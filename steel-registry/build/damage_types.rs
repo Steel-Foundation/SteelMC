@@ -99,9 +99,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort damage types by name for consistent generation
-    damage_types.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -125,7 +122,7 @@ pub(crate) fn build() -> TokenStream {
         let death_message_type = generate_death_message_type(damage_type.death_message_type);
 
         stream.extend(quote! {
-            pub const #damage_type_ident: &DamageType = &DamageType {
+            pub static #damage_type_ident: &DamageType = &DamageType {
                 key: #key,
                 message_id: #message_id,
                 scaling: #scaling,

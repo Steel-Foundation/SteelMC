@@ -1,6 +1,9 @@
 use std::{
     io, mem,
-    sync::{Arc, Weak, atomic::Ordering},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -17,19 +20,18 @@ use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::{runtime::Runtime, time::Instant};
 use tokio_util::task::TaskTracker;
 
-use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
+use crate::chunk::{chunk_access::ChunkAccess, chunk_ticket_manager::is_ticked};
 use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask,
     flat_chunk_generator::FlatChunkGenerator, world_gen_context::WorldGenContext,
 };
 use crate::chunk_saver::RegionManager;
-use crate::config::STEEL_CONFIG;
 use crate::player::Player;
 use crate::world::World;
 
@@ -38,6 +40,7 @@ const PROCESS_CHANGES_WARN_THRESHOLD: usize = 1_000;
 #[allow(dead_code)]
 const PROCESS_CHANGES_WARN_MIN_DURATION: Duration = Duration::from_micros(500);
 const SLOW_TASK_WARN_THRESHOLD: Duration = Duration::from_micros(250);
+const SLOW_TASK_WARN_THRESHOLD_BIG: Duration = Duration::from_micros(800);
 /// A map of chunks managing their state, loading, and generation.
 pub struct ChunkMap {
     /// Map of active chunks.
@@ -52,14 +55,18 @@ pub struct ChunkMap {
     pub chunk_tickets: SyncMutex<ChunkTicketManager>,
     /// The world generation context.
     pub world_gen_context: Arc<WorldGenContext>,
-    /// The thread pool to use for generation.
-    pub thread_pool: Arc<ThreadPool>,
+    /// The thread pool to use for chunk generation (throughput-oriented).
+    pub generation_pool: Arc<ThreadPool>,
+    /// The thread pool to use for chunk ticking (latency-oriented).
+    pub tick_pool: Arc<ThreadPool>,
     /// The runtime to use for chunk tasks.
     pub chunk_runtime: Arc<Runtime>,
     /// Manager for chunk saving and loading.
     pub region_manager: Arc<RegionManager>,
     /// Chunk holders with pending block changes to broadcast.
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
+    /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
+    last_tickable_len: AtomicUsize,
 }
 
 impl ChunkMap {
@@ -88,20 +95,25 @@ impl ChunkMap {
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
             world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
-            thread_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
+            generation_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
+            tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             chunk_runtime,
             region_manager: Arc::new(RegionManager::new(format!("world/{}", dimension.key.path))),
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
+            last_tickable_len: AtomicUsize::new(0),
         }
     }
 
-    /// Returns a chunk if it's fully loaded
+    /// Executes a function with access to a fully loaded chunk.
+    /// Returns `None` if the chunk is not loaded or not at Full status.
     #[allow(clippy::missing_panics_doc)]
-    pub fn get_full_chunk(&self, pos: &ChunkPos) -> Option<Arc<ChunkAccess>> {
+    pub fn with_full_chunk<F, R>(&self, pos: &ChunkPos, f: F) -> Option<R>
+    where
+        F: FnOnce(&ChunkAccess) -> R,
+    {
         let chunk_holder = self.chunks.get_sync(pos)?;
-        chunk_holder
-            .try_chunk(ChunkStatus::Full)
-            .map(|guard| guard.as_ref().expect("Not empty by this stage").clone())
+        let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
+        Some(f(&guard))
     }
 
     /// Records a block change at the given position.
@@ -228,7 +240,7 @@ impl ChunkMap {
             pos,
             target_status,
             self.clone(),
-            self.thread_pool.clone(),
+            self.generation_pool.clone(),
         ));
         if start.elapsed() >= Duration::from_millis(1) {
             log::warn!("schedule_generation_task_b took: {:?}", start.elapsed());
@@ -291,23 +303,24 @@ impl ChunkMap {
         } else {
             //log::info!("Unloading chunk at {pos:?}");
             chunk_holder.cancel_generation_task();
+            chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
+            chunk_holder.update_highest_allowed_status(u8::MAX);
 
-            // Check for two cause we are also holding a reference to the chunk
-            if let Some((_, holder)) = self
-                .chunks
-                .remove_if_sync(pos, |chunk| Arc::strong_count(chunk) == 2)
-            {
-                let _ = self.unloading_chunks.insert_sync(*pos, holder.clone());
-            } else {
-                chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
-                chunk_holder.update_highest_allowed_status(u8::MAX);
+            // Move to unloading_chunks for deferred unload
+            if let Some((_, holder)) = self.chunks.remove_sync(pos) {
+                let _ = self.unloading_chunks.insert_sync(*pos, holder);
             }
             None
         }
     }
 
-    /// Processes chunk updates.
-    pub fn tick_b(self: &Arc<Self>, tick_count: u64) {
+    /// Processes chunk updates and ticks chunks.
+    ///
+    /// # Arguments
+    /// * `tick_count` - The current server tick count
+    /// * `random_tick_speed` - Number of random blocks to tick per section per tick
+    #[allow(clippy::too_many_lines)]
+    pub fn tick_b(self: &Arc<Self>, tick_count: u64, random_tick_speed: u32) {
         let start = Instant::now();
 
         {
@@ -329,12 +342,14 @@ impl ChunkMap {
             let holder_creation_elapsed = holder_creation_start.elapsed();
 
             let schedule_start = Instant::now();
-            holders_to_schedule.par_iter().for_each(|(holder, level)| {
-                if let Some(level) = level
-                    && is_full(*level)
-                {
-                    holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self);
-                }
+            self.tick_pool.install(|| {
+                holders_to_schedule.par_iter().for_each(|(holder, level)| {
+                    if let Some(level) = level
+                        && is_full(*level)
+                    {
+                        holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self);
+                    }
+                });
             });
             let schedule_elapsed = schedule_start.elapsed();
 
@@ -382,78 +397,127 @@ impl ChunkMap {
                 self.unloading_chunks.len()
             );
         }
+
+        // Chunk ticking - tick all full chunks in parallel
+        let start_collect = Instant::now();
+        let mut total_chunks = 0;
+        let last_len = self.last_tickable_len.load(Ordering::Relaxed);
+        let mut tickable_chunks = Vec::with_capacity(last_len);
+        self.chunks.iter_sync(|_, holder| {
+            total_chunks += 1;
+            let level = holder.ticket_level.load(Ordering::Relaxed);
+            if is_ticked(level) {
+                tickable_chunks.push(holder.clone());
+            }
+            true
+        });
+        self.last_tickable_len
+            .store(tickable_chunks.len(), Ordering::Relaxed);
+        let collect_elapsed = start_collect.elapsed();
+        if collect_elapsed >= SLOW_TASK_WARN_THRESHOLD {
+            log::warn!(
+                "tickable_chunks collect slow: {collect_elapsed:?}, count: {}",
+                tickable_chunks.len()
+            );
+        }
+
+        if !tickable_chunks.is_empty() {
+            let start_tick = Instant::now();
+            // TODO: In the future we might want to tick different regions/islands in parallel
+            for holder in &tickable_chunks {
+                if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                    chunk_guard.tick(random_tick_speed);
+                }
+            }
+            let tick_elapsed = start_tick.elapsed();
+            if tick_elapsed >= SLOW_TASK_WARN_THRESHOLD_BIG {
+                log::warn!(
+                    "chunk tick loop slow: {tick_elapsed:?}, count: {}/{}",
+                    tickable_chunks.len(),
+                    total_chunks
+                );
+            }
+        }
     }
 
-    /// Saves a chunk to disk.
-    ///
-    /// This function is currently a placeholder for the actual saving logic.
+    /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
     #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
-    pub async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>, chunk_map: &Arc<ChunkMap>) {
-        let chunk = chunk_holder.try_chunk(ChunkStatus::StructureStarts);
+    async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
+        // Prepare chunk data while holding the lock, then release before async I/O
+        let prepared = {
+            let Some(chunk_guard) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
+                // Chunk was at Empty stage so no need to save it
+                return;
+            };
 
-        if let Some(chunk) = chunk {
             let status = chunk_holder
                 .persisted_status()
                 .expect("The check above confirmed it exists");
 
-            let result = chunk_map.region_manager.save_chunk(&chunk, status).await;
+            let prepared = RegionManager::prepare_chunk_save(&chunk_guard);
 
-            match result {
-                Ok(_) => {
-                    let res = chunk_map
-                        .unloading_chunks
-                        .remove_async(&chunk_holder.get_pos())
-                        .await;
-                    if res.is_some() {
-                        if let Err(e) = chunk_map
-                            .region_manager
-                            .release_chunk(chunk_holder.get_pos())
-                            .await
-                        {
-                            log::error!("Error releasing chunk: {e}");
-                        }
-                    } else {
-                        // Chunk was recovered
-                    }
-                }
-                Err(e) => {
-                    log::error!("Error saving chunk: {e}");
-                }
+            // Clear dirty flag while we still have the lock (only if we're actually saving)
+            if prepared.is_some() {
+                chunk_guard.clear_dirty();
             }
-        } else {
-            // Chunk was at Empty stage so no need to save it
-            let _ = chunk_map
-                .unloading_chunks
-                .remove_async(&chunk_holder.get_pos())
-                .await;
+
+            (prepared, status)
+        }; // chunk_guard dropped here
+
+        let (prepared, status) = prepared;
+
+        // Save chunk data if dirty
+        if let Some(prepared) = prepared {
+            let result = self.region_manager.save_chunk_data(prepared, status).await;
+
+            if let Err(e) = result {
+                log::error!("Error saving chunk: {e}");
+            }
         }
     }
 
     /// Processes chunks that are pending unload.
     ///
-    /// This method iterates over the chunks in the `unloading_chunks` map.
-    /// If a chunk is only held by the map (strong count is 1), it is removed
-    /// and a background task is spawned to save it.
+    /// Iterates over `unloading_chunks`. For each chunk with `strong_count == 1`:
+    /// - If not dirty: remove and release region handle
+    /// - If dirty: spawn save task (removal happens on next tick when clean)
     pub fn process_unloads(self: &Arc<Self>) {
-        self.unloading_chunks.iter_sync(|_pos, holder| {
-            // If the strong count is 1, it means only this map holds a reference to the chunk.
-            // We can safely unload it.
+        self.unloading_chunks.retain_sync(|pos, holder| {
             if Arc::strong_count(holder) == 1 {
-                let holder_clone = holder.clone();
-                let map_clone = self.clone();
+                // Check if dirty by trying to get chunk access
+                let is_dirty = holder
+                    .try_chunk(ChunkStatus::StructureStarts)
+                    .is_some_and(|chunk| chunk.is_dirty());
 
-                self.task_tracker.spawn(async move {
-                    map_clone.save_chunk(&holder_clone, &map_clone).await;
-                });
+                if is_dirty {
+                    // Save the chunk, don't remove yet
+                    let holder_clone = holder.clone();
+                    let map_clone = self.clone();
+                    self.task_tracker.spawn(async move {
+                        map_clone.save_chunk(&holder_clone).await;
+                    });
+                    true // keep
+                } else {
+                    // Clean and no refs - remove and release region handle
+                    let pos = *pos;
+                    let map_clone = self.clone();
+                    self.task_tracker.spawn(async move {
+                        if let Err(e) = map_clone.region_manager.release_chunk(pos).await {
+                            log::error!("Error releasing chunk: {e}");
+                        }
+                    });
+                    false // remove
+                }
+            } else {
+                true // keep, still has refs
             }
-            true
         });
     }
 
     /// Updates the player's status in the chunk map.
     pub fn update_player_status(&self, player: &Player) {
         let current_chunk_pos = *player.last_chunk_pos.lock();
-        let view_distance = STEEL_CONFIG.view_distance;
+        let view_distance = player.view_distance();
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
         let mut last_view_guard = player.last_tracking_view.lock();
@@ -574,15 +638,26 @@ impl ChunkMap {
 
         // Save all chunks that have data
         for holder in &all_chunks {
-            if let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts)
-                && let Some(status) = holder.persisted_status()
-            {
-                match self.region_manager.save_chunk(&chunk, status).await {
-                    Ok(true) => saved_count += 1,
-                    Ok(false) => {} // Not dirty
-                    Err(e) => {
-                        log::error!("Failed to save chunk at {:?}: {e}", holder.get_pos());
-                    }
+            let prepared = {
+                let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts) else {
+                    continue;
+                };
+                let Some(status) = holder.persisted_status() else {
+                    continue;
+                };
+                let Some(prepared) = RegionManager::prepare_chunk_save(&chunk) else {
+                    continue; // Not dirty
+                };
+                chunk.clear_dirty();
+                (prepared, status)
+            };
+
+            let (prepared, status) = prepared;
+            match self.region_manager.save_chunk_data(prepared, status).await {
+                Ok(true) => saved_count += 1,
+                Ok(false) => {} // Not dirty
+                Err(e) => {
+                    log::error!("Failed to save chunk at {:?}: {e}", holder.get_pos());
                 }
             }
         }

@@ -102,9 +102,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort cow variants by name for consistent generation
-    cow_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -132,7 +129,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub const #cow_variant_ident: &CowVariant = &CowVariant {
+            pub static #cow_variant_ident: &CowVariant = &CowVariant {
                 key: #key,
                 asset_id: #asset_id,
                 model: #model,

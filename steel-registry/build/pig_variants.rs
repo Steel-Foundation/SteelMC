@@ -101,9 +101,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort pig variants by name for consistent generation
-    pig_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -131,7 +128,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub const #pig_variant_ident: &PigVariant = &PigVariant {
+            pub static #pig_variant_ident: &PigVariant = &PigVariant {
                 key: #key,
                 asset_id: #asset_id,
                 model: #model,

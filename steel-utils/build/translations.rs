@@ -86,7 +86,7 @@ pub(crate) fn build() -> TokenStream {
         phf_map_entries.push((key.clone(), format!("\"{escaped_text}\"")));
 
         stream.extend(quote! {
-            pub const #const_name: Translation<#param_count> = Translation::new(
+            pub static #const_name: Translation<#param_count> = Translation::new(
                 #key,
                 #escaped_text
             );

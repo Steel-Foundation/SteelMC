@@ -1,11 +1,12 @@
 //! `ChunkHolder` manages chunk state and asynchronous generation tasks.
-use arc_swap::{ArcSwapOption, Guard};
 use futures::Future;
+use parking_lot::RwLockReadGuard;
 use rustc_hash::FxHashSet;
 use std::fmt::Debug;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
+use steel_utils::locks::SyncRwLock;
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::sync::{oneshot, watch};
 
@@ -34,6 +35,26 @@ pub enum ChunkResult {
     Ok(ChunkStatus),
 }
 
+struct ChunkGuard(SyncRwLock<ChunkAccess>);
+
+impl ChunkGuard {
+    pub fn new(chunk_access: ChunkAccess) -> Self {
+        ChunkGuard(SyncRwLock::new(chunk_access))
+    }
+
+    pub fn read(&self) -> RwLockReadGuard<'_, ChunkAccess> {
+        self.0.read()
+    }
+
+    pub fn with_write<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut ChunkAccess) -> R,
+    {
+        let mut guard = self.0.write();
+        f(&mut guard)
+    }
+}
+
 /// Holds a chunk in a watch channel, allowing for concurrent access and state tracking.
 ///
 /// NOTICE: It is very important to keep data and `chunk_result` in sync.
@@ -46,7 +67,7 @@ pub enum ChunkResult {
 ///
 /// `ChunkResult::Ok(ChunkStatus::Full)` -> data is `Some(ChunkAccess::Full(LevelChunk))`
 pub struct ChunkHolder {
-    data: ArcSwapOption<ChunkAccess>,
+    data: ChunkGuard,
     chunk_result: watch::Receiver<ChunkResult>,
     sender: watch::Sender<ChunkResult>,
     generation_task: SyncMutex<Option<Arc<ChunkGenerationTask>>>,
@@ -97,7 +118,7 @@ impl ChunkHolder {
             .collect();
 
         Self {
-            data: ArcSwapOption::new(None),
+            data: ChunkGuard::new(ChunkAccess::Unloaded),
             chunk_result: receiver,
             sender,
             generation_task: SyncMutex::new(None),
@@ -214,9 +235,9 @@ impl ChunkHolder {
 
     /// Gets access to the chunk if it has reached the given status.
     #[inline]
-    pub fn try_chunk(&self, status: ChunkStatus) -> Option<Guard<Option<Arc<ChunkAccess>>>> {
+    pub fn try_chunk(&self, status: ChunkStatus) -> Option<RwLockReadGuard<'_, ChunkAccess>> {
         match &*self.chunk_result.borrow() {
-            ChunkResult::Ok(s) if status <= *s => Some(self.data.load()),
+            ChunkResult::Ok(s) if status <= *s => Some(self.data.read()),
             _ => None,
         }
     }
@@ -225,7 +246,7 @@ impl ChunkHolder {
     pub fn await_chunk(
         &self,
         status: ChunkStatus,
-    ) -> impl Future<Output = Option<Guard<Option<Arc<ChunkAccess>>>>> {
+    ) -> impl Future<Output = Option<RwLockReadGuard<'_, ChunkAccess>>> {
         let mut subscriber = self.sender.subscribe();
         async move {
             loop {
@@ -233,7 +254,7 @@ impl ChunkHolder {
                     let chunk_result = subscriber.borrow_and_update();
                     match &*chunk_result {
                         ChunkResult::Ok(s) if status <= *s => {
-                            return Some(self.data.load());
+                            return Some(self.data.read());
                         }
                         ChunkResult::Failed => {
                             return None;
@@ -342,9 +363,7 @@ impl ChunkHolder {
                     Ok(()) => {
                         sender.send_modify(|chunk| {
                             // Update inner status
-                            if let Some(acc) = self_clone2.data.load().as_ref()
-                                && let ChunkAccess::Proto(chunk) = acc.as_ref()
-                            {
+                            if let ChunkAccess::Proto(chunk) = &*self_clone2.data.read() {
                                 chunk.set_status(target_status);
                             }
                             if let ChunkResult::Ok(s) = chunk {
@@ -413,37 +432,42 @@ impl ChunkHolder {
 
     /// Upgrades the chunk to a full chunk.
     ///
+    /// If the chunk is already a `LevelChunk` (e.g., loaded from disk), this is a no-op.
+    ///
     /// # Arguments
     /// * `level` - Weak reference to the world for the `LevelChunk`
     ///
     /// # Panics
-    /// Panics if the chunk is not at `ProtoChunk` stage or completed.
+    /// Panics if the chunk is not at `ProtoChunk` stage or already full.
     pub fn upgrade_to_full(&self, level: Weak<World>) {
-        let data = self.data.load_full();
+        self.data.with_write(|chunk| {
+            use std::mem::replace;
+            let owned = replace(chunk, ChunkAccess::Unloaded);
 
-        if let Some(data) = data
-            && let ChunkAccess::Proto(proto_chunk) = &*data
-        {
-            // This is a cheap clone since the sections are wrapped in Arc
-            let full_chunk =
-                LevelChunk::from_proto(proto_chunk.clone(), self.min_y, self.height, level);
-            self.data
-                .store(Some(Arc::new(ChunkAccess::Full(full_chunk))));
-        }
+            *chunk = match owned {
+                ChunkAccess::Proto(proto) => {
+                    let min_y = proto.min_y();
+                    let height = proto.height();
+                    ChunkAccess::Full(LevelChunk::from_proto(proto, min_y, height, level))
+                }
+                ChunkAccess::Full(full) => ChunkAccess::Full(full),
+                ChunkAccess::Unloaded => panic!("Chunk is unloaded, cannot upgrade to full"),
+            };
+        });
     }
 
     /// Inserts a chunk into the holder with a specific status.
     /// This notifies watchers - use `insert_chunk_no_notify` + separate notification
     /// if calling from a rayon thread to avoid contention.
     pub fn insert_chunk(&self, chunk: ChunkAccess, status: ChunkStatus) {
-        self.data.store(Some(Arc::new(chunk)));
+        self.data.with_write(|c| *c = chunk);
         self.sender.send_replace(ChunkResult::Ok(status));
     }
 
     /// Inserts a chunk into the holder without notifying watchers.
     /// The caller is responsible for notifying via the completion channel.
     pub(crate) fn insert_chunk_no_notify(&self, chunk: ChunkAccess) {
-        self.data.store(Some(Arc::new(chunk)));
+        self.data.with_write(|c| *c = chunk);
     }
 
     /// Notifies watchers that the chunk has reached a status.

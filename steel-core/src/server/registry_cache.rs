@@ -30,14 +30,21 @@ pub struct RegistryCache {
     pub tags_packet: Arc<EncodedPacket>,
 }
 
+impl Default for RegistryCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RegistryCache {
     /// Creates a new `RegistryCache` from the given registry.
-    pub async fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         let registry_packets = Self::build_registry_packets(&REGISTRY);
         let tags_by_registry_packet = Self::build_tags_packet(&REGISTRY);
 
         let (registry_packets, tags_packet) =
-            build_compressed_packets(registry_packets, tags_by_registry_packet).await;
+            build_compressed_packets(registry_packets, tags_by_registry_packet);
 
         Self {
             registry_packets,
@@ -147,39 +154,32 @@ impl RegistryCache {
 }
 
 /// Compresses a packet.
-pub async fn compress_packet<P: ClientPacket>(packet: P) -> Result<EncodedPacket, ()> {
+fn compress_packet<P: ClientPacket>(packet: P) -> Option<EncodedPacket> {
     let compression_info = STEEL_CONFIG.compression;
     let id = packet.get_id(ConnectionProtocol::Config);
 
-    let encoded_packet =
-        EncodedPacket::from_bare(packet, compression_info, ConnectionProtocol::Config)
-            .await
-            .map_err(|_| {
-                log::error!("Failed to encode packet: {id:?}");
-            })?;
-
-    Ok(encoded_packet)
+    EncodedPacket::from_bare(packet, compression_info, ConnectionProtocol::Config)
+        .map_err(|_| {
+            log::error!("Failed to encode packet: {id:?}");
+        })
+        .ok()
 }
 
 /// # Panics
 /// This function will panic if the compression fails.
-pub async fn build_compressed_packets(
+#[must_use]
+pub fn build_compressed_packets(
     registry_packets: Vec<CRegistryData>,
     tags_packet: CUpdateTags,
 ) -> (Arc<[EncodedPacket]>, EncodedPacket) {
     let mut compressed_packets = Vec::with_capacity(registry_packets.len());
 
     for packet in registry_packets {
-        compressed_packets.push(
-            compress_packet(packet)
-                .await
-                .expect("Failed to compress packet"),
-        );
+        compressed_packets.push(compress_packet(packet).expect("Failed to compress packet"));
     }
 
-    let compressed_tags_packet = compress_packet(tags_packet)
-        .await
-        .expect("Failed to compress tags packet");
+    let compressed_tags_packet =
+        compress_packet(tags_packet).expect("Failed to compress tags packet");
 
     (compressed_packets.into(), compressed_tags_packet)
 }

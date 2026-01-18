@@ -13,6 +13,14 @@ use tokio::{
 };
 use tokio_util::task::TaskTracker;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
+#[cfg(all(feature = "mimalloc", not(feature = "dhat-heap")))]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// Main entry point for the Steel Minecraft server.
 ///
 ///
@@ -25,6 +33,9 @@ use tokio_util::task::TaskTracker;
 /// We have to create the runtimes at this level cause tokio panics if you drop a runtime in a context where blocking is not allowed.
 #[allow(clippy::unwrap_used)]
 fn main() {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let chunk_runtime = Arc::new(Builder::new_multi_thread().enable_all().build().unwrap());
 
     let main_runtime = Builder::new_multi_thread().enable_all().build().unwrap();
@@ -120,10 +131,7 @@ async fn main_async(chunk_runtime: Arc<Runtime>) {
     log::info!("Saving world data...");
     let mut total_saved = 0;
     for world in &server.worlds {
-        match world.save_all_chunks().await {
-            Ok(count) => total_saved += count,
-            Err(e) => log::error!("Failed to save world chunks: {e}"),
-        }
+        world.cleanup(&mut total_saved).await;
     }
     log::info!("Saved {total_saved} chunks");
 

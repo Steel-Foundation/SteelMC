@@ -115,7 +115,7 @@ pub(crate) fn build() -> TokenStream {
         };
 
         stream.extend(quote! {
-            pub const #const_name: Translation<#args_type> = Translation::new(
+            pub static #const_name: Translation<#args_type> = Translation::new(
                 #key,
                 #escaped_text
             );

@@ -135,7 +135,7 @@ pub(crate) fn build() -> TokenStream {
         let timeline_strs = timelines.iter().map(|s| s.as_str());
 
         stream.extend(quote! {
-            pub const #tag_ident: &[&str] = &[#(#timeline_strs),*];
+            pub static #tag_ident: &[&str] = &[#(#timeline_strs),*];
         });
     }
 

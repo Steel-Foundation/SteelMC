@@ -52,6 +52,8 @@ pub enum TextureError {
     JSONError(String),
 }
 
+const MAX_RETRIES: u32 = 3;
+
 /// Authenticates a player with Mojang's servers.
 pub async fn mojang_authenticate(
     username: &str,
@@ -64,17 +66,26 @@ pub async fn mojang_authenticate(
     auth_url += SERVER_ID_ARG;
     auth_url += server_hash;
 
-    let response = reqwest::get(auth_url)
-        .await
-        .map_err(|_| AuthError::FailedResponse)?;
+    let mut last_error = AuthError::FailedResponse;
 
-    match response.status() {
-        StatusCode::OK => {}
-        StatusCode::NO_CONTENT => Err(AuthError::UnverifiedUsername)?,
-        other => Err(AuthError::UnknownStatusCode(other))?,
+    for _ in 0..MAX_RETRIES {
+        let Ok(response) = reqwest::get(&auth_url).await else {
+            last_error = AuthError::FailedResponse;
+            continue;
+        };
+
+        match response.status() {
+            StatusCode::OK => {
+                return response.json().await.map_err(|_| AuthError::FailedParse);
+            }
+            StatusCode::NO_CONTENT => return Err(AuthError::UnverifiedUsername),
+            other => last_error = AuthError::UnknownStatusCode(other),
+        }
     }
 
-    response.json().await.map_err(|_| AuthError::FailedParse)
+    log::warn!("Plauer {username} auth failed");
+
+    Err(last_error)
 }
 
 /// Converts a signed bytes big endian to a hex string.

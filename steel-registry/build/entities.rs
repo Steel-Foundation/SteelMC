@@ -36,7 +36,7 @@ pub(crate) fn build() -> TokenStream {
         let update_interval = entity_type.update_interval;
 
         stream.extend(quote! {
-            pub const #entity_type_ident: &EntityType = &EntityType {
+            pub static #entity_type_ident: &EntityType = &EntityType {
                 key: #entity_type_key,
                 id: #id,
                 client_tracking_range: #client_tracking_range,

@@ -14,10 +14,12 @@ use std::{
 
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{CLogin, CommonPlayerSpawnInfo};
+use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry};
 use steel_utils::locks::SyncRwLock;
-use steel_utils::{Identifier, types::GameType};
+use steel_utils::types::GameType;
 use tick_rate_manager::TickRateManager;
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
@@ -67,12 +69,28 @@ impl Server {
         init_behaviors();
         log::info!("Behavior registries initialized");
 
-        let registry_cache = RegistryCache::new().await;
+        let registry_cache = RegistryCache::new();
+
+        let seed: i64 = if STEEL_CONFIG.seed.is_empty() {
+            rand::random()
+        } else {
+            STEEL_CONFIG.seed.parse().unwrap_or_else(|_| {
+                let mut hash: i64 = 0;
+                for byte in STEEL_CONFIG.seed.bytes() {
+                    hash = hash.wrapping_mul(31).wrapping_add(i64::from(byte));
+                }
+                hash
+            })
+        };
+
+        let overworld = World::new(chunk_runtime, OVERWORLD, seed)
+            .await
+            .expect("Failed to create overworld");
 
         Server {
             cancel_token,
             key_store: KeyStore::create(),
-            worlds: vec![World::new(chunk_runtime, OVERWORLD)],
+            worlds: vec![overworld],
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -87,28 +105,50 @@ impl Server {
     }
 
     /// Adds a player to the server.
+    ///
+    /// # Panics
+    /// Panics if the registry is not initialized.
     pub fn add_player(&self, player: Arc<Player>) {
+        let world = &self.worlds[0];
+
+        // Get gamerule values
+        let reduced_debug_info =
+            world.get_game_rule(REDUCED_DEBUG_INFO) == GameRuleValue::Bool(true);
+        let immediate_respawn = world.get_game_rule(IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true);
+        let do_limited_crafting =
+            world.get_game_rule(LIMITED_CRAFTING) == GameRuleValue::Bool(true);
+
+        // Get world data
+        let hashed_seed = world.obfuscated_seed();
+        let dimension_key = world.dimension.key.clone();
+
         player.connection.send_packet(CLogin {
             player_id: player.entity_id,
             hardcore: false,
-            levels: vec![Identifier::vanilla_static("overworld")],
-            max_players: 5,
-            chunk_radius: STEEL_CONFIG.view_distance.into(),
+            levels: vec![dimension_key.clone()],
+            max_players: STEEL_CONFIG.max_players as i32,
+            chunk_radius: player.view_distance().into(),
             simulation_distance: STEEL_CONFIG.simulation_distance.into(),
-            reduced_debug_info: false,
-            show_death_screen: false,
-            do_limited_crafting: false,
+            reduced_debug_info,
+            show_death_screen: !immediate_respawn,
+            do_limited_crafting,
             common_player_spawn_info: CommonPlayerSpawnInfo {
-                dimension_type: 0,
-                dimension: Identifier::vanilla_static("overworld"),
-                seed: 0,
+                dimension_type: *(REGISTRY.dimension_types.get_id(
+                    REGISTRY
+                        .dimension_types
+                        .by_key(&dimension_key)
+                        .expect("Should be registered"),
+                )) as i32,
+                dimension: dimension_key,
+                seed: hashed_seed,
                 game_type: GameType::Survival,
                 previous_game_type: None,
                 is_debug: false,
+                // TODO: Change once we add a normal generator
                 is_flat: true,
                 last_death_location: None,
                 portal_cooldown: 0,
-                sea_level: 64,
+                sea_level: 63, // Standard overworld sea level
             },
             enforces_secure_chat: STEEL_CONFIG.enforce_secure_chat,
         });
@@ -116,7 +156,7 @@ impl Server {
         let commands = self.command_dispatcher.read().get_commands();
         player.connection.send_packet(commands);
 
-        self.worlds[0].add_player(player);
+        world.add_player(player);
     }
 
     /// Runs the server tick loop.

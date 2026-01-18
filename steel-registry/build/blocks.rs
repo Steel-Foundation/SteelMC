@@ -94,8 +94,6 @@ pub struct Shape {
 #[derive(Deserialize, Clone, Debug)]
 pub struct BlockAssets {
     pub blocks: Vec<Block>,
-    #[allow(dead_code)]
-    pub block_entity_types: Vec<String>,
     pub shapes: Vec<Shape>,
 }
 
@@ -456,7 +454,7 @@ pub(crate) fn build() -> TokenStream {
             let max_y = shape.max[1];
             let max_z = shape.max[2];
             quote! {
-                const #name: AABB = AABB::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
+                static #name: AABB = AABB::new(#min_x, #min_y, #min_z, #max_x, #max_y, #max_z);
             }
         })
         .collect();
@@ -569,7 +567,7 @@ pub(crate) fn build() -> TokenStream {
         );
 
         stream.extend(quote! {
-            pub const #block_name: &Block = &Block::new(
+            pub static #block_name: &Block = &Block::new(
                 Identifier::vanilla_static(#block_name_str),
                 BlockConfig::new()#(#builder_calls)*,
                 &[

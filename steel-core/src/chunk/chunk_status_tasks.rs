@@ -93,9 +93,7 @@ impl ChunkStatusTasks {
         let chunk = holder
             .try_chunk(ChunkStatus::Biomes)
             .expect("Chunk not found at status Biomes");
-        context
-            .generator
-            .fill_from_noise(chunk.as_ref().expect("Chunk is not loaded").as_ref());
+        context.generator.fill_from_noise(&chunk);
         Ok(())
     }
 

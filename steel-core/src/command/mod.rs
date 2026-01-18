@@ -7,13 +7,14 @@ pub mod sender;
 
 use std::sync::Arc;
 
-use steel_protocol::packets::game::{CCommands, CommandNode};
+use steel_protocol::packets::game::{CCommandSuggestions, CCommands, CommandNode, SuggestionEntry};
 use steel_utils::text::{TextComponent, color::NamedColor};
 
 use crate::command::commands::CommandHandlerDyn;
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
 use crate::command::sender::CommandSender;
+use crate::player::Player;
 use crate::server::Server;
 
 /// A struct that parses and dispatches commands to their appropriate handlers.
@@ -30,6 +31,7 @@ impl CommandDispatcher {
         let dispatcher = CommandDispatcher::new_empty();
         dispatcher.register(commands::execute::command_handler());
         dispatcher.register(commands::gamemode::command_handler());
+        dispatcher.register(commands::gamerule::command_handler());
         dispatcher.register(commands::seed::command_handler());
         dispatcher.register(commands::stop::command_handler());
         dispatcher.register(commands::weather::command_handler());
@@ -160,5 +162,87 @@ impl CommandDispatcher {
         for name in names {
             self.handlers.remove_sync(name);
         }
+    }
+
+    /// Handles a command suggestion request from a player.
+    pub fn handle_suggestions(&self, player: &Arc<Player>, id: i32, command: &str) {
+        // Remove leading slash if present
+        let command = command.strip_prefix('/').unwrap_or(command);
+
+        // Split into parts, preserving trailing space as empty string
+        let mut parts: Vec<&str> = command.split(' ').collect();
+
+        // Remove empty parts from the middle but keep trailing empty if command ends with space
+        let has_trailing_space = command.ends_with(' ');
+        parts.retain(|s| !s.is_empty());
+        if has_trailing_space {
+            parts.push("");
+        }
+
+        // If empty or typing command name, suggest command names
+        if parts.is_empty() || (parts.len() == 1 && !has_trailing_space) {
+            let prefix = parts.first().copied().unwrap_or("");
+            let suggestions = self.get_command_suggestions(prefix);
+            // Start position is 1 (after the slash)
+            player.connection.send_packet(CCommandSuggestions::new(
+                id,
+                1,
+                prefix.len() as i32,
+                suggestions,
+            ));
+            return;
+        }
+
+        // Get the command handler
+        let command_name = parts[0];
+        let Some(handler) = self.handlers.read_sync(command_name, |_, v| v.clone()) else {
+            // Unknown command - no suggestions
+            player
+                .connection
+                .send_packet(CCommandSuggestions::new(id, 0, 0, vec![]));
+            return;
+        };
+
+        // Calculate where args start (after "command_name ")
+        let args_start_pos = command_name.len() + 1; // +1 for space
+
+        // Get the args (everything after command name)
+        let args = &parts[1..];
+
+        // Create context for suggestion
+        let mut context = CommandContext::new(CommandSender::Player(Arc::clone(player)));
+
+        // Get suggestions from handler
+        if let Some(result) = handler.suggest(args, args_start_pos, &mut context) {
+            // Adjust start position to account for leading slash
+            player.connection.send_packet(CCommandSuggestions::new(
+                id,
+                result.start + 1, // +1 for leading slash
+                result.length,
+                result.suggestions,
+            ));
+        } else {
+            // No suggestions
+            player
+                .connection
+                .send_packet(CCommandSuggestions::new(id, 0, 0, vec![]));
+        }
+    }
+
+    /// Gets command name suggestions matching the given prefix.
+    fn get_command_suggestions(&self, prefix: &str) -> Vec<SuggestionEntry> {
+        let mut suggestions = Vec::new();
+        let prefix_lower = prefix.to_lowercase();
+
+        self.handlers.iter_sync(|name, handler| {
+            // Only include primary command names (not aliases)
+            if *name == handler.names()[0] && name.to_lowercase().starts_with(&prefix_lower) {
+                suggestions.push(SuggestionEntry::new(*name));
+            }
+            true
+        });
+
+        suggestions.sort_by(|a, b| a.text.cmp(&b.text));
+        suggestions
     }
 }

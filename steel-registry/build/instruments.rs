@@ -55,9 +55,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort instruments by name for consistent generation
-    instruments.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -82,7 +79,7 @@ pub(crate) fn build() -> TokenStream {
         let description = generate_text_component(&instrument.description);
 
         stream.extend(quote! {
-            pub const #instrument_ident: &Instrument = &Instrument {
+            pub static #instrument_ident: &Instrument = &Instrument {
                 key: #key,
                 sound_event: #sound_event,
                 use_duration: #use_duration,

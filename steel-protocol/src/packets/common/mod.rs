@@ -11,6 +11,6 @@ pub use c_disconnect::CDisconnect;
 pub use c_keep_alive::CKeepAlive;
 pub use c_update_tags::CUpdateTags;
 pub use c_update_tags::TagCollection;
-pub use s_client_information::SClientInformation;
+pub use s_client_information::{ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation};
 pub use s_custom_payload::SCustomPayload;
 pub use s_keep_alive::SKeepAlive;

@@ -7,15 +7,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use steel_protocol::packet_reader::TCPNetworkDecoder;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket};
 use steel_protocol::packet_writer::TCPNetworkEncoder;
-use steel_protocol::packets::common::{CDisconnect, CKeepAlive, SCustomPayload, SKeepAlive};
+use steel_protocol::packets::common::{
+    CDisconnect, CKeepAlive, SClientInformation, SCustomPayload, SKeepAlive,
+};
 use steel_protocol::packets::game::{
     SAcceptTeleportation, SChat, SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived,
-    SClientTickEnd, SContainerButtonClick, SContainerClick, SContainerClose,
+    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
     SMovePlayerStatusOnly, SPickItemFromBlock, SPlayerAction, SPlayerInput, SPlayerLoad,
     SSetCarriedItem, SSetCreativeModeSlot, SSwing, SUseItem, SUseItemOn,
 };
-use steel_protocol::utils::{ConnectionProtocol, EnqueuedPacket, PacketError, RawPacket};
+use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::{text::TextComponent, translations};
@@ -38,7 +40,7 @@ struct KeepAliveTracker {
 
 /// A connection to a Java client.
 pub struct JavaConnection {
-    outgoing_packets: UnboundedSender<EnqueuedPacket>,
+    outgoing_packets: UnboundedSender<EncodedPacket>,
     cancel_token: CancellationToken,
     compression: Option<CompressionInfo>,
     network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
@@ -52,7 +54,7 @@ pub struct JavaConnection {
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
     pub fn new(
-        outgoing_packets: UnboundedSender<EnqueuedPacket>,
+        outgoing_packets: UnboundedSender<EncodedPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
         network_writer: Arc<AsyncMutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
@@ -129,16 +131,12 @@ impl JavaConnection {
     /// Sends a packet to the client.
     ///
     /// # Panics
-    /// - If the packet fails to be written to the buffer.
+    /// - If the packet fails to be encoded.
     /// - If the packet fails to be sent through the channel.
     pub fn send_packet<P: ClientPacket>(&self, packet: P) {
-        let packet = EncodedPacket::write_vec(packet, ConnectionProtocol::Play)
-            .expect("Failed to write packet");
-        if self
-            .outgoing_packets
-            .send(EnqueuedPacket::RawData(packet))
-            .is_err()
-        {
+        let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            .expect("Failed to encode packet");
+        if self.outgoing_packets.send(packet).is_err() {
             self.close();
         }
     }
@@ -148,11 +146,7 @@ impl JavaConnection {
     /// # Panics
     /// - If the packet fails to be sent through the channel.
     pub fn send_encoded_packet(&self, packet: EncodedPacket) {
-        if self
-            .outgoing_packets
-            .send(EnqueuedPacket::EncodedPacket(packet))
-            .is_err()
-        {
+        if self.outgoing_packets.send(packet).is_err() {
             self.close();
         }
     }
@@ -174,6 +168,7 @@ impl JavaConnection {
     }
 
     /// Processes a packet from the client.
+    #[allow(clippy::too_many_lines)]
     pub fn process_packet(
         self: &Arc<Self>,
         packet: RawPacket,
@@ -197,6 +192,9 @@ impl JavaConnection {
             }
             play::S_CHAT_ACK => {
                 player.handle_chat_ack(SChatAck::read_packet(data)?);
+            }
+            play::S_CLIENT_INFORMATION => {
+                player.handle_client_information(SClientInformation::read_packet(data)?);
             }
             play::S_CLIENT_TICK_END => {
                 let _ = SClientTickEnd::read_packet(data)?;
@@ -235,6 +233,14 @@ impl JavaConnection {
                     CommandSender::Player(player),
                     SChatCommand::read_packet(data)?.command,
                     &server,
+                );
+            }
+            play::S_COMMAND_SUGGESTION => {
+                let packet = SCommandSuggestion::read_packet(data)?;
+                server.command_dispatcher.read().handle_suggestions(
+                    &player,
+                    packet.id,
+                    &packet.command,
                 );
             }
             play::S_CONTAINER_BUTTON_CLICK => {
@@ -319,7 +325,7 @@ impl JavaConnection {
     ///
     /// # Panics
     /// - If the player is not available.
-    pub async fn sender(self: Arc<Self>, mut sender_recv: UnboundedReceiver<EnqueuedPacket>) {
+    pub async fn sender(self: Arc<Self>, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
         loop {
             select! {
                 () = self.wait_for_close() => {
@@ -327,25 +333,11 @@ impl JavaConnection {
                 }
                 packet = sender_recv.recv() => {
                     if let Some(packet) = packet {
-
-                        let Some(encoded_packet) = (match packet {
-                            EnqueuedPacket::EncodedPacket(packet) => Some(packet),
-                            EnqueuedPacket::RawData(packet) => {
-                                EncodedPacket::from_data(packet, self.compression)
-                                    .await
-                                    .ok()
-                            }
-                        }) else {
-                            log::warn!("Failed to convert packet to encoded packet for client {}", self.id);
-                            continue;
-                        };
-
-                        if let Err(err) = self.network_writer.lock().await.write_packet(&encoded_packet).await
+                        if let Err(err) = self.network_writer.lock().await.write_packet(&packet).await
                         {
                             log::warn!("Failed to send packet to client {}: {err}", self.id);
                             self.close();
                         }
-
                     } else {
                         //log::warn!(
                         //    "Internal packet_sender_recv channel closed for client {}",

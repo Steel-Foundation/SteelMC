@@ -48,9 +48,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort trim patterns by name for consistent generation
-    trim_patterns.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -74,7 +71,7 @@ pub(crate) fn build() -> TokenStream {
         let decal = trim_pattern.decal;
 
         stream.extend(quote! {
-            pub const #trim_pattern_ident: &TrimPattern = &TrimPattern {
+            pub static #trim_pattern_ident: &TrimPattern = &TrimPattern {
                 key: #key,
                 asset_id: #asset_id,
                 description: TextComponent::const_translate(#translate),

@@ -129,9 +129,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort dimension types by name for consistent generation
-    dimension_types.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -177,7 +174,7 @@ pub(crate) fn build() -> TokenStream {
         let monster_spawn_block_light_limit = dimension_type.monster_spawn_block_light_limit;
 
         stream.extend(quote! {
-            pub const #dimension_type_ident: &DimensionType = &DimensionType {
+            pub static #dimension_type_ident: &DimensionType = &DimensionType {
                 key: #key,
                 fixed_time: #fixed_time,
                 has_skylight: #has_skylight,

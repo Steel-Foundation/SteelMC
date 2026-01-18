@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{Result, Write};
 
 use steel_macros::{ClientPacket, WriteTo};
@@ -23,13 +24,13 @@ pub enum CommandNode {
     Literal {
         children: Vec<i32>,
         redirects_to: Option<i32>,
-        name: &'static str,
+        name: Cow<'static, str>,
         is_executable: bool,
     },
     Argument {
         children: Vec<i32>,
         redirects_to: Option<i32>,
-        name: &'static str,
+        name: Cow<'static, str>,
         is_executable: bool,
         parser: ArgumentType,
         suggestions_type: Option<SuggestionType>,
@@ -47,10 +48,10 @@ impl CommandNode {
         }
     }
 
-    pub fn new_literal(info: CommandNodeInfo, name: &'static str) -> Self {
+    pub fn new_literal(info: CommandNodeInfo, name: impl Into<Cow<'static, str>>) -> Self {
         Self::Literal {
             children: info.children,
-            name,
+            name: name.into(),
             is_executable: info.is_executable,
             redirects_to: info.redirects_to,
         }
@@ -58,12 +59,12 @@ impl CommandNode {
 
     pub fn new_argument(
         info: CommandNodeInfo,
-        name: &'static str,
+        name: impl Into<Cow<'static, str>>,
         argument: (ArgumentType, Option<SuggestionType>),
     ) -> Self {
         Self::Argument {
             children: info.children,
-            name,
+            name: name.into(),
             is_executable: info.is_executable,
             redirects_to: info.redirects_to,
             parser: argument.0,
@@ -123,11 +124,11 @@ impl CommandNode {
         }
     }
 
-    fn name(&self) -> Option<&'static str> {
+    fn name(&self) -> Option<&str> {
         match self {
             CommandNode::Root { .. } => None,
-            CommandNode::Literal { name, .. } => Some(*name),
-            CommandNode::Argument { name, .. } => Some(*name),
+            CommandNode::Literal { name, .. } => Some(name),
+            CommandNode::Argument { name, .. } => Some(name),
         }
     }
 }

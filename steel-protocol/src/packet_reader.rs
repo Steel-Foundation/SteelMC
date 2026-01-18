@@ -6,49 +6,21 @@ Credit to https://github.com/Pumpkin-MC/Pumpkin/ for this implementation.
 */
 
 use std::{
-    io,
+    io::{self, Read},
     num::NonZeroU32,
     pin::Pin,
     task::{Context, Poll},
 };
 
 use aes::cipher::KeyIvInit;
-use async_compression::tokio::bufread::ZlibDecoder;
+use flate2::read::ZlibDecoder;
 use steel_utils::codec::VarInt;
-use tokio::io::{AsyncRead, AsyncReadExt, BufReader, ReadBuf};
+use steel_utils::serial::ReadFrom;
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 
 use crate::utils::{
     Aes128Cfb8Dec, MAX_PACKET_DATA_SIZE, MAX_PACKET_SIZE, PacketError, RawPacket, StreamDecryptor,
 };
-
-// decrypt -> decompress -> raw
-/// A reader that can decompress data.
-pub enum DecompressionReader<R: AsyncRead + Unpin> {
-    /// A reader that decompresses data.
-    Decompress(ZlibDecoder<BufReader<R>>),
-    /// A reader that does not decompress data.
-    None(R),
-}
-
-impl<R: AsyncRead + Unpin> AsyncRead for DecompressionReader<R> {
-    #[inline]
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        match self.get_mut() {
-            Self::Decompress(reader) => {
-                let reader = Pin::new(reader);
-                reader.poll_read(cx, buf)
-            }
-            Self::None(reader) => {
-                let reader = Pin::new(reader);
-                reader.poll_read(cx, buf)
-            }
-        }
-    }
-}
 
 /// A reader that can decrypt data.
 pub enum DecryptionReader<R: AsyncRead + Unpin> {
@@ -142,38 +114,49 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
             Err(PacketError::OutOfBounds)?;
         }
 
-        let mut bounded_reader = (&mut self.reader).take(packet_len as _);
+        // Read the entire packet data into a buffer
+        let mut packet_data = vec![0u8; packet_len];
+        self.reader
+            .read_exact(&mut packet_data)
+            .await
+            .map_err(|e| PacketError::Other(e.to_string()))?;
 
-        let mut reader = if let Some(threshold) = self.compression {
-            let decompressed_len = VarInt::read_async(&mut bounded_reader).await?;
-            let raw_packet_len = packet_len - VarInt::written_size(decompressed_len);
-            let decompressed_len = decompressed_len as usize;
+        let mut cursor = io::Cursor::new(packet_data);
+
+        let decompressed_data = if let Some(threshold) = self.compression {
+            let decompressed_len = VarInt::read(&mut cursor)?.0 as usize;
+            let raw_packet_len = packet_len - VarInt::written_size(decompressed_len as i32);
 
             if decompressed_len > MAX_PACKET_DATA_SIZE {
                 Err(PacketError::TooLong(decompressed_len))?;
             }
 
             if decompressed_len > 0 {
-                DecompressionReader::Decompress(ZlibDecoder::new(BufReader::new(bounded_reader)))
+                // Decompress the remaining data
+                let mut decompressed = Vec::with_capacity(decompressed_len);
+                ZlibDecoder::new(&mut cursor)
+                    .read_to_end(&mut decompressed)
+                    .map_err(|e| PacketError::DecompressionFailed(e.to_string()))?;
+                decompressed
             } else {
                 // Validate that we are not less than the compression threshold
                 if raw_packet_len > threshold.get() as _ {
                     Err(PacketError::NotCompressed)?;
                 }
 
-                DecompressionReader::None(bounded_reader)
+                // Rest of the data is uncompressed
+                let pos = cursor.position() as usize;
+                cursor.into_inner()[pos..].to_vec()
             }
         } else {
-            DecompressionReader::None(bounded_reader)
+            cursor.into_inner()
         };
 
-        let packet_id = VarInt::read_async(&mut reader).await?;
-
-        let mut payload = Vec::new();
-        reader
-            .read_to_end(&mut payload)
-            .await
-            .map_err(|e| PacketError::DecompressionFailed(e.to_string()))?;
+        // Parse packet ID and payload from decompressed data
+        let mut cursor = io::Cursor::new(decompressed_data);
+        let packet_id = VarInt::read(&mut cursor)?.0;
+        let pos = cursor.position() as usize;
+        let payload = cursor.into_inner()[pos..].to_vec();
 
         Ok(RawPacket {
             id: packet_id,

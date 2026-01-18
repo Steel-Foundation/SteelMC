@@ -156,6 +156,30 @@ pub trait BlockBehaviour: Send + Sync {
         // Default: look up item by block's key
         REGISTRY.items.by_key(&block.key).map(ItemStack::new)
     }
+
+    /// Returns whether this block should receive random ticks.
+    ///
+    /// Override to return true for blocks like crops, grass, ice, fire, etc.
+    /// This is used to optimize chunk ticking by skipping sections with no
+    /// randomly-ticking blocks.
+    #[allow(unused_variables)]
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        false
+    }
+
+    /// Called on random tick for blocks that support random ticking.
+    ///
+    /// This is only called if `is_randomly_ticking()` returns true.
+    /// Used for crop growth, grass spread, ice melting, fire behavior, etc.
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    /// * `world` - The world the block is in
+    /// * `pos` - The position of the block
+    #[allow(unused_variables)]
+    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+        // Default: no-op
+    }
 }
 
 /// Default block behavior that returns the block's default state for placement.

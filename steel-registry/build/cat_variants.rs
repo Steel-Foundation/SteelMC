@@ -128,9 +128,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort cat variants by name for consistent generation
-    cat_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -157,7 +154,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub const #cat_variant_ident: &CatVariant = &CatVariant {
+            pub static #cat_variant_ident: &CatVariant = &CatVariant {
                 key: #key,
                 asset_id: #asset_id,
                 spawn_conditions: &[#(#spawn_conditions),*],

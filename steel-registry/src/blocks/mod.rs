@@ -308,14 +308,20 @@ impl BlockRegistry {
 
     // Panics if that property isn't supposed to be on this block.
     pub fn get_property<T, P: Property<T>>(&self, id: BlockStateId, property: &P) -> T {
+        self.try_get_property(id, property)
+            .expect("Property not found on this block")
+    }
+
+    /// Gets the value of a property, returning `None` if the block doesn't have this property.
+    #[must_use]
+    pub fn try_get_property<T, P: Property<T>>(&self, id: BlockStateId, property: &P) -> Option<T> {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
         // Find the property index in the block's property list
         let property_index = block
             .properties
             .iter()
-            .position(|prop| prop.get_name() == property.as_dyn().get_name())
-            .expect("Property not found on this block");
+            .position(|prop| prop.get_name() == property.as_dyn().get_name())?;
 
         // Get the base state ID for this block (O(1) lookup)
         let block_id = self.state_to_block_id[id.0 as usize];
@@ -341,7 +347,7 @@ impl BlockRegistry {
         }
 
         // Convert the index back to the actual value
-        property.value_from_index(property_value_index)
+        Some(property.value_from_index(property_value_index))
     }
 
     // Panics if that property isn't supposed to be on this block.

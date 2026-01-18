@@ -1,6 +1,7 @@
 //! This module contains the command building structs.
 pub mod execute;
 pub mod gamemode;
+pub mod gamerule;
 pub mod seed;
 pub mod stop;
 pub mod weather;
@@ -9,12 +10,25 @@ use std::marker::PhantomData;
 use std::ops::Not;
 use std::sync::Arc;
 
-use steel_protocol::packets::game::{CommandNode, CommandNodeInfo};
+use steel_protocol::packets::game::{
+    CommandNode, CommandNodeInfo, SuggestionEntry, SuggestionType,
+};
 
-use crate::command::arguments::CommandArgument;
+use crate::command::arguments::{CommandArgument, SuggestionContext};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
 use crate::server::Server;
+
+/// Result of a suggestion query, containing the suggestions and where to apply them.
+#[derive(Debug, Clone)]
+pub struct SuggestionResult {
+    /// The suggestions to show.
+    pub suggestions: Vec<SuggestionEntry>,
+    /// Start position in the input string (after the slash).
+    pub start: i32,
+    /// Length of text to replace.
+    pub length: i32,
+}
 
 /// A trait that defines the behavior of a type safe command executor.
 pub trait CommandExecutor<S> {
@@ -63,6 +77,18 @@ pub trait CommandHandlerDyn {
 
     /// Generates the usage information for the command.
     fn usage(&self, buffer: &mut Vec<CommandNode>, root_children: &mut Vec<i32>);
+
+    /// Returns suggestions for the given arguments.
+    /// `args` is the argument list (command name already removed).
+    /// `args_start_pos` is the byte position where args start in the original input (after command name + space).
+    fn suggest(
+        &self,
+        _args: &[&str],
+        _args_start_pos: usize,
+        _context: &mut CommandContext,
+    ) -> Option<SuggestionResult> {
+        None
+    }
 }
 
 impl CommandHandlerBuilder {
@@ -199,9 +225,20 @@ where
             root_children.push(buffer.len() as i32);
             buffer.push(CommandNode::new_literal(
                 CommandNodeInfo::new_redirect(node_index as i32),
-                name,
+                *name,
             ));
         }
+    }
+
+    fn suggest(
+        &self,
+        args: &[&str],
+        args_start_pos: usize,
+        context: &mut CommandContext,
+    ) -> Option<SuggestionResult> {
+        let mut suggestion_ctx = SuggestionContext::new();
+        self.executor
+            .suggest(args, args_start_pos, context, &mut suggestion_ctx)
     }
 }
 
@@ -219,6 +256,19 @@ pub trait CommandParserExecutor<S> {
 
     /// Generates usage information for the command.
     fn usage(&self, buffer: &mut Vec<CommandNode>, node_index: i32) -> CommandNodeInfo;
+
+    /// Returns suggestions for the current argument position.
+    /// `args` is the remaining unparsed arguments.
+    /// `current_pos` is the byte position in the original input where args start.
+    /// `suggestion_ctx` contains previously parsed argument values for context-dependent suggestions.
+    /// Returns `Some(SuggestionResult)` if suggestions are available.
+    fn suggest(
+        &self,
+        args: &[&str],
+        current_pos: usize,
+        context: &mut CommandContext,
+        suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult>;
 }
 
 /// Tree node that executes a command with the given parsed arguments.
@@ -245,6 +295,17 @@ where
 
     fn usage(&self, _buffer: &mut Vec<CommandNode>, _: i32) -> CommandNodeInfo {
         CommandNodeInfo::new_executable()
+    }
+
+    fn suggest(
+        &self,
+        _args: &[&str],
+        _current_pos: usize,
+        _context: &mut CommandContext,
+        _suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult> {
+        // Leaf executor has no more arguments to suggest
+        None
     }
 }
 
@@ -285,6 +346,36 @@ where
         self.first_executor
             .usage(buffer, node_index)
             .chain(self.second_executor.usage(buffer, node_index))
+    }
+
+    fn suggest(
+        &self,
+        args: &[&str],
+        current_pos: usize,
+        context: &mut CommandContext,
+        suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult> {
+        // Get suggestions from both executors and combine them
+        let first =
+            self.first_executor
+                .suggest(args, current_pos, context, &mut suggestion_ctx.clone());
+        let second = self
+            .second_executor
+            .suggest(args, current_pos, context, suggestion_ctx);
+
+        match (first, second) {
+            (Some(mut first_result), Some(second_result)) => {
+                // Combine suggestions from both branches if they have the same position
+                if first_result.start == second_result.start
+                    && first_result.length == second_result.length
+                {
+                    first_result.suggestions.extend(second_result.suggestions);
+                }
+                Some(first_result)
+            }
+            (Some(result), None) | (None, Some(result)) => Some(result),
+            (None, None) => None,
+        }
     }
 }
 
@@ -350,6 +441,18 @@ where
             CommandRedirectTarget::Current => node_index,
             CommandRedirectTarget::All => 0,
         })
+    }
+
+    fn suggest(
+        &self,
+        _args: &[&str],
+        _current_pos: usize,
+        _context: &mut CommandContext,
+        _suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult> {
+        // Redirect executors don't provide suggestions themselves
+        // The redirected command would handle suggestions
+        None
     }
 }
 
@@ -479,6 +582,37 @@ where
 
         CommandNodeInfo::new(result)
     }
+
+    fn suggest(
+        &self,
+        args: &[&str],
+        current_pos: usize,
+        context: &mut CommandContext,
+        suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult> {
+        let first = args.first()?;
+
+        // If we're typing this literal (partial match or complete match with more args)
+        if self.expected.starts_with(*first) && args.len() == 1 {
+            // Suggest this literal if it's a partial match
+            if *first != self.expected {
+                return Some(SuggestionResult {
+                    suggestions: vec![SuggestionEntry::new(self.expected)],
+                    start: current_pos as i32,
+                    length: first.len() as i32,
+                });
+            }
+        }
+
+        // If the literal matches exactly, continue to next argument
+        if *first == self.expected {
+            let next_pos = current_pos + first.len() + 1; // +1 for space
+            self.executor
+                .suggest(&args[1..], next_pos, context, suggestion_ctx)
+        } else {
+            None
+        }
+    }
 }
 
 /// A builder struct for creating typed command argument executors.
@@ -563,6 +697,58 @@ where
 
         CommandNodeInfo::new(result)
     }
+
+    fn suggest(
+        &self,
+        args: &[&str],
+        current_pos: usize,
+        context: &mut CommandContext,
+        suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult> {
+        // Check if this argument uses AskServer suggestions
+        let (_, suggestion_type) = self.argument.usage();
+        let uses_ask_server = matches!(suggestion_type, Some(SuggestionType::AskServer));
+
+        // Try to parse the current argument
+        if let Some((remaining, _)) = self.argument.parse(args, context) {
+            // Argument parsed successfully - store parsed value in context for downstream args
+            if let Some(parsed_value) = self.argument.parsed_value(args, context) {
+                suggestion_ctx.set(self.name, parsed_value);
+            }
+
+            // Continue to next argument
+            if remaining.is_empty() {
+                // No more args
+                return None;
+            }
+            // Calculate position after this argument
+            let consumed_len: usize = args
+                .iter()
+                .take(args.len() - remaining.len())
+                .map(|s| s.len() + 1) // +1 for space
+                .sum();
+            let next_pos = current_pos + consumed_len;
+            return self
+                .executor
+                .suggest(remaining, next_pos, context, suggestion_ctx);
+        }
+
+        // Argument didn't parse - if we use AskServer, provide suggestions
+        if uses_ask_server {
+            let prefix = args.first().copied().unwrap_or("");
+            let suggestions = self.argument.suggest(prefix, suggestion_ctx);
+
+            if !suggestions.is_empty() {
+                return Some(SuggestionResult {
+                    suggestions,
+                    start: current_pos as i32,
+                    length: prefix.len() as i32,
+                });
+            }
+        }
+
+        None
+    }
 }
 
 /// Tree node that parses a typed argument and provides the parsed value to the next executor.
@@ -621,3 +807,152 @@ impl<S, A, E1> CommandParserArgumentExecutor<S, A, E1> {
 
 type SplitLeafExecutor<S, E1, E2> =
     CommandParserSplitExecutor<S, E1, CommandParserLeafExecutor<S, E2>>;
+
+// ============================================================================
+// Dynamic command building support
+// ============================================================================
+
+/// A boxed command parser executor that allows dynamic command tree construction.
+/// This enables building command trees in loops where the concrete type changes each iteration.
+pub type BoxedExecutor<S> = Box<dyn CommandParserExecutor<S> + Send + Sync>;
+
+impl<S> CommandParserExecutor<S> for BoxedExecutor<S> {
+    fn execute(
+        &self,
+        args: &[&str],
+        parsed: S,
+        context: &mut CommandContext,
+        server: &Arc<Server>,
+        handler: &dyn CommandHandlerDyn,
+    ) -> Option<Result<(), CommandError>> {
+        (**self).execute(args, parsed, context, server, handler)
+    }
+
+    fn usage(&self, buffer: &mut Vec<CommandNode>, node_index: i32) -> CommandNodeInfo {
+        (**self).usage(buffer, node_index)
+    }
+
+    fn suggest(
+        &self,
+        args: &[&str],
+        current_pos: usize,
+        context: &mut CommandContext,
+        suggestion_ctx: &mut SuggestionContext,
+    ) -> Option<SuggestionResult> {
+        (**self).suggest(args, current_pos, context, suggestion_ctx)
+    }
+}
+
+/// A dynamic command handler that uses boxed executors for runtime-constructed command trees.
+pub struct DynCommandHandler {
+    names: &'static [&'static str],
+    description: &'static str,
+    permission: &'static str,
+    executors: Vec<BoxedExecutor<()>>,
+}
+
+impl DynCommandHandler {
+    /// Creates a new dynamic command handler builder.
+    #[must_use]
+    pub fn new(
+        names: &'static [&'static str],
+        description: &'static str,
+        permission: &'static str,
+    ) -> Self {
+        Self {
+            names,
+            description,
+            permission,
+            executors: Vec::new(),
+        }
+    }
+
+    /// Adds an executor branch to this command handler.
+    #[must_use]
+    pub fn then<E>(mut self, executor: E) -> Self
+    where
+        E: CommandParserExecutor<()> + Send + Sync + 'static,
+    {
+        self.executors.push(Box::new(executor));
+        self
+    }
+}
+
+impl CommandHandlerDyn for DynCommandHandler {
+    fn names(&self) -> &'static [&'static str] {
+        self.names
+    }
+
+    fn description(&self) -> &'static str {
+        self.description
+    }
+
+    fn permission(&self) -> &'static str {
+        self.permission
+    }
+
+    fn execute(
+        &self,
+        command_args: &[&str],
+        context: &mut CommandContext,
+        server: &Arc<Server>,
+    ) -> Result<(), CommandError> {
+        for executor in &self.executors {
+            if let Some(result) = executor.execute(command_args, (), context, server, self) {
+                return result;
+            }
+        }
+        Err(CommandError::CommandFailed(Box::new(
+            "Invalid Syntax.".into(),
+        )))
+    }
+
+    fn usage(&self, buffer: &mut Vec<CommandNode>, root_children: &mut Vec<i32>) {
+        let node_index = buffer.len();
+        buffer.push(CommandNode::new_root()); // Reserve spot
+        root_children.push(node_index as i32);
+
+        let mut children = CommandNodeInfo::new(vec![]);
+        for executor in &self.executors {
+            children = children.chain(executor.usage(buffer, node_index as i32));
+        }
+
+        buffer[node_index] = CommandNode::new_literal(children, self.names()[0]);
+
+        for name in self.names().iter().skip(1) {
+            root_children.push(buffer.len() as i32);
+            buffer.push(CommandNode::new_literal(
+                CommandNodeInfo::new_redirect(node_index as i32),
+                *name,
+            ));
+        }
+    }
+
+    fn suggest(
+        &self,
+        args: &[&str],
+        args_start_pos: usize,
+        context: &mut CommandContext,
+    ) -> Option<SuggestionResult> {
+        let mut combined: Option<SuggestionResult> = None;
+        let suggestion_ctx = SuggestionContext::new();
+
+        for executor in &self.executors {
+            if let Some(result) =
+                executor.suggest(args, args_start_pos, context, &mut suggestion_ctx.clone())
+            {
+                match &mut combined {
+                    Some(existing)
+                        if existing.start == result.start && existing.length == result.length =>
+                    {
+                        existing.suggestions.extend(result.suggestions);
+                    }
+                    None => combined = Some(result),
+                    _ => {}
+                }
+            }
+        }
+
+        combined
+    }
+}

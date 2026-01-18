@@ -322,6 +322,24 @@ impl Direction {
         }
     }
 
+    /// Returns the horizontal direction from a yaw rotation.
+    ///
+    /// Yaw values follow Minecraft's convention:
+    /// - 0° = South (+Z)
+    /// - 90° = West (-X)
+    /// - 180° = North (-Z)
+    /// - 270° = East (+X)
+    #[must_use]
+    pub fn from_yaw(yaw: f32) -> Direction {
+        let adjusted = yaw.rem_euclid(360.0);
+        match adjusted {
+            y if !(45.0..315.0).contains(&y) => Direction::South,
+            y if y < 135.0 => Direction::West,
+            y if y < 225.0 => Direction::North,
+            _ => Direction::East,
+        }
+    }
+
     /// The order in which neighbor shape updates are processed.
     /// This matches vanilla's `BlockBehaviour.UPDATE_SHAPE_ORDER`.
     pub const UPDATE_SHAPE_ORDER: [Direction; 6] = [

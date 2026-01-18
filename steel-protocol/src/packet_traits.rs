@@ -7,14 +7,13 @@ use std::{
     sync::Arc,
 };
 
-use async_compression::{Level, tokio::write::ZlibEncoder};
+use flate2::{Compression, write::ZlibEncoder};
 use serde::Deserialize;
 use steel_utils::{
     FrontVec,
     codec::VarInt,
     serial::{ReadFrom, WriteTo},
 };
-use tokio::io::AsyncWriteExt;
 
 use crate::utils::{ConnectionProtocol, MAX_PACKET_DATA_SIZE, MAX_PACKET_SIZE, PacketError};
 
@@ -116,11 +115,7 @@ pub struct EncodedPacket {
 }
 
 impl EncodedPacket {
-    /// Creates a new `EncodedPacket` from uncompressed data.
-    ///
-    /// # Errors
-    /// - If the packet is too long.
-    pub fn from_data_uncompressed(mut packet_data: FrontVec) -> Result<Self, PacketError> {
+    fn from_data_uncompressed(mut packet_data: FrontVec) -> Result<Self, PacketError> {
         let data_len = packet_data.len();
         let varint_size = VarInt::written_size(data_len as i32);
 
@@ -141,7 +136,7 @@ impl EncodedPacket {
         clippy::cast_possible_wrap,
         clippy::too_many_lines
     )]
-    async fn from_packet_data(
+    fn from_packet_data(
         mut packet_data: FrontVec,
         compression: CompressionInfo,
     ) -> Result<Self, PacketError> {
@@ -154,15 +149,13 @@ impl EncodedPacket {
         if data_len >= compression.threshold.get() as _ {
             let mut buf = FrontVec::new(10);
             let mut compressor =
-                ZlibEncoder::with_quality(&mut buf, Level::Precise(compression.level));
+                ZlibEncoder::new(&mut buf, Compression::new(compression.level as u32));
 
             compressor
                 .write_all(&packet_data)
-                .await
                 .map_err(|e| PacketError::CompressionFailed(e.to_string()))?;
             compressor
-                .flush()
-                .await
+                .finish()
                 .map_err(|e| PacketError::CompressionFailed(e.to_string()))?;
 
             // compressed data cant be larger so we dont need to check the size again
@@ -201,20 +194,16 @@ impl EncodedPacket {
     /// # Errors
     /// - If the packet fails to write.
     /// - If the packet fails to compress.
-    pub async fn from_bare<P: ClientPacket>(
+    pub fn from_bare<P: ClientPacket>(
         packet: P,
         compression: Option<CompressionInfo>,
         protocol: ConnectionProtocol,
     ) -> Result<Self, PacketError> {
         let buf = Self::write_vec(packet, protocol)?;
-        Self::from_data(buf, compression).await
+        Self::from_data(buf, compression)
     }
 
-    /// Writes a packet to a `FrontVec`.
-    ///
-    /// # Errors
-    /// - If the packet fails to write.
-    pub fn write_vec<P: ClientPacket>(
+    fn write_vec<P: ClientPacket>(
         packet: P,
         protocol: ConnectionProtocol,
     ) -> Result<FrontVec, PacketError> {
@@ -223,17 +212,9 @@ impl EncodedPacket {
         Ok(buf)
     }
 
-    /// Creates a new `EncodedPacket` from a `FrontVec`.
-    ///
-    /// # Errors
-    /// - If the packet fails to compress.
-    /// - If the packet is too long.
-    pub async fn from_data(
-        buf: FrontVec,
-        compression: Option<CompressionInfo>,
-    ) -> Result<Self, PacketError> {
+    fn from_data(buf: FrontVec, compression: Option<CompressionInfo>) -> Result<Self, PacketError> {
         if let Some(compression) = compression {
-            Self::from_packet_data(buf, compression).await
+            Self::from_packet_data(buf, compression)
         } else {
             Self::from_data_uncompressed(buf)
         }

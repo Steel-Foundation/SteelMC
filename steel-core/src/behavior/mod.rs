@@ -21,7 +21,7 @@
 //! init_behaviors();
 //!
 //! // Then access behaviors via the global registries:
-//! let behavior = BLOCK_BEHAVIORS.get().unwrap().get_behavior(block);
+//! let behavior = BLOCK_BEHAVIORS.get_behavior(block);
 //! ```
 
 mod block;
@@ -45,14 +45,42 @@ use block_behaviours::register_block_behaviors;
 pub use context::{BlockHitResult, BlockPlaceContext, InteractionResult, UseOnContext};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviours::register_item_behaviors;
-pub use items::{BlockItemBehavior, DefaultItemBehavior};
+pub use items::{BlockItemBehavior, DefaultItemBehavior, EnderEyeBehavior, FilledBucketBehavior};
+use std::ops::Deref;
 use std::sync::OnceLock;
+use steel_registry::{vanilla_blocks, vanilla_items};
+
+/// Wrapper for the global block behavior registry that implements `Deref`.
+pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
+
+impl Deref for BlockBehaviorLock {
+    type Target = BlockBehaviorRegistry;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.get().expect("Block behaviors not initialized")
+    }
+}
+
+/// Wrapper for the global item behavior registry that implements `Deref`.
+pub struct ItemBehaviorLock(OnceLock<ItemBehaviorRegistry>);
+
+impl Deref for ItemBehaviorLock {
+    type Target = ItemBehaviorRegistry;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.get().expect("Item behaviors not initialized")
+    }
+}
 
 /// Global block behavior registry.
-pub static BLOCK_BEHAVIORS: OnceLock<BlockBehaviorRegistry> = OnceLock::new();
+///
+/// Access behaviors directly via deref: `BLOCK_BEHAVIORS.get_behavior(block)`
+pub static BLOCK_BEHAVIORS: BlockBehaviorLock = BlockBehaviorLock(OnceLock::new());
 
 /// Global item behavior registry.
-pub static ITEM_BEHAVIORS: OnceLock<ItemBehaviorRegistry> = OnceLock::new();
+///
+/// Access behaviors directly via deref: `ITEM_BEHAVIORS.get_behavior(item)`
+pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
 
 /// Initializes the global behavior registries.
 ///
@@ -66,15 +94,31 @@ pub fn init_behaviors() {
     register_block_behaviors(&mut block_behaviors);
 
     assert!(
-        BLOCK_BEHAVIORS.set(block_behaviors).is_ok(),
+        BLOCK_BEHAVIORS.0.set(block_behaviors).is_ok(),
         "Block behavior registry already initialized"
     );
 
     let mut item_behaviors = ItemBehaviorRegistry::new();
     register_item_behaviors(&mut item_behaviors);
 
+    // Register bucket behaviors (not auto-generated since they're not block items)
+    item_behaviors.set_behavior(
+        &vanilla_items::ITEMS.water_bucket,
+        Box::new(FilledBucketBehavior::new(
+            vanilla_blocks::WATER,
+            &vanilla_items::ITEMS.bucket,
+        )),
+    );
+    item_behaviors.set_behavior(
+        &vanilla_items::ITEMS.lava_bucket,
+        Box::new(FilledBucketBehavior::new(
+            vanilla_blocks::LAVA,
+            &vanilla_items::ITEMS.bucket,
+        )),
+    );
+
     assert!(
-        ITEM_BEHAVIORS.set(item_behaviors).is_ok(),
+        ITEM_BEHAVIORS.0.set(item_behaviors).is_ok(),
         "Item behavior registry already initialized"
     );
 }

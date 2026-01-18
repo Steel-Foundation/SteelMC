@@ -37,7 +37,7 @@ aes.workspace = true
 cfb8.workspace = true
 
 # Compression
-async-compression.workspace = true
+flate2.workspace = true
 
 # Utilities
 replace_with.workspace = true

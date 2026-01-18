@@ -17,6 +17,15 @@ use crate::{
     world::World,
 };
 
+/// Minimum chunks per tick (vanilla: 0.01)
+const MIN_CHUNKS_PER_TICK: f32 = 8f32;
+/// Maximum chunks per tick (vanilla: 64.0, we use 500.0 for faster loading)
+const MAX_CHUNKS_PER_TICK: f32 = 500.0;
+/// Starting chunks per tick (vanilla: 9.0)
+const START_CHUNKS_PER_TICK: f32 = 9.0;
+/// Maximum unacknowledged batches after first ack (vanilla: 10)
+const MAX_UNACKNOWLEDGED_BATCHES: u16 = 10;
+
 /// This struct is responsible for sending chunks to the client.
 #[derive(Debug)]
 pub struct ChunkSender {
@@ -25,10 +34,12 @@ pub struct ChunkSender {
     /// The number of batches that have been sent to the client but have not been acknowledged yet.
     pub unacknowledged_batches: u16,
     /// The number of chunks that should be sent to the client per tick.
+    /// This is dynamically adjusted based on client feedback.
     pub desired_chunks_per_tick: f32,
     /// The number of chunks that can be sent to the client in the current batch.
     pub batch_quota: f32,
     /// The maximum number of unacknowledged batches allowed.
+    /// Starts at 1 and increases to `MAX_UNACKNOWLEDGED_BATCHES` after first ack.
     pub max_unacknowledged_batches: u16,
 }
 
@@ -70,20 +81,16 @@ impl ChunkSender {
                     let _ = spawn_blocking(move || {
                         let mut chunks_to_send = Vec::new();
                         for holder in chunks_to_process {
-                            if let Some(chunk) = holder.try_chunk(ChunkStatus::Full).map(|chunk| {
-                                if let ChunkAccess::Full(chunk) =
-                                    chunk.as_ref().expect("Chunk is not loaded").as_ref()
-                                {
-                                    CLevelChunkWithLight {
+                            if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                                if let ChunkAccess::Full(chunk) = &*chunk_guard {
+                                    chunks_to_send.push(CLevelChunkWithLight {
                                         pos: holder.get_pos(),
                                         chunk_data: chunk.extract_chunk_data(),
                                         light_data: chunk.extract_light_data(),
-                                    }
+                                    });
                                 } else {
                                     panic!("Chunk must be at Full status to be sent to the client");
                                 }
-                            }) {
-                                chunks_to_send.push(chunk);
                             }
                         }
 
@@ -139,10 +146,27 @@ impl ChunkSender {
     }
 
     /// Handles the acknowledgement of a chunk batch from the client.
-    pub fn on_chunk_batch_received_by_client(&mut self, _batch_size: f32) {
-        if self.unacknowledged_batches > 0 {
-            self.unacknowledged_batches -= 1;
+    ///
+    /// The client sends back its desired chunks per tick based on how fast it can
+    /// process chunks. We clamp this value and use it to adjust our sending rate.
+    pub fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) {
+        self.unacknowledged_batches = self.unacknowledged_batches.saturating_sub(1);
+
+        // Handle NaN and clamp to valid range (vanilla uses 0.01-64, we use 0.01-500)
+        self.desired_chunks_per_tick = if desired_chunks_per_tick.is_nan() {
+            MIN_CHUNKS_PER_TICK
+        } else {
+            desired_chunks_per_tick.clamp(MIN_CHUNKS_PER_TICK, MAX_CHUNKS_PER_TICK)
+        };
+
+        // Reset batch quota when all batches are acknowledged
+        if self.unacknowledged_batches == 0 {
+            self.batch_quota = 1.0;
         }
+
+        // After receiving the first acknowledgement, allow more unacknowledged batches
+        // for better pipelining (vanilla behavior)
+        self.max_unacknowledged_batches = MAX_UNACKNOWLEDGED_BATCHES;
     }
 }
 
@@ -151,7 +175,7 @@ impl Default for ChunkSender {
         Self {
             pending_chunks: FxHashSet::default(),
             unacknowledged_batches: 0,
-            desired_chunks_per_tick: 32.0,
+            desired_chunks_per_tick: START_CHUNKS_PER_TICK,
             batch_quota: 0.0,
             max_unacknowledged_batches: 1,
         }

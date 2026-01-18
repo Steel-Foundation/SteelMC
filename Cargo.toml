@@ -59,7 +59,7 @@ syn = "2.0.114"
 crossbeam = "0.8.4"
 parking_lot = { version = "0.12.5", features = ["nightly", "arc_lock"] }
 rayon = "1.11.0"
-scc = "3.4.10"
+scc = "3.4.11"
 arc-swap = "1.8.0"
 
 # Data structures
@@ -94,7 +94,7 @@ hex = "0.4.3"
 rsa-der = "0.3.0"
 
 # Compression
-async-compression = { version = "0.4.36", features = ["tokio", "zlib"] }
+flate2 = "1.1.8"
 zstd = "0.13"
 
 # Utilities

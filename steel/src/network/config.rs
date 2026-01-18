@@ -9,8 +9,8 @@ use steel_protocol::packets::config::SSelectKnownPacks;
 use steel_protocol::packets::shared_implementation::KnownPack;
 use steel_protocol::utils::ConnectionProtocol;
 
-use steel_core::player::Player;
 use steel_core::player::networking::JavaConnection;
+use steel_core::player::{ClientInformation, Player};
 use steel_utils::Identifier;
 
 use crate::MC_VERSION;
@@ -26,8 +26,23 @@ impl JavaTcpClient {
     }
 
     /// Handles the client information packet during the configuration state.
-    pub fn handle_client_information(&self, packet: SClientInformation) {
-        println!("Client information packet: {packet:?}");
+    pub async fn handle_client_information(&self, packet: SClientInformation) {
+        log::debug!("Client information packet: {packet:?}");
+
+        // Convert packet to our ClientInformation struct and store it
+        let info = ClientInformation {
+            language: packet.language,
+            view_distance: packet.view_distance.clamp(2, 32) as u8,
+            chat_visibility: packet.chat_visibility,
+            chat_colors: packet.chat_colors,
+            model_customisation: packet.model_customisation,
+            main_hand: packet.main_hand,
+            text_filtering_enabled: packet.text_filtering_enabled,
+            allows_listing: packet.allows_listing,
+            particle_status: packet.particle_status,
+        };
+
+        *self.client_information.lock().await = info;
     }
 
     /// Starts the configuration process by sending initial packets.
@@ -77,6 +92,8 @@ impl JavaTcpClient {
             .clone()
             .expect("Game profile is empty");
 
+        let client_info = self.client_information.lock().await.clone();
+
         let world = self.server.worlds[0].clone();
         let entity_id = self.server.next_entity_id();
 
@@ -90,7 +107,14 @@ impl JavaTcpClient {
                 player_weak.clone(),
             ));
 
-            Player::new(gameprofile, connection, world, entity_id, player_weak)
+            Player::new(
+                gameprofile,
+                connection,
+                world,
+                entity_id,
+                player_weak,
+                client_info,
+            )
         });
 
         self.connection_updates

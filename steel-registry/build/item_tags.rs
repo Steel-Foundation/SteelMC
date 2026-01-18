@@ -135,7 +135,7 @@ pub(crate) fn build() -> TokenStream {
         let item_strs = items.iter().map(|s| s.as_str());
 
         stream.extend(quote! {
-            pub const #tag_ident: &[&str] = &[#(#item_strs),*];
+            pub static #tag_ident: &[&str] = &[#(#item_strs),*];
         });
     }
 

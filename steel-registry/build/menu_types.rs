@@ -29,7 +29,7 @@ pub(crate) fn build() -> TokenStream {
         let key = quote! { Identifier::vanilla_static(#menu_type_name_str) };
 
         stream.extend(quote! {
-            pub const #menu_type_ident: &MenuType = &MenuType {
+            pub static #menu_type_ident: &MenuType = &MenuType {
                 key: #key,
             };
         });

@@ -106,9 +106,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort painting variants by name for consistent generation
-    painting_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -137,7 +134,7 @@ pub(crate) fn build() -> TokenStream {
         let author = generate_option(&painting_variant.author, generate_text_component);
 
         stream.extend(quote! {
-            pub const #painting_variant_ident: &PaintingVariant = &PaintingVariant {
+            pub static #painting_variant_ident: &PaintingVariant = &PaintingVariant {
                 key: #key,
                 width: #width,
                 height: #height,

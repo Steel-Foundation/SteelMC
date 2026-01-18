@@ -46,8 +46,8 @@ pub fn use_item_on(
     let suppress_block_use = player.is_secondary_use_active() && have_something;
 
     // Get behavior registries
-    let block_behaviors = BLOCK_BEHAVIORS.get().expect("Behaviors not initialized");
-    let item_behaviors = ITEM_BEHAVIORS.get().expect("Behaviors not initialized");
+    let block_behaviors = &*BLOCK_BEHAVIORS;
+    let item_behaviors = &*ITEM_BEHAVIORS;
 
     // Try block interaction first (if not suppressed)
     if !suppress_block_use {

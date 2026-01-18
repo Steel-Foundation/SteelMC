@@ -289,10 +289,6 @@ pub(crate) fn build() -> TokenStream {
         &mut shapeless_recipes,
     );
 
-    // Sort recipes by name for consistent generation
-    shaped_recipes.sort_by(|a, b| a.name.cmp(&b.name));
-    shapeless_recipes.sort_by(|a, b| a.name.cmp(&b.name));
-
     // Generate struct fields
     let shaped_fields: Vec<TokenStream> = shaped_recipes
         .iter()

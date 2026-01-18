@@ -16,31 +16,6 @@ const DEFAULT_CONFIG: &str = include_str!("../../package-content/steel_config.js
 pub static STEEL_CONFIG: LazyLock<ServerConfig> =
     LazyLock::new(|| ServerConfig::load_or_create(Path::new("config/steel_config.json5")));
 
-/// Movement and anti-cheat check settings.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-pub struct ChecksConfig {
-    /// Enable vanilla-style collision detection for player movement.
-    /// When disabled, players can move through blocks.
-    pub collision: bool,
-    /// Enable speed validation to prevent players from moving too fast.
-    /// When disabled, no speed limits are enforced.
-    pub speed: bool,
-    /// Enable movement error checking (0.0625 block threshold).
-    /// When disabled, position discrepancies are not validated.
-    pub movement_error: bool,
-}
-
-impl Default for ChecksConfig {
-    fn default() -> Self {
-        Self {
-            collision: true,
-            speed: true,
-            movement_error: true,
-        }
-    }
-}
-
 /// The server configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
@@ -68,9 +43,6 @@ pub struct ServerConfig {
     pub enforce_secure_chat: bool,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
-    /// Movement and anti-cheat check settings.
-    #[serde(default)]
-    pub checks: ChecksConfig,
 }
 
 impl ServerConfig {

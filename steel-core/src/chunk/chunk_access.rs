@@ -137,6 +137,10 @@ pub enum ChunkAccess {
     Full(LevelChunk),
     /// A chunk that is still being generated.
     Proto(ProtoChunk),
+    /// To get a chunk accses non-internally you need to use the methods on chunk holder.
+    /// Which prohibits you from getting an unloaded chunk.
+    // Therefore this can be seen as a placeholder that will panic if you somehow get it
+    Unloaded,
 }
 
 impl ChunkAccess {
@@ -155,7 +159,7 @@ impl ChunkAccess {
             Self::Proto(proto_chunk) => {
                 Self::Full(LevelChunk::from_proto(proto_chunk, min_y, height, level))
             }
-            Self::Full(_) => unreachable!(),
+            Self::Full(_) | Self::Unloaded => unreachable!(),
         }
     }
 
@@ -170,6 +174,7 @@ impl ChunkAccess {
         let sections = match self {
             Self::Full(chunk) => &chunk.sections,
             Self::Proto(proto_chunk) => &proto_chunk.sections,
+            Self::Unloaded => unreachable!(),
         };
 
         sections.get_relative_block(relative_x, relative_y, relative_z)
@@ -197,6 +202,7 @@ impl ChunkAccess {
                     .set_relative_block(relative_x, relative_y, relative_z, value);
                 proto_chunk.dirty.store(true, Ordering::Release);
             }
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -206,6 +212,7 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.dirty.load(Ordering::Acquire),
             Self::Proto(proto_chunk) => proto_chunk.dirty.load(Ordering::Acquire),
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -214,6 +221,7 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.dirty.store(true, Ordering::Release),
             Self::Proto(proto_chunk) => proto_chunk.dirty.store(true, Ordering::Release),
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -222,6 +230,7 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.dirty.store(false, Ordering::Release),
             Self::Proto(proto_chunk) => proto_chunk.dirty.store(false, Ordering::Release),
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -231,6 +240,7 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.pos,
             Self::Proto(proto_chunk) => proto_chunk.pos,
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -240,6 +250,7 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => &chunk.sections,
             Self::Proto(proto_chunk) => &proto_chunk.sections,
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -255,6 +266,7 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.set_block_state(pos, state, flags),
             Self::Proto(proto_chunk) => proto_chunk.set_block_state(pos, state, flags),
+            Self::Unloaded => unreachable!(),
         }
     }
 
@@ -264,6 +276,27 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.get_block_state(pos),
             Self::Proto(proto_chunk) => proto_chunk.get_block_state(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a reference to the `LevelChunk` if this is a full chunk.
+    #[must_use]
+    pub const fn as_full(&self) -> Option<&LevelChunk> {
+        match self {
+            Self::Full(chunk) => Some(chunk),
+            Self::Proto(_) => None,
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Ticks the chunk if it's a full chunk.
+    ///
+    /// # Arguments
+    /// * `random_tick_speed` - Number of random blocks to tick per section per tick
+    pub fn tick(&self, random_tick_speed: u32) {
+        if let Self::Full(chunk) = self {
+            chunk.tick(random_tick_speed);
         }
     }
 }

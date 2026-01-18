@@ -78,9 +78,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort trim materials by name for consistent generation
-    trim_materials.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {

@@ -7,11 +7,10 @@
 use std::{
     io,
     path::PathBuf,
-    sync::{Arc, Weak},
+    sync::Weak,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use arc_swap::Guard;
 use rustc_hash::FxHashMap;
 use steel_registry::{REGISTRY, Registry};
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
@@ -25,10 +24,10 @@ use crate::chunk::{
     level_chunk::LevelChunk,
     paletted_container::PalettedContainer,
     proto_chunk::ProtoChunk,
-    section::{ChunkSection, Sections},
+    section::{ChunkSection, SectionHolder, Sections},
 };
 use crate::world::World;
-use steel_utils::locks::{AsyncRwLock, SyncRwLock};
+use steel_utils::locks::AsyncRwLock;
 
 use super::{
     bit_pack::{bits_for_palette_len, pack_indices, unpack_indices},
@@ -49,6 +48,15 @@ pub struct RegionManager {
     base_path: PathBuf,
     /// Open region file handles with their headers.
     regions: AsyncRwLock<FxHashMap<RegionPos, RegionHandle>>,
+}
+
+/// Prepared chunk data ready to be saved asynchronously.
+/// Created by `prepare_chunk_save` while holding the chunk lock.
+pub struct PreparedChunkSave {
+    /// The chunk position.
+    pub pos: ChunkPos,
+    /// The serialized chunk data.
+    persistent: PersistentChunk,
 }
 
 /// An open region file with its header.
@@ -295,21 +303,29 @@ impl RegionManager {
     ///
     /// If the chunk is not dirty, this is a no-op and returns `Ok(false)`.
     /// Returns `Ok(true)` if the chunk was saved.
-    ///
-    /// # Panics
-    /// Panics if the chunk is not loaded.
-    #[allow(clippy::missing_panics_doc)]
-    pub async fn save_chunk(
-        &self,
-        chunk: &Guard<Option<Arc<ChunkAccess>>>,
-        status: ChunkStatus,
-    ) -> io::Result<bool> {
-        // Skip saving if chunk hasn't been modified
-        if !chunk.as_ref().expect("Chunk is not loaded").is_dirty() {
-            return Ok(false);
+    /// Prepares chunk data for saving. Call this while holding the chunk lock,
+    /// then pass the result to `save_chunk_data` after releasing the lock.
+    #[must_use]
+    pub fn prepare_chunk_save(chunk: &ChunkAccess) -> Option<PreparedChunkSave> {
+        if !chunk.is_dirty() {
+            return None;
         }
 
-        let pos = chunk.as_ref().expect("Chunk is not loaded").pos();
+        let pos = chunk.pos();
+        let persistent = Self::sections_to_persistent(chunk.sections());
+
+        Some(PreparedChunkSave { pos, persistent })
+    }
+
+    /// Saves prepared chunk data to disk. This is the async part that doesn't
+    /// need to hold the chunk lock.
+    #[allow(clippy::missing_panics_doc)]
+    pub async fn save_chunk_data(
+        &self,
+        prepared: PreparedChunkSave,
+        status: ChunkStatus,
+    ) -> io::Result<bool> {
+        let pos = prepared.pos;
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
@@ -328,9 +344,8 @@ impl RegionManager {
             regions.get_mut(&region_pos).expect("just inserted")
         };
 
-        // Convert chunk to persistent format and serialize
-        let persistent =
-            Self::sections_to_persistent(chunk.as_ref().expect("Chunk is not loaded").sections());
+        // Serialize the prepared data
+        let persistent = prepared.persistent;
         let data = wincode::serialize(&persistent)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
@@ -386,9 +401,6 @@ impl RegionManager {
         } else {
             handle.header_dirty = true;
         }
-
-        drop(regions);
-        chunk.as_ref().expect("Chunk is not loaded").clear_dirty();
 
         Ok(true)
     }
@@ -587,7 +599,7 @@ impl RegionManager {
 
     /// Converts a runtime section to persistent format.
     fn section_to_persistent(
-        section: &SyncRwLock<ChunkSection>,
+        section: &SectionHolder,
         builder: &mut ChunkBuilder,
     ) -> PersistentSection {
         let section = section.read();
@@ -707,18 +719,14 @@ impl RegionManager {
 
         match status {
             ChunkStatus::Full => ChunkAccess::Full(LevelChunk::from_disk(
-                Sections {
-                    sections: sections.into_iter().map(SyncRwLock::new).collect(),
-                },
+                Sections::from_owned(sections.into_boxed_slice()),
                 pos,
                 min_y,
                 height,
                 level,
             )),
             _ => ChunkAccess::Proto(ProtoChunk::from_disk(
-                Sections {
-                    sections: sections.into_iter().map(SyncRwLock::new).collect(),
-                },
+                Sections::from_owned(sections.into_boxed_slice()),
                 pos,
                 status,
                 min_y,
@@ -740,10 +748,7 @@ impl RegionManager {
                 let block_id = Self::resolve_block_state(chunk, *block_state);
                 let biome_data = Self::persistent_to_biomes(biomes, chunk);
 
-                ChunkSection {
-                    states: PalettedContainer::Homogeneous(block_id),
-                    biomes: biome_data,
-                }
+                ChunkSection::new_with_biomes(PalettedContainer::Homogeneous(block_id), biome_data)
             }
             PersistentSection::Heterogeneous {
                 palette,
@@ -775,10 +780,7 @@ impl RegionManager {
                 let states = PalettedContainer::from_cube(cube);
                 let biome_data = Self::persistent_to_biomes(biomes, chunk);
 
-                ChunkSection {
-                    states,
-                    biomes: biome_data,
-                }
+                ChunkSection::new_with_biomes(states, biome_data)
             }
         }
     }

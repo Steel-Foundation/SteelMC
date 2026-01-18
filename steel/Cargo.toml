@@ -46,8 +46,17 @@ sha1.workspace = true
 sha2.workspace = true
 hex.workspace = true
 
+# Memory
+mimalloc = { version = "0.1.48", optional = true }
+
+# Profiling
+dhat = { version = "0.3", optional = true }
+
 [lints]
 workspace = true
 
 [features]
+default = ["mimalloc"]
 deadlock_detection = ["dep:parking_lot"]
+dhat-heap = ["dhat"]
+mimalloc = ["dep:mimalloc"]

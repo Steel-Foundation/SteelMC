@@ -2,6 +2,7 @@ use std::{fs, path::Path, process::Command};
 
 mod banner_patterns;
 mod biomes;
+mod block_entity_types;
 mod block_tags;
 mod blocks;
 mod cat_variants;
@@ -14,6 +15,7 @@ mod dimension_types;
 mod entities;
 mod entity_data_serializers;
 mod frog_variants;
+mod game_rules;
 mod instruments;
 mod item_tags;
 mod items;
@@ -67,8 +69,13 @@ const RECIPES: &str = "recipes";
 const VANILLA_ENTITIES: &str = "entities";
 const ENTITY_DATA_SERIALIZERS: &str = "entity_data_serializers";
 const LOOT_TABLES: &str = "loot_tables";
+const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
+const GAME_RULES: &str = "game_rules";
 
 pub fn main() {
+    // Rerun build script when any file in the build/ directory changes
+    println!("cargo:rerun-if-changed=build/");
+
     if !Path::new(OUT_DIR).exists() {
         fs::create_dir(OUT_DIR).unwrap();
     }
@@ -105,6 +112,8 @@ pub fn main() {
         (entities::build(), VANILLA_ENTITIES),
         (entity_data_serializers::build(), ENTITY_DATA_SERIALIZERS),
         (loot_tables::build(), LOOT_TABLES),
+        (block_entity_types::build(), BLOCK_ENTITY_TYPES),
+        (game_rules::build(), GAME_RULES),
     ];
 
     for (content, file_name) in vanilla_builds {

@@ -1658,9 +1658,6 @@ pub(crate) fn build() -> TokenStream {
         &mut tables,
     );
 
-    // Sort by key for consistent generation
-    tables.sort_by(|a, b| a.key.cmp(&b.key));
-
     let mut stream = TokenStream::new();
 
     // Imports
@@ -1690,7 +1687,7 @@ pub(crate) fn build() -> TokenStream {
         };
 
         stream.extend(quote! {
-            pub const #const_ident: &LootTable = &LootTable {
+            pub static #const_ident: &LootTable = &LootTable {
                 key: Identifier::vanilla_static(#key),
                 loot_type: #loot_type,
                 pools: &[#(#pools),*],

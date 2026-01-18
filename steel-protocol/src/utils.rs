@@ -8,19 +8,8 @@ use std::{
 };
 
 use aes::cipher::{Array, BlockModeDecrypt, BlockModeEncrypt, BlockSizeUser};
-use steel_utils::FrontVec;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-
-use crate::packet_traits::EncodedPacket;
-
-/// A packet that is enqueued to be sent.
-pub enum EnqueuedPacket {
-    /// Raw data to be sent.
-    RawData(FrontVec),
-    /// An already encoded packet.
-    EncodedPacket(EncodedPacket),
-}
 
 /// An AES-128 CFB-8 encryptor.
 pub type Aes128Cfb8Enc = cfb8::Encryptor<aes::Aes128>;

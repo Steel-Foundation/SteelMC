@@ -92,9 +92,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort frog variants by name for consistent generation
-    frog_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -121,7 +118,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub const #frog_variant_ident: &FrogVariant = &FrogVariant {
+            pub static #frog_variant_ident: &FrogVariant = &FrogVariant {
                 key: #key,
                 asset_id: #asset_id,
                 spawn_conditions: &[#(#spawn_conditions),*],

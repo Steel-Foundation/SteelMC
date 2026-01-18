@@ -55,9 +55,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort jukebox songs by name for consistent generation
-    jukebox_songs.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -89,7 +86,7 @@ pub(crate) fn build() -> TokenStream {
         let comparator_output = jukebox_song.comparator_output;
 
         stream.extend(quote! {
-            pub const #jukebox_song_ident: &JukeboxSong = &JukeboxSong {
+            pub static #jukebox_song_ident: &JukeboxSong = &JukeboxSong {
                 key: #key,
                 sound_event: #sound_event,
                 description: #description,

@@ -1,8 +1,5 @@
 //! A proto chunk is a chunk that is still being generated.
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustc_hash::FxHashMap;
 
@@ -25,31 +22,16 @@ pub struct ProtoChunk {
     pub pos: ChunkPos,
     /// Whether the chunk has been modified since last save.
     /// Proto chunks start dirty since they're being generated.
-    pub dirty: Arc<AtomicBool>,
+    pub dirty: AtomicBool,
     /// Current generation status of this chunk. Every time a chunk is loaded it goes thru all stages.
     /// If you want the real status use the chunkholder status
     status: AtomicCell<ChunkStatus>,
     /// Heightmaps (lazily initialized based on status).
-    pub heightmaps: Arc<SyncRwLock<FxHashMap<HeightmapType, Heightmap>>>,
+    pub heightmaps: SyncRwLock<FxHashMap<HeightmapType, Heightmap>>,
     /// The minimum Y coordinate of the world this chunk belongs to.
     min_y: i32,
     /// The total height of the world.
     height: i32,
-}
-
-// Everything here has internal Arcs so old refs aren't invalid
-impl Clone for ProtoChunk {
-    fn clone(&self) -> Self {
-        Self {
-            sections: self.sections.clone(),
-            pos: self.pos,
-            dirty: self.dirty.clone(),
-            status: AtomicCell::new(self.status.load()),
-            heightmaps: self.heightmaps.clone(),
-            min_y: self.min_y,
-            height: self.height,
-        }
-    }
 }
 
 impl ProtoChunk {
@@ -59,9 +41,9 @@ impl ProtoChunk {
         Self {
             sections,
             pos,
-            dirty: Arc::new(AtomicBool::new(true)), // New chunks are always dirty
+            dirty: AtomicBool::new(true), // New chunks are always dirty
             status: AtomicCell::new(ChunkStatus::Empty),
-            heightmaps: Arc::new(SyncRwLock::new(FxHashMap::default())),
+            heightmaps: SyncRwLock::new(FxHashMap::default()),
             min_y,
             height,
         }
@@ -79,10 +61,10 @@ impl ProtoChunk {
         Self {
             sections,
             pos,
-            dirty: Arc::new(AtomicBool::new(false)),
+            dirty: AtomicBool::new(false),
             status: AtomicCell::new(status),
             //TODO: Save heigtmaps on disk
-            heightmaps: Arc::new(SyncRwLock::new(FxHashMap::default())),
+            heightmaps: SyncRwLock::new(FxHashMap::default()),
             min_y,
             height,
         }

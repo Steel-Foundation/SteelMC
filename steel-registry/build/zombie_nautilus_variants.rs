@@ -98,9 +98,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort zombie nautilus variants by name for consistent generation
-    zombie_nautilus_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -133,7 +130,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub const #zombie_nautilus_variant_ident: &ZombieNautilusVariant = &ZombieNautilusVariant {
+            pub static #zombie_nautilus_variant_ident: &ZombieNautilusVariant = &ZombieNautilusVariant {
                 key: #key,
                 asset_id: #asset_id,
                 model: #model,

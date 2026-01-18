@@ -113,9 +113,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort chat types by name for consistent generation
-    chat_types.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -135,7 +132,7 @@ pub(crate) fn build() -> TokenStream {
         let narration = generate_chat_type_decoration(&chat_type.narration);
 
         stream.extend(quote! {
-            pub const #chat_type_ident: &ChatType = &ChatType {
+            pub static #chat_type_ident: &ChatType = &ChatType {
                 key: #key,
                 chat: #chat,
                 narration: #narration,

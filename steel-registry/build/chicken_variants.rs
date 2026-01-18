@@ -102,9 +102,6 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
-    // Sort chicken variants by name for consistent generation
-    chicken_variants.sort_by(|a, b| a.0.cmp(&b.0));
-
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
@@ -134,7 +131,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub const #chicken_variant_ident: &ChickenVariant = &ChickenVariant {
+            pub static #chicken_variant_ident: &ChickenVariant = &ChickenVariant {
                 key: #key,
                 asset_id: #asset_id,
                 model: #model,
