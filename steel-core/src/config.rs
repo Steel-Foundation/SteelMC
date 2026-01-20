@@ -3,6 +3,9 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Deserialize;
 use std::{fs, path::Path, sync::LazyLock};
 use steel_protocol::packet_traits::CompressionInfo;
+use steel_protocol::packets::config::{CServerLinks, Link, ServerLinksType};
+use steel_utils::codec::Or;
+use steel_utils::text::TextComponent;
 
 #[cfg(feature = "stand-alone")]
 const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png");
@@ -15,6 +18,63 @@ const DEFAULT_CONFIG: &str = include_str!("../../package-content/steel_config.js
 /// This is loaded from `config/steel_config.json5` or created if it doesn't exist.
 pub static STEEL_CONFIG: LazyLock<ServerConfig> =
     LazyLock::new(|| ServerConfig::load_or_create(Path::new("config/steel_config.json5")));
+
+/// Label type for server links - either built-in string or custom `TextComponent`
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
+pub enum ConfigLabel {
+    /// Built-in server link type (e.g., "`bug_report`", "website")
+    BuiltIn(ServerLinksType),
+    /// Custom text component with formatting
+    Custom(TextComponent),
+}
+
+/// A single server link configuration entry
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConfigLink {
+    /// The label for this link (built-in type or custom `TextComponent`)
+    pub label: ConfigLabel,
+    /// The URL for this link
+    pub url: String,
+}
+
+/// Server links configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct ServerLinks {
+    /// Enable the server links feature
+    pub enable: bool,
+    /// List of server links to display
+    #[serde(default)]
+    pub links: Vec<ConfigLink>,
+}
+
+impl ServerLinks {
+    /// Creates the server link package from the server config
+    #[must_use]
+    pub fn from_config() -> Option<CServerLinks> {
+        let server_links = STEEL_CONFIG.server_links.as_ref()?;
+
+        if !server_links.enable || server_links.links.is_empty() {
+            return None;
+        }
+
+        let links: Vec<Link> = server_links
+            .links
+            .iter()
+            .map(|config_link| {
+                let label = match &config_link.label {
+                    ConfigLabel::BuiltIn(link_type) => Or::Left(*link_type),
+                    ConfigLabel::Custom(text_component) => Or::Right(text_component.clone()),
+                };
+                Link::new(label, config_link.url.clone())
+            })
+            .collect();
+
+        Some(CServerLinks { links })
+    }
+}
 
 /// The server configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +103,8 @@ pub struct ServerConfig {
     pub enforce_secure_chat: bool,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
+    /// All settings and configurations for server links
+    pub server_links: Option<ServerLinks>,
 }
 
 impl ServerConfig {

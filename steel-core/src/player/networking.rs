@@ -122,6 +122,13 @@ impl JavaConnection {
         }
     }
 
+    /// Returns the current latency in milliseconds.
+    /// This is a smoothed average calculated from keep-alive round-trip times.
+    #[must_use]
+    pub fn latency(&self) -> i32 {
+        *self.latency.lock() as i32
+    }
+
     /// Disconnects the client.
     pub fn disconnect(&self, reason: impl Into<TextComponent>) {
         self.send_packet(CDisconnect::new(reason.into()));

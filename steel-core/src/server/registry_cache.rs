@@ -9,13 +9,14 @@ use steel_protocol::{
     },
     utils::ConnectionProtocol,
 };
+
 use steel_registry::{
     BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCKS_REGISTRY, CAT_VARIANT_REGISTRY,
     CHAT_TYPE_REGISTRY, CHICKEN_VARIANT_REGISTRY, COW_VARIANT_REGISTRY, DAMAGE_TYPE_REGISTRY,
-    DIMENSION_TYPE_REGISTRY, FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY, ITEMS_REGISTRY,
-    JUKEBOX_SONG_REGISTRY, PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY, REGISTRY, Registry,
-    TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, WOLF_SOUND_VARIANT_REGISTRY,
-    WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
+    DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY,
+    ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY, PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY,
+    REGISTRY, Registry, TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY,
+    WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -93,6 +94,7 @@ impl RegistryCache {
         add_registry!(JUKEBOX_SONG_REGISTRY, jukebox_songs);
         add_registry!(INSTRUMENT_REGISTRY, instruments);
         add_registry!(TIMELINE_REGISTRY, timelines);
+        add_registry!(DIALOG_REGISTRY, dialogs);
 
         packets
     }
@@ -147,6 +149,22 @@ impl RegistryCache {
         }
 
         tags_by_registry.push((TIMELINE_REGISTRY, timeline_tags));
+
+        // Build dialog tags
+        let mut dialog_tags: Vec<(Identifier, Vec<VarInt>)> =
+            Vec::with_capacity(registry.dialogs.tag_keys().count());
+        for tag_key in registry.dialogs.tag_keys() {
+            let mut dialog_ids = Vec::with_capacity(registry.dialogs.iter_tag(tag_key).count());
+
+            for dialog in registry.dialogs.iter_tag(tag_key) {
+                let dialog_id = *registry.dialogs.get_id(dialog);
+                dialog_ids.push(VarInt::from(dialog_id as i32));
+            }
+
+            dialog_tags.push((tag_key.clone(), dialog_ids));
+        }
+
+        tags_by_registry.push((DIALOG_REGISTRY, dialog_tags));
 
         // Build and return a CUpdateTagsPacket based on the registry data
         CUpdateTags::new(tags_by_registry)

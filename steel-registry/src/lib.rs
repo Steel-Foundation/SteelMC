@@ -184,6 +184,11 @@ pub mod vanilla_dialogs;
 
 #[allow(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_dialog_tags.rs"]
+pub mod vanilla_dialog_tags;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_menu_types.rs"]
 pub mod vanilla_menu_types;
 
@@ -369,6 +374,7 @@ impl Registry {
         vanilla_jukebox_songs::register_jukebox_songs(&mut registry.jukebox_songs);
         vanilla_instruments::register_instruments(&mut registry.instruments);
         vanilla_dialogs::register_dialogs(&mut registry.dialogs);
+        vanilla_dialog_tags::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
         vanilla_zombie_nautilus_variants::register_zombie_nautilus_variants(
             &mut registry.zombie_nautilus_variants,

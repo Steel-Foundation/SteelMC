@@ -4,6 +4,7 @@ pub mod gamemode;
 pub mod gamerule;
 pub mod seed;
 pub mod stop;
+pub mod tick;
 pub mod weather;
 
 use std::marker::PhantomData;

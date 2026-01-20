@@ -1,6 +1,7 @@
 //! This module contains types and utilities for parsing command arguments.
 pub mod anchor;
 pub mod bool;
+pub mod float;
 pub mod gamemode;
 pub mod integer;
 pub mod rotation;

@@ -27,13 +27,36 @@
         threshold: 256,
         level: 4,
     },
-    // Movement and anti-cheat checks
-    checks: {
-        // Enable collision detection for player movement
-        collision: true,
-        // Enable speed validation (prevents moving too fast)
-        speed: true,
-        // Enable movement error checking
-        movement_error: true,
+    // Server links configuration
+    server_links: {
+        // Enable server links feature
+        enable: true,
+        // List of links to display in the server menu
+        links: [
+            // Built-in link type (simple string label)
+            {
+                label: "bug_report",
+                url: "https://github.com/4lve/SteelMC/issues"
+            },
+            // Another built-in type
+            {
+                label: "website",
+                url: "https://github.com/4lve/SteelMC"
+            },
+            // The news channel on discord
+            {
+                label: "announcements",
+                url: "https://discord.com/channels/1428487339759370322/1428487584966774795"
+            },
+            // Custom TextComponent (object label with formatting)
+            {
+                label: {
+                    text: "Visit the SteelMC Discord",
+                    color: "blue",
+                    bold: true
+                },
+                url: "https://discord.gg/suSXXNdVSf"
+            }
+        ]
     },
 }

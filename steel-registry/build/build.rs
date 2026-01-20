@@ -10,6 +10,7 @@ mod chat_types;
 mod chicken_variants;
 mod cow_variants;
 mod damage_types;
+mod dialog_tags;
 mod dialogs;
 mod dimension_types;
 mod entities;
@@ -61,6 +62,7 @@ const DAMAGE_TYPES: &str = "damage_types";
 const JUKEBOX_SONGS: &str = "jukebox_songs";
 const INSTRUMENTS: &str = "instruments";
 const DIALOGS: &str = "dialogs";
+const DIALOG_TAGS: &str = "dialog_tags";
 const MENU_TYPES: &str = "menu_types";
 const TIMELINES: &str = "timelines";
 const TIMELINE_TAGS: &str = "timeline_tags";
@@ -104,6 +106,7 @@ pub fn main() {
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),
         (dialogs::build(), DIALOGS),
+        (dialog_tags::build(), DIALOG_TAGS),
         (menu_types::build(), MENU_TYPES),
         (timelines::build(), TIMELINES),
         (timeline_tags::build(), TIMELINE_TAGS),

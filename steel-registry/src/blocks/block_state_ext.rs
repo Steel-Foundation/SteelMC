@@ -16,6 +16,7 @@ pub trait BlockStateExt {
     fn get_value<T, P: Property<T>>(&self, property: &P) -> T;
     /// Gets the value of a property, returning `None` if the block doesn't have this property.
     fn try_get_value<T, P: Property<T>>(&self, property: &P) -> Option<T>;
+    #[must_use]
     fn set_value<T, P: Property<T>>(&self, property: &P, value: T) -> BlockStateId;
     fn get_property_str(&self, name: &str) -> Option<String>;
     fn get_collision_shape(&self) -> &'static [blocks::shapes::AABB];
@@ -51,6 +52,7 @@ impl BlockStateExt for BlockStateId {
     fn try_get_value<T, P: Property<T>>(&self, property: &P) -> Option<T> {
         REGISTRY.blocks.try_get_property(*self, property)
     }
+
 
     fn set_value<T, P: Property<T>>(&self, property: &P, value: T) -> BlockStateId {
         REGISTRY.blocks.set_property(*self, property, value)

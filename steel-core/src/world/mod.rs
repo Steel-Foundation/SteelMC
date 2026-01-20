@@ -10,8 +10,11 @@ use std::{
 
 use sha2::{Digest, Sha256};
 use steel_protocol::packet_traits::EncodedPacket;
-use steel_protocol::packets::game::{CBlockDestruction, CPlayerChat, CSystemChat};
+use steel_protocol::packets::game::{
+    CBlockDestruction, CPlayerChat, CPlayerInfoUpdate, CSystemChat,
+};
 use steel_protocol::utils::ConnectionProtocol;
+
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -39,6 +42,10 @@ mod world_entities;
 
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
+
+/// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
+/// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
+const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
 /// A struct that represents a world.
 pub struct World {
@@ -427,13 +434,17 @@ impl World {
     }
 
     /// Ticks the world.
-    pub fn tick_b(&self, tick_count: u64) {
-        // Get random tick speed from game rules
+    ///
+    /// * `tick_count` - The current tick number
+    /// * `runs_normally` - Whether game elements (random ticks, entities) should run.
+    ///   When false (frozen), only essential operations like chunk loading run.
+    pub fn tick_b(&self, tick_count: u64, runs_normally: bool) {
         let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
-        self.chunk_map.tick_b(tick_count, random_tick_speed);
+        self.chunk_map
+            .tick_b(tick_count, random_tick_speed, runs_normally);
 
-        // Tick players
+        // Tick players (always tick players - they can move when frozen)
         let start = Instant::now();
         self.players.iter_players(|_uuid, player| {
             player.tick();
@@ -443,6 +454,32 @@ impl World {
         let player_tick_elapsed = start.elapsed();
         if player_tick_elapsed >= Duration::from_millis(100) {
             log::warn!("Player tick slow: {player_tick_elapsed:?}");
+        }
+
+        // Broadcast player latency updates periodically
+        if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
+            self.broadcast_player_latency_updates();
+        }
+    }
+
+    /// Broadcasts latency updates for all players to all players.
+    /// This is called every `SEND_PLAYER_INFO_INTERVAL` ticks to update the ping display.
+    fn broadcast_player_latency_updates(&self) {
+        // Collect all player latencies
+        let mut latency_entries = Vec::new();
+        self.players.iter_players(|uuid, player| {
+            latency_entries.push((*uuid, player.connection.latency()));
+            true
+        });
+
+        // Only broadcast if there are players
+        if !latency_entries.is_empty() {
+            let packet = CPlayerInfoUpdate::update_latency(latency_entries);
+
+            self.players.iter_players(|_, player| {
+                player.connection.send_packet(packet.clone());
+                true
+            });
         }
     }
 

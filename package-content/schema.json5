@@ -96,24 +96,89 @@
             ],
             "additionalProperties": false
         },
-        "checks": {
+        "server_links": {
             "type": "object",
-            "description": "Movement and anti-cheat check settings",
+            "description": "Server links configuration",
             "properties": {
-                "collision": {
+                "enable": {
                     "type": "boolean",
-                    "description": "Enable collision detection for player movement",
-                    "default": true
+                    "description": "Enable the server links feature",
+                    "default": false
                 },
-                "speed": {
-                    "type": "boolean",
-                    "description": "Enable speed validation (prevents moving too fast)",
-                    "default": true
-                },
-                "movement_error": {
-                    "type": "boolean",
-                    "description": "Enable movement error checking",
-                    "default": true
+                "links": {
+                    "type": "array",
+                    "description": "List of server links to display in the server menu",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {
+                                "description": "Label for the link - either a built-in type (string) or custom TextComponent (object)",
+                                "oneOf": [
+                                    {
+                                        "type": "string",
+                                        "enum": [
+                                            "bug_report",
+                                            "community_guidelines",
+                                            "support",
+                                            "status",
+                                            "feedback",
+                                            "community",
+                                            "website",
+                                            "forums",
+                                            "news",
+                                            "announcements"
+                                        ],
+                                        "description": "Built-in server link type"
+                                    },
+                                    {
+                                        "type": "object",
+                                        "description": "Custom text component with formatting",
+                                        "properties": {
+                                            "text": {
+                                                "type": "string",
+                                                "description": "The text content"
+                                            },
+                                            "color": {
+                                                "type": "string",
+                                                "description": "Text color (named color or #RRGGBB hex)",
+                                                "pattern": "^(#[0-9a-fA-F]{6}|black|dark_blue|dark_green|dark_aqua|dark_red|dark_purple|gold|gray|dark_gray|blue|green|aqua|red|light_purple|yellow|white|reset)$"
+                                            },
+                                            "bold": {
+                                                "type": "boolean",
+                                                "description": "Make text bold"
+                                            },
+                                            "italic": {
+                                                "type": "boolean",
+                                                "description": "Make text italic"
+                                            },
+                                            "underlined": {
+                                                "type": "boolean",
+                                                "description": "Underline text"
+                                            },
+                                            "strikethrough": {
+                                                "type": "boolean",
+                                                "description": "Strikethrough text"
+                                            },
+                                            "obfuscated": {
+                                                "type": "boolean",
+                                                "description": "Obfuscate text"
+                                            }
+                                        },
+                                        "required": ["text"],
+                                        "additionalProperties": true
+                                    }
+                                ]
+                            },
+                            "url": {
+                                "type": "string",
+                                "description": "The URL for this link",
+                                "format": "uri"
+                            }
+                        },
+                        "required": ["label", "url"],
+                        "additionalProperties": false
+                    },
+                    "default": []
                 }
             },
             "additionalProperties": false

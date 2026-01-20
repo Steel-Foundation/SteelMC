@@ -48,11 +48,15 @@ impl World {
         // Send existing players to the new player (tab list + entity spawn)
         self.players.iter_players(|_, existing_player| {
             if existing_player.gameprofile.id != player.gameprofile.id {
-                // Add to tab list
-                let add_existing = CPlayerInfoUpdate::add_player(
+                // Add to tab list with full player info
+                let add_existing = CPlayerInfoUpdate::create_player_initializing(
                     existing_player.gameprofile.id,
                     existing_player.gameprofile.name.clone(),
                     existing_player.gameprofile.properties.clone(),
+                    existing_player.game_mode.load().into(),
+                    existing_player.connection.latency(),
+                    None, // display_name
+                    true, // show_hat
                 );
                 player.connection.send_packet(add_existing);
 
@@ -84,10 +88,14 @@ impl World {
         });
 
         // Broadcast new player to all existing players (tab list + entity spawn)
-        let player_info_packet = CPlayerInfoUpdate::add_player(
+        let player_info_packet = CPlayerInfoUpdate::create_player_initializing(
             player.gameprofile.id,
             player.gameprofile.name.clone(),
             player.gameprofile.properties.clone(),
+            player.game_mode.load().into(),
+            player.connection.latency(),
+            None, // display_name
+            true, // show_hat
         );
         let spawn_packet = CAddEntity::player(
             player.entity_id,

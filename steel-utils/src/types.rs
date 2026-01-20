@@ -388,6 +388,13 @@ impl From<GameType> for i8 {
     }
 }
 
+#[allow(missing_docs)]
+impl From<GameType> for i32 {
+    fn from(value: GameType) -> Self {
+        value as i32
+    }
+}
+
 impl From<GameType> for f32 {
     fn from(value: GameType) -> Self {
         f32::from(value as i8)

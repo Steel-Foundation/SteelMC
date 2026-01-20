@@ -319,8 +319,9 @@ impl ChunkMap {
     /// # Arguments
     /// * `tick_count` - The current server tick count
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick
+    /// * `runs_normally` - Whether game elements should run (false when frozen)
     #[allow(clippy::too_many_lines)]
-    pub fn tick_b(self: &Arc<Self>, tick_count: u64, random_tick_speed: u32) {
+    pub fn tick_b(self: &Arc<Self>, tick_count: u64, random_tick_speed: u32, runs_normally: bool) {
         let start = Instant::now();
 
         {
@@ -398,7 +399,11 @@ impl ChunkMap {
             );
         }
 
-        // Chunk ticking - tick all full chunks in parallel
+        // Chunk ticking - skip when frozen
+        if !runs_normally {
+            return;
+        }
+
         let start_collect = Instant::now();
         let mut total_chunks = 0;
         let last_len = self.last_tickable_len.load(Ordering::Relaxed);

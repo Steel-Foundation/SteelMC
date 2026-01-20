@@ -89,9 +89,7 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::dialog::{
-            Dialog, DialogList, ServerLinks, DialogRegistry, ExitAction,
-        };
+        use crate::dialog::{Dialog, DialogVariant, DialogRegistry, ExitAction};
         use steel_utils::Identifier;
         use steel_utils::text::TextComponent;
     });
@@ -113,15 +111,15 @@ pub(crate) fn build() -> TokenStream {
                 let title = generate_text_component(&dialog_list.title);
 
                 stream.extend(quote! {
-                    pub static #dialog_ident: &Dialog = &Dialog::DialogList(DialogList {
+                    pub static #dialog_ident: &Dialog = &Dialog {
                         key: #key,
                         button_width: #button_width,
                         columns: #columns,
-                        dialogs: #dialogs_ref,
                         exit_action: #exit_action,
                         external_title: #external_title,
                         title: #title,
-                    });
+                        variant: DialogVariant::DialogList { dialogs: #dialogs_ref },
+                    };
                 });
             }
             DialogJson::ServerLinks(server_links) => {
@@ -132,14 +130,15 @@ pub(crate) fn build() -> TokenStream {
                 let title = generate_text_component(&server_links.title);
 
                 stream.extend(quote! {
-                    pub static #dialog_ident: &Dialog = &Dialog::ServerLinks(ServerLinks {
+                    pub static #dialog_ident: &Dialog = &Dialog {
                         key: #key,
                         button_width: #button_width,
                         columns: #columns,
                         exit_action: #exit_action,
                         external_title: #external_title,
                         title: #title,
-                    });
+                        variant: DialogVariant::ServerLinks,
+                    };
                 });
             }
         }
@@ -149,10 +148,8 @@ pub(crate) fn build() -> TokenStream {
     let mut register_stream = TokenStream::new();
     for (dialog_name, _) in &dialogs {
         let dialog_ident = Ident::new(&dialog_name.to_shouty_snake_case(), Span::call_site());
-        let dialog_name_str = dialog_name.clone();
-        let key = quote! { Identifier::vanilla_static(#dialog_name_str) };
         register_stream.extend(quote! {
-            registry.register(#key, #dialog_ident);
+            registry.register(#dialog_ident);
         });
     }
 

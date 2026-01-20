@@ -34,6 +34,7 @@ impl CommandDispatcher {
         dispatcher.register(commands::gamerule::command_handler());
         dispatcher.register(commands::seed::command_handler());
         dispatcher.register(commands::stop::command_handler());
+        dispatcher.register(commands::tick::command_handler());
         dispatcher.register(commands::weather::command_handler());
         dispatcher
     }
