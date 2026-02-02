@@ -48,7 +48,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_json5 = "0.2.1"
 simdnbt = "0.9.0"
-wincode = { version = "0.3", features = ["derive"] }
+wincode = { version = "0.3.1", features = ["derive"] }
 
 # Error handling
 thiserror = "2.0"

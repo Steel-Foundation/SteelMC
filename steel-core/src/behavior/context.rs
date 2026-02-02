@@ -67,49 +67,37 @@ impl BlockPlaceContext<'_> {
     /// Based on Java's `Direction.orderedByNearest(Entity)[0]`.
     #[must_use]
     pub fn get_nearest_looking_direction(&self) -> Direction {
-        let pitch_rad = self.pitch.to_radians();
-        let yaw_rad = (-self.rotation).to_radians();
+        self.get_nearest_looking_directions()[0]
+    }
 
-        let pitch_sin = pitch_rad.sin();
-        let pitch_cos = pitch_rad.cos();
-        let yaw_sin = yaw_rad.sin();
-        let yaw_cos = yaw_rad.cos();
+    /// Returns all 6 directions ordered by how closely the player is looking at them.
+    ///
+    /// Based on Java's `BlockPlaceContext.getNearestLookingDirections()`.
+    /// When not replacing the clicked block, the opposite of the clicked face
+    /// is moved to the front of the array.
+    #[must_use]
+    pub fn get_nearest_looking_directions(&self) -> [Direction; 6] {
+        let mut directions = Direction::ordered_by_nearest(self.rotation, self.pitch);
 
-        let x_pos = yaw_sin > 0.0;
-        let y_pos = pitch_sin < 0.0;
-        let z_pos = yaw_cos > 0.0;
+        // If not replacing the clicked block, prioritize the opposite of clicked face
+        if !self.replace_clicked {
+            let clicked_opposite = self.clicked_face.opposite();
+            let mut index = 0;
 
-        let x_yaw = if x_pos { yaw_sin } else { -yaw_sin };
-        let y_mag = if y_pos { -pitch_sin } else { pitch_sin };
-        let z_yaw = if z_pos { yaw_cos } else { -yaw_cos };
+            // Find the index of the opposite direction
+            while index < directions.len() && directions[index] != clicked_opposite {
+                index += 1;
+            }
 
-        let x_mag = x_yaw * pitch_cos;
-        let z_mag = z_yaw * pitch_cos;
-
-        let axis_x = if x_pos {
-            Direction::East
-        } else {
-            Direction::West
-        };
-        let axis_y = if y_pos {
-            Direction::Up
-        } else {
-            Direction::Down
-        };
-        let axis_z = if z_pos {
-            Direction::South
-        } else {
-            Direction::North
-        };
-
-        // Return the direction with the largest magnitude
-        if x_yaw > z_yaw {
-            if y_mag > x_mag { axis_y } else { axis_x }
-        } else if y_mag > z_mag {
-            axis_y
-        } else {
-            axis_z
+            // Move it to the front by shifting elements
+            if index > 0 && index < directions.len() {
+                // Shift elements [0..index] to [1..index+1] and put opposite at [0]
+                directions.copy_within(0..index, 1);
+                directions[0] = clicked_opposite;
+            }
         }
+
+        directions
     }
 }
 

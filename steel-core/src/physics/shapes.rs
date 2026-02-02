@@ -94,23 +94,22 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
                 // Moving in positive Y direction
                 let max_move = obstacle.min_y - entity_aabb.max_y;
                 // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
-                let result = if max_move >= -1.0e-7 && max_move < desired_movement {
+
+                if max_move >= -1.0e-7 && max_move < desired_movement {
                     max_move
                 } else {
                     desired_movement
-                };
-                result
+                }
             } else {
                 // Moving in negative Y direction
                 let max_move = obstacle.max_y - entity_aabb.min_y;
                 // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
-                let result = if max_move <= 1.0e-7 && max_move > desired_movement {
+
+                if max_move <= 1.0e-7 && max_move > desired_movement {
                     max_move
                 } else {
                     desired_movement
-                };
-
-                result
+                }
             }
         }
         Axis::Z => {

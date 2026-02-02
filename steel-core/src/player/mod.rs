@@ -156,6 +156,7 @@ pub struct Player {
     pub world: Arc<World>,
 
     /// Reference to the server (for entity ID generation, etc.).
+    #[allow(dead_code)]
     pub(crate) server: Weak<Server>,
 
     /// The entity ID assigned to this player.

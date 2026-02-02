@@ -122,7 +122,7 @@ pub struct ItemEntity {
     /// Last position sent to clients (for delta detection).
     /// Mirrors vanilla's `ServerEntity.lastSentXyz` fields.
     last_sent_position: SyncMutex<Vector3<f64>>,
-    /// Last on_ground state sent to clients.
+    /// Last `on_ground` state sent to clients.
     last_sent_on_ground: AtomicBool,
     /// Whether position/velocity needs to be synced to clients.
     /// Set when velocity changes significantly, like vanilla's `Entity.needsSync`.
@@ -482,7 +482,7 @@ impl ItemEntity {
         }
     }
 
-    /// Merges the from_item's stack into the to_item's stack.
+    /// Merges the `from_item`'s stack into the `to_item`'s stack.
     ///
     /// Mirrors vanilla's `ItemEntity.merge(ItemEntity, ItemStack, ItemEntity, ItemStack)`.
     fn merge_stacks(
@@ -595,11 +595,11 @@ impl ItemEntity {
 
     /// Checks if position should be synced and returns the appropriate packet.
     ///
-    /// Uses delta encoding (CMoveEntityPos) for small movements, and falls back
-    /// to absolute position sync (CEntityPositionSync) when:
+    /// Uses delta encoding (`CMoveEntityPos`) for small movements, and falls back
+    /// to absolute position sync (`CEntityPositionSync`) when:
     /// - Delta is too large for i16 encoding
     /// - On-ground state changed
-    /// - Periodic full sync (every 60 ticks based on tick_count)
+    /// - Periodic full sync (every 60 ticks based on `tick_count`)
     fn check_position_sync(&self, tick_count: i32) -> Option<PositionSyncPacket> {
         let current_pos = self.position();
         let last_sent = *self.last_sent_position.lock();
@@ -667,9 +667,9 @@ impl ItemEntity {
             // Vanilla stores the actual position, not the decoded position.
             // This works because encode() is deterministic - both server and client
             // compute the same encoded values.
-            let dx = dx.unwrap();
-            let dy = dy.unwrap();
-            let dz = dz.unwrap();
+            let dx = dx.expect("delta dx missing in delta position sync");
+            let dy = dy.expect("delta dy missing in delta position sync");
+            let dz = dz.expect("delta dz missing in delta position sync");
 
             *self.last_sent_position.lock() = current_pos;
 
@@ -769,9 +769,8 @@ impl Entity for ItemEntity {
         // (vanilla: ItemEntity.tick line 121)
         let vel = self.velocity();
         let horizontal_movement_sq = vel.x * vel.x + vel.z * vel.z;
-        let should_move = !self.on_ground()
-            || horizontal_movement_sq > 1.0e-5
-            || ((tick_count + self.id) & 3) == 0;
+        let should_move =
+            !self.on_ground() || horizontal_movement_sq > 1.0e-5 || (tick_count + self.id) % 4 == 0;
 
         if should_move {
             // Move with collision detection (do_move handles velocity zeroing on collision)
@@ -816,10 +815,11 @@ impl Entity for ItemEntity {
             || old_pos.z.floor() as i32 != current_pos.z.floor() as i32;
         let merge_rate = if moved_block { 2 } else { 40 };
 
-        if tick_count % merge_rate == 0 && self.is_mergable() {
-            if let Some(world) = self.level() {
-                self.merge_with_neighbours(&world);
-            }
+        if tick_count % merge_rate == 0
+            && self.is_mergable()
+            && let Some(world) = self.level()
+        {
+            self.merge_with_neighbours(&world);
         }
 
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)

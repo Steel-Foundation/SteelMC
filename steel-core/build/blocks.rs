@@ -42,7 +42,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut wall_sign_blocks = Vec::new();
     let mut ceiling_hanging_sign_blocks = Vec::new();
     let mut wall_hanging_sign_blocks = Vec::new();
-    let mut cactus_blocks = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
@@ -58,7 +57,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "WallSignBlock" => wall_sign_blocks.push(const_ident),
             "CeilingHangingSignBlock" => ceiling_hanging_sign_blocks.push(const_ident),
             "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
-            "CactusBlock" => cactus_blocks.push(const_ident),
             _ => {}
         }
     }
@@ -74,7 +72,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
     let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
     let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
-    let cactus_type = Ident::new("CactusBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let crafting_table_registrations =
@@ -94,7 +91,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
     );
     let wall_hanging_sign_registrations =
         generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
-    let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
@@ -104,7 +100,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use crate::behavior::blocks::{
             BarrelBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock, FarmlandBlock,
             FenceBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
-            CeilingHangingSignBlock, WallHangingSignBlock, CactusBlock,
+            CeilingHangingSignBlock, WallHangingSignBlock,
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
@@ -119,7 +115,6 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #wall_sign_registrations
             #ceiling_hanging_sign_registrations
             #wall_hanging_sign_registrations
-            #cactus_registrations
         }
     };
 

@@ -10,8 +10,10 @@ mod crop_block;
 mod end_portal_frame_block;
 mod farmland_block;
 mod fence_block;
+mod redstone_torch_block;
 mod rotated_pillar_block;
 mod sign_block;
+mod torch_block;
 
 pub use barrel_block::BarrelBlock;
 pub use cactus_block::CactusBlock;
@@ -20,7 +22,9 @@ pub use crop_block::CropBlock;
 pub use end_portal_frame_block::EndPortalFrameBlock;
 pub use farmland_block::FarmlandBlock;
 pub use fence_block::FenceBlock;
+pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use rotated_pillar_block::RotatedPillarBlock;
 pub use sign_block::{
     CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
 };
+pub use torch_block::{TorchBlock, WallTorchBlock};

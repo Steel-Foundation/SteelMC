@@ -415,7 +415,7 @@ impl Direction {
     /// - `yaw`: Player's yaw rotation in degrees (0 = South, 90 = West, 180 = North, 270 = East)
     /// - `pitch`: Player's pitch rotation in degrees (negative = looking up, positive = looking down)
     #[must_use]
-    pub fn ordered_by_nearest(yaw: f32, pitch: f32) -> Vec<Direction> {
+    pub fn ordered_by_nearest(yaw: f32, pitch: f32) -> [Direction; 6] {
         // Convert to radians and negate yaw to match vanilla's coordinate system
         let pitch_rad = pitch.to_radians();
         let yaw_rad = (-yaw).to_radians();
@@ -472,14 +472,16 @@ impl Direction {
         }
     }
 
-    /// Creates an array of all 6 directions, with the first 3 being the primary axes
-    /// and the last 3 being their opposites.
+    /// Creates an array of all 6 directions ordered by magnitude.
+    ///
+    /// The order is: 3 primary directions by magnitude, then their opposites in reverse order.
+    /// This matches vanilla's `Direction.makeDirectionArray()`.
     fn make_direction_array(
         axis1: Direction,
         axis2: Direction,
         axis3: Direction,
-    ) -> Vec<Direction> {
-        vec![
+    ) -> [Direction; 6] {
+        [
             axis1,
             axis2,
             axis3,

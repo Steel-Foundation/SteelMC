@@ -6,16 +6,21 @@ use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct Item {
     pub id: u16,
     pub name: String,
+    #[serde(default)]
     pub components: BTreeMap<String, Value>,
+    #[serde(default)]
     pub block_item: Option<String>,
+    #[serde(default)]
     pub is_double: bool,
+    #[serde(default)]
     pub is_scaffolding: bool,
+    #[serde(default)]
     pub is_water_placable: bool,
 }
 

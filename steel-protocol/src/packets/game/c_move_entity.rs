@@ -102,7 +102,7 @@ pub fn encode_position(value: f64) -> i64 {
 #[must_use]
 pub fn calc_delta(current: f64, previous: f64) -> Option<i16> {
     let delta = encode_position(current) - encode_position(previous);
-    if delta >= MIN_DELTA && delta <= MAX_DELTA {
+    if (MIN_DELTA..=MAX_DELTA).contains(&delta) {
         Some(delta as i16)
     } else {
         None
