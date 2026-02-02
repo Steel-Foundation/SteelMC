@@ -9,6 +9,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_registry::blocks::BlockRef;
 
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
@@ -18,15 +19,12 @@ use crate::world::World;
 const MAX_CACTUS_HEIGHT: u32 = 3;
 
 /// Age at which cactus can attempt to grow a flower (vanilla 1.21+).
-#[allow(dead_code)]
 const CACTUS_FLOWER_AGE: u8 = 8;
 
 /// Chance for small cactus (< 3 blocks) to spawn flower.
-#[allow(dead_code)]
 const FLOWER_CHANCE_SMALL: f64 = 0.1;
 
 /// Chance for tall cactus (>= 3 blocks) to spawn flower.
-#[allow(dead_code)]
 const FLOWER_CHANCE_TALL: f64 = 0.25;
 
 /// Behavior for cactus blocks.
@@ -36,9 +34,17 @@ const FLOWER_CHANCE_TALL: f64 = 0.25;
 /// - Cannot have solid blocks adjacent horizontally
 /// - Grows up to 3 blocks tall via random ticks
 /// - Damages entities that touch it (TODO)
-pub struct CactusBlock;
+pub struct CactusBlock {
+    block: BlockRef,
+}
 
 impl CactusBlock {
+    /// Creates a new cactus block behavior.
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self { block }
+    }
+
     /// Checks if cactus can survive at the given position.
     ///
     /// Survival requirements:
@@ -90,7 +96,7 @@ impl BlockBehaviour for CactusBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let pos = context.relative_pos;
         if Self::can_survive(context.world, pos) {
-            Some(vanilla_blocks::CACTUS.default_state())
+            Some(self.block.default_state())
         } else {
             None // Cannot place here
         }
@@ -160,9 +166,13 @@ impl BlockBehaviour for CactusBlock {
         
         // Vanilla lines 66-70: Cactus Flower logic (1.21+)
         // At age 8, there's a chance to spawn a cactus flower above
-        if age == 8 && Self::can_survive(world, above_pos) {
+        if age == CACTUS_FLOWER_AGE && Self::can_survive(world, above_pos) {
             // Probability: 25% if height >= MAX_CACTUS_HEIGHT blocks, 10% otherwise
-            let chance = if i >= MAX_CACTUS_HEIGHT { 0.25 } else { 0.1 };
+            let chance = if i >= MAX_CACTUS_HEIGHT {
+                FLOWER_CHANCE_TALL
+            } else {
+                FLOWER_CHANCE_SMALL
+            };
             if rand::random::<f64>() <= chance {
                 world.set_block(
                     above_pos,
