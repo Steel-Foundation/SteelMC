@@ -4,6 +4,7 @@
 //! See `src/generated/behaviors.rs` for the generated registration code.
 
 mod barrel_block;
+mod cactus_block;
 mod crafting_table_block;
 mod crop_block;
 mod end_portal_frame_block;
@@ -13,6 +14,7 @@ mod rotated_pillar_block;
 mod sign_block;
 
 pub use barrel_block::BarrelBlock;
+pub use cactus_block::CactusBlock;
 pub use crafting_table_block::CraftingTableBlock;
 pub use crop_block::CropBlock;
 pub use end_portal_frame_block::EndPortalFrameBlock;

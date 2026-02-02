@@ -93,6 +93,9 @@ pub fn init_behaviors() {
     let mut block_behaviors = BlockBehaviorRegistry::new();
     register_block_behaviors(&mut block_behaviors);
 
+    // Register cactus behavior (not auto-generated)
+    block_behaviors.set_behavior(vanilla_blocks::CACTUS, Box::new(blocks::CactusBlock));
+
     assert!(
         BLOCK_BEHAVIORS.0.set(block_behaviors).is_ok(),
         "Block behavior registry already initialized"
