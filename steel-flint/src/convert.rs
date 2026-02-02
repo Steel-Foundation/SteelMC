@@ -1,7 +1,7 @@
 //! Conversion utilities between Flint types and `SteelMC` types.
 
-use flint_core::test_spec::{Block as FlintBlock, BlockFace};
-use flint_core::traits::BlockData;
+use flint_core::test_spec::BlockFace;
+use flint_core::Block;
 use rustc_hash::FxHashMap;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::Direction;
@@ -10,7 +10,7 @@ use steel_utils::{BlockPos as SteelBlockPos, BlockStateId, Identifier};
 /// Convert a Flint block specification to a `SteelMC` `BlockStateId`.
 ///
 /// Returns `None` if the block ID is unknown or if any property is invalid.
-pub fn flint_block_to_state_id(block: &FlintBlock) -> Option<BlockStateId> {
+pub fn flint_block_to_state_id(block: &Block) -> Option<BlockStateId> {
     // Parse the block ID - may have "minecraft:" prefix
     let block_id = if block.id.starts_with("minecraft:") {
         &block.id[10..]
@@ -20,25 +20,11 @@ pub fn flint_block_to_state_id(block: &FlintBlock) -> Option<BlockStateId> {
 
     let identifier = Identifier::vanilla(block_id.to_string());
 
-    // Convert properties from serde_json::Value to (&str, &str) pairs
-    let properties: Vec<(String, String)> = block
+    // Properties are already String values in the new Block type
+    let properties: Vec<(&str, &str)> = block
         .properties
         .iter()
-        .filter_map(|(key, value)| {
-            // Skip the "properties" key (nested format from flint-core)
-            if key == "properties" {
-                return None;
-            }
-
-            let value_str = match value {
-                serde_json::Value::String(s) => s.clone(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                serde_json::Value::Number(n) => n.to_string(),
-                _ => return None,
-            };
-
-            Some((key.clone(), value_str))
-        })
+        .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
 
     // If no properties specified, return the block's default state
@@ -47,27 +33,20 @@ pub fn flint_block_to_state_id(block: &FlintBlock) -> Option<BlockStateId> {
         return Some(REGISTRY.blocks.get_default_state_id(block_ref));
     }
 
-    // Convert to the format expected by the registry
-    let props_refs: Vec<(&str, &str)> = properties
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-
     REGISTRY
         .blocks
-        .state_id_from_properties(&identifier, &props_refs)
+        .state_id_from_properties(&identifier, &properties)
 }
 
-/// Convert a `SteelMC` `BlockStateId` to Flint `BlockData`.
-pub fn state_id_to_block_data(state_id: BlockStateId) -> BlockData {
+/// Convert a `SteelMC` `BlockStateId` to Flint `Block`.
+pub fn state_id_to_block(state_id: BlockStateId) -> Block {
     let Some(block) = REGISTRY.blocks.by_state_id(state_id) else {
-        return BlockData::new("minecraft:air");
+        return Block::new("minecraft:air");
     };
 
     let id = format!("minecraft:{}", block.key.path);
 
     // Get properties from the registry
-    // Note: Using std HashMap because flint-steel's API requires it
     let props = REGISTRY.blocks.get_properties(state_id);
     #[allow(clippy::disallowed_types)]
     let properties: FxHashMap<String, String> = props
@@ -75,7 +54,7 @@ pub fn state_id_to_block_data(state_id: BlockStateId) -> BlockData {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-    BlockData::with_properties(id, properties)
+    Block::with_properties(id, properties)
 }
 
 /// Convert Flint `BlockPos` to `SteelMC` `BlockPos`.
@@ -124,25 +103,19 @@ mod tests {
     #[test]
     fn test_simple_block_conversion() {
         init_test_registries();
-        let block = FlintBlock {
-            id: "minecraft:stone".to_string(),
-            properties: FxHashMap::default(),
-        };
+        let block = Block::new("minecraft:stone");
 
         let state_id = flint_block_to_state_id(&block);
         assert!(state_id.is_some(), "Stone should convert to valid state ID");
 
-        let block_data = state_id_to_block_data(state_id.expect("Valid state ID"));
-        assert_eq!(block_data.id, "minecraft:stone");
+        let retrieved = state_id_to_block(state_id.expect("Valid state ID"));
+        assert_eq!(retrieved.id, "minecraft:stone");
     }
 
     #[test]
     fn test_air_block() {
         init_test_registries();
-        let block = FlintBlock {
-            id: "minecraft:air".to_string(),
-            properties: FxHashMap::default(),
-        };
+        let block = Block::new("minecraft:air");
 
         let state_id = flint_block_to_state_id(&block);
         assert!(state_id.is_some(), "Air should convert to valid state ID");
@@ -151,10 +124,7 @@ mod tests {
     #[test]
     fn test_block_without_prefix() {
         init_test_registries();
-        let block = FlintBlock {
-            id: "stone".to_string(),
-            properties: FxHashMap::default(),
-        };
+        let block = Block::new("stone");
 
         let state_id = flint_block_to_state_id(&block);
         assert!(state_id.is_some(), "Block without prefix should still work");

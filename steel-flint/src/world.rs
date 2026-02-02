@@ -8,8 +8,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use flint_core::test_spec::Block as FlintBlock;
-use flint_core::traits::BlockData;
+use flint_core::Block;
 use flint_core::{BlockPos as FlintBlockPos, FlintPlayer, FlintWorld};
 use futures::executor;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
@@ -23,7 +22,7 @@ use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_registry::vanilla_dimension_types::OVERWORLD;
 use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
-use crate::convert::{flint_block_to_state_id, flint_pos_to_steel, state_id_to_block_data};
+use crate::convert::{flint_block_to_state_id, flint_pos_to_steel, state_id_to_block};
 use crate::player::SteelTestPlayer;
 use crate::runtime;
 
@@ -178,17 +177,17 @@ impl FlintWorld for SteelTestWorld {
         self.tick.load(Ordering::SeqCst)
     }
 
-    fn get_block(&self, pos: FlintBlockPos) -> BlockData {
+    fn get_block(&self, pos: FlintBlockPos) -> Block {
         let steel_pos = flint_pos_to_steel(pos);
 
         // Ensure the chunk is loaded (for RAM storage this creates empty chunks)
         self.ensure_chunk_at(&steel_pos);
 
         let state = self.world.get_block_state(&steel_pos);
-        state_id_to_block_data(state)
+        state_id_to_block(state)
     }
 
-    fn set_block(&mut self, pos: FlintBlockPos, block: &FlintBlock) {
+    fn set_block(&mut self, pos: FlintBlockPos, block: &Block) {
         let Some(state_id) = flint_block_to_state_id(block) else {
             tracing::warn!("Unknown block: {} - skipping placement", block.id);
             return;
@@ -216,7 +215,6 @@ impl FlintWorld for SteelTestWorld {
 mod tests {
     use super::*;
     use crate::init_test_registries;
-    use rustc_hash::FxHashMap;
 
     #[test]
     fn test_world_creation() {
@@ -257,11 +255,7 @@ mod tests {
         init_test_registries();
         let mut world = SteelTestWorld::new();
 
-        let stone = FlintBlock {
-            id: "minecraft:stone".to_string(),
-            properties: FxHashMap::default(),
-        };
-
+        let stone = Block::new("minecraft:stone");
         world.set_block([0, 64, 0], &stone);
 
         let retrieved = world.get_block([0, 64, 0]);
@@ -274,20 +268,14 @@ mod tests {
         let mut world = SteelTestWorld::new();
 
         // Place a block
-        let stone = FlintBlock {
-            id: "minecraft:stone".to_string(),
-            properties: FxHashMap::default(),
-        };
+        let stone = Block::new("minecraft:stone");
         world.set_block([0, 64, 0], &stone);
 
         let retrieved = world.get_block([0, 64, 0]);
         assert_eq!(retrieved.id, "minecraft:stone");
 
         // Remove with air
-        let air = FlintBlock {
-            id: "minecraft:air".to_string(),
-            properties: FxHashMap::default(),
-        };
+        let air = Block::new("minecraft:air");
         world.set_block([0, 64, 0], &air);
 
         let retrieved = world.get_block([0, 64, 0]);
