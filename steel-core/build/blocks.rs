@@ -30,6 +30,8 @@ fn generate_registrations<'a>(
     quote! { #(#registrations)* }
 }
 
+// Tjos is okay cause it's a long function. and because it is needed for like all of those blocks there.
+#[allow(clippy::too_many_lines)]
 pub fn build(blocks: &[BlockClass]) -> String {
     let mut barrel_blocks = Vec::new();
     let mut crafting_table_blocks = Vec::new();
@@ -42,6 +44,11 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut wall_sign_blocks = Vec::new();
     let mut ceiling_hanging_sign_blocks = Vec::new();
     let mut wall_hanging_sign_blocks = Vec::new();
+    let mut torch_blocks = Vec::new();
+    let mut wall_torch_blocks = Vec::new();
+    let mut redstone_torch_blocks = Vec::new();
+    let mut redstone_wall_torch_blocks = Vec::new();
+    let mut cactus_blocks = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
@@ -57,6 +64,11 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "WallSignBlock" => wall_sign_blocks.push(const_ident),
             "CeilingHangingSignBlock" => ceiling_hanging_sign_blocks.push(const_ident),
             "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
+            "TorchBlock" => torch_blocks.push(const_ident),
+            "WallTorchBlock" => wall_torch_blocks.push(const_ident),
+            "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
+            "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
+            "CactusBlock" => cactus_blocks.push(const_ident),
             _ => {}
         }
     }
@@ -72,6 +84,11 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
     let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
     let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
+    let torch_type = Ident::new("TorchBlock", Span::call_site());
+    let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
+    let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
+    let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
+    let cactus_type = Ident::new("CactusBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let crafting_table_registrations =
@@ -91,6 +108,14 @@ pub fn build(blocks: &[BlockClass]) -> String {
     );
     let wall_hanging_sign_registrations =
         generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
+    let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
+    let wall_torch_registrations =
+        generate_registrations(wall_torch_blocks.iter(), &wall_torch_type);
+    let redstone_torch_registrations =
+        generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
+    let redstone_wall_torch_registrations =
+        generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
+    let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
@@ -100,7 +125,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use crate::behavior::blocks::{
             BarrelBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock, FarmlandBlock,
             FenceBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
-            CeilingHangingSignBlock, WallHangingSignBlock,
+            CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
+            RedstoneTorchBlock, RedstoneWallTorchBlock, CactusBlock,
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
@@ -115,6 +141,11 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #wall_sign_registrations
             #ceiling_hanging_sign_registrations
             #wall_hanging_sign_registrations
+            #torch_registrations
+            #wall_torch_registrations
+            #redstone_torch_registrations
+            #redstone_wall_torch_registrations
+            #cactus_registrations
         }
     };
 
