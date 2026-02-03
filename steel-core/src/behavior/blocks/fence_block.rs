@@ -74,7 +74,7 @@ impl FenceBlock {
                     return true;
                 }
             }
-        }LootTable
+        }
 
         // Check if the neighbor has a sturdy face on the opposite side
         let opposite = match direction {
