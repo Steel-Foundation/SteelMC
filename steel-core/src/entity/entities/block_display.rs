@@ -6,6 +6,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
+use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
@@ -72,6 +74,16 @@ impl BlockDisplayEntity {
             removed: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
+    }
+
+    /// Creates a block display entity from saved data.
+    ///
+    /// Display entities don't use velocity, rotation, or `on_ground`, so this is
+    /// essentially an alias for `with_uuid`. Type-specific data is restored
+    /// via `load_additional()` after construction.
+    #[must_use]
+    pub fn from_saved(id: i32, position: Vector3<f64>, uuid: Uuid, world: Weak<World>) -> Self {
+        Self::with_uuid(id, position, uuid, world)
     }
 
     /// Gets a reference to the entity data for reading/modifying synced state.
@@ -158,5 +170,24 @@ impl Entity for BlockDisplayEntity {
 
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
         *self.level_callback.lock() = callback;
+    }
+
+    fn save_additional(&self, nbt: &mut NbtCompound) {
+        // Save block state ID directly - these are deterministic in Minecraft
+        let block_state_id = *self.entity_data.lock().block_state.get();
+        nbt.insert("block_state", i32::from(block_state_id.0));
+    }
+
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
+        // Convert to view type to access accessor methods
+        let nbt: NbtCompoundView<'_, '_> = nbt.into();
+
+        // Load block state ID
+        if let Some(state_id) = nbt.int("block_state") {
+            self.entity_data
+                .lock()
+                .block_state
+                .set(BlockStateId(state_id as u16));
+        }
     }
 }

@@ -251,5 +251,19 @@ async fn run_server(
     }
     log::info!("Saved {total_saved} chunks");
 
+    // Save all player data before shutdown
+    log::info!("Saving player data...");
+    let mut players_to_save = Vec::new();
+    for world in &server.worlds {
+        world.players.iter_players(|_, player| {
+            players_to_save.push(player.clone());
+            true
+        });
+    }
+    match server.player_data_storage.save_all(&players_to_save).await {
+        Ok(count) => log::info!("Saved {count} players"),
+        Err(e) => log::error!("Failed to save player data: {e}"),
+    }
+
     log::info!("Server stopped");
 }

@@ -29,6 +29,7 @@ use crate::chunk::{
     proto_chunk::ProtoChunk,
     section::{ChunkSection, SectionHolder, Sections},
 };
+use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
 
 use super::{
@@ -36,8 +37,8 @@ use super::{
     format::{
         BIOMES_PER_SECTION, BLOCKS_PER_SECTION, CHUNK_TABLE_SIZE, FILE_HEADER_SIZE,
         FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE, PersistentBiomeData,
-        PersistentBlockEntity, PersistentBlockState, PersistentChunk, PersistentSection,
-        REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
+        PersistentBlockEntity, PersistentBlockState, PersistentChunk, PersistentEntity,
+        PersistentSection, REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
     },
 };
 
@@ -321,7 +322,13 @@ impl RegionManager {
             .map(super::super::chunk::level_chunk::LevelChunk::get_block_entities)
             .unwrap_or_default();
 
-        let persistent = Self::to_persistent(chunk.sections(), &block_entities, pos);
+        // Get saveable entities if this is a full chunk
+        let entities: Vec<SharedEntity> = chunk
+            .as_full()
+            .map(|c| c.entities.get_saveable_entities())
+            .unwrap_or_default();
+
+        let persistent = Self::to_persistent(chunk.sections(), &block_entities, &entities, pos);
 
         Some(PreparedChunkSave { pos, persistent })
     }
@@ -604,6 +611,7 @@ impl RegionManager {
     fn to_persistent(
         sections: &Sections,
         block_entities: &[SharedBlockEntity],
+        entities: &[SharedEntity],
         chunk_pos: ChunkPos,
     ) -> PersistentChunk {
         let mut builder = ChunkBuilder::new(&REGISTRY);
@@ -637,6 +645,42 @@ impl RegionManager {
             })
             .collect();
 
+        // Serialize entities
+        let persistent_entities: Vec<PersistentEntity> = entities
+            .iter()
+            .filter_map(|entity| {
+                let pos = entity.position();
+                let vel = entity.velocity();
+                let (yaw, pitch) = entity.rotation();
+
+                // Validate position is finite (discard corrupted entities)
+                if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+                    tracing::warn!(
+                        uuid = ?entity.uuid(),
+                        "Entity has non-finite position {:?}, skipping save",
+                        pos
+                    );
+                    return None;
+                }
+
+                // Serialize type-specific NBT data
+                let mut nbt = NbtCompound::new();
+                entity.save_additional(&mut nbt);
+                let mut nbt_bytes = Vec::new();
+                nbt.write(&mut nbt_bytes);
+
+                Some(PersistentEntity {
+                    entity_type: entity.entity_type().key.clone(),
+                    uuid: *entity.uuid().as_bytes(),
+                    pos: [pos.x, pos.y, pos.z],
+                    motion: [vel.x, vel.y, vel.z],
+                    rotation: [yaw, pitch],
+                    on_ground: entity.on_ground(),
+                    nbt_data: nbt_bytes,
+                })
+            })
+            .collect();
+
         PersistentChunk {
             last_modified: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -645,6 +689,7 @@ impl RegionManager {
             biomes: builder.biomes,
             sections: persistent_sections,
             block_entities: persistent_block_entities,
+            entities: persistent_entities,
         }
     }
 
@@ -775,7 +820,7 @@ impl RegionManager {
                     pos,
                     min_y,
                     height,
-                    level,
+                    level.clone(),
                 );
 
                 // Load block entities
@@ -784,6 +829,14 @@ impl RegionManager {
                         Self::persistent_to_block_entity(persistent_be, pos, &chunk)
                     {
                         chunk.add_and_register_block_entity(block_entity);
+                    }
+                }
+
+                // Load entities
+                for persistent_entity in &persistent.entities {
+                    if let Some(entity) = Self::persistent_to_entity(persistent_entity, pos, &chunk)
+                    {
+                        chunk.add_and_register_entity(entity);
                     }
                 }
 
@@ -837,6 +890,98 @@ impl RegionManager {
             // Create the block entity and load NBT
             BLOCK_ENTITIES.create_and_load(block_entity_type, level, pos, state, &nbt)
         }
+    }
+
+    /// Converts a persistent entity to runtime format.
+    fn persistent_to_entity(
+        persistent: &PersistentEntity,
+        chunk_pos: ChunkPos,
+        chunk: &LevelChunk,
+    ) -> Option<SharedEntity> {
+        use steel_utils::math::Vector3;
+        use uuid::Uuid;
+
+        // Reconstruct base fields
+        let pos = Vector3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
+        let mut velocity = Vector3::new(
+            persistent.motion[0],
+            persistent.motion[1],
+            persistent.motion[2],
+        );
+        let rotation = (persistent.rotation[0], persistent.rotation[1]);
+        let uuid = Uuid::from_bytes(persistent.uuid);
+
+        // Validate position is finite
+        if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+            tracing::warn!(
+                ?uuid,
+                "Entity has non-finite position {:?}, skipping load",
+                pos
+            );
+            return None;
+        }
+
+        // Validate position is within expected chunk (sanity check)
+        let expected_chunk_x = (pos.x as i32) >> 4;
+        let expected_chunk_z = (pos.z as i32) >> 4;
+        if chunk_pos.0.x != expected_chunk_x || chunk_pos.0.y != expected_chunk_z {
+            tracing::warn!(
+                ?uuid,
+                "Entity position {:?} doesn't match chunk {:?}, loading anyway",
+                pos,
+                chunk_pos
+            );
+        }
+
+        // Clamp motion values > 10.0 to 0 (vanilla behavior to prevent corruption)
+        if velocity.x.abs() > 10.0 {
+            velocity.x = 0.0;
+        }
+        if velocity.y.abs() > 10.0 {
+            velocity.y = 0.0;
+        }
+        if velocity.z.abs() > 10.0 {
+            velocity.z = 0.0;
+        }
+
+        // Look up entity type
+        let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
+
+        // Check if we have a load factory for this entity type
+        if !ENTITIES.has_load_factory(entity_type) {
+            tracing::debug!(
+                entity_type = %persistent.entity_type,
+                "No load factory for entity type, skipping"
+            );
+            return None;
+        }
+
+        // Get world reference
+        let level = chunk.level_weak();
+
+        // Parse NBT from bytes (or use empty compound data)
+        let nbt_bytes = if persistent.nbt_data.is_empty() {
+            // Empty NBT compound: type byte (10 = compound), empty name (2 zero bytes), end tag (0)
+            &[0x0a, 0x00, 0x00, 0x00][..]
+        } else {
+            &persistent.nbt_data[..]
+        };
+
+        let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(nbt_bytes)) else {
+            tracing::warn!(?uuid, "Failed to parse entity NBT, skipping");
+            return None;
+        };
+
+        ENTITIES.create_and_load(
+            entity_type,
+            pos,
+            uuid,
+            velocity,
+            rotation,
+            persistent.on_ground,
+            level,
+            &nbt,
+        )
     }
 
     /// Converts a persistent section to runtime format.

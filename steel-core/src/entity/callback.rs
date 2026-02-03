@@ -200,6 +200,11 @@ impl EntityLevelCallback for EntityChunkCallback {
             let actual_old_chunk = ChunkPos::from_i64(old_packed);
 
             world.move_entity_between_chunks(self.entity_id, actual_old_chunk, new_chunk);
+
+            // Mark both old and new chunks dirty for saving
+            // (within-chunk movement is handled by LevelChunk::tick marking dirty after entity ticks)
+            world.mark_chunk_dirty(actual_old_chunk);
+            world.mark_chunk_dirty(new_chunk);
         }
     }
 
@@ -214,6 +219,10 @@ impl EntityLevelCallback for EntityChunkCallback {
         };
 
         let chunk_pos = self.current_chunk();
+
+        // Mark chunk dirty so removal is persisted
+        world.mark_chunk_dirty(chunk_pos);
+
         world.remove_entity_internal(self.entity_id, chunk_pos, reason);
     }
 }

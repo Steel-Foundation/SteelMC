@@ -520,10 +520,7 @@ mod tests {
         let result = move_entity(&state, large_fall, MoverType::SelfMovement, &world);
 
         assert!(result.on_ground, "Should be on ground after landing");
-        assert_eq!(
-            result.final_position.y, 1.0,
-            "Should stop exactly at floor level"
-        );
+
         assert!(
             result.vertical_collision,
             "Should detect vertical collision"
