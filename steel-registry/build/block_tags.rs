@@ -128,34 +128,38 @@ pub(crate) fn build() -> TokenStream {
     // Generate const arrays for each tag
     for (tag_name, blocks) in &sorted_tags {
         let tag_ident = Ident::new(
-            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
+            &format!("{}_TAG_LIST", tag_name.to_shouty_snake_case()),
             Span::call_site(),
         );
 
         let block_strs = blocks.iter().map(|s| s.as_str());
 
+        // No public needed to work, and isn't modifiable
         stream.extend(quote! {
-            pub static #tag_ident: &[&str] = &[#(#block_strs),*];
+            static #tag_ident: &[&str] = &[#(#block_strs),*];
         });
     }
 
     // Generate registration function
     let mut register_stream = TokenStream::new();
     for (tag_name, _) in &sorted_tags {
+        let tag_ident_array = Ident::new(
+            &format!("{}_TAG_LIST", tag_name.to_shouty_snake_case()),
+            Span::call_site(),
+        );
         let tag_ident = Ident::new(
             &format!("{}_TAG", tag_name.to_shouty_snake_case()),
             Span::call_site(),
         );
         let tag_key = tag_name.clone();
-
+        stream.extend(quote! {pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);});
         register_stream.extend(quote! {
             registry.register_tag(
-                Identifier::vanilla_static(#tag_key),
-                #tag_ident
+                #tag_ident,
+                #tag_ident_array
             );
         });
     }
-
     stream.extend(quote! {
         pub fn register_block_tags(registry: &mut BlockRegistry) {
             #register_stream

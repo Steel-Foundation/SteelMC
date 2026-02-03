@@ -6,6 +6,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::vanilla_block_tags::FENCES_TAG;
 use steel_utils::{BlockPos, BlockStateId, Identifier};
 
 use crate::behavior::block::BlockBehaviour;
@@ -46,8 +47,7 @@ impl FenceBlock {
         let neighbor_block = neighbor_state.get_block();
 
         // Check if it's a fence (same tag)
-        let fences_tag = Identifier::vanilla_static("fences");
-        if REGISTRY.blocks.is_in_tag(neighbor_block, &fences_tag) {
+        if REGISTRY.blocks.is_in_tag(neighbor_block, &FENCES_TAG) {
             return true;
         }
 
