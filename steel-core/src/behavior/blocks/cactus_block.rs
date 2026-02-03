@@ -5,11 +5,11 @@
 
 use std::ptr;
 
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
-use steel_registry::blocks::BlockRef;
 
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
@@ -76,9 +76,10 @@ impl CactusBlock {
         let below_block = below.get_block();
 
         let valid_below = ptr::eq(below_block, vanilla_blocks::CACTUS)
-            || steel_registry::REGISTRY
-                .blocks
-                .is_in_tag(below_block, &steel_utils::Identifier::vanilla_static("sand"));
+            || steel_registry::REGISTRY.blocks.is_in_tag(
+                below_block,
+                &steel_utils::Identifier::vanilla_static("sand"),
+            );
 
         if !valid_below {
             return false;
@@ -129,7 +130,11 @@ impl BlockBehaviour for CactusBlock {
             // Play break particles and sound
             world.destroy_block_effect(pos, u32::from(state.0), None);
             // Remove the block
-            world.set_block(pos, vanilla_blocks::AIR.default_state(), UpdateFlags::UPDATE_ALL);
+            world.set_block(
+                pos,
+                vanilla_blocks::AIR.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
             // TODO: Drop cactus item via pop_resource
         }
     }
@@ -140,19 +145,21 @@ impl BlockBehaviour for CactusBlock {
 
     fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
         let above_pos = pos.offset(0, 1, 0);
-        
+
         // Vanilla line 56: if (serverLevel.isEmptyBlock(blockPos2))
         if !world.get_block_state(&above_pos).is_air() {
             return;
         }
-        
+
         // Vanilla lines 57-64: Count cactus blocks below and check max height
         let mut i = 1u32;
         let age = state.get_value(&BlockStateProperties::AGE_15);
-        
+
         // Vanilla: while (serverLevel.getBlockState(blockPos.below(i)).is(this))
         while ptr::eq(
-            world.get_block_state(&pos.offset(0, -(i as i32), 0)).get_block(),
+            world
+                .get_block_state(&pos.offset(0, -(i as i32), 0))
+                .get_block(),
             vanilla_blocks::CACTUS,
         ) {
             // Vanilla: if (++i == 3 && j == 15) return;
@@ -161,9 +168,9 @@ impl BlockBehaviour for CactusBlock {
                 return;
             }
         }
-        
+
         // At this point, `i` is the cactus stack height (1 = just this block, 2 = one below, 3 = two below)
-        
+
         // Vanilla lines 66-70: Cactus Flower logic (1.21+)
         // At age 8, there's a chance to spawn a cactus flower above
         if age == CACTUS_FLOWER_AGE && Self::can_survive(world, above_pos) {
@@ -181,7 +188,6 @@ impl BlockBehaviour for CactusBlock {
                 );
             }
         }
-        
         // Vanilla lines 71-76: Age 15 and height < MAX_CACTUS_HEIGHT → grow new cactus block
         // The new block's on_place method will check can_survive and destroy if needed
         else if age == 15 && i < MAX_CACTUS_HEIGHT {
@@ -194,7 +200,7 @@ impl BlockBehaviour for CactusBlock {
             let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
-        
+
         // Vanilla lines 78-80: Increment age if < 15
         if age < 15 {
             let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
