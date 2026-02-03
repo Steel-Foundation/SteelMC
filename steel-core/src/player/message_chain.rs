@@ -106,7 +106,12 @@ pub struct SignedMessageBody {
 impl SignedMessageBody {
     /// Creates a new signed message body
     #[must_use]
-    pub const fn new(content: String, time_stamp: SystemTime, salt: i64, last_seen: LastSeen) -> Self {
+    pub const fn new(
+        content: String,
+        time_stamp: SystemTime,
+        salt: i64,
+        last_seen: LastSeen,
+    ) -> Self {
         Self {
             content,
             time_stamp,
