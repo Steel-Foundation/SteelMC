@@ -417,7 +417,7 @@ impl ItemEntity {
 
     /// Gets the bob offset for client-side animation.
     #[must_use]
-    pub fn bob_offset(&self) -> f32 {
+    pub const fn bob_offset(&self) -> f32 {
         self.bob_offset
     }
 

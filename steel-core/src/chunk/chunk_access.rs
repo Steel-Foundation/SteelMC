@@ -45,7 +45,7 @@ impl ChunkStatus {
 
     /// Gets the status from an index.
     #[must_use]
-    pub fn from_index(index: usize) -> Option<Self> {
+    pub const fn from_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::Empty),
             1 => Some(Self::StructureStarts),
@@ -69,7 +69,7 @@ impl ChunkStatus {
     /// # Panics
     /// This function will panic if the chunk is at the Full status.
     #[must_use]
-    pub fn next(self) -> Option<Self> {
+    pub const fn next(self) -> Option<Self> {
         match self {
             Self::Empty => Some(Self::StructureStarts),
             Self::StructureStarts => Some(Self::StructureReferences),
@@ -88,7 +88,7 @@ impl ChunkStatus {
 
     /// Gets the parent status in the generation order.
     #[must_use]
-    pub fn parent(self) -> Option<Self> {
+    pub const fn parent(self) -> Option<Self> {
         match self {
             Self::Empty => None,
             Self::StructureStarts => Some(Self::Empty),

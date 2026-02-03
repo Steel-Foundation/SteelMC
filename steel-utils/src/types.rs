@@ -149,7 +149,7 @@ impl ChunkPos {
     /// Uses `Mth.absMax(x, z) <= MAX_COORDINATE_VALUE`.
     #[must_use]
     #[inline]
-    pub fn is_valid(x: i32, z: i32) -> bool {
+    pub const fn is_valid(x: i32, z: i32) -> bool {
         x.abs().max(z.abs()) <= Self::MAX_COORDINATE_VALUE
     }
 
@@ -163,7 +163,7 @@ impl ChunkPos {
     /// Creates a new `ChunkPos` from an `i64`.
     #[must_use]
     #[inline]
-    pub fn from_i64(value: i64) -> Self {
+    pub const fn from_i64(value: i64) -> Self {
         Self(Vector2::new(
             (value & 0xFFFF_FFFF) as i32,
             (value >> 32) as i32,
@@ -223,7 +223,7 @@ impl BlockPos {
     /// Creates a `BlockPos` from an `i64`.
     /// Layout: X (26 bits, offset 38) | Z (26 bits, offset 12) | Y (12 bits, offset 0)
     #[must_use]
-    pub fn from_i64(value: i64) -> Self {
+    pub const fn from_i64(value: i64) -> Self {
         let x = value >> Self::X_OFFSET;
         let y = value & Self::PACKED_Y_MASK;
         let z = (value >> Self::Z_OFFSET) & Self::PACKED_Z_MASK;
@@ -238,25 +238,25 @@ impl BlockPos {
 
     /// Returns a new `BlockPos` offset by the given amounts.
     #[must_use]
-    pub fn offset(&self, dx: i32, dy: i32, dz: i32) -> Self {
+    pub const fn offset(&self, dx: i32, dy: i32, dz: i32) -> Self {
         Self(Vector3::new(self.0.x + dx, self.0.y + dy, self.0.z + dz))
     }
 
     /// Returns the x coordinate.
     #[must_use]
-    pub fn x(&self) -> i32 {
+    pub const fn x(&self) -> i32 {
         self.0.x
     }
 
     /// Returns the y coordinate.
     #[must_use]
-    pub fn y(&self) -> i32 {
+    pub const fn y(&self) -> i32 {
         self.0.y
     }
 
     /// Returns the z coordinate.
     #[must_use]
-    pub fn z(&self) -> i32 {
+    pub const fn z(&self) -> i32 {
         self.0.z
     }
 }
@@ -292,7 +292,7 @@ impl SectionPos {
 
     /// Creates a `SectionPos` from a `BlockPos`.
     #[must_use]
-    pub fn from_block_pos(pos: BlockPos) -> Self {
+    pub const fn from_block_pos(pos: BlockPos) -> Self {
         Self::new(
             Self::block_to_section_coord(pos.0.x),
             Self::block_to_section_coord(pos.0.y),
@@ -368,7 +368,7 @@ impl SectionPos {
     /// Unpacks a section position from an i64.
     /// Format: (x << 42) | (z << 20) | y
     #[must_use]
-    pub fn from_i64(value: i64) -> Self {
+    pub const fn from_i64(value: i64) -> Self {
         let x = value >> 42;
         let z = (value >> 20) & 0x3F_FFFF;
         let y = value & 0xF_FFFF;
@@ -385,7 +385,7 @@ impl SectionPos {
     /// Format: (x << 8) | (z << 4) | y (each coordinate masked to 4 bits)
     #[must_use]
     #[inline]
-    pub fn section_relative_pos(pos: &BlockPos) -> i16 {
+    pub const fn section_relative_pos(pos: &BlockPos) -> i16 {
         let x = pos.0.x & Self::SECTION_MASK;
         let y = pos.0.y & Self::SECTION_MASK;
         let z = pos.0.z & Self::SECTION_MASK;
@@ -394,7 +394,7 @@ impl SectionPos {
 
     /// Converts a section-relative packed position back to a block position.
     #[must_use]
-    pub fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
+    pub const fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
         BlockPos(Vector3::new(
             self.relative_to_block_x(relative),
             self.relative_to_block_y(relative),
@@ -492,7 +492,7 @@ impl Identifier {
 
     /// Creates a new `Identifier` with the vanilla namespace.
     #[must_use]
-    pub fn vanilla(path: String) -> Self {
+    pub const fn vanilla(path: String) -> Self {
         Identifier {
             namespace: Cow::Borrowed(Self::VANILLA_NAMESPACE),
             path: Cow::Owned(path),
@@ -510,7 +510,7 @@ impl Identifier {
 
     /// Returns whether the character is a valid namespace character.
     #[must_use]
-    pub fn valid_namespace_char(char: char) -> bool {
+    pub const fn valid_namespace_char(char: char) -> bool {
         char == '_'
             || char == '-'
             || char.is_ascii_lowercase()
@@ -520,7 +520,7 @@ impl Identifier {
 
     /// Returns whether the character is a valid path character.
     #[must_use]
-    pub fn valid_char(char: char) -> bool {
+    pub const fn valid_char(char: char) -> bool {
         Self::valid_namespace_char(char) || char == '/'
     }
 

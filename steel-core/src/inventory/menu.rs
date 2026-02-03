@@ -55,7 +55,7 @@ pub enum RemoteSlot {
 impl RemoteSlot {
     /// Creates an unknown remote slot.
     #[must_use]
-    pub fn unknown() -> Self {
+    pub const fn unknown() -> Self {
         Self::Unknown
     }
 
@@ -224,27 +224,27 @@ pub const SLOT_SIZE: i32 = 18;
 /// Extracts the quickcraft type from a button mask.
 /// Type is stored in bits 2-3.
 #[must_use]
-pub fn get_quickcraft_type(button: i32) -> i32 {
+pub const fn get_quickcraft_type(button: i32) -> i32 {
     (button >> 2) & 3
 }
 
 /// Extracts the quickcraft header (phase) from a button mask.
 /// Header is stored in bits 0-1.
 #[must_use]
-pub fn get_quickcraft_header(button: i32) -> i32 {
+pub const fn get_quickcraft_header(button: i32) -> i32 {
     button & 3
 }
 
 /// Creates a quickcraft button mask from header and type.
 #[must_use]
-pub fn get_quickcraft_mask(header: i32, quickcraft_type: i32) -> i32 {
+pub const fn get_quickcraft_mask(header: i32, quickcraft_type: i32) -> i32 {
     (header & 3) | ((quickcraft_type & 3) << 2)
 }
 
 /// Checks if a quickcraft type is valid for the given player.
 /// Type 2 (clone) requires creative mode (infinite materials).
 #[must_use]
-pub fn is_valid_quickcraft_type(quickcraft_type: i32, has_infinite_materials: bool) -> bool {
+pub const fn is_valid_quickcraft_type(quickcraft_type: i32, has_infinite_materials: bool) -> bool {
     match quickcraft_type {
         0 | 1 => true,
         2 => has_infinite_materials,
@@ -406,7 +406,7 @@ impl MenuBehavior {
     /// Returns true if a slot can be dragged to during quickcraft.
     /// Menus can override this via the Menu trait.
     #[must_use]
-    pub fn can_drag_to(&self, _slot_index: usize) -> bool {
+    pub const fn can_drag_to(&self, _slot_index: usize) -> bool {
         true
     }
 
@@ -512,19 +512,19 @@ impl MenuBehavior {
 
     /// Returns the current state ID.
     #[must_use]
-    pub fn get_state_id(&self) -> u32 {
+    pub const fn get_state_id(&self) -> u32 {
         self.state_id
     }
 
     /// Suppresses remote updates during click handling.
     /// Call this before processing a click.
-    pub fn suppress_remote_updates(&mut self) {
+    pub const fn suppress_remote_updates(&mut self) {
         self.suppress_remote_updates = true;
     }
 
     /// Resumes remote updates after click handling.
     /// Call this after processing a click.
-    pub fn resume_remote_updates(&mut self) {
+    pub const fn resume_remote_updates(&mut self) {
         self.suppress_remote_updates = false;
     }
 
@@ -567,13 +567,13 @@ impl MenuBehavior {
     /// -999 is used for clicking outside the inventory.
     /// -1 is also accepted (matches Java behavior, though not used by vanilla clients).
     #[must_use]
-    pub fn is_valid_slot_index(&self, slot: i16) -> bool {
+    pub const fn is_valid_slot_index(&self, slot: i16) -> bool {
         slot == -1 || slot == -999 || (slot >= 0 && (slot as usize) < self.slots.len())
     }
 
     /// Returns the number of slots in this menu.
     #[must_use]
-    pub fn slot_count(&self) -> usize {
+    pub const fn slot_count(&self) -> usize {
         self.slots.len()
     }
 
@@ -585,7 +585,7 @@ impl MenuBehavior {
 
     /// Gets the carried item (cursor).
     #[must_use]
-    pub fn get_carried(&self) -> &ItemStack {
+    pub const fn get_carried(&self) -> &ItemStack {
         &self.carried
     }
 
@@ -595,7 +595,7 @@ impl MenuBehavior {
     }
 
     /// Increments and returns the new state ID.
-    pub fn increment_state_id(&mut self) -> u32 {
+    pub const fn increment_state_id(&mut self) -> u32 {
         self.state_id = self.state_id.wrapping_add(1) & 0x7FFF; // Keep it within 15 bits
         self.state_id
     }

@@ -165,6 +165,7 @@ cast_possible_wrap = "allow"
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 absolute_paths = "warn"
+missing_const_for_fn = "warn"
 
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }

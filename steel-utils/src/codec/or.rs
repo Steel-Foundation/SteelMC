@@ -15,22 +15,22 @@ pub enum Or<L, R> {
 
 impl<L, R> Or<L, R> {
     /// Creates a new `Or` with the left variant.
-    pub fn left(value: L) -> Self {
+    pub const fn left(value: L) -> Self {
         Self::Left(value)
     }
 
     /// Creates a new `Or` with the right variant.
-    pub fn right(value: R) -> Self {
+    pub const fn right(value: R) -> Self {
         Self::Right(value)
     }
 
     /// Returns `true` if this is a `Left` variant.
-    pub fn is_left(&self) -> bool {
+    pub const fn is_left(&self) -> bool {
         matches!(self, Self::Left(_))
     }
 
     /// Returns `true` if this is a `Right` variant.
-    pub fn is_right(&self) -> bool {
+    pub const fn is_right(&self) -> bool {
         matches!(self, Self::Right(_))
     }
 }

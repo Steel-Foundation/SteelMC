@@ -79,7 +79,7 @@ pub struct JavaConnection {
 
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
-    pub fn new(
+    pub const fn new(
         outgoing_packets: UnboundedSender<EncodedPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,

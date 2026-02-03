@@ -25,7 +25,7 @@ pub struct XoroshiroSplitter {
 impl Xoroshiro {
     /// Creates a new `Xoroshiro` from a seed.
     #[must_use]
-    pub fn from_seed(seed: u64) -> Self {
+    pub const fn from_seed(seed: u64) -> Self {
         // From RandomSupport
         let (lo, hi) = Self::upgrade_seed_to_128_bit(seed);
         let lo = mix_stafford_13(lo);
@@ -35,13 +35,13 @@ impl Xoroshiro {
 
     /// Creates a new `Xoroshiro` from a seed without mixing.
     #[must_use]
-    pub fn from_seed_unmixed(seed: u64) -> Self {
+    pub const fn from_seed_unmixed(seed: u64) -> Self {
         // From RandomSupport and
         let (lo, hi) = Self::upgrade_seed_to_128_bit(seed);
         Self::new(lo, hi)
     }
 
-    fn new(lo: u64, hi: u64) -> Self {
+    const fn new(lo: u64, hi: u64) -> Self {
         let (lo, hi) = if (lo | hi) == 0 {
             (GOLDEN_RATIO_64, SILVER_RATIO_64)
         } else {
@@ -54,18 +54,18 @@ impl Xoroshiro {
         }
     }
 
-    fn upgrade_seed_to_128_bit(seed: u64) -> (u64, u64) {
+    const fn upgrade_seed_to_128_bit(seed: u64) -> (u64, u64) {
         let lo = seed ^ SILVER_RATIO_64;
         let hi = lo.wrapping_add(GOLDEN_RATIO_64);
         (lo, hi)
     }
 
-    fn next(&mut self, bits: u64) -> u64 {
+    const fn next(&mut self, bits: u64) -> u64 {
         self.next_random() >> (64 - bits)
     }
 
     #[cfg(not(target_arch = "x86_64"))]
-    fn next_random(&mut self) -> u64 {
+    const fn next_random(&mut self) -> u64 {
         let l = self.seed_lo;
         let m = self.seed_hi;
         let n = l.wrapping_add(m).rotate_left(17).wrapping_add(l);
@@ -116,7 +116,7 @@ impl MarsagliaPolarGaussian for Xoroshiro {
     }
 }
 
-fn mix_stafford_13(z: u64) -> u64 {
+const fn mix_stafford_13(z: u64) -> u64 {
     let z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)

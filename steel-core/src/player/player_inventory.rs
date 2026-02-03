@@ -21,7 +21,7 @@ use crate::{
 /// Slot 40: Offhand
 /// Slot 41: Body armor (for animals, not used for players)
 /// Slot 42: Saddle (for animals, not used for players)
-fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
+const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
     match slot {
         36 => Some(EquipmentSlot::Feet),
         37 => Some(EquipmentSlot::Legs),
@@ -74,24 +74,24 @@ impl PlayerInventory {
 
     /// Returns a reference to the entity equipment.
     #[must_use]
-    pub fn equipment(&self) -> &EntityEquipment {
+    pub const fn equipment(&self) -> &EntityEquipment {
         &self.equipment
     }
 
     /// Returns a mutable reference to the entity equipment.
-    pub fn equipment_mut(&mut self) -> &mut EntityEquipment {
+    pub const fn equipment_mut(&mut self) -> &mut EntityEquipment {
         &mut self.equipment
     }
 
     /// Returns true if the given slot index is a hotbar slot (0-8).
     #[must_use]
-    pub fn is_hotbar_slot(slot: usize) -> bool {
+    pub const fn is_hotbar_slot(slot: usize) -> bool {
         slot < Self::SELECTION_SIZE
     }
 
     /// Returns the currently selected hotbar slot (0-8).
     #[must_use]
-    pub fn get_selected_slot(&self) -> u8 {
+    pub const fn get_selected_slot(&self) -> u8 {
         self.selected
     }
 
@@ -115,13 +115,13 @@ impl PlayerInventory {
 
     /// Returns a clone of the currently selected item (main hand).
     #[must_use]
-    pub fn get_selected_item(&self) -> &ItemStack {
+    pub const fn get_selected_item(&self) -> &ItemStack {
         &self.items[self.selected as usize]
     }
 
     /// Returns a clone of the currently selected item (main hand).
     #[must_use]
-    pub fn get_selected_item_mut(&mut self) -> &mut ItemStack {
+    pub const fn get_selected_item_mut(&mut self) -> &mut ItemStack {
         &mut self.items[self.selected as usize]
     }
 
@@ -133,13 +133,13 @@ impl PlayerInventory {
 
     /// Returns a clone of the offhand item.
     #[must_use]
-    pub fn get_offhand_item(&self) -> &ItemStack {
+    pub const fn get_offhand_item(&self) -> &ItemStack {
         self.equipment.get_ref(EquipmentSlot::OffHand)
     }
 
     /// Returns a clone of the offhand item.
     #[must_use]
-    pub fn get_offhand_item_mut(&mut self) -> &mut ItemStack {
+    pub const fn get_offhand_item_mut(&mut self) -> &mut ItemStack {
         self.equipment.get_mut(EquipmentSlot::OffHand)
     }
 
@@ -158,13 +158,13 @@ impl PlayerInventory {
 
     /// Returns the number of times this inventory has been modified.
     #[must_use]
-    pub fn get_times_changed(&self) -> u32 {
+    pub const fn get_times_changed(&self) -> u32 {
         self.times_changed
     }
 
     /// Returns the non-equipment items (main 36 slots).
     #[must_use]
-    pub fn get_items(&self) -> &[ItemStack; Self::INVENTORY_SIZE] {
+    pub const fn get_items(&self) -> &[ItemStack; Self::INVENTORY_SIZE] {
         &self.items
     }
 
@@ -223,7 +223,7 @@ impl PlayerInventory {
 
     /// Gets the item in the specified hand.
     #[must_use]
-    pub fn get_item_in_hand(&self, hand: InteractionHand) -> &ItemStack {
+    pub const fn get_item_in_hand(&self, hand: InteractionHand) -> &ItemStack {
         match hand {
             InteractionHand::MainHand => self.get_selected_item(),
             InteractionHand::OffHand => self.get_offhand_item(),
@@ -232,7 +232,7 @@ impl PlayerInventory {
 
     /// Gets the item in the specified hand.
     #[must_use]
-    pub fn get_item_in_hand_mut(&mut self, hand: InteractionHand) -> &mut ItemStack {
+    pub const fn get_item_in_hand_mut(&mut self, hand: InteractionHand) -> &mut ItemStack {
         match hand {
             InteractionHand::MainHand => self.get_selected_item_mut(),
             InteractionHand::OffHand => self.get_offhand_item_mut(),

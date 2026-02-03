@@ -93,7 +93,7 @@ pub trait CommandHandlerDyn {
 impl CommandHandlerBuilder {
     /// Creates a new command handler builder.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         names: &'static [&'static str],
         description: &'static str,
         permission: &'static str,
@@ -107,7 +107,7 @@ impl CommandHandlerBuilder {
 
     /// Chains a command executor to this command handler.
     #[must_use]
-    pub fn then<E>(self, executor: E) -> CommandHandler<E>
+    pub const fn then<E>(self, executor: E) -> CommandHandler<E>
     where
         E: CommandParserExecutor<()>,
     {
@@ -120,7 +120,7 @@ impl CommandHandlerBuilder {
     }
 
     /// Executes the command executor if the command was ran without arguments.
-    pub fn executes<E>(self, executor: E) -> CommandHandler<CommandParserLeafExecutor<(), E>>
+    pub const fn executes<E>(self, executor: E) -> CommandHandler<CommandParserLeafExecutor<(), E>>
     where
         E: CommandExecutor<()>,
     {
@@ -387,7 +387,7 @@ pub struct CommandParserRedirectExecutor<S, E> {
 }
 
 /// Creates a new command redirect builder.
-pub fn redirect<S, E>(
+pub const fn redirect<S, E>(
     to: CommandRedirectTarget,
     executor: E,
 ) -> CommandParserRedirectExecutor<S, E> {
@@ -464,7 +464,7 @@ pub struct CommandParserLiteralBuilder<S> {
 
 /// Creates a new literal command argument builder.
 #[must_use]
-pub fn literal<S>(expected: &'static str) -> CommandParserLiteralBuilder<S> {
+pub const fn literal<S>(expected: &'static str) -> CommandParserLiteralBuilder<S> {
     CommandParserLiteralBuilder {
         expected,
         _source: PhantomData,
@@ -473,7 +473,7 @@ pub fn literal<S>(expected: &'static str) -> CommandParserLiteralBuilder<S> {
 
 impl<S> CommandParserLiteralBuilder<S> {
     /// Executes the command argument executor after the argument is parsed.
-    pub fn then<E>(self, executor: E) -> CommandParserLiteralExecutor<S, E>
+    pub const fn then<E>(self, executor: E) -> CommandParserLiteralExecutor<S, E>
     where
         E: CommandParserExecutor<S>,
     {
@@ -485,7 +485,7 @@ impl<S> CommandParserLiteralBuilder<S> {
     }
 
     /// Executes the command executor after the argument is parsed.
-    pub fn executes<E>(
+    pub const fn executes<E>(
         self,
         executor: E,
     ) -> CommandParserLiteralExecutor<S, CommandParserLeafExecutor<S, E>>

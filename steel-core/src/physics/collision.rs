@@ -41,7 +41,7 @@ pub struct WorldCollisionProvider<'a> {
 
 impl<'a> WorldCollisionProvider<'a> {
     /// Creates a new collision provider for the given world.
-    pub fn new(world: &'a World) -> Self {
+    pub const fn new(world: &'a World) -> Self {
         Self { world }
     }
 }

@@ -42,7 +42,7 @@ pub enum ParsedValue {
 impl SuggestionContext {
     /// Creates a new empty suggestion context.
     #[must_use]
-    pub fn new(server: Arc<Server>) -> Self {
+    pub const fn new(server: Arc<Server>) -> Self {
         Self {
             parsed_values: vec![],
             server,

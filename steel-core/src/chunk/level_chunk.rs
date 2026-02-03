@@ -258,7 +258,7 @@ impl LevelChunk {
 
     /// Gets the section index for a given Y coordinate.
     #[must_use]
-    fn get_section_index(&self, y: i32) -> usize {
+    const fn get_section_index(&self, y: i32) -> usize {
         ((y - self.min_y) / 16) as usize
     }
 
@@ -313,7 +313,7 @@ impl LevelChunk {
 
     /// Returns a reference to the block entity storage.
     #[must_use]
-    pub fn block_entity_storage(&self) -> &BlockEntityStorage {
+    pub const fn block_entity_storage(&self) -> &BlockEntityStorage {
         &self.block_entities
     }
 

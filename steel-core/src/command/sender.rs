@@ -18,7 +18,7 @@ pub enum CommandSender {
 impl CommandSender {
     /// Returns the player if the sender is a player.
     #[must_use]
-    pub fn get_player(&self) -> Option<&Arc<Player>> {
+    pub const fn get_player(&self) -> Option<&Arc<Player>> {
         match self {
             Self::Player(player) => Some(player),
             _ => None,

@@ -22,12 +22,12 @@ pub struct PlayerArgument {
 impl PlayerArgument {
     /// Creates a selector for multiple players
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         PlayerArgument { one: false }
     }
     /// Creates a selector for one player
     #[must_use]
-    pub fn one() -> Self {
+    pub const fn one() -> Self {
         PlayerArgument { one: true }
     }
 }

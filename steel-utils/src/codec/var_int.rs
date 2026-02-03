@@ -18,7 +18,7 @@ impl VarInt {
     /// Returns the exact number of bytes this `VarInt` will write when
     /// [`WriteTo::write`] is called, assuming no error occurs.
     #[must_use]
-    pub fn written_size(val: i32) -> usize {
+    pub const fn written_size(val: i32) -> usize {
         match val {
             0 => 1,
             n => (31 - n.leading_zeros() as usize) / 7 + 1,
