@@ -2,8 +2,6 @@ use crate::random::{
     PositionalRandom, Random, RandomSource, RandomSplitter, gaussian::MarsagliaPolarGaussian,
     get_seed,
 };
-#[cfg(target_arch = "x86_64")]
-use std::arch::asm;
 
 // Ratios used in the mix functions
 const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -64,7 +62,6 @@ impl Xoroshiro {
         self.next_random() >> (64 - bits)
     }
 
-    #[cfg(not(target_arch = "x86_64"))]
     const fn next_random(&mut self) -> u64 {
         let l = self.seed_lo;
         let m = self.seed_hi;
@@ -73,35 +70,6 @@ impl Xoroshiro {
         self.seed_lo = l.rotate_left(49) ^ m ^ (m << 21);
         self.seed_hi = m.rotate_left(28);
         n
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    fn next_random(&mut self) -> u64 {
-        unsafe {
-            let n;
-            asm!(
-                "mov {copy_seed_lo}, {seed_lo}", // create a temporary copy of seed_lo
-                "mov {copy_seed_hi}, {seed_hi}", // create a temporary copy of seed_hi
-                "xor {seed_hi}, {copy_seed_lo}", // seed_hi = seed_hi ^ seed_lo
-                "lea rax, [{copy_seed_lo} + {copy_seed_hi}]", // n = seed_lo + seed_hi
-                "rol {seed_lo}, 49", // seed_lo = rol(seed_lo, 49)
-                "mov r8, {seed_hi}", // create a copy for ^ (hi << 21)
-                "shl r8, 21", // (hi << 21)
-                "rol rax, 17", // n = rol(n, 17)
-                "xor {seed_lo}, {seed_hi}", // seed_lo ^= seed_hi
-                "add rax, {copy_seed_lo}", // n += temp copy of seed_lo
-                "xor {seed_lo}, r8", // seed_lo ^= (hi << 21)
-                "rol {seed_hi}, 28", // seed_hi = rol(seed_hi, 28)
-                seed_lo = inout(reg) self.seed_lo,
-                seed_hi = inout(reg) self.seed_hi,
-                out("rax") n,
-                copy_seed_lo = out(reg) _,
-                copy_seed_hi = out(reg) _,
-                out("r8") _,
-                options(nostack, nomem, preserves_flags),
-            );
-            n
-        }
     }
 }
 
