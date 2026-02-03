@@ -58,7 +58,7 @@ pub(crate) fn build() -> TokenStream {
                 key: #key,
             };
         });
-        
+
         register_stream.extend(quote! {
             registry.register(#timeline_ident);
         });

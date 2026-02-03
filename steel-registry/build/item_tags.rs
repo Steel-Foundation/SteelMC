@@ -166,8 +166,7 @@ pub(crate) fn build() -> TokenStream {
             const_identifier.extend(
                 quote! { pub const #tag_ident: Identifier = Identifier::new_static("c", #key); },
             );
-        }
-        else {
+        } else {
             const_identifier.extend(
                 quote! {pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);},
             );

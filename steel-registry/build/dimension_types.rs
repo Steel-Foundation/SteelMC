@@ -196,7 +196,7 @@ pub(crate) fn build() -> TokenStream {
                 monster_spawn_block_light_limit: #monster_spawn_block_light_limit,
             };
         });
-        
+
         register_stream.extend(quote! {
             registry.register(#dimension_type_ident);
         });

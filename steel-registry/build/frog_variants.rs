@@ -125,7 +125,7 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-        
+
         register_stream.extend(quote! {
             registry.register(#frog_variant_ident);
         });

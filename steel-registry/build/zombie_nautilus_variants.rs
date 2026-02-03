@@ -138,7 +138,7 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-        
+
         let zombie_nautilus_variant_ident = Ident::new(
             &zombie_nautilus_variant_name.to_shouty_snake_case(),
             Span::call_site(),

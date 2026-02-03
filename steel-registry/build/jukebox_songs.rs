@@ -95,7 +95,7 @@ pub(crate) fn build() -> TokenStream {
                 comparator_output: #comparator_output,
             };
         });
-        
+
         register_stream.extend(quote! {
             registry.register(#jukebox_song_ident);
         });

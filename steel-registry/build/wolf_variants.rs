@@ -138,7 +138,7 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-        
+
         register_stream.extend(quote! {
             registry.register(#wolf_variant_ident);
         });

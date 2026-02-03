@@ -34,7 +34,7 @@ pub(crate) fn build() -> TokenStream {
                 key: #key,
             };
         });
-        
+
         register_stream.extend(quote! {
             registry.register(#menu_type_ident);
         });
