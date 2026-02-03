@@ -2,6 +2,8 @@
 name = "steel-utils"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]

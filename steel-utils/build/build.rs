@@ -14,6 +14,8 @@ const REGISTRY: &str = "registry";
 
 /// Main build script entry point that generates translation constants.
 pub fn main() {
+    println!("cargo:rerun-if-changed=build/");
+
     if !Path::new(OUT_DIR).exists() {
         fs::create_dir_all(OUT_DIR).expect("Failed to create output directory");
     }
