@@ -793,7 +793,11 @@ impl ReadFrom for ItemStack {
 
 // ==================== NBT Serialization ====================
 
-use simdnbt::{FromNbtTag, ToNbtTag, borrow::NbtTag as BorrowedNbtTag, owned::NbtCompound};
+use simdnbt::{
+    FromNbtTag, ToNbtTag,
+    borrow::{NbtCompound as NbtCompoundView, NbtTag as BorrowedNbtTag},
+    owned::NbtCompound,
+};
 
 impl ToNbtTag for ItemStack {
     /// Converts this item stack to an NBT tag for persistent storage.
@@ -860,5 +864,32 @@ impl FromNbtTag for ItemStack {
             .unwrap_or_default();
 
         Some(Self { item, count, patch })
+    }
+}
+
+impl ItemStack {
+    /// Parses an `ItemStack` from a borrowed `NbtCompoundView`.
+    ///
+    /// This is useful for loading items from disk where we have borrowed NBT data
+    /// and want to avoid the overhead of converting to an owned tag first.
+    #[must_use]
+    pub fn from_borrowed_compound(compound: &NbtCompoundView<'_, '_>) -> Option<Self> {
+        // Get the item ID
+        let id_str = compound.string("id")?.to_str();
+        let id = id_str.parse::<Identifier>().ok()?;
+
+        // Look up the item in the registry
+        let item = REGISTRY.items.by_key(&id)?;
+
+        // Get the count (default to 1 if not present)
+        let count = compound.int("count").unwrap_or(1);
+
+        // Parse components if present
+        let patch = compound
+            .get("components")
+            .and_then(DataComponentPatch::from_nbt_tag)
+            .unwrap_or_default();
+
+        Some(Self::with_count_and_patch(item, count, patch))
     }
 }

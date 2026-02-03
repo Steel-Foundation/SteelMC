@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
+use simdnbt::borrow::BaseNbtCompound;
+use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
@@ -274,6 +276,26 @@ pub trait Entity: Send + Sync {
         let pos = self.position();
         world.spawn_item(Vector3::new(pos.x, pos.y + y_offset, pos.z), item)
     }
+
+    // === Persistence Methods ===
+    // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.
+
+    /// Saves type-specific entity data to NBT.
+    ///
+    /// Called during chunk serialization. Implementors should save all data
+    /// needed to restore entity state on load. Base fields (pos, motion,
+    /// rotation, uuid, `on_ground`) are handled by the serialization layer.
+    ///
+    /// Mirrors vanilla's `Entity.addAdditionalSaveData()`.
+    fn save_additional(&self, _nbt: &mut NbtCompound) {}
+
+    /// Loads type-specific entity data from NBT.
+    ///
+    /// Called after entity creation during chunk deserialization. Base fields
+    /// are already restored; this handles type-specific data.
+    ///
+    /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
+    fn load_additional(&self, _nbt: &BaseNbtCompound<'_>) {}
 }
 
 /// A trait for living entities that can take damage, heal, and die.

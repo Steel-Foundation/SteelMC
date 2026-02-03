@@ -9,6 +9,8 @@ mod message_validator;
 pub mod movement;
 /// This module contains the networking implementation for the player.
 pub mod networking;
+pub mod player_data;
+pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
