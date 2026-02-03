@@ -113,6 +113,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static chicken variant definitions
+    let mut register_stream = TokenStream::new();
     for (chicken_variant_name, chicken_variant) in &chicken_variants {
         let chicken_variant_ident = Ident::new(
             &chicken_variant_name.to_shouty_snake_case(),
@@ -138,15 +139,6 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (chicken_variant_name, _) in &chicken_variants {
-        let chicken_variant_ident = Ident::new(
-            &chicken_variant_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
             registry.register(#chicken_variant_ident);
         });
