@@ -442,6 +442,11 @@ impl BlockRegistry {
         self.tags.insert(tag, blocks);
     }
 
+    /// Gives the access to all blocks to delete and add new entries
+    pub fn modify_tag(&mut self, tag: &Identifier) -> Option<&mut Vec<BlockRef>> {
+        self.tags.get_mut(tag)
+    }
+
     /// Checks if a block is in a given tag.
     #[must_use]
     pub fn is_in_tag(&self, block: BlockRef, tag: &Identifier) -> bool {

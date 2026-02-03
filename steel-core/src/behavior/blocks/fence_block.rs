@@ -7,7 +7,8 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::vanilla_block_tags::{FENCES_TAG, FENCE_GATES_TAG};
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_registry::vanilla_loot_tables::BLOCKS_CHERRY_FENCE;
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
@@ -73,7 +74,7 @@ impl FenceBlock {
                     return true;
                 }
             }
-        }
+        }LootTable
 
         // Check if the neighbor has a sturdy face on the opposite side
         let opposite = match direction {
