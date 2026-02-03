@@ -6,7 +6,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::vanilla_block_tags::FENCES_TAG;
+use steel_registry::vanilla_block_tags::{FENCES_TAG, FENCE_GATES_TAG};
 use steel_utils::{BlockPos, BlockStateId, Identifier};
 
 use crate::behavior::block::BlockBehaviour;
@@ -52,8 +52,7 @@ impl FenceBlock {
         }
 
         // Check if it's a fence gate facing the right direction
-        let fence_gates_tag = Identifier::vanilla_static("fence_gates");
-        if REGISTRY.blocks.is_in_tag(neighbor_block, &fence_gates_tag) {
+        if REGISTRY.blocks.is_in_tag(neighbor_block, &FENCE_GATES_TAG) {
             // Fence gates connect perpendicular to their facing direction
             // A gate facing north/south connects to fences to its east/west
             // A gate facing east/west connects to fences to its north/south
