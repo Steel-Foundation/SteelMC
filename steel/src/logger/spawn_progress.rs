@@ -96,7 +96,7 @@ pub struct SpawnProgressDisplay {
 
 impl SpawnProgressDisplay {
     /// Creates a new display with all cells unloaded (black).
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             grid: [[None; DISPLAY_DIAMETER]; DISPLAY_DIAMETER],
             rendered: false,
@@ -104,7 +104,7 @@ impl SpawnProgressDisplay {
     }
 
     /// Updates the internal grid state.
-    pub fn set_grid(&mut self, new_grid: &Grid) {
+    pub const fn set_grid(&mut self, new_grid: &Grid) {
         self.grid = *new_grid;
     }
 

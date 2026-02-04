@@ -5,6 +5,8 @@ use crossterm::{
     style::{Color::DarkGrey, ResetColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
+#[cfg(feature = "spawn_chunk_display")]
+use std::io::Result;
 use std::{
     io::Write,
     sync::Arc,
@@ -168,7 +170,7 @@ impl CommandLogger {
 #[cfg(feature = "spawn_chunk_display")]
 impl CommandLogger {
     /// Initializes the display of the spawn chunks
-    pub async fn activate_spawn_display(&self) -> std::io::Result<()> {
+    pub async fn activate_spawn_display(&self) -> Result<()> {
         use crate::spawn_progress::DISPLAY_RADIUS;
         use crossterm::terminal::Clear;
         use std::time::Duration;
@@ -208,7 +210,7 @@ impl CommandLogger {
     }
 
     /// Updates the spawn grid, and displays it if required
-    pub async fn update_spawn_grid(&self, grid: &Grid, should_render: bool) -> std::io::Result<()> {
+    pub async fn update_spawn_grid(&self, grid: &Grid, should_render: bool) -> Result<()> {
         let mut state = self.input.write().await;
         state.spawn_display.set_grid(grid);
         if !should_render {
