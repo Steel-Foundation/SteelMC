@@ -17,6 +17,8 @@ mod front_vec;
 pub mod hash;
 /// A module for custom locks.
 pub mod locks;
+/// Utilities for Steel logging.
+pub mod logger;
 pub mod math;
 pub mod random;
 pub mod serial;

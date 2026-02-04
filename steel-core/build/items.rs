@@ -109,6 +109,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut hanging_sign_items: Vec<(Ident, Ident, Ident)> = Vec::new();
     let mut standing_and_wall_items: Vec<(Ident, Ident, Ident)> = Vec::new();
     let mut ender_eye_items: Vec<Ident> = Vec::new();
+    let mut shovel_items: Vec<Ident> = Vec::new();
 
     for item in items {
         let item_field = to_item_field(&item.name);
@@ -156,6 +157,7 @@ pub fn build(items: &[ItemClass]) -> String {
                 standing_and_wall_items.push((item_field, standing_const, wall_const));
             }
             "EnderEyeItem" => ender_eye_items.push(item_field),
+            "ShovelItem" => shovel_items.push(item_field),
             _ => {}
         }
     }
@@ -170,13 +172,15 @@ pub fn build(items: &[ItemClass]) -> String {
     let ender_eye_type = Ident::new("EnderEyeBehavior", Span::call_site());
     let ender_eye_registrations =
         generate_simple_registrations(ender_eye_items.iter(), &ender_eye_type);
+    let shovel_type = Ident::new("ShovelBehaviour", Span::call_site());
+    let shovel_registrations = generate_simple_registrations(shovel_items.iter(), &shovel_type);
 
     let output = quote! {
         //! Generated item behavior assignments.
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem};
+        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations
@@ -184,6 +188,7 @@ pub fn build(items: &[ItemClass]) -> String {
             #hanging_sign_item_registrations
             #standing_and_wall_item_registrations
             #ender_eye_registrations
+            #shovel_registrations
         }
     };
 

@@ -2,32 +2,30 @@
 
 use std::sync::Arc;
 
-use steel::SteelServer;
-#[cfg(feature = "spawn_chunk_display")]
-use steel::spawn_progress::SwitchableWriter;
+use steel::logger::CommandLogger;
 use steel::spawn_progress::generate_spawn_chunks;
+use steel::{SERVER, SteelServer, logger::LoggerLayer};
 use steel_utils::text::DisplayResolutor;
 use text_components::fmt::set_display_resolutor;
-use tokio::{
-    runtime::{Builder, Runtime},
-    signal,
-};
-use tokio_util::task::TaskTracker;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-
-fn default_env_filter() -> EnvFilter {
-    EnvFilter::builder()
-        .with_default_directive(tracing::Level::INFO.into())
-        .from_env_lossy()
-}
+use tokio::runtime::{Builder, Runtime};
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
+#[cfg(feature = "jaeger")]
+use tracing::Subscriber;
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+#[cfg(feature = "jaeger")]
+use tracing_subscriber::{Layer, registry::LookupSpan};
 
 #[cfg(feature = "jaeger")]
-fn init_jaeger() {
+fn init_jaeger<S>() -> impl Layer<S> + Send + Sync
+where
+    S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
+{
     use opentelemetry::KeyValue;
     use opentelemetry::global;
     use opentelemetry::trace::TracerProvider;
     use opentelemetry_sdk::Resource;
     use opentelemetry_sdk::trace::SdkTracerProvider;
+    use tracing_opentelemetry::OpenTelemetryLayer;
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
@@ -53,83 +51,32 @@ fn init_jaeger() {
         .with_batch_exporter(exporter)
         .build();
 
-    let _tracer = tracer_provider.tracer("steel");
+    let tracer = tracer_provider.tracer("steel");
     global::set_tracer_provider(tracer_provider);
+    OpenTelemetryLayer::new(tracer)
+        .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off"))
 }
 
-#[cfg(not(feature = "spawn_chunk_display"))]
-fn init_tracing() {
-    #[cfg(feature = "jaeger")]
-    {
-        use opentelemetry::global;
-        use tracing_opentelemetry::OpenTelemetryLayer;
-        use tracing_subscriber::Layer;
+async fn init_tracing(cancel_token: CancellationToken) -> Arc<CommandLogger> {
+    let layer = LoggerLayer::new("./.tmp", cancel_token)
+        .await
+        .expect("Couldn't initialize the logger");
+    let logger = layer.0.clone();
 
-        init_jaeger();
-        let tracer = global::tracer("steel");
-
-        tracing_subscriber::registry()
-            .with(
-                OpenTelemetryLayer::new(tracer)
-                    .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off")),
-            )
-            .with(
-                fmt::layer()
-                    .with_timer(fmt::time::uptime())
-                    .with_filter(default_env_filter()),
-            )
-            .init();
-    }
-
-    #[cfg(not(feature = "jaeger"))]
-    {
-        tracing_subscriber::registry()
-            .with(fmt::layer().with_timer(fmt::time::uptime()))
-            .with(default_env_filter())
-            .init();
-    }
-}
-
-#[cfg(feature = "spawn_chunk_display")]
-fn init_tracing() -> SwitchableWriter {
-    let writer = SwitchableWriter::new();
+    let tracing = tracing_subscriber::registry().with(layer);
 
     #[cfg(feature = "jaeger")]
-    {
-        use opentelemetry::global;
-        use tracing_opentelemetry::OpenTelemetryLayer;
-        use tracing_subscriber::Layer;
+    let tracing = tracing.with(init_jaeger());
 
-        init_jaeger();
-        let tracer = global::tracer("steel");
+    let tracing = tracing.with(
+        EnvFilter::builder()
+            .with_default_directive(tracing::Level::INFO.into())
+            .from_env_lossy(),
+    );
 
-        tracing_subscriber::registry()
-            .with(
-                OpenTelemetryLayer::new(tracer)
-                    .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off")),
-            )
-            .with(
-                fmt::layer()
-                    .with_timer(fmt::time::uptime())
-                    .with_writer(writer.clone())
-                    .with_filter(default_env_filter()),
-            )
-            .init();
-    }
-
-    #[cfg(not(feature = "jaeger"))]
-    {
-        tracing_subscriber::registry()
-            .with(
-                fmt::layer()
-                    .with_timer(fmt::time::uptime())
-                    .with_writer(writer.clone()),
-            )
-            .with(default_env_filter())
-            .init();
-    }
-
-    writer
+    set_display_resolutor(&DisplayResolutor);
+    tracing.init();
+    logger
 }
 
 #[cfg(feature = "dhat-heap")]
@@ -166,24 +113,19 @@ fn main() {
 }
 
 async fn main_async(chunk_runtime: Arc<Runtime>) {
-    #[cfg(feature = "spawn_chunk_display")]
-    {
-        let writer = init_tracing();
-        run_server(chunk_runtime, &writer).await;
-    }
-    #[cfg(not(feature = "spawn_chunk_display"))]
-    {
-        init_tracing();
-        run_server(chunk_runtime).await;
-    }
+    let cancel_token = CancellationToken::new();
+    let logger = init_tracing(cancel_token.clone()).await;
+
+    run_server(chunk_runtime, cancel_token, &logger).await;
+
+    logger.stop().await;
 }
 
 async fn run_server(
     chunk_runtime: Arc<Runtime>,
-    #[cfg(feature = "spawn_chunk_display")] writer: &SwitchableWriter,
+    cancel_token: CancellationToken,
+    logger: &Arc<CommandLogger>,
 ) {
-    set_display_resolutor(&DisplayResolutor);
-
     #[cfg(feature = "deadlock_detection")]
     {
         // only for #[cfg]
@@ -212,22 +154,12 @@ async fn run_server(
         });
     }
 
-    let mut steel = SteelServer::new(chunk_runtime.clone()).await;
+    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone()).await;
 
-    #[cfg(feature = "spawn_chunk_display")]
-    generate_spawn_chunks(&steel.server, writer).await;
-    #[cfg(not(feature = "spawn_chunk_display"))]
-    generate_spawn_chunks(&steel.server).await;
+    generate_spawn_chunks(&steel.server, logger).await;
 
+    SERVER.set(steel.server.clone()).ok();
     let server = steel.server.clone();
-    let cancel_token = steel.cancel_token.clone();
-
-    tokio::spawn(async move {
-        if signal::ctrl_c().await.is_ok() {
-            log::info!("Shutdown signal received");
-            cancel_token.cancel();
-        }
-    });
 
     let task_tracker = TaskTracker::new();
 

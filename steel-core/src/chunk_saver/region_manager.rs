@@ -84,7 +84,7 @@ struct ChunkBuilder<'a> {
 }
 
 impl<'a> ChunkBuilder<'a> {
-    fn new(registry: &'a Registry) -> Self {
+    const fn new(registry: &'a Registry) -> Self {
         Self {
             block_states: Vec::new(),
             biomes: Vec::new(),

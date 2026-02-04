@@ -141,34 +141,34 @@ impl World {
     }
 
     /// Returns the total height of the world in blocks.
-    pub fn get_height(&self) -> i32 {
+    pub const fn get_height(&self) -> i32 {
         self.dimension.height
     }
 
     /// Returns the minimum Y coordinate of the world.
-    pub fn get_min_y(&self) -> i32 {
+    pub const fn get_min_y(&self) -> i32 {
         self.dimension.min_y
     }
 
     /// Returns the maximum Y coordinate of the world.
-    pub fn get_max_y(&self) -> i32 {
+    pub const fn get_max_y(&self) -> i32 {
         self.get_min_y() + self.get_height() - 1
     }
 
     /// Returns whether the given Y coordinate is outside the build height.
-    pub fn is_outside_build_height(&self, block_y: i32) -> bool {
+    pub const fn is_outside_build_height(&self, block_y: i32) -> bool {
         block_y < self.get_min_y() || block_y > self.get_max_y()
     }
 
     /// Returns whether the block position is within valid horizontal bounds.
-    pub fn is_in_valid_bounds_horizontal(&self, block_pos: &BlockPos) -> bool {
+    pub const fn is_in_valid_bounds_horizontal(&self, block_pos: &BlockPos) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(block_pos.0.x);
         let chunk_z = SectionPos::block_to_section_coord(block_pos.0.z);
         ChunkPos::is_valid(chunk_x, chunk_z)
     }
 
     /// Returns whether the block position is within valid world bounds.
-    pub fn is_in_valid_bounds(&self, block_pos: &BlockPos) -> bool {
+    pub const fn is_in_valid_bounds(&self, block_pos: &BlockPos) -> bool {
         !self.is_outside_build_height(block_pos.0.y)
             && self.is_in_valid_bounds_horizontal(block_pos)
     }
@@ -176,14 +176,14 @@ impl World {
     /// Returns the maximum build height (one above the highest placeable block).
     /// This is `min_y + height`.
     #[must_use]
-    pub fn max_build_height(&self) -> i32 {
+    pub const fn max_build_height(&self) -> i32 {
         self.get_min_y() + self.get_height()
     }
 
     /// Checks if a player may interact with the world at the given position.
     /// Currently only checks if position is within world bounds.
     #[must_use]
-    pub fn may_interact(&self, _player: &Player, pos: &BlockPos) -> bool {
+    pub const fn may_interact(&self, _player: &Player, pos: &BlockPos) -> bool {
         self.is_in_valid_bounds(pos)
     }
 
@@ -460,7 +460,7 @@ impl World {
         behavior.handle_neighbor_changed(state, self, pos, source_block, moved_by_piston);
     }
 
-    fn chunk_pos_for_block(pos: &BlockPos) -> ChunkPos {
+    const fn chunk_pos_for_block(pos: &BlockPos) -> ChunkPos {
         ChunkPos::new(
             SectionPos::block_to_section_coord(pos.0.x),
             SectionPos::block_to_section_coord(pos.0.z),
@@ -1085,13 +1085,13 @@ impl World {
 
     /// Returns a reference to the entity cache.
     #[must_use]
-    pub fn entity_cache(&self) -> &EntityCache {
+    pub const fn entity_cache(&self) -> &EntityCache {
         &self.entity_cache
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
     #[must_use]
-    pub fn entity_tracker(&self) -> &EntityTracker {
+    pub const fn entity_tracker(&self) -> &EntityTracker {
         &self.entity_tracker
     }
 

@@ -48,7 +48,7 @@ pub enum ChunkResult {
 struct ChunkGuard(SyncRwLock<ChunkAccess>);
 
 impl ChunkGuard {
-    pub fn new(chunk_access: ChunkAccess) -> Self {
+    pub const fn new(chunk_access: ChunkAccess) -> Self {
         ChunkGuard(SyncRwLock::new(chunk_access))
     }
 
@@ -101,17 +101,17 @@ pub struct ChunkHolder {
 
 impl ChunkHolder {
     /// Gets the chunk position.
-    pub fn get_pos(&self) -> ChunkPos {
+    pub const fn get_pos(&self) -> ChunkPos {
         self.pos
     }
 
     /// Gets the minimum Y coordinate of the world.
-    pub fn min_y(&self) -> i32 {
+    pub const fn min_y(&self) -> i32 {
         self.min_y
     }
 
     /// Gets the total height of the world.
-    pub fn height(&self) -> i32 {
+    pub const fn height(&self) -> i32 {
         self.height
     }
 

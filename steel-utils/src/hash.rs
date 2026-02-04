@@ -80,7 +80,7 @@ pub struct ComponentHasher {
 impl ComponentHasher {
     /// Creates a new hasher.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { data: Vec::new() }
     }
 

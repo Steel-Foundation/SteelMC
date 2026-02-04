@@ -4,7 +4,7 @@
 
 use std::{
     net::{Ipv4Addr, SocketAddrV4},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use steel_core::server::Server;
@@ -14,10 +14,15 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 /// Server configuration module.
 pub mod config;
+/// A module for logging utilities.
+pub mod logger;
 /// Spawn chunk generation with optional terminal progress display.
 pub mod spawn_progress;
 
 pub use config::{MC_VERSION, STEEL_CONFIG};
+
+/// Static access to the server
+pub static SERVER: OnceLock<Arc<Server>> = OnceLock::new();
 
 /// The main server struct.
 pub struct SteelServer {
@@ -36,19 +41,18 @@ impl SteelServer {
     ///
     /// # Panics
     /// This function will panic if the TCP listener fails to bind to the server address.
-    pub async fn new(chunk_runtime: Arc<Runtime>) -> Self {
+    pub async fn new(chunk_runtime: Arc<Runtime>, cancel_token: CancellationToken) -> Self {
         log::info!("Starting Steel Server");
 
         // Initialize steel-core's config reference before any steel-core code runs
         config::init_steel_core_config();
 
-        let cancel_token = CancellationToken::new();
         let server = Server::new(chunk_runtime, cancel_token.clone()).await;
 
         Self {
             tcp_listener: TcpListener::bind(SocketAddrV4::new(
                 Ipv4Addr::UNSPECIFIED,
-                STEEL_CONFIG.server_port,
+                STEEL_CONFIG.server_config.server_port,
             ))
             .await
             .expect("Failed to bind to server address"),

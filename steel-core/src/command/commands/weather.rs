@@ -51,12 +51,9 @@ impl CommandExecutor<()> for WeatherCommandExecutor {
 }
 
 impl CommandExecutor<((), i32)> for WeatherCommandExecutor {
-    fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
-        let ((), _duration) = args;
-        let _world = context
-            .world
-            .as_ref()
-            .ok_or(CommandError::InvalidRequirement)?;
+    fn execute(&self, _args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
+        // let ((), _duration) = args;
+        // let _world = &context.world;
 
         // TODO: Apply the duration to the world's weather system once weather state is implemented
 

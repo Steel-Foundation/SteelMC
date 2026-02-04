@@ -44,7 +44,7 @@ impl Default for BlockBreakingManager {
 impl BlockBreakingManager {
     /// Creates a new block breaking manager.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             is_destroying_block: false,
             destroy_progress_start: 0,

@@ -11,7 +11,7 @@ use std::{
 
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CLogin, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
+    CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
@@ -180,6 +180,10 @@ impl Server {
 
         // Send player abilities (flight, invulnerability, etc.)
         player.send_abilities();
+
+        player.connection.send_packet(CSetHeldSlot {
+            slot: i32::from(player.inventory.lock().get_selected_slot()),
+        });
 
         let commands = self.command_dispatcher.read().get_commands();
         player.connection.send_packet(commands);

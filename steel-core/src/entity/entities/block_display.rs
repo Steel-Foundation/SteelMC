@@ -87,7 +87,7 @@ impl BlockDisplayEntity {
     }
 
     /// Gets a reference to the entity data for reading/modifying synced state.
-    pub fn entity_data(&self) -> &SyncMutex<BlockDisplayEntityData> {
+    pub const fn entity_data(&self) -> &SyncMutex<BlockDisplayEntityData> {
         &self.entity_data
     }
 

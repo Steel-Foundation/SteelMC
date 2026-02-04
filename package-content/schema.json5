@@ -96,6 +96,34 @@
             ],
             "additionalProperties": false
         },
+        "log": {
+            "type": "object",
+            "description": "Logging configuration",
+            "properties": {
+                "time": {
+                    "type": "string",
+                    "description": "Time format: none, date (HH:MM:SS:mmm), or uptime (seconds since start)",
+                    "enum": ["none", "date", "uptime"],
+                    "default": "uptime"
+                },
+                "module_path": {
+                    "type": "boolean",
+                    "description": "Whether the module_path of the log should be displayed",
+                    "default": false
+                },
+                "extra": {
+                    "type": "boolean",
+                    "description": "Whether the extra data of the log should be displayed",
+                    "default": false
+                }
+            },
+            "required": [
+                "time",
+                "module_path",
+                "extra"
+            ],
+            "additionalProperties": false
+        },
         "server_links": {
             "type": "object",
             "description": "Server links configuration",

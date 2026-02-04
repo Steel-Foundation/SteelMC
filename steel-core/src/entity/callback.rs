@@ -26,7 +26,7 @@ pub enum RemovalReason {
 impl RemovalReason {
     /// Returns true if entity data should be destroyed (not saved).
     #[must_use]
-    pub fn should_destroy(self) -> bool {
+    pub const fn should_destroy(self) -> bool {
         matches!(self, Self::Killed | Self::Discarded)
     }
 
@@ -36,7 +36,7 @@ impl RemovalReason {
     /// `ChangedDimension` does NOT save because the entity moves to a different world
     /// rather than being stored in the current world's entity storage.
     #[must_use]
-    pub fn should_save(self) -> bool {
+    pub const fn should_save(self) -> bool {
         matches!(self, Self::UnloadedToChunk)
     }
 }
