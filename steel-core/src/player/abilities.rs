@@ -86,7 +86,7 @@ impl Abilities {
 
     /// Updates abilities based on the given game mode.
     /// This mirrors vanilla's `GameType.updatePlayerAbilities()`.
-    pub fn update_for_game_mode(&mut self, game_mode: GameType) {
+    pub const fn update_for_game_mode(&mut self, game_mode: GameType) {
         match game_mode {
             GameType::Survival => {
                 self.invulnerable = false;
@@ -121,7 +121,7 @@ impl Abilities {
 
     /// Converts abilities to a clientbound packet
     #[must_use]
-    pub fn to_packet(&self) -> CPlayerAbilities {
+    pub const fn to_packet(&self) -> CPlayerAbilities {
         let mut flags: u8 = 0;
 
         if self.invulnerable {

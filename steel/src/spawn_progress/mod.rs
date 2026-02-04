@@ -17,16 +17,12 @@ use steel_core::server::Server;
 use steel_core::world::World;
 use steel_utils::{ChunkPos, SectionPos};
 
-#[cfg(feature = "spawn_chunk_display")]
-mod display;
-
-#[cfg(feature = "spawn_chunk_display")]
-pub use display::SwitchableWriter;
-
 #[cfg(feature = "slow_chunk_gen")]
 use std::sync::atomic::Ordering;
 #[cfg(feature = "slow_chunk_gen")]
 use steel_core::chunk::chunk_holder::SLOW_CHUNK_GEN;
+
+use crate::logger::CommandLogger;
 
 /// Vanilla spawn chunk radius — chunks within this radius reach Full status.
 const SPAWN_RADIUS: i32 = 3;
@@ -55,7 +51,7 @@ const TOTAL_SPAWN_CHUNKS: usize = ((SPAWN_RADIUS * 2 + 1) * (SPAWN_RADIUS * 2 + 
 /// a colored terminal grid that includes the surrounding dependency chunks.
 pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
-    #[cfg(feature = "spawn_chunk_display")] writer: &SwitchableWriter,
+    #[allow(unused)] logger: &Arc<CommandLogger>,
 ) {
     let world = &server.worlds[0];
 
@@ -86,7 +82,7 @@ pub async fn generate_spawn_chunks(
     SLOW_CHUNK_GEN.store(true, Ordering::Relaxed);
 
     #[cfg(feature = "spawn_chunk_display")]
-    let elapsed = generate_with_display(world, center_chunk, writer).await;
+    let elapsed = generate_with_display(world, center_chunk, logger).await;
 
     #[cfg(not(feature = "spawn_chunk_display"))]
     let elapsed = {
@@ -115,17 +111,11 @@ pub async fn generate_spawn_chunks(
 async fn generate_with_display(
     world: &World,
     center_chunk: ChunkPos,
-    writer: &SwitchableWriter,
+    logger: &Arc<CommandLogger>,
 ) -> Duration {
-    use std::io::{self, IsTerminal};
-
     use crate::spawn_progress::{DISPLAY_DIAMETER, DISPLAY_RADIUS};
 
-    let use_display = io::stderr().is_terminal();
-    if use_display {
-        writer.activate();
-    }
-
+    let _ = logger.activate_spawn_display().await;
     let start = Instant::now();
     let mut tick_count: u64 = 1;
     let mut grid = [[None; DISPLAY_DIAMETER]; DISPLAY_DIAMETER];
@@ -160,12 +150,10 @@ async fn generate_with_display(
         }
 
         // Always update grid state; throttle rendering to ~10fps
-        if use_display {
-            let should_render = last_render.elapsed() >= Duration::from_millis(100);
-            writer.update_grid(&grid, should_render);
-            if should_render {
-                last_render = Instant::now();
-            }
+        let should_render = last_render.elapsed() >= Duration::from_millis(100);
+        let _ = logger.update_spawn_grid(&grid, should_render).await;
+        if should_render {
+            last_render = Instant::now();
         }
 
         if completed == TOTAL_SPAWN_CHUNKS && !pending_dependencies {
@@ -178,14 +166,12 @@ async fn generate_with_display(
 
     let elapsed = start.elapsed();
 
-    if use_display {
-        // Render final state
-        writer.update_grid(&grid, true);
-        // Show completed grid briefly before clearing
-        #[cfg(feature = "slow_chunk_gen")]
-        sleep(Duration::from_secs(1)).await;
-        writer.deactivate();
-    }
+    // Render final state
+    let _ = logger.update_spawn_grid(&grid, true).await;
+    // Show completed grid briefly before clearing
+    #[cfg(feature = "slow_chunk_gen")]
+    sleep(Duration::from_secs(1)).await;
+    logger.deactivate_spawn_display().await;
 
     elapsed
 }

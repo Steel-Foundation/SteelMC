@@ -37,12 +37,12 @@ impl EntityEquipment {
 
     /// Gets a reference to the item in a slot.
     #[must_use]
-    pub fn get_ref(&self, slot: EquipmentSlot) -> &ItemStack {
+    pub const fn get_ref(&self, slot: EquipmentSlot) -> &ItemStack {
         &self.slots[slot.index()]
     }
 
     /// Gets a mutable reference to the item in a slot.
-    pub fn get_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
+    pub const fn get_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
         &mut self.slots[slot.index()]
     }
 
@@ -52,7 +52,7 @@ impl EntityEquipment {
     }
 
     /// Sets the item in a slot, returning the old item.
-    pub fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
+    pub const fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
         mem::replace(&mut self.slots[slot.index()], stack)
     }
 

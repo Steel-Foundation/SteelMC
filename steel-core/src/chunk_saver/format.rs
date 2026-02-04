@@ -37,7 +37,8 @@ use crate::chunk::chunk_access::ChunkStatus;
 pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 
 /// Current format version. Increment when making breaking changes.
-pub const FORMAT_VERSION: u16 = 2;
+/// v3: Added entity persistence (`PersistentEntity`).
+pub const FORMAT_VERSION: u16 = 3;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -284,8 +285,10 @@ pub struct PersistentChunk {
     pub biomes: Vec<Identifier>,
     /// Vertical sections (typically 24 for -64 to 319).
     pub sections: Vec<PersistentSection>,
-    /// Block entities (chests, signs, etc.). Currently placeholder.
+    /// Block entities (chests, signs, etc.).
     pub block_entities: Vec<PersistentBlockEntity>,
+    /// Entities in this chunk (excludes players and non-serializable types).
+    pub entities: Vec<PersistentEntity>,
 }
 
 /// A 16×16×16 section of a chunk.
@@ -346,6 +349,29 @@ pub struct PersistentBlockEntity {
     pub entity_type: Identifier,
     /// Serialized NBT data (simdnbt binary format).
     /// Contains the block entity's custom data from `save_additional`.
+    pub nbt_data: Vec<u8>,
+}
+
+/// An entity stored with a chunk.
+///
+/// Unlike vanilla which stores entities in separate region files,
+/// Steel stores entities inline with chunk data for simplicity.
+/// Base entity fields are stored directly; type-specific data is in `nbt_data`.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentEntity {
+    /// Entity type identifier (e.g., "minecraft:item").
+    pub entity_type: Identifier,
+    /// Persistent UUID (16 bytes).
+    pub uuid: [u8; 16],
+    /// Position (x, y, z) in absolute world coordinates.
+    pub pos: [f64; 3],
+    /// Velocity (x, y, z) in blocks per tick.
+    pub motion: [f64; 3],
+    /// Rotation (yaw, pitch) in degrees.
+    pub rotation: [f32; 2],
+    /// Whether entity is on ground.
+    pub on_ground: bool,
+    /// Type-specific NBT data from `save_additional`.
     pub nbt_data: Vec<u8>,
 }
 

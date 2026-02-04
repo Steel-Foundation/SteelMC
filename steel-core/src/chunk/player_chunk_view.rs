@@ -14,7 +14,7 @@ pub struct PlayerChunkView {
 impl PlayerChunkView {
     /// Creates a new empty `ChunkTrackingView`.
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             center: ChunkPos::new(0, 0),
             view_distance: 0,
@@ -23,7 +23,7 @@ impl PlayerChunkView {
 
     /// Creates a new `ChunkTrackingView` with the given center and view distance.
     #[must_use]
-    pub fn new(center: ChunkPos, view_distance: u8) -> Self {
+    pub const fn new(center: ChunkPos, view_distance: u8) -> Self {
         Self {
             center,
             view_distance,

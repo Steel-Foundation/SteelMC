@@ -12,12 +12,13 @@ use std::{
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize, de::Error as _};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use wincode::{SchemaRead, SchemaWrite, io::Reader, io::Writer};
+use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
 
 use crate::{
     codec::VarInt,
+    direction::Direction,
     hash::{ComponentHasher, HashComponent},
-    math::{Vector2, Vector3},
+    math::{Axis, Vector2, Vector3},
     serial::{ReadFrom, WriteTo},
 };
 
@@ -149,7 +150,7 @@ impl ChunkPos {
     /// Uses `Mth.absMax(x, z) <= MAX_COORDINATE_VALUE`.
     #[must_use]
     #[inline]
-    pub fn is_valid(x: i32, z: i32) -> bool {
+    pub const fn is_valid(x: i32, z: i32) -> bool {
         x.abs().max(z.abs()) <= Self::MAX_COORDINATE_VALUE
     }
 
@@ -163,7 +164,7 @@ impl ChunkPos {
     /// Creates a new `ChunkPos` from an `i64`.
     #[must_use]
     #[inline]
-    pub fn from_i64(value: i64) -> Self {
+    pub const fn from_i64(value: i64) -> Self {
         Self(Vector2::new(
             (value & 0xFFFF_FFFF) as i32,
             (value >> 32) as i32,
@@ -198,6 +199,7 @@ impl BlockPos {
     const PACKED_X_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
     const PACKED_Y_MASK: i64 = (1i64 << Self::PACKED_Y_LEN) - 1;
     const PACKED_Z_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
+    pub const ZERO: BlockPos = BlockPos(Vector3::new(0, 0, 0));
 
     /// Maximum horizontal coordinate value: `(1 << 26) / 2 - 1 = 33554431`
     pub const MAX_HORIZONTAL_COORDINATE: i32 = (1 << Self::PACKED_HORIZONTAL_LEN) / 2 - 1;
@@ -223,7 +225,7 @@ impl BlockPos {
     /// Creates a `BlockPos` from an `i64`.
     /// Layout: X (26 bits, offset 38) | Z (26 bits, offset 12) | Y (12 bits, offset 0)
     #[must_use]
-    pub fn from_i64(value: i64) -> Self {
+    pub const fn from_i64(value: i64) -> Self {
         let x = value >> Self::X_OFFSET;
         let y = value & Self::PACKED_Y_MASK;
         let z = (value >> Self::Z_OFFSET) & Self::PACKED_Z_MASK;
@@ -238,26 +240,186 @@ impl BlockPos {
 
     /// Returns a new `BlockPos` offset by the given amounts.
     #[must_use]
-    pub fn offset(&self, dx: i32, dy: i32, dz: i32) -> Self {
+    pub const fn offset(&self, dx: i32, dy: i32, dz: i32) -> Self {
         Self(Vector3::new(self.0.x + dx, self.0.y + dy, self.0.z + dz))
     }
 
     /// Returns the x coordinate.
     #[must_use]
-    pub fn x(&self) -> i32 {
+    pub const fn x(&self) -> i32 {
         self.0.x
     }
 
     /// Returns the y coordinate.
     #[must_use]
-    pub fn y(&self) -> i32 {
+    pub const fn y(&self) -> i32 {
         self.0.y
     }
 
     /// Returns the z coordinate.
     #[must_use]
-    pub fn z(&self) -> i32 {
+    pub const fn z(&self) -> i32 {
         self.0.z
+    }
+
+    /// Returns the position one block above (Y + 1).
+    #[must_use]
+    pub const fn above(&self) -> Self {
+        self.offset(0, 1, 0)
+    }
+
+    /// Returns the position `n` blocks above (Y + n).
+    #[must_use]
+    pub const fn above_n(&self, n: i32) -> Self {
+        self.offset(0, n, 0)
+    }
+
+    /// Returns the position one block below (Y - 1).
+    #[must_use]
+    pub const fn below(&self) -> Self {
+        self.offset(0, -1, 0)
+    }
+
+    /// Returns the position `n` blocks below (Y - n).
+    #[must_use]
+    pub const fn below_n(&self, n: i32) -> Self {
+        self.offset(0, -n, 0)
+    }
+
+    /// Returns the position one block to the north (Z - 1).
+    #[must_use]
+    pub const fn north(&self) -> Self {
+        self.offset(0, 0, -1)
+    }
+
+    /// Returns the position `n` blocks to the north (Z - n).
+    #[must_use]
+    pub const fn north_n(&self, n: i32) -> Self {
+        self.offset(0, 0, -n)
+    }
+
+    /// Returns the position one block to the south (Z + 1).
+    #[must_use]
+    pub const fn south(&self) -> Self {
+        self.offset(0, 0, 1)
+    }
+
+    /// Returns the position `n` blocks to the south (Z + n).
+    #[must_use]
+    pub const fn south_n(&self, n: i32) -> Self {
+        self.offset(0, 0, n)
+    }
+
+    /// Returns the position one block to the west (X - 1).
+    #[must_use]
+    pub const fn west(&self) -> Self {
+        self.offset(-1, 0, 0)
+    }
+
+    /// Returns the position `n` blocks to the west (X - n).
+    #[must_use]
+    pub const fn west_n(&self, n: i32) -> Self {
+        self.offset(-n, 0, 0)
+    }
+
+    /// Returns the position one block to the east (X + 1).
+    #[must_use]
+    pub const fn east(&self) -> Self {
+        self.offset(1, 0, 0)
+    }
+
+    /// Returns the position `n` blocks to the east (X + n).
+    #[must_use]
+    pub const fn east_n(&self, n: i32) -> Self {
+        self.offset(n, 0, 0)
+    }
+
+    /// Returns the position offset by one block in the given direction.
+    #[must_use]
+    pub const fn relative(&self, direction: Direction) -> Self {
+        let (dx, dy, dz) = direction.offset();
+        self.offset(dx, dy, dz)
+    }
+
+    /// Returns the position offset by `n` blocks in the given direction.
+    #[must_use]
+    pub const fn relative_n(&self, direction: Direction, n: i32) -> Self {
+        if n == 0 {
+            *self
+        } else {
+            let (dx, dy, dz) = direction.offset();
+            self.offset(dx * n, dy * n, dz * n)
+        }
+    }
+
+    /// Returns the position offset by `n` blocks along the given axis.
+    #[must_use]
+    pub const fn relative_axis(&self, axis: Axis, n: i32) -> Self {
+        if n == 0 {
+            *self
+        } else {
+            match axis {
+                Axis::X => self.offset(n, 0, 0),
+                Axis::Y => self.offset(0, n, 0),
+                Axis::Z => self.offset(0, 0, n),
+            }
+        }
+    }
+
+    /// Returns a new position with the same X and Z but the given Y.
+    #[must_use]
+    pub const fn at_y(&self, y: i32) -> Self {
+        Self::new(self.0.x, y, self.0.z)
+    }
+
+    /// Returns a new position with all coordinates multiplied by the given factor.
+    #[must_use]
+    pub const fn multiply(&self, factor: i32) -> Self {
+        if factor == 1 {
+            *self
+        } else if factor == 0 {
+            Self::ZERO
+        } else {
+            Self::new(self.0.x * factor, self.0.y * factor, self.0.z * factor)
+        }
+    }
+
+    /// Returns the center of this block as a floating-point position.
+    #[must_use]
+    pub fn get_center(&self) -> (f64, f64, f64) {
+        (
+            f64::from(self.0.x) + 0.5,
+            f64::from(self.0.y) + 0.5,
+            f64::from(self.0.z) + 0.5,
+        )
+    }
+
+    /// Returns the bottom center of this block (center of the bottom face).
+    #[must_use]
+    pub fn get_bottom_center(&self) -> (f64, f64, f64) {
+        (
+            f64::from(self.0.x) + 0.5,
+            f64::from(self.0.y),
+            f64::from(self.0.z) + 0.5,
+        )
+    }
+
+    /// Creates a `BlockPos` containing the given floating-point coordinates.
+    #[must_use]
+    pub const fn containing(x: f64, y: f64, z: f64) -> Self {
+        Self::new(x.floor() as i32, y.floor() as i32, z.floor() as i32)
+    }
+
+    /// Returns the minimum coordinates of two positions.
+    #[must_use]
+    pub const fn min(a: &BlockPos, b: &BlockPos) -> Self {
+        Self::new(a.0.x.min(b.0.x), a.0.y.min(b.0.y), a.0.z.min(b.0.z))
+    }
+
+    /// Returns the maximum coordinates of two positions.
+    #[must_use]
+    pub const fn max(a: &BlockPos, b: &BlockPos) -> Self {
+        Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
 }
 
@@ -292,7 +454,7 @@ impl SectionPos {
 
     /// Creates a `SectionPos` from a `BlockPos`.
     #[must_use]
-    pub fn from_block_pos(pos: BlockPos) -> Self {
+    pub const fn from_block_pos(pos: BlockPos) -> Self {
         Self::new(
             Self::block_to_section_coord(pos.0.x),
             Self::block_to_section_coord(pos.0.y),
@@ -368,7 +530,7 @@ impl SectionPos {
     /// Unpacks a section position from an i64.
     /// Format: (x << 42) | (z << 20) | y
     #[must_use]
-    pub fn from_i64(value: i64) -> Self {
+    pub const fn from_i64(value: i64) -> Self {
         let x = value >> 42;
         let z = (value >> 20) & 0x3F_FFFF;
         let y = value & 0xF_FFFF;
@@ -385,7 +547,7 @@ impl SectionPos {
     /// Format: (x << 8) | (z << 4) | y (each coordinate masked to 4 bits)
     #[must_use]
     #[inline]
-    pub fn section_relative_pos(pos: &BlockPos) -> i16 {
+    pub const fn section_relative_pos(pos: &BlockPos) -> i16 {
         let x = pos.0.x & Self::SECTION_MASK;
         let y = pos.0.y & Self::SECTION_MASK;
         let z = pos.0.z & Self::SECTION_MASK;
@@ -394,7 +556,7 @@ impl SectionPos {
 
     /// Converts a section-relative packed position back to a block position.
     #[must_use]
-    pub fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
+    pub const fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
         BlockPos(Vector3::new(
             self.relative_to_block_x(relative),
             self.relative_to_block_y(relative),
@@ -492,7 +654,7 @@ impl Identifier {
 
     /// Creates a new `Identifier` with the vanilla namespace.
     #[must_use]
-    pub fn vanilla(path: String) -> Self {
+    pub const fn vanilla(path: String) -> Self {
         Identifier {
             namespace: Cow::Borrowed(Self::VANILLA_NAMESPACE),
             path: Cow::Owned(path),
@@ -510,7 +672,7 @@ impl Identifier {
 
     /// Returns whether the character is a valid namespace character.
     #[must_use]
-    pub fn valid_namespace_char(char: char) -> bool {
+    pub const fn valid_namespace_char(char: char) -> bool {
         char == '_'
             || char == '-'
             || char.is_ascii_lowercase()
@@ -520,7 +682,7 @@ impl Identifier {
 
     /// Returns whether the character is a valid path character.
     #[must_use]
-    pub fn valid_char(char: char) -> bool {
+    pub const fn valid_char(char: char) -> bool {
         Self::valid_namespace_char(char) || char == '/'
     }
 
@@ -593,19 +755,26 @@ impl<'de> Deserialize<'de> for Identifier {
     }
 }
 
-impl SchemaWrite for Identifier {
+// SAFETY: This implementation delegates to the `str` and `String` implementations
+// which are already safe, and the Identifier type has the same serialized representation
+// as a String (length-prefixed UTF-8 bytes). The size_of method returns exactly the
+// number of bytes that write will produce.
+unsafe impl<C: Config> SchemaWrite<C> for Identifier {
     type Src = Identifier;
 
     fn size_of(src: &Self::Src) -> wincode::WriteResult<usize> {
-        <str>::size_of(&src.to_string())
+        <str as SchemaWrite<C>>::size_of(&src.to_string())
     }
 
     fn write(writer: &mut impl Writer, src: &Self::Src) -> wincode::WriteResult<()> {
-        <str>::write(writer, &src.to_string())
+        <str as SchemaWrite<C>>::write(writer, &src.to_string())
     }
 }
 
-impl<'de> SchemaRead<'de> for Identifier {
+// SAFETY: This implementation delegates to the `String` implementation which is
+// already safe, and then validates the result as a valid Identifier. The read
+// method initializes `dst` if and only if it returns Ok(()).
+unsafe impl<'de, C: Config> SchemaRead<'de, C> for Identifier {
     type Dst = Identifier;
 
     fn read(
@@ -613,8 +782,9 @@ impl<'de> SchemaRead<'de> for Identifier {
         dst: &mut MaybeUninit<Self::Dst>,
     ) -> wincode::ReadResult<()> {
         let mut s = MaybeUninit::<String>::uninit();
-        String::read(reader, &mut s)?;
+        <String as SchemaRead<'de, C>>::read(reader, &mut s)?;
 
+        // SAFETY: String::read succeeded, so s is initialized
         let s = unsafe { s.assume_init() };
 
         dst.write(Identifier::from_str(&s).map_err(wincode::ReadError::Custom)?);

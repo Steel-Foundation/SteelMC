@@ -6,8 +6,6 @@
 use steel_registry::blocks::shapes::{AABB, AABBd};
 use steel_utils::math::{Axis, Vector3};
 
-use crate::physics::COLLISION_EPSILON;
-
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
 ///
 /// This is the core collision function used by vanilla's `Shapes.collide()`.
@@ -48,6 +46,8 @@ pub fn collide(axis: Axis, entity_aabb: &AABBd, shapes: &[AABBd], desired_moveme
 }
 
 /// Collides entity AABB against a single obstacle shape along the given axis.
+///
+/// DEBUG: Added extensive logging to trace collision issues.
 fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_movement: f64) -> f64 {
     match axis {
         Axis::X => {
@@ -63,7 +63,8 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
             if desired_movement > 0.0 {
                 // Moving in positive X direction
                 let max_move = obstacle.min_x - entity_aabb.max_x;
-                if max_move < desired_movement {
+                // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
+                if max_move >= -1.0e-7 && max_move < desired_movement {
                     max_move
                 } else {
                     desired_movement
@@ -71,7 +72,8 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
             } else {
                 // Moving in negative X direction
                 let max_move = obstacle.max_x - entity_aabb.min_x;
-                if max_move > desired_movement {
+                // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
+                if max_move <= 1.0e-7 && max_move > desired_movement {
                     max_move
                 } else {
                     desired_movement
@@ -91,7 +93,9 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
             if desired_movement > 0.0 {
                 // Moving in positive Y direction
                 let max_move = obstacle.min_y - entity_aabb.max_y;
-                if max_move < desired_movement {
+                // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
+
+                if max_move >= -1.0e-7 && max_move < desired_movement {
                     max_move
                 } else {
                     desired_movement
@@ -99,7 +103,9 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
             } else {
                 // Moving in negative Y direction
                 let max_move = obstacle.max_y - entity_aabb.min_y;
-                if max_move > desired_movement {
+                // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
+
+                if max_move <= 1.0e-7 && max_move > desired_movement {
                     max_move
                 } else {
                     desired_movement
@@ -119,7 +125,8 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
             if desired_movement > 0.0 {
                 // Moving in positive Z direction
                 let max_move = obstacle.min_z - entity_aabb.max_z;
-                if max_move < desired_movement {
+                // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
+                if max_move >= -1.0e-7 && max_move < desired_movement {
                     max_move
                 } else {
                     desired_movement
@@ -127,7 +134,8 @@ fn collide_single(axis: Axis, entity_aabb: &AABBd, obstacle: &AABBd, desired_mov
             } else {
                 // Moving in negative Z direction
                 let max_move = obstacle.max_z - entity_aabb.min_z;
-                if max_move > desired_movement {
+                // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
+                if max_move <= 1.0e-7 && max_move > desired_movement {
                     max_move
                 } else {
                     desired_movement
@@ -180,20 +188,6 @@ pub fn translate_shape(shape: &AABB, block_pos: Vector3<i32>) -> AABBd {
         max_x: bx + f64::from(shape.max_x),
         max_y: by + f64::from(shape.max_y),
         max_z: bz + f64::from(shape.max_z),
-    }
-}
-
-/// Deflates (shrinks) an AABB by the collision epsilon on all sides.
-///
-/// Used to avoid floating-point precision issues in collision detection.
-pub fn deflate_aabb(aabb: &AABBd) -> AABBd {
-    AABBd {
-        min_x: aabb.min_x + COLLISION_EPSILON,
-        min_y: aabb.min_y + COLLISION_EPSILON,
-        min_z: aabb.min_z + COLLISION_EPSILON,
-        max_x: aabb.max_x - COLLISION_EPSILON,
-        max_y: aabb.max_y - COLLISION_EPSILON,
-        max_z: aabb.max_z - COLLISION_EPSILON,
     }
 }
 

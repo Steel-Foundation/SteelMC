@@ -1,5 +1,5 @@
 //! A gamemode argument.
-use steel_protocol::packets::game::{ArgumentType, SuggestionType};
+use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
 use steel_utils::types::GameType;
 
 use crate::command::arguments::CommandArgument;
@@ -31,5 +31,36 @@ impl CommandArgument for GameModeArgument {
 
     fn usage(&self) -> (ArgumentType, Option<SuggestionType>) {
         (ArgumentType::Gamemode, None)
+    }
+
+    /// ONLY FOR THE CONSOLE\
+    /// (If you want to also suggest to the client,
+    /// put the `SuggestionType` to `AskServer`)
+    fn suggest(
+        &self,
+        prefix: &str,
+        _suggestion_ctx: &super::SuggestionContext,
+    ) -> Vec<SuggestionEntry> {
+        let mut suggestions = vec![
+            SuggestionEntry {
+                text: String::from("survival"),
+                tooltip: None,
+            },
+            SuggestionEntry {
+                text: String::from("creative"),
+                tooltip: None,
+            },
+            SuggestionEntry {
+                text: String::from("adventure"),
+                tooltip: None,
+            },
+            SuggestionEntry {
+                text: String::from("spectator"),
+                tooltip: None,
+            },
+        ];
+
+        suggestions.retain(|s| s.text.starts_with(prefix));
+        suggestions
     }
 }

@@ -117,19 +117,19 @@ impl CraftingMenu {
 
     /// Returns a reference to the crafting container.
     #[must_use]
-    pub fn crafting_container(&self) -> &SyncCraftingContainer {
+    pub const fn crafting_container(&self) -> &SyncCraftingContainer {
         &self.crafting_container
     }
 
     /// Returns a reference to the result container.
     #[must_use]
-    pub fn result_container(&self) -> &SyncResultContainer {
+    pub const fn result_container(&self) -> &SyncResultContainer {
         &self.result_container
     }
 
     /// Returns the position of the crafting table block.
     #[must_use]
-    pub fn block_pos(&self) -> BlockPos {
+    pub const fn block_pos(&self) -> BlockPos {
         self.block_pos
     }
 
@@ -273,7 +273,7 @@ impl Menu for CraftingMenu {
             // Java: if (slotIndex == 0) { player.drop(stack, false); }
             // Drop any items from the result slot that couldn't fit in the inventory
             if !stack_mut.is_empty() {
-                player.drop_item(stack_mut, false);
+                player.drop_item(stack_mut, false, true);
             }
         }
 
@@ -348,7 +348,7 @@ pub struct CraftingMenuProvider {
 impl CraftingMenuProvider {
     /// Creates a new crafting menu provider.
     #[must_use]
-    pub fn new(inventory: SyncPlayerInv, pos: BlockPos) -> Self {
+    pub const fn new(inventory: SyncPlayerInv, pos: BlockPos) -> Self {
         Self { inventory, pos }
     }
 }

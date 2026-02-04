@@ -22,12 +22,12 @@ pub struct EntityArgument {
 impl EntityArgument {
     /// Creates a selector for multiple entities
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         EntityArgument { one: false }
     }
     /// Creates a selector for one entity
     #[must_use]
-    pub fn one() -> Self {
+    pub const fn one() -> Self {
         EntityArgument { one: true }
     }
 }
@@ -41,6 +41,9 @@ impl CommandArgument for EntityArgument {
         context: &mut CommandContext,
     ) -> Option<(&'a [&'a str], Self::Output)> {
         let players = context.server.get_players();
+        if players.is_empty() {
+            return Some((&arg[1..], vec![]));
+        }
         let entities = match arg[0] {
             // TODO: Add getting entities
             "@a" | "@e" => players
@@ -48,7 +51,7 @@ impl CommandArgument for EntityArgument {
                 .map(|p| p as Arc<dyn LivingEntity + Send + Sync>)
                 .collect(),
             "@n" | "@p" => {
-                let position = context.position?;
+                let position = context.position;
                 let mut near_dist = (f64::MAX, players[0].clone());
                 for player in players {
                     let dist = player.get_position().squared_distance_to_vec(position);
@@ -63,7 +66,11 @@ impl CommandArgument for EntityArgument {
                     as Arc<dyn LivingEntity + Send + Sync>]
             }
             "@s" => {
-                vec![context.player.clone()? as Arc<dyn LivingEntity + Send + Sync>]
+                if let Some(player) = &context.player {
+                    vec![player.clone() as Arc<dyn LivingEntity + Send + Sync>]
+                } else {
+                    vec![]
+                }
             }
             name => {
                 let uuid = if let Ok(uuid) = Uuid::parse_str(name) {
@@ -72,7 +79,7 @@ impl CommandArgument for EntityArgument {
                     Uuid::nil()
                 };
                 let player = players.into_iter().find_map(|p| {
-                    if p.gameprofile.name == name || p.get_uuid() == uuid {
+                    if p.gameprofile.name == name || p.uuid() == uuid {
                         Some(p)
                     } else {
                         None

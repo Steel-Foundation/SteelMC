@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use std::cell::OnceCell;
 use steel_core::config::{STEEL_CONFIG, ServerLinks};
+use steel_core::entity::next_entity_id;
 use steel_core::player::networking::JavaConnection;
 use steel_core::player::{ClientInformation, Player};
 use steel_protocol::packets::common::CCustomPayload;
@@ -100,7 +101,7 @@ impl JavaTcpClient {
         let client_info = self.client_information.lock().await.clone();
 
         let world = self.server.worlds[0].clone();
-        let entity_id = self.server.next_entity_id();
+        let entity_id = next_entity_id();
 
         // We need a way to get the JavaConnection arc after player creation.
         // Use a cell to pass it out of the new_cyclic callback.
@@ -123,6 +124,7 @@ impl JavaTcpClient {
                 gameprofile,
                 connection,
                 world,
+                Arc::downgrade(&self.server),
                 entity_id,
                 player_weak,
                 client_info,
@@ -138,6 +140,6 @@ impl JavaTcpClient {
             .send(ConnectionUpdate::Upgrade(java_connection))
             .expect("Failed to send connection update");
 
-        self.server.add_player(player);
+        self.server.add_player(player).await;
     }
 }

@@ -221,7 +221,7 @@ impl ChunkGenerationTask {
         }
     }
 
-    fn get_radius_for_layer(&self, status: ChunkStatus, needs_generation: bool) -> i32 {
+    const fn get_radius_for_layer(&self, status: ChunkStatus, needs_generation: bool) -> i32 {
         let pyramid = if needs_generation {
             &GENERATION_PYRAMID
         } else {

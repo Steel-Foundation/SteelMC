@@ -5,6 +5,7 @@
 //! just handles the file I/O and initialization.
 
 use base64::{Engine, prelude::BASE64_STANDARD};
+use serde::Deserialize;
 use std::{fs, path::Path, sync::LazyLock};
 
 // Re-export types from steel-core for convenience
@@ -22,8 +23,43 @@ pub const MC_VERSION: &str = "1.21.11";
 /// The server configuration.
 ///
 /// This is loaded from `config/steel_config.json5` or created if it doesn't exist.
-pub static STEEL_CONFIG: LazyLock<ServerConfig> =
+pub static STEEL_CONFIG: LazyLock<ExtendedConfig> =
     LazyLock::new(|| load_or_create(Path::new("config/steel_config.json5")));
+
+/// A extended configuration for non-server features
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtendedConfig {
+    /// The full server configuration
+    #[serde(flatten)]
+    pub server_config: ServerConfig,
+    /// Logging configuration
+    pub log: Option<LogConfig>,
+}
+
+/// Logging configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct LogConfig {
+    /// Time display format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
+    #[serde(default)]
+    pub time: LogTimeFormat,
+    /// Whether the `module_path` of the log should be displayed
+    pub module_path: bool,
+    /// Whether the extra data of the log should be displayed
+    pub extra: bool,
+}
+
+/// Time format for log entries
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogTimeFormat {
+    /// No time displayed
+    None,
+    /// Current time (HH:MM:SS:mmm)
+    #[default]
+    Date,
+    /// Seconds since server start
+    Uptime,
+}
 
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.
 ///
@@ -31,30 +67,30 @@ pub static STEEL_CONFIG: LazyLock<ServerConfig> =
 /// This function will panic if the config file does not exist and the directory cannot be created,
 /// or if the config file cannot be read or written.
 #[must_use]
-fn load_or_create(path: &Path) -> ServerConfig {
+fn load_or_create(path: &Path) -> ExtendedConfig {
     let mut config = if path.exists() {
         let config_str = fs::read_to_string(path).expect("Failed to read config file");
-        let config: ServerConfig =
+        let config: ExtendedConfig =
             serde_json5::from_str(config_str.as_str()).expect("Failed to parse config");
-        validate(&config).expect("Failed to validate config");
+        validate(&config.server_config).expect("Failed to validate config");
         config
     } else {
         fs::create_dir_all(path.parent().expect("Failed to get config directory"))
             .expect("Failed to create config directory");
         fs::write(path, DEFAULT_CONFIG).expect("Failed to write config file");
-        let config: ServerConfig =
+        let config: ExtendedConfig =
             serde_json5::from_str(DEFAULT_CONFIG).expect("Failed to parse config");
-        validate(&config).expect("Failed to validate config");
+        validate(&config.server_config).expect("Failed to validate config");
         config
     };
 
     // Set the MC version (not loaded from config file)
-    config.mc_version = MC_VERSION;
+    config.server_config.mc_version = MC_VERSION;
 
     // If icon file doesnt exist, write it
     #[cfg(feature = "stand-alone")]
-    if config.use_favicon && !Path::new(&config.favicon).exists() {
-        fs::write(Path::new(&config.favicon), DEFAULT_FAVICON)
+    if config.server_config.use_favicon && !Path::new(&config.server_config.favicon).exists() {
+        fs::write(Path::new(&config.server_config.favicon), DEFAULT_FAVICON)
             .expect("Failed to write favicon file");
     }
 
@@ -134,5 +170,5 @@ pub fn load_favicon(config: &ServerConfig) -> Option<String> {
 /// This must be called before any steel-core code accesses `STEEL_CONFIG`.
 pub fn init_steel_core_config() {
     // Force config to load, then initialize steel-core's reference
-    ServerConfigRef::init(&STEEL_CONFIG);
+    ServerConfigRef::init(&STEEL_CONFIG.server_config);
 }

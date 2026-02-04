@@ -18,7 +18,7 @@ pub enum CommandSender {
 impl CommandSender {
     /// Returns the player if the sender is a player.
     #[must_use]
-    pub fn get_player(&self) -> Option<&Arc<Player>> {
+    pub const fn get_player(&self) -> Option<&Arc<Player>> {
         match self {
             Self::Player(player) => Some(player),
             _ => None,
@@ -29,7 +29,7 @@ impl CommandSender {
     pub fn send_message(&self, text: &TextComponent) {
         match self {
             Self::Player(player) => player.send_message(text),
-            Self::Console => log::info!("{text:p}"),
+            Self::Console => log::info!("{:p}", *text),
             // TODO: Implement Rcon message sending
             Self::Rcon => unimplemented!(),
         }
