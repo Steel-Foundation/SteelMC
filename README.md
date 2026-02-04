@@ -12,12 +12,14 @@
 
 # Steel
 
-   <p align="center" width="66%">
-     <img src="https://i.imgur.com/lFQ6jH2.png" alt="Logo" width="66%">
-   </p>
+![Logo](https://i.imgur.com/lFQ6jH2.png)
 
-Steel is a lightweight Rust implementation of the Minecraft server, partially based on [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin).  
+Steel is a lightweight Rust implementation of the Minecraft server.  
 It focuses on clean code, performance, extensibility, and ease of use.
+
+![Demo](https://github.com/user-attachments/assets/ee656153-0660-4626-8295-37d3c96d8fd9)
+
+
 </div>
 
 ---
@@ -25,7 +27,7 @@ It focuses on clean code, performance, extensibility, and ease of use.
 ## 🔗 Links
 <div align="center">
    
-[Discord](https://discord.gg/MwChEHnAbh) | [Parchment Mappings Tutorial](https://parchmentmc.org/docs/getting-started) | [GitCraft](https://github.com/WinPlay02/GitCraft)
+[Discord](https://discord.gg/MwChEHnAbh) | [GitCraft](https://github.com/WinPlay02/GitCraft)
 </div>
    
 ---
@@ -34,16 +36,11 @@ It focuses on clean code, performance, extensibility, and ease of use.
 
 1. Identify a feature you'd like to add or an issue to work on.
    You should always create a post in the channel [feature-discussion](https://canary.discord.com/channels/1428487339759370322/1429074039015473272) when considering adding a major feature.
-2. Decompile the latest version of Minecraft using Parchment mappings.  
-   *(the `master` branch currently targets Minecraft **1.21.11**).*
-
-   Alternatively, you may use [GitCraft](https://github.com/WinPlay02/GitCraft) for this task.
-
-   If you choose to use GitCraft, run the command 
+2. Decompile Minecraft 1.21.11 by running the provided script:
    ```bash
-   ./gradlew run --args="--mappings=mojmap_parchment --only-stable"
+   ./update-minecraft-src.sh
    ```
-   in the GitCraft directory and keep in mind that you *may* have to implement this [change](https://github.com/WinPlay02/GitCraft/pull/29).
+   This will clone GitCraft and generate the decompiled source in `minecraft-src/`.
 3. Fork the `master` branch of this repository.  
 4. Examine the vanilla implementation and translate it into idiomatic Rust as cleanly and efficiently as possible.  
 5. Commit your changes to your fork and open a pull request.

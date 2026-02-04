@@ -26,6 +26,11 @@ pub trait BlockStateExt {
     fn is_face_sturdy(&self, direction: Direction) -> bool;
     /// Checks if this block face is sturdy for the given support type.
     fn is_face_sturdy_for(&self, direction: Direction, support_type: SupportType) -> bool;
+    /// Checks if this block state is solid (has a full cube collision shape).
+    ///
+    /// This matches vanilla's `BlockState.isSolid()` which is used by standing signs
+    /// to check if they can be placed on a block.
+    fn is_solid(&self) -> bool;
 }
 
 impl BlockStateExt for BlockStateId {
@@ -81,5 +86,21 @@ impl BlockStateExt for BlockStateId {
     fn is_face_sturdy_for(&self, direction: Direction, support_type: SupportType) -> bool {
         let shape = self.get_collision_shape();
         blocks::shapes::is_face_sturdy(shape, direction, support_type)
+    }
+
+    fn is_solid(&self) -> bool {
+        let block = self.get_block();
+
+        // Check force flags first (matches vanilla's calculateSolid)
+        if block.config.force_solid_on {
+            return true;
+        }
+        if block.config.force_solid_off {
+            return false;
+        }
+
+        // Check if the collision shape is a full block
+        let shape = self.get_collision_shape();
+        blocks::shapes::is_shape_full_block(shape)
     }
 }

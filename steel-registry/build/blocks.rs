@@ -32,6 +32,8 @@ pub struct BlockConfig {
     pub requires_correct_tool_for_drops: bool,
     pub instrument: Cow<'static, str>,
     pub replaceable: bool,
+    #[serde(default, rename = "sound_type")]
+    pub sound_type: Option<Cow<'static, str>>,
 }
 
 impl BlockConfig {
@@ -56,6 +58,7 @@ impl BlockConfig {
             requires_correct_tool_for_drops: false,
             instrument: Cow::Borrowed("HARP"),
             replaceable: false,
+            sound_type: None,
         }
     }
 }
@@ -218,6 +221,10 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     if bp.replaceable != default_props.replaceable {
         let val = bp.replaceable;
         builder_calls.push(quote! { .replaceable(#val) });
+    }
+    if let Some(sound_type) = &bp.sound_type {
+        let sound_type_ident = Ident::new(sound_type, Span::call_site());
+        builder_calls.push(quote! { .sound_type(crate::sound_types::#sound_type_ident) });
     }
 
     builder_calls

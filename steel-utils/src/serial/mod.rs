@@ -10,6 +10,8 @@ pub mod read;
 /// A module for writing data.
 pub mod write;
 
+pub use write::OptionalNbt;
+
 const DEFAULT_BOUND: usize = i16::MAX as _;
 
 /// A trait for reading data from a cursor.

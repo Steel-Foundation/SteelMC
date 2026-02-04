@@ -1,5 +1,5 @@
 //! Module defining errors that can occur during command execution.
-use steel_utils::text::TextComponent;
+use text_components::TextComponent;
 
 /// An error that can occur during command execution.
 pub enum CommandError {

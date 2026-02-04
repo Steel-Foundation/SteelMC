@@ -4,6 +4,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+
 #[derive(Debug, Deserialize)]
 pub struct BlockClass {
     pub name: String,
@@ -29,7 +30,11 @@ fn generate_registrations<'a>(
     quote! { #(#registrations)* }
 }
 
+// Tjos is okay cause it's a long function. and because it is needed for like all of those blocks there.
+#[allow(clippy::too_many_lines)]
 pub fn build(blocks: &[BlockClass]) -> String {
+    let mut barrel_blocks = Vec::new();
+    let mut candle_blocks = Vec::new();
     let mut crafting_table_blocks = Vec::new();
     let mut crop_blocks = Vec::new();
     let mut end_portal_frame_blocks = Vec::new();
@@ -41,16 +46,34 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut wall_blocks = Vec::new();
     let mut chain_blocks = Vec::new();
     let mut copper_chain_blocks = Vec::new();
+    let mut standing_sign_blocks = Vec::new();
+    let mut wall_sign_blocks = Vec::new();
+    let mut ceiling_hanging_sign_blocks = Vec::new();
+    let mut wall_hanging_sign_blocks = Vec::new();
+    let mut torch_blocks = Vec::new();
+    let mut wall_torch_blocks = Vec::new();
+    let mut redstone_torch_blocks = Vec::new();
+    let mut redstone_wall_torch_blocks = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
         match block.class.as_str() {
+            "BarrelBlock" => barrel_blocks.push(const_ident),
+            "CandleBlock" => candle_blocks.push(const_ident),
             "CraftingTableBlock" => crafting_table_blocks.push(const_ident),
             "CropBlock" => crop_blocks.push(const_ident),
             "EndPortalFrameBlock" => end_portal_frame_blocks.push(const_ident),
             "FarmBlock" => farm_blocks.push(const_ident),
             "FenceBlock" => fence_blocks.push(const_ident),
             "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
+            "StandingSignBlock" => standing_sign_blocks.push(const_ident),
+            "WallSignBlock" => wall_sign_blocks.push(const_ident),
+            "CeilingHangingSignBlock" => ceiling_hanging_sign_blocks.push(const_ident),
+            "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
+            "TorchBlock" => torch_blocks.push(const_ident),
+            "WallTorchBlock" => wall_torch_blocks.push(const_ident),
+            "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
+            "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
             "IronBarsBlock" => iron_bar_blocks.push(const_ident),
             "WeatheringCopperBarsBlock" => copper_bar_blocks.push(const_ident),
             "WallBlock" => wall_blocks.push(const_ident),
@@ -60,18 +83,30 @@ pub fn build(blocks: &[BlockClass]) -> String {
         }
     }
 
+    let barrel_type = Ident::new("BarrelBlock", Span::call_site());
+    let candle_type = Ident::new("CandleBlock", Span::call_site());
     let crafting_table_type = Ident::new("CraftingTableBlock", Span::call_site());
     let crop_type = Ident::new("CropBlock", Span::call_site());
     let end_portal_frame_type = Ident::new("EndPortalFrameBlock", Span::call_site());
     let farmland_type = Ident::new("FarmlandBlock", Span::call_site());
     let fence_type = Ident::new("FenceBlock", Span::call_site());
     let pillar_type = Ident::new("RotatedPillarBlock", Span::call_site());
+    let standing_sign_type = Ident::new("StandingSignBlock", Span::call_site());
+    let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
+    let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
+    let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
+    let torch_type = Ident::new("TorchBlock", Span::call_site());
+    let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
+    let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
+    let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
     let iron_bar_type = Ident::new("IronBarsBlock", Span::call_site());
     let copper_bar_type = Ident::new("WeatheringCopperBarsBlock", Span::call_site());
     let wall_type = Ident::new("WallBlock", Span::call_site());
     let chain_type = Ident::new("ChainBlock", Span::call_site());
     let copper_chain_type = Ident::new("WeatheringCopperChainBlock", Span::call_site());
 
+    let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
+    let candle_registrations = generate_registrations(candle_blocks.iter(), &candle_type);
     let crafting_table_registrations =
         generate_registrations(crafting_table_blocks.iter(), &crafting_table_type);
     let crop_registrations = generate_registrations(crop_blocks.iter(), &crop_type);
@@ -87,6 +122,22 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let chain_registrations = generate_registrations(chain_blocks.iter(), &chain_type);
     let copper_chain_registrations =
         generate_registrations(copper_chain_blocks.iter(), &copper_chain_type);
+    let standing_sign_registrations =
+        generate_registrations(standing_sign_blocks.iter(), &standing_sign_type);
+    let wall_sign_registrations = generate_registrations(wall_sign_blocks.iter(), &wall_sign_type);
+    let ceiling_hanging_sign_registrations = generate_registrations(
+        ceiling_hanging_sign_blocks.iter(),
+        &ceiling_hanging_sign_type,
+    );
+    let wall_hanging_sign_registrations =
+        generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
+    let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
+    let wall_torch_registrations =
+        generate_registrations(wall_torch_blocks.iter(), &wall_torch_type);
+    let redstone_torch_registrations =
+        generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
+    let redstone_wall_torch_registrations =
+        generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
@@ -102,18 +153,37 @@ pub fn build(blocks: &[BlockClass]) -> String {
             FenceBlock,
             IronBarsBlock,
             RotatedPillarBlock,
-            WallBlock,
             WeatheringCopperBarsBlock,
             WeatheringCopperChainBlock,
+            BarrelBlock,
+            CandleBlock,
+            RedstoneWallTorchBlock,
+            RedstoneTorchBlock,
+            WallTorchBlock,
+            TorchBlock,
+            WallHangingSignBlock,
+            CeilingHangingSignBlock,
+            WallSignBlock,
+            StandingSignBlock,
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
+            #barrel_registrations
+            #candle_registrations
             #crafting_table_registrations
             #crop_registrations
             #end_portal_frame_registrations
             #farm_registrations
             #fence_registrations
             #pillar_registrations
+            #standing_sign_registrations
+            #wall_sign_registrations
+            #ceiling_hanging_sign_registrations
+            #wall_hanging_sign_registrations
+            #torch_registrations
+            #wall_torch_registrations
+            #redstone_torch_registrations
+            #redstone_wall_torch_registrations
             #iron_bar_registrations
             #copper_bar_registrations
             #wall_registrations

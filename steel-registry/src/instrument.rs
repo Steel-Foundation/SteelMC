@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-use steel_utils::text::TextComponent;
+use text_components::TextComponent;
 
 use crate::RegistryExt;
 

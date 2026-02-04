@@ -15,7 +15,7 @@ pub enum Ingredient {
     /// Matches any item in a tag.
     Tag(Identifier),
     /// Matches any of the listed items (OR).
-    Choice(Vec<ItemRef>),
+    Choice(&'static [ItemRef]),
 }
 
 impl Ingredient {
@@ -57,7 +57,7 @@ impl Ingredient {
                 .get_tag(tag)
                 .map(|items| items.to_vec())
                 .unwrap_or_default(),
-            Self::Choice(items) => items.clone(),
+            Self::Choice(items) => items.to_vec(),
         }
     }
 

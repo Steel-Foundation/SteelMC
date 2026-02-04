@@ -120,12 +120,12 @@ impl LevelData {
 
     /// Gets the spawn position as a `BlockPos`.
     #[must_use]
-    pub fn spawn_pos(&self) -> BlockPos {
+    pub const fn spawn_pos(&self) -> BlockPos {
         BlockPos::new(self.spawn.x, self.spawn.y, self.spawn.z)
     }
 
     /// Sets the spawn position from a `BlockPos`.
-    pub fn set_spawn_pos(&mut self, pos: BlockPos) {
+    pub const fn set_spawn_pos(&mut self, pos: BlockPos) {
         self.spawn.x = pos.x();
         self.spawn.y = pos.y();
         self.spawn.z = pos.z();
@@ -176,24 +176,24 @@ impl LevelDataManager {
 
     /// Gets a reference to the level data.
     #[must_use]
-    pub fn data(&self) -> &LevelData {
+    pub const fn data(&self) -> &LevelData {
         &self.data
     }
 
     /// Gets a mutable reference to the level data and marks it as dirty.
-    pub fn data_mut(&mut self) -> &mut LevelData {
+    pub const fn data_mut(&mut self) -> &mut LevelData {
         self.dirty = true;
         &mut self.data
     }
 
     /// Returns whether the data has been modified since last save.
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
+    pub const fn is_dirty(&self) -> bool {
         self.dirty
     }
 
     /// Marks the data as dirty (needs saving).
-    pub fn mark_dirty(&mut self) {
+    pub const fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
@@ -227,30 +227,30 @@ impl LevelDataManager {
 
     /// Gets the seed.
     #[must_use]
-    pub fn seed(&self) -> i64 {
+    pub const fn seed(&self) -> i64 {
         self.data.seed
     }
 
     /// Gets the game time.
     #[must_use]
-    pub fn game_time(&self) -> i64 {
+    pub const fn game_time(&self) -> i64 {
         self.data.game_time
     }
 
     /// Sets the game time.
-    pub fn set_game_time(&mut self, time: i64) {
+    pub const fn set_game_time(&mut self, time: i64) {
         self.data.game_time = time;
         self.dirty = true;
     }
 
     /// Gets the day time.
     #[must_use]
-    pub fn day_time(&self) -> i64 {
+    pub const fn day_time(&self) -> i64 {
         self.data.day_time
     }
 
     /// Sets the day time.
-    pub fn set_day_time(&mut self, time: i64) {
+    pub const fn set_day_time(&mut self, time: i64) {
         self.data.day_time = time;
         self.dirty = true;
     }

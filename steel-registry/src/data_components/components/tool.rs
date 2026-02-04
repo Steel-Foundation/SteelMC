@@ -166,3 +166,118 @@ impl HashComponent for Tool {
         hasher.end_map();
     }
 }
+
+impl simdnbt::ToNbtTag for Tool {
+    fn to_nbt_tag(self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+
+        let mut compound = NbtCompound::new();
+
+        // Serialize rules
+        let rules: Vec<NbtCompound> = self
+            .rules
+            .into_iter()
+            .map(|rule| {
+                let mut rule_compound = NbtCompound::new();
+
+                // Blocks as a list of strings
+                let blocks: Vec<NbtTag> = rule
+                    .blocks
+                    .into_iter()
+                    .map(|id| NbtTag::String(id.to_string().into()))
+                    .collect();
+                rule_compound.insert(
+                    "blocks",
+                    NbtList::String(
+                        blocks
+                            .into_iter()
+                            .filter_map(|t| match t {
+                                NbtTag::String(s) => Some(s),
+                                _ => None,
+                            })
+                            .collect(),
+                    ),
+                );
+
+                if let Some(speed) = rule.speed {
+                    rule_compound.insert("speed", speed);
+                }
+                if let Some(correct) = rule.correct_for_drops {
+                    rule_compound.insert("correct_for_drops", i8::from(correct));
+                }
+
+                rule_compound
+            })
+            .collect();
+        compound.insert("rules", NbtList::Compound(rules));
+
+        compound.insert("default_mining_speed", self.default_mining_speed);
+        compound.insert("damage_per_block", self.damage_per_block);
+        compound.insert(
+            "can_destroy_blocks_in_creative",
+            i8::from(self.can_destroy_blocks_in_creative),
+        );
+
+        NbtTag::Compound(compound)
+    }
+}
+
+impl simdnbt::FromNbtTag for Tool {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        let compound = tag.compound()?;
+
+        // Parse rules
+        let mut rules = Vec::new();
+        if let Some(rules_list) = compound.get("rules").and_then(|t| t.list())
+            && let Some(compounds) = rules_list.compounds()
+        {
+            for rule_compound in compounds {
+                let mut blocks = Vec::new();
+                if let Some(blocks_list) = rule_compound.get("blocks").and_then(|t| t.list())
+                    && let Some(strings) = blocks_list.strings()
+                {
+                    for s in strings {
+                        if let Ok(id) = s.to_str().parse() {
+                            blocks.push(id);
+                        }
+                    }
+                }
+
+                let speed = rule_compound.get("speed").and_then(|t| t.float());
+                let correct_for_drops = rule_compound
+                    .get("correct_for_drops")
+                    .and_then(|t| t.byte())
+                    .map(|b| b != 0);
+
+                rules.push(ToolRule {
+                    blocks,
+                    speed,
+                    correct_for_drops,
+                });
+            }
+        }
+
+        let default_mining_speed = compound
+            .get("default_mining_speed")
+            .and_then(|t| t.float())
+            .unwrap_or(1.0);
+
+        let damage_per_block = compound
+            .get("damage_per_block")
+            .and_then(|t| t.int())
+            .unwrap_or(1);
+
+        let can_destroy_blocks_in_creative = compound
+            .get("can_destroy_blocks_in_creative")
+            .and_then(|t| t.byte())
+            .map(|b| b != 0)
+            .unwrap_or(true);
+
+        Some(Self {
+            rules,
+            default_mining_speed,
+            damage_per_block,
+            can_destroy_blocks_in_creative,
+        })
+    }
+}

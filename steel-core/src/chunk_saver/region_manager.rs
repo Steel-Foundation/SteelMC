@@ -5,20 +5,23 @@
 //! format, avoiding memory duplication.
 
 use std::{
-    io,
+    io::{self, Cursor},
     path::PathBuf,
-    sync::Weak,
+    sync::{Weak, atomic::Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use rustc_hash::FxHashMap;
+use simdnbt::borrow::read_compound as read_borrowed_compound;
+use simdnbt::owned::NbtCompound;
 use steel_registry::{REGISTRY, Registry};
-use steel_utils::{BlockStateId, ChunkPos, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier, locks::AsyncRwLock};
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 
+use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
     level_chunk::LevelChunk,
@@ -26,16 +29,16 @@ use crate::chunk::{
     proto_chunk::ProtoChunk,
     section::{ChunkSection, SectionHolder, Sections},
 };
+use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
-use steel_utils::locks::AsyncRwLock;
 
 use super::{
     bit_pack::{bits_for_palette_len, pack_indices, unpack_indices},
     format::{
         BIOMES_PER_SECTION, BLOCKS_PER_SECTION, CHUNK_TABLE_SIZE, FILE_HEADER_SIZE,
         FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE, PersistentBiomeData,
-        PersistentBlockState, PersistentChunk, PersistentSection, REGION_MAGIC, RegionHeader,
-        RegionPos, SECTOR_SIZE,
+        PersistentBlockEntity, PersistentBlockState, PersistentChunk, PersistentEntity,
+        PersistentSection, REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
     },
 };
 
@@ -81,7 +84,7 @@ struct ChunkBuilder<'a> {
 }
 
 impl<'a> ChunkBuilder<'a> {
-    fn new(registry: &'a Registry) -> Self {
+    const fn new(registry: &'a Registry) -> Self {
         Self {
             block_states: Vec::new(),
             biomes: Vec::new(),
@@ -312,7 +315,20 @@ impl RegionManager {
         }
 
         let pos = chunk.pos();
-        let persistent = Self::sections_to_persistent(chunk.sections());
+
+        // Get block entities if this is a full chunk
+        let block_entities: Vec<SharedBlockEntity> = chunk
+            .as_full()
+            .map(super::super::chunk::level_chunk::LevelChunk::get_block_entities)
+            .unwrap_or_default();
+
+        // Get saveable entities if this is a full chunk
+        let entities: Vec<SharedEntity> = chunk
+            .as_full()
+            .map(|c| c.entities.get_saveable_entities())
+            .unwrap_or_default();
+
+        let persistent = Self::to_persistent(chunk.sections(), &block_entities, &entities, pos);
 
         Some(PreparedChunkSave { pos, persistent })
     }
@@ -417,6 +433,8 @@ impl RegionManager {
     /// * `min_y` - The minimum Y coordinate of the world
     /// * `height` - The total height of the world
     /// * `level` - Weak reference to the world for `LevelChunk`
+    ///
+    /// The region must already be acquired via `acquire_chunk` before calling this.
     #[allow(clippy::missing_panics_doc)]
     pub async fn load_chunk(
         &self,
@@ -431,31 +449,15 @@ impl RegionManager {
 
         let mut regions = self.regions.write().await;
 
-        // Track if we just opened this region
-        let was_already_open = regions.contains_key(&region_pos);
-
-        // Get or open the region
-        let handle = if let Some(handle) = regions.get_mut(&region_pos) {
-            handle
-        } else {
-            // Try to open region file
-            match self.open_region(region_pos).await {
-                Ok(handle) => {
-                    regions.insert(region_pos, handle);
-                    regions.get_mut(&region_pos).expect("just inserted")
-                }
-                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-                Err(e) => return Err(e),
-            }
+        // Get the region (should already be open via acquire_chunk)
+        let Some(handle) = regions.get_mut(&region_pos) else {
+            log::warn!("load_chunk called without acquire_chunk for region {region_pos:?}");
+            return Ok(None);
         };
 
         // Check if chunk exists
         let entry = handle.header.entries[index];
         if !entry.exists() {
-            // Clean up if we just opened this region for nothing
-            if !was_already_open && handle.loaded_chunk_count == 0 && !handle.header_dirty {
-                regions.remove(&region_pos);
-            }
             return Ok(None);
         }
 
@@ -474,10 +476,40 @@ impl RegionManager {
         let status = entry.status;
         let chunk = Self::persistent_to_chunk(&persistent, pos, status, min_y, height, level);
 
+        Ok(Some((chunk, status)))
+    }
+
+    /// Acquires a chunk, incrementing the region's reference count.
+    ///
+    /// This opens or creates the region file. Call this before loading or
+    /// generating a chunk, and call `release_chunk` when done with the chunk.
+    ///
+    /// Returns `Ok(true)` if the chunk exists on disk, `Ok(false)` if it doesn't.
+    #[allow(clippy::missing_panics_doc)]
+    pub async fn acquire_chunk(&self, pos: ChunkPos) -> io::Result<bool> {
+        let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
+        let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
+        let index = RegionHeader::chunk_index(local_x, local_z);
+
+        let mut regions = self.regions.write().await;
+
+        // Get or open/create the region
+        let handle = if let Some(handle) = regions.get_mut(&region_pos) {
+            handle
+        } else {
+            // open_region creates the file if it doesn't exist
+            let handle = self.open_region(region_pos).await?;
+            regions.insert(region_pos, handle);
+            regions.get_mut(&region_pos).expect("just inserted")
+        };
+
+        // Check if chunk exists
+        let exists = handle.header.entries[index].exists();
+
         // Increment ref count
         handle.loaded_chunk_count += 1;
 
-        Ok(Some((chunk, status)))
+        Ok(exists)
     }
 
     /// Releases a loaded chunk, decrementing the region's reference count.
@@ -575,8 +607,13 @@ impl RegionManager {
         Ok(())
     }
 
-    /// Converts sections to persistent format.
-    fn sections_to_persistent(sections: &Sections) -> PersistentChunk {
+    /// Converts chunk data to persistent format.
+    fn to_persistent(
+        sections: &Sections,
+        block_entities: &[SharedBlockEntity],
+        entities: &[SharedEntity],
+        chunk_pos: ChunkPos,
+    ) -> PersistentChunk {
         let mut builder = ChunkBuilder::new(&REGISTRY);
 
         let persistent_sections = sections
@@ -585,15 +622,74 @@ impl RegionManager {
             .map(|section| Self::section_to_persistent(section, &mut builder))
             .collect();
 
+        // Serialize block entities
+        let persistent_block_entities: Vec<PersistentBlockEntity> = block_entities
+            .iter()
+            .map(|entity| {
+                let guard = entity.lock();
+                let pos = guard.get_block_pos();
+
+                // Serialize NBT data
+                let mut nbt = NbtCompound::new();
+                guard.save_additional(&mut nbt);
+                let mut nbt_bytes = Vec::new();
+                nbt.write(&mut nbt_bytes);
+
+                PersistentBlockEntity {
+                    x: (pos.0.x - chunk_pos.0.x * 16) as u8,
+                    y: pos.0.y as i16,
+                    z: (pos.0.z - chunk_pos.0.y * 16) as u8,
+                    entity_type: guard.get_type().key.clone(),
+                    nbt_data: nbt_bytes,
+                }
+            })
+            .collect();
+
+        // Serialize entities
+        let persistent_entities: Vec<PersistentEntity> = entities
+            .iter()
+            .filter_map(|entity| {
+                let pos = entity.position();
+                let vel = entity.velocity();
+                let (yaw, pitch) = entity.rotation();
+
+                // Validate position is finite (discard corrupted entities)
+                if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+                    tracing::warn!(
+                        uuid = ?entity.uuid(),
+                        "Entity has non-finite position {:?}, skipping save",
+                        pos
+                    );
+                    return None;
+                }
+
+                // Serialize type-specific NBT data
+                let mut nbt = NbtCompound::new();
+                entity.save_additional(&mut nbt);
+                let mut nbt_bytes = Vec::new();
+                nbt.write(&mut nbt_bytes);
+
+                Some(PersistentEntity {
+                    entity_type: entity.entity_type().key.clone(),
+                    uuid: *entity.uuid().as_bytes(),
+                    pos: [pos.x, pos.y, pos.z],
+                    motion: [vel.x, vel.y, vel.z],
+                    rotation: [yaw, pitch],
+                    on_ground: entity.on_ground(),
+                    nbt_data: nbt_bytes,
+                })
+            })
+            .collect();
+
         PersistentChunk {
             last_modified: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs() as u32)
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs() as u32),
             block_states: builder.block_states,
             biomes: builder.biomes,
             sections: persistent_sections,
-            block_entities: Vec::new(), // TODO: Implement block entity serialization
+            block_entities: persistent_block_entities,
+            entities: persistent_entities,
         }
     }
 
@@ -718,13 +814,37 @@ impl RegionManager {
             .collect();
 
         match status {
-            ChunkStatus::Full => ChunkAccess::Full(LevelChunk::from_disk(
-                Sections::from_owned(sections.into_boxed_slice()),
-                pos,
-                min_y,
-                height,
-                level,
-            )),
+            ChunkStatus::Full => {
+                let chunk = LevelChunk::from_disk(
+                    Sections::from_owned(sections.into_boxed_slice()),
+                    pos,
+                    min_y,
+                    height,
+                    level.clone(),
+                );
+
+                // Load block entities
+                for persistent_be in &persistent.block_entities {
+                    if let Some(block_entity) =
+                        Self::persistent_to_block_entity(persistent_be, pos, &chunk)
+                    {
+                        chunk.add_and_register_block_entity(block_entity);
+                    }
+                }
+
+                // Load entities
+                for persistent_entity in &persistent.entities {
+                    if let Some(entity) = Self::persistent_to_entity(persistent_entity, pos, &chunk)
+                    {
+                        chunk.add_and_register_entity(entity);
+                    }
+                }
+
+                // Clear dirty flag since we just loaded (add_and_register marks dirty)
+                chunk.dirty.store(false, Ordering::Release);
+
+                ChunkAccess::Full(chunk)
+            }
             _ => ChunkAccess::Proto(ProtoChunk::from_disk(
                 Sections::from_owned(sections.into_boxed_slice()),
                 pos,
@@ -733,6 +853,135 @@ impl RegionManager {
                 height,
             )),
         }
+    }
+
+    /// Converts a persistent block entity to runtime format.
+    fn persistent_to_block_entity(
+        persistent: &PersistentBlockEntity,
+        chunk_pos: ChunkPos,
+        chunk: &LevelChunk,
+    ) -> Option<SharedBlockEntity> {
+        // Calculate absolute position
+        let abs_x = chunk_pos.0.x * 16 + i32::from(persistent.x);
+        let abs_z = chunk_pos.0.y * 16 + i32::from(persistent.z);
+        let pos = BlockPos::new(abs_x, i32::from(persistent.y), abs_z);
+
+        // Get the block state at this position
+        let state = chunk.get_block_state(pos);
+
+        // Look up the block entity type
+        let block_entity_type = REGISTRY
+            .block_entity_types
+            .by_key(&persistent.entity_type)?;
+
+        // Get the world reference from the chunk
+        let level = chunk.level_weak();
+
+        // Parse and load NBT data
+        if persistent.nbt_data.is_empty() {
+            // No NBT data, just create the entity without loading
+            BLOCK_ENTITIES.create(block_entity_type, level, pos, state)
+        } else {
+            // Parse NBT from bytes as borrowed
+            let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&persistent.nbt_data)) else {
+                return BLOCK_ENTITIES.create(block_entity_type, level, pos, state);
+            };
+
+            // Create the block entity and load NBT
+            BLOCK_ENTITIES.create_and_load(block_entity_type, level, pos, state, &nbt)
+        }
+    }
+
+    /// Converts a persistent entity to runtime format.
+    fn persistent_to_entity(
+        persistent: &PersistentEntity,
+        chunk_pos: ChunkPos,
+        chunk: &LevelChunk,
+    ) -> Option<SharedEntity> {
+        use steel_utils::math::Vector3;
+        use uuid::Uuid;
+
+        // Reconstruct base fields
+        let pos = Vector3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
+        let mut velocity = Vector3::new(
+            persistent.motion[0],
+            persistent.motion[1],
+            persistent.motion[2],
+        );
+        let rotation = (persistent.rotation[0], persistent.rotation[1]);
+        let uuid = Uuid::from_bytes(persistent.uuid);
+
+        // Validate position is finite
+        if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+            tracing::warn!(
+                ?uuid,
+                "Entity has non-finite position {:?}, skipping load",
+                pos
+            );
+            return None;
+        }
+
+        // Validate position is within expected chunk (sanity check)
+        let expected_chunk_x = (pos.x as i32) >> 4;
+        let expected_chunk_z = (pos.z as i32) >> 4;
+        if chunk_pos.0.x != expected_chunk_x || chunk_pos.0.y != expected_chunk_z {
+            tracing::warn!(
+                ?uuid,
+                "Entity position {:?} doesn't match chunk {:?}, loading anyway",
+                pos,
+                chunk_pos
+            );
+        }
+
+        // Clamp motion values > 10.0 to 0 (vanilla behavior to prevent corruption)
+        if velocity.x.abs() > 10.0 {
+            velocity.x = 0.0;
+        }
+        if velocity.y.abs() > 10.0 {
+            velocity.y = 0.0;
+        }
+        if velocity.z.abs() > 10.0 {
+            velocity.z = 0.0;
+        }
+
+        // Look up entity type
+        let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
+
+        // Check if we have a load factory for this entity type
+        if !ENTITIES.has_load_factory(entity_type) {
+            tracing::debug!(
+                entity_type = %persistent.entity_type,
+                "No load factory for entity type, skipping"
+            );
+            return None;
+        }
+
+        // Get world reference
+        let level = chunk.level_weak();
+
+        // Parse NBT from bytes (or use empty compound data)
+        let nbt_bytes = if persistent.nbt_data.is_empty() {
+            // Empty NBT compound: type byte (10 = compound), empty name (2 zero bytes), end tag (0)
+            &[0x0a, 0x00, 0x00, 0x00][..]
+        } else {
+            &persistent.nbt_data[..]
+        };
+
+        let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(nbt_bytes)) else {
+            tracing::warn!(?uuid, "Failed to parse entity NBT, skipping");
+            return None;
+        };
+
+        ENTITIES.create_and_load(
+            entity_type,
+            pos,
+            uuid,
+            velocity,
+            rotation,
+            persistent.on_ground,
+            level,
+            &nbt,
+        )
     }
 
     /// Converts a persistent section to runtime format.

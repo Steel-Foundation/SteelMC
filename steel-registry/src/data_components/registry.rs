@@ -1,6 +1,18 @@
+//! Data component registry and storage types.
+//!
+//! This module provides:
+//! - [`DataComponentRegistry`] - Registry of all component types with their serialization functions
+//! - [`DataComponentMap`] - Storage for component values on items/entities
+//! - [`DataComponentPatch`] - Diff representation for network/storage
+//! - [`DataComponentType`] - Type-safe handle for accessing components
+
 use rustc_hash::FxHashMap;
+use simdnbt::{
+    FromNbtTag, ToNbtTag,
+    borrow::NbtTag as BorrowedNbtTag,
+    owned::{NbtCompound, NbtTag as OwnedNbtTag},
+};
 use std::{
-    any::Any,
     fmt::Debug,
     io::{Cursor, Result, Write},
     marker::PhantomData,
@@ -9,64 +21,45 @@ use std::{
 use steel_utils::{
     Identifier,
     codec::VarInt,
-    hash::HashComponent,
     serial::{ReadFrom, WriteTo},
-    types::Todo,
 };
 
-use crate::{
-    RegistryExt,
-    data_components::vanilla_components::{
-        ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
-        TOOLTIP_DISPLAY,
-    },
+use crate::RegistryExt;
+
+use super::component_data::{Component, ComponentData, ComponentDataDiscriminant};
+use super::vanilla_components::{
+    ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
+    TOOLTIP_DISPLAY,
 };
 
-/// Type alias for a component reader function.
-/// Takes a cursor and returns a boxed `ComponentValue`.
-type ComponentReader = fn(&mut Cursor<&[u8]>) -> Result<Box<dyn ComponentValue>>;
+// ==================== DataComponentType ====================
 
-pub trait ComponentValue: Debug + Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-    fn clone_boxed(&self) -> Box<dyn ComponentValue>;
-    fn eq_value(&self, other: &dyn ComponentValue) -> bool;
-    /// Writes this component value to the network stream.
-    fn write_network(&self, writer: &mut Vec<u8>) -> Result<()>;
-    /// Computes the hash of this component value for validation.
-    fn compute_hash(&self) -> i32;
-}
-
-impl<T: 'static + Send + Sync + Debug + Clone + PartialEq + WriteTo + ReadFrom + HashComponent>
-    ComponentValue for T
-{
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn clone_boxed(&self) -> Box<dyn ComponentValue> {
-        Box::new(self.clone())
-    }
-
-    fn eq_value(&self, other: &dyn ComponentValue) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<T>()
-            .is_some_and(|o| self == o)
-    }
-
-    fn write_network(&self, writer: &mut Vec<u8>) -> Result<()> {
-        self.write(writer)
-    }
-
-    fn compute_hash(&self) -> i32 {
-        HashComponent::compute_hash(self)
-    }
-}
-
-//TODO: Implement codecs, also one for persistent storage and one for network.
+/// A typed handle for a data component.
+///
+/// This provides compile-time type safety when getting/setting components.
+/// The actual storage uses [`ComponentData`] for ABI stability.
+///
+/// # Example
+/// ```ignore
+/// pub const DAMAGE: DataComponentType<Damage> =
+///     DataComponentType::new(Identifier::vanilla_static("damage"));
+///
+/// // Type-safe access
+/// let damage: Option<Damage> = components.get(DAMAGE);
+/// components.set(DAMAGE, Damage(10));
+/// ```
 pub struct DataComponentType<T> {
     pub key: Identifier,
     _phantom: PhantomData<T>,
+}
+
+impl<T> Clone for DataComponentType<T> {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            _phantom: PhantomData,
+        }
+    }
 }
 
 impl<T> DataComponentType<T> {
@@ -79,13 +72,82 @@ impl<T> DataComponentType<T> {
     }
 }
 
+// ==================== ComponentEntry ====================
+
+/// Reader function for deserializing a component from network format.
+pub type NetworkReader = fn(&mut Cursor<&[u8]>) -> Result<ComponentData>;
+
+/// Writer function for serializing a component to network format.
+pub type NetworkWriter = fn(&ComponentData, &mut Vec<u8>) -> Result<()>;
+
+/// Reader function for deserializing a component from NBT format.
+pub type NbtReader = fn(BorrowedNbtTag) -> Option<ComponentData>;
+
+/// Writer function for serializing a component to NBT format.
+pub type NbtWriter = fn(&ComponentData) -> OwnedNbtTag;
+
+/// Metadata for a registered component type.
+///
+/// Contains the component's key and all serialization functions needed
+/// to read/write the component for network and persistent storage.
+pub struct ComponentEntry {
+    /// The component's identifier (e.g., "minecraft:damage")
+    pub key: Identifier,
+    /// Expected discriminant for this component type
+    pub expected_discriminant: ComponentDataDiscriminant,
+    /// Network protocol reader
+    pub network_reader: NetworkReader,
+    /// Network protocol writer
+    pub network_writer: NetworkWriter,
+    /// NBT storage reader
+    pub nbt_reader: NbtReader,
+    /// NBT storage writer
+    pub nbt_writer: NbtWriter,
+}
+
+impl ComponentEntry {
+    /// Creates a new component entry with all serialization functions.
+    #[must_use]
+    pub fn new(
+        key: Identifier,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+        nbt_reader: NbtReader,
+        nbt_writer: NbtWriter,
+    ) -> Self {
+        Self {
+            key,
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            nbt_reader,
+            nbt_writer,
+        }
+    }
+
+    /// Validates that a `ComponentData` value matches the expected type for this component.
+    ///
+    /// Returns `true` if the data is valid for this component type, `false` otherwise.
+    /// This prevents plugins from setting wrong types on vanilla components.
+    #[must_use]
+    pub fn validates(&self, data: &ComponentData) -> bool {
+        data.discriminant() == self.expected_discriminant
+    }
+}
+
+// ==================== DataComponentRegistry ====================
+
+/// Registry of all data component types.
+///
+/// Stores metadata about each component type including how to serialize/deserialize
+/// them for network and persistent storage.
 pub struct DataComponentRegistry {
+    /// Component entries indexed by network ID
+    entries: Vec<ComponentEntry>,
     /// Map from component key to network ID
-    components_by_key: FxHashMap<Identifier, usize>,
-    /// Ordered list of component keys (index = network ID)
-    components_by_id: Vec<Identifier>,
-    /// Ordered list of reader functions (index = network ID)
-    readers_by_id: Vec<ComponentReader>,
+    by_key: FxHashMap<Identifier, usize>,
+    /// Whether registration is still allowed
     allows_registering: bool,
 }
 
@@ -99,69 +161,219 @@ impl DataComponentRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            components_by_key: FxHashMap::default(),
-            components_by_id: Vec::new(),
-            readers_by_id: Vec::new(),
+            entries: Vec::new(),
+            by_key: FxHashMap::default(),
             allows_registering: true,
         }
     }
 
-    pub fn register<T: 'static + ComponentValue + ReadFrom>(
+    /// Registers a vanilla component type.
+    ///
+    /// The component type `T` must implement the necessary serialization traits.
+    /// This creates the appropriate reader/writer functions automatically.
+    pub fn register<T>(
         &mut self,
         component: DataComponentType<T>,
-    ) {
+        expected_discriminant: ComponentDataDiscriminant,
+    ) where
+        T: 'static + Component + WriteTo + ReadFrom + ToNbtTag + FromNbtTag,
+    {
         assert!(
             self.allows_registering,
             "Cannot register data components after the registry has been frozen"
         );
 
-        let id = self.components_by_id.len();
-        self.components_by_key.insert(component.key.clone(), id);
-        self.components_by_id.push(component.key);
-
-        // Create a reader function that deserializes T and boxes it
-        fn read_component<T: 'static + ComponentValue + ReadFrom>(
-            data: &mut Cursor<&[u8]>,
-        ) -> Result<Box<dyn ComponentValue>> {
-            let value = T::read(data)?;
-            Ok(Box::new(value))
+        // Create reader/writer functions that handle the ComponentData conversion
+        fn make_network_reader<T>() -> NetworkReader
+        where
+            T: 'static + Component + ReadFrom,
+        {
+            |cursor| {
+                let value = T::read(cursor)?;
+                Ok(value.into_data())
+            }
         }
 
-        self.readers_by_id.push(read_component::<T>);
+        fn make_network_writer<T>() -> NetworkWriter
+        where
+            T: 'static + Component + WriteTo,
+        {
+            |data, writer| {
+                if let Some(value) = T::from_data_ref(data) {
+                    value.write(writer)
+                } else {
+                    Err(std::io::Error::other("Component type mismatch"))
+                }
+            }
+        }
+
+        fn make_nbt_reader<T>() -> NbtReader
+        where
+            T: 'static + Component + FromNbtTag,
+        {
+            |tag| {
+                let value = T::from_nbt_tag(tag)?;
+                Some(value.into_data())
+            }
+        }
+
+        fn make_nbt_writer<T>() -> NbtWriter
+        where
+            T: 'static + Component + ToNbtTag + Clone,
+        {
+            |data| {
+                if let Some(value) = T::from_data_ref(data) {
+                    value.clone().to_nbt_tag()
+                } else {
+                    // Fallback: empty compound
+                    OwnedNbtTag::Compound(NbtCompound::new())
+                }
+            }
+        }
+
+        let entry = ComponentEntry::new(
+            component.key.clone(),
+            expected_discriminant,
+            make_network_reader::<T>(),
+            make_network_writer::<T>(),
+            make_nbt_reader::<T>(),
+            make_nbt_writer::<T>(),
+        );
+
+        let id = self.entries.len();
+        self.by_key.insert(component.key.clone(), id);
+        self.entries.push(entry);
     }
 
+    /// Registers a component with custom network reader/writer functions.
+    ///
+    /// Use this when the default `WriteTo`/`ReadFrom` implementations don't match
+    /// the network encoding (e.g., VarInt-encoded i32 components).
+    /// NBT serialization still uses the type's `ToNbtTag`/`FromNbtTag` impls.
+    pub fn register_custom_network<T>(
+        &mut self,
+        component: DataComponentType<T>,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+    ) where
+        T: 'static + Component + ToNbtTag + FromNbtTag,
+    {
+        assert!(
+            self.allows_registering,
+            "Cannot register data components after the registry has been frozen"
+        );
+
+        fn make_nbt_reader<T>() -> NbtReader
+        where
+            T: 'static + Component + FromNbtTag,
+        {
+            |tag| {
+                let value = T::from_nbt_tag(tag)?;
+                Some(value.into_data())
+            }
+        }
+
+        fn make_nbt_writer<T>() -> NbtWriter
+        where
+            T: 'static + Component + ToNbtTag + Clone,
+        {
+            |data| {
+                if let Some(value) = T::from_data_ref(data) {
+                    value.clone().to_nbt_tag()
+                } else {
+                    OwnedNbtTag::Compound(NbtCompound::new())
+                }
+            }
+        }
+
+        let entry = ComponentEntry::new(
+            component.key.clone(),
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            make_nbt_reader::<T>(),
+            make_nbt_writer::<T>(),
+        );
+
+        let id = self.entries.len();
+        self.by_key.insert(component.key.clone(), id);
+        self.entries.push(entry);
+    }
+
+    /// Registers a dynamic/plugin component type.
+    ///
+    /// Plugin components use the `ComponentData::Other` variant and handle
+    /// their own serialization. The provided functions read/write raw bytes.
+    pub fn register_dynamic(
+        &mut self,
+        key: Identifier,
+        expected_discriminant: ComponentDataDiscriminant,
+        network_reader: NetworkReader,
+        network_writer: NetworkWriter,
+        nbt_reader: NbtReader,
+        nbt_writer: NbtWriter,
+    ) -> usize {
+        assert!(
+            self.allows_registering,
+            "Cannot register data components after the registry has been frozen"
+        );
+
+        let entry = ComponentEntry::new(
+            key.clone(),
+            expected_discriminant,
+            network_reader,
+            network_writer,
+            nbt_reader,
+            nbt_writer,
+        );
+
+        let id = self.entries.len();
+        self.by_key.insert(key, id);
+        self.entries.push(entry);
+        id
+    }
+
+    /// Gets the network ID for a component type.
     #[must_use]
-    pub fn get_id<T: 'static>(&self, component: DataComponentType<T>) -> Option<usize> {
-        self.components_by_key.get(&component.key).copied()
+    pub fn get_id<T>(&self, component: DataComponentType<T>) -> Option<usize> {
+        self.by_key.get(&component.key).copied()
     }
 
+    /// Gets the network ID for a component by key.
     #[must_use]
     pub fn get_id_by_key(&self, key: &Identifier) -> Option<usize> {
-        self.components_by_key.get(key).copied()
+        self.by_key.get(key).copied()
     }
 
-    /// Gets the component key by its network ID.
+    /// Gets the component key by network ID.
     #[must_use]
     pub fn get_key_by_id(&self, id: usize) -> Option<&Identifier> {
-        self.components_by_id.get(id)
+        self.entries.get(id).map(|e| &e.key)
     }
 
-    /// Gets the reader function for a component by its network ID.
+    /// Gets the component entry by network ID.
     #[must_use]
-    pub fn get_reader_by_id(&self, id: usize) -> Option<ComponentReader> {
-        self.readers_by_id.get(id).copied()
+    pub fn get_entry(&self, id: usize) -> Option<&ComponentEntry> {
+        self.entries.get(id)
+    }
+
+    /// Gets the component entry by key.
+    #[must_use]
+    pub fn get_entry_by_key(&self, key: &Identifier) -> Option<&ComponentEntry> {
+        self.by_key.get(key).and_then(|&id| self.entries.get(id))
     }
 
     /// Returns the number of registered components.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.components_by_id.len()
+        self.entries.len()
     }
 
     /// Returns true if no components are registered.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.components_by_id.is_empty()
+        self.entries.is_empty()
     }
 }
 
@@ -171,9 +383,14 @@ impl RegistryExt for DataComponentRegistry {
     }
 }
 
-#[derive(Debug)]
+// ==================== DataComponentMap ====================
+
+/// Storage for component values.
+///
+/// Maps component keys to their values. Used on items to store their data components.
+#[derive(Debug, Clone)]
 pub struct DataComponentMap {
-    map: FxHashMap<Identifier, Box<dyn ComponentValue>>,
+    map: FxHashMap<Identifier, ComponentData>,
 }
 
 impl Default for DataComponentMap {
@@ -190,97 +407,118 @@ impl DataComponentMap {
         }
     }
 
+    /// Creates a map with common item components pre-populated.
     #[must_use]
     pub fn common_item_components() -> Self {
         let mut map = FxHashMap::default();
-        map.insert(
-            MAX_STACK_SIZE.key.clone(),
-            Box::new(64i32) as Box<dyn ComponentValue>,
-        );
-        map.insert(LORE.key.clone(), Box::new(Todo) as Box<dyn ComponentValue>);
-        map.insert(
-            ENCHANTMENTS.key.clone(),
-            Box::new(Todo) as Box<dyn ComponentValue>,
-        );
-        map.insert(
-            REPAIR_COST.key.clone(),
-            Box::new(0i32) as Box<dyn ComponentValue>,
-        );
-        map.insert(
-            ATTRIBUTE_MODIFIERS.key.clone(),
-            Box::new(Todo) as Box<dyn ComponentValue>,
-        );
-        map.insert(
-            RARITY.key.clone(),
-            Box::new(Todo) as Box<dyn ComponentValue>,
-        );
-        map.insert(
-            BREAK_SOUND.key.clone(),
-            Box::new(Todo) as Box<dyn ComponentValue>,
-        );
-        map.insert(
-            TOOLTIP_DISPLAY.key.clone(),
-            Box::new(Todo) as Box<dyn ComponentValue>,
-        );
+        map.insert(MAX_STACK_SIZE.key.clone(), ComponentData::I32(64));
+        map.insert(LORE.key.clone(), ComponentData::Todo);
+        map.insert(ENCHANTMENTS.key.clone(), ComponentData::Todo);
+        map.insert(REPAIR_COST.key.clone(), ComponentData::I32(0));
+        map.insert(ATTRIBUTE_MODIFIERS.key.clone(), ComponentData::Todo);
+        map.insert(RARITY.key.clone(), ComponentData::Todo);
+        map.insert(BREAK_SOUND.key.clone(), ComponentData::Todo);
+        map.insert(TOOLTIP_DISPLAY.key.clone(), ComponentData::Todo);
         Self { map }
     }
 
+    /// Sets a component value (builder pattern).
     #[must_use]
-    pub fn builder_set<T: 'static + ComponentValue>(
+    pub fn builder_set<T: Component>(
         mut self,
         component: DataComponentType<T>,
-        data: Option<T>,
+        value: Option<T>,
     ) -> Self {
-        self.set(component, data);
+        self.set(component, value);
         self
     }
 
-    pub fn set<T: 'static + ComponentValue>(
-        &mut self,
-        component: DataComponentType<T>,
-        data: Option<T>,
-    ) {
-        if let Some(data) = data {
-            self.map.insert(component.key.clone(), Box::new(data));
+    /// Sets a component value, or removes it if `None`.
+    pub fn set<T: Component>(&mut self, component: DataComponentType<T>, value: Option<T>) {
+        if let Some(v) = value {
+            self.map.insert(component.key.clone(), v.into_data());
         } else {
             self.map.remove(&component.key);
         }
     }
 
+    /// Gets a component value by type.
     #[must_use]
-    pub fn get<T: 'static>(&self, component: DataComponentType<T>) -> Option<&T> {
-        let value = self.map.get(&component.key)?;
-        value.as_ref().as_any().downcast_ref::<T>()
+    pub fn get<T: Component>(&self, component: DataComponentType<T>) -> Option<T> {
+        let data = self.map.get(&component.key)?;
+        T::from_data(data.clone())
     }
 
+    /// Gets a reference to a component value.
     #[must_use]
-    pub fn has<T: 'static>(&self, component: DataComponentType<T>) -> bool {
+    pub fn get_ref<T: Component>(&self, component: DataComponentType<T>) -> Option<&T> {
+        let data = self.map.get(&component.key)?;
+        T::from_data_ref(data)
+    }
+
+    /// Checks if a component is present.
+    #[must_use]
+    pub fn has<T>(&self, component: DataComponentType<T>) -> bool {
         self.map.contains_key(&component.key)
     }
 
+    /// Returns the number of components.
     #[must_use]
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
+    /// Returns true if empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 
+    /// Iterates over component keys.
     pub fn keys(&self) -> impl Iterator<Item = &Identifier> {
         self.map.keys()
     }
 
+    /// Gets raw component data by key (for plugin use).
     #[must_use]
-    pub fn get_raw(&self, key: &Identifier) -> Option<&dyn ComponentValue> {
-        self.map.get(key).map(|v| v.as_ref())
+    pub fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.map.get(key)
+    }
+
+    /// Sets raw component data (for plugin use).
+    ///
+    /// Returns `true` if the data was set successfully, `false` if the data type
+    /// doesn't match the registered component type (validation failed).
+    ///
+    /// This prevents plugins from setting invalid types on vanilla components.
+    pub fn set_raw(&mut self, key: Identifier, data: ComponentData) -> bool {
+        use crate::REGISTRY;
+
+        // Validate against registry if this component is registered
+        if let Some(entry) = REGISTRY.data_components.get_entry_by_key(&key)
+            && !entry.validates(&data)
+        {
+            return false;
+        }
+
+        self.map.insert(key, data);
+        true
+    }
+
+    /// Removes a component by key.
+    pub fn remove(&mut self, key: &Identifier) -> Option<ComponentData> {
+        self.map.remove(key)
     }
 }
 
-#[derive(Debug)]
+// ==================== DataComponentPatch ====================
+
+/// Entry in a component patch.
+#[derive(Debug, Clone)]
 pub enum ComponentPatchEntry {
-    Set(Box<dyn ComponentValue>),
+    /// Component is set to this value
+    Set(ComponentData),
+    /// Component is explicitly removed
     Removed,
 }
 
@@ -288,52 +526,20 @@ impl PartialEq for ComponentPatchEntry {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Removed, Self::Removed) => true,
-            (Self::Set(a), Self::Set(b)) => a.eq_value(b.as_ref()),
+            (Self::Set(a), Self::Set(b)) => a == b,
             _ => false,
         }
     }
 }
 
-impl Clone for ComponentPatchEntry {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Set(v) => Self::Set(v.clone_boxed()),
-            Self::Removed => Self::Removed,
-        }
-    }
-}
-
-/// A patch representing modifications to a `DataComponentMap`.
+/// A patch representing modifications to a [`DataComponentMap`].
 ///
 /// Stores differences from a prototype:
 /// - Components that are added or overridden (`Set`)
 /// - Components that are explicitly removed (`Removed`)
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct DataComponentPatch {
     entries: FxHashMap<Identifier, ComponentPatchEntry>,
-}
-
-impl PartialEq for DataComponentPatch {
-    fn eq(&self, other: &Self) -> bool {
-        if self.entries.len() != other.entries.len() {
-            return false;
-        }
-        self.entries
-            .iter()
-            .all(|(k, v)| other.entries.get(k).is_some_and(|ov| v == ov))
-    }
-}
-
-impl Clone for DataComponentPatch {
-    fn clone(&self) -> Self {
-        Self {
-            entries: self
-                .entries
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        }
-    }
 }
 
 impl DataComponentPatch {
@@ -354,32 +560,58 @@ impl DataComponentPatch {
         self.entries.len()
     }
 
-    pub fn set<T: 'static + ComponentValue>(&mut self, component: DataComponentType<T>, value: T) {
+    /// Sets a component value in the patch.
+    pub fn set<T: Component>(&mut self, component: DataComponentType<T>, value: T) {
         self.entries.insert(
             component.key.clone(),
-            ComponentPatchEntry::Set(Box::new(value)),
+            ComponentPatchEntry::Set(value.into_data()),
         );
     }
 
+    /// Sets raw component data (for plugin use).
+    ///
+    /// Returns `true` if the data was set successfully, `false` if the data type
+    /// doesn't match the registered component type (validation failed).
+    ///
+    /// This prevents plugins from setting invalid types on vanilla components.
+    pub fn set_raw(&mut self, key: Identifier, data: ComponentData) -> bool {
+        use crate::REGISTRY;
+
+        // Validate against registry if this component is registered
+        if let Some(entry) = REGISTRY.data_components.get_entry_by_key(&key)
+            && !entry.validates(&data)
+        {
+            return false;
+        }
+
+        self.entries.insert(key, ComponentPatchEntry::Set(data));
+        true
+    }
+
+    /// Marks a component as removed.
     pub fn remove<T>(&mut self, component: DataComponentType<T>) {
         self.entries
             .insert(component.key.clone(), ComponentPatchEntry::Removed);
     }
 
+    /// Clears any patch entry for a component.
     pub fn clear<T>(&mut self, component: DataComponentType<T>) {
         self.entries.remove(&component.key);
     }
 
+    /// Gets the patch entry for a key.
     #[must_use]
     pub fn get_entry(&self, key: &Identifier) -> Option<&ComponentPatchEntry> {
         self.entries.get(key)
     }
 
+    /// Checks if a component is marked as removed.
     #[must_use]
     pub fn is_removed(&self, key: &Identifier) -> bool {
         matches!(self.entries.get(key), Some(ComponentPatchEntry::Removed))
     }
 
+    /// Counts set entries.
     #[must_use]
     pub fn count_set(&self) -> usize {
         self.entries
@@ -388,6 +620,7 @@ impl DataComponentPatch {
             .count()
     }
 
+    /// Counts removed entries.
     #[must_use]
     pub fn count_removed(&self) -> usize {
         self.entries
@@ -396,10 +629,12 @@ impl DataComponentPatch {
             .count()
     }
 
+    /// Iterates over all entries.
     pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentPatchEntry)> {
         self.entries.iter()
     }
 
+    /// Iterates over removed component keys.
     pub fn iter_removed(&self) -> impl Iterator<Item = &Identifier> {
         self.entries.iter().filter_map(|(k, v)| {
             if matches!(v, ComponentPatchEntry::Removed) {
@@ -411,25 +646,18 @@ impl DataComponentPatch {
     }
 }
 
-pub fn component_try_into<T: 'static>(
-    value: &dyn ComponentValue,
-    _component: DataComponentType<T>,
-) -> Option<&T> {
-    value.as_any().downcast_ref::<T>()
-}
+// ==================== Network Serialization ====================
 
 impl WriteTo for DataComponentPatch {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         use crate::REGISTRY;
 
-        // Format: VarInt addedCount, VarInt removedCount, then added entries, then removed entries
-        // Collect added and removed entries
-        let mut added: Vec<(&Identifier, &Box<dyn ComponentValue>)> = Vec::new();
+        let mut added: Vec<(&Identifier, &ComponentData)> = Vec::new();
         let mut removed: Vec<&Identifier> = Vec::new();
 
         for (key, entry) in &self.entries {
             match entry {
-                ComponentPatchEntry::Set(value) => added.push((key, value)),
+                ComponentPatchEntry::Set(data) => added.push((key, data)),
                 ComponentPatchEntry::Removed => removed.push(key),
             }
         }
@@ -437,17 +665,22 @@ impl WriteTo for DataComponentPatch {
         VarInt(added.len() as i32).write(writer)?;
         VarInt(removed.len() as i32).write(writer)?;
 
-        // Write added components: VarInt type_id, then component data
-        for (key, value) in added {
+        // Write added components
+        for (key, data) in added {
             let id = REGISTRY
                 .data_components
                 .get_id_by_key(key)
                 .ok_or_else(|| std::io::Error::other(format!("Unknown component key: {key:?}")))?;
+
+            let entry = REGISTRY
+                .data_components
+                .get_entry(id)
+                .ok_or_else(|| std::io::Error::other(format!("No entry for component id: {id}")))?;
+
             VarInt(id as i32).write(writer)?;
 
-            // Write the component value
             let mut buf = Vec::new();
-            value.write_network(&mut buf)?;
+            (entry.network_writer)(data, &mut buf)?;
             writer.write_all(&buf)?;
         }
 
@@ -468,7 +701,6 @@ impl ReadFrom for DataComponentPatch {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         use crate::REGISTRY;
 
-        // Format: VarInt addedCount, VarInt removedCount, then added entries, then removed entries
         let added_count = VarInt::read(data)?.0 as usize;
         let removed_count = VarInt::read(data)?.0 as usize;
 
@@ -491,22 +723,22 @@ impl ReadFrom for DataComponentPatch {
 
             log::info!("  [{i}] Reading component {key} (id={type_id}) at pos {pos_before}");
 
-            // Try to get a reader for this component type
-            if let Some(reader) = REGISTRY.data_components.get_reader_by_id(type_id) {
-                let value = reader(data).map_err(|e| {
-                    log::error!("    Failed to read component {key}: {e}");
-                    e
-                })?;
-                let pos_after = data.position();
-                log::info!("    Read {} bytes for {key}", pos_after - pos_before);
-                patch.entries.insert(key, ComponentPatchEntry::Set(value));
-            } else {
-                // No reader registered for this component - we can't skip it properly
-                // since we don't know its size
-                return Err(std::io::Error::other(format!(
-                    "No reader registered for component: {key}"
-                )));
-            }
+            let entry = REGISTRY
+                .data_components
+                .get_entry(type_id)
+                .ok_or_else(|| std::io::Error::other(format!("No entry for component: {key}")))?;
+
+            let component_data = (entry.network_reader)(data).map_err(|e| {
+                log::error!("    Failed to read component {key}: {e}");
+                e
+            })?;
+
+            let pos_after = data.position();
+            log::info!("    Read {} bytes for {key}", pos_after - pos_before);
+
+            patch
+                .entries
+                .insert(key, ComponentPatchEntry::Set(component_data));
         }
 
         // Read removed component IDs
@@ -526,4 +758,73 @@ impl ReadFrom for DataComponentPatch {
 
         Ok(patch)
     }
+}
+
+// ==================== NBT Serialization ====================
+
+impl ToNbtTag for DataComponentPatch {
+    fn to_nbt_tag(self) -> OwnedNbtTag {
+        use crate::REGISTRY;
+
+        let mut compound = NbtCompound::new();
+
+        for (key, entry) in self.entries {
+            match entry {
+                ComponentPatchEntry::Set(data) => {
+                    if let Some(entry) = REGISTRY.data_components.get_entry_by_key(&key) {
+                        let nbt = (entry.nbt_writer)(&data);
+                        compound.insert(key.to_string(), nbt);
+                    }
+                }
+                ComponentPatchEntry::Removed => {
+                    compound.insert(format!("!{key}"), NbtCompound::new());
+                }
+            }
+        }
+
+        OwnedNbtTag::Compound(compound)
+    }
+}
+
+impl FromNbtTag for DataComponentPatch {
+    fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
+        use crate::REGISTRY;
+
+        let compound = tag.compound()?;
+        let mut patch = Self::new();
+
+        for (key, value) in compound.iter() {
+            let key_str = key.to_str();
+
+            if let Some(stripped) = key_str.strip_prefix('!') {
+                // Removed component
+                if let Ok(id) = stripped.parse::<Identifier>() {
+                    patch.entries.insert(id, ComponentPatchEntry::Removed);
+                }
+            } else {
+                // Set component
+                if let Ok(id) = key_str.parse::<Identifier>()
+                    && let Some(entry) = REGISTRY.data_components.get_entry_by_key(&id)
+                    && let Some(component_data) = (entry.nbt_reader)(value)
+                {
+                    patch
+                        .entries
+                        .insert(id, ComponentPatchEntry::Set(component_data));
+                }
+            }
+        }
+
+        Some(patch)
+    }
+}
+
+// ==================== Helper Functions ====================
+
+/// Attempts to extract a typed component from `ComponentData`.
+#[must_use]
+pub fn component_try_into<T: Component>(
+    data: &ComponentData,
+    _component: DataComponentType<T>,
+) -> Option<&T> {
+    T::from_data_ref(data)
 }

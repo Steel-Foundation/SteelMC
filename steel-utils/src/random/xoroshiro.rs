@@ -2,8 +2,6 @@ use crate::random::{
     PositionalRandom, Random, RandomSource, RandomSplitter, gaussian::MarsagliaPolarGaussian,
     get_seed,
 };
-#[cfg(target_arch = "x86_64")]
-use std::arch::asm;
 
 // Ratios used in the mix functions
 const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -25,7 +23,7 @@ pub struct XoroshiroSplitter {
 impl Xoroshiro {
     /// Creates a new `Xoroshiro` from a seed.
     #[must_use]
-    pub fn from_seed(seed: u64) -> Self {
+    pub const fn from_seed(seed: u64) -> Self {
         // From RandomSupport
         let (lo, hi) = Self::upgrade_seed_to_128_bit(seed);
         let lo = mix_stafford_13(lo);
@@ -35,13 +33,13 @@ impl Xoroshiro {
 
     /// Creates a new `Xoroshiro` from a seed without mixing.
     #[must_use]
-    pub fn from_seed_unmixed(seed: u64) -> Self {
+    pub const fn from_seed_unmixed(seed: u64) -> Self {
         // From RandomSupport and
         let (lo, hi) = Self::upgrade_seed_to_128_bit(seed);
         Self::new(lo, hi)
     }
 
-    fn new(lo: u64, hi: u64) -> Self {
+    const fn new(lo: u64, hi: u64) -> Self {
         let (lo, hi) = if (lo | hi) == 0 {
             (GOLDEN_RATIO_64, SILVER_RATIO_64)
         } else {
@@ -54,18 +52,17 @@ impl Xoroshiro {
         }
     }
 
-    fn upgrade_seed_to_128_bit(seed: u64) -> (u64, u64) {
+    const fn upgrade_seed_to_128_bit(seed: u64) -> (u64, u64) {
         let lo = seed ^ SILVER_RATIO_64;
         let hi = lo.wrapping_add(GOLDEN_RATIO_64);
         (lo, hi)
     }
 
-    fn next(&mut self, bits: u64) -> u64 {
+    const fn next(&mut self, bits: u64) -> u64 {
         self.next_random() >> (64 - bits)
     }
 
-    #[cfg(not(target_arch = "x86_64"))]
-    fn next_random(&mut self) -> u64 {
+    const fn next_random(&mut self) -> u64 {
         let l = self.seed_lo;
         let m = self.seed_hi;
         let n = l.wrapping_add(m).rotate_left(17).wrapping_add(l);
@@ -73,35 +70,6 @@ impl Xoroshiro {
         self.seed_lo = l.rotate_left(49) ^ m ^ (m << 21);
         self.seed_hi = m.rotate_left(28);
         n
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    fn next_random(&mut self) -> u64 {
-        unsafe {
-            let n;
-            asm!(
-                "mov {copy_seed_lo}, {seed_lo}", // create a temporary copy of seed_lo
-                "mov {copy_seed_hi}, {seed_hi}", // create a temporary copy of seed_hi
-                "xor {seed_hi}, {copy_seed_lo}", // seed_hi = seed_hi ^ seed_lo
-                "lea rax, [{copy_seed_lo} + {copy_seed_hi}]", // n = seed_lo + seed_hi
-                "rol {seed_lo}, 49", // seed_lo = rol(seed_lo, 49)
-                "mov r8, {seed_hi}", // create a copy for ^ (hi << 21)
-                "shl r8, 21", // (hi << 21)
-                "rol rax, 17", // n = rol(n, 17)
-                "xor {seed_lo}, {seed_hi}", // seed_lo ^= seed_hi
-                "add rax, {copy_seed_lo}", // n += temp copy of seed_lo
-                "xor {seed_lo}, r8", // seed_lo ^= (hi << 21)
-                "rol {seed_hi}, 28", // seed_hi = rol(seed_hi, 28)
-                seed_lo = inout(reg) self.seed_lo,
-                seed_hi = inout(reg) self.seed_hi,
-                out("rax") n,
-                copy_seed_lo = out(reg) _,
-                copy_seed_hi = out(reg) _,
-                out("r8") _,
-                options(nostack, nomem, preserves_flags),
-            );
-            n
-        }
     }
 }
 
@@ -116,7 +84,7 @@ impl MarsagliaPolarGaussian for Xoroshiro {
     }
 }
 
-fn mix_stafford_13(z: u64) -> u64 {
+const fn mix_stafford_13(z: u64) -> u64 {
     let z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)

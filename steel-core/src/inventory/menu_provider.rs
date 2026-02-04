@@ -1,7 +1,7 @@
 //! Menu provider for opening menus.
 
 use steel_registry::menu_type::MenuTypeRef;
-use steel_utils::text::TextComponent;
+use text_components::TextComponent;
 
 use crate::inventory::menu::Menu;
 

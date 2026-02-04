@@ -24,6 +24,12 @@ impl std::fmt::Debug for Item {
     }
 }
 
+impl PartialEq for Item {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
 impl Item {
     #[must_use]
     pub fn from_block(block: BlockRef) -> Self {
@@ -41,6 +47,17 @@ impl Item {
             components: DataComponentMap::common_item_components(),
             craft_remainder: None,
         }
+    }
+
+    /// Builder method to set a component on this item. Used during static initialization.
+    #[must_use]
+    pub fn builder_set<T: crate::data_components::Component>(
+        mut self,
+        component: crate::data_components::DataComponentType<T>,
+        value: Option<T>,
+    ) -> Self {
+        self.components.set(component, value);
+        self
     }
 
     /// Returns the item stack that remains after this item is used in crafting.

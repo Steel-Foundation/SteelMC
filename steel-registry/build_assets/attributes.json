@@ -1,0 +1,317 @@
+[
+  {
+    "id": 0,
+    "name": "armor",
+    "translation_key": "attribute.name.armor",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 30.0
+  },
+  {
+    "id": 1,
+    "name": "armor_toughness",
+    "translation_key": "attribute.name.armor_toughness",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 20.0
+  },
+  {
+    "id": 2,
+    "name": "attack_damage",
+    "translation_key": "attribute.name.attack_damage",
+    "default_value": 2.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 2048.0
+  },
+  {
+    "id": 3,
+    "name": "attack_knockback",
+    "translation_key": "attribute.name.attack_knockback",
+    "default_value": 0.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 5.0
+  },
+  {
+    "id": 4,
+    "name": "attack_speed",
+    "translation_key": "attribute.name.attack_speed",
+    "default_value": 4.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 5,
+    "name": "block_break_speed",
+    "translation_key": "attribute.name.block_break_speed",
+    "default_value": 1.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 6,
+    "name": "block_interaction_range",
+    "translation_key": "attribute.name.block_interaction_range",
+    "default_value": 4.5,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 64.0
+  },
+  {
+    "id": 7,
+    "name": "burning_time",
+    "translation_key": "attribute.name.burning_time",
+    "default_value": 1.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 8,
+    "name": "camera_distance",
+    "translation_key": "attribute.name.camera_distance",
+    "default_value": 4.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 32.0
+  },
+  {
+    "id": 9,
+    "name": "explosion_knockback_resistance",
+    "translation_key": "attribute.name.explosion_knockback_resistance",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 10,
+    "name": "entity_interaction_range",
+    "translation_key": "attribute.name.entity_interaction_range",
+    "default_value": 3.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 64.0
+  },
+  {
+    "id": 11,
+    "name": "fall_damage_multiplier",
+    "translation_key": "attribute.name.fall_damage_multiplier",
+    "default_value": 1.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 100.0
+  },
+  {
+    "id": 12,
+    "name": "flying_speed",
+    "translation_key": "attribute.name.flying_speed",
+    "default_value": 0.4,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 13,
+    "name": "follow_range",
+    "translation_key": "attribute.name.follow_range",
+    "default_value": 32.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 2048.0
+  },
+  {
+    "id": 14,
+    "name": "gravity",
+    "translation_key": "attribute.name.gravity",
+    "default_value": 0.08,
+    "syncable": true,
+    "min_value": -1.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 15,
+    "name": "jump_strength",
+    "translation_key": "attribute.name.jump_strength",
+    "default_value": 0.41999998688697815,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 32.0
+  },
+  {
+    "id": 16,
+    "name": "knockback_resistance",
+    "translation_key": "attribute.name.knockback_resistance",
+    "default_value": 0.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 17,
+    "name": "luck",
+    "translation_key": "attribute.name.luck",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": -1024.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 18,
+    "name": "max_absorption",
+    "translation_key": "attribute.name.max_absorption",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 2048.0
+  },
+  {
+    "id": 19,
+    "name": "max_health",
+    "translation_key": "attribute.name.max_health",
+    "default_value": 20.0,
+    "syncable": true,
+    "min_value": 1.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 20,
+    "name": "mining_efficiency",
+    "translation_key": "attribute.name.mining_efficiency",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 21,
+    "name": "movement_efficiency",
+    "translation_key": "attribute.name.movement_efficiency",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 22,
+    "name": "movement_speed",
+    "translation_key": "attribute.name.movement_speed",
+    "default_value": 0.7,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 23,
+    "name": "oxygen_bonus",
+    "translation_key": "attribute.name.oxygen_bonus",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 24,
+    "name": "safe_fall_distance",
+    "translation_key": "attribute.name.safe_fall_distance",
+    "default_value": 3.0,
+    "syncable": true,
+    "min_value": -1024.0,
+    "max_value": 1024.0
+  },
+  {
+    "id": 25,
+    "name": "scale",
+    "translation_key": "attribute.name.scale",
+    "default_value": 1.0,
+    "syncable": true,
+    "min_value": 0.0625,
+    "max_value": 16.0
+  },
+  {
+    "id": 26,
+    "name": "sneaking_speed",
+    "translation_key": "attribute.name.sneaking_speed",
+    "default_value": 0.3,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 27,
+    "name": "spawn_reinforcements",
+    "translation_key": "attribute.name.spawn_reinforcements",
+    "default_value": 0.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 28,
+    "name": "step_height",
+    "translation_key": "attribute.name.step_height",
+    "default_value": 0.6,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 10.0
+  },
+  {
+    "id": 29,
+    "name": "submerged_mining_speed",
+    "translation_key": "attribute.name.submerged_mining_speed",
+    "default_value": 0.2,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 20.0
+  },
+  {
+    "id": 30,
+    "name": "sweeping_damage_ratio",
+    "translation_key": "attribute.name.sweeping_damage_ratio",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 31,
+    "name": "tempt_range",
+    "translation_key": "attribute.name.tempt_range",
+    "default_value": 10.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 2048.0
+  },
+  {
+    "id": 32,
+    "name": "water_movement_efficiency",
+    "translation_key": "attribute.name.water_movement_efficiency",
+    "default_value": 0.0,
+    "syncable": true,
+    "min_value": 0.0,
+    "max_value": 1.0
+  },
+  {
+    "id": 33,
+    "name": "waypoint_transmit_range",
+    "translation_key": "attribute.name.waypoint_transmit_range",
+    "default_value": 0.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 6.0e7
+  },
+  {
+    "id": 34,
+    "name": "waypoint_receive_range",
+    "translation_key": "attribute.name.waypoint_receive_range",
+    "default_value": 0.0,
+    "syncable": false,
+    "min_value": 0.0,
+    "max_value": 6.0e7
+  }
+]

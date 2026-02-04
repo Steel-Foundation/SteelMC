@@ -63,7 +63,7 @@ pub struct TickRateManager {
 impl TickRateManager {
     /// Creates a new `TickRateManager` with the default tick rate (20.0 TPS).
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             tick_rate: 20.0,
             nanoseconds_per_tick: 50_000_000, // 1_000_000_000 / 20
@@ -93,7 +93,7 @@ impl TickRateManager {
 
     /// Returns the tick rate.
     #[must_use]
-    pub fn tick_rate(&self) -> f32 {
+    pub const fn tick_rate(&self) -> f32 {
         self.tick_rate
     }
 
@@ -104,37 +104,37 @@ impl TickRateManager {
     }
 
     /// Sets the frozen state of the server.
-    pub fn set_frozen(&mut self, frozen: bool) {
+    pub const fn set_frozen(&mut self, frozen: bool) {
         self.is_frozen = frozen;
     }
 
     /// Returns whether the server is frozen.
     #[must_use]
-    pub fn is_frozen(&self) -> bool {
+    pub const fn is_frozen(&self) -> bool {
         self.is_frozen
     }
 
     /// Returns whether the server is currently stepping forward.
     #[must_use]
-    pub fn is_stepping_forward(&self) -> bool {
+    pub const fn is_stepping_forward(&self) -> bool {
         self.frozen_ticks_to_run > 0
     }
 
     /// Returns the number of frozen ticks to run.
     #[must_use]
-    pub fn frozen_ticks_to_run(&self) -> i32 {
+    pub const fn frozen_ticks_to_run(&self) -> i32 {
         self.frozen_ticks_to_run
     }
 
     /// Returns whether game elements should run this tick.
     #[must_use]
-    pub fn runs_normally(&self) -> bool {
+    pub const fn runs_normally(&self) -> bool {
         self.run_game_elements
     }
 
     /// Updates the state for the current tick.
     /// Call this at the start of each server tick.
-    pub fn tick(&mut self) {
+    pub const fn tick(&mut self) {
         self.run_game_elements = !self.is_frozen || self.frozen_ticks_to_run > 0;
         if self.frozen_ticks_to_run > 0 {
             self.frozen_ticks_to_run -= 1;
@@ -142,7 +142,7 @@ impl TickRateManager {
     }
 
     /// Increments the tick count. Call this when a tick actually runs.
-    pub fn increment_tick_count(&mut self) {
+    pub const fn increment_tick_count(&mut self) {
         self.tick_count += 1;
     }
 
@@ -150,7 +150,7 @@ impl TickRateManager {
 
     /// Steps the game forward by the given number of ticks if paused.
     /// Returns true if stepping was started, false if the game is not frozen.
-    pub fn step_game_if_paused(&mut self, ticks: i32) -> bool {
+    pub const fn step_game_if_paused(&mut self, ticks: i32) -> bool {
         if !self.is_frozen {
             return false;
         }
@@ -160,7 +160,7 @@ impl TickRateManager {
 
     /// Stops the current step operation.
     /// Returns true if stepping was stopped, false if not stepping.
-    pub fn stop_stepping(&mut self) -> bool {
+    pub const fn stop_stepping(&mut self) -> bool {
         if self.frozen_ticks_to_run > 0 {
             self.frozen_ticks_to_run = 0;
             true
@@ -173,7 +173,7 @@ impl TickRateManager {
 
     /// Returns whether the server is currently sprinting.
     #[must_use]
-    pub fn is_sprinting(&self) -> bool {
+    pub const fn is_sprinting(&self) -> bool {
         self.scheduled_current_sprint_ticks > 0
     }
 
@@ -283,7 +283,7 @@ impl TickRateManager {
 
     /// Returns the exponentially smoothed tick time in milliseconds.
     #[must_use]
-    pub fn get_smoothed_mspt(&self) -> f32 {
+    pub const fn get_smoothed_mspt(&self) -> f32 {
         self.smoothed_tick_time_ms
     }
 
@@ -301,7 +301,7 @@ impl TickRateManager {
 
     /// Returns a copy of the tick times array for percentile calculation.
     #[must_use]
-    pub fn get_tick_times_nanos(&self) -> [u64; TICK_STATS_SPAN] {
+    pub const fn get_tick_times_nanos(&self) -> [u64; TICK_STATS_SPAN] {
         self.tick_times_nanos
     }
 

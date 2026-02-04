@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 mod banner_patterns;
 mod biomes;
@@ -14,19 +14,25 @@ mod dialog_tags;
 mod dialogs;
 mod dimension_types;
 mod entities;
-mod entity_data_serializers;
+mod entity_data;
+mod fluid_tags;
+mod fluids;
+
 mod frog_variants;
 mod game_rules;
 mod instruments;
 mod item_tags;
 mod items;
 mod jukebox_songs;
+mod level_events;
 mod loot_tables;
 mod menu_types;
 mod packets;
 mod painting_variants;
 mod pig_variants;
 mod recipes;
+mod sound_events;
+mod sound_types;
 mod timeline_tags;
 mod timelines;
 mod trim_materials;
@@ -36,8 +42,6 @@ mod wolf_variants;
 mod zombie_nautilus_variants;
 
 const FMT: bool = cfg!(feature = "fmt");
-
-const OUT_DIR: &str = "src/generated";
 
 const BLOCKS: &str = "blocks";
 const BLOCK_TAGS: &str = "block_tags";
@@ -69,17 +73,28 @@ const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
 const RECIPES: &str = "recipes";
 const VANILLA_ENTITIES: &str = "entities";
-const ENTITY_DATA_SERIALIZERS: &str = "entity_data_serializers";
+const ENTITY_DATA: &str = "entity_data";
+const FLUIDS: &str = "fluids";
+const FLUID_TAGS: &str = "fluid_tags";
+
 const LOOT_TABLES: &str = "loot_tables";
 const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
 const GAME_RULES: &str = "game_rules";
+const LEVEL_EVENTS: &str = "level_events";
+const SOUND_EVENTS: &str = "sound_events";
+const SOUND_TYPES: &str = "sound_types";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
     println!("cargo:rerun-if-changed=build/");
 
-    if !Path::new(OUT_DIR).exists() {
-        fs::create_dir(OUT_DIR).unwrap();
+    // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let out_dir = Path::new(&manifest_dir).join("src/generated");
+
+    // Create the generated directory if it doesn't exist
+    if !out_dir.exists() {
+        fs::create_dir(&out_dir).unwrap();
     }
 
     let vanilla_builds = [
@@ -113,21 +128,45 @@ pub fn main() {
         (zombie_nautilus_variants::build(), ZOMBIE_NAUTILUS_VARIANTS),
         (recipes::build(), RECIPES),
         (entities::build(), VANILLA_ENTITIES),
-        (entity_data_serializers::build(), ENTITY_DATA_SERIALIZERS),
+        (entity_data::build(), ENTITY_DATA),
+        (fluids::build(), FLUIDS),
+        (fluid_tags::build(), FLUID_TAGS),
         (loot_tables::build(), LOOT_TABLES),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),
         (game_rules::build(), GAME_RULES),
+        (level_events::build(), LEVEL_EVENTS),
+        (sound_events::build(), SOUND_EVENTS),
+        (sound_types::build(), SOUND_TYPES),
     ];
 
+    // Track which files we're generating this run
+    let mut generated_files: Vec<std::path::PathBuf> = Vec::new();
+
     for (content, file_name) in vanilla_builds {
-        fs::write(
-            format!("{OUT_DIR}/vanilla_{file_name}.rs"),
-            content.to_string(),
-        )
-        .unwrap();
+        let path = out_dir.join(format!("vanilla_{file_name}.rs"));
+        let content = content.to_string();
+        generated_files.push(path.clone());
+
+        // Only write if content changed
+        if let Ok(existing) = fs::read_to_string(&path)
+            && existing == content
+        {
+            continue;
+        }
+        fs::write(&path, content).unwrap();
     }
 
-    if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
+    // Remove any stale files not generated this run
+    if let Ok(entries) = fs::read_dir(&out_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !generated_files.contains(&path) {
+                let _ = fs::remove_file(&path);
+            }
+        }
+    }
+
+    if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
         for entry in entries.flatten() {
             let _ = Command::new("rustfmt").arg(entry.path()).output();
         }

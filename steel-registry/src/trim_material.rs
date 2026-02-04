@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents an armor trim material definition from the data packs.
 #[derive(Debug)]

@@ -1,17 +1,12 @@
 //! Handler for the "seed" command.
-use std::sync::Arc;
-
-use steel_utils::text::TextComponent;
-use steel_utils::text::color::NamedColor;
-use steel_utils::text::interactivity::{ClickEvent, HoverEvent, Interactivity};
-use steel_utils::text::translation::TranslatedMessage;
-use steel_utils::translations;
-
 use crate::command::commands::{CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
 use crate::config::STEEL_CONFIG;
-use crate::server::Server;
+use steel_utils::translations;
+use text_components::format::Color;
+use text_components::interactivity::{ClickEvent, HoverEvent};
+use text_components::{Modifier, TextComponent};
 
 /// Handler for the "seed" command.
 #[must_use]
@@ -27,29 +22,16 @@ pub fn command_handler() -> impl CommandHandlerDyn {
 struct SeedCommandExecutor;
 
 impl CommandExecutor<()> for SeedCommandExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        _server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
         context.sender.send_message(
-            TranslatedMessage::new(
-                "commands.seed.success",
-                Some(Box::new([TextComponent::new()
-                    .text(&STEEL_CONFIG.seed)
-                    .color(NamedColor::Green)
-                    .interactivity(
-                        Interactivity::new()
-                            .hover_event(HoverEvent::show_text(
-                                translations::CHAT_COPY_CLICK.msg().into(),
-                            ))
-                            .click_event(ClickEvent::CopyToClipboard {
-                                value: (&STEEL_CONFIG.seed).into(),
-                            }),
-                    )])),
-            )
-            .into(),
+            &translations::COMMANDS_SEED_SUCCESS
+                .message([TextComponent::plain(&STEEL_CONFIG.seed)
+                    .color(Color::Green)
+                    .hover_event(HoverEvent::show_text(&translations::CHAT_COPY_CLICK))
+                    .click_event(ClickEvent::CopyToClipboard {
+                        value: (&STEEL_CONFIG.seed).into(),
+                    })])
+                .component(),
         );
         Ok(())
     }

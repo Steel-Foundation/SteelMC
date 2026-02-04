@@ -11,9 +11,6 @@
 //! - `dimension` (execute in another dimension)
 //! - `summon` (execute as newly summoned entity)
 //! - `on` (execute on related entities)
-
-use std::sync::Arc;
-
 use crate::command::arguments::anchor::AnchorArgument;
 use crate::command::arguments::rotation::RotationArgument;
 use crate::command::commands::{
@@ -22,7 +19,6 @@ use crate::command::commands::{
 };
 use crate::command::context::{CommandContext, EntityAnchor};
 use crate::command::error::CommandError;
-use crate::server::Server;
 
 /// Handler for the "execute" command.
 #[must_use]
@@ -53,7 +49,6 @@ impl CommandExecutor<((), EntityAnchor)> for AnchorExecutor {
         &self,
         args: ((), EntityAnchor),
         context: &mut CommandContext,
-        _server: &Arc<Server>,
     ) -> Result<(), CommandError> {
         context.anchor = args.1;
         Ok(())
@@ -66,7 +61,6 @@ impl CommandExecutor<((), (f32, f32))> for RotationExecutor {
         &self,
         args: ((), (f32, f32)),
         context: &mut CommandContext,
-        _server: &Arc<Server>,
     ) -> Result<(), CommandError> {
         context.rotation = Some(args.1);
         Ok(())
@@ -75,12 +69,7 @@ impl CommandExecutor<((), (f32, f32))> for RotationExecutor {
 
 struct RunExecutor;
 impl CommandExecutor<()> for RunExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        _context: &mut CommandContext,
-        _server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, _args: (), _context: &mut CommandContext) -> Result<(), CommandError> {
         Ok(())
     }
 }

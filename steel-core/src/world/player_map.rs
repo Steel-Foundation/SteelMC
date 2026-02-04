@@ -39,7 +39,7 @@ impl PlayerMap {
     /// Returns `true` if the player was inserted, `false` if a player with the same UUID already exists.
     pub fn insert(&self, player: Arc<Player>) -> bool {
         let uuid = player.gameprofile.id;
-        let entity_id = player.entity_id;
+        let entity_id = player.id;
 
         if self.by_uuid.insert_sync(uuid, player.clone()).is_err() {
             return false;
@@ -54,7 +54,7 @@ impl PlayerMap {
     /// Returns the removed player if found.
     pub async fn remove(&self, uuid: &Uuid) -> Option<Arc<Player>> {
         if let Some((_, player)) = self.by_uuid.remove_async(uuid).await {
-            let _ = self.by_entity_id.remove_async(&player.entity_id).await;
+            let _ = self.by_entity_id.remove_async(&player.id).await;
             Some(player)
         } else {
             None

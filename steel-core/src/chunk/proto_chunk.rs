@@ -95,7 +95,7 @@ impl ProtoChunk {
 
     /// Gets the section index for a given Y coordinate.
     #[must_use]
-    fn get_section_index(&self, y: i32) -> usize {
+    const fn get_section_index(&self, y: i32) -> usize {
         ((y - self.min_y) / 16) as usize
     }
 

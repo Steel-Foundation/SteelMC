@@ -37,13 +37,13 @@ impl CraftingContainer {
 
     /// Returns the width of the crafting grid.
     #[must_use]
-    pub fn width(&self) -> usize {
+    pub const fn width(&self) -> usize {
         self.width
     }
 
     /// Returns the height of the crafting grid.
     #[must_use]
-    pub fn height(&self) -> usize {
+    pub const fn height(&self) -> usize {
         self.height
     }
 

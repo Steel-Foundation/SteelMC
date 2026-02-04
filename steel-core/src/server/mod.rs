@@ -5,34 +5,33 @@ pub mod registry_cache;
 pub mod tick_rate_manager;
 
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicI32, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CLogin, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
+    CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry};
 use steel_utils::locks::SyncRwLock;
-use steel_utils::text::{TextComponent, color::NamedColor};
-use steel_utils::types::GameType;
+use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 
 use crate::behavior::init_behaviors;
+use crate::block_entity::init_block_entities;
 use crate::command::CommandDispatcher;
 use crate::config::STEEL_CONFIG;
+use crate::entity::init_entities;
 use crate::player::Player;
+use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
-use crate::world::World;
+use crate::world::{World, WorldTickTimings};
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -51,8 +50,8 @@ pub struct Server {
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
-    /// Counter for assigning unique entity IDs.
-    next_entity_id: AtomicI32,
+    /// Player data storage for saving/loading player state.
+    pub player_data_storage: PlayerDataStorage,
 }
 
 impl Server {
@@ -73,6 +72,8 @@ impl Server {
 
         // Initialize behavior registries after the main registry is frozen
         init_behaviors();
+        init_block_entities();
+        init_entities();
         log::info!("Behavior registries initialized");
 
         let registry_cache = RegistryCache::new();
@@ -93,6 +94,10 @@ impl Server {
             .await
             .expect("Failed to create overworld");
 
+        let player_data_storage = PlayerDataStorage::new()
+            .await
+            .expect("Failed to create player data storage");
+
         Server {
             cancel_token,
             key_store: KeyStore::create(),
@@ -100,21 +105,35 @@ impl Server {
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
-            next_entity_id: AtomicI32::new(1), // Start at 1, 0 is reserved
+            player_data_storage,
         }
-    }
-
-    /// Allocates a new unique entity ID.
-    #[must_use]
-    pub fn next_entity_id(&self) -> i32 {
-        self.next_entity_id.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Adds a player to the server.
     ///
     /// # Panics
     /// Panics if the registry is not initialized.
-    pub fn add_player(&self, player: Arc<Player>) {
+    pub async fn add_player(&self, player: Arc<Player>) {
+        // Load saved player data if it exists
+        match self.player_data_storage.load(player.gameprofile.id).await {
+            Ok(Some(saved_data)) => {
+                log::info!("Loaded saved data for player {}", player.gameprofile.name);
+                saved_data.apply_to_player(&player);
+            }
+            Ok(None) => {
+                log::debug!(
+                    "No saved data for player {}, using defaults",
+                    player.gameprofile.name
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to load player data for {}: {e}",
+                    player.gameprofile.name
+                );
+            }
+        }
+
         let world = &self.worlds[0];
 
         // Get gamerule values
@@ -129,7 +148,7 @@ impl Server {
         let dimension_key = world.dimension.key.clone();
 
         player.connection.send_packet(CLogin {
-            player_id: player.entity_id,
+            player_id: player.id,
             hardcore: false,
             levels: vec![dimension_key.clone()],
             max_players: STEEL_CONFIG.max_players as i32,
@@ -147,7 +166,7 @@ impl Server {
                 )) as i32,
                 dimension: dimension_key,
                 seed: hashed_seed,
-                game_type: GameType::Survival,
+                game_type: player.game_mode.load(),
                 previous_game_type: None,
                 is_debug: false,
                 // TODO: Change once we add a normal generator
@@ -159,13 +178,40 @@ impl Server {
             enforces_secure_chat: STEEL_CONFIG.enforce_secure_chat,
         });
 
+        // Send player abilities (flight, invulnerability, etc.)
+        player.send_abilities();
+
+        player.connection.send_packet(CSetHeldSlot {
+            slot: i32::from(player.inventory.lock().get_selected_slot()),
+        });
+
         let commands = self.command_dispatcher.read().get_commands();
         player.connection.send_packet(commands);
 
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
 
-        world.add_player(player);
+        // Get player position for teleport sync (must be done before add_player moves the Arc)
+        let pos = *player.position.lock();
+        let (yaw, pitch) = player.rotation.load();
+
+        // Send position sync to client (ensures client is at the correct loaded position)
+        // This must be sent after the player is added to the world
+        player.teleport(pos.x, pos.y, pos.z, yaw, pitch);
+
+        world.add_player(player.clone());
+    }
+
+    /// Gets all the players on the server
+    pub fn get_players(&self) -> Vec<Arc<Player>> {
+        let mut players = vec![];
+        for world in &self.worlds {
+            world.players.iter_players(|_, p| {
+                players.push(p.clone());
+                true
+            });
+        }
+        players
     }
 
     /// Runs the server tick loop.
@@ -250,25 +296,46 @@ impl Server {
         }
     }
 
+    #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
         for world in &self.worlds {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
-                world_clone.tick_b(tick_count, runs_normally);
+                world_clone.tick_b(tick_count, runs_normally)
             }));
         }
-        #[cfg(feature = "debug_measurement_output")]
         let start = Instant::now();
+        let mut all_timings: Vec<WorldTickTimings> = Vec::with_capacity(tasks.len());
         for task in tasks {
-            let _ = task.await;
+            if let Ok(timings) = task.await {
+                all_timings.push(timings);
+            }
         }
-        #[cfg(feature = "debug_measurement_output")]
-        if start.elapsed().as_millis() > 1 {
-            log::warn!(
-                "Worlds ticked in {:?}, tick count: {tick_count}",
-                start.elapsed()
-            );
+        let elapsed = start.elapsed();
+        if elapsed.as_millis() >= 30 {
+            // Log detailed breakdown when tick is slow
+            for (i, timings) in all_timings.iter().enumerate() {
+                let cm = &timings.chunk_map;
+                tracing::warn!(
+                    world = i,
+                    ?elapsed,
+                    tick_count,
+                    player_tick = ?timings.player_tick,
+                    ticket_updates = ?cm.ticket_updates,
+                    holder_creation = ?cm.holder_creation,
+                    schedule_generation = ?cm.schedule_generation,
+                    scheduled_count = cm.scheduled_count,
+                    run_generation = ?cm.run_generation,
+                    broadcast_changes = ?cm.broadcast_changes,
+                    process_unloads = ?cm.process_unloads,
+                    collect_tickable = ?cm.collect_tickable,
+                    tick_chunks = ?cm.tick_chunks,
+                    tickable_count = cm.tickable_count,
+                    total_chunks = cm.total_chunks,
+                    "Worlds tick slow"
+                );
+            }
         }
     }
 
@@ -276,55 +343,36 @@ impl Server {
     fn broadcast_tab_list(&self, tps: f32, mspt: f32) {
         // Color TPS based on value
         let tps_color = if tps >= 19.5 {
-            NamedColor::Green
+            Color::Green
         } else if tps >= 15.0 {
-            NamedColor::Yellow
+            Color::Yellow
         } else {
-            NamedColor::Red
+            Color::Red
         };
 
         // Color MSPT based on value (under 50ms is good)
         let mspt_color = if mspt <= 50.0 {
-            NamedColor::Aqua
+            Color::Aqua
         } else {
-            NamedColor::Red
+            Color::Red
         };
 
-        let packet = CTabList::new(
-            // Header: Steel Dev Build
-            TextComponent::new()
-                .text("\n")
-                .extra(
-                    TextComponent::new()
-                        .text("Steel Dev Build")
-                        .color(NamedColor::Yellow),
-                )
-                .extra(TextComponent::new().text("\n")),
-            // Footer: TPS and MSPT with live values
-            TextComponent::new()
-                .text("\n")
-                .extra(TextComponent::new().text("TPS: ").color(NamedColor::Gray))
-                .extra(
-                    TextComponent::new()
-                        .text(format!("{tps:.1}"))
-                        .color(tps_color),
-                )
-                .extra(TextComponent::new().text(" | ").color(NamedColor::DarkGray))
-                .extra(TextComponent::new().text("MSPT: ").color(NamedColor::Gray))
-                .extra(
-                    TextComponent::new()
-                        .text(format!("{mspt:.2}"))
-                        .color(mspt_color),
-                )
-                .extra(TextComponent::new().text("\n")),
-        );
+        let header = TextComponent::plain("\n").add_children(vec![
+            TextComponent::plain("Steel Dev Build").color(Color::Yellow),
+            TextComponent::plain("\n"),
+        ]);
+        let footer = TextComponent::plain("\n").add_children(vec![
+            TextComponent::plain("TPS: ").color(Color::Gray),
+            TextComponent::plain(format!("{tps:.1}")).color(tps_color),
+            TextComponent::plain(" | ").color(Color::DarkGray),
+            TextComponent::plain("MSPT: ").color(Color::Gray),
+            TextComponent::plain(format!("{mspt:.2}")).color(mspt_color),
+            TextComponent::plain("\n"),
+        ]);
 
         // Broadcast to all players in all worlds
         for world in &self.worlds {
-            world.players.iter_players(|_, player| {
-                player.connection.send_packet(packet.clone());
-                true
-            });
+            world.broadcast_to_all_with(|player| CTabList::new(&header, &footer, player));
         }
     }
 
@@ -339,13 +387,8 @@ impl Server {
             ])
             .into();
 
-        let packet = CSystemChat::new(message, false);
-
         for world in &self.worlds {
-            world.players.iter_players(|_, player| {
-                player.connection.send_packet(packet.clone());
-                true
-            });
+            world.broadcast_to_all_with(|player| CSystemChat::new(&message, false, player));
         }
     }
 
@@ -357,10 +400,7 @@ impl Server {
         drop(tick_manager);
 
         for world in &self.worlds {
-            world.players.iter_players(|_, player| {
-                player.connection.send_packet(packet.clone());
-                true
-            });
+            world.broadcast_to_all(packet.clone());
         }
     }
 
@@ -372,10 +412,7 @@ impl Server {
         drop(tick_manager);
 
         for world in &self.worlds {
-            world.players.iter_players(|_, player| {
-                player.connection.send_packet(packet.clone());
-                true
-            });
+            world.broadcast_to_all(packet.clone());
         }
     }
 

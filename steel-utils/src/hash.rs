@@ -80,7 +80,7 @@ pub struct ComponentHasher {
 impl ComponentHasher {
     /// Creates a new hasher.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { data: Vec::new() }
     }
 
@@ -284,29 +284,32 @@ impl ComponentHasher {
 }
 
 /// A hash entry for map sorting.
+///
+/// Vanilla Minecraft hashes each key and value, then sorts by these hashes,
+/// and writes ONLY the 4-byte hash values (not the original encoded bytes) to the final hasher.
 #[derive(Clone)]
 pub struct HashEntry {
-    /// The hash of the key data.
+    /// The hash of the key data (for sorting).
     pub key_hash: i64,
-    /// The hash of the value data.
+    /// The hash of the value data (for sorting).
     pub value_hash: i64,
-    /// The raw bytes of the key.
-    pub key_bytes: Vec<u8>,
-    /// The raw bytes of the value.
-    pub value_bytes: Vec<u8>,
+    /// The 4-byte CRC32C hash of the key (to be written to the final hasher).
+    pub key_bytes: [u8; 4],
+    /// The 4-byte CRC32C hash of the value (to be written to the final hasher).
+    pub value_bytes: [u8; 4],
 }
 
 impl HashEntry {
     /// Creates a new hash entry.
     #[must_use]
     pub fn new(key_hasher: ComponentHasher, value_hasher: ComponentHasher) -> Self {
-        let key_bytes = key_hasher.data.clone();
-        let value_bytes = value_hasher.data.clone();
+        let key_bytes = crc32c::crc32c(&key_hasher.data);
+        let value_bytes = crc32c::crc32c(&value_hasher.data);
         Self {
-            key_hash: i64::from(crc32c::crc32c(&key_bytes)),
-            value_hash: i64::from(crc32c::crc32c(&value_bytes)),
-            key_bytes,
-            value_bytes,
+            key_hash: i64::from(key_bytes),
+            value_hash: i64::from(value_bytes),
+            key_bytes: key_bytes.to_le_bytes(),
+            value_bytes: value_bytes.to_le_bytes(),
         }
     }
 }
@@ -487,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_text_component_steel() {
-        use crate::text::TextComponent;
+        use text_components::TextComponent;
 
         // A simple text component with just "Steel" should collapse to a string
         let component = TextComponent::from("Steel");
@@ -495,5 +498,37 @@ mod tests {
 
         // Expected hash from vanilla Minecraft client
         assert_eq!(hash, -25_646_594, "Hash should match vanilla client");
+    }
+
+    #[test]
+    fn test_text_component_simple_styled() {
+        use text_components::TextComponent;
+        use text_components::{Modifier, format::Color};
+
+        // Simple styled component: {"text":"R","color":"red","bold":true}
+        // Expected hash from vanilla client 1.21.11: 1605556242
+        let component = TextComponent::plain("R").color(Color::Red).bold(true);
+        let hash = component.compute_hash();
+
+        assert_eq!(
+            hash, 1_605_556_242,
+            "Hash should match vanilla client 1.21.11 for simple styled text"
+        );
+    }
+
+    #[test]
+    fn test_text_component_rainbow() {
+        use text_components::TextComponent;
+
+        // Rainbow text from the issue
+        let json = r##"[{"text":"R","color":"red","bold":true},{"text":"a","color":"#ff5a00"},{"text":"i","color":"yellow","bold":true},{"text":"n","color":"green"},{"text":"b","color":"aqua","bold":true},{"text":"o","color":"blue"},{"text":"w","color":"light_purple","bold":true}]"##;
+        let component = TextComponent::from_snbt(json).expect("Failed to parse rainbow text");
+        let hash = component.compute_hash();
+
+        // Expected hash from vanilla Minecraft client (from the error message)
+        assert_eq!(
+            hash, 796_582_470,
+            "Hash should match vanilla client for rainbow text"
+        );
     }
 }
