@@ -1,7 +1,7 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
-use crate::RegistryExt;
 
 /// Represents a musical instrument definition from a data pack JSON file,
 /// primarily used for Goat Horns.

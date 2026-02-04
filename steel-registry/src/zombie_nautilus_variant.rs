@@ -61,7 +61,11 @@ impl ZombieNautilusVariantRegistry {
     /// Replaces a zombie_nautilus_variant at a given index.
     /// Returns true if the zombie_nautilus_variant was replaced and false if the zombie_nautilus_variant wasn't replaced
     #[must_use]
-    pub fn replace(&mut self, zombie_nautilus_variant: ZombieNautilusVariantRef, id: usize) -> bool {
+    pub fn replace(
+        &mut self,
+        zombie_nautilus_variant: ZombieNautilusVariantRef,
+        id: usize,
+    ) -> bool {
         if id >= self.zombie_nautilus_variants_by_id.len() {
             return false;
         }

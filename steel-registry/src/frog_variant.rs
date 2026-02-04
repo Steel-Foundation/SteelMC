@@ -1,6 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-use crate::RegistryExt;
 
 /// Represents a full frog variant definition from a data pack JSON file.
 #[derive(Debug)]

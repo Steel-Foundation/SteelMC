@@ -1,6 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-use crate::RegistryExt;
 
 /// Represents a full cat variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -54,7 +54,6 @@ impl CatVariantRegistry {
         self.cat_variants_by_id.push(cat_variant);
         id
     }
-
 
     /// Replaces a cat_variant at a given index.
     /// Returns true if the cat_variant was replaced and false if the cat_variant wasn't replaced

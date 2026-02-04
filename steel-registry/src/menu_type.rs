@@ -1,6 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-use crate::RegistryExt;
 
 /// Represents a menu type (container/GUI type) in Minecraft.
 /// Menu types define the different inventory interfaces available,

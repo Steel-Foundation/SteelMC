@@ -1,7 +1,7 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
-use crate::RegistryExt;
 
 /// Categories for game rules, used for organization in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
