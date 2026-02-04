@@ -4,12 +4,12 @@ use std::{
         Arc, Weak,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use rayon::{
     ThreadPool, ThreadPoolBuilder,
-    iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
+    iter::{IntoParallelIterator, ParallelIterator},
 };
 use rustc_hash::FxBuildHasher;
 use steel_protocol::packets::game::{
@@ -17,8 +17,9 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef, vanilla_blocks};
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
-use tokio::{runtime::Runtime, time::Instant};
+use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
+use tracing::instrument;
 
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
@@ -35,12 +36,33 @@ use crate::chunk_saver::RegionManager;
 use crate::player::Player;
 use crate::world::World;
 
-#[allow(dead_code)]
-const PROCESS_CHANGES_WARN_THRESHOLD: usize = 1_000;
-#[allow(dead_code)]
-const PROCESS_CHANGES_WARN_MIN_DURATION: Duration = Duration::from_micros(500);
-const SLOW_TASK_WARN_THRESHOLD: Duration = Duration::from_micros(250);
-const SLOW_TASK_WARN_THRESHOLD_BIG: Duration = Duration::from_micros(800);
+/// Timing information for chunk map tick operations.
+#[derive(Debug, Default)]
+pub struct ChunkMapTickTimings {
+    /// Time spent processing ticket updates.
+    pub ticket_updates: Duration,
+    /// Time spent creating/updating chunk holders.
+    pub holder_creation: Duration,
+    /// Time spent scheduling generation tasks.
+    pub schedule_generation: Duration,
+    /// Number of holders scheduled for generation.
+    pub scheduled_count: usize,
+    /// Time spent spawning generation tasks.
+    pub run_generation: Duration,
+    /// Time spent broadcasting block changes.
+    pub broadcast_changes: Duration,
+    /// Time spent processing chunk unloads.
+    pub process_unloads: Duration,
+    /// Time spent collecting tickable chunks.
+    pub collect_tickable: Duration,
+    /// Time spent ticking chunks (random ticks, etc.).
+    pub tick_chunks: Duration,
+    /// Number of chunks that were ticked.
+    pub tickable_count: usize,
+    /// Total number of loaded chunks.
+    pub total_chunks: usize,
+}
+
 /// A map of chunks managing their state, loading, and generation.
 pub struct ChunkMap {
     /// Map of active chunks.
@@ -58,7 +80,7 @@ pub struct ChunkMap {
     /// The thread pool to use for chunk generation (throughput-oriented).
     pub generation_pool: Arc<ThreadPool>,
     /// The thread pool to use for chunk ticking (latency-oriented).
-    pub tick_pool: Arc<ThreadPool>,
+    //pub tick_pool: Arc<ThreadPool>,
     /// The runtime to use for chunk tasks.
     pub chunk_runtime: Arc<Runtime>,
     /// Manager for chunk saving and loading.
@@ -96,7 +118,7 @@ impl ChunkMap {
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
             world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
             generation_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
-            tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
+            //tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             chunk_runtime,
             region_manager: Arc::new(RegionManager::new(format!("world/{}", dimension.key.path))),
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
@@ -111,7 +133,7 @@ impl ChunkMap {
     where
         F: FnOnce(&ChunkAccess) -> R,
     {
-        let chunk_holder = self.chunks.get_sync(pos)?;
+        let chunk_holder = self.chunks.read_sync(pos, |_, chunk| chunk.clone())?;
         let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
         Some(f(&guard))
     }
@@ -175,11 +197,11 @@ impl ChunkMap {
                     let block_pos = section_pos.relative_to_block_pos(packed);
                     let block_state = world.get_block_state(&block_pos);
 
-                    log::debug!(
-                        "Broadcasting single block update at {:?} state={:?} to {} players",
-                        block_pos,
-                        block_state,
-                        tracking_players.len()
+                    tracing::debug!(
+                        ?block_pos,
+                        ?block_state,
+                        player_count = tracking_players.len(),
+                        "Broadcasting single block update"
                     );
 
                     let update_packet = CBlockUpdate {
@@ -206,11 +228,11 @@ impl ChunkMap {
                         })
                         .collect();
 
-                    log::debug!(
-                        "Broadcasting {} block updates in section {:?} to {} players",
-                        changes.len(),
-                        section_pos,
-                        tracking_players.len()
+                    tracing::debug!(
+                        change_count = changes.len(),
+                        ?section_pos,
+                        player_count = tracking_players.len(),
+                        "Broadcasting section block updates"
                     );
 
                     let packet = CSectionBlocksUpdate {
@@ -230,37 +252,38 @@ impl ChunkMap {
 
     /// Schedules a new generation task.
     #[inline]
+    #[instrument(level = "trace", skip(self), fields(chunk = ?pos, target = ?target_status))]
     pub(crate) fn schedule_generation_task_b(
         self: &Arc<Self>,
         target_status: ChunkStatus,
         pos: ChunkPos,
     ) -> Arc<ChunkGenerationTask> {
-        let start = Instant::now();
         let task = Arc::new(ChunkGenerationTask::new(
             pos,
             target_status,
             self.clone(),
             self.generation_pool.clone(),
         ));
-        if start.elapsed() >= Duration::from_millis(1) {
-            log::warn!("schedule_generation_task_b took: {:?}", start.elapsed());
-        }
         self.pending_generation_tasks.lock().push(task.clone());
         task
     }
 
     /// Runs queued generation tasks.
+    #[instrument(level = "trace", skip(self))]
     pub fn run_generation_tasks_b(&self) {
         let mut pending = self.pending_generation_tasks.lock();
         if pending.is_empty() {
             return;
         }
-        //log::info!("Running {} generation tasks", pending.len());
+        let task_count = pending.len();
+        tracing::trace!(task_count, "Running generation tasks");
         let tasks = pending.drain(..).collect::<Vec<_>>();
-        tasks.into_par_iter().for_each(|task| {
+        drop(pending); // Release lock before spawning
+
+        for task in tasks {
             self.task_tracker
                 .spawn_on(async move { task.run().await }, self.chunk_runtime.handle());
-        });
+        }
     }
 
     /// Updates scheduling for a chunk based on its new level.
@@ -320,133 +343,137 @@ impl ChunkMap {
     /// * `tick_count` - The current server tick count
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick
     /// * `runs_normally` - Whether game elements should run (false when frozen)
+    ///
+    /// Returns timing information for each phase of the tick.
     #[allow(clippy::too_many_lines)]
-    pub fn tick_b(self: &Arc<Self>, tick_count: u64, random_tick_speed: u32, runs_normally: bool) {
-        let start = Instant::now();
+    #[instrument(level = "trace", skip(self), name = "chunk_map_tick")]
+    pub fn tick_b(
+        self: &Arc<Self>,
+        tick_count: u64,
+        random_tick_speed: u32,
+        runs_normally: bool,
+    ) -> ChunkMapTickTimings {
+        let mut timings = ChunkMapTickTimings::default();
 
         {
             let mut ct = self.chunk_tickets.lock();
 
-            let updates_start = Instant::now();
             // Only process chunks that actually changed
-            let changes: Vec<LevelChange> = ct.run_all_updates().to_vec();
-            let updates_elapsed = updates_start.elapsed();
+            let changes: Vec<LevelChange> = {
+                let _span = tracing::trace_span!("ticket_updates").entered();
+                let start = Instant::now();
+                let result = ct.run_all_updates().to_vec();
+                timings.ticket_updates = start.elapsed();
+                result
+            };
 
-            let holder_creation_start = Instant::now();
-            let holders_to_schedule: Vec<_> = changes
-                .iter()
-                .filter_map(|change| {
-                    self.update_chunk_level(&change.pos, change.new_level)
-                        .map(|holder| (holder, change.new_level))
-                })
-                .collect();
-            let holder_creation_elapsed = holder_creation_start.elapsed();
+            let holders_to_schedule: Vec<_> = {
+                let _span = tracing::trace_span!("holder_creation").entered();
+                let start = Instant::now();
+                let result = changes
+                    .iter()
+                    .filter_map(|change| {
+                        self.update_chunk_level(&change.pos, change.new_level)
+                            .map(|holder| (holder, change.new_level))
+                    })
+                    .collect();
+                timings.holder_creation = start.elapsed();
+                result
+            };
 
-            let schedule_start = Instant::now();
-            self.tick_pool.install(|| {
-                holders_to_schedule.par_iter().for_each(|(holder, level)| {
-                    if let Some(level) = level
-                        && is_full(*level)
-                    {
-                        holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self);
-                    }
-                });
-            });
-            let schedule_elapsed = schedule_start.elapsed();
-
-            if updates_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-                log::warn!("chunk_tickets run_updates slow: {updates_elapsed:?}");
-            }
-            if holder_creation_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-                log::warn!("holder_creation slow: {holder_creation_elapsed:?}");
-            }
-            if schedule_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-                log::warn!("schedule slow: {schedule_elapsed:?}");
+            {
+                let _span = tracing::trace_span!("schedule_generation").entered();
+                let start = Instant::now();
+                let scheduled_count: usize = holders_to_schedule
+                    .into_par_iter()
+                    .filter(|(holder, level)| {
+                        level.is_some_and(is_full)
+                            && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
+                    })
+                    .count();
+                timings.schedule_generation = start.elapsed();
+                timings.scheduled_count = scheduled_count;
             }
         };
 
-        let start_gen = Instant::now();
-        self.run_generation_tasks_b();
-        let gen_elapsed = start_gen.elapsed();
-        if gen_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-            log::warn!("run_generation_tasks_b slow: {gen_elapsed:?}");
+        {
+            let _span = tracing::trace_span!("run_generation").entered();
+            let start = Instant::now();
+            self.run_generation_tasks_b();
+            timings.run_generation = start.elapsed();
         }
 
-        let start_broadcast = Instant::now();
-        self.broadcast_changed_chunks();
-        let broadcast_elapsed = start_broadcast.elapsed();
-        if broadcast_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-            log::warn!("broadcast_changed_chunks slow: {broadcast_elapsed:?}");
+        {
+            let _span = tracing::trace_span!("broadcast_changes").entered();
+            let start = Instant::now();
+            self.broadcast_changed_chunks();
+            timings.broadcast_changes = start.elapsed();
         }
 
-        let start_unload = Instant::now();
-        self.process_unloads();
-        let unload_elapsed = start_unload.elapsed();
-        if unload_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-            log::warn!("process_unloads slow: {unload_elapsed:?}");
-        }
-
-        let tick_elapsed = start.elapsed();
-        if tick_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-            log::warn!("Tick_b slow: total {tick_elapsed:?}");
+        {
+            let _span = tracing::trace_span!("process_unloads").entered();
+            let start = Instant::now();
+            self.process_unloads();
+            timings.process_unloads = start.elapsed();
         }
 
         if tick_count.is_multiple_of(100) {
-            log::debug!(
-                "Chunk map entries: {}, unloading chunks: {}",
-                self.chunks.len(),
-                self.unloading_chunks.len()
+            tracing::debug!(
+                chunks = self.chunks.len(),
+                unloading = self.unloading_chunks.len(),
+                "Chunk map status"
             );
         }
 
         // Chunk ticking - skip when frozen
         if !runs_normally {
-            return;
+            return timings;
         }
 
-        let start_collect = Instant::now();
-        let mut total_chunks = 0;
-        let last_len = self.last_tickable_len.load(Ordering::Relaxed);
-        let mut tickable_chunks = Vec::with_capacity(last_len);
-        self.chunks.iter_sync(|_, holder| {
-            total_chunks += 1;
-            let level = holder.ticket_level.load(Ordering::Relaxed);
-            if is_ticked(level) {
-                tickable_chunks.push(holder.clone());
-            }
-            true
-        });
-        self.last_tickable_len
-            .store(tickable_chunks.len(), Ordering::Relaxed);
-        let collect_elapsed = start_collect.elapsed();
-        if collect_elapsed >= SLOW_TASK_WARN_THRESHOLD {
-            log::warn!(
-                "tickable_chunks collect slow: {collect_elapsed:?}, count: {}",
-                tickable_chunks.len()
-            );
-        }
-
-        if !tickable_chunks.is_empty() {
-            let start_tick = Instant::now();
-            // TODO: In the future we might want to tick different regions/islands in parallel
-            for holder in &tickable_chunks {
-                if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                    chunk_guard.tick(random_tick_speed);
+        {
+            let _span = tracing::trace_span!("collect_tickable").entered();
+            let start = Instant::now();
+            let mut total_chunks = 0;
+            let last_len = self.last_tickable_len.load(Ordering::Relaxed);
+            let mut tickable_chunks = Vec::with_capacity(last_len);
+            self.chunks.iter_sync(|_, holder| {
+                total_chunks += 1;
+                let level = holder.ticket_level.load(Ordering::Relaxed);
+                if is_ticked(level) {
+                    tickable_chunks.push(holder.clone());
                 }
-            }
-            let tick_elapsed = start_tick.elapsed();
-            if tick_elapsed >= SLOW_TASK_WARN_THRESHOLD_BIG {
-                log::warn!(
-                    "chunk tick loop slow: {tick_elapsed:?}, count: {}/{}",
-                    tickable_chunks.len(),
+                true
+            });
+            self.last_tickable_len
+                .store(tickable_chunks.len(), Ordering::Relaxed);
+            timings.collect_tickable = start.elapsed();
+            timings.total_chunks = total_chunks;
+            timings.tickable_count = tickable_chunks.len();
+
+            if !tickable_chunks.is_empty() {
+                let _span = tracing::trace_span!(
+                    "tick_chunks",
+                    count = tickable_chunks.len(),
                     total_chunks
-                );
+                )
+                .entered();
+                let start = Instant::now();
+                // TODO: In the future we might want to tick different regions/islands in parallel
+                for holder in &tickable_chunks {
+                    if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                        chunk_guard.tick(random_tick_speed, tick_count as i32);
+                    }
+                }
+                timings.tick_chunks = start.elapsed();
             }
         }
+
+        timings
     }
 
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
     #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
+    #[instrument(level = "trace", skip(self, chunk_holder), fields(chunk = ?chunk_holder.get_pos()))]
     async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
         // Prepare chunk data while holding the lock, then release before async I/O
         let prepared = {
@@ -476,7 +503,7 @@ impl ChunkMap {
             let result = self.region_manager.save_chunk_data(prepared, status).await;
 
             if let Err(e) = result {
-                log::error!("Error saving chunk: {e}");
+                tracing::error!("Error saving chunk: {e}");
             }
         }
     }
@@ -484,8 +511,9 @@ impl ChunkMap {
     /// Processes chunks that are pending unload.
     ///
     /// Iterates over `unloading_chunks`. For each chunk with `strong_count == 1`:
-    /// - If not dirty: remove and release region handle
-    /// - If dirty: spawn save task (removal happens on next tick when clean)
+    /// - If dirty: spawn save task (keep until saved and clean)
+    /// - If not dirty: release region handle and remove
+    #[instrument(level = "trace", skip(self))]
     pub fn process_unloads(self: &Arc<Self>) {
         self.unloading_chunks.retain_sync(|pos, holder| {
             if Arc::strong_count(holder) == 1 {
@@ -495,20 +523,20 @@ impl ChunkMap {
                     .is_some_and(|chunk| chunk.is_dirty());
 
                 if is_dirty {
-                    // Save the chunk, don't remove yet
+                    // Save the chunk, keep until next tick when it's clean
                     let holder_clone = holder.clone();
                     let map_clone = self.clone();
                     self.task_tracker.spawn(async move {
                         map_clone.save_chunk(&holder_clone).await;
                     });
-                    true // keep
+                    true // keep until clean
                 } else {
-                    // Clean and no refs - remove and release region handle
+                    // Clean and no refs - release region handle and remove
                     let pos = *pos;
                     let map_clone = self.clone();
                     self.task_tracker.spawn(async move {
                         if let Err(e) = map_clone.region_manager.release_chunk(pos).await {
-                            log::error!("Error releasing chunk: {e}");
+                            tracing::error!(?pos, "Error releasing chunk: {e}");
                         }
                     });
                     false // remove
@@ -575,7 +603,14 @@ impl ChunkMap {
 
                 // Update the player area map with the diff
                 world.player_area_map.on_player_view_change(
-                    player.entity_id,
+                    player.id,
+                    &added_chunks,
+                    &removed_chunks,
+                );
+
+                // Update entity tracking for this player (only check added/removed chunks)
+                world.entity_tracker().on_player_view_change(
+                    player,
                     &added_chunks,
                     &removed_chunks,
                 );
@@ -585,6 +620,12 @@ impl ChunkMap {
                     MAX_VIEW_DISTANCE.saturating_sub(new_view.view_distance),
                 );
 
+                // Send initial chunk cache center to client
+                connection.send_packet(CSetChunkCenter {
+                    x: new_view.center.0.x,
+                    y: new_view.center.0.y,
+                });
+
                 let mut chunk_sender = player.chunk_sender.lock();
                 new_view.for_each(|pos| {
                     chunk_sender.mark_chunk_pending_to_send(pos);
@@ -593,6 +634,9 @@ impl ChunkMap {
 
                 // First time - add all chunks in view to player area map
                 world.player_area_map.on_player_join(player, &new_view);
+
+                // Initial entity tracking for this player
+                world.entity_tracker().on_player_join(player, &new_view);
             }
 
             *last_view_guard = Some(new_view);
@@ -622,6 +666,7 @@ impl ChunkMap {
     /// 3. Closes all region file handles (flushing headers)
     ///
     /// Returns the number of chunks saved.
+    #[instrument(level = "info", skip(self), name = "save_all_chunks")]
     pub async fn save_all_chunks(self: &Arc<Self>) -> io::Result<usize> {
         let mut saved_count = 0;
 
@@ -639,7 +684,7 @@ impl ChunkMap {
             chunks
         };
 
-        log::info!("Saving {} chunks...", all_chunks.len());
+        tracing::info!(chunk_count = all_chunks.len(), "Saving chunks");
 
         // Save all chunks that have data
         for holder in &all_chunks {
@@ -662,19 +707,20 @@ impl ChunkMap {
                 Ok(true) => saved_count += 1,
                 Ok(false) => {} // Not dirty
                 Err(e) => {
-                    log::error!("Failed to save chunk at {:?}: {e}", holder.get_pos());
+                    tracing::error!(chunk = ?holder.get_pos(), "Failed to save chunk: {e}");
                 }
             }
         }
 
         // Close all region files (flushes headers and releases file handles)
         if let Err(e) = self.region_manager.close_all().await {
-            log::error!("Failed to close region files: {e}");
+            tracing::error!("Failed to close region files: {e}");
         }
 
-        log::info!(
-            "Saved {saved_count} dirty chunks (checked {} total)",
-            all_chunks.len()
+        tracing::info!(
+            saved_count,
+            total_checked = all_chunks.len(),
+            "Chunk save complete"
         );
 
         Ok(saved_count)

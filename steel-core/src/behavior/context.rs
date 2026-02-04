@@ -29,7 +29,7 @@ impl InteractionResult {
     /// Returns true if this result consumes the action (Success or Fail).
     /// Pass and `TryEmptyHandInteraction` do not consume the action.
     #[must_use]
-    pub fn consumes_action(&self) -> bool {
+    pub const fn consumes_action(&self) -> bool {
         matches!(self, InteractionResult::Success | InteractionResult::Fail)
     }
 }
@@ -52,8 +52,53 @@ pub struct BlockPlaceContext<'a> {
     pub horizontal_direction: Direction,
     /// The player's rotation (yaw).
     pub rotation: f32,
+    /// The player's pitch (vertical look angle).
+    pub pitch: f32,
     /// The world where the block is being placed.
     pub world: &'a World,
+}
+
+impl BlockPlaceContext<'_> {
+    /// Returns the direction the player is looking at most directly.
+    ///
+    /// This considers both yaw and pitch to determine the nearest direction
+    /// among all 6 directions (UP, DOWN, NORTH, SOUTH, EAST, WEST).
+    ///
+    /// Based on Java's `Direction.orderedByNearest(Entity)[0]`.
+    #[must_use]
+    pub fn get_nearest_looking_direction(&self) -> Direction {
+        self.get_nearest_looking_directions()[0]
+    }
+
+    /// Returns all 6 directions ordered by how closely the player is looking at them.
+    ///
+    /// Based on Java's `BlockPlaceContext.getNearestLookingDirections()`.
+    /// When not replacing the clicked block, the opposite of the clicked face
+    /// is moved to the front of the array.
+    #[must_use]
+    pub fn get_nearest_looking_directions(&self) -> [Direction; 6] {
+        let mut directions = Direction::ordered_by_nearest(self.rotation, self.pitch);
+
+        // If not replacing the clicked block, prioritize the opposite of clicked face
+        if !self.replace_clicked {
+            let clicked_opposite = self.clicked_face.opposite();
+            let mut index = 0;
+
+            // Find the index of the opposite direction
+            while index < directions.len() && directions[index] != clicked_opposite {
+                index += 1;
+            }
+
+            // Move it to the front by shifting elements
+            if index > 0 && index < directions.len() {
+                // Shift elements [0..index] to [1..index+1] and put opposite at [0]
+                directions.copy_within(0..index, 1);
+                directions[0] = clicked_opposite;
+            }
+        }
+
+        directions
+    }
 }
 
 /// Context for using an item on a block.

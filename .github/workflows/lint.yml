@@ -9,18 +9,24 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+
+      - name: Setup Nightly
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly
-          components: clippy, rustfmt
-          override: true
-      - name: Spell Check Repo
+          components: rustfmt, clippy
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Spell Check
         uses: crate-ci/typos@v1.39.0
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --all-targets --all-features
-      - run: cargo fmt --check
-      - run: cargo clippy --release --all-targets --all-features
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy -r --all-targets --all-features

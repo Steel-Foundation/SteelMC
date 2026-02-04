@@ -3,7 +3,7 @@
 //! Dynamic item behavior has been moved to `steel-core::behavior`.
 //! This file contains data structures that are needed by other crates.
 
-use std::io::{self, Read};
+use std::io::{self, Cursor};
 
 use steel_utils::BlockPos;
 use steel_utils::math::Vector3;
@@ -32,7 +32,7 @@ pub struct BlockHitResult {
 }
 
 impl ReadFrom for BlockHitResult {
-    fn read(data: &mut impl Read) -> io::Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let block_pos = BlockPos::read(data)?;
         let direction = Direction::read(data)?;
         // Click coordinates are relative to the block position (0.0 to 1.0 range)

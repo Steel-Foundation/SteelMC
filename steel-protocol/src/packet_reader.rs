@@ -121,7 +121,7 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
             .await
             .map_err(|e| PacketError::Other(e.to_string()))?;
 
-        let mut cursor = io::Cursor::new(packet_data);
+        let mut cursor = io::Cursor::new(packet_data.as_slice());
 
         let decompressed_data = if let Some(threshold) = self.compression {
             let decompressed_len = VarInt::read(&mut cursor)?.0 as usize;
@@ -146,17 +146,17 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
 
                 // Rest of the data is uncompressed
                 let pos = cursor.position() as usize;
-                cursor.into_inner()[pos..].to_vec()
+                packet_data[pos..].to_vec()
             }
         } else {
-            cursor.into_inner()
+            packet_data
         };
 
         // Parse packet ID and payload from decompressed data
-        let mut cursor = io::Cursor::new(decompressed_data);
+        let mut cursor = io::Cursor::new(decompressed_data.as_slice());
         let packet_id = VarInt::read(&mut cursor)?.0;
         let pos = cursor.position() as usize;
-        let payload = cursor.into_inner()[pos..].to_vec();
+        let payload = decompressed_data[pos..].to_vec();
 
         Ok(RawPacket {
             id: packet_id,

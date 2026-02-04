@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use steel_macros::ServerPacket;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::ReadFrom;
@@ -15,7 +17,7 @@ pub struct SChatAck {
 }
 
 impl ReadFrom for SChatAck {
-    fn read(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
         Ok(Self {
             offset: VarInt::read(reader)?,
         })

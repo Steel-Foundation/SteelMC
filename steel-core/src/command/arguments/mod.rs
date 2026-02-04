@@ -1,24 +1,31 @@
 //! This module contains types and utilities for parsing command arguments.
 pub mod anchor;
 pub mod bool;
+pub mod entity;
 pub mod float;
 pub mod gamemode;
 pub mod integer;
+pub mod player;
 pub mod rotation;
+pub mod text_component;
 pub mod time;
 pub mod vector2;
 pub mod vector3;
 
+use std::sync::Arc;
+
 use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
 
-use crate::command::context::CommandContext;
+use crate::{command::context::CommandContext, server::Server};
 
 /// Context passed to suggestion methods containing previously parsed arguments.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone)]
 pub struct SuggestionContext {
     /// Previously parsed argument values stored by name.
     /// Used for context-dependent suggestions (e.g., gamerule value depends on rule type).
     parsed_values: Vec<(&'static str, ParsedValue)>,
+    /// The server where the suggestion is needed.
+    server: Arc<Server>,
 }
 
 /// A parsed value that can be stored in suggestion context.
@@ -35,8 +42,11 @@ pub enum ParsedValue {
 impl SuggestionContext {
     /// Creates a new empty suggestion context.
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new(server: Arc<Server>) -> Self {
+        Self {
+            parsed_values: vec![],
+            server,
+        }
     }
 
     /// Stores a parsed value with its argument name.

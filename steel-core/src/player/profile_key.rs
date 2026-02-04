@@ -14,7 +14,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 /// Grace period for expired keys (8 hours, as in vanilla)
-pub const EXPIRY_GRACE_PERIOD: Duration = Duration::from_secs(8 * 60 * 60);
+pub const EXPIRY_GRACE_PERIOD: Duration = Duration::from_hours(8);
 
 /// Maximum size of key signature in bytes
 pub const MAX_KEY_SIGNATURE_SIZE: usize = 4096;
@@ -53,7 +53,7 @@ pub struct ProfilePublicKeyData {
 impl ProfilePublicKeyData {
     /// Creates new profile public key data
     #[must_use]
-    pub fn new(expires_at: SystemTime, key: RsaPublicKey, key_signature: Vec<u8>) -> Self {
+    pub const fn new(expires_at: SystemTime, key: RsaPublicKey, key_signature: Vec<u8>) -> Self {
         Self {
             expires_at,
             key,
@@ -231,7 +231,7 @@ impl ProfilePublicKey {
     ///
     /// This should only be called after validating the signature.
     #[must_use]
-    pub fn new(data: ProfilePublicKeyData) -> Self {
+    pub const fn new(data: ProfilePublicKeyData) -> Self {
         Self { data }
     }
 
@@ -252,7 +252,7 @@ impl ProfilePublicKey {
 
     /// Gets the underlying key data
     #[must_use]
-    pub fn data(&self) -> &ProfilePublicKeyData {
+    pub const fn data(&self) -> &ProfilePublicKeyData {
         &self.data
     }
 
@@ -277,7 +277,7 @@ pub struct RemoteChatSession {
 impl RemoteChatSession {
     /// Creates a new remote chat session
     #[must_use]
-    pub fn new(session_id: Uuid, profile_public_key: ProfilePublicKey) -> Self {
+    pub const fn new(session_id: Uuid, profile_public_key: ProfilePublicKey) -> Self {
         Self {
             session_id,
             profile_public_key,

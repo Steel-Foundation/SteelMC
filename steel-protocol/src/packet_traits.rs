@@ -2,7 +2,7 @@
 //!
 //! This module contains the traits for the packets.
 use std::{
-    io::{Read, Write},
+    io::{Cursor, Write},
     num::NonZeroU32,
     sync::Arc,
 };
@@ -21,7 +21,7 @@ use crate::utils::{ConnectionProtocol, MAX_PACKET_DATA_SIZE, MAX_PACKET_SIZE, Pa
 /// A trait for packets sent from the server to the client.
 pub trait ServerPacket: ReadFrom {
     /// Reads a packet from the given data.
-    fn read_packet(data: &mut impl Read) -> Result<Self, PacketError> {
+    fn read_packet(data: &mut Cursor<&[u8]>) -> Result<Self, PacketError> {
         Self::read(data).map_err(PacketError::from)
     }
 }

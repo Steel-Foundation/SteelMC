@@ -1,12 +1,4 @@
 //! Handler for the "gamerule" command.
-use std::borrow::Cow;
-use std::sync::Arc;
-
-use steel_registry::REGISTRY;
-use steel_registry::game_rules::{GameRuleRef, GameRuleType, GameRuleValue};
-use steel_utils::text::TextComponent;
-use steel_utils::translations;
-
 use crate::command::arguments::bool::BoolArgument;
 use crate::command::arguments::integer::IntegerArgument;
 use crate::command::commands::{
@@ -14,7 +6,11 @@ use crate::command::commands::{
 };
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
-use crate::server::Server;
+use std::borrow::Cow;
+use steel_registry::REGISTRY;
+use steel_registry::game_rules::{GameRuleRef, GameRuleType, GameRuleValue};
+use steel_utils::translations;
+use text_components::TextComponent;
 
 /// Returns the handler for the "gamerule" command.
 #[must_use]
@@ -58,18 +54,13 @@ pub fn command_handler() -> impl CommandHandlerDyn {
 struct QueryExecutor(GameRuleRef);
 
 impl CommandExecutor<()> for QueryExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        _server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        let world = context.get_world()?;
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        let world = &context.world;
         let rule_name = self.0.key.path.to_string();
         let value = world.get_game_rule(self.0);
 
         context.sender.send_message(
-            translations::COMMANDS_GAMERULE_QUERY
+            &translations::COMMANDS_GAMERULE_QUERY
                 .message([
                     TextComponent::from(rule_name),
                     TextComponent::from(value.to_string()),
@@ -84,20 +75,15 @@ impl CommandExecutor<()> for QueryExecutor {
 struct SetBoolExecutor(GameRuleRef);
 
 impl CommandExecutor<((), bool)> for SetBoolExecutor {
-    fn execute(
-        &self,
-        args: ((), bool),
-        context: &mut CommandContext,
-        _server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, args: ((), bool), context: &mut CommandContext) -> Result<(), CommandError> {
         let ((), value) = args;
-        let world = context.get_world()?;
+        let world = &context.world;
         let rule_name = self.0.key.path.to_string();
 
         world.set_game_rule(self.0, GameRuleValue::Bool(value));
 
         context.sender.send_message(
-            translations::COMMANDS_GAMERULE_SET
+            &translations::COMMANDS_GAMERULE_SET
                 .message([
                     TextComponent::from(rule_name),
                     TextComponent::from(value.to_string()),
@@ -112,20 +98,15 @@ impl CommandExecutor<((), bool)> for SetBoolExecutor {
 struct SetIntExecutor(GameRuleRef);
 
 impl CommandExecutor<((), i32)> for SetIntExecutor {
-    fn execute(
-        &self,
-        args: ((), i32),
-        context: &mut CommandContext,
-        _server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
         let ((), value) = args;
-        let world = context.get_world()?;
+        let world = &context.world;
         let rule_name = self.0.key.path.to_string();
 
         world.set_game_rule(self.0, GameRuleValue::Int(value));
 
         context.sender.send_message(
-            translations::COMMANDS_GAMERULE_SET
+            &translations::COMMANDS_GAMERULE_SET
                 .message([
                     TextComponent::from(rule_name),
                     TextComponent::from(value.to_string()),

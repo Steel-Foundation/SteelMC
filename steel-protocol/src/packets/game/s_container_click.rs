@@ -1,4 +1,4 @@
-use std::io::{Read, Result};
+use std::io::{Cursor, Result};
 
 use rustc_hash::FxHashMap;
 use steel_macros::ServerPacket;
@@ -18,7 +18,7 @@ pub enum ClickType {
 }
 
 impl ReadFrom for ClickType {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let id = VarInt::read(data)?.0;
         Ok(match id {
             0 => ClickType::Pickup,
@@ -42,7 +42,7 @@ pub struct HashedPatchMap {
 }
 
 impl ReadFrom for HashedPatchMap {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         // Read added components map: Map<VarInt, Int>
         let added_count = VarInt::read(data)?.0 as usize;
         let mut added_components = FxHashMap::default();
@@ -80,7 +80,7 @@ pub enum HashedStack {
 }
 
 impl ReadFrom for HashedStack {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         // Optional<ActualItem> - bool prefix
         let present = bool::read(data)?;
         if !present {
@@ -113,7 +113,7 @@ pub struct SContainerClick {
 }
 
 impl ReadFrom for SContainerClick {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         let container_id = VarInt::read(data)?.0;
         let state_id = VarInt::read(data)?.0;
         let slot_num = i16::read(data)?;

@@ -1,9 +1,6 @@
-use std::{
-    fmt::Debug,
-    io::{self, Read},
-};
+use std::fmt::Debug;
 
-pub use steel_utils::{codec::VarInt, math::Axis, serial::ReadFrom};
+pub use steel_utils::{Direction, codec::VarInt, math::Axis, serial::ReadFrom};
 
 pub trait Property<T>: Sync + Send {
     fn get_value(&self, value: &str) -> Option<T>;
@@ -238,118 +235,10 @@ impl<T: const PartialEq + PropertyEnum + 'static> EnumProperty<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
-pub enum Direction {
-    Down,
-    Up,
-    North,
-    South,
-    West,
-    East,
-}
-
 impl PropertyEnum for Direction {
     fn as_str(&self) -> &str {
-        match self {
-            Direction::Down => "down",
-            Direction::Up => "up",
-            Direction::North => "north",
-            Direction::South => "south",
-            Direction::West => "west",
-            Direction::East => "east",
-        }
+        Direction::as_str(self)
     }
-}
-
-impl ReadFrom for Direction {
-    fn read(data: &mut impl Read) -> io::Result<Self> {
-        let id = VarInt::read(data)?.0;
-        match id {
-            0 => Ok(Direction::Down),
-            1 => Ok(Direction::Up),
-            2 => Ok(Direction::North),
-            3 => Ok(Direction::South),
-            4 => Ok(Direction::West),
-            5 => Ok(Direction::East),
-            _ => Err(io::Error::other("Invalid Direction id")),
-        }
-    }
-}
-
-impl Direction {
-    /// Returns the block position offset for this direction.
-    #[must_use]
-    pub fn offset(&self) -> (i32, i32, i32) {
-        match self {
-            Direction::Down => (0, -1, 0),
-            Direction::Up => (0, 1, 0),
-            Direction::North => (0, 0, -1),
-            Direction::South => (0, 0, 1),
-            Direction::West => (-1, 0, 0),
-            Direction::East => (1, 0, 0),
-        }
-    }
-
-    /// Returns the block position relative to the given position in this direction.
-    #[must_use]
-    pub fn relative(&self, pos: &steel_utils::BlockPos) -> steel_utils::BlockPos {
-        let (dx, dy, dz) = self.offset();
-        pos.offset(dx, dy, dz)
-    }
-
-    pub fn get_axis(&self) -> Axis {
-        match self {
-            Direction::Down => Axis::Y,
-            Direction::Up => Axis::Y,
-            Direction::North => Axis::Z,
-            Direction::South => Axis::Z,
-            Direction::West => Axis::X,
-            Direction::East => Axis::X,
-        }
-    }
-
-    /// Returns the opposite direction.
-    #[must_use]
-    pub const fn opposite(&self) -> Direction {
-        match self {
-            Direction::Down => Direction::Up,
-            Direction::Up => Direction::Down,
-            Direction::North => Direction::South,
-            Direction::South => Direction::North,
-            Direction::West => Direction::East,
-            Direction::East => Direction::West,
-        }
-    }
-
-    /// Returns the horizontal direction from a yaw rotation.
-    ///
-    /// Yaw values follow Minecraft's convention:
-    /// - 0° = South (+Z)
-    /// - 90° = West (-X)
-    /// - 180° = North (-Z)
-    /// - 270° = East (+X)
-    #[must_use]
-    pub fn from_yaw(yaw: f32) -> Direction {
-        let adjusted = yaw.rem_euclid(360.0);
-        match adjusted {
-            y if !(45.0..315.0).contains(&y) => Direction::South,
-            y if y < 135.0 => Direction::West,
-            y if y < 225.0 => Direction::North,
-            _ => Direction::East,
-        }
-    }
-
-    /// The order in which neighbor shape updates are processed.
-    /// This matches vanilla's `BlockBehaviour.UPDATE_SHAPE_ORDER`.
-    pub const UPDATE_SHAPE_ORDER: [Direction; 6] = [
-        Direction::West,
-        Direction::East,
-        Direction::North,
-        Direction::South,
-        Direction::Down,
-        Direction::Up,
-    ];
 }
 
 // Additional enum types for properties

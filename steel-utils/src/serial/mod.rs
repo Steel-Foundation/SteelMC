@@ -1,5 +1,5 @@
 //! This module contains traits for serializing and deserializing data.
-use std::io::{Read, Result, Write};
+use std::io::{Cursor, Result, Write};
 
 /// A module for reading prefixed data.
 pub mod prefixed_read;
@@ -10,12 +10,14 @@ pub mod read;
 /// A module for writing data.
 pub mod write;
 
+pub use write::OptionalNbt;
+
 const DEFAULT_BOUND: usize = i16::MAX as _;
 
-/// A trait for reading data from a reader.
+/// A trait for reading data from a cursor.
 pub trait ReadFrom: Sized {
-    /// Reads data from a reader.
-    fn read(data: &mut impl Read) -> Result<Self>;
+    /// Reads data from a cursor.
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self>;
 }
 
 /// A trait for writing data to a writer.
@@ -24,16 +26,16 @@ pub trait WriteTo {
     fn write(&self, writer: &mut impl Write) -> Result<()>;
 }
 
-/// A trait for reading prefixed data from a reader.
+/// A trait for reading prefixed data from a cursor.
 pub trait PrefixedRead: Sized {
-    /// Reads prefixed data from a reader with a bound.
+    /// Reads prefixed data from a cursor with a bound.
     fn read_prefixed_bound<P: TryInto<usize> + ReadFrom>(
-        data: &mut impl Read,
+        data: &mut Cursor<&[u8]>,
         bound: usize,
     ) -> Result<Self>;
 
-    /// Reads prefixed data from a reader.
-    fn read_prefixed<P: TryInto<usize> + ReadFrom>(data: &mut impl Read) -> Result<Self> {
+    /// Reads prefixed data from a cursor.
+    fn read_prefixed<P: TryInto<usize> + ReadFrom>(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Self::read_prefixed_bound::<P>(data, DEFAULT_BOUND)
     }
 }

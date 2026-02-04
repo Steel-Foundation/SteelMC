@@ -1,6 +1,7 @@
 //! Entity physics state representation.
 
 use steel_registry::blocks::shapes::AABBd;
+use steel_registry::entity_types::{EntityDimensions, EntityTypeRef};
 use steel_utils::math::Vector3;
 
 /// Physics state for an entity, tracking position, velocity, and movement properties.
@@ -9,7 +10,7 @@ use steel_utils::math::Vector3;
 /// matching vanilla's Entity class fields related to movement.
 #[derive(Debug, Clone)]
 pub struct EntityPhysicsState {
-    /// Current position (center of bounding box at feet level for players).
+    /// Current position (center of bounding box at feet level).
     pub position: Vector3<f64>,
 
     /// Current velocity (delta movement per tick).
@@ -18,7 +19,10 @@ pub struct EntityPhysicsState {
     /// Entity's axis-aligned bounding box in world coordinates.
     pub bounding_box: AABBd,
 
-    /// Maximum height the entity can step up automatically (0.6 for players).
+    /// Current entity dimensions (can change with pose/age).
+    pub dimensions: EntityDimensions,
+
+    /// Maximum height the entity can step up automatically.
     pub max_up_step: f32,
 
     /// Whether the entity is crouching (affects sneak-edge prevention).
@@ -43,31 +47,31 @@ pub struct EntityPhysicsState {
     pub fall_distance: f32,
 }
 
-impl EntityPhysicsState {
-    /// Creates a new physics state for a player at the given position.
-    ///
-    /// Uses standard player dimensions (0.6 x 1.8) and max step height (0.6).
-    #[must_use]
-    pub fn new_player(position: Vector3<f64>) -> Self {
-        const PLAYER_WIDTH: f64 = 0.6;
-        const PLAYER_HEIGHT: f64 = 1.8;
-        const PLAYER_MAX_UP_STEP: f32 = 0.6;
+/// Default max step height for most entities.
+const DEFAULT_MAX_UP_STEP: f32 = 0.6;
 
-        let half_width = PLAYER_WIDTH / 2.0;
-        let bounding_box = AABBd {
-            min_x: position.x - half_width,
-            min_y: position.y,
-            min_z: position.z - half_width,
-            max_x: position.x + half_width,
-            max_y: position.y + PLAYER_HEIGHT,
-            max_z: position.z + half_width,
-        };
+impl EntityPhysicsState {
+    /// Creates a new physics state for an entity at the given position.
+    #[must_use]
+    pub fn new(position: Vector3<f64>, entity_type: EntityTypeRef) -> Self {
+        Self::with_dimensions(position, entity_type.dimensions, DEFAULT_MAX_UP_STEP)
+    }
+
+    /// Creates a new physics state with custom dimensions.
+    #[must_use]
+    pub fn with_dimensions(
+        position: Vector3<f64>,
+        dimensions: EntityDimensions,
+        max_up_step: f32,
+    ) -> Self {
+        let bounding_box = Self::make_bounding_box(position, &dimensions);
 
         Self {
             position,
             velocity: Vector3::new(0.0, 0.0, 0.0),
             bounding_box,
-            max_up_step: PLAYER_MAX_UP_STEP,
+            dimensions,
+            max_up_step,
             is_crouching: false,
             on_ground: false,
             horizontal_collision: false,
@@ -78,25 +82,54 @@ impl EntityPhysicsState {
         }
     }
 
-    /// Updates the bounding box to match the current position.
-    ///
-    /// Maintains the same dimensions but centers on the new position.
-    pub fn update_bounding_box(&mut self) {
-        let width = self.bounding_box.max_x - self.bounding_box.min_x;
-        let height = self.bounding_box.max_y - self.bounding_box.min_y;
-        let half_width = width / 2.0;
+    /// Creates a bounding box from position and dimensions.
+    /// Box is centered on X/Z with Y at entity feet (vanilla behavior).
+    #[must_use]
+    fn make_bounding_box(position: Vector3<f64>, dimensions: &EntityDimensions) -> AABBd {
+        let half_width = f64::from(dimensions.width) / 2.0;
+        let height = f64::from(dimensions.height);
 
-        self.bounding_box.min_x = self.position.x - half_width;
-        self.bounding_box.min_z = self.position.z - half_width;
-        self.bounding_box.max_x = self.position.x + half_width;
-        self.bounding_box.max_z = self.position.z + half_width;
-        self.bounding_box.min_y = self.position.y;
-        self.bounding_box.max_y = self.position.y + height;
+        AABBd {
+            min_x: position.x - half_width,
+            min_y: position.y,
+            min_z: position.z - half_width,
+            max_x: position.x + half_width,
+            max_y: position.y + height,
+            max_z: position.z + half_width,
+        }
+    }
+
+    /// Updates the bounding box to match the current position and dimensions.
+    pub fn update_bounding_box(&mut self) {
+        self.bounding_box = Self::make_bounding_box(self.position, &self.dimensions);
     }
 
     /// Sets the position and updates the bounding box accordingly.
     pub fn set_position(&mut self, position: Vector3<f64>) {
         self.position = position;
         self.update_bounding_box();
+    }
+
+    /// Sets new dimensions and updates the bounding box.
+    /// Used when entity changes pose (crouching, swimming) or age (baby).
+    pub fn set_dimensions(&mut self, dimensions: EntityDimensions) {
+        self.dimensions = dimensions;
+        self.update_bounding_box();
+    }
+
+    /// Returns the current eye height.
+    #[must_use]
+    pub const fn eye_height(&self) -> f32 {
+        self.dimensions.eye_height
+    }
+
+    /// Returns the eye position in world coordinates.
+    #[must_use]
+    pub fn eye_position(&self) -> Vector3<f64> {
+        Vector3::new(
+            self.position.x,
+            self.position.y + f64::from(self.dimensions.eye_height),
+            self.position.z,
+        )
     }
 }

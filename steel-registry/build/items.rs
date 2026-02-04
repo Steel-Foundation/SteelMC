@@ -6,16 +6,21 @@ use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct Item {
     pub id: u16,
     pub name: String,
+    #[serde(default)]
     pub components: BTreeMap<String, Value>,
+    #[serde(default)]
     pub block_item: Option<String>,
+    #[serde(default)]
     pub is_double: bool,
+    #[serde(default)]
     pub is_scaffolding: bool,
+    #[serde(default)]
     pub is_water_placable: bool,
 }
 
@@ -179,6 +184,12 @@ fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     quote! { .builder_set(vanilla_components::#component_ident, Some(#val)) },
                 );
             }
+            "minecraft:damage" => {
+                let val = value.as_i64().unwrap() as i32;
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::#component_ident, Some(#val)) },
+                );
+            }
             "minecraft:repair_cost" => {
                 let val = value.as_i64().unwrap() as i32;
                 if val != 0 {
@@ -248,15 +259,31 @@ pub(crate) fn build() -> TokenStream {
 
         if let Some(block_name) = &item.block_item {
             let block_ident = Ident::new(&block_name.to_shouty_snake_case(), Span::call_site());
+            let builder_calls = generate_builder_calls(item);
 
-            if block_name != &item.name {
-                item_construction.extend(quote! {
-                    #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str),
-                });
+            if builder_calls.is_empty() {
+                if block_name != &item.name {
+                    item_construction.extend(quote! {
+                        #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str),
+                    });
+                } else {
+                    item_construction.extend(quote! {
+                        #item_ident: Item::from_block(vanilla_blocks::#block_ident),
+                    });
+                }
             } else {
-                item_construction.extend(quote! {
-                    #item_ident: Item::from_block(vanilla_blocks::#block_ident),
-                });
+                // Block item with custom components
+                if block_name != &item.name {
+                    item_construction.extend(quote! {
+                        #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str)
+                            #(#builder_calls)*,
+                    });
+                } else {
+                    item_construction.extend(quote! {
+                        #item_ident: Item::from_block(vanilla_blocks::#block_ident)
+                            #(#builder_calls)*,
+                    });
+                }
             }
         } else {
             let builder_calls = generate_builder_calls(item);

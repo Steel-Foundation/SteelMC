@@ -1,4 +1,4 @@
-use std::io::{Error, Read, Write};
+use std::io::{Cursor, Error, Write};
 
 use crate::serial::{ReadFrom, WriteTo};
 
@@ -13,7 +13,7 @@ impl VarLong {
 
 #[allow(missing_docs)]
 impl ReadFrom for VarLong {
-    fn read(read: &mut impl Read) -> Result<Self, Error> {
+    fn read(read: &mut Cursor<&[u8]>) -> Result<Self, Error> {
         let mut val = 0i64;
         for i in 0..Self::MAX_SIZE {
             let byte = u8::read(read)?;
@@ -81,7 +81,7 @@ mod tests {
             let mut buf = Vec::new();
             var_long.write(&mut buf).expect("write failed");
 
-            let mut cursor = Cursor::new(buf);
+            let mut cursor = Cursor::new(buf.as_slice());
             let read_val = VarLong::read(&mut cursor).expect("read failed");
             assert_eq!(read_val, var_long, "Failed for value {val}");
         }

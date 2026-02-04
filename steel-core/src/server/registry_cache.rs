@@ -13,10 +13,11 @@ use steel_protocol::{
 use steel_registry::{
     BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCKS_REGISTRY, CAT_VARIANT_REGISTRY,
     CHAT_TYPE_REGISTRY, CHICKEN_VARIANT_REGISTRY, COW_VARIANT_REGISTRY, DAMAGE_TYPE_REGISTRY,
-    DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY,
-    ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY, PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY,
-    REGISTRY, Registry, TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY,
-    WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
+    DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, FLUID_REGISTRY, FROG_VARIANT_REGISTRY,
+    INSTRUMENT_REGISTRY, ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY, PAINTING_VARIANT_REGISTRY,
+    PIG_VARIANT_REGISTRY, REGISTRY, Registry, TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY,
+    TRIM_PATTERN_REGISTRY, WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY,
+    ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -165,6 +166,21 @@ impl RegistryCache {
         }
 
         tags_by_registry.push((DIALOG_REGISTRY, dialog_tags));
+
+        // Build fluid tags
+        let mut fluid_tags: Vec<(Identifier, Vec<VarInt>)> =
+            Vec::with_capacity(registry.fluids.tag_keys().count());
+        for tag_key in registry.fluids.tag_keys() {
+            let mut fluid_ids = Vec::with_capacity(registry.fluids.iter_tag(tag_key).count());
+
+            for fluid in registry.fluids.iter_tag(tag_key) {
+                let fluid_id = *registry.fluids.get_id(fluid).expect("Fluid not found");
+                fluid_ids.push(VarInt::from(fluid_id as i32));
+            }
+
+            fluid_tags.push((tag_key.clone(), fluid_ids));
+        }
+        tags_by_registry.push((FLUID_REGISTRY, fluid_tags));
 
         // Build and return a CUpdateTagsPacket based on the registry data
         CUpdateTags::new(tags_by_registry)

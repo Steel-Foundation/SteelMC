@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Cursor, Read};
 
 use steel_macros::{ReadFrom, ServerPacket};
 use steel_utils::Identifier;
@@ -16,7 +16,7 @@ pub struct SCustomPayload {
 pub struct Payload(pub Vec<u8>);
 
 impl ReadFrom for Payload {
-    fn read(data: &mut impl Read) -> Result<Self, std::io::Error> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self, std::io::Error> {
         let mut buf = vec![];
         data.read_to_end(&mut buf)?;
         Ok(Self(buf))

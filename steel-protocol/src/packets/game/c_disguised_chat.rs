@@ -1,6 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_DISGUISED_CHAT;
-use steel_utils::text::TextComponent;
+use text_components::{TextComponent, resolving::TextResolutor};
 
 use super::c_player_chat::ChatTypeBound;
 
@@ -14,7 +14,14 @@ pub struct CDisguisedChat {
 }
 
 impl CDisguisedChat {
-    pub fn new(message: TextComponent, chat_type: ChatTypeBound) -> Self {
-        Self { message, chat_type }
+    pub fn new<T: TextResolutor>(
+        message: &TextComponent,
+        chat_type: ChatTypeBound,
+        player: &T,
+    ) -> Self {
+        Self {
+            message: message.resolve(player),
+            chat_type,
+        }
     }
 }

@@ -1,3 +1,5 @@
+use std::io::{Cursor, Read};
+
 use steel_macros::ServerPacket;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::{PrefixedRead, ReadFrom};
@@ -27,7 +29,7 @@ pub struct SChatCommandSigned {
 }
 
 impl ReadFrom for SChatCommandSigned {
-    fn read(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
         let command = String::read_prefixed_bound::<VarInt>(reader, 256)?;
         let timestamp = i64::read(reader)?;
         let salt = i64::read(reader)?;
@@ -67,7 +69,7 @@ pub struct ArgumentSignature {
 }
 
 impl ReadFrom for ArgumentSignature {
-    fn read(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
         // Read argument name (max 16 chars)
         let name = String::read_prefixed_bound::<VarInt>(reader, 16)?;
 
@@ -91,7 +93,7 @@ pub struct LastSeenMessagesUpdate {
 }
 
 impl ReadFrom for LastSeenMessagesUpdate {
-    fn read(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
         let offset = VarInt::read(reader)?;
         let mut acknowledged = [0u8; 3];
         reader.read_exact(&mut acknowledged)?;

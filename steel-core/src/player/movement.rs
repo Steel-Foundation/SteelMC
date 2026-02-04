@@ -5,6 +5,7 @@
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
+use steel_registry::vanilla_entities;
 use steel_utils::{BlockPos, math::Vector3};
 
 use crate::physics::{
@@ -13,10 +14,10 @@ use crate::physics::{
 };
 use crate::world::World;
 
-/// Player bounding box width (standard player size).
-pub const PLAYER_WIDTH: f64 = 0.6;
-/// Player bounding box height (standard player size).
-pub const PLAYER_HEIGHT: f64 = 1.8;
+/// Player bounding box width (from entity type registry).
+pub const PLAYER_WIDTH: f64 = vanilla_entities::PLAYER.dimensions.width as f64;
+/// Player bounding box height (from entity type registry).
+pub const PLAYER_HEIGHT: f64 = vanilla_entities::PLAYER.dimensions.height as f64;
 
 /// Small epsilon for AABB deflation (matches vanilla 1.0E-5).
 pub const COLLISION_EPSILON: f64 = 1.0E-5;
@@ -116,7 +117,7 @@ pub fn simulate_move(
     on_ground: bool,
 ) -> MoveResult {
     // Create physics state for the player
-    let mut state = EntityPhysicsState::new_player(start_pos);
+    let mut state = EntityPhysicsState::new(start_pos, vanilla_entities::PLAYER);
     state.is_crouching = is_crouching;
     state.on_ground = on_ground;
 

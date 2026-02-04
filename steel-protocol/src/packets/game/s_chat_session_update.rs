@@ -1,3 +1,5 @@
+use std::io::{Cursor, Read};
+
 use steel_macros::ServerPacket;
 use steel_utils::serial::ReadFrom;
 use uuid::Uuid;
@@ -24,7 +26,7 @@ pub struct SChatSessionUpdate {
 }
 
 impl ReadFrom for SChatSessionUpdate {
-    fn read(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
         let session_id = Uuid::read(reader)?;
         let expires_at = i64::read(reader)?;
 

@@ -1,8 +1,6 @@
 //! Handler for the "tick" command.
-use std::sync::Arc;
-
-use steel_utils::text::TextComponent;
 use steel_utils::translations;
+use text_components::TextComponent;
 
 use crate::command::arguments::float::FloatArgument;
 use crate::command::arguments::time::TimeArgument;
@@ -11,7 +9,6 @@ use crate::command::commands::{
 };
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
-use crate::server::Server;
 
 /// Handler for the "tick" command.
 #[must_use]
@@ -57,13 +54,8 @@ fn nanos_to_ms_string(nanos: u64) -> String {
 // /tick query
 struct TickQueryExecutor;
 impl CommandExecutor<()> for TickQueryExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        let tick_manager = server.tick_rate_manager.read();
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        let tick_manager = context.server.tick_rate_manager.read();
 
         let tick_rate = tick_manager.tick_rate();
         let busy_time_nanos = tick_manager.get_average_tick_time_nanos();
@@ -74,9 +66,9 @@ impl CommandExecutor<()> for TickQueryExecutor {
         if tick_manager.is_sprinting() {
             context
                 .sender
-                .send_message(translations::COMMANDS_TICK_STATUS_SPRINTING.msg().into());
+                .send_message(&translations::COMMANDS_TICK_STATUS_SPRINTING.msg().into());
             context.sender.send_message(
-                translations::COMMANDS_TICK_QUERY_RATE_SPRINTING
+                &translations::COMMANDS_TICK_QUERY_RATE_SPRINTING
                     .message([
                         TextComponent::from(tick_rate_string),
                         TextComponent::from(busy_time),
@@ -88,20 +80,20 @@ impl CommandExecutor<()> for TickQueryExecutor {
             if tick_manager.is_frozen() {
                 context
                     .sender
-                    .send_message(translations::COMMANDS_TICK_STATUS_FROZEN.msg().into());
+                    .send_message(&translations::COMMANDS_TICK_STATUS_FROZEN.msg().into());
             } else if tick_manager.nanoseconds_per_tick < busy_time_nanos {
                 context
                     .sender
-                    .send_message(translations::COMMANDS_TICK_STATUS_LAGGING.msg().into());
+                    .send_message(&translations::COMMANDS_TICK_STATUS_LAGGING.msg().into());
             } else {
                 context
                     .sender
-                    .send_message(translations::COMMANDS_TICK_STATUS_RUNNING.msg().into());
+                    .send_message(&translations::COMMANDS_TICK_STATUS_RUNNING.msg().into());
             }
 
             let target_mspt = nanos_to_ms_string(tick_manager.nanoseconds_per_tick);
             context.sender.send_message(
-                translations::COMMANDS_TICK_QUERY_RATE_RUNNING
+                &translations::COMMANDS_TICK_QUERY_RATE_RUNNING
                     .message([
                         TextComponent::from(tick_rate_string),
                         TextComponent::from(busy_time),
@@ -135,7 +127,7 @@ impl CommandExecutor<()> for TickQueryExecutor {
         };
 
         context.sender.send_message(
-            translations::COMMANDS_TICK_QUERY_PERCENTILES
+            &translations::COMMANDS_TICK_QUERY_PERCENTILES
                 .message([
                     TextComponent::from(p50),
                     TextComponent::from(p95),
@@ -152,20 +144,15 @@ impl CommandExecutor<()> for TickQueryExecutor {
 // /tick rate <rate>
 struct TickRateExecutor;
 impl CommandExecutor<((), f32)> for TickRateExecutor {
-    fn execute(
-        &self,
-        args: ((), f32),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, args: ((), f32), context: &mut CommandContext) -> Result<(), CommandError> {
         let ((), rate) = args;
 
-        server.tick_rate_manager.write().set_tick_rate(rate);
-        server.broadcast_ticking_state();
+        context.server.broadcast_ticking_state();
+        context.server.tick_rate_manager.write().set_tick_rate(rate);
 
         let rate_string = format!("{rate:.1}");
         context.sender.send_message(
-            translations::COMMANDS_TICK_RATE_SUCCESS
+            &translations::COMMANDS_TICK_RATE_SUCCESS
                 .message([TextComponent::from(rate_string)])
                 .into(),
         );
@@ -177,13 +164,8 @@ impl CommandExecutor<((), f32)> for TickRateExecutor {
 // /tick freeze
 struct TickFreezeExecutor;
 impl CommandExecutor<()> for TickFreezeExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        let mut tick_manager = server.tick_rate_manager.write();
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        let mut tick_manager = context.server.tick_rate_manager.write();
 
         // Stop sprinting if active (vanilla behavior)
         if tick_manager.is_sprinting() {
@@ -198,11 +180,11 @@ impl CommandExecutor<()> for TickFreezeExecutor {
         tick_manager.set_frozen(true);
         drop(tick_manager);
 
-        server.broadcast_ticking_state();
+        context.server.broadcast_ticking_state();
 
         context
             .sender
-            .send_message(translations::COMMANDS_TICK_STATUS_FROZEN.msg().into());
+            .send_message(&translations::COMMANDS_TICK_STATUS_FROZEN.msg().into());
 
         Ok(())
     }
@@ -211,18 +193,13 @@ impl CommandExecutor<()> for TickFreezeExecutor {
 // /tick unfreeze
 struct TickUnfreezeExecutor;
 impl CommandExecutor<()> for TickUnfreezeExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        server.tick_rate_manager.write().set_frozen(false);
-        server.broadcast_ticking_state();
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        context.server.tick_rate_manager.write().set_frozen(false);
+        context.server.broadcast_ticking_state();
 
         context
             .sender
-            .send_message(translations::COMMANDS_TICK_STATUS_RUNNING.msg().into());
+            .send_message(&translations::COMMANDS_TICK_STATUS_RUNNING.msg().into());
 
         Ok(())
     }
@@ -231,41 +208,31 @@ impl CommandExecutor<()> for TickUnfreezeExecutor {
 // /tick step (default 1 tick)
 struct TickStepDefaultExecutor;
 impl CommandExecutor<()> for TickStepDefaultExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        step_impl(1, context, server)
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        step_impl(1, context)
     }
 }
 
 // /tick step <time>
 struct TickStepExecutor;
 impl CommandExecutor<((), i32)> for TickStepExecutor {
-    fn execute(
-        &self,
-        args: ((), i32),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
         let ((), ticks) = args;
-        step_impl(ticks, context, server)
+        step_impl(ticks, context)
     }
 }
 
-fn step_impl(
-    ticks: i32,
-    context: &mut CommandContext,
-    server: &Arc<Server>,
-) -> Result<(), CommandError> {
-    let success = server.tick_rate_manager.write().step_game_if_paused(ticks);
+fn step_impl(ticks: i32, context: &mut CommandContext) -> Result<(), CommandError> {
+    let success = context
+        .server
+        .tick_rate_manager
+        .write()
+        .step_game_if_paused(ticks);
 
     if success {
-        server.broadcast_ticking_step();
+        context.server.broadcast_ticking_step();
         context.sender.send_message(
-            translations::COMMANDS_TICK_STEP_SUCCESS
+            &translations::COMMANDS_TICK_STEP_SUCCESS
                 .message([TextComponent::from(format!("{ticks}"))])
                 .into(),
         );
@@ -280,19 +247,14 @@ fn step_impl(
 // /tick step stop
 struct TickStepStopExecutor;
 impl CommandExecutor<()> for TickStepStopExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        let stopped = server.tick_rate_manager.write().stop_stepping();
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        let stopped = context.server.tick_rate_manager.write().stop_stepping();
 
         if stopped {
-            server.broadcast_ticking_step();
+            context.server.broadcast_ticking_step();
             context
                 .sender
-                .send_message(translations::COMMANDS_TICK_STEP_STOP_SUCCESS.msg().into());
+                .send_message(&translations::COMMANDS_TICK_STEP_STOP_SUCCESS.msg().into());
             Ok(())
         } else {
             Err(CommandError::CommandFailed(Box::new(
@@ -305,31 +267,27 @@ impl CommandExecutor<()> for TickStepStopExecutor {
 // /tick sprint <time>
 struct TickSprintExecutor;
 impl CommandExecutor<((), i32)> for TickSprintExecutor {
-    fn execute(
-        &self,
-        args: ((), i32),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
+    fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
         let ((), ticks) = args;
 
-        let interrupted = server
+        let interrupted = context
+            .server
             .tick_rate_manager
             .write()
             .request_game_to_sprint(ticks);
 
         // Broadcast state change (unfrozen during sprint)
-        server.broadcast_ticking_state();
+        context.server.broadcast_ticking_state();
 
         if interrupted {
             context
                 .sender
-                .send_message(translations::COMMANDS_TICK_SPRINT_STOP_SUCCESS.msg().into());
+                .send_message(&translations::COMMANDS_TICK_SPRINT_STOP_SUCCESS.msg().into());
         }
 
         context
             .sender
-            .send_message(translations::COMMANDS_TICK_STATUS_SPRINTING.msg().into());
+            .send_message(&translations::COMMANDS_TICK_STATUS_SPRINTING.msg().into());
 
         Ok(())
     }
@@ -338,21 +296,16 @@ impl CommandExecutor<((), i32)> for TickSprintExecutor {
 // /tick sprint stop
 struct TickSprintStopExecutor;
 impl CommandExecutor<()> for TickSprintStopExecutor {
-    fn execute(
-        &self,
-        _args: (),
-        context: &mut CommandContext,
-        server: &Arc<Server>,
-    ) -> Result<(), CommandError> {
-        let report = server.tick_rate_manager.write().stop_sprinting();
+    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        let report = context.server.tick_rate_manager.write().stop_sprinting();
 
         if let Some(report) = report {
             // Broadcast state change (restored previous frozen state)
-            server.broadcast_ticking_state();
+            context.server.broadcast_ticking_state();
 
             // Send sprint report
             context.sender.send_message(
-                translations::COMMANDS_TICK_SPRINT_REPORT
+                &translations::COMMANDS_TICK_SPRINT_REPORT
                     .message([
                         TextComponent::from(format!("{}", report.ticks_per_second)),
                         TextComponent::from(format!("{:.2}", report.ms_per_tick)),

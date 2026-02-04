@@ -178,9 +178,11 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     {
         match self {
             Self::Homogeneous(value) => {
+                // bits per entry = 0 (ZeroBitStorage)
                 0u8.write(writer)?;
+                // Single-value palette
                 VarInt(value.to_global_id() as i32).write(writer)?;
-                VarInt(0).write(writer)?;
+                // No data array - vanilla's writeFixedSizeLongArray(new long[0]) writes nothing
             }
             Self::Heterogeneous(data) => {
                 let (bits, mode) = Self::calculate_strategy(data.palette.len());

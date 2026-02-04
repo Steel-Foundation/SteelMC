@@ -1,6 +1,6 @@
 //! A 3D vector.
 use std::{
-    io::{Read, Result, Write},
+    io::{Cursor, Result, Write},
     ops::{Add, AddAssign, Div, Mul, Sub},
 };
 
@@ -34,7 +34,7 @@ pub enum Axis {
 #[allow(missing_docs)]
 impl Axis {
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             Axis::X => "x",
             Axis::Y => "y",
@@ -328,7 +328,7 @@ impl<T: WriteTo> WriteTo for Vector3<T> {
 
 #[allow(missing_docs)]
 impl<T: ReadFrom> ReadFrom for Vector3<T> {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
             x: T::read(data)?,
             y: T::read(data)?,

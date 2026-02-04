@@ -1,8 +1,6 @@
 //! Module defining the sender of a command.
 use std::{fmt, sync::Arc};
-
-use steel_protocol::packets::game::CSystemChatMessage;
-use steel_utils::text::TextComponent;
+use text_components::TextComponent;
 
 use crate::player::Player;
 
@@ -20,7 +18,7 @@ pub enum CommandSender {
 impl CommandSender {
     /// Returns the player if the sender is a player.
     #[must_use]
-    pub fn get_player(&self) -> Option<&Arc<Player>> {
+    pub const fn get_player(&self) -> Option<&Arc<Player>> {
         match self {
             Self::Player(player) => Some(player),
             _ => None,
@@ -28,13 +26,10 @@ impl CommandSender {
     }
 
     /// Sends a system message to the command sender.
-    pub fn send_message(&self, text: TextComponent) {
+    pub fn send_message(&self, text: &TextComponent) {
         match self {
-            Self::Player(player) => player.connection.send_packet(CSystemChatMessage {
-                content: text,
-                overlay: false,
-            }),
-            Self::Console => log::info!("{text}"),
+            Self::Player(player) => player.send_message(text),
+            Self::Console => log::info!("{:p}", *text),
             // TODO: Implement Rcon message sending
             Self::Rcon => unimplemented!(),
         }

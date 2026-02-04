@@ -1,12 +1,11 @@
 //! This module contains the `ChunkAccess` enum, which is used to access chunks in different states.
-use std::sync::{Weak, atomic::Ordering};
+use std::sync::atomic::Ordering;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
 use wincode::{SchemaRead, SchemaWrite};
 
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
-use crate::world::World;
 
 /// The status of a chunk.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, SchemaWrite, SchemaRead)]
@@ -46,7 +45,7 @@ impl ChunkStatus {
 
     /// Gets the status from an index.
     #[must_use]
-    pub fn from_index(index: usize) -> Option<Self> {
+    pub const fn from_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::Empty),
             1 => Some(Self::StructureStarts),
@@ -70,7 +69,7 @@ impl ChunkStatus {
     /// # Panics
     /// This function will panic if the chunk is at the Full status.
     #[must_use]
-    pub fn next(self) -> Option<Self> {
+    pub const fn next(self) -> Option<Self> {
         match self {
             Self::Empty => Some(Self::StructureStarts),
             Self::StructureStarts => Some(Self::StructureReferences),
@@ -89,7 +88,7 @@ impl ChunkStatus {
 
     /// Gets the parent status in the generation order.
     #[must_use]
-    pub fn parent(self) -> Option<Self> {
+    pub const fn parent(self) -> Option<Self> {
         match self {
             Self::Empty => None,
             Self::StructureStarts => Some(Self::Empty),
@@ -144,25 +143,6 @@ pub enum ChunkAccess {
 }
 
 impl ChunkAccess {
-    /// Converts a proto chunk into a full chunk.
-    ///
-    /// # Arguments
-    /// * `min_y` - The minimum Y coordinate of the world
-    /// * `height` - The total height of the world
-    /// * `level` - Weak reference to the world for the `LevelChunk`
-    ///
-    /// # Panics
-    /// This function will panic if the chunk is already a full chunk.
-    #[must_use]
-    pub fn into_full(self, min_y: i32, height: i32, level: Weak<World>) -> Self {
-        match self {
-            Self::Proto(proto_chunk) => {
-                Self::Full(LevelChunk::from_proto(proto_chunk, min_y, height, level))
-            }
-            Self::Full(_) | Self::Unloaded => unreachable!(),
-        }
-    }
-
     /// Gets a block at a relative position in the chunk.
     #[must_use]
     pub fn get_relative_block(
@@ -294,9 +274,10 @@ impl ChunkAccess {
     ///
     /// # Arguments
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick
-    pub fn tick(&self, random_tick_speed: u32) {
+    /// * `tick_count` - Current server tick count (for entity sync timing)
+    pub fn tick(&self, random_tick_speed: u32, tick_count: i32) {
         if let Self::Full(chunk) = self {
-            chunk.tick(random_tick_speed);
+            chunk.tick(random_tick_speed, tick_count);
         }
     }
 }

@@ -158,7 +158,7 @@ mod tests {
 
         assert_eq!(fv.front_space, 4);
         assert_eq!(fv.len(), 0);
-        assert_eq!(fv.as_slice(), &[]);
+        assert_eq!(fv.as_slice(), &[] as &[u8]);
 
         fv.extend_from_slice(&[1, 2, 3]);
         assert_eq!(fv.as_slice(), &[1, 2, 3]);

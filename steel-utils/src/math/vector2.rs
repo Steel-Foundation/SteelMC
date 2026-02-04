@@ -1,6 +1,6 @@
 //! A 2D vector.
 use std::{
-    io::{Read, Result, Write},
+    io::{Cursor, Result, Write},
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
@@ -69,7 +69,7 @@ impl<T: WriteTo> WriteTo for Vector2<T> {
 
 #[allow(missing_docs)]
 impl<T: ReadFrom> ReadFrom for Vector2<T> {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
             x: T::read(data)?,
             y: T::read(data)?,

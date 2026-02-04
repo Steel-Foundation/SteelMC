@@ -3,8 +3,8 @@ use steel_registry::packets::play::C_PLAYER_CHAT;
 use steel_utils::{
     codec::{BitSet, VarInt},
     serial::PrefixedWrite,
-    text::TextComponent,
 };
+use text_components::TextComponent;
 use uuid::Uuid;
 
 /// Represents Minecraft's ChatType.Bound structure
@@ -109,7 +109,7 @@ impl steel_utils::serial::WriteTo for CPlayerChat {
         match &self.unsigned_content {
             Some(content) => {
                 true.write(writer)?;
-                writer.write_all(&content.encode())?;
+                content.write(writer)?;
             }
             None => false.write(writer)?,
         }

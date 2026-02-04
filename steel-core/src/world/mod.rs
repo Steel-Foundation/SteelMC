@@ -8,30 +8,40 @@ use std::{
     time::Duration,
 };
 
+use crate::chunk::chunk_map::ChunkMapTickTimings;
+
 use sha2::{Digest, Sha256};
-use steel_protocol::packet_traits::EncodedPacket;
+use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CPlayerChat, CPlayerInfoUpdate, CSystemChat,
+    CBlockDestruction, CBlockEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate, CRemoveEntities,
+    CSound, CSystemChat, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 
+use simdnbt::owned::NbtCompound;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::RANDOM_TICK_SPEED;
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
 
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::SyncRwLock;
+use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
 
 use crate::{
     ChunkMap,
     behavior::BLOCK_BEHAVIORS,
+    block_entity::SharedBlockEntity,
     config::STEEL_CONFIG,
+    entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     level_data::LevelDataManager,
     player::{LastSeen, Player},
 };
@@ -42,6 +52,23 @@ mod world_entities;
 
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
+
+/// Generates a random value using triangle distribution.
+///
+/// Mirrors vanilla's `RandomSource.triangle(mode, deviation)`.
+/// Produces values centered around `mode` with a spread of `deviation`.
+fn triangle_random(mode: f64, deviation: f64) -> f64 {
+    mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
+}
+
+/// Timing information for a world tick.
+#[derive(Debug)]
+pub struct WorldTickTimings {
+    /// Chunk map tick timings.
+    pub chunk_map: ChunkMapTickTimings,
+    /// Time spent ticking players.
+    pub player_tick: Duration,
+}
 
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
 /// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
@@ -62,6 +89,11 @@ pub struct World {
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
+    /// Entity cache for fast entity lookups by ID, UUID, or spatial position.
+    /// Uses `Weak` references - entities are owned by chunks.
+    entity_cache: EntityCache,
+    /// Entity tracker for managing which players can see which entities.
+    entity_tracker: EntityTracker,
 }
 
 impl World {
@@ -85,6 +117,8 @@ impl World {
             dimension,
             level_data: SyncRwLock::new(level_data),
             tick_runs_normally: AtomicBool::new(true),
+            entity_cache: EntityCache::new(),
+            entity_tracker: EntityTracker::new(),
         }))
     }
 
@@ -107,34 +141,34 @@ impl World {
     }
 
     /// Returns the total height of the world in blocks.
-    pub fn get_height(&self) -> i32 {
+    pub const fn get_height(&self) -> i32 {
         self.dimension.height
     }
 
     /// Returns the minimum Y coordinate of the world.
-    pub fn get_min_y(&self) -> i32 {
+    pub const fn get_min_y(&self) -> i32 {
         self.dimension.min_y
     }
 
     /// Returns the maximum Y coordinate of the world.
-    pub fn get_max_y(&self) -> i32 {
+    pub const fn get_max_y(&self) -> i32 {
         self.get_min_y() + self.get_height() - 1
     }
 
     /// Returns whether the given Y coordinate is outside the build height.
-    pub fn is_outside_build_height(&self, block_y: i32) -> bool {
+    pub const fn is_outside_build_height(&self, block_y: i32) -> bool {
         block_y < self.get_min_y() || block_y > self.get_max_y()
     }
 
     /// Returns whether the block position is within valid horizontal bounds.
-    pub fn is_in_valid_bounds_horizontal(&self, block_pos: &BlockPos) -> bool {
+    pub const fn is_in_valid_bounds_horizontal(&self, block_pos: &BlockPos) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(block_pos.0.x);
         let chunk_z = SectionPos::block_to_section_coord(block_pos.0.z);
         ChunkPos::is_valid(chunk_x, chunk_z)
     }
 
     /// Returns whether the block position is within valid world bounds.
-    pub fn is_in_valid_bounds(&self, block_pos: &BlockPos) -> bool {
+    pub const fn is_in_valid_bounds(&self, block_pos: &BlockPos) -> bool {
         !self.is_outside_build_height(block_pos.0.y)
             && self.is_in_valid_bounds_horizontal(block_pos)
     }
@@ -142,14 +176,14 @@ impl World {
     /// Returns the maximum build height (one above the highest placeable block).
     /// This is `min_y + height`.
     #[must_use]
-    pub fn max_build_height(&self) -> i32 {
+    pub const fn max_build_height(&self) -> i32 {
         self.get_min_y() + self.get_height()
     }
 
     /// Checks if a player may interact with the world at the given position.
     /// Currently only checks if position is within world bounds.
     #[must_use]
-    pub fn may_interact(&self, _player: &Player, pos: &BlockPos) -> bool {
+    pub const fn may_interact(&self, _player: &Player, pos: &BlockPos) -> bool {
         self.is_in_valid_bounds(pos)
     }
 
@@ -331,8 +365,7 @@ impl World {
 
             // Notify all 6 neighbors about our shape change
             for direction in Direction::UPDATE_SHAPE_ORDER {
-                let (dx, dy, dz) = direction.offset();
-                let neighbor_pos = pos.offset(dx, dy, dz);
+                let neighbor_pos = pos.relative(direction);
 
                 // Tell the neighbor that we (at pos) changed
                 self.neighbor_shape_changed(
@@ -364,8 +397,7 @@ impl World {
     /// This is the Rust equivalent of vanilla's `Level.updateNeighborsAt()`.
     fn update_neighbors_at(&self, pos: &BlockPos, source_block: BlockRef) {
         for direction in Self::NEIGHBOR_UPDATE_ORDER {
-            let (dx, dy, dz) = direction.offset();
-            let neighbor_pos = pos.offset(dx, dy, dz);
+            let neighbor_pos = pos.relative(direction);
             self.neighbor_changed(neighbor_pos, source_block, false);
         }
     }
@@ -426,11 +458,43 @@ impl World {
         behavior.handle_neighbor_changed(state, self, pos, source_block, moved_by_piston);
     }
 
-    fn chunk_pos_for_block(pos: &BlockPos) -> ChunkPos {
+    const fn chunk_pos_for_block(pos: &BlockPos) -> ChunkPos {
         ChunkPos::new(
             SectionPos::block_to_section_coord(pos.0.x),
             SectionPos::block_to_section_coord(pos.0.z),
         )
+    }
+
+    /// Gets a block entity at the given position.
+    ///
+    /// Returns `None` if the chunk is not loaded or there is no block entity at the position.
+    #[must_use]
+    pub fn get_block_entity(&self, pos: &BlockPos) -> Option<SharedBlockEntity> {
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_full_chunk(&chunk_pos, |chunk| {
+                chunk.as_full().and_then(|lc| lc.get_block_entity(*pos))
+            })
+            .flatten()
+    }
+
+    /// Called when a block entity's data changes.
+    ///
+    /// Marks the containing chunk as unsaved so it will be persisted to disk.
+    pub fn block_entity_changed(&self, pos: BlockPos) {
+        let chunk_pos = Self::chunk_pos_for_block(&pos);
+        self.mark_chunk_dirty(chunk_pos);
+    }
+
+    /// Marks a chunk as dirty (unsaved) so it will be persisted to disk.
+    ///
+    /// Called when entities move, are added/removed, or when block entities change.
+    pub fn mark_chunk_dirty(&self, chunk_pos: ChunkPos) {
+        self.chunk_map.with_full_chunk(&chunk_pos, |chunk| {
+            if let Some(lc) = chunk.as_full() {
+                lc.dirty.store(true, Ordering::Release);
+            }
+        });
     }
 
     /// Ticks the world.
@@ -438,27 +502,36 @@ impl World {
     /// * `tick_count` - The current tick number
     /// * `runs_normally` - Whether game elements (random ticks, entities) should run.
     ///   When false (frozen), only essential operations like chunk loading run.
-    pub fn tick_b(&self, tick_count: u64, runs_normally: bool) {
+    ///
+    /// Returns timing information for the world tick.
+    #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
+    pub fn tick_b(&self, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
         let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
-        self.chunk_map
+        let chunk_map_timings = self
+            .chunk_map
             .tick_b(tick_count, random_tick_speed, runs_normally);
 
         // Tick players (always tick players - they can move when frozen)
-        let start = Instant::now();
-        self.players.iter_players(|_uuid, player| {
-            player.tick();
-
-            true
-        });
-        let player_tick_elapsed = start.elapsed();
-        if player_tick_elapsed >= Duration::from_millis(100) {
-            log::warn!("Player tick slow: {player_tick_elapsed:?}");
-        }
+        let player_tick = {
+            let _span = tracing::trace_span!("player_tick").entered();
+            let start = Instant::now();
+            self.players.iter_players(|_uuid, player| {
+                player.tick();
+                true
+            });
+            start.elapsed()
+        };
 
         // Broadcast player latency updates periodically
         if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
+            let _span = tracing::trace_span!("broadcast_latency").entered();
             self.broadcast_player_latency_updates();
+        }
+
+        WorldTickTimings {
+            chunk_map: chunk_map_timings,
+            player_tick,
         }
     }
 
@@ -475,11 +548,7 @@ impl World {
         // Only broadcast if there are players
         if !latency_entries.is_empty() {
             let packet = CPlayerInfoUpdate::update_latency(latency_entries);
-
-            self.players.iter_players(|_, player| {
-                player.connection.send_packet(packet.clone());
-                true
-            });
+            self.broadcast_to_all(packet);
         }
     }
 
@@ -555,8 +624,45 @@ impl World {
 
     /// Broadcasts a system chat message to all players.
     pub fn broadcast_system_chat(&self, packet: CSystemChat) {
+        self.broadcast_to_all(packet);
+    }
+
+    /// Broadcasts a packet to all players in the world.
+    ///
+    /// This method handles encoding the packet once and sending it to all players,
+    /// avoiding repeated cloning of unencoded packets.
+    pub fn broadcast_to_all<P: ClientPacket>(&self, packet: P) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.broadcast_to_all_encoded(encoded);
+    }
+
+    /// Broadcasts a packet to all players in the world.
+    ///
+    /// This method handles encoding the packets producced from the function passed
+    pub fn broadcast_to_all_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
         self.players.iter_players(|_, player| {
-            player.connection.send_packet(packet.clone());
+            let Ok(encoded) = EncodedPacket::from_bare(
+                packet(player),
+                STEEL_CONFIG.compression,
+                ConnectionProtocol::Play,
+            ) else {
+                return false;
+            };
+            player.connection.send_encoded_packet(encoded);
+            true
+        });
+    }
+
+    /// Broadcasts an already-encoded packet to all players in the world.
+    ///
+    /// Use this when you have a pre-encoded packet to avoid re-encoding.
+    pub fn broadcast_to_all_encoded(&self, packet: EncodedPacket) {
+        self.players.iter_players(|_, player| {
+            player.connection.send_encoded_packet(packet.clone());
             true
         });
     }
@@ -579,8 +685,28 @@ impl World {
         });
     }
 
-    /// Broadcasts an encoded packet to all players tracking the given chunk.
-    pub fn broadcast_to_nearby(
+    /// Broadcasts a packet to all players tracking the given chunk.
+    ///
+    /// This method handles encoding the packet internally, avoiding boilerplate at call sites.
+    /// If encoding fails, the broadcast is silently skipped.
+    pub fn broadcast_to_nearby<P: ClientPacket>(
+        &self,
+        chunk: ChunkPos,
+        packet: P,
+        exclude: Option<i32>,
+    ) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.broadcast_to_nearby_encoded(chunk, encoded, exclude);
+    }
+
+    /// Broadcasts an already-encoded packet to all players tracking the given chunk.
+    ///
+    /// Use this when you have a pre-encoded packet to avoid re-encoding.
+    pub fn broadcast_to_nearby_encoded(
         &self,
         chunk: ChunkPos,
         packet: EncodedPacket,
@@ -625,12 +751,585 @@ impl World {
             pos,
             progress: progress.clamp(-1, 9) as u8,
         };
+        self.broadcast_to_nearby(chunk, packet, Some(entity_id));
+    }
+
+    /// Broadcasts a block entity update to all players tracking the chunk.
+    ///
+    /// This is used when block entity data changes (e.g., sign text updated).
+    ///
+    /// # Arguments
+    /// * `pos` - The position of the block entity
+    /// * `block_entity_type` - The type of block entity
+    /// * `nbt` - The NBT data to send
+    pub fn broadcast_block_entity_update(
+        &self,
+        pos: BlockPos,
+        block_entity_type: BlockEntityTypeRef,
+        nbt: NbtCompound,
+    ) {
+        use steel_protocol::packets::game::CBlockEntityData;
+        use steel_utils::serial::OptionalNbt;
+
+        let chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.x()),
+            SectionPos::block_to_section_coord(pos.z()),
+        );
+
+        // Get the block entity type ID from the registry
+        let type_id = *REGISTRY.block_entity_types.get_id(block_entity_type);
+
+        let packet = CBlockEntityData {
+            pos,
+            block_entity_type: type_id as i32,
+            nbt: OptionalNbt(Some(nbt)),
+        };
+
+        self.broadcast_to_nearby(chunk, packet, None);
+    }
+
+    /// Drops an item stack at the given position with scatter behavior.
+    ///
+    /// Mirrors vanilla's `Containers.dropItemStack`. Splits large stacks into
+    /// multiple item entities (10-30 items each) and scatters them with random
+    /// positions and velocities.
+    ///
+    /// # Arguments
+    /// * `pos` - The block position to drop the item at
+    /// * `item` - The item stack to drop
+    pub fn drop_item_stack(self: &Arc<Self>, pos: BlockPos, mut item: ItemStack) {
+        use crate::entity::next_entity_id;
+        use steel_registry::vanilla_entities;
+
+        // Random velocity using triangle distribution (vanilla uses random.triangle)
+        // Vanilla constant: 0.05F * Mth.SQRT_OF_TWO (sqrt(2) * 0.05 ≈ 0.1148...)
+        const VELOCITY_SPREAD: f64 = 0.114_850_001_711_398_36;
+
+        if item.is_empty() {
+            return;
+        }
+
+        // Vanilla uses EntityType.ITEM dimensions for position calculation
+        let item_width = f64::from(vanilla_entities::ITEM.dimensions.width);
+        let center_range = 1.0 - item_width;
+        let half_size = item_width / 2.0;
+
+        // Keep spawning item entities until the stack is empty
+        // Vanilla splits stacks into 10-30 items each
+        while !item.is_empty() {
+            // Split off 10-30 items (or remaining if less)
+            let split_count = (rand::random::<u32>() % 21 + 10) as i32;
+            let split_stack = item.split(split_count);
+
+            if split_stack.is_empty() {
+                break;
+            }
+
+            // Random position within the block (vanilla logic)
+            let x = f64::from(pos.x()).floor() + rand::random::<f64>() * center_range + half_size;
+            let y = f64::from(pos.y()).floor() + rand::random::<f64>() * center_range;
+            let z = f64::from(pos.z()).floor() + rand::random::<f64>() * center_range + half_size;
+
+            // triangle(mode, deviation) produces values centered around mode with spread of deviation
+            let vx = triangle_random(0.0, VELOCITY_SPREAD);
+            let vy = triangle_random(0.2, VELOCITY_SPREAD);
+            let vz = triangle_random(0.0, VELOCITY_SPREAD);
+
+            let entity_id = next_entity_id();
+            let entity = Arc::new(ItemEntity::with_item_and_velocity(
+                entity_id,
+                Vector3::new(x, y, z),
+                split_stack,
+                Vector3::new(vx, vy, vz),
+                Arc::downgrade(self),
+            ));
+            entity.set_default_pickup_delay();
+            self.add_entity(entity);
+        }
+    }
+
+    /// Broadcasts a level event to nearby players within 64 blocks.
+    ///
+    /// Level events trigger sounds, particles, and animations on the client.
+    /// See `steel_registry::level_events` for available event type constants.
+    ///
+    /// # Arguments
+    /// * `event_type` - The event type ID from `steel_registry::level_events`
+    /// * `pos` - The position where the event occurs
+    /// * `data` - Event-specific data (e.g., block state ID for block destruction)
+    /// * `exclude` - Optional entity ID to exclude from receiving the event
+    pub fn level_event(&self, event_type: i32, pos: BlockPos, data: i32, exclude: Option<i32>) {
+        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
+
+        let chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.x()),
+            SectionPos::block_to_section_coord(pos.z()),
+        );
+        let packet = CLevelEvent::new(event_type, pos, data, false);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
         else {
-            log::warn!("Failed to encode block destruction packet");
+            log::warn!("Failed to encode level event packet");
             return;
         };
-        self.broadcast_to_nearby(chunk, encoded, Some(entity_id));
+
+        // Get players tracking this chunk, then filter by 64-block distance
+        let event_pos = (
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        );
+
+        for entity_id in self.player_area_map.get_tracking_players(chunk) {
+            // Skip excluded player (they hear the effect client-side)
+            if exclude == Some(entity_id) {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                let player_pos = *player.position.lock();
+                let dx = player_pos.x - event_pos.0;
+                let dy = player_pos.y - event_pos.1;
+                let dz = player_pos.z - event_pos.2;
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+
+                if dist_sq <= MAX_DISTANCE_SQ {
+                    player.connection.send_encoded_packet(encoded.clone());
+                }
+            }
+        }
+    }
+
+    /// Broadcasts a global level event to all players in the world.
+    ///
+    /// Unlike `level_event`, this sends the event to all players regardless of distance.
+    /// Used for events like the ender dragon death or wither spawn.
+    ///
+    /// # Arguments
+    /// * `event_type` - The event type ID from `steel_registry::level_events`
+    /// * `pos` - The position where the event occurs
+    /// * `data` - Event-specific data
+    pub fn global_level_event(&self, event_type: i32, pos: BlockPos, data: i32) {
+        let packet = CLevelEvent::new(event_type, pos, data, true);
+        self.players.iter_players(|_, player| {
+            player.connection.send_packet(packet.clone());
+            true
+        });
+    }
+
+    /// Broadcasts block destruction particles and sound for a destroyed block.
+    ///
+    /// This is a convenience method that sends the `PARTICLES_DESTROY_BLOCK` level event.
+    ///
+    /// # Arguments
+    /// * `pos` - The position of the destroyed block
+    /// * `block_state_id` - The block state ID of the destroyed block
+    /// * `exclude` - Optional entity ID to exclude from receiving the event
+    pub fn destroy_block_effect(&self, pos: BlockPos, block_state_id: u32, exclude: Option<i32>) {
+        self.level_event(
+            level_events::PARTICLES_DESTROY_BLOCK,
+            pos,
+            block_state_id as i32,
+            exclude,
+        );
+    }
+
+    /// Broadcasts a block event to nearby players within 64 blocks.
+    ///
+    /// Block events are used for special block behaviors like pistons, note blocks,
+    /// chests, and bells. Each block type interprets the parameters differently.
+    ///
+    /// # Arguments
+    /// * `pos` - The position of the block
+    /// * `block` - The block reference
+    /// * `action_id` - The action ID (block-specific meaning)
+    /// * `action_param` - The action parameter (block-specific meaning)
+    pub fn block_event(&self, pos: BlockPos, block: BlockRef, action_id: u8, action_param: u8) {
+        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
+
+        let block_id = *REGISTRY.blocks.get_id(block) as i32;
+
+        let chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.x()),
+            SectionPos::block_to_section_coord(pos.z()),
+        );
+        let packet = CBlockEvent::new(pos, action_id, action_param, block_id);
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode block event packet");
+            return;
+        };
+
+        // Get players tracking this chunk, then filter by 64-block distance
+        let event_pos = (
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        );
+
+        for entity_id in self.player_area_map.get_tracking_players(chunk) {
+            if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                let player_pos = *player.position.lock();
+                let dx = player_pos.x - event_pos.0;
+                let dy = player_pos.y - event_pos.1;
+                let dz = player_pos.z - event_pos.2;
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+
+                if dist_sq <= MAX_DISTANCE_SQ {
+                    player.connection.send_encoded_packet(encoded.clone());
+                }
+            }
+        }
+    }
+
+    /// Plays a sound at a specific position, broadcasting to nearby players.
+    ///
+    /// The sound is sent to all players within 64 blocks of the position,
+    /// except for the excluded player (if any). The excluded player is typically
+    /// the one who triggered the sound, as they hear it client-side.
+    ///
+    /// # Arguments
+    /// * `sound_id` - The sound event registry ID (from `steel_registry::sound_events`)
+    /// * `source` - The sound source category
+    /// * `pos` - The block position (sound plays at center of block)
+    /// * `volume` - Volume multiplier (1.0 = normal)
+    /// * `pitch` - Pitch multiplier (1.0 = normal)
+    /// * `exclude` - Optional entity ID to exclude from receiving the sound
+    pub fn play_sound(
+        &self,
+        sound_id: i32,
+        source: SoundSource,
+        pos: BlockPos,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
+        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
+
+        let chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(pos.x()),
+            SectionPos::block_to_section_coord(pos.z()),
+        );
+
+        // Generate a random seed for sound variations
+        let seed = rand::random::<i64>();
+
+        let packet = CSound::new(
+            sound_id,
+            source,
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+            volume,
+            pitch,
+            seed,
+        );
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode sound packet");
+            return;
+        };
+
+        // Get players tracking this chunk, then filter by 64-block distance
+        let sound_pos = (
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        );
+
+        for entity_id in self.player_area_map.get_tracking_players(chunk) {
+            // Skip excluded player (they hear the sound client-side)
+            if exclude == Some(entity_id) {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(entity_id) {
+                let player_pos = *player.position.lock();
+                let dx = player_pos.x - sound_pos.0;
+                let dy = player_pos.y - sound_pos.1;
+                let dz = player_pos.z - sound_pos.2;
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+
+                if dist_sq <= MAX_DISTANCE_SQ {
+                    player.connection.send_encoded_packet(encoded.clone());
+                }
+            }
+        }
+    }
+
+    /// Plays a block sound at a specific position.
+    ///
+    /// Convenience method that uses the BLOCKS sound source and applies
+    /// the sound type's volume and pitch modifiers.
+    ///
+    /// # Arguments
+    /// * `sound_id` - The sound event registry ID
+    /// * `pos` - The block position
+    /// * `volume` - Base volume (typically from `SoundType`)
+    /// * `pitch` - Base pitch (typically from `SoundType`)
+    /// * `exclude` - Optional entity ID to exclude from receiving the sound
+    pub fn play_block_sound(
+        &self,
+        sound_id: i32,
+        pos: BlockPos,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
+        self.play_sound(sound_id, SoundSource::Blocks, pos, volume, pitch, exclude);
+    }
+
+    // === Entity Methods ===
+
+    /// Returns a reference to the entity cache.
+    #[must_use]
+    pub const fn entity_cache(&self) -> &EntityCache {
+        &self.entity_cache
+    }
+
+    /// Returns the entity tracker for managing player-entity visibility.
+    #[must_use]
+    pub const fn entity_tracker(&self) -> &EntityTracker {
+        &self.entity_tracker
+    }
+
+    /// Adds an entity to the world.
+    ///
+    /// This delegates to the chunk's `add_and_register_entity` method which handles:
+    /// - Adding to chunk storage
+    /// - Setting up level callback
+    /// - Registering in entity cache
+    /// - Adding to entity tracker and sending spawn packets
+    /// - Marking the chunk dirty
+    pub fn add_entity(self: &Arc<Self>, entity: SharedEntity) {
+        let pos = entity.position();
+        let chunk_pos = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+
+        self.chunk_map.with_full_chunk(&chunk_pos, |chunk| {
+            if let Some(c) = chunk.as_full() {
+                c.add_and_register_entity(entity.clone());
+            }
+        });
+    }
+
+    /// Spawns an item entity at the given position.
+    ///
+    /// This is a convenience method for dropping items in the world.
+    /// The item will have a default pickup delay.
+    ///
+    /// Returns `None` if the item stack is empty.
+    pub fn spawn_item(
+        self: &Arc<Self>,
+        pos: Vector3<f64>,
+        item: ItemStack,
+    ) -> Option<Arc<ItemEntity>> {
+        self.spawn_item_with_velocity(pos, item, Vector3::new(0.0, 0.0, 0.0))
+    }
+
+    /// Spawns an item entity at the given position with initial velocity.
+    ///
+    /// Returns `None` if the item stack is empty.
+    pub fn spawn_item_with_velocity(
+        self: &Arc<Self>,
+        pos: Vector3<f64>,
+        item: ItemStack,
+        velocity: Vector3<f64>,
+    ) -> Option<Arc<ItemEntity>> {
+        use crate::entity::next_entity_id;
+
+        if item.is_empty() {
+            return None;
+        }
+
+        let entity_id = next_entity_id();
+        let entity = Arc::new(ItemEntity::with_item_and_velocity(
+            entity_id,
+            pos,
+            item,
+            velocity,
+            Arc::downgrade(self),
+        ));
+        entity.set_default_pickup_delay();
+
+        self.add_entity(entity.clone());
+        Some(entity)
+    }
+
+    /// Drops an item at a block position with random offset and velocity.
+    ///
+    /// Mirrors vanilla's `Block.popResource()`. Used for block drops.
+    /// The item spawns near the center of the block with slight random offset
+    /// and small random velocity.
+    pub fn pop_resource(
+        self: &Arc<Self>,
+        pos: &BlockPos,
+        item: ItemStack,
+    ) -> Option<Arc<ItemEntity>> {
+        use steel_registry::vanilla_entities;
+
+        if item.is_empty() {
+            return None;
+        }
+
+        // Vanilla uses EntityType.ITEM dimensions for offset calculation
+        let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
+
+        // Random offset within block (vanilla: nextDouble(-0.25, 0.25))
+        let x = f64::from(pos.x()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
+        let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
+        let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
+
+        self.spawn_item(Vector3::new(x, y, z), item)
+    }
+
+    /// Drops an item from a block face with directional velocity.
+    ///
+    /// Mirrors vanilla's `Block.popResourceFromFace()`. Used for items ejected
+    /// from a specific side of a block.
+    pub fn pop_resource_from_face(
+        self: &Arc<Self>,
+        pos: &BlockPos,
+        face: Direction,
+        item: ItemStack,
+    ) -> Option<Arc<ItemEntity>> {
+        use steel_registry::vanilla_entities;
+
+        if item.is_empty() {
+            return None;
+        }
+
+        let half_width = f64::from(vanilla_entities::ITEM.dimensions.width) / 2.0;
+        let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
+
+        let (step_x, step_y, step_z) = face.offset();
+
+        // Position calculation (vanilla logic)
+        let x = f64::from(pos.x())
+            + 0.5
+            + if step_x == 0 {
+                (rand::random::<f64>() - 0.5) * 0.5
+            } else {
+                f64::from(step_x) * (0.5 + half_width)
+            };
+        let y = f64::from(pos.y())
+            + 0.5
+            + if step_y == 0 {
+                (rand::random::<f64>() - 0.5) * 0.5
+            } else {
+                f64::from(step_y) * (0.5 + half_height)
+            }
+            - half_height;
+        let z = f64::from(pos.z())
+            + 0.5
+            + if step_z == 0 {
+                (rand::random::<f64>() - 0.5) * 0.5
+            } else {
+                f64::from(step_z) * (0.5 + half_width)
+            };
+
+        // Velocity in direction of face
+        let delta_x = if step_x == 0 {
+            (rand::random::<f64>() - 0.5) * 0.2
+        } else {
+            f64::from(step_x) * 0.1
+        };
+        let delta_y = if step_y == 0 {
+            rand::random::<f64>() * 0.1
+        } else {
+            f64::from(step_y) * 0.1 + 0.1
+        };
+        let delta_z = if step_z == 0 {
+            (rand::random::<f64>() - 0.5) * 0.2
+        } else {
+            f64::from(step_z) * 0.1
+        };
+
+        self.spawn_item_with_velocity(
+            Vector3::new(x, y, z),
+            item,
+            Vector3::new(delta_x, delta_y, delta_z),
+        )
+    }
+
+    /// Gets an entity by its network ID.
+    ///
+    /// Returns `None` if the entity doesn't exist or its chunk was unloaded.
+    #[must_use]
+    pub fn get_entity_by_id(&self, id: i32) -> Option<SharedEntity> {
+        self.entity_cache.get_by_id(id)
+    }
+
+    /// Gets an entity by its UUID.
+    ///
+    /// Returns `None` if the entity doesn't exist or its chunk was unloaded.
+    #[must_use]
+    pub fn get_entity_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
+        self.entity_cache.get_by_uuid(uuid)
+    }
+
+    /// Gets all entities intersecting the given bounding box.
+    ///
+    /// Only returns entities in loaded chunks.
+    #[must_use]
+    pub fn get_entities_in_aabb(&self, aabb: &AABBd) -> Vec<SharedEntity> {
+        self.entity_cache.get_entities_in_aabb(aabb)
+    }
+
+    /// Moves an entity's Arc between chunks when it crosses a chunk boundary.
+    ///
+    /// Called by `EntityChunkCallback` when an entity moves between chunks.
+    pub fn move_entity_between_chunks(&self, entity_id: i32, from: ChunkPos, to: ChunkPos) {
+        // Remove Arc from old chunk
+        let entity = self
+            .chunk_map
+            .with_full_chunk(&from, |chunk| {
+                chunk.as_full().and_then(|c| c.entities.remove(entity_id))
+            })
+            .flatten();
+
+        // Add Arc to new chunk
+        if let Some(entity) = entity {
+            self.chunk_map.with_full_chunk(&to, |chunk| {
+                if let Some(c) = chunk.as_full() {
+                    c.entities.add(entity);
+                }
+            });
+        }
+    }
+
+    /// Internal method to remove an entity from the world.
+    ///
+    /// Called by `EntityChunkCallback::on_remove`.
+    pub fn remove_entity_internal(
+        &self,
+        entity_id: i32,
+        chunk_pos: ChunkPos,
+        reason: RemovalReason,
+    ) {
+        // Remove from chunk storage
+        let entity: Option<SharedEntity> = self
+            .chunk_map
+            .with_full_chunk(&chunk_pos, |chunk| {
+                chunk.as_full().and_then(|c| c.entities.remove(entity_id))
+            })
+            .flatten();
+
+        // Unregister from cache
+        if let Some(entity) = entity {
+            let pos = entity.position();
+            let section = SectionPos::new(
+                (pos.x as i32) >> 4,
+                (pos.y as i32) >> 4,
+                (pos.z as i32) >> 4,
+            );
+            self.entity_cache
+                .unregister(entity_id, entity.uuid(), section);
+
+            // Broadcast remove packet if entity was destroyed
+            if reason.should_destroy() {
+                let packet = CRemoveEntities::single(entity_id);
+                self.broadcast_to_nearby(chunk_pos, packet, None);
+            }
+        }
     }
 }

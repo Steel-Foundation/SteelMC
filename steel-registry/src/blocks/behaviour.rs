@@ -4,6 +4,7 @@
 //! has been moved to `steel-core::behavior`.
 
 pub use crate::blocks::properties::NoteBlockInstrument;
+use crate::sound_types::SoundType;
 
 /// How a block reacts when pushed by a piston.
 #[derive(Debug, Clone, Copy)]
@@ -39,6 +40,7 @@ pub struct BlockConfig {
     pub requires_correct_tool_for_drops: bool,
     pub instrument: NoteBlockInstrument,
     pub replaceable: bool,
+    pub sound_type: SoundType,
 }
 
 impl BlockConfig {
@@ -64,6 +66,7 @@ impl BlockConfig {
             requires_correct_tool_for_drops: false,
             instrument: NoteBlockInstrument::Harp,
             replaceable: false,
+            sound_type: crate::sound_types::STONE,
         }
     }
 
@@ -172,6 +175,12 @@ impl BlockConfig {
     #[must_use]
     pub const fn replaceable(mut self, replaceable: bool) -> Self {
         self.replaceable = replaceable;
+        self
+    }
+
+    #[must_use]
+    pub const fn sound_type(mut self, sound_type: SoundType) -> Self {
+        self.sound_type = sound_type;
         self
     }
 }

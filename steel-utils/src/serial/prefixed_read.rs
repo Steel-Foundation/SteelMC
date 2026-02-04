@@ -1,11 +1,11 @@
 #![allow(missing_docs)]
-use std::io::{Error, Read, Result};
+use std::io::{Cursor, Error, Read, Result};
 
 use crate::serial::{PrefixedRead, ReadFrom};
 
 impl PrefixedRead for String {
     fn read_prefixed_bound<P: TryInto<usize> + ReadFrom>(
-        data: &mut impl Read,
+        data: &mut Cursor<&[u8]>,
         bound: usize,
     ) -> Result<Self> {
         let len: usize = P::read(data)?
@@ -24,7 +24,7 @@ impl PrefixedRead for String {
 
 impl<T: ReadFrom> PrefixedRead for Vec<T> {
     fn read_prefixed_bound<P: TryInto<usize> + ReadFrom>(
-        data: &mut impl Read,
+        data: &mut Cursor<&[u8]>,
         bound: usize,
     ) -> Result<Self> {
         let len: usize = P::read(data)?
@@ -44,7 +44,7 @@ impl<T: ReadFrom> PrefixedRead for Vec<T> {
 
 impl<T: PrefixedRead> PrefixedRead for Option<T> {
     fn read_prefixed_bound<P: TryInto<usize> + ReadFrom>(
-        data: &mut impl Read,
+        data: &mut Cursor<&[u8]>,
         bound: usize,
     ) -> Result<Self> {
         if bool::read(data)? {

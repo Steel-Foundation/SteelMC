@@ -1,4 +1,4 @@
-use std::io::{Read, Result, Write};
+use std::io::{Cursor, Result, Write};
 
 use crate::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
 
@@ -28,7 +28,7 @@ impl BitSet {
 
 #[allow(missing_docs)]
 impl ReadFrom for BitSet {
-    fn read(data: &mut impl Read) -> Result<Self> {
+    fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self(Vec::read_prefixed::<VarInt>(data)?.into_boxed_slice()))
     }
 }

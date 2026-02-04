@@ -44,7 +44,7 @@ impl Default for BlockBreakingManager {
 impl BlockBreakingManager {
     /// Creates a new block breaking manager.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             is_destroying_block: false,
             destroy_progress_start: 0,
@@ -84,7 +84,7 @@ impl BlockBreakingManager {
             let state = world.get_block_state(&self.destroy_pos);
             if is_air(state) {
                 // Block was broken by something else
-                world.broadcast_block_destruction(player.entity_id, self.destroy_pos, -1);
+                world.broadcast_block_destruction(player.id, self.destroy_pos, -1);
                 self.last_sent_state = -1;
                 self.is_destroying_block = false;
             } else {
@@ -114,7 +114,7 @@ impl BlockBreakingManager {
         let state = (progress * 10.0) as i32;
 
         if state != self.last_sent_state {
-            world.broadcast_block_destruction(player.entity_id, pos, state);
+            world.broadcast_block_destruction(player.id, pos, state);
             self.last_sent_state = state;
         }
 
@@ -192,7 +192,7 @@ impl BlockBreakingManager {
                         self.is_destroying_block = true;
                         self.destroy_pos = pos;
                         let state = (progress * 10.0) as i32;
-                        world.broadcast_block_destruction(player.entity_id, pos, state);
+                        world.broadcast_block_destruction(player.id, pos, state);
                         self.last_sent_state = state;
                     }
                 }
@@ -210,7 +210,7 @@ impl BlockBreakingManager {
                         if progress >= 0.7 {
                             // Complete the break
                             self.is_destroying_block = false;
-                            world.broadcast_block_destruction(player.entity_id, pos, -1);
+                            world.broadcast_block_destruction(player.id, pos, -1);
                             self.destroy_and_ack(player, world, pos);
                             return;
                         }
@@ -235,10 +235,10 @@ impl BlockBreakingManager {
                         self.destroy_pos,
                         pos
                     );
-                    world.broadcast_block_destruction(player.entity_id, self.destroy_pos, -1);
+                    world.broadcast_block_destruction(player.id, self.destroy_pos, -1);
                 }
 
-                world.broadcast_block_destruction(player.entity_id, pos, -1);
+                world.broadcast_block_destruction(player.id, pos, -1);
             }
         }
     }
@@ -277,23 +277,56 @@ impl BlockBreakingManager {
         let changed = world.set_block(pos, air_state, UpdateFlags::UPDATE_ALL);
 
         if changed {
-            // TODO: Call block.destroy for effects
+            // Play block destruction particles and sound (skip for fire blocks like vanilla)
+            // Exclude the breaking player as they see the effect client-side
+            let block = REGISTRY.blocks.by_state_id(state);
+            let is_fire = block.is_some_and(|b| {
+                b.key == vanilla_blocks::FIRE.key || b.key == vanilla_blocks::SOUL_FIRE.key
+            });
+            if !is_fire {
+                world.destroy_block_effect(pos, u32::from(state.0), Some(player.id));
+            }
 
-            // Handle drops if player doesn't prevent them (spectator mode)
-            if player.game_mode.load() != GameType::Spectator {
-                // Check if player has correct tool for drops
-                let has_correct_tool = {
-                    let inv = player.inventory.lock();
-                    let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-                    main_hand.is_correct_tool_for_drops(state) || !requires_correct_tool(state)
-                };
+            // Check if player has correct tool for drops
+            let has_correct_tool = {
+                let inv = player.inventory.lock();
+                let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
+                main_hand.is_correct_tool_for_drops(state) || !requires_correct_tool(state)
+            };
 
-                if has_correct_tool {
-                    // TODO: Call playerDestroy to spawn drops
-                    drop_block_loot(player, world, pos, state);
+            // Damage the tool if the block has non-zero destroy time
+            // This is done before playerDestroy, matching vanilla's Item.mineBlock
+            let block_destroy_time = REGISTRY
+                .blocks
+                .by_state_id(state)
+                .map_or(0.0, |b| b.config.destroy_time);
+
+            if block_destroy_time != 0.0 {
+                let mut inv = player.inventory.lock();
+                let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
+
+                if damage_per_block > 0 {
+                    // Use with_selected_item_mut to ensure set_changed() is called
+                    // Skip damage if player has infinite materials (creative mode)
+                    let has_infinite_materials = player.has_infinite_materials();
+                    let broke = inv.with_selected_item_mut(|main_hand| {
+                        main_hand.hurt_and_break(damage_per_block, has_infinite_materials)
+                    });
+                    if broke {
+                        // TODO: Play item break sound/particles
+                        log::debug!("Tool broke while mining block at {pos:?}");
+                    }
                 }
+            }
 
-                // TODO: Damage the tool
+            // Handle drops (skip for creative/spectator)
+            let game_mode = player.game_mode.load();
+            if game_mode != GameType::Spectator
+                && game_mode != GameType::Creative
+                && has_correct_tool
+            {
+                // TODO: Call playerDestroy to spawn drops
+                drop_block_loot(player, world, pos, state);
             }
         }
 
@@ -388,10 +421,54 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
     speed / destroy_time / divisor
 }
 
-/// Placeholder for block loot drops.
-///
-/// TODO: Implement proper loot table lookup and item spawning.
+/// Drops loot for a destroyed block using its loot table.
 #[allow(clippy::needless_pass_by_value)]
-fn drop_block_loot(_player: &Player, _world: &World, _pos: BlockPos, _state: BlockStateId) {
-    // Noop for now - will be implemented with loot tables
+fn drop_block_loot(player: &Player, _world: &World, pos: BlockPos, state: BlockStateId) {
+    use steel_registry::blocks::block_state_ext::BlockStateExt;
+    use steel_registry::loot_table::LootContext;
+    use steel_utils::Identifier;
+
+    let block = state.get_block();
+
+    // Build the loot table key: "blocks/{block_name}"
+    let loot_table_key = Identifier::vanilla(format!("blocks/{}", block.key.path));
+
+    let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_table_key) else {
+        // No loot table for this block (e.g., air, bedrock)
+        return;
+    };
+
+    // Get the player's tool
+    let tool = player.inventory.lock().get_selected_item().clone();
+
+    // Create loot context
+    let mut rng = rand::rng();
+    let mut ctx = LootContext {
+        rng: &mut rng,
+        luck: 0.0, // TODO: Get luck from player attributes
+        block_state: Some(state),
+        tool: Some(&tool),
+        explosion_radius: None,
+        killed_by_player: false,
+        origin: Some((f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()))),
+        game_time: None,
+        weather: None,
+        this_entity: None,
+        killer_entity: None,
+        direct_killer_entity: None,
+        last_damage_player: None,
+        damage_source: None,
+        block_entity: None,
+        interacting_entity: None,
+    };
+
+    // Generate drops
+    let drops = loot_table.get_random_items(&mut ctx);
+
+    // Spawn each dropped item using the player's world reference (Arc<World>)
+    for item in drops {
+        if !item.is_empty() {
+            player.world.pop_resource(&pos, item);
+        }
+    }
 }

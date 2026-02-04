@@ -20,9 +20,11 @@ use std::mem;
 
 use steel_protocol::packets::game::{
     CContainerSetContent, CContainerSetData, CContainerSetSlot, CSetCursorItem, ClickType,
-    HashedStack,
+    HashedPatchMap, HashedStack,
 };
-use steel_registry::{REGISTRY, item_stack::ItemStack, menu_type::MenuTypeRef};
+use steel_registry::{
+    REGISTRY, data_components::DataComponentPatch, item_stack::ItemStack, menu_type::MenuTypeRef,
+};
 
 use crate::{
     inventory::{
@@ -53,7 +55,7 @@ pub enum RemoteSlot {
 impl RemoteSlot {
     /// Creates an unknown remote slot.
     #[must_use]
-    pub fn unknown() -> Self {
+    pub const fn unknown() -> Self {
         Self::Unknown
     }
 
@@ -83,21 +85,117 @@ impl RemoteSlot {
 /// Checks if a hashed stack matches the given `ItemStack`.
 fn hashed_stack_matches(hash: &HashedStack, item: &ItemStack) -> bool {
     match hash {
-        HashedStack::Empty => item.is_empty(),
+        HashedStack::Empty => {
+            if !item.is_empty() {
+                log::info!("HashedStack mismatch: client sent Empty, server has {item}");
+                return false;
+            }
+            true
+        }
         HashedStack::Item {
             item_id,
             count,
-            components: _,
+            components,
         } => {
             if item.is_empty() {
+                log::info!(
+                    "HashedStack mismatch: client sent item_id={item_id} count={count}, server has Empty"
+                );
                 return false;
             }
+
             // Check item type and count match
-            // TODO: Component hash verification would go here
             let local_id = *REGISTRY.items.get_id(item.item) as i32;
-            local_id == *item_id && item.count == *count
+            if local_id != *item_id {
+                log::info!(
+                    "HashedStack mismatch: item_id client={item_id} server={local_id} ({})",
+                    item.item.key
+                );
+                return false;
+            }
+            if item.count != *count {
+                log::info!(
+                    "HashedStack mismatch: count client={count} server={} for {}",
+                    item.count,
+                    item.item.key
+                );
+                return false;
+            }
+
+            // Validate component hashes
+            validate_component_hashes(components, item.patch())
         }
     }
+}
+
+/// Validates that the hashed component patch matches the local patch.
+fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch) -> bool {
+    use rustc_hash::FxHashSet;
+    use steel_registry::data_components::ComponentPatchEntry;
+
+    // Check removed components match
+    let local_removed: FxHashSet<i32> = patch
+        .iter_removed()
+        .filter_map(|k| {
+            REGISTRY
+                .data_components
+                .get_id_by_key(k)
+                .map(|id| id as i32)
+        })
+        .collect();
+    let hashed_removed: FxHashSet<i32> = hashed.removed_components.iter().copied().collect();
+
+    if local_removed != hashed_removed {
+        log::info!(
+            "HashedStack mismatch: removed components differ - client={hashed_removed:?} server={local_removed:?}"
+        );
+        return false;
+    }
+
+    // Check added component hashes
+    // For each component in our patch, verify the client sent the correct hash
+    for (key, entry) in patch.iter() {
+        if let ComponentPatchEntry::Set(value) = entry {
+            let Some(id) = REGISTRY.data_components.get_id_by_key(key) else {
+                continue; // Unknown component, skip
+            };
+            let id = id as i32;
+
+            let Some(&expected_hash) = hashed.added_components.get(&id) else {
+                // Client didn't send hash for this component
+                log::info!(
+                    "HashedStack mismatch: client missing hash for component {key} (id={id})"
+                );
+                return false;
+            };
+
+            // Compute the hash of the component value using proper HashOps format
+            let actual_hash = value.compute_hash();
+
+            if actual_hash != expected_hash {
+                log::info!(
+                    "HashedStack mismatch: component {key} hash differs - client={expected_hash} server={actual_hash}"
+                );
+                return false;
+            }
+        }
+    }
+
+    // Check that the client didn't send extra components we don't have
+    for &id in hashed.added_components.keys() {
+        let Some(key) = REGISTRY.data_components.get_key_by_id(id as usize) else {
+            log::info!("HashedStack mismatch: client sent unknown component id={id}");
+            return false; // Unknown component ID from client
+        };
+        if !matches!(patch.get_entry(key), Some(ComponentPatchEntry::Set(_))) {
+            log::info!(
+                "HashedStack mismatch: client claims component {key} exists but server doesn't have it"
+            );
+            return false; // Client claims component exists but we don't have it
+        }
+    }
+
+    true
 }
 
 /// Slot index for clicking outside the inventory window (drop items).
@@ -126,27 +224,27 @@ pub const SLOT_SIZE: i32 = 18;
 /// Extracts the quickcraft type from a button mask.
 /// Type is stored in bits 2-3.
 #[must_use]
-pub fn get_quickcraft_type(button: i32) -> i32 {
+pub const fn get_quickcraft_type(button: i32) -> i32 {
     (button >> 2) & 3
 }
 
 /// Extracts the quickcraft header (phase) from a button mask.
 /// Header is stored in bits 0-1.
 #[must_use]
-pub fn get_quickcraft_header(button: i32) -> i32 {
+pub const fn get_quickcraft_header(button: i32) -> i32 {
     button & 3
 }
 
 /// Creates a quickcraft button mask from header and type.
 #[must_use]
-pub fn get_quickcraft_mask(header: i32, quickcraft_type: i32) -> i32 {
+pub const fn get_quickcraft_mask(header: i32, quickcraft_type: i32) -> i32 {
     (header & 3) | ((quickcraft_type & 3) << 2)
 }
 
 /// Checks if a quickcraft type is valid for the given player.
 /// Type 2 (clone) requires creative mode (infinite materials).
 #[must_use]
-pub fn is_valid_quickcraft_type(quickcraft_type: i32, has_infinite_materials: bool) -> bool {
+pub const fn is_valid_quickcraft_type(quickcraft_type: i32, has_infinite_materials: bool) -> bool {
     match quickcraft_type {
         0 | 1 => true,
         2 => has_infinite_materials,
@@ -308,7 +406,7 @@ impl MenuBehavior {
     /// Returns true if a slot can be dragged to during quickcraft.
     /// Menus can override this via the Menu trait.
     #[must_use]
-    pub fn can_drag_to(&self, _slot_index: usize) -> bool {
+    pub const fn can_drag_to(&self, _slot_index: usize) -> bool {
         true
     }
 
@@ -348,7 +446,7 @@ impl MenuBehavior {
                     && ItemStack::is_same_item_same_components(item_stack, &target)
                 {
                     let total_stack = target.count + item_stack.count;
-                    let max_stack_size = slot.get_max_stack_size_for_item(&target);
+                    let max_stack_size = slot.get_max_stack_size_for_item(guard, &target);
 
                     if total_stack <= max_stack_size {
                         item_stack.set_count(0);
@@ -387,7 +485,7 @@ impl MenuBehavior {
                 let target = slot.get_item(guard).clone();
 
                 if target.is_empty() && slot.may_place(item_stack) {
-                    let max_stack_size = slot.get_max_stack_size_for_item(item_stack);
+                    let max_stack_size = slot.get_max_stack_size_for_item(guard, item_stack);
                     let to_place = item_stack.count.min(max_stack_size);
                     let mut placed = item_stack.clone();
                     placed.set_count(to_place);
@@ -414,19 +512,19 @@ impl MenuBehavior {
 
     /// Returns the current state ID.
     #[must_use]
-    pub fn get_state_id(&self) -> u32 {
+    pub const fn get_state_id(&self) -> u32 {
         self.state_id
     }
 
     /// Suppresses remote updates during click handling.
     /// Call this before processing a click.
-    pub fn suppress_remote_updates(&mut self) {
+    pub const fn suppress_remote_updates(&mut self) {
         self.suppress_remote_updates = true;
     }
 
     /// Resumes remote updates after click handling.
     /// Call this after processing a click.
-    pub fn resume_remote_updates(&mut self) {
+    pub const fn resume_remote_updates(&mut self) {
         self.suppress_remote_updates = false;
     }
 
@@ -469,13 +567,13 @@ impl MenuBehavior {
     /// -999 is used for clicking outside the inventory.
     /// -1 is also accepted (matches Java behavior, though not used by vanilla clients).
     #[must_use]
-    pub fn is_valid_slot_index(&self, slot: i16) -> bool {
+    pub const fn is_valid_slot_index(&self, slot: i16) -> bool {
         slot == -1 || slot == -999 || (slot >= 0 && (slot as usize) < self.slots.len())
     }
 
     /// Returns the number of slots in this menu.
     #[must_use]
-    pub fn slot_count(&self) -> usize {
+    pub const fn slot_count(&self) -> usize {
         self.slots.len()
     }
 
@@ -487,7 +585,7 @@ impl MenuBehavior {
 
     /// Gets the carried item (cursor).
     #[must_use]
-    pub fn get_carried(&self) -> &ItemStack {
+    pub const fn get_carried(&self) -> &ItemStack {
         &self.carried
     }
 
@@ -497,7 +595,7 @@ impl MenuBehavior {
     }
 
     /// Increments and returns the new state ID.
-    pub fn increment_state_id(&mut self) -> u32 {
+    pub const fn increment_state_id(&mut self) -> u32 {
         self.state_id = self.state_id.wrapping_add(1) & 0x7FFF; // Keep it within 15 bits
         self.state_id
     }
@@ -794,7 +892,7 @@ impl MenuBehavior {
                         };
                         let max_size = source
                             .max_stack_size()
-                            .min(slot.get_max_stack_size_for_item(&source));
+                            .min(slot.get_max_stack_size_for_item(&guard, &source));
                         let place_count = get_quickcraft_place_count(
                             quickcraft_slots.len(),
                             self.quickcraft_type,
@@ -830,13 +928,13 @@ impl MenuBehavior {
                 if button == 0 {
                     // Left click outside - drop all carried items
                     let to_drop = mem::take(&mut self.carried);
-                    player.drop_item(to_drop, true);
+                    player.drop_item(to_drop, false, true);
                 } else {
                     // Right click outside - drop one carried item
                     let mut to_drop = self.carried.clone();
                     to_drop.set_count(1);
                     self.carried.shrink(1);
-                    player.drop_item(to_drop, true);
+                    player.drop_item(to_drop, false, true);
                 }
             }
             return;
@@ -858,7 +956,7 @@ impl MenuBehavior {
         if slot_item.is_empty() {
             // Slot is empty - place carried items (if allowed)
             if !carried.is_empty() && slot.may_place(&carried) {
-                let max_for_slot = slot.get_max_stack_size_for_item(&carried);
+                let max_for_slot = slot.get_max_stack_size_for_item(&guard, &carried);
                 let requested = if button == 0 { carried.count } else { 1 };
                 let amount = requested.min(max_for_slot);
 
@@ -901,7 +999,7 @@ impl MenuBehavior {
             if slot.may_place(&carried) {
                 if button == 0 {
                     // Left click - add as many as possible to slot
-                    let max = slot.get_max_stack_size_for_item(&carried);
+                    let max = slot.get_max_stack_size_for_item(&guard, &carried);
                     let space = max - slot_item.count;
                     let to_add = space.min(carried.count);
 
@@ -919,7 +1017,7 @@ impl MenuBehavior {
                     }
                 } else {
                     // Right click - add one to slot
-                    let max = slot.get_max_stack_size_for_item(&carried);
+                    let max = slot.get_max_stack_size_for_item(&guard, &carried);
                     if slot_item.count < max {
                         slot.get_item_mut(&mut guard).set_count(slot_item.count + 1);
                         let remaining = carried.count - 1;
@@ -958,7 +1056,7 @@ impl MenuBehavior {
         } else {
             // Different items - swap (if both operations are allowed)
             if slot.may_pickup() && slot.may_place(&carried) {
-                if carried.count <= slot.get_max_stack_size_for_item(&carried) {
+                if carried.count <= slot.get_max_stack_size_for_item(&guard, &carried) {
                     slot.set_by_player(&mut guard, carried, &slot_item);
                     self.carried = slot_item;
                 } else {
@@ -1029,7 +1127,7 @@ impl MenuBehavior {
 
         let dropped = slot.remove(&mut guard, amount);
         if !dropped.is_empty() {
-            player.drop_item(dropped.clone(), true);
+            player.drop_item(dropped.clone(), false, true);
         }
         slot.set_changed(&mut guard);
 
@@ -1052,7 +1150,7 @@ impl MenuBehavior {
                 if more_dropped.is_empty() {
                     break;
                 }
-                player.drop_item(more_dropped, true);
+                player.drop_item(more_dropped, false, true);
                 slot.set_changed(&mut guard);
             }
         }
@@ -1098,7 +1196,7 @@ pub trait Menu {
         // Default: drop the carried item
         let carried = mem::take(&mut self.behavior_mut().carried);
         if !carried.is_empty() {
-            player.drop_item(carried, false);
+            player.drop_item(carried, false, true);
         }
     }
 
@@ -1240,7 +1338,7 @@ pub trait Menu {
         } else if target_item.is_empty() {
             // Move from inventory to target
             if target_slot.may_place(&source_item) {
-                let max_size = target_slot.get_max_stack_size_for_item(&source_item);
+                let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Split the stack
                     let mut to_place = source_item.clone();
@@ -1260,7 +1358,7 @@ pub trait Menu {
         } else {
             // Swap items between target and inventory
             if target_slot.may_pickup() && target_slot.may_place(&source_item) {
-                let max_size = target_slot.get_max_stack_size_for_item(&source_item);
+                let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Source is too big - place partial and add target to inventory
                     let mut to_place = source_item.clone();

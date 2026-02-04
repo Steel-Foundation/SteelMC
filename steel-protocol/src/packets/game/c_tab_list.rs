@@ -1,6 +1,6 @@
 use steel_macros::ClientPacket;
 use steel_registry::packets::play::C_TAB_LIST;
-use steel_utils::text::TextComponent;
+use text_components::{TextComponent, resolving::TextResolutor};
 
 /// Packet to set the tab list header and footer.
 /// This allows servers to display custom text above and below the player list.
@@ -16,8 +16,15 @@ pub struct CTabList {
 impl CTabList {
     /// Creates a new tab list packet with the specified header and footer.
     #[must_use]
-    pub fn new(header: TextComponent, footer: TextComponent) -> Self {
-        Self { header, footer }
+    pub fn new<T: TextResolutor>(
+        header: &TextComponent,
+        footer: &TextComponent,
+        player: &T,
+    ) -> Self {
+        Self {
+            header: header.resolve(player),
+            footer: footer.resolve(player),
+        }
     }
 
     /// Creates a tab list packet with empty header and footer (clears them).
@@ -31,19 +38,19 @@ impl CTabList {
 
     /// Creates a tab list packet with only a header.
     #[must_use]
-    pub fn header_only(header: TextComponent) -> Self {
+    pub fn header_only<T: TextResolutor>(header: &TextComponent, player: &T) -> Self {
         Self {
-            header,
+            header: header.resolve(player),
             footer: TextComponent::new(),
         }
     }
 
     /// Creates a tab list packet with only a footer.
     #[must_use]
-    pub fn footer_only(footer: TextComponent) -> Self {
+    pub fn footer_only<T: TextResolutor>(footer: &TextComponent, player: &T) -> Self {
         Self {
             header: TextComponent::new(),
-            footer,
+            footer: footer.resolve(player),
         }
     }
 }

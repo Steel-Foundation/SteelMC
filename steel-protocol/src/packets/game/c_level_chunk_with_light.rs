@@ -1,6 +1,6 @@
-use simdnbt::owned::NbtCompound;
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_LEVEL_CHUNK_WITH_LIGHT;
+use steel_utils::serial::OptionalNbt;
 use steel_utils::{ChunkPos, codec::BitSet};
 
 #[derive(WriteTo, Copy, Clone, Debug)]
@@ -22,7 +22,7 @@ pub struct BlockEntityInfo {
     pub y: i16,
     #[write(as = VarInt)]
     pub type_id: i32,
-    pub data: Option<NbtCompound>,
+    pub data: OptionalNbt,
 }
 
 #[derive(Debug, Clone, WriteTo)]

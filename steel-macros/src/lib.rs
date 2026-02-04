@@ -30,7 +30,7 @@ const WRONG_WRITE_FORMAT: &str =
 /// - Simple: `VarInt`, `Byte`, `Json`
 /// - Container: `Prefixed(VarInt)`, `Prefixed(VarInt, inner = VarInt)`
 /// - Unprefixed: `Unprefixed`, `Unprefixed(inner = VarInt)`
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct Strategy {
     name: Ident,
     /// For Prefixed: the prefix type (e.g., `VarInt`, u16)
@@ -144,7 +144,7 @@ pub fn read_from_derive(input: TokenStream) -> TokenStream {
     let name = input.ident;
 
     match input.data {
-        Data::Struct(s) => read_from_struct(s, name),
+        Data::Struct(s) => read_from_struct(s, name, &input.attrs),
         Data::Enum(e) => read_from_enum(e, name, input.attrs),
         Data::Union(_) => panic!("Read can only be derived for structs or enums"),
     }
@@ -255,50 +255,120 @@ fn generate_read_code(
     }
 }
 
-fn read_from_struct(s: syn::DataStruct, name: Ident) -> TokenStream {
-    let Fields::Named(fields) = s.fields else {
-        panic!("Read only supports structs with named fields");
-    };
+/// Parses struct-level read attributes for newtypes.
+fn parse_struct_read_attributes(attrs: &[syn::Attribute]) -> FieldReadAttributes {
+    let mut strategy: Option<Strategy> = None;
+    let mut bound: Option<syn::LitInt> = None;
 
-    // Create read calls for every field
-    let readers = fields.named.iter().map(|f| {
-        let field_name = f.ident.as_ref().expect("should have a named field");
-        let field_type = &f.ty;
-        let FieldReadAttributes { strategy, bound } = parse_read_attributes(f);
-
-        if let Some(strat) = strategy {
-            let read_code = generate_read_code(&strat, field_type, bound.as_ref());
-            quote! {
-                let #field_name = #read_code;
-            }
+    if let Some(attr) = attrs.iter().find(|a| a.path().is_ident("read")) {
+        if let Meta::List(meta) = attr.meta.clone() {
+            meta.parse_nested_meta(|meta| {
+                if meta.path.is_ident("as") {
+                    let value = meta.value()?;
+                    strategy = Some(value.parse()?);
+                    Ok(())
+                } else if meta.path.is_ident("bound") {
+                    let value = meta.value()?;
+                    let int_lit: syn::LitInt = value.parse()?;
+                    bound = Some(int_lit);
+                    Ok(())
+                } else {
+                    Err(meta.error(UNSUPPORTED_READ_PROP))
+                }
+            })
+            .unwrap_or_else(|e| panic!("Failed to parse `read` attribute: {e}"));
         } else {
-            quote! {
-                let #field_name = <#field_type>::read(data)?;
-            }
+            panic!("{WRONG_READ_FORMAT}");
         }
-    });
+    }
 
-    let field_names = fields
-        .named
-        .iter()
-        .map(|f| f.ident.as_ref().expect("should have a named field"));
+    FieldReadAttributes { strategy, bound }
+}
 
-    let expanded = quote! {
-        #[automatically_derived]
-        impl steel_utils::serial::ReadFrom for #name {
-            fn read(data: &mut impl std::io::Read) -> std::io::Result<Self>{
-                use steel_utils::serial::PrefixedRead;
+fn read_from_struct(s: syn::DataStruct, name: Ident, attrs: &[syn::Attribute]) -> TokenStream {
+    match s.fields {
+        Fields::Named(fields) => {
+            // Create read calls for every field
+            let readers = fields.named.iter().map(|f| {
+                let field_name = f.ident.as_ref().expect("should have a named field");
+                let field_type = &f.ty;
+                let FieldReadAttributes { strategy, bound } = parse_read_attributes(f);
 
-                #(#readers)*
+                if let Some(strat) = strategy {
+                    let read_code = generate_read_code(&strat, field_type, bound.as_ref());
+                    quote! {
+                        let #field_name = #read_code;
+                    }
+                } else {
+                    quote! {
+                        let #field_name = <#field_type>::read(data)?;
+                    }
+                }
+            });
 
-                Ok(Self {
-                    #(#field_names),*
-                })
-            }
+            let field_names = fields
+                .named
+                .iter()
+                .map(|f| f.ident.as_ref().expect("should have a named field"));
+
+            let expanded = quote! {
+                #[automatically_derived]
+                impl steel_utils::serial::ReadFrom for #name {
+                    fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self>{
+                        use steel_utils::serial::PrefixedRead;
+
+                        #(#readers)*
+
+                        Ok(Self {
+                            #(#field_names),*
+                        })
+                    }
+                }
+            };
+
+            TokenStream::from(expanded)
         }
-    };
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            // Newtype: single unnamed field
+            let field_type = &fields.unnamed.first().expect("checked len == 1").ty;
+            let FieldReadAttributes { strategy, bound } = parse_struct_read_attributes(attrs);
 
-    TokenStream::from(expanded)
+            let read_code = if let Some(strat) = strategy {
+                generate_read_code(&strat, field_type, bound.as_ref())
+            } else {
+                quote! { <#field_type>::read(data)? }
+            };
+
+            let expanded = quote! {
+                #[automatically_derived]
+                impl steel_utils::serial::ReadFrom for #name {
+                    fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
+                        use steel_utils::serial::PrefixedRead;
+
+                        Ok(Self(#read_code))
+                    }
+                }
+            };
+
+            TokenStream::from(expanded)
+        }
+        Fields::Unnamed(_) => {
+            panic!("Read only supports tuple structs with a single field (newtypes)");
+        }
+        Fields::Unit => {
+            // Unit struct: read nothing
+            let expanded = quote! {
+                #[automatically_derived]
+                impl steel_utils::serial::ReadFrom for #name {
+                    fn read(_data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
+                        Ok(Self)
+                    }
+                }
+            };
+
+            TokenStream::from(expanded)
+        }
+    }
 }
 
 fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
@@ -346,21 +416,21 @@ fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> 
         }
     }
 
-    let read_discriminant = match strategy.as_ref().map(Strategy::name_str) {
+    let read_discriminant = match &strategy.as_ref().map(Strategy::name_str) {
         // Default: read a VarInt (i32)
         None => {
             quote! { steel_utils::codec::VarInt::read(data)?.into() }
         }
         // Explicit VarInt
-        Some(ref s) if s == "VarInt" => {
+        Some(s) if s == "VarInt" => {
             quote! { steel_utils::codec::VarInt::read(data)?.into() }
         }
         // VarLong
-        Some(ref s) if s == "VarLong" => {
+        Some(s) if s == "VarLong" => {
             quote! { steel_utils::codec::VarLong::read(data)?.into() }
         }
         // Primitive numeric type (u8, i32, etc.)
-        Some(ref s) if ALLOWED_TYPES.contains(&s.as_str()) => {
+        Some(s) if ALLOWED_TYPES.contains(&s.as_str()) => {
             let enum_type = Ident::new(s, Span::call_site());
             let _ = bound; // `bound` currently unused for primitive reads
             quote! { <#enum_type as steel_utils::serial::ReadFrom>::read(data)? }
@@ -376,7 +446,7 @@ fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> 
     TokenStream::from(quote! {
         #[automatically_derived]
         impl steel_utils::serial::ReadFrom for #name {
-            fn read(data: &mut impl std::io::Read) -> std::io::Result<Self> {
+            fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
                 Ok(match { #read_discriminant } {
                     #(#readers)*
                     _ => {
@@ -403,7 +473,7 @@ pub fn write_to_derive(input: TokenStream) -> TokenStream {
     let name = input.ident;
 
     match input.data {
-        Data::Struct(s) => write_to_struct(s, name, &input.generics),
+        Data::Struct(s) => write_to_struct(s, name, &input.generics, &input.attrs),
         Data::Enum(_) => write_to_enum(name, input.attrs),
         Data::Union(_) => panic!("Write can only be derived for structs and enums"),
     }
@@ -567,39 +637,115 @@ fn generate_write_code(
     }
 }
 
-#[allow(clippy::too_many_lines)]
-fn write_to_struct(s: syn::DataStruct, name: Ident, generics: &syn::Generics) -> TokenStream {
-    let Fields::Named(fields) = s.fields else {
-        panic!("Write only supports structs with named fields");
-    };
+/// Parses struct-level write attributes for newtypes.
+fn parse_struct_write_attributes(attrs: &[syn::Attribute]) -> FieldWriteAttributes {
+    let mut strategy: Option<Strategy> = None;
+    let mut bound: Option<syn::LitInt> = None;
 
-    let writers = fields.named.iter().map(|f| {
-        let field_name = f.ident.as_ref().expect("should have a named field");
-        let FieldWriteAttributes { strategy, bound } = parse_write_attributes(f);
-
-        if let Some(strat) = strategy {
-            generate_write_code(&strat, quote! { self.#field_name }, bound.as_ref())
+    if let Some(attr) = attrs.iter().find(|a| a.path().is_ident("write")) {
+        if let Meta::List(meta) = attr.meta.clone() {
+            meta.parse_nested_meta(|meta| {
+                if meta.path.is_ident("as") {
+                    let value = meta.value()?;
+                    strategy = Some(value.parse()?);
+                    Ok(())
+                } else if meta.path.is_ident("bound") {
+                    let value = meta.value()?;
+                    let int_lit: syn::LitInt = value.parse()?;
+                    bound = Some(int_lit);
+                    Ok(())
+                } else {
+                    Err(meta.error(UNSUPPORTED_WRITE_PROP))
+                }
+            })
+            .unwrap_or_else(|e| panic!("Failed to parse `write` attribute: {e}"));
         } else {
-            quote! {
-                self.#field_name.write(writer)?;
-            }
+            panic!("{WRONG_WRITE_FORMAT}");
         }
-    });
+    }
 
+    FieldWriteAttributes { strategy, bound }
+}
+
+#[allow(clippy::too_many_lines)]
+fn write_to_struct(
+    s: syn::DataStruct,
+    name: Ident,
+    generics: &syn::Generics,
+    attrs: &[syn::Attribute],
+) -> TokenStream {
     let (impl_generics, ty_generics, _) = generics.split_for_impl();
 
-    let expanded = quote! {
-        #[automatically_derived]
-        impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
-            fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-                #(#writers)*
+    match s.fields {
+        Fields::Named(fields) => {
+            let writers = fields.named.iter().map(|f| {
+                let field_name = f.ident.as_ref().expect("should have a named field");
+                let FieldWriteAttributes { strategy, bound } = parse_write_attributes(f);
 
-                Ok(())
-            }
+                if let Some(strat) = strategy {
+                    generate_write_code(&strat, quote! { self.#field_name }, bound.as_ref())
+                } else {
+                    quote! {
+                        self.#field_name.write(writer)?;
+                    }
+                }
+            });
+
+            let expanded = quote! {
+                #[automatically_derived]
+                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+                    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+                        #(#writers)*
+
+                        Ok(())
+                    }
+                }
+            };
+
+            TokenStream::from(expanded)
         }
-    };
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            // Newtype: single unnamed field
+            let FieldWriteAttributes { strategy, bound } = parse_struct_write_attributes(attrs);
 
-    TokenStream::from(expanded)
+            let writer = if let Some(strat) = strategy {
+                generate_write_code(&strat, quote! { self.0 }, bound.as_ref())
+            } else {
+                quote! {
+                    self.0.write(writer)?;
+                }
+            };
+
+            let expanded = quote! {
+                #[automatically_derived]
+                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+                    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+                        #writer
+
+                        Ok(())
+                    }
+                }
+            };
+
+            TokenStream::from(expanded)
+        }
+        Fields::Unnamed(_) => {
+            panic!("Write only supports tuple structs with a single field (newtypes)");
+        }
+        Fields::Unit => {
+            // Unit struct: write nothing
+            let expanded = quote! {
+                #[automatically_derived]
+                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+                    fn write(&self, _writer: &mut impl std::io::Write) -> std::io::Result<()> {
+                        Ok(())
+                    }
+                }
+            };
+
+            TokenStream::from(expanded)
+        }
+    }
 }
 
 fn write_to_enum(name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
