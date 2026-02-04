@@ -6,6 +6,7 @@ use steel_registry::{
         BlockRef,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty, IntProperty},
+        shapes::SupportType,
     },
     entity_data::Direction,
     item_stack::ItemStack,
@@ -23,24 +24,20 @@ use crate::{
     world::World,
 };
 
+const CANDLES_PROPERTY: IntProperty = BlockStateProperties::CANDLES;
+const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
+const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const MAX_CANDLES: u8 = 4;
+
 /// Behaviour for all Candle type blocks
 pub struct CandleBlock {
     block: BlockRef,
 }
 
 impl CandleBlock {
-    /// Amount of Candles property
-    pub const CANDLES_PROPERTY: IntProperty = BlockStateProperties::CANDLES;
-    /// Lit Property
-    pub const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
-    /// Waterlogged property
-    pub const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
-    /// The maximum amount of candles that can be stacked on the floor
-    pub const MAX_CANDLES: u8 = 4;
-
     /// Creates a new candle block behaviour for the given block
     #[must_use]
-    pub fn new(block: BlockRef) -> Self {
+    pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 
@@ -48,7 +45,7 @@ impl CandleBlock {
     pub fn can_survive(world: &World, pos: BlockPos) -> bool {
         world
             .get_block_state(&pos.offset(0, -1, 0))
-            .is_face_sturdy(Direction::Up)
+            .is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 }
 
@@ -67,7 +64,7 @@ impl BlockBehaviour for CandleBlock {
                 vanilla_blocks::WATER,
             ) {
                 // FIXME: is_water_source()
-                return Some(default_state.set_value(&Self::WATERLOGGED, true));
+                return Some(default_state.set_value(&WATERLOGGED, true));
             }
             return Some(default_state);
         }
@@ -100,11 +97,11 @@ impl BlockBehaviour for CandleBlock {
         _hit_result: &BlockHitResult,
     ) -> InteractionResult {
         if item_stack.is_empty() {
-            if !state.get_value(&Self::LIT_PROPERTY) {
+            if !state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }
-            let new_state = state.set_value(&Self::LIT_PROPERTY, false);
-            world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+            let new_state = state.set_value(&LIT_PROPERTY, false);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             return InteractionResult::Success;
         }
 
@@ -112,11 +109,11 @@ impl BlockBehaviour for CandleBlock {
             item_stack.item,
             &Identifier::vanilla_static("creeper_igniters"),
         ) {
-            if state.get_value(&Self::LIT_PROPERTY) || state.get_value(&Self::WATERLOGGED) {
+            if state.get_value(&LIT_PROPERTY) || state.get_value(&WATERLOGGED) {
                 return InteractionResult::Pass;
             }
-            let new_state = state.set_value(&Self::LIT_PROPERTY, true);
-            world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+            let new_state = state.set_value(&LIT_PROPERTY, true);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             return InteractionResult::Success;
         }
 
@@ -124,10 +121,10 @@ impl BlockBehaviour for CandleBlock {
             .get_clone_item_stack(self.block, state, false)
             .is_some_and(|it| it.is(item_stack.item))
         {
-            let candles_amount = state.get_value(&Self::CANDLES_PROPERTY);
-            if candles_amount < Self::MAX_CANDLES {
-                let new_state = state.set_value(&Self::CANDLES_PROPERTY, candles_amount + 1);
-                world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+            let candles_amount = state.get_value(&CANDLES_PROPERTY);
+            if candles_amount < MAX_CANDLES {
+                let new_state = state.set_value(&CANDLES_PROPERTY, candles_amount + 1);
+                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
                 return InteractionResult::Success;
             }
         }
