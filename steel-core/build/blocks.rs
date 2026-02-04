@@ -165,6 +165,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             CeilingHangingSignBlock,
             WallSignBlock,
             StandingSignBlock,
+            WallBlock
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
