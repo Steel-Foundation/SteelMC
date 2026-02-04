@@ -32,6 +32,8 @@ pub mod translations;
 #[path = "generated/vanilla_translations/registry.rs"]
 #[allow(missing_docs, warnings)]
 pub mod translations_registry;
+/// helpful tools for registry
+pub mod registry;
 
 pub use front_vec::FrontVec;
 pub use types::BlockPos;
