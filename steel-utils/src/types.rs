@@ -199,6 +199,7 @@ impl BlockPos {
     const PACKED_X_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
     const PACKED_Y_MASK: i64 = (1i64 << Self::PACKED_Y_LEN) - 1;
     const PACKED_Z_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
+    pub const ZERO: BlockPos = BlockPos(Vector3::new(0, 0, 0));
 
     /// Maximum horizontal coordinate value: `(1 << 26) / 2 - 1 = 33554431`
     pub const MAX_HORIZONTAL_COORDINATE: i32 = (1 << Self::PACKED_HORIZONTAL_LEN) / 2 - 1;
@@ -260,8 +261,6 @@ impl BlockPos {
     pub const fn z(&self) -> i32 {
         self.0.z
     }
-
-    // ===== Vanilla-parity helper methods =====
 
     /// Returns the position one block above (Y + 1).
     #[must_use]
@@ -384,9 +383,6 @@ impl BlockPos {
             Self::new(self.0.x * factor, self.0.y * factor, self.0.z * factor)
         }
     }
-
-    /// The zero position (0, 0, 0).
-    pub const ZERO: BlockPos = BlockPos(Vector3::new(0, 0, 0));
 
     /// Returns the center of this block as a floating-point position.
     #[must_use]
