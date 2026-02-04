@@ -17,7 +17,7 @@ struct TagFile {
 }
 
 /// Reads all tag JSON files and returns a map of tag name -> values
-fn read_all_vanillla_tags(tag_dir: &str) -> FxHashMap<String, Vec<String>> {
+fn read_all_tags(tag_dir: &str) -> FxHashMap<String, Vec<String>> {
     let mut tags = FxHashMap::default();
 
     fn read_directory(dir: &Path, base_path: &Path, tags: &mut FxHashMap<String, Vec<String>>) {
@@ -119,7 +119,7 @@ pub(crate) fn build() -> TokenStream {
     );
 
     let tag_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/tags/block";
-    let mut all_tags = read_all_vanillla_tags(tag_dir);
+    let mut all_tags = read_all_tags(tag_dir);
     all_tags.extend(read_all_fabric_tags("build_assets/tags.json"));
 
     // Resolve all tags
