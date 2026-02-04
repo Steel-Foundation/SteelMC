@@ -41,13 +41,12 @@ impl ItemBehavior for ShovelBehaviour {
 
         if REGISTRY.blocks.is_in_tag(block, &tag) {
             if !block_state.get_value(&LIT_PROPERTY) {
-                log::info!("UNLIT");
                 return InteractionResult::Pass;
             }
             context.world.set_block(
                 context.hit_result.block_pos,
                 block_state.set_value(&LIT_PROPERTY, false),
-                UpdateFlags::UPDATE_CLIENTS,
+                UpdateFlags::UPDATE_ALL_IMMEDIATE,
             );
             return InteractionResult::Success;
         }
@@ -67,7 +66,7 @@ impl ItemBehavior for ShovelBehaviour {
             context.world.set_block(
                 context.hit_result.block_pos,
                 vanilla_blocks::DIRT_PATH.default_state(),
-                UpdateFlags::UPDATE_CLIENTS,
+                UpdateFlags::UPDATE_ALL_IMMEDIATE,
             );
             return InteractionResult::Success;
         }
