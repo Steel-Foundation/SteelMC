@@ -38,8 +38,12 @@ impl History {
         self.values.push_front(Cow::Owned(out.text.clone()));
     }
     pub fn update(state: &mut LogState, dir: Move) -> Result<()> {
+        if state.history.values.is_empty() {
+            return Ok(());
+        }
+        let len = state.history.values.len();
         match dir {
-            Move::Up => state.history.pos = (state.history.pos + 1) % state.history.values.len(),
+            Move::Up => state.history.pos = (state.history.pos + 1) % (len + 1),
             Move::Down if state.history.pos != 0 => state.history.pos -= 1,
             _ => (),
         }
@@ -64,6 +68,7 @@ impl History {
         for line in self.values.iter().rev() {
             file.write_all(format!("{line}\n").as_bytes()).await?;
         }
-        file.set_len(file.metadata().await?.len() - 1).await
+        file.set_len(file.metadata().await?.len().saturating_sub(1))
+            .await
     }
 }

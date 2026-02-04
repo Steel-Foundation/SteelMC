@@ -259,6 +259,11 @@ impl CommandLogger {
                                 }
                                 continue;
                             }
+                            KeyCode::Esc => {
+                                state.selection.clear();
+                                state.reset()?;
+                                continue;
+                            }
                             _ => continue,
                         },
                         ExtendedKey::Ctrl(char) => {

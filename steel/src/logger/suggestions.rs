@@ -78,9 +78,10 @@ impl Completer {
         }
 
         // Updates completion position
+        let len = self.suggestions.len();
         match dir {
-            Move::Up => self.selected = (self.selected - 1) % self.suggestions.len(),
-            Move::Down => self.selected = (self.selected + 1) % self.suggestions.len(),
+            Move::Up => self.selected = (self.selected + len - 1) % len,
+            Move::Down => self.selected = (self.selected + 1) % len,
             Move::None => (),
         }
         // Updates the screen width
