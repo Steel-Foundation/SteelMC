@@ -31,8 +31,10 @@ impl CommandLogger {
         let (tx, rx) = mpsc::unbounded_channel();
         enable_raw_mode()?;
         self.clone().input_receiver(tx);
-        self.input_key(rx).await?;
-        Ok(())
+        let stopped = self.stopped.clone();
+        let result = self.input_key(rx).await;
+        stopped.cancel();
+        result
     }
 
     fn input_receiver(self: Arc<Self>, tx: UnboundedSender<ExtendedKey>) {
@@ -43,7 +45,7 @@ impl CommandLogger {
                     break;
                 }
 
-                if let Ok(true) = poll(Duration::from_secs(0)) {
+                if let Ok(true) = poll(Duration::from_millis(50)) {
                     let event = read().expect("Event bug; Cannot read event.");
                     if let Event::Key(key) = event {
                         if let KeyCode::Char(char) = key.code {

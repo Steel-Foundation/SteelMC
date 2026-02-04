@@ -29,8 +29,8 @@
     },
     // Logging configuration
     log: {
-        // Whether the time should be displayed
-        time: true,
+        // Time format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
+        time: "uptime",
         // Whether the module_path of the log should be displayed
         module_path: false,
         // Whether the extra data of the log should be displayed

@@ -1,16 +1,13 @@
 //! Main entry point for the Steel Minecraft server.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use steel::logger::CommandLogger;
 use steel::spawn_progress::generate_spawn_chunks;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
 use steel_utils::text::DisplayResolutor;
 use text_components::fmt::set_display_resolutor;
-use tokio::{
-    runtime::{Builder, Runtime},
-    time::sleep,
-};
+use tokio::runtime::{Builder, Runtime};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 #[cfg(feature = "jaeger")]
 use tracing::Subscriber;
@@ -121,8 +118,7 @@ async fn main_async(chunk_runtime: Arc<Runtime>) {
 
     run_server(chunk_runtime, cancel_token, &logger).await;
 
-    logger.stop();
-    sleep(Duration::from_millis(10)).await;
+    logger.stop().await;
 }
 
 async fn run_server(
@@ -160,21 +156,10 @@ async fn run_server(
 
     let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone()).await;
 
-    // #[cfg(feature = "spawn_chunk_display")]
-    // generate_spawn_chunks(&steel.server, writer).await;
-    // #[cfg(not(feature = "spawn_chunk_display"))]
-    // generate_spawn_chunks(&steel.server).await;
     generate_spawn_chunks(&steel.server, logger).await;
 
     SERVER.set(steel.server.clone()).ok();
     let server = steel.server.clone();
-
-    // tokio::spawn(async move {
-    //     if signal::ctrl_c().await.is_ok() {
-    //         log::info!("Shutdown signal received");
-    //         cancel_token.cancel();
-    //     }
-    // });
 
     let task_tracker = TaskTracker::new();
 

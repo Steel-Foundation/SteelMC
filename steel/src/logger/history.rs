@@ -11,15 +11,17 @@ impl History {
     pub async fn new(path: &'static str) -> Self {
         let file_path = format!("{path}/history.txt");
         let values = if let Ok(true) = fs::try_exists(&file_path).await {
-            let history = fs::read_to_string(file_path).await;
-            let Ok(history) = history else {
-                panic!("Cannot load history.");
-            };
-            history
-                .split('\n')
-                .map(|str| Cow::Owned(str.to_string()))
-                .rev()
-                .collect()
+            fs::read_to_string(file_path)
+                .await.map_or_else(|err| {
+                    log::warn!("Failed to load history: {err}");
+                    VecDeque::new()
+                }, |history| {
+                    history
+                        .split('\n')
+                        .map(|str| Cow::Owned(str.to_string()))
+                        .rev()
+                        .collect()
+                })
         } else {
             VecDeque::new()
         };

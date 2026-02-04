@@ -39,13 +39,13 @@ impl Output {
 }
 /// Utilities
 impl Output {
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.length == 0
     }
-    pub fn is_at_start(&self) -> bool {
+    pub const fn is_at_start(&self) -> bool {
         self.pos == 0
     }
-    pub fn is_at_end(&self) -> bool {
+    pub const fn is_at_end(&self) -> bool {
         self.pos == self.length
     }
     pub fn char_pos(&self, pos: usize) -> (usize, usize) {

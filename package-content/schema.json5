@@ -101,9 +101,10 @@
             "description": "Logging configuration",
             "properties": {
                 "time": {
-                    "type": "boolean",
-                    "description": "Whether the time should be displayed",
-                    "default": true
+                    "type": "string",
+                    "description": "Time format: none, date (HH:MM:SS:mmm), or uptime (seconds since start)",
+                    "enum": ["none", "date", "uptime"],
+                    "default": "uptime"
                 },
                 "module_path": {
                     "type": "boolean",

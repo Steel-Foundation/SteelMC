@@ -39,12 +39,26 @@ pub struct ExtendedConfig {
 /// Logging configuration
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogConfig {
-    /// Whether the time should be displayed
-    pub time: bool,
+    /// Time display format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
+    #[serde(default)]
+    pub time: LogTimeFormat,
     /// Whether the `module_path` of the log should be displayed
     pub module_path: bool,
     /// Whether the extra data of the log should be displayed
     pub extra: bool,
+}
+
+/// Time format for log entries
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogTimeFormat {
+    /// No time displayed
+    None,
+    /// Current time (HH:MM:SS:mmm)
+    #[default]
+    Date,
+    /// Seconds since server start
+    Uptime,
 }
 
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.

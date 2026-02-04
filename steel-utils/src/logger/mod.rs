@@ -85,7 +85,7 @@ pub struct LogData {
 impl LogData {
     /// Creates a new `LogData`
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             message: String::new(),
             module_path: String::new(),

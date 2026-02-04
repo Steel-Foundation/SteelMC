@@ -21,7 +21,7 @@ pub struct Completer {
     pub suggestions: Vec<String>,
 }
 impl Completer {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Completer {
             enabled: false,
             error: false,
