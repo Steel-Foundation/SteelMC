@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-pub use steel_utils::{codec::VarInt, math::Axis, serial::ReadFrom};
+pub use steel_utils::{Direction, codec::VarInt, math::Axis, serial::ReadFrom};
 
 pub trait Property<T>: Sync + Send {
     fn get_value(&self, value: &str) -> Option<T>;
@@ -234,9 +234,6 @@ impl<T: const PartialEq + PropertyEnum + 'static> EnumProperty<T> {
         panic!("value not found in possible_values");
     }
 }
-
-// Re-export Direction from steel-utils
-pub use steel_utils::Direction;
 
 impl PropertyEnum for Direction {
     fn as_str(&self) -> &str {
