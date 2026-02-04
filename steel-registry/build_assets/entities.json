@@ -36,12 +36,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -178,12 +178,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -320,13 +320,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.35,
       "height": 0.6,
@@ -337,6 +330,7 @@
     "update_interval": 2,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -524,12 +518,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 2147483647,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -648,13 +642,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.42000002,
       "height": 0.39000002,
@@ -665,6 +652,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -851,18 +839,12 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -1095,12 +1077,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -1225,13 +1207,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.375,
       "height": 0.21,
@@ -1242,6 +1217,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -1441,12 +1417,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -1583,12 +1559,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -1725,13 +1701,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.9,
@@ -1742,6 +1711,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -1921,13 +1891,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.35,
       "height": 0.3,
@@ -1938,6 +1901,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -2132,12 +2096,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -2274,12 +2238,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -2416,13 +2380,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.8,
@@ -2433,6 +2390,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -2613,12 +2571,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 1,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -2833,13 +2791,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.99,
@@ -2850,6 +2801,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -3030,13 +2982,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.77,
@@ -3047,6 +2992,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -3221,12 +3167,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -3327,18 +3273,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      },
-      "sitting": {
-        "width": 1.7,
-        "height": 0.94500005,
-        "eye_height": 0.845
-      }
-    },
     "baby_dimensions": {
       "width": 0.765,
       "height": 1.06875,
@@ -3349,6 +3283,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -3547,18 +3482,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      },
-      "sitting": {
-        "width": 1.7,
-        "height": 0.94500005,
-        "eye_height": 0.845
-      }
-    },
     "baby_dimensions": {
       "width": 0.765,
       "height": 1.06875,
@@ -3569,6 +3492,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -3767,13 +3691,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.35,
@@ -3784,6 +3701,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -4003,13 +3921,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.7,
       "height": 0.5,
@@ -4020,6 +3931,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -4200,12 +4112,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -4342,12 +4254,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -4484,12 +4396,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -4622,13 +4534,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.2,
       "height": 0.35,
@@ -4639,6 +4544,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -4825,13 +4731,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.3,
@@ -4842,6 +4741,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -5021,13 +4921,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
@@ -5038,6 +4931,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -5223,12 +5117,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -5373,13 +5267,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.7,
@@ -5390,6 +5277,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -5576,13 +5464,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.9,
       "height": 2.7,
@@ -5593,6 +5474,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -5793,13 +5675,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.7,
@@ -5810,6 +5685,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -6002,12 +5878,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -6144,12 +6020,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -6286,13 +6162,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.585,
       "height": 0.39000002,
@@ -6303,6 +6172,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -6495,13 +6365,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.75,
@@ -6512,6 +6375,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -6704,12 +6568,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -6810,13 +6674,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -6827,6 +6684,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -7020,12 +6878,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -7135,13 +6993,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 1.9975,
       "height": 1.9975,
@@ -7152,6 +7003,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -7338,13 +7190,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 2.9,
@@ -7355,6 +7200,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -7549,13 +7395,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4,
       "height": 0.3,
@@ -7566,6 +7405,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -7740,13 +7580,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 16.0,
       "height": 8.0,
@@ -7799,6 +7632,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -7978,12 +7812,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8093,12 +7927,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 16,
     "update_interval": 2147483647,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8213,13 +8047,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.95,
@@ -8230,6 +8057,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -8416,12 +8244,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 6,
     "update_interval": 2,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8522,12 +8350,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8637,12 +8465,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 6,
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8749,12 +8577,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 4,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8864,12 +8692,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -8980,12 +8808,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -9095,12 +8923,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -9224,13 +9052,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.35,
@@ -9241,6 +9062,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -9450,13 +9272,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.5,
@@ -9467,6 +9282,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -9662,12 +9478,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -9806,13 +9622,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 4.0,
       "height": 4.0,
@@ -9823,6 +9632,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -10018,13 +9828,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.95,
       "height": 0.95,
@@ -10035,6 +9838,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -10228,13 +10032,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 3.6,
       "height": 12.0,
@@ -10245,6 +10042,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -10419,12 +10217,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -10543,13 +10341,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4,
       "height": 0.4,
@@ -10560,6 +10351,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -10745,18 +10537,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      },
-      "long_jumping": {
-        "width": 0.63,
-        "height": 0.90999997,
-        "eye_height": 0.7735
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.65,
@@ -10767,6 +10547,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -10966,13 +10747,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.85,
       "height": 0.85,
@@ -10983,6 +10757,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -11169,13 +10944,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.7,
@@ -11186,6 +10954,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -11372,12 +11141,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -11510,13 +11279,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.8,
@@ -11527,6 +11289,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -11719,13 +11482,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -11736,6 +11492,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -11929,13 +11686,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.95,
@@ -11946,6 +11696,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -12132,103 +11883,12 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "standing": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "fall_flying": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "sleeping": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "swimming": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "spin_attack": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "crouching": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "long_jumping": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "dying": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "croaking": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "using_tongue": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "sitting": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "roaring": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "sniffing": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "emerging": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "digging": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "sliding": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "shooting": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      },
-      "inhaling": {
-        "width": 1.0,
-        "height": 1.0,
-        "eye_height": 0.85
-      }
-    },
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -12347,13 +12007,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 1.4,
       "height": 2.7,
@@ -12364,6 +12017,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -12544,12 +12198,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 6,
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -12656,12 +12310,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 1,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -12882,12 +12536,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13006,12 +12660,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13148,12 +12802,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13290,12 +12944,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13396,12 +13050,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 16,
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13502,13 +13156,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.935,
@@ -13519,6 +13166,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13723,12 +13371,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -13829,13 +13477,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.52,
       "height": 0.52,
@@ -13846,6 +13487,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -14026,12 +13668,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -14168,12 +13810,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -14310,43 +13952,12 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "fall_flying": {
-        "width": 0.6,
-        "height": 0.6,
-        "eye_height": 0.4
-      },
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      },
-      "swimming": {
-        "width": 0.6,
-        "height": 0.6,
-        "eye_height": 0.4
-      },
-      "spin_attack": {
-        "width": 0.6,
-        "height": 0.6,
-        "eye_height": 0.4
-      },
-      "crouching": {
-        "width": 0.6,
-        "height": 1.5,
-        "eye_height": 1.27
-      },
-      "dying": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 1.62
-      }
-    },
     "mob_category": "MISC",
     "client_tracking_range": 32,
     "update_interval": 2,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -14546,12 +14157,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 0,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -14652,12 +14263,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -14790,13 +14401,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.7,
@@ -14807,6 +14411,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -14993,13 +14598,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.8,
@@ -15010,6 +14608,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -15202,13 +14801,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4375,
       "height": 0.475,
@@ -15219,6 +14811,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -15420,12 +15013,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -15562,12 +15155,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -15704,13 +15297,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.35,
@@ -15721,6 +15307,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -15908,12 +15495,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -16020,12 +15607,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 2147483647,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -16138,12 +15725,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -16280,12 +15867,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -16422,13 +16009,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.65,
       "height": 0.625,
@@ -16439,6 +16019,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -16656,13 +16237,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.99,
@@ -16673,6 +16247,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -16847,13 +16422,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.9,
@@ -16864,6 +16432,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -17066,13 +16635,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.9,
       "height": 0.5,
@@ -17083,6 +16645,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -17263,13 +16826,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.45,
@@ -17280,6 +16836,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -17472,13 +17029,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -17489,6 +17039,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -17687,13 +17238,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.95,
@@ -17704,6 +17248,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -17884,13 +17429,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.95,
@@ -17901,6 +17439,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -18087,13 +17626,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.7,
       "height": 0.7,
@@ -18104,6 +17636,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -18291,12 +17824,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -18406,12 +17939,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -18521,98 +18054,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "standing": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "fall_flying": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      },
-      "swimming": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "spin_attack": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "crouching": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "long_jumping": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "dying": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "croaking": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "using_tongue": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "sitting": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "roaring": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "sniffing": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "emerging": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "digging": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "sliding": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "shooting": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      },
-      "inhaling": {
-        "width": 0.35,
-        "height": 0.35,
-        "eye_height": 0.2275
-      }
-    },
     "baby_dimensions": {
       "width": 0.35,
       "height": 0.35,
@@ -18623,6 +18064,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -18808,13 +18250,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.2,
       "height": 0.25,
@@ -18825,6 +18260,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -19012,13 +18448,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 1.95,
       "height": 2.2,
@@ -19029,6 +18458,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -19209,13 +18639,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.7,
       "height": 0.4,
@@ -19226,6 +18649,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -19411,13 +18835,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.65,
@@ -19428,6 +18845,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -19614,13 +19032,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 1.0,
       "height": 1.0,
@@ -19631,6 +19042,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -19822,12 +19234,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -19928,13 +19340,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4,
       "height": 0.3,
@@ -19945,6 +19350,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -20119,13 +19525,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.99,
@@ -20136,6 +19535,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -20316,13 +19716,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.8,
@@ -20333,6 +19726,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -20519,13 +19913,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.52,
       "height": 0.52,
@@ -20536,6 +19923,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -20716,12 +20104,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -20831,13 +20219,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.95,
       "height": 0.875,
@@ -20848,6 +20229,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -21040,12 +20422,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -21155,13 +20537,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.7,
       "height": 1.9,
@@ -21172,6 +20547,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -21351,12 +20727,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -21489,12 +20865,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -21613,13 +20989,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 1.4,
       "height": 0.9,
@@ -21630,6 +20999,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -21810,12 +21180,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -21952,12 +21322,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -22094,13 +21464,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4,
       "height": 0.4,
@@ -22111,6 +21474,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -22290,13 +21654,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.99,
@@ -22307,6 +21664,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -22481,13 +21839,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.85,
@@ -22498,6 +21849,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -22690,13 +22042,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4,
       "height": 0.3,
@@ -22707,6 +22052,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -22887,12 +22233,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 1,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -23131,12 +22477,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 10,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -23249,12 +22595,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -23387,13 +22733,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.935,
@@ -23404,6 +22743,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -23608,12 +22948,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 20,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -23744,13 +23084,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.4,
@@ -23761,6 +23094,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -23946,13 +23280,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.36,
       "height": 0.120000005,
@@ -23963,6 +23290,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -24155,13 +23483,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.4,
       "height": 0.8,
@@ -24172,6 +23493,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -24352,13 +23674,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -24369,6 +23684,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -24560,13 +23876,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.95,
@@ -24577,6 +23886,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -24757,13 +24067,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -24774,6 +24077,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -24959,13 +24263,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.9,
       "height": 2.9,
@@ -24976,6 +24273,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -25156,12 +24454,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -25262,13 +24560,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6,
       "height": 1.95,
@@ -25279,6 +24570,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -25465,13 +24757,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.9,
       "height": 3.5,
@@ -25482,6 +24767,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -25681,13 +24967,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.7,
       "height": 2.4,
@@ -25698,6 +24977,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -25872,12 +25152,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 10,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -25984,13 +25264,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.425,
@@ -26001,6 +25274,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -26226,13 +25500,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.7,
@@ -26243,6 +25510,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -26423,13 +25691,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -26440,6 +25701,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -26633,13 +25895,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.8,
@@ -26650,6 +25905,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -26836,13 +26092,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.875,
       "height": 0.95,
@@ -26853,6 +26102,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -27060,13 +26310,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -27077,6 +26320,7 @@
     "update_interval": 3,
     "fire_immune": false,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -27282,13 +26526,6 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      }
-    },
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
@@ -27299,6 +26536,7 @@
     "update_interval": 3,
     "fire_immune": true,
     "summonable": true,
+    "can_serialize": true,
     "can_spawn_far_from_player": false,
     "synched_data": [
       {
@@ -27492,43 +26730,12 @@
         }
       ]
     },
-    "pose_dimensions": {
-      "fall_flying": {
-        "width": 0.6,
-        "height": 0.6,
-        "eye_height": 0.4
-      },
-      "sleeping": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 0.2
-      },
-      "swimming": {
-        "width": 0.6,
-        "height": 0.6,
-        "eye_height": 0.4
-      },
-      "spin_attack": {
-        "width": 0.6,
-        "height": 0.6,
-        "eye_height": 0.4
-      },
-      "crouching": {
-        "width": 0.6,
-        "height": 1.5,
-        "eye_height": 1.27
-      },
-      "dying": {
-        "width": 0.2,
-        "height": 0.2,
-        "eye_height": 1.62
-      }
-    },
     "mob_category": "MISC",
     "client_tracking_range": 32,
     "update_interval": 2,
     "fire_immune": false,
     "summonable": false,
+    "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {
@@ -27733,12 +26940,12 @@
         }
       ]
     },
-    "pose_dimensions": {},
     "mob_category": "MISC",
     "client_tracking_range": 4,
     "update_interval": 5,
     "fire_immune": false,
     "summonable": false,
+    "can_serialize": false,
     "can_spawn_far_from_player": true,
     "synched_data": [
       {

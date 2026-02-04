@@ -20,18 +20,18 @@ impl LegacyRandom {
     /// Creates a new `LegacyRandom` instance from the given seed.
     /// The seed is `XORed` with the LCG multiplier and masked to 48 bits, matching Java's behavior.
     #[must_use]
-    pub fn from_seed(seed: u64) -> Self {
+    pub const fn from_seed(seed: u64) -> Self {
         Self {
             seed: (seed as i64 ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF,
             next_gauissian: None,
         }
     }
 
-    fn next(&mut self, bits: u64) -> i32 {
+    const fn next(&mut self, bits: u64) -> i32 {
         (self.next_random() >> (48 - bits)) as i32
     }
 
-    fn next_random(&mut self) -> i64 {
+    const fn next_random(&mut self) -> i64 {
         let l = self.seed;
         let m = l.wrapping_mul(0x0005_DEEC_E66D).wrapping_add(0xB) & 0xFFFF_FFFF_FFFF;
         self.seed = m;

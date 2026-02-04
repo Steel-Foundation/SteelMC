@@ -45,6 +45,8 @@ opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
+crossterm = { version = "0.29.0", features = ["osc52"] }
+chrono = "0.4.43"
 
 # Networking
 reqwest.workspace = true

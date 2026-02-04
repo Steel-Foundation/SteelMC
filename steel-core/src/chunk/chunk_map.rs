@@ -133,7 +133,7 @@ impl ChunkMap {
     where
         F: FnOnce(&ChunkAccess) -> R,
     {
-        let chunk_holder = self.chunks.get_sync(pos)?;
+        let chunk_holder = self.chunks.read_sync(pos, |_, chunk| chunk.clone())?;
         let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
         Some(f(&guard))
     }
@@ -461,7 +461,7 @@ impl ChunkMap {
                 // TODO: In the future we might want to tick different regions/islands in parallel
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.tick(random_tick_speed);
+                        chunk_guard.tick(random_tick_speed, tick_count as i32);
                     }
                 }
                 timings.tick_chunks = start.elapsed();
@@ -607,11 +607,24 @@ impl ChunkMap {
                     &added_chunks,
                     &removed_chunks,
                 );
+
+                // Update entity tracking for this player (only check added/removed chunks)
+                world.entity_tracker().on_player_view_change(
+                    player,
+                    &added_chunks,
+                    &removed_chunks,
+                );
             } else {
                 chunk_tickets.add_ticket(
                     new_view.center,
                     MAX_VIEW_DISTANCE.saturating_sub(new_view.view_distance),
                 );
+
+                // Send initial chunk cache center to client
+                connection.send_packet(CSetChunkCenter {
+                    x: new_view.center.0.x,
+                    y: new_view.center.0.y,
+                });
 
                 let mut chunk_sender = player.chunk_sender.lock();
                 new_view.for_each(|pos| {
@@ -621,6 +634,9 @@ impl ChunkMap {
 
                 // First time - add all chunks in view to player area map
                 world.player_area_map.on_player_join(player, &new_view);
+
+                // Initial entity tracking for this player
+                world.entity_tracker().on_player_join(player, &new_view);
             }
 
             *last_view_guard = Some(new_view);

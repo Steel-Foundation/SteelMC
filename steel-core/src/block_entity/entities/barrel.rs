@@ -6,15 +6,13 @@
 use std::any::Any;
 use std::sync::{Arc, Weak};
 
+use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_registry::data_components::DataComponentPatch;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::block_entity::BlockEntity;
 use crate::inventory::container::Container;
@@ -117,7 +115,7 @@ impl BlockEntity for BarrelBlockEntity {
                     let slot = slot as usize;
                     if slot < BARREL_SLOTS {
                         // Parse item directly from the borrowed compound
-                        if let Some(item) = item_from_borrowed_compound(&compound) {
+                        if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
                             self.items[slot] = item;
                         }
                     }
@@ -183,28 +181,4 @@ impl Container for BarrelBlockEntity {
     fn set_changed(&mut self) {
         BlockEntity::set_changed(self);
     }
-}
-
-/// Parses an `ItemStack` from a borrowed `NbtCompound`.
-///
-/// This mirrors the logic of `ItemStack::from_nbt_tag` but works directly with
-/// borrowed compound data, properly parsing component patches.
-fn item_from_borrowed_compound(compound: &NbtCompoundView<'_, '_>) -> Option<ItemStack> {
-    // Get the item ID
-    let id_str = compound.string("id")?.to_str();
-    let id = id_str.parse::<Identifier>().ok()?;
-
-    // Look up the item in the registry
-    let item = REGISTRY.items.by_key(&id)?;
-
-    // Get the count (default to 1 if not present)
-    let count = compound.int("count").unwrap_or(1);
-
-    // Parse components if present
-    let patch = compound
-        .get("components")
-        .and_then(DataComponentPatch::from_nbt_tag)
-        .unwrap_or_default();
-
-    Some(ItemStack::with_count_and_patch(item, count, patch))
 }

@@ -1,5 +1,5 @@
 //! A boolean argument.
-use steel_protocol::packets::game::{ArgumentType, SuggestionType};
+use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
 
 use crate::command::arguments::CommandArgument;
 use crate::command::context::CommandContext;
@@ -28,5 +28,28 @@ impl CommandArgument for BoolArgument {
 
     fn usage(&self) -> (ArgumentType, Option<SuggestionType>) {
         (ArgumentType::Bool, None)
+    }
+
+    /// ONLY FOR THE CONSOLE\
+    /// (If you want to also suggest to the client,
+    /// put the `SuggestionType` to `AskServer`)
+    fn suggest(
+        &self,
+        prefix: &str,
+        _suggestion_ctx: &super::SuggestionContext,
+    ) -> Vec<SuggestionEntry> {
+        let mut suggestions = vec![
+            SuggestionEntry {
+                text: String::from("true"),
+                tooltip: None,
+            },
+            SuggestionEntry {
+                text: String::from("false"),
+                tooltip: None,
+            },
+        ];
+
+        suggestions.retain(|s| s.text.starts_with(prefix));
+        suggestions
     }
 }

@@ -21,7 +21,7 @@ const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
 const MAX_LEVEL: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
 
 #[must_use]
-pub fn is_full(level: u8) -> bool {
+pub const fn is_full(level: u8) -> bool {
     level <= MAX_VIEW_DISTANCE
 }
 
@@ -31,7 +31,7 @@ pub fn is_ticked(level: u8) -> bool {
 }
 
 #[must_use]
-pub fn generation_status(level: Option<u8>) -> Option<ChunkStatus> {
+pub const fn generation_status(level: Option<u8>) -> Option<ChunkStatus> {
     match level {
         None => None,
         Some(level) => {
@@ -223,7 +223,7 @@ impl ChunkTicketManager {
 
     #[allow(dead_code)]
     #[must_use]
-    fn is_dirty(&self) -> bool {
+    const fn is_dirty(&self) -> bool {
         self.dirty
     }
 

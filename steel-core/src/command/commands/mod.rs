@@ -5,6 +5,7 @@ pub mod gamemode;
 pub mod gamerule;
 pub mod seed;
 pub mod stop;
+pub mod summon;
 pub mod tellraw;
 pub mod tick;
 pub mod weather;
@@ -20,6 +21,7 @@ use steel_protocol::packets::game::{
 use crate::command::arguments::{CommandArgument, SuggestionContext};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
+use crate::command::sender::CommandSender;
 use crate::server::Server;
 
 /// Result of a suggestion query, containing the suggestions and where to apply them.
@@ -92,7 +94,7 @@ pub trait CommandHandlerDyn {
 impl CommandHandlerBuilder {
     /// Creates a new command handler builder.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         names: &'static [&'static str],
         description: &'static str,
         permission: &'static str,
@@ -106,7 +108,7 @@ impl CommandHandlerBuilder {
 
     /// Chains a command executor to this command handler.
     #[must_use]
-    pub fn then<E>(self, executor: E) -> CommandHandler<E>
+    pub const fn then<E>(self, executor: E) -> CommandHandler<E>
     where
         E: CommandParserExecutor<()>,
     {
@@ -119,7 +121,7 @@ impl CommandHandlerBuilder {
     }
 
     /// Executes the command executor if the command was ran without arguments.
-    pub fn executes<E>(self, executor: E) -> CommandHandler<CommandParserLeafExecutor<(), E>>
+    pub const fn executes<E>(self, executor: E) -> CommandHandler<CommandParserLeafExecutor<(), E>>
     where
         E: CommandExecutor<()>,
     {
@@ -386,7 +388,7 @@ pub struct CommandParserRedirectExecutor<S, E> {
 }
 
 /// Creates a new command redirect builder.
-pub fn redirect<S, E>(
+pub const fn redirect<S, E>(
     to: CommandRedirectTarget,
     executor: E,
 ) -> CommandParserRedirectExecutor<S, E> {
@@ -463,7 +465,7 @@ pub struct CommandParserLiteralBuilder<S> {
 
 /// Creates a new literal command argument builder.
 #[must_use]
-pub fn literal<S>(expected: &'static str) -> CommandParserLiteralBuilder<S> {
+pub const fn literal<S>(expected: &'static str) -> CommandParserLiteralBuilder<S> {
     CommandParserLiteralBuilder {
         expected,
         _source: PhantomData,
@@ -472,7 +474,7 @@ pub fn literal<S>(expected: &'static str) -> CommandParserLiteralBuilder<S> {
 
 impl<S> CommandParserLiteralBuilder<S> {
     /// Executes the command argument executor after the argument is parsed.
-    pub fn then<E>(self, executor: E) -> CommandParserLiteralExecutor<S, E>
+    pub const fn then<E>(self, executor: E) -> CommandParserLiteralExecutor<S, E>
     where
         E: CommandParserExecutor<S>,
     {
@@ -484,7 +486,7 @@ impl<S> CommandParserLiteralBuilder<S> {
     }
 
     /// Executes the command executor after the argument is parsed.
-    pub fn executes<E>(
+    pub const fn executes<E>(
         self,
         executor: E,
     ) -> CommandParserLiteralExecutor<S, CommandParserLeafExecutor<S, E>>
@@ -593,13 +595,11 @@ where
         // If we're typing this literal (partial match or complete match with more args)
         if self.expected.starts_with(*first) && args.len() == 1 {
             // Suggest this literal if it's a partial match
-            if *first != self.expected {
-                return Some(SuggestionResult {
-                    suggestions: vec![SuggestionEntry::new(self.expected)],
-                    start: current_pos as i32,
-                    length: first.len() as i32,
-                });
-            }
+            return Some(SuggestionResult {
+                suggestions: vec![SuggestionEntry::new(self.expected)],
+                start: current_pos as i32,
+                length: first.len() as i32,
+            });
         }
 
         // If the literal matches exactly, continue to next argument
@@ -706,30 +706,56 @@ where
         // Check if this argument uses AskServer suggestions
         let (_, suggestion_type) = self.argument.usage();
         let uses_ask_server = matches!(suggestion_type, Some(SuggestionType::AskServer));
+        let is_console = matches!(context.sender, CommandSender::Console);
 
         // Try to parse the current argument
-        if let Some((remaining, _)) = self.argument.parse(args, context)
-            && !remaining.is_empty()
-        {
-            // Argument parsed successfully - store parsed value in context for downstream args
-            if let Some(parsed_value) = self.argument.parsed_value(args, context) {
-                suggestion_ctx.set(self.name, parsed_value);
-            }
+        match self.argument.parse(args, context) {
+            Some((remaining, _)) if !remaining.is_empty() => {
+                // Argument parsed successfully - store parsed value in context for downstream args
+                if let Some(parsed_value) = self.argument.parsed_value(args, context) {
+                    suggestion_ctx.set(self.name, parsed_value);
+                }
 
-            // Calculate position after this argument
-            let consumed_len: usize = args
-                .iter()
-                .take(args.len() - remaining.len())
-                .map(|s| s.len() + 1) // +1 for space
-                .sum();
-            let next_pos = current_pos + consumed_len;
-            return self
-                .executor
-                .suggest(remaining, next_pos, context, suggestion_ctx);
+                // Calculate position after this argument
+                let consumed_len: usize = args
+                    .iter()
+                    .take(args.len() - remaining.len())
+                    .map(|s| s.len() + 1) // +1 for space
+                    .sum();
+                let next_pos = current_pos + consumed_len;
+                return self
+                    .executor
+                    .suggest(remaining, next_pos, context, suggestion_ctx);
+            }
+            // If its the end and the request belongs to the console, first try suggestions
+            Some(_) if matches!(context.sender, CommandSender::Console) => {
+                let prefix = args.first().copied().unwrap_or("");
+                let suggestions = self.argument.suggest(prefix, suggestion_ctx);
+
+                // If we have suggestions, return them
+                if !suggestions.is_empty() {
+                    return Some(SuggestionResult {
+                        suggestions,
+                        start: current_pos as i32,
+                        length: prefix.len() as i32,
+                    });
+                }
+
+                // Otherwise, respond with the current text as confirmation
+                return Some(SuggestionResult {
+                    suggestions: vec![SuggestionEntry {
+                        text: args.join(" "),
+                        tooltip: None,
+                    }],
+                    start: 0,
+                    length: 0,
+                });
+            }
+            _ => (),
         }
 
-        // Argument didn't parse - if we use AskServer, provide suggestions
-        if uses_ask_server {
+        // Argument didn't parse - if we use AskServer, or is requested from console, provide suggestions
+        if uses_ask_server || is_console {
             let prefix = args.first().copied().unwrap_or("");
             let suggestions = self.argument.suggest(prefix, suggestion_ctx);
 

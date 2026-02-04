@@ -37,7 +37,7 @@ pub struct WorldGenContext {
 impl WorldGenContext {
     /// Creates a new `WorldGenContext`.
     #[must_use]
-    pub fn new(generator: Arc<ChunkGeneratorType>, world: Weak<World>) -> Self {
+    pub const fn new(generator: Arc<ChunkGeneratorType>, world: Weak<World>) -> Self {
         Self { generator, world }
     }
 

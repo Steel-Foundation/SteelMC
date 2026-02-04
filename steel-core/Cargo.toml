@@ -58,6 +58,7 @@ sha2.workspace = true
 
 # Compression
 zstd.workspace = true
+flate2.workspace = true
 
 # Utilities
 enum_dispatch.workspace = true

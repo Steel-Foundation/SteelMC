@@ -16,12 +16,8 @@ impl CommandArgument for Vector2Argument {
         arg: &'a [&'a str],
         context: &mut CommandContext,
     ) -> Option<(&'a [&'a str], Self::Output)> {
-        let x = Helper::parse_relative_coordinate::<false>(
-            arg.first()?,
-            context.position.map(|o| o.x),
-        )?;
-        let z =
-            Helper::parse_relative_coordinate::<false>(arg.get(1)?, context.position.map(|o| o.z))?;
+        let x = Helper::parse_relative_coordinate::<false>(arg.first()?, Some(context.position.x))?;
+        let z = Helper::parse_relative_coordinate::<false>(arg.get(1)?, Some(context.position.z))?;
 
         Some((&arg[2..], Vector2::new(x, z)))
     }

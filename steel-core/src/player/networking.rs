@@ -12,11 +12,12 @@ use steel_protocol::packets::common::{
     SPingRequest,
 };
 use steel_protocol::packets::game::{
-    SAcceptTeleportation, SChat, SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived,
-    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
-    SMovePlayerStatusOnly, SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerInput,
-    SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSwing, SUseItem, SUseItemOn,
+    CBundleDelimiter, SAcceptTeleportation, SChat, SChatAck, SChatCommand, SChatSessionUpdate,
+    SChunkBatchReceived, SClientTickEnd, SCommandSuggestion, SContainerButtonClick,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SMovePlayerPos,
+    SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SPickItemFromBlock, SPlayerAbilities,
+    SPlayerAction, SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
+    SSwing, SUseItem, SUseItemOn,
 };
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
@@ -35,6 +36,26 @@ use tokio_util::sync::CancellationToken;
 use crate::command::sender::CommandSender;
 use crate::player::Player;
 use crate::server::Server;
+
+/// Builder for creating packet bundles.
+///
+/// Used with [`JavaConnection::send_bundle`] to send multiple packets atomically.
+pub struct BundleBuilder {
+    packets: Vec<EncodedPacket>,
+    compression: Option<CompressionInfo>,
+}
+
+impl BundleBuilder {
+    /// Adds a packet to the bundle.
+    ///
+    /// # Panics
+    /// Panics if the packet fails to encode.
+    pub fn add<P: ClientPacket>(&mut self, packet: P) {
+        let encoded = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            .expect("Failed to encode packet");
+        self.packets.push(encoded);
+    }
+}
 
 #[allow(clippy::struct_field_names)]
 struct KeepAliveTracker {
@@ -58,7 +79,7 @@ pub struct JavaConnection {
 
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
-    pub fn new(
+    pub const fn new(
         outgoing_packets: UnboundedSender<EncodedPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
@@ -163,6 +184,42 @@ impl JavaConnection {
         }
     }
 
+    /// Sends multiple packets as an atomic bundle.
+    ///
+    /// The client will process all packets in the bundle together in a single game tick.
+    /// This is used for entity spawning to ensure spawn, metadata, and equipment packets
+    /// are applied atomically.
+    ///
+    /// # Panics
+    /// - If any packet fails to be encoded.
+    /// - If any packet fails to be sent through the channel.
+    pub fn send_bundle<F>(&self, f: F)
+    where
+        F: FnOnce(&mut BundleBuilder),
+    {
+        let mut builder = BundleBuilder {
+            packets: Vec::new(),
+            compression: self.compression,
+        };
+        f(&mut builder);
+
+        // Only send bundle delimiters if there are packets to bundle
+        if builder.packets.is_empty() {
+            return;
+        }
+
+        // Send start delimiter
+        self.send_packet(CBundleDelimiter);
+
+        // Send all bundled packets
+        for packet in builder.packets {
+            self.send_encoded_packet(packet);
+        }
+
+        // Send end delimiter
+        self.send_packet(CBundleDelimiter);
+    }
+
     /// Closes the connection.
     pub fn close(&self) {
         self.cancel_token.cancel();
@@ -249,7 +306,7 @@ impl JavaConnection {
             }
             play::S_COMMAND_SUGGESTION => {
                 let packet = SCommandSuggestion::read_packet(data)?;
-                server.command_dispatcher.read().handle_suggestions(
+                server.command_dispatcher.read().handle_player_suggestions(
                     &player,
                     packet.id,
                     &packet.command,

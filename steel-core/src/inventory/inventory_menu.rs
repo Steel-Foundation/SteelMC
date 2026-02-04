@@ -137,13 +137,13 @@ impl InventoryMenu {
 
     /// Returns a reference to the crafting container.
     #[must_use]
-    pub fn crafting_container(&self) -> &SyncCraftingContainer {
+    pub const fn crafting_container(&self) -> &SyncCraftingContainer {
         &self.crafting_container
     }
 
     /// Returns a reference to the result container.
     #[must_use]
-    pub fn result_container(&self) -> &SyncResultContainer {
+    pub const fn result_container(&self) -> &SyncResultContainer {
         &self.result_container
     }
 
@@ -366,7 +366,7 @@ impl Menu for InventoryMenu {
             // Java: if (slotIndex == 0) { player.drop(stack, false); }
             // Drop any items from the result slot that couldn't fit in the inventory
             if !stack_mut.is_empty() {
-                player.drop_item(stack_mut, false);
+                player.drop_item(stack_mut, false, true);
             }
         }
 

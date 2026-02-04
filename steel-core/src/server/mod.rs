@@ -5,23 +5,19 @@ pub mod registry_cache;
 pub mod tick_rate_manager;
 
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicI32, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CLogin, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
+    CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry};
 use steel_utils::locks::SyncRwLock;
-use steel_utils::types::GameType;
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -31,7 +27,9 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::command::CommandDispatcher;
 use crate::config::STEEL_CONFIG;
+use crate::entity::init_entities;
 use crate::player::Player;
+use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldTickTimings};
 
@@ -52,8 +50,8 @@ pub struct Server {
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
-    /// Counter for assigning unique entity IDs.
-    next_entity_id: AtomicI32,
+    /// Player data storage for saving/loading player state.
+    pub player_data_storage: PlayerDataStorage,
 }
 
 impl Server {
@@ -75,6 +73,7 @@ impl Server {
         // Initialize behavior registries after the main registry is frozen
         init_behaviors();
         init_block_entities();
+        init_entities();
         log::info!("Behavior registries initialized");
 
         let registry_cache = RegistryCache::new();
@@ -95,6 +94,10 @@ impl Server {
             .await
             .expect("Failed to create overworld");
 
+        let player_data_storage = PlayerDataStorage::new()
+            .await
+            .expect("Failed to create player data storage");
+
         Server {
             cancel_token,
             key_store: KeyStore::create(),
@@ -102,21 +105,35 @@ impl Server {
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
-            next_entity_id: AtomicI32::new(1), // Start at 1, 0 is reserved
+            player_data_storage,
         }
-    }
-
-    /// Allocates a new unique entity ID.
-    #[must_use]
-    pub fn next_entity_id(&self) -> i32 {
-        self.next_entity_id.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Adds a player to the server.
     ///
     /// # Panics
     /// Panics if the registry is not initialized.
-    pub fn add_player(&self, player: Arc<Player>) {
+    pub async fn add_player(&self, player: Arc<Player>) {
+        // Load saved player data if it exists
+        match self.player_data_storage.load(player.gameprofile.id).await {
+            Ok(Some(saved_data)) => {
+                log::info!("Loaded saved data for player {}", player.gameprofile.name);
+                saved_data.apply_to_player(&player);
+            }
+            Ok(None) => {
+                log::debug!(
+                    "No saved data for player {}, using defaults",
+                    player.gameprofile.name
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to load player data for {}: {e}",
+                    player.gameprofile.name
+                );
+            }
+        }
+
         let world = &self.worlds[0];
 
         // Get gamerule values
@@ -149,7 +166,7 @@ impl Server {
                 )) as i32,
                 dimension: dimension_key,
                 seed: hashed_seed,
-                game_type: GameType::Survival,
+                game_type: player.game_mode.load(),
                 previous_game_type: None,
                 is_debug: false,
                 // TODO: Change once we add a normal generator
@@ -164,13 +181,25 @@ impl Server {
         // Send player abilities (flight, invulnerability, etc.)
         player.send_abilities();
 
+        player.connection.send_packet(CSetHeldSlot {
+            slot: i32::from(player.inventory.lock().get_selected_slot()),
+        });
+
         let commands = self.command_dispatcher.read().get_commands();
         player.connection.send_packet(commands);
 
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
 
-        world.add_player(player);
+        // Get player position for teleport sync (must be done before add_player moves the Arc)
+        let pos = *player.position.lock();
+        let (yaw, pitch) = player.rotation.load();
+
+        // Send position sync to client (ensures client is at the correct loaded position)
+        // This must be sent after the player is added to the world
+        player.teleport(pos.x, pos.y, pos.z, yaw, pitch);
+
+        world.add_player(player.clone());
     }
 
     /// Gets all the players on the server
