@@ -1,5 +1,7 @@
 //! Block behavior trait and registry.
 
+use std::sync::Weak;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::properties::Direction;
@@ -8,6 +10,7 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::block_entity::SharedBlockEntity;
 use crate::player::Player;
 use crate::world::World;
 
@@ -179,6 +182,71 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
         // Default: no-op
+    }
+
+    // === Block Entity Methods ===
+
+    /// Returns whether this block has an associated block entity.
+    ///
+    /// Override to return `true` for blocks like chests, furnaces, signs, etc.
+    fn has_block_entity(&self) -> bool {
+        false
+    }
+
+    /// Creates a new block entity for this block.
+    ///
+    /// Only called if `has_block_entity()` returns `true`.
+    ///
+    /// # Arguments
+    /// * `level` - Weak reference to the world
+    /// * `pos` - The position where the block entity will be placed
+    /// * `state` - The block state for this block entity
+    #[allow(unused_variables)]
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> Option<SharedBlockEntity> {
+        None
+    }
+
+    /// Returns whether the block entity should be kept when the block state changes.
+    ///
+    /// This is used when a block changes to a different block type that shares
+    /// the same block entity type (e.g., different chest variants).
+    ///
+    /// # Arguments
+    /// * `old_state` - The previous block state
+    /// * `new_state` - The new block state
+    #[allow(unused_variables)]
+    fn should_keep_block_entity(&self, old_state: BlockStateId, new_state: BlockStateId) -> bool {
+        false
+    }
+
+    // === Redstone / Comparator Methods ===
+
+    /// Returns whether this block can provide an analog output signal to comparators.
+    ///
+    /// Override to return `true` for containers (chests, barrels, hoppers, etc.)
+    /// and other blocks that comparators can read (composters, beehives, etc.).
+    #[allow(unused_variables)]
+    fn has_analog_output_signal(&self, state: BlockStateId) -> bool {
+        false
+    }
+
+    /// Returns the analog output signal strength (0-15) for comparators.
+    ///
+    /// Only called if `has_analog_output_signal()` returns `true`.
+    /// For containers, this is typically based on how full they are.
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    /// * `world` - The world
+    /// * `pos` - The position of the block
+    #[allow(unused_variables)]
+    fn get_analog_output_signal(&self, state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
+        0
     }
 }
 

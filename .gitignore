@@ -3,9 +3,11 @@
 /steel-utils/src/generated
 /steel-core/src/behavior/generated
 /config
+/.tmp
 /minecraft-src
 profile.json.gz
 /world
 AGENTS.md
 CLAUDE.md
 .idea/
+/players

@@ -1,4 +1,7 @@
 //! Container trait for anything that holds items.
+//!
+//! Containers are the base abstraction for anything that can hold items,
+//! including player inventories, chests, barrels, furnaces, etc.
 
 use std::mem;
 
@@ -161,4 +164,41 @@ pub trait Container {
 
         stack.is_empty()
     }
+}
+
+/// Calculates the redstone comparator signal strength (0-15) from a container.
+///
+/// Based on Java's `AbstractContainerMenu.getRedstoneSignalFromContainer`.
+/// The signal is proportional to how full the container is:
+/// - 0 = empty
+/// - 1-14 = partially filled (linear interpolation)
+/// - 15 = completely full
+///
+/// # Arguments
+/// * `container` - The container to calculate the signal for
+///
+/// # Returns
+/// Signal strength from 0 to 15
+#[must_use]
+pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i32 {
+    let size = container.get_container_size();
+    if size == 0 {
+        return 0;
+    }
+
+    let mut total_percent: f32 = 0.0;
+
+    for i in 0..size {
+        let item = container.get_item(i);
+        if !item.is_empty() {
+            let max_stack = container.get_max_stack_size_for_item(item);
+            total_percent += item.count() as f32 / max_stack as f32;
+        }
+    }
+
+    total_percent /= size as f32;
+
+    // Lerp from 0 to 15 based on fullness
+    // Equivalent to Java's Mth.lerpDiscrete(totalPercent, 0, 15)
+    (total_percent * 15.0).round() as i32
 }

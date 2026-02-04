@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::config::C_SERVER_LINKS;
 use steel_utils::codec::Or;
-use steel_utils::text::TextComponent;
+use text_components::TextComponent;
 
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Config = C_SERVER_LINKS)]

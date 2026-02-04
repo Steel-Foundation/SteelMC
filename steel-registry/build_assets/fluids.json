@@ -1,0 +1,446 @@
+[
+  {
+    "id": 0,
+    "name": "empty",
+    "is_empty": true,
+    "is_source": false,
+    "block": "air",
+    "bucket_item": "air",
+    "height": 0.0,
+    "amount": 0,
+    "explosion_resistance": 0.0,
+    "is_flowing_fluid": false
+  },
+  {
+    "id": 1,
+    "name": "flowing_water",
+    "is_empty": false,
+    "is_source": false,
+    "block": "water",
+    "bucket_item": "water_bucket",
+    "height": 0.11111111,
+    "amount": 1,
+    "properties": [
+      {
+        "name": "falling",
+        "constant": "FALLING",
+        "values": ["true", "false"],
+        "default": "true"
+      },
+      {
+        "name": "level",
+        "constant": "LEVEL_FLOWING",
+        "values": ["1", "2", "3", "4", "5", "6", "7", "8"],
+        "default": "1"
+      }
+    ],
+    "is_flowing_fluid": true,
+    "source_fluid": "water",
+    "flowing_fluid": "flowing_water",
+    "tick_delay": 5,
+    "falling": true,
+    "states": [
+      {
+        "is_source": false,
+        "amount": 1,
+        "own_height": 0.11111111,
+        "properties": {
+          "falling": "true",
+          "level": "1"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 2,
+        "own_height": 0.22222222,
+        "properties": {
+          "falling": "true",
+          "level": "2"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 3,
+        "own_height": 0.33333334,
+        "properties": {
+          "falling": "true",
+          "level": "3"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 4,
+        "own_height": 0.44444445,
+        "properties": {
+          "falling": "true",
+          "level": "4"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 5,
+        "own_height": 0.5555556,
+        "properties": {
+          "falling": "true",
+          "level": "5"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 6,
+        "own_height": 0.6666667,
+        "properties": {
+          "falling": "true",
+          "level": "6"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 7,
+        "own_height": 0.7777778,
+        "properties": {
+          "falling": "true",
+          "level": "7"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "true",
+          "level": "8"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 1,
+        "own_height": 0.11111111,
+        "properties": {
+          "falling": "false",
+          "level": "1"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 2,
+        "own_height": 0.22222222,
+        "properties": {
+          "falling": "false",
+          "level": "2"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 3,
+        "own_height": 0.33333334,
+        "properties": {
+          "falling": "false",
+          "level": "3"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 4,
+        "own_height": 0.44444445,
+        "properties": {
+          "falling": "false",
+          "level": "4"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 5,
+        "own_height": 0.5555556,
+        "properties": {
+          "falling": "false",
+          "level": "5"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 6,
+        "own_height": 0.6666667,
+        "properties": {
+          "falling": "false",
+          "level": "6"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 7,
+        "own_height": 0.7777778,
+        "properties": {
+          "falling": "false",
+          "level": "7"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "false",
+          "level": "8"
+        }
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "water",
+    "is_empty": false,
+    "is_source": true,
+    "block": "water",
+    "bucket_item": "water_bucket",
+    "height": 0.8888889,
+    "amount": 8,
+    "properties": [
+      {
+        "name": "falling",
+        "constant": "FALLING",
+        "values": ["true", "false"],
+        "default": "true"
+      }
+    ],
+    "is_flowing_fluid": true,
+    "source_fluid": "water",
+    "flowing_fluid": "flowing_water",
+    "tick_delay": 5,
+    "falling": true,
+    "states": [
+      {
+        "is_source": true,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "true"
+        }
+      },
+      {
+        "is_source": true,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "false"
+        }
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "flowing_lava",
+    "is_empty": false,
+    "is_source": false,
+    "block": "lava",
+    "bucket_item": "lava_bucket",
+    "height": 0.11111111,
+    "amount": 1,
+    "properties": [
+      {
+        "name": "falling",
+        "constant": "FALLING",
+        "values": ["true", "false"],
+        "default": "true"
+      },
+      {
+        "name": "level",
+        "constant": "LEVEL_FLOWING",
+        "values": ["1", "2", "3", "4", "5", "6", "7", "8"],
+        "default": "1"
+      }
+    ],
+    "is_flowing_fluid": true,
+    "source_fluid": "lava",
+    "flowing_fluid": "flowing_lava",
+    "tick_delay": 30,
+    "falling": true,
+    "states": [
+      {
+        "is_source": false,
+        "amount": 1,
+        "own_height": 0.11111111,
+        "properties": {
+          "falling": "true",
+          "level": "1"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 2,
+        "own_height": 0.22222222,
+        "properties": {
+          "falling": "true",
+          "level": "2"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 3,
+        "own_height": 0.33333334,
+        "properties": {
+          "falling": "true",
+          "level": "3"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 4,
+        "own_height": 0.44444445,
+        "properties": {
+          "falling": "true",
+          "level": "4"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 5,
+        "own_height": 0.5555556,
+        "properties": {
+          "falling": "true",
+          "level": "5"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 6,
+        "own_height": 0.6666667,
+        "properties": {
+          "falling": "true",
+          "level": "6"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 7,
+        "own_height": 0.7777778,
+        "properties": {
+          "falling": "true",
+          "level": "7"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "true",
+          "level": "8"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 1,
+        "own_height": 0.11111111,
+        "properties": {
+          "falling": "false",
+          "level": "1"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 2,
+        "own_height": 0.22222222,
+        "properties": {
+          "falling": "false",
+          "level": "2"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 3,
+        "own_height": 0.33333334,
+        "properties": {
+          "falling": "false",
+          "level": "3"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 4,
+        "own_height": 0.44444445,
+        "properties": {
+          "falling": "false",
+          "level": "4"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 5,
+        "own_height": 0.5555556,
+        "properties": {
+          "falling": "false",
+          "level": "5"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 6,
+        "own_height": 0.6666667,
+        "properties": {
+          "falling": "false",
+          "level": "6"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 7,
+        "own_height": 0.7777778,
+        "properties": {
+          "falling": "false",
+          "level": "7"
+        }
+      },
+      {
+        "is_source": false,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "false",
+          "level": "8"
+        }
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "lava",
+    "is_empty": false,
+    "is_source": true,
+    "block": "lava",
+    "bucket_item": "lava_bucket",
+    "height": 0.8888889,
+    "amount": 8,
+    "properties": [
+      {
+        "name": "falling",
+        "constant": "FALLING",
+        "values": ["true", "false"],
+        "default": "true"
+      }
+    ],
+    "is_flowing_fluid": true,
+    "source_fluid": "lava",
+    "flowing_fluid": "flowing_lava",
+    "tick_delay": 30,
+    "falling": true,
+    "states": [
+      {
+        "is_source": true,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "true"
+        }
+      },
+      {
+        "is_source": true,
+        "amount": 8,
+        "own_height": 0.8888889,
+        "properties": {
+          "falling": "false"
+        }
+      }
+    ]
+  }
+]

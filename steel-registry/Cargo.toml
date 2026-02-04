@@ -2,12 +2,17 @@
 name = "steel-registry"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
 # Internal crates
 steel-utils.workspace = true
 steel-macros.workspace = true
+
+# UUID
+uuid.workspace = true
 
 # Serialization
 serde.workspace = true
@@ -20,10 +25,16 @@ rustc-hash.workspace = true
 log.workspace = true
 # Utils
 rand.workspace = true
+text_components.workspace = true
+# NBT
+simdnbt.workspace = true
 
 [build-dependencies]
 # Internal crates
 steel-utils.workspace = true
+
+# UUID
+uuid.workspace = true
 
 # Serialization
 serde.workspace = true

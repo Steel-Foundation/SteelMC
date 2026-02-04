@@ -52,7 +52,7 @@ impl PlayerAreaMap {
 
     /// Registers a player at their current position using their chunk view.
     pub fn on_player_join(&self, player: &Player, view: &PlayerChunkView) {
-        let entity_id = player.entity_id;
+        let entity_id = player.id;
         let mut player_set = FxHashSet::default();
 
         view.for_each(|chunk| {
@@ -65,7 +65,7 @@ impl PlayerAreaMap {
 
     /// Removes a player from all tracked chunks.
     pub fn on_player_leave(&self, player: &Arc<Player>) {
-        let entity_id = player.entity_id;
+        let entity_id = player.id;
         if let Some((_, chunks)) = self.player_chunks.remove_sync(&entity_id) {
             for chunk in chunks {
                 self.remove_from_chunk(chunk, entity_id);

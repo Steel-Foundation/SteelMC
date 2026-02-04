@@ -27,6 +27,15 @@
         threshold: 256,
         level: 4,
     },
+    // Logging configuration
+    log: {
+        // Time format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
+        time: "uptime",
+        // Whether the module_path of the log should be displayed
+        module_path: false,
+        // Whether the extra data of the log should be displayed
+        extra: false,
+    },
     // Server links configuration
     server_links: {
         // Enable server links feature

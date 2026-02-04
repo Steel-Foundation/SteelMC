@@ -1,23 +1,51 @@
 //! Handles all the server configuration.
-use base64::{Engine, prelude::BASE64_STANDARD};
+//!
+//! The `ServerConfig` struct is defined here, but loading is handled by the `steel` crate.
+//! Steel-core accesses config via `STEEL_CONFIG` after steel initializes it.
+
+use std::ops::Deref;
+use std::sync::OnceLock;
+
 use serde::Deserialize;
-use std::{fs, path::Path, sync::LazyLock};
 use steel_protocol::packet_traits::CompressionInfo;
 use steel_protocol::packets::config::{CServerLinks, Link, ServerLinksType};
 use steel_utils::codec::Or;
-use steel_utils::text::TextComponent;
+use text_components::TextComponent;
 
-#[cfg(feature = "stand-alone")]
-const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png");
-const ICON_PREFIX: &str = "data:image/png;base64,";
+/// Reference to the server configuration.
+///
+/// This is initialized by the `steel` crate during server startup.
+/// Access configuration via the `STEEL_CONFIG` static.
+pub struct ServerConfigRef;
 
-const DEFAULT_CONFIG: &str = include_str!("../../package-content/steel_config.json5");
+static CONFIG: OnceLock<&'static ServerConfig> = OnceLock::new();
+
+impl ServerConfigRef {
+    /// Initializes the configuration reference.
+    ///
+    /// # Panics
+    /// Panics if called more than once.
+    pub fn init(config: &'static ServerConfig) {
+        CONFIG
+            .set(config)
+            .expect("Server config already initialized");
+    }
+}
+
+impl Deref for ServerConfigRef {
+    type Target = ServerConfig;
+
+    fn deref(&self) -> &Self::Target {
+        CONFIG
+            .get()
+            .expect("Server config not initialized - steel crate must call ServerConfigRef::init()")
+    }
+}
 
 /// The server configuration.
 ///
-/// This is loaded from `config/steel_config.json5` or created if it doesn't exist.
-pub static STEEL_CONFIG: LazyLock<ServerConfig> =
-    LazyLock::new(|| ServerConfig::load_or_create(Path::new("config/steel_config.json5")));
+/// Access via `STEEL_CONFIG` static after initialization by the steel crate.
+pub static STEEL_CONFIG: ServerConfigRef = ServerConfigRef;
 
 /// Label type for server links - either built-in string or custom `TextComponent`
 #[derive(Debug, Clone, Deserialize)]
@@ -79,6 +107,10 @@ impl ServerLinks {
 /// The server configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
+    /// The Minecraft version this server supports.
+    /// This is not loaded from config but set programmatically.
+    #[serde(skip)]
+    pub mc_version: &'static str,
     /// The port the server will listen on.
     pub server_port: u16,
     /// The seed for the world generator.
@@ -105,107 +137,4 @@ pub struct ServerConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links
     pub server_links: Option<ServerLinks>,
-}
-
-impl ServerConfig {
-    /// Loads the server configuration from the given path, or creates it if it doesn't exist.
-    ///
-    /// # Panics
-    /// This function will panic if the config file does not exist and the directory cannot be created,
-    /// or if the config file cannot be read or written.
-    #[must_use]
-    pub fn load_or_create(path: &Path) -> Self {
-        let config = if path.exists() {
-            let config_str = fs::read_to_string(path).expect("Failed to read config file");
-            let config: ServerConfig =
-                serde_json5::from_str(config_str.as_str()).expect("Failed to parse config");
-            config.validate().expect("Failed to validate config");
-            config
-        } else {
-            fs::create_dir_all(path.parent().expect("Failed to get config directory"))
-                .expect("Failed to create config directory");
-            fs::write(path, DEFAULT_CONFIG).expect("Failed to write config file");
-            let config: ServerConfig =
-                serde_json5::from_str(DEFAULT_CONFIG).expect("Failed to parse config");
-            config.validate().expect("Failed to validate config");
-            config
-        };
-
-        // If icon file doesnt exist, write it
-        #[cfg(feature = "stand-alone")]
-        if config.use_favicon && !Path::new(&config.favicon).exists() {
-            fs::write(Path::new(&config.favicon), DEFAULT_FAVICON)
-                .expect("Failed to write favicon file");
-        }
-
-        config
-    }
-
-    /// Validates the server configuration.
-    ///
-    /// # Errors
-    /// This function will return an error if the configuration is invalid.
-    pub fn validate(&self) -> Result<(), &'static str> {
-        if !(1..=64).contains(&self.view_distance) {
-            return Err("View distance must in range 1..64");
-        }
-        if !(1..=32).contains(&self.simulation_distance) {
-            return Err("Simulation distance must in range 1..32");
-        }
-        if let Some(compression) = self.compression {
-            if compression.threshold.get() < 256 {
-                return Err("Compression threshold must be greater than or equal to 256");
-            }
-            if !(1..=9).contains(&compression.level) {
-                return Err("Compression level must be between 1 and 9");
-            }
-        }
-        if self.enforce_secure_chat {
-            if !self.online_mode {
-                return Err("online_mode must be true when enforce_secure_chat is enabled");
-            }
-            if !self.encryption {
-                return Err("encryption must be true when enforce_secure_chat is enabled");
-            }
-        }
-        Ok(())
-    }
-
-    /// Loads the favicon from the path specified in the config.
-    /// If the favicon doesn't exist, it will use the default favicon.
-    /// If `use_favicon` is false, this will return `None`.
-    ///
-    /// The returned string is a base64 encoded png with the `data:image/png;base64,` prefix.
-    #[must_use]
-    pub fn load_favicon(&self) -> Option<String> {
-        if self.use_favicon {
-            let path = Path::new(&self.favicon);
-            if path.exists() {
-                let icon = fs::read(path);
-
-                if let Ok(icon) = icon {
-                    let cap = ICON_PREFIX.len() + icon.len().div_ceil(3) * 4;
-                    let mut base64 = String::with_capacity(cap);
-
-                    base64 += ICON_PREFIX;
-                    BASE64_STANDARD.encode_string(icon, &mut base64);
-
-                    return Some(base64);
-                }
-                #[cfg(feature = "stand-alone")]
-                {
-                    let cap = ICON_PREFIX.len() + DEFAULT_FAVICON.len().div_ceil(3) * 4;
-                    let mut base64 = String::with_capacity(cap);
-
-                    base64 += ICON_PREFIX;
-                    BASE64_STANDARD.encode_string(DEFAULT_FAVICON, &mut base64);
-
-                    return Some(base64);
-                }
-                #[cfg(not(feature = "stand-alone"))]
-                return None;
-            }
-        }
-        None
-    }
 }

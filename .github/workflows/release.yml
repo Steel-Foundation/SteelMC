@@ -4,25 +4,60 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact: steel
+          - os: windows-latest
+            artifact: steel.exe
+          - os: macos-latest
+            artifact: steel
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: steel-${{ matrix.os }}
-          path: target/release/steel*
+          path: target/release/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate version
+        id: version
+        run: |
+          echo "version=alpha-$(date +%Y%m%d)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          mv artifacts/steel-ubuntu-latest/steel release/steel-linux
+          mv artifacts/steel-windows-latest/steel.exe release/steel-windows.exe
+          mv artifacts/steel-macos-latest/steel release/steel-macos
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: true
+          files: release/*
+          generate_release_notes: true

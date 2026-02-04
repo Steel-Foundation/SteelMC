@@ -1,0 +1,242 @@
+[
+  {
+    "id": 0,
+    "name": "speed",
+    "category": "BENEFICIAL",
+    "color": 3402751
+  },
+  {
+    "id": 1,
+    "name": "slowness",
+    "category": "HARMFUL",
+    "color": 9154528
+  },
+  {
+    "id": 2,
+    "name": "haste",
+    "category": "BENEFICIAL",
+    "color": 14270531
+  },
+  {
+    "id": 3,
+    "name": "mining_fatigue",
+    "category": "HARMFUL",
+    "color": 4866583
+  },
+  {
+    "id": 4,
+    "name": "strength",
+    "category": "BENEFICIAL",
+    "color": 16762624
+  },
+  {
+    "id": 5,
+    "name": "instant_health",
+    "category": "BENEFICIAL",
+    "color": 16262179
+  },
+  {
+    "id": 6,
+    "name": "instant_damage",
+    "category": "HARMFUL",
+    "color": 11101546
+  },
+  {
+    "id": 7,
+    "name": "jump_boost",
+    "category": "BENEFICIAL",
+    "color": 16646020
+  },
+  {
+    "id": 8,
+    "name": "nausea",
+    "category": "HARMFUL",
+    "color": 5578058
+  },
+  {
+    "id": 9,
+    "name": "regeneration",
+    "category": "BENEFICIAL",
+    "color": 13458603
+  },
+  {
+    "id": 10,
+    "name": "resistance",
+    "category": "BENEFICIAL",
+    "color": 9520880
+  },
+  {
+    "id": 11,
+    "name": "fire_resistance",
+    "category": "BENEFICIAL",
+    "color": 16750848
+  },
+  {
+    "id": 12,
+    "name": "water_breathing",
+    "category": "BENEFICIAL",
+    "color": 10017472
+  },
+  {
+    "id": 13,
+    "name": "invisibility",
+    "category": "BENEFICIAL",
+    "color": 16185078
+  },
+  {
+    "id": 14,
+    "name": "blindness",
+    "category": "HARMFUL",
+    "color": 2039587
+  },
+  {
+    "id": 15,
+    "name": "night_vision",
+    "category": "BENEFICIAL",
+    "color": 12779366
+  },
+  {
+    "id": 16,
+    "name": "hunger",
+    "category": "HARMFUL",
+    "color": 5797459
+  },
+  {
+    "id": 17,
+    "name": "weakness",
+    "category": "HARMFUL",
+    "color": 4738376
+  },
+  {
+    "id": 18,
+    "name": "poison",
+    "category": "HARMFUL",
+    "color": 8889187
+  },
+  {
+    "id": 19,
+    "name": "wither",
+    "category": "HARMFUL",
+    "color": 7561558
+  },
+  {
+    "id": 20,
+    "name": "health_boost",
+    "category": "BENEFICIAL",
+    "color": 16284963
+  },
+  {
+    "id": 21,
+    "name": "absorption",
+    "category": "BENEFICIAL",
+    "color": 2445989
+  },
+  {
+    "id": 22,
+    "name": "saturation",
+    "category": "BENEFICIAL",
+    "color": 16262179
+  },
+  {
+    "id": 23,
+    "name": "glowing",
+    "category": "NEUTRAL",
+    "color": 9740385
+  },
+  {
+    "id": 24,
+    "name": "levitation",
+    "category": "HARMFUL",
+    "color": 13565951
+  },
+  {
+    "id": 25,
+    "name": "luck",
+    "category": "BENEFICIAL",
+    "color": 5882118
+  },
+  {
+    "id": 26,
+    "name": "unluck",
+    "category": "HARMFUL",
+    "color": 12624973
+  },
+  {
+    "id": 27,
+    "name": "slow_falling",
+    "category": "BENEFICIAL",
+    "color": 15978425
+  },
+  {
+    "id": 28,
+    "name": "conduit_power",
+    "category": "BENEFICIAL",
+    "color": 1950417
+  },
+  {
+    "id": 29,
+    "name": "dolphins_grace",
+    "category": "BENEFICIAL",
+    "color": 8954814
+  },
+  {
+    "id": 30,
+    "name": "bad_omen",
+    "category": "NEUTRAL",
+    "color": 745784
+  },
+  {
+    "id": 31,
+    "name": "hero_of_the_village",
+    "category": "BENEFICIAL",
+    "color": 4521796
+  },
+  {
+    "id": 32,
+    "name": "darkness",
+    "category": "HARMFUL",
+    "color": 2696993
+  },
+  {
+    "id": 33,
+    "name": "trial_omen",
+    "category": "NEUTRAL",
+    "color": 1484454
+  },
+  {
+    "id": 34,
+    "name": "raid_omen",
+    "category": "NEUTRAL",
+    "color": 14565464
+  },
+  {
+    "id": 35,
+    "name": "wind_charged",
+    "category": "HARMFUL",
+    "color": 12438015
+  },
+  {
+    "id": 36,
+    "name": "weaving",
+    "category": "HARMFUL",
+    "color": 7891290
+  },
+  {
+    "id": 37,
+    "name": "oozing",
+    "category": "HARMFUL",
+    "color": 10092451
+  },
+  {
+    "id": 38,
+    "name": "infested",
+    "category": "HARMFUL",
+    "color": 9214860
+  },
+  {
+    "id": 39,
+    "name": "breath_of_the_nautilus",
+    "category": "BENEFICIAL",
+    "color": 65518
+  }
+]

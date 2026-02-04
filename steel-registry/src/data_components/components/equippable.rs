@@ -93,3 +93,22 @@ impl HashComponent for Equippable {
         hasher.end_map();
     }
 }
+
+impl simdnbt::ToNbtTag for Equippable {
+    fn to_nbt_tag(self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+
+        let mut compound = NbtCompound::new();
+        compound.insert("slot", self.slot.as_str());
+        NbtTag::Compound(compound)
+    }
+}
+
+impl simdnbt::FromNbtTag for Equippable {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        let compound = tag.compound()?;
+        let slot_str = compound.get("slot")?.string()?.to_str();
+        let slot = EquippableSlot::parse(&slot_str)?;
+        Some(Self { slot })
+    }
+}

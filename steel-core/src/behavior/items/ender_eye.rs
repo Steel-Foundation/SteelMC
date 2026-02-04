@@ -3,6 +3,7 @@
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
 
@@ -17,7 +18,7 @@ pub struct EnderEyeBehavior;
 
 impl ItemBehavior for EnderEyeBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        // TODO: updateNeighbourForOutputSignal, levelEvent(1503), portal completion check
+        // TODO: updateNeighbourForOutputSignal, portal completion check
 
         let clicked_pos = context.hit_result.block_pos;
         let clicked_state = context.world.get_block_state(&clicked_pos);
@@ -43,6 +44,11 @@ impl ItemBehavior for EnderEyeBehavior {
         {
             return InteractionResult::Pass;
         }
+
+        // Play the end portal frame fill sound effect (no exclusion, all players hear it)
+        context
+            .world
+            .level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
 
         context.item_stack.shrink(1);
 

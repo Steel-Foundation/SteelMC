@@ -1,0 +1,499 @@
+[
+  {
+    "id": 0,
+    "name": "water",
+    "effects": []
+  },
+  {
+    "id": 1,
+    "name": "mundane",
+    "effects": []
+  },
+  {
+    "id": 2,
+    "name": "thick",
+    "effects": []
+  },
+  {
+    "id": 3,
+    "name": "awkward",
+    "effects": []
+  },
+  {
+    "id": 4,
+    "name": "night_vision",
+    "effects": [
+      {
+        "effect": "night_vision",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "long_night_vision",
+    "effects": [
+      {
+        "effect": "night_vision",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "invisibility",
+    "effects": [
+      {
+        "effect": "invisibility",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "long_invisibility",
+    "effects": [
+      {
+        "effect": "invisibility",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "leaping",
+    "effects": [
+      {
+        "effect": "jump_boost",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 9,
+    "name": "long_leaping",
+    "effects": [
+      {
+        "effect": "jump_boost",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 10,
+    "name": "strong_leaping",
+    "effects": [
+      {
+        "effect": "jump_boost",
+        "duration": 1800,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 11,
+    "name": "fire_resistance",
+    "effects": [
+      {
+        "effect": "fire_resistance",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 12,
+    "name": "long_fire_resistance",
+    "effects": [
+      {
+        "effect": "fire_resistance",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 13,
+    "name": "swiftness",
+    "effects": [
+      {
+        "effect": "speed",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 14,
+    "name": "long_swiftness",
+    "effects": [
+      {
+        "effect": "speed",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 15,
+    "name": "strong_swiftness",
+    "effects": [
+      {
+        "effect": "speed",
+        "duration": 1800,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 16,
+    "name": "slowness",
+    "effects": [
+      {
+        "effect": "slowness",
+        "duration": 1800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 17,
+    "name": "long_slowness",
+    "effects": [
+      {
+        "effect": "slowness",
+        "duration": 4800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 18,
+    "name": "strong_slowness",
+    "effects": [
+      {
+        "effect": "slowness",
+        "duration": 400,
+        "amplifier": 3
+      }
+    ]
+  },
+  {
+    "id": 19,
+    "name": "turtle_master",
+    "effects": [
+      {
+        "effect": "slowness",
+        "duration": 400,
+        "amplifier": 3
+      },
+      {
+        "effect": "resistance",
+        "duration": 400,
+        "amplifier": 2
+      }
+    ]
+  },
+  {
+    "id": 20,
+    "name": "long_turtle_master",
+    "effects": [
+      {
+        "effect": "slowness",
+        "duration": 800,
+        "amplifier": 3
+      },
+      {
+        "effect": "resistance",
+        "duration": 800,
+        "amplifier": 2
+      }
+    ]
+  },
+  {
+    "id": 21,
+    "name": "strong_turtle_master",
+    "effects": [
+      {
+        "effect": "slowness",
+        "duration": 400,
+        "amplifier": 5
+      },
+      {
+        "effect": "resistance",
+        "duration": 400,
+        "amplifier": 3
+      }
+    ]
+  },
+  {
+    "id": 22,
+    "name": "water_breathing",
+    "effects": [
+      {
+        "effect": "water_breathing",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 23,
+    "name": "long_water_breathing",
+    "effects": [
+      {
+        "effect": "water_breathing",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 24,
+    "name": "healing",
+    "effects": [
+      {
+        "effect": "instant_health",
+        "duration": 1,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 25,
+    "name": "strong_healing",
+    "effects": [
+      {
+        "effect": "instant_health",
+        "duration": 1,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 26,
+    "name": "harming",
+    "effects": [
+      {
+        "effect": "instant_damage",
+        "duration": 1,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 27,
+    "name": "strong_harming",
+    "effects": [
+      {
+        "effect": "instant_damage",
+        "duration": 1,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 28,
+    "name": "poison",
+    "effects": [
+      {
+        "effect": "poison",
+        "duration": 900,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 29,
+    "name": "long_poison",
+    "effects": [
+      {
+        "effect": "poison",
+        "duration": 1800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 30,
+    "name": "strong_poison",
+    "effects": [
+      {
+        "effect": "poison",
+        "duration": 432,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 31,
+    "name": "regeneration",
+    "effects": [
+      {
+        "effect": "regeneration",
+        "duration": 900,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 32,
+    "name": "long_regeneration",
+    "effects": [
+      {
+        "effect": "regeneration",
+        "duration": 1800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 33,
+    "name": "strong_regeneration",
+    "effects": [
+      {
+        "effect": "regeneration",
+        "duration": 450,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 34,
+    "name": "strength",
+    "effects": [
+      {
+        "effect": "strength",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 35,
+    "name": "long_strength",
+    "effects": [
+      {
+        "effect": "strength",
+        "duration": 9600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 36,
+    "name": "strong_strength",
+    "effects": [
+      {
+        "effect": "strength",
+        "duration": 1800,
+        "amplifier": 1
+      }
+    ]
+  },
+  {
+    "id": 37,
+    "name": "weakness",
+    "effects": [
+      {
+        "effect": "weakness",
+        "duration": 1800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 38,
+    "name": "long_weakness",
+    "effects": [
+      {
+        "effect": "weakness",
+        "duration": 4800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 39,
+    "name": "luck",
+    "effects": [
+      {
+        "effect": "luck",
+        "duration": 6000,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 40,
+    "name": "slow_falling",
+    "effects": [
+      {
+        "effect": "slow_falling",
+        "duration": 1800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 41,
+    "name": "long_slow_falling",
+    "effects": [
+      {
+        "effect": "slow_falling",
+        "duration": 4800,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 42,
+    "name": "wind_charged",
+    "effects": [
+      {
+        "effect": "wind_charged",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 43,
+    "name": "weaving",
+    "effects": [
+      {
+        "effect": "weaving",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 44,
+    "name": "oozing",
+    "effects": [
+      {
+        "effect": "oozing",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  },
+  {
+    "id": 45,
+    "name": "infested",
+    "effects": [
+      {
+        "effect": "infested",
+        "duration": 3600,
+        "amplifier": 0
+      }
+    ]
+  }
+]

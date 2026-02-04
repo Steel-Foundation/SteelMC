@@ -73,7 +73,7 @@ impl CropBlock {
     /// - Same crop in row: /2.0 speed penalty
     fn get_growth_speed(&self, world: &World, pos: BlockPos) -> f32 {
         let mut speed = 1.0f32;
-        let below = pos.offset(0, -1, 0);
+        let below = pos.below();
 
         // Check 3x3 area of farmland below
         for dx in -1..=1 {
@@ -101,10 +101,10 @@ impl CropBlock {
         }
 
         // Check for same crop in adjacent positions (reduces growth speed)
-        let north = world.get_block_state(&pos.offset(0, 0, -1));
-        let south = world.get_block_state(&pos.offset(0, 0, 1));
-        let west = world.get_block_state(&pos.offset(-1, 0, 0));
-        let east = world.get_block_state(&pos.offset(1, 0, 0));
+        let north = world.get_block_state(&pos.north());
+        let south = world.get_block_state(&pos.south());
+        let west = world.get_block_state(&pos.west());
+        let east = world.get_block_state(&pos.east());
 
         let horizontal_row =
             self.is_same_block(west.get_block()) || self.is_same_block(east.get_block());
@@ -116,10 +116,10 @@ impl CropBlock {
             speed /= 2.0;
         } else {
             // Check diagonals
-            let nw = world.get_block_state(&pos.offset(-1, 0, -1));
-            let ne = world.get_block_state(&pos.offset(1, 0, -1));
-            let sw = world.get_block_state(&pos.offset(-1, 0, 1));
-            let se = world.get_block_state(&pos.offset(1, 0, 1));
+            let nw = world.get_block_state(&pos.north().west());
+            let ne = world.get_block_state(&pos.north().east());
+            let sw = world.get_block_state(&pos.south().west());
+            let se = world.get_block_state(&pos.south().east());
 
             let has_diagonal = self.is_same_block(nw.get_block())
                 || self.is_same_block(ne.get_block())

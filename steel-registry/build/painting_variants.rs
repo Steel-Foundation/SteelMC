@@ -46,22 +46,22 @@ where
 fn parse_color(color_str: &str) -> TokenStream {
     // Parse named colors at build time
     match color_str {
-        "black" => quote! { Color::Named(NamedColor::Black) },
-        "dark_blue" => quote! { Color::Named(NamedColor::DarkBlue) },
-        "dark_green" => quote! { Color::Named(NamedColor::DarkGreen) },
-        "dark_aqua" => quote! { Color::Named(NamedColor::DarkAqua) },
-        "dark_red" => quote! { Color::Named(NamedColor::DarkRed) },
-        "dark_purple" => quote! { Color::Named(NamedColor::DarkPurple) },
-        "gold" => quote! { Color::Named(NamedColor::Gold) },
-        "gray" => quote! { Color::Named(NamedColor::Gray) },
-        "dark_gray" => quote! { Color::Named(NamedColor::DarkGray) },
-        "blue" => quote! { Color::Named(NamedColor::Blue) },
-        "green" => quote! { Color::Named(NamedColor::Green) },
-        "aqua" => quote! { Color::Named(NamedColor::Aqua) },
-        "red" => quote! { Color::Named(NamedColor::Red) },
-        "light_purple" => quote! { Color::Named(NamedColor::LightPurple) },
-        "yellow" => quote! { Color::Named(NamedColor::Yellow) },
-        "white" => quote! { Color::Named(NamedColor::White) },
+        "black" => quote! { Color::Black },
+        "dark_blue" => quote! { Color::DarkBlue },
+        "dark_green" => quote! { Color::DarkGreen },
+        "dark_aqua" => quote! { Color::DarkAqua },
+        "dark_red" => quote! { Color::DarkRed },
+        "dark_purple" => quote! { Color::DarkPurple },
+        "gold" => quote! { Color::Gold },
+        "gray" => quote! { Color::Gray },
+        "dark_gray" => quote! { Color::DarkGray },
+        "blue" => quote! { Color::Blue },
+        "green" => quote! { Color::Green },
+        "aqua" => quote! { Color::Aqua },
+        "red" => quote! { Color::Red },
+        "light_purple" => quote! { Color::LightPurple },
+        "yellow" => quote! { Color::Yellow },
+        "white" => quote! { Color::White },
         _ => panic!("Unknown color: {}", color_str),
     }
 }
@@ -73,11 +73,25 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
         let color = parse_color(color_str.as_str());
         // Generate code that creates a TextComponent with color
         quote! {
-            TextComponent::const_translate_with_color(#translate, #color)
+            TextComponent {
+                content: Content::Translate(TranslatedMessage::new(#translate, None)),
+                format: Format {
+                    color: Some(#color),
+                    font: None,
+                    bold: None,
+                    italic: None,
+                    underlined: None,
+                    strikethrough: None,
+                    obfuscated: None,
+                    shadow_color: None,
+                },
+                children: vec![],
+                interactions: Interactivity::new(),
+            }
         }
     } else {
         quote! {
-            TextComponent::const_translate(#translate)
+            TextComponent::translated(TranslatedMessage::new(#translate, None))
         }
     }
 }
@@ -113,8 +127,9 @@ pub(crate) fn build() -> TokenStream {
             PaintingVariant, PaintingVariantRegistry,
         };
         use steel_utils::Identifier;
-        use steel_utils::text::TextComponent;
-        use steel_utils::text::color::{Color, NamedColor};
+        use text_components::{
+            TextComponent, content::Content, format::{Color, Format}, interactivity::Interactivity, translation::TranslatedMessage
+        };
         use std::borrow::Cow;
     });
 

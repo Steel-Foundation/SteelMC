@@ -65,7 +65,7 @@ impl FarmlandBlock {
     /// Checks if the block above is a crop that should maintain the farmland.
     /// This prevents farmland from turning to dirt when crops are planted.
     fn should_maintain_farmland(world: &World, pos: BlockPos) -> bool {
-        let above = world.get_block_state(&pos.offset(0, 1, 0));
+        let above = world.get_block_state(&pos.above());
         let block = above.get_block();
 
         // Check for crops that maintain farmland

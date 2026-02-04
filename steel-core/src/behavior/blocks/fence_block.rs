@@ -57,33 +57,21 @@ impl FenceBlock {
             // Fence gates connect perpendicular to their facing direction
             // A gate facing north/south connects to fences to its east/west
             // A gate facing east/west connects to fences to its north/south
-            if let Some(facing_str) = neighbor_state.get_property_str("facing") {
-                let gate_facing = match facing_str.as_str() {
-                    "north" => Some(Direction::North),
-                    "south" => Some(Direction::South),
-                    "east" => Some(Direction::East),
-                    "west" => Some(Direction::West),
-                    _ => None,
-                };
-
-                if let Some(gate_facing) = gate_facing {
-                    // Gate connects perpendicular to its facing
-                    let connects = match (gate_facing, direction) {
-                        // Gate facing N/S connects to blocks on E/W sides,
-                        // Gate facing E/W connects to blocks on N/S sides
-                        (
-                            Direction::North | Direction::South,
-                            Direction::East | Direction::West,
-                        )
-                        | (
-                            Direction::East | Direction::West,
-                            Direction::North | Direction::South,
-                        ) => true,
-                        _ => false,
-                    };
-                    if connects {
-                        return true;
+            if let Some(gate_facing) =
+                neighbor_state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+            {
+                // Gate connects perpendicular to its facing
+                let connects = match (gate_facing, direction) {
+                    // Gate facing N/S connects to blocks on E/W sides,
+                    // Gate facing E/W connects to blocks on N/S sides
+                    (Direction::North | Direction::South, Direction::East | Direction::West)
+                    | (Direction::East | Direction::West, Direction::North | Direction::South) => {
+                        true
                     }
+                    _ => false,
+                };
+                if connects {
+                    return true;
                 }
             }
         }

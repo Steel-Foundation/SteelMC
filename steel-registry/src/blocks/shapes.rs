@@ -232,6 +232,19 @@ impl AABBd {
         }
     }
 
+    /// Returns a new AABB inflated by different amounts on each axis.
+    #[must_use]
+    pub fn inflate_xyz(&self, x: f64, y: f64, z: f64) -> Self {
+        Self {
+            min_x: self.min_x - x,
+            min_y: self.min_y - y,
+            min_z: self.min_z - z,
+            max_x: self.max_x + x,
+            max_y: self.max_y + y,
+            max_z: self.max_z + z,
+        }
+    }
+
     /// Checks if this AABB intersects with another AABB.
     #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {
@@ -379,6 +392,25 @@ impl BlockShapes {
 }
 
 use super::properties::Direction;
+
+/// Checks if a shape is a full block (covers the entire 0-1 cube).
+///
+/// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolid()`.
+#[must_use]
+pub fn is_shape_full_block(shape: VoxelShape) -> bool {
+    // A full block shape must have exactly one AABB that covers 0-1 on all axes
+    if shape.len() != 1 {
+        return false;
+    }
+
+    let aabb = &shape[0];
+    aabb.min_x <= 0.0
+        && aabb.max_x >= 1.0
+        && aabb.min_y <= 0.0
+        && aabb.max_y >= 1.0
+        && aabb.min_z <= 0.0
+        && aabb.max_z >= 1.0
+}
 
 /// Support type for `is_face_sturdy` checks.
 ///
