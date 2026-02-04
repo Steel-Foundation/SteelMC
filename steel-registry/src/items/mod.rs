@@ -160,10 +160,28 @@ impl ItemRegistry {
 
         let items: Vec<ItemRef> = item_keys
             .iter()
-            .filter_map(|key| self.by_key(&Identifier::vanilla_static(key)))
+            .filter_map(|key| {
+                if let Some(key) = key.strip_prefix("c:") {
+                    self.by_key(&Identifier::new_static("c", key))
+                } else {
+                    self.by_key(&Identifier::vanilla_static(key))
+                }
+            })
             .collect();
 
         self.tags.insert(tag, items);
+    }
+
+    /// Gives the access to all blocks to delete and add new entries
+    pub fn modify_tag(&mut self, tag: &Identifier, f: impl FnOnce(Vec<ItemRef>) -> Vec<ItemRef>) {
+        // removes tag if exists and copy the new blocks into it
+        if let Some(items) = self.tags.remove(tag) {
+            self.tags.insert(tag.clone(), f(items));
+        }
+        // if it doesn't exist, a new tag will be created
+        else {
+            self.tags.insert(tag.clone(), f(Vec::new()));
+        }
     }
 
     /// Checks if an item is in a given tag.

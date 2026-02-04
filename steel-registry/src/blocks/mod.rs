@@ -436,15 +436,27 @@ impl BlockRegistry {
 
         let blocks: Vec<BlockRef> = block_keys
             .iter()
-            .filter_map(|key| self.by_key(&Identifier::vanilla_static(key)))
+            .filter_map(|key| {
+                if let Some(key) = key.strip_prefix("c:") {
+                    self.by_key(&Identifier::new_static("c", key))
+                }
+                else { self.by_key(&Identifier::vanilla_static(key)) }
+            })
             .collect();
 
         self.tags.insert(tag, blocks);
     }
 
     /// Gives the access to all blocks to delete and add new entries
-    pub fn modify_tag(&mut self, tag: &Identifier) -> Option<&mut Vec<BlockRef>> {
-        self.tags.get_mut(tag)
+    pub fn modify_tag(&mut self, tag: &Identifier, f: impl FnOnce(Vec<BlockRef>) -> Vec<BlockRef>) {
+        // removes tag if exists and copy the new blocks into it
+        if let Some(blocks) = self.tags.remove(tag) {
+            self.tags.insert(tag.clone(), f(blocks));
+        }
+        // if it doesn't exist, a new tag will be created
+        else {
+            self.tags.insert(tag.clone(), f(Vec::new()));
+        }
     }
 
     /// Checks if a block is in a given tag.
