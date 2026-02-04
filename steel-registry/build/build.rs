@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 mod banner_patterns;
 mod biomes;
@@ -42,8 +42,6 @@ mod wolf_variants;
 mod zombie_nautilus_variants;
 
 const FMT: bool = cfg!(feature = "fmt");
-
-const OUT_DIR: &str = "src/generated";
 
 const BLOCKS: &str = "blocks";
 const BLOCK_TAGS: &str = "block_tags";
@@ -90,9 +88,13 @@ pub fn main() {
     // Rerun build script when any file in the build/ directory changes
     println!("cargo:rerun-if-changed=build/");
 
+    // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let out_dir = Path::new(&manifest_dir).join("src/generated");
+
     // Create the generated directory if it doesn't exist
-    if !Path::new(OUT_DIR).exists() {
-        fs::create_dir(OUT_DIR).unwrap();
+    if !out_dir.exists() {
+        fs::create_dir(&out_dir).unwrap();
     }
 
     let vanilla_builds = [
@@ -138,10 +140,10 @@ pub fn main() {
     ];
 
     // Track which files we're generating this run
-    let mut generated_files = Vec::new();
+    let mut generated_files: Vec<std::path::PathBuf> = Vec::new();
 
     for (content, file_name) in vanilla_builds {
-        let path = format!("{OUT_DIR}/vanilla_{file_name}.rs");
+        let path = out_dir.join(format!("vanilla_{file_name}.rs"));
         let content = content.to_string();
         generated_files.push(path.clone());
 
@@ -155,18 +157,16 @@ pub fn main() {
     }
 
     // Remove any stale files not generated this run
-    if let Ok(entries) = fs::read_dir(OUT_DIR) {
+    if let Ok(entries) = fs::read_dir(&out_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(path_str) = path.to_str()
-                && !generated_files.contains(&path_str.to_string())
-            {
+            if !generated_files.contains(&path) {
                 let _ = fs::remove_file(&path);
             }
         }
     }
 
-    if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
+    if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
         for entry in entries.flatten() {
             let _ = Command::new("rustfmt").arg(entry.path()).output();
         }

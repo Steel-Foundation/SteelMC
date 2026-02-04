@@ -44,7 +44,7 @@ impl Default for BlockBreakingManager {
 impl BlockBreakingManager {
     /// Creates a new block breaking manager.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             is_destroying_block: false,
             destroy_progress_start: 0,
@@ -421,10 +421,54 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
     speed / destroy_time / divisor
 }
 
-/// Placeholder for block loot drops.
-///
-/// TODO: Implement proper loot table lookup and item spawning.
+/// Drops loot for a destroyed block using its loot table.
 #[allow(clippy::needless_pass_by_value)]
-fn drop_block_loot(_player: &Player, _world: &World, _pos: BlockPos, _state: BlockStateId) {
-    // Noop for now - will be implemented with loot tables
+fn drop_block_loot(player: &Player, _world: &World, pos: BlockPos, state: BlockStateId) {
+    use steel_registry::blocks::block_state_ext::BlockStateExt;
+    use steel_registry::loot_table::LootContext;
+    use steel_utils::Identifier;
+
+    let block = state.get_block();
+
+    // Build the loot table key: "blocks/{block_name}"
+    let loot_table_key = Identifier::vanilla(format!("blocks/{}", block.key.path));
+
+    let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_table_key) else {
+        // No loot table for this block (e.g., air, bedrock)
+        return;
+    };
+
+    // Get the player's tool
+    let tool = player.inventory.lock().get_selected_item().clone();
+
+    // Create loot context
+    let mut rng = rand::rng();
+    let mut ctx = LootContext {
+        rng: &mut rng,
+        luck: 0.0, // TODO: Get luck from player attributes
+        block_state: Some(state),
+        tool: Some(&tool),
+        explosion_radius: None,
+        killed_by_player: false,
+        origin: Some((f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()))),
+        game_time: None,
+        weather: None,
+        this_entity: None,
+        killer_entity: None,
+        direct_killer_entity: None,
+        last_damage_player: None,
+        damage_source: None,
+        block_entity: None,
+        interacting_entity: None,
+    };
+
+    // Generate drops
+    let drops = loot_table.get_random_items(&mut ctx);
+
+    // Spawn each dropped item using the player's world reference (Arc<World>)
+    for item in drops {
+        if !item.is_empty() {
+            player.world.pop_resource(&pos, item);
+        }
+    }
 }

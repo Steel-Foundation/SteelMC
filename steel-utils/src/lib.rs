@@ -25,6 +25,8 @@ pub mod serial;
 pub mod text;
 /// A module for common types.
 pub mod types;
+/// UUID extension trait for Minecraft NBT serialization.
+pub mod uuid_ext;
 
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/ids.rs"]
@@ -41,3 +43,4 @@ pub use types::BlockStateId;
 pub use types::ChunkPos;
 pub use types::Identifier;
 pub use types::SectionPos;
+pub use uuid_ext::UuidExt;

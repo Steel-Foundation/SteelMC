@@ -17,7 +17,7 @@ pub struct LastSeen(Vec<Box<[u8]>>);
 impl LastSeen {
     /// Creates a new `LastSeen` from a vector of signatures
     #[must_use]
-    pub fn new(signatures: Vec<Box<[u8]>>) -> Self {
+    pub const fn new(signatures: Vec<Box<[u8]>>) -> Self {
         Self(signatures)
     }
 
@@ -29,13 +29,13 @@ impl LastSeen {
 
     /// Gets the number of tracked signatures
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Checks if there are no tracked signatures
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }

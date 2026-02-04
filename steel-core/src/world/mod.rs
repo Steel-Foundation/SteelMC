@@ -13,8 +13,8 @@ use crate::chunk::chunk_map::ChunkMapTickTimings;
 use sha2::{Digest, Sha256};
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate, CSound,
-    CSystemChat, SoundSource,
+    CBlockDestruction, CBlockEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate, CRemoveEntities,
+    CSound, CSystemChat, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 
@@ -32,6 +32,7 @@ use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
 
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::SyncRwLock;
+use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
 
@@ -40,7 +41,7 @@ use crate::{
     behavior::BLOCK_BEHAVIORS,
     block_entity::SharedBlockEntity,
     config::STEEL_CONFIG,
-    entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity},
+    entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     level_data::LevelDataManager,
     player::{LastSeen, Player},
 };
@@ -51,6 +52,14 @@ mod world_entities;
 
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
+
+/// Generates a random value using triangle distribution.
+///
+/// Mirrors vanilla's `RandomSource.triangle(mode, deviation)`.
+/// Produces values centered around `mode` with a spread of `deviation`.
+fn triangle_random(mode: f64, deviation: f64) -> f64 {
+    mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
+}
 
 /// Timing information for a world tick.
 #[derive(Debug)]
@@ -132,34 +141,34 @@ impl World {
     }
 
     /// Returns the total height of the world in blocks.
-    pub fn get_height(&self) -> i32 {
+    pub const fn get_height(&self) -> i32 {
         self.dimension.height
     }
 
     /// Returns the minimum Y coordinate of the world.
-    pub fn get_min_y(&self) -> i32 {
+    pub const fn get_min_y(&self) -> i32 {
         self.dimension.min_y
     }
 
     /// Returns the maximum Y coordinate of the world.
-    pub fn get_max_y(&self) -> i32 {
+    pub const fn get_max_y(&self) -> i32 {
         self.get_min_y() + self.get_height() - 1
     }
 
     /// Returns whether the given Y coordinate is outside the build height.
-    pub fn is_outside_build_height(&self, block_y: i32) -> bool {
+    pub const fn is_outside_build_height(&self, block_y: i32) -> bool {
         block_y < self.get_min_y() || block_y > self.get_max_y()
     }
 
     /// Returns whether the block position is within valid horizontal bounds.
-    pub fn is_in_valid_bounds_horizontal(&self, block_pos: &BlockPos) -> bool {
+    pub const fn is_in_valid_bounds_horizontal(&self, block_pos: &BlockPos) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(block_pos.0.x);
         let chunk_z = SectionPos::block_to_section_coord(block_pos.0.z);
         ChunkPos::is_valid(chunk_x, chunk_z)
     }
 
     /// Returns whether the block position is within valid world bounds.
-    pub fn is_in_valid_bounds(&self, block_pos: &BlockPos) -> bool {
+    pub const fn is_in_valid_bounds(&self, block_pos: &BlockPos) -> bool {
         !self.is_outside_build_height(block_pos.0.y)
             && self.is_in_valid_bounds_horizontal(block_pos)
     }
@@ -167,14 +176,14 @@ impl World {
     /// Returns the maximum build height (one above the highest placeable block).
     /// This is `min_y + height`.
     #[must_use]
-    pub fn max_build_height(&self) -> i32 {
+    pub const fn max_build_height(&self) -> i32 {
         self.get_min_y() + self.get_height()
     }
 
     /// Checks if a player may interact with the world at the given position.
     /// Currently only checks if position is within world bounds.
     #[must_use]
-    pub fn may_interact(&self, _player: &Player, pos: &BlockPos) -> bool {
+    pub const fn may_interact(&self, _player: &Player, pos: &BlockPos) -> bool {
         self.is_in_valid_bounds(pos)
     }
 
@@ -451,7 +460,7 @@ impl World {
         behavior.handle_neighbor_changed(state, self, pos, source_block, moved_by_piston);
     }
 
-    fn chunk_pos_for_block(pos: &BlockPos) -> ChunkPos {
+    const fn chunk_pos_for_block(pos: &BlockPos) -> ChunkPos {
         ChunkPos::new(
             SectionPos::block_to_section_coord(pos.0.x),
             SectionPos::block_to_section_coord(pos.0.z),
@@ -476,6 +485,13 @@ impl World {
     /// Marks the containing chunk as unsaved so it will be persisted to disk.
     pub fn block_entity_changed(&self, pos: BlockPos) {
         let chunk_pos = Self::chunk_pos_for_block(&pos);
+        self.mark_chunk_dirty(chunk_pos);
+    }
+
+    /// Marks a chunk as dirty (unsaved) so it will be persisted to disk.
+    ///
+    /// Called when entities move, are added/removed, or when block entities change.
+    pub fn mark_chunk_dirty(&self, chunk_pos: ChunkPos) {
         self.chunk_map.with_full_chunk(&chunk_pos, |chunk| {
             if let Some(lc) = chunk.as_full() {
                 lc.dirty.store(true, Ordering::Release);
@@ -774,26 +790,64 @@ impl World {
         self.broadcast_to_nearby(chunk, packet, None);
     }
 
-    /// Drops an item stack at the given position.
+    /// Drops an item stack at the given position with scatter behavior.
     ///
-    /// This spawns an item entity at the specified location with random velocity.
-    /// Based on Java's `Containers.dropItemStack`.
+    /// Mirrors vanilla's `Containers.dropItemStack`. Splits large stacks into
+    /// multiple item entities (10-30 items each) and scatters them with random
+    /// positions and velocities.
     ///
     /// # Arguments
     /// * `pos` - The block position to drop the item at
     /// * `item` - The item stack to drop
-    pub fn drop_item_stack(&self, pos: BlockPos, item: ItemStack) {
+    pub fn drop_item_stack(self: &Arc<Self>, pos: BlockPos, mut item: ItemStack) {
+        use crate::entity::next_entity_id;
+        use steel_registry::vanilla_entities;
+
+        // Random velocity using triangle distribution (vanilla uses random.triangle)
+        // Vanilla constant: 0.05F * Mth.SQRT_OF_TWO (sqrt(2) * 0.05 ≈ 0.1148...)
+        const VELOCITY_SPREAD: f64 = 0.114_850_001_711_398_36;
+
         if item.is_empty() {
             return;
         }
-        // TODO: Spawn ItemEntity when entity system is implemented
-        // For now, items are lost when containers are broken
-        log::debug!(
-            "Would drop item at {:?}: {:?} x{}",
-            pos,
-            item.item().key,
-            item.count()
-        );
+
+        // Vanilla uses EntityType.ITEM dimensions for position calculation
+        let item_width = f64::from(vanilla_entities::ITEM.dimensions.width);
+        let center_range = 1.0 - item_width;
+        let half_size = item_width / 2.0;
+
+        // Keep spawning item entities until the stack is empty
+        // Vanilla splits stacks into 10-30 items each
+        while !item.is_empty() {
+            // Split off 10-30 items (or remaining if less)
+            let split_count = (rand::random::<u32>() % 21 + 10) as i32;
+            let split_stack = item.split(split_count);
+
+            if split_stack.is_empty() {
+                break;
+            }
+
+            // Random position within the block (vanilla logic)
+            let x = f64::from(pos.x()).floor() + rand::random::<f64>() * center_range + half_size;
+            let y = f64::from(pos.y()).floor() + rand::random::<f64>() * center_range;
+            let z = f64::from(pos.z()).floor() + rand::random::<f64>() * center_range + half_size;
+
+            // triangle(mode, deviation) produces values centered around mode with spread of deviation
+            let vx = triangle_random(0.0, VELOCITY_SPREAD);
+            let vy = triangle_random(0.2, VELOCITY_SPREAD);
+            let vz = triangle_random(0.0, VELOCITY_SPREAD);
+
+            let entity_id = next_entity_id();
+            let entity = Arc::new(ItemEntity::with_item_and_velocity(
+                entity_id,
+                Vector3::new(x, y, z),
+                split_stack,
+                Vector3::new(vx, vy, vz),
+                Arc::downgrade(self),
+            ));
+            entity.set_default_pickup_delay();
+            self.add_entity(entity);
+        }
     }
 
     /// Broadcasts a level event to nearby players within 64 blocks.
@@ -1031,55 +1085,172 @@ impl World {
 
     /// Returns a reference to the entity cache.
     #[must_use]
-    pub fn entity_cache(&self) -> &EntityCache {
+    pub const fn entity_cache(&self) -> &EntityCache {
         &self.entity_cache
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
     #[must_use]
-    pub fn entity_tracker(&self) -> &EntityTracker {
+    pub const fn entity_tracker(&self) -> &EntityTracker {
         &self.entity_tracker
     }
 
     /// Adds an entity to the world.
     ///
-    /// This registers the entity in the cache, adds it to the appropriate chunk,
-    /// sets up the level callback, and broadcasts the spawn packet to nearby players.
+    /// This delegates to the chunk's `add_and_register_entity` method which handles:
+    /// - Adding to chunk storage
+    /// - Setting up level callback
+    /// - Registering in entity cache
+    /// - Adding to entity tracker and sending spawn packets
+    /// - Marking the chunk dirty
     pub fn add_entity(self: &Arc<Self>, entity: SharedEntity) {
-        use crate::entity::EntityChunkCallback;
-
         let pos = entity.position();
         let chunk_pos = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
 
-        // Set up callback for chunk/section tracking
-        let callback = Arc::new(EntityChunkCallback::new(&entity, Arc::downgrade(self)));
-        entity.set_level_callback(callback);
-
-        // Register in entity cache (for fast lookups)
-        self.entity_cache.register(&entity);
-
-        // Add to chunk storage (for ticking and persistence)
         self.chunk_map.with_full_chunk(&chunk_pos, |chunk| {
             if let Some(c) = chunk.as_full() {
-                c.entities.add(entity.clone());
+                c.add_and_register_entity(entity.clone());
             }
         });
+    }
 
-        // Add to entity tracker (registers in chunk index)
-        self.entity_tracker.add(&entity);
+    /// Spawns an item entity at the given position.
+    ///
+    /// This is a convenience method for dropping items in the world.
+    /// The item will have a default pickup delay.
+    ///
+    /// Returns `None` if the item stack is empty.
+    pub fn spawn_item(
+        self: &Arc<Self>,
+        pos: Vector3<f64>,
+        item: ItemStack,
+    ) -> Option<Arc<ItemEntity>> {
+        self.spawn_item_with_velocity(pos, item, Vector3::new(0.0, 0.0, 0.0))
+    }
 
-        // Send spawn packets to players who can see this entity's chunk
-        let tracking_players = self.player_area_map.get_tracking_players(chunk_pos);
-        for player_id in tracking_players {
-            if player_id == entity.id() {
-                continue; // Don't send to self
-            }
-            if let Some(player) = self.players.get_by_entity_id(player_id) {
-                // The tracker's add() already registered the entity, so we just need
-                // to mark this player as tracking and send packets
-                self.entity_tracker.send_spawn_to_player(&entity, &player);
-            }
+    /// Spawns an item entity at the given position with initial velocity.
+    ///
+    /// Returns `None` if the item stack is empty.
+    pub fn spawn_item_with_velocity(
+        self: &Arc<Self>,
+        pos: Vector3<f64>,
+        item: ItemStack,
+        velocity: Vector3<f64>,
+    ) -> Option<Arc<ItemEntity>> {
+        use crate::entity::next_entity_id;
+
+        if item.is_empty() {
+            return None;
         }
+
+        let entity_id = next_entity_id();
+        let entity = Arc::new(ItemEntity::with_item_and_velocity(
+            entity_id,
+            pos,
+            item,
+            velocity,
+            Arc::downgrade(self),
+        ));
+        entity.set_default_pickup_delay();
+
+        self.add_entity(entity.clone());
+        Some(entity)
+    }
+
+    /// Drops an item at a block position with random offset and velocity.
+    ///
+    /// Mirrors vanilla's `Block.popResource()`. Used for block drops.
+    /// The item spawns near the center of the block with slight random offset
+    /// and small random velocity.
+    pub fn pop_resource(
+        self: &Arc<Self>,
+        pos: &BlockPos,
+        item: ItemStack,
+    ) -> Option<Arc<ItemEntity>> {
+        use steel_registry::vanilla_entities;
+
+        if item.is_empty() {
+            return None;
+        }
+
+        // Vanilla uses EntityType.ITEM dimensions for offset calculation
+        let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
+
+        // Random offset within block (vanilla: nextDouble(-0.25, 0.25))
+        let x = f64::from(pos.x()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
+        let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
+        let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
+
+        self.spawn_item(Vector3::new(x, y, z), item)
+    }
+
+    /// Drops an item from a block face with directional velocity.
+    ///
+    /// Mirrors vanilla's `Block.popResourceFromFace()`. Used for items ejected
+    /// from a specific side of a block.
+    pub fn pop_resource_from_face(
+        self: &Arc<Self>,
+        pos: &BlockPos,
+        face: Direction,
+        item: ItemStack,
+    ) -> Option<Arc<ItemEntity>> {
+        use steel_registry::vanilla_entities;
+
+        if item.is_empty() {
+            return None;
+        }
+
+        let half_width = f64::from(vanilla_entities::ITEM.dimensions.width) / 2.0;
+        let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
+
+        let (step_x, step_y, step_z) = face.offset();
+
+        // Position calculation (vanilla logic)
+        let x = f64::from(pos.x())
+            + 0.5
+            + if step_x == 0 {
+                (rand::random::<f64>() - 0.5) * 0.5
+            } else {
+                f64::from(step_x) * (0.5 + half_width)
+            };
+        let y = f64::from(pos.y())
+            + 0.5
+            + if step_y == 0 {
+                (rand::random::<f64>() - 0.5) * 0.5
+            } else {
+                f64::from(step_y) * (0.5 + half_height)
+            }
+            - half_height;
+        let z = f64::from(pos.z())
+            + 0.5
+            + if step_z == 0 {
+                (rand::random::<f64>() - 0.5) * 0.5
+            } else {
+                f64::from(step_z) * (0.5 + half_width)
+            };
+
+        // Velocity in direction of face
+        let delta_x = if step_x == 0 {
+            (rand::random::<f64>() - 0.5) * 0.2
+        } else {
+            f64::from(step_x) * 0.1
+        };
+        let delta_y = if step_y == 0 {
+            rand::random::<f64>() * 0.1
+        } else {
+            f64::from(step_y) * 0.1 + 0.1
+        };
+        let delta_z = if step_z == 0 {
+            (rand::random::<f64>() - 0.5) * 0.2
+        } else {
+            f64::from(step_z) * 0.1
+        };
+
+        self.spawn_item_with_velocity(
+            Vector3::new(x, y, z),
+            item,
+            Vector3::new(delta_x, delta_y, delta_z),
+        )
     }
 
     /// Gets an entity by its network ID.
@@ -1158,7 +1329,8 @@ impl World {
 
             // Broadcast remove packet if entity was destroyed
             if reason.should_destroy() {
-                // TODO: Send CRemoveEntities packet to nearby players
+                let packet = CRemoveEntities::single(entity_id);
+                self.broadcast_to_nearby(chunk_pos, packet, None);
             }
         }
     }

@@ -22,6 +22,13 @@ impl World {
         if self.players.remove(&uuid).await.is_some() {
             let start = Instant::now();
 
+            // Save player data before removal
+            if let Some(server) = player.server.upgrade()
+                && let Err(e) = server.player_data_storage.save(&player).await
+            {
+                log::error!("Failed to save player data for {uuid}: {e}");
+            }
+
             // Unregister from entity cache
             let pos = player.position();
             let section = steel_utils::SectionPos::new(
@@ -96,20 +103,23 @@ impl World {
                     player.connection.send_packet(session_packet);
                 }
 
-                // Spawn existing player entity for new player
+                // Spawn existing player entity for new player (bundled for atomic processing)
                 let existing_pos = *existing_player.position.lock();
                 let (existing_yaw, existing_pitch) = existing_player.rotation.load();
                 let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
-                player.connection.send_packet(CAddEntity::player(
-                    existing_player.id,
-                    existing_player.gameprofile.id,
-                    player_type_id,
-                    existing_pos.x,
-                    existing_pos.y,
-                    existing_pos.z,
-                    existing_yaw,
-                    existing_pitch,
-                ));
+                player.connection.send_bundle(|bundle| {
+                    bundle.add(CAddEntity::player(
+                        existing_player.id,
+                        existing_player.gameprofile.id,
+                        player_type_id,
+                        existing_pos.x,
+                        existing_pos.y,
+                        existing_pos.z,
+                        existing_yaw,
+                        existing_pitch,
+                    ));
+                    // TODO: Add entity metadata and equipment packets here when implemented
+                });
             }
             true
         });
@@ -140,7 +150,11 @@ impl World {
             p.connection.send_packet(player_info_packet.clone());
             // Don't send spawn packet to self
             if p.gameprofile.id != player.gameprofile.id {
-                p.connection.send_packet(spawn_packet.clone());
+                // Bundle spawn packet for atomic processing
+                p.connection.send_bundle(|bundle| {
+                    bundle.add(spawn_packet.clone());
+                    // TODO: Add entity metadata and equipment packets here when implemented
+                });
             }
             true
         });

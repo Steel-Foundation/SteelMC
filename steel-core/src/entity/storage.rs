@@ -68,20 +68,47 @@ impl EntityStorage {
         self.entities.read().is_empty()
     }
 
+    /// Returns entities that should be saved when the chunk is persisted.
+    ///
+    /// Excludes:
+    /// - Removed entities
+    /// - Players (saved separately in playerdata)
+    /// - Entity types with `can_serialize = false`
+    #[must_use]
+    pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
+        self.entities
+            .read()
+            .values()
+            .filter(|e| {
+                !e.is_removed()
+                    && (*e).clone().as_player().is_none()
+                    && e.entity_type().can_serialize
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Ticks all entities in this chunk and broadcasts dirty entity data.
     ///
     /// Called from `LevelChunk::tick()`.
-    pub fn tick(&self, world: &Arc<World>, chunk_pos: ChunkPos) {
+    /// Returns `true` if any entities were ticked (chunk should be marked dirty).
+    pub fn tick(&self, world: &Arc<World>, chunk_pos: ChunkPos, tick_count: i32) -> bool {
         // Clone to avoid holding lock during tick
         let entities: Vec<SharedEntity> = self.entities.read().values().cloned().collect();
 
+        let mut ticked_any = false;
         for entity in entities {
             if entity.is_removed() {
                 continue;
             }
 
-            // Entity-specific tick
+            ticked_any = true;
+
+            // Entity-specific tick (entities access world via self.level())
             entity.tick();
+
+            // Send position/velocity changes (mirrors vanilla's ServerEntity.sendChanges())
+            entity.send_changes(tick_count);
 
             // Broadcast dirty entity data (base tick behavior)
             if let Some(dirty_data) = entity.pack_dirty_entity_data() {
@@ -92,6 +119,8 @@ impl EntityStorage {
 
         // Cleanup removed entities
         self.entities.write().retain(|_, e| !e.is_removed());
+
+        ticked_any
     }
 
     /// Clears all entities from storage.

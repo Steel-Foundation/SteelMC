@@ -17,7 +17,7 @@ pub struct SectionHolder {
 impl SectionHolder {
     /// Creates a new section holder.
     #[must_use]
-    pub fn new(section: ChunkSection) -> Self {
+    pub const fn new(section: ChunkSection) -> Self {
         Self {
             section: SyncRwLock::new(section),
         }
@@ -136,7 +136,7 @@ impl ChunkSection {
     /// Note: You must call `recalculate_counts()` after creation to initialize
     /// the cached counters if the states palette contains non-air blocks.
     #[must_use]
-    pub fn new_with_biomes(states: BlockPalette, biomes: BiomePalette) -> Self {
+    pub const fn new_with_biomes(states: BlockPalette, biomes: BiomePalette) -> Self {
         Self {
             states,
             biomes,
@@ -147,7 +147,7 @@ impl ChunkSection {
 
     /// Creates a new empty chunk section.
     #[must_use]
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             states: BlockPalette::Homogeneous(BlockStateId(0)),
             biomes: BiomePalette::Homogeneous(0),
@@ -158,25 +158,25 @@ impl ChunkSection {
 
     /// Returns true if this section contains no non-air blocks.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.non_empty_block_count == 0
     }
 
     /// Returns true if this section contains any randomly-ticking blocks.
     #[must_use]
-    pub fn is_randomly_ticking(&self) -> bool {
+    pub const fn is_randomly_ticking(&self) -> bool {
         self.ticking_block_count > 0
     }
 
     /// Returns the number of non-air blocks in this section.
     #[must_use]
-    pub fn non_empty_block_count(&self) -> u16 {
+    pub const fn non_empty_block_count(&self) -> u16 {
         self.non_empty_block_count
     }
 
     /// Returns the number of randomly-ticking blocks in this section.
     #[must_use]
-    pub fn ticking_block_count(&self) -> u16 {
+    pub const fn ticking_block_count(&self) -> u16 {
         self.ticking_block_count
     }
 

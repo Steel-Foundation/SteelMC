@@ -27,7 +27,7 @@ pub struct SignedMessageLink {
 impl SignedMessageLink {
     /// Creates a new message link
     #[must_use]
-    pub fn new(index: i32, sender: Uuid, session_id: Uuid) -> Self {
+    pub const fn new(index: i32, sender: Uuid, session_id: Uuid) -> Self {
         Self {
             index,
             sender,
@@ -37,13 +37,13 @@ impl SignedMessageLink {
 
     /// Creates an unsigned message link (`session_id` = nil UUID)
     #[must_use]
-    pub fn unsigned(sender: Uuid) -> Self {
+    pub const fn unsigned(sender: Uuid) -> Self {
         Self::root(sender, Uuid::from_u128(0))
     }
 
     /// Creates the root (first) link in a chain
     #[must_use]
-    pub fn root(sender: Uuid, session_id: Uuid) -> Self {
+    pub const fn root(sender: Uuid, session_id: Uuid) -> Self {
         Self {
             index: 0,
             sender,
@@ -75,7 +75,7 @@ impl SignedMessageLink {
 
     /// Advances to the next link in the chain (returns `None` if at max)
     #[must_use]
-    pub fn advance(&self) -> Option<Self> {
+    pub const fn advance(&self) -> Option<Self> {
         if self.index == i32::MAX {
             None
         } else {
@@ -106,7 +106,12 @@ pub struct SignedMessageBody {
 impl SignedMessageBody {
     /// Creates a new signed message body
     #[must_use]
-    pub fn new(content: String, time_stamp: SystemTime, salt: i64, last_seen: LastSeen) -> Self {
+    pub const fn new(
+        content: String,
+        time_stamp: SystemTime,
+        salt: i64,
+        last_seen: LastSeen,
+    ) -> Self {
         Self {
             content,
             time_stamp,
@@ -215,7 +220,7 @@ pub struct SignedMessageChain {
 impl SignedMessageChain {
     /// Creates a new message chain
     #[must_use]
-    pub fn new(sender: Uuid, session_id: Uuid) -> Self {
+    pub const fn new(sender: Uuid, session_id: Uuid) -> Self {
         Self {
             next_link: Some(SignedMessageLink::root(sender, session_id)),
             last_timestamp: UNIX_EPOCH,
@@ -224,18 +229,18 @@ impl SignedMessageChain {
 
     /// Gets the current link if the chain is not broken
     #[must_use]
-    pub fn next_link(&self) -> Option<&SignedMessageLink> {
+    pub const fn next_link(&self) -> Option<&SignedMessageLink> {
         self.next_link.as_ref()
     }
 
     /// Checks if the chain is broken
     #[must_use]
-    pub fn is_broken(&self) -> bool {
+    pub const fn is_broken(&self) -> bool {
         self.next_link.is_none()
     }
 
     /// Breaks the chain (sets `next_link` to None)
-    pub fn break_chain(&mut self) {
+    pub const fn break_chain(&mut self) {
         self.next_link = None;
     }
 
@@ -266,7 +271,7 @@ impl SignedMessageChain {
     }
 
     /// Resets the chain to a new session
-    pub fn reset(&mut self, sender: Uuid, session_id: Uuid) {
+    pub const fn reset(&mut self, sender: Uuid, session_id: Uuid) {
         self.next_link = Some(SignedMessageLink::root(sender, session_id));
         self.last_timestamp = UNIX_EPOCH;
     }
@@ -281,7 +286,7 @@ pub struct MessageSignatureUpdater<'a> {
 impl<'a> MessageSignatureUpdater<'a> {
     /// Creates a new message signature updater
     #[must_use]
-    pub fn new(link: &'a SignedMessageLink, body: &'a SignedMessageBody) -> Self {
+    pub const fn new(link: &'a SignedMessageLink, body: &'a SignedMessageBody) -> Self {
         Self { link, body }
     }
 }

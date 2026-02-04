@@ -232,6 +232,19 @@ impl AABBd {
         }
     }
 
+    /// Returns a new AABB inflated by different amounts on each axis.
+    #[must_use]
+    pub fn inflate_xyz(&self, x: f64, y: f64, z: f64) -> Self {
+        Self {
+            min_x: self.min_x - x,
+            min_y: self.min_y - y,
+            min_z: self.min_z - z,
+            max_x: self.max_x + x,
+            max_y: self.max_y + y,
+            max_z: self.max_z + z,
+        }
+    }
+
     /// Checks if this AABB intersects with another AABB.
     #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {

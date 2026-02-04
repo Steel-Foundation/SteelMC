@@ -99,7 +99,7 @@ impl CommandDispatcher {
         };
 
         // TODO: Implement permission checking logic here
-        // if let CommandSender::Player(ref player) = sender
+        // if let CommandSender::Player(&player) = sender
         //     && !server.player_has_permission(player, &handler.permission)
         // {
         //     return Err(PermissionDenied);

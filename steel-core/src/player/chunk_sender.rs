@@ -149,7 +149,7 @@ impl ChunkSender {
     ///
     /// The client sends back its desired chunks per tick based on how fast it can
     /// process chunks. We clamp this value and use it to adjust our sending rate.
-    pub fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) {
+    pub const fn on_chunk_batch_received_by_client(&mut self, desired_chunks_per_tick: f32) {
         self.unacknowledged_batches = self.unacknowledged_batches.saturating_sub(1);
 
         // Handle NaN and clamp to valid range (vanilla uses 0.01-64, we use 0.01-500)

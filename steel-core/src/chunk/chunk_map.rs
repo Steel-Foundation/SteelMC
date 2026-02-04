@@ -133,7 +133,7 @@ impl ChunkMap {
     where
         F: FnOnce(&ChunkAccess) -> R,
     {
-        let chunk_holder = self.chunks.get_sync(pos)?;
+        let chunk_holder = self.chunks.read_sync(pos, |_, chunk| chunk.clone())?;
         let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
         Some(f(&guard))
     }
@@ -461,7 +461,7 @@ impl ChunkMap {
                 // TODO: In the future we might want to tick different regions/islands in parallel
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.tick(random_tick_speed);
+                        chunk_guard.tick(random_tick_speed, tick_count as i32);
                     }
                 }
                 timings.tick_chunks = start.elapsed();
