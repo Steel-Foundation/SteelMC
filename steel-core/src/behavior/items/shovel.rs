@@ -53,7 +53,7 @@ impl ItemBehavior for ShovelBehaviour {
 
         if !context
             .world
-            .get_block_state(&context.hit_result.block_pos.offset(0, 1, 0))
+            .get_block_state(&context.hit_result.block_pos.above())
             .is_air()
         {
             return InteractionResult::Pass;

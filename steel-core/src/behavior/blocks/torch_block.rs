@@ -36,7 +36,7 @@ impl TorchBlock {
     /// Checks if a torch can survive at the given position.
     /// Requires the block below to provide center support on its top face.
     pub fn can_survive(world: &World, pos: BlockPos) -> bool {
-        let below_pos = pos.offset(0, -1, 0);
+        let below_pos = pos.below();
         let below_state = world.get_block_state(&below_pos);
         below_state.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }

@@ -16,8 +16,9 @@ use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
 
 use crate::{
     codec::VarInt,
+    direction::Direction,
     hash::{ComponentHasher, HashComponent},
-    math::{Vector2, Vector3},
+    math::{Axis, Vector2, Vector3},
     serial::{ReadFrom, WriteTo},
 };
 
@@ -258,6 +259,171 @@ impl BlockPos {
     #[must_use]
     pub const fn z(&self) -> i32 {
         self.0.z
+    }
+
+    // ===== Vanilla-parity helper methods =====
+
+    /// Returns the position one block above (Y + 1).
+    #[must_use]
+    pub fn above(&self) -> Self {
+        self.offset(0, 1, 0)
+    }
+
+    /// Returns the position `n` blocks above (Y + n).
+    #[must_use]
+    pub fn above_n(&self, n: i32) -> Self {
+        self.offset(0, n, 0)
+    }
+
+    /// Returns the position one block below (Y - 1).
+    #[must_use]
+    pub fn below(&self) -> Self {
+        self.offset(0, -1, 0)
+    }
+
+    /// Returns the position `n` blocks below (Y - n).
+    #[must_use]
+    pub fn below_n(&self, n: i32) -> Self {
+        self.offset(0, -n, 0)
+    }
+
+    /// Returns the position one block to the north (Z - 1).
+    #[must_use]
+    pub fn north(&self) -> Self {
+        self.offset(0, 0, -1)
+    }
+
+    /// Returns the position `n` blocks to the north (Z - n).
+    #[must_use]
+    pub fn north_n(&self, n: i32) -> Self {
+        self.offset(0, 0, -n)
+    }
+
+    /// Returns the position one block to the south (Z + 1).
+    #[must_use]
+    pub fn south(&self) -> Self {
+        self.offset(0, 0, 1)
+    }
+
+    /// Returns the position `n` blocks to the south (Z + n).
+    #[must_use]
+    pub fn south_n(&self, n: i32) -> Self {
+        self.offset(0, 0, n)
+    }
+
+    /// Returns the position one block to the west (X - 1).
+    #[must_use]
+    pub fn west(&self) -> Self {
+        self.offset(-1, 0, 0)
+    }
+
+    /// Returns the position `n` blocks to the west (X - n).
+    #[must_use]
+    pub fn west_n(&self, n: i32) -> Self {
+        self.offset(-n, 0, 0)
+    }
+
+    /// Returns the position one block to the east (X + 1).
+    #[must_use]
+    pub fn east(&self) -> Self {
+        self.offset(1, 0, 0)
+    }
+
+    /// Returns the position `n` blocks to the east (X + n).
+    #[must_use]
+    pub fn east_n(&self, n: i32) -> Self {
+        self.offset(n, 0, 0)
+    }
+
+    /// Returns the position offset by one block in the given direction.
+    #[must_use]
+    pub fn relative(&self, direction: Direction) -> Self {
+        let (dx, dy, dz) = direction.offset();
+        self.offset(dx, dy, dz)
+    }
+
+    /// Returns the position offset by `n` blocks in the given direction.
+    #[must_use]
+    pub fn relative_n(&self, direction: Direction, n: i32) -> Self {
+        if n == 0 {
+            *self
+        } else {
+            let (dx, dy, dz) = direction.offset();
+            self.offset(dx * n, dy * n, dz * n)
+        }
+    }
+
+    /// Returns the position offset by `n` blocks along the given axis.
+    #[must_use]
+    pub fn relative_axis(&self, axis: Axis, n: i32) -> Self {
+        if n == 0 {
+            *self
+        } else {
+            match axis {
+                Axis::X => self.offset(n, 0, 0),
+                Axis::Y => self.offset(0, n, 0),
+                Axis::Z => self.offset(0, 0, n),
+            }
+        }
+    }
+
+    /// Returns a new position with the same X and Z but the given Y.
+    #[must_use]
+    pub fn at_y(&self, y: i32) -> Self {
+        Self::new(self.0.x, y, self.0.z)
+    }
+
+    /// Returns a new position with all coordinates multiplied by the given factor.
+    #[must_use]
+    pub fn multiply(&self, factor: i32) -> Self {
+        if factor == 1 {
+            *self
+        } else if factor == 0 {
+            Self::ZERO
+        } else {
+            Self::new(self.0.x * factor, self.0.y * factor, self.0.z * factor)
+        }
+    }
+
+    /// The zero position (0, 0, 0).
+    pub const ZERO: BlockPos = BlockPos(Vector3::new(0, 0, 0));
+
+    /// Returns the center of this block as a floating-point position.
+    #[must_use]
+    pub fn get_center(&self) -> (f64, f64, f64) {
+        (
+            f64::from(self.0.x) + 0.5,
+            f64::from(self.0.y) + 0.5,
+            f64::from(self.0.z) + 0.5,
+        )
+    }
+
+    /// Returns the bottom center of this block (center of the bottom face).
+    #[must_use]
+    pub fn get_bottom_center(&self) -> (f64, f64, f64) {
+        (
+            f64::from(self.0.x) + 0.5,
+            f64::from(self.0.y),
+            f64::from(self.0.z) + 0.5,
+        )
+    }
+
+    /// Creates a BlockPos containing the given floating-point coordinates.
+    #[must_use]
+    pub fn containing(x: f64, y: f64, z: f64) -> Self {
+        Self::new(x.floor() as i32, y.floor() as i32, z.floor() as i32)
+    }
+
+    /// Returns the minimum coordinates of two positions.
+    #[must_use]
+    pub fn min(a: &BlockPos, b: &BlockPos) -> Self {
+        Self::new(a.0.x.min(b.0.x), a.0.y.min(b.0.y), a.0.z.min(b.0.z))
+    }
+
+    /// Returns the maximum coordinates of two positions.
+    #[must_use]
+    pub fn max(a: &BlockPos, b: &BlockPos) -> Self {
+        Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
 }
 

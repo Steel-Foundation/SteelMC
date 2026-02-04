@@ -44,7 +44,7 @@ impl CandleBlock {
     /// Checks if the Candle block can survive at the given position
     pub fn can_survive(world: &World, pos: BlockPos) -> bool {
         world
-            .get_block_state(&pos.offset(0, -1, 0))
+            .get_block_state(&pos.below())
             .is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 }
