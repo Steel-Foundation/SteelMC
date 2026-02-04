@@ -365,8 +365,7 @@ impl World {
 
             // Notify all 6 neighbors about our shape change
             for direction in Direction::UPDATE_SHAPE_ORDER {
-                let (dx, dy, dz) = direction.offset();
-                let neighbor_pos = pos.offset(dx, dy, dz);
+                let neighbor_pos = pos.relative(direction);
 
                 // Tell the neighbor that we (at pos) changed
                 self.neighbor_shape_changed(
@@ -398,8 +397,7 @@ impl World {
     /// This is the Rust equivalent of vanilla's `Level.updateNeighborsAt()`.
     fn update_neighbors_at(&self, pos: &BlockPos, source_block: BlockRef) {
         for direction in Self::NEIGHBOR_UPDATE_ORDER {
-            let (dx, dy, dz) = direction.offset();
-            let neighbor_pos = pos.offset(dx, dy, dz);
+            let neighbor_pos = pos.relative(direction);
             self.neighbor_changed(neighbor_pos, source_block, false);
         }
     }
