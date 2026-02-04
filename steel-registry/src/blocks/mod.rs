@@ -482,7 +482,7 @@ impl BlockRegistry {
     pub fn is_in_tag(&self, block: BlockRef, tag: &Identifier) -> bool {
         self.tags
             .get(tag)
-            .is_some_and(|ident| ident.iter().any(|b| block.key == *b))
+            .is_some_and(|ident| ident.contains(&block.key))
     }
 
     /// Gets all blocks in a tag.

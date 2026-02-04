@@ -156,7 +156,7 @@ impl DialogRegistry {
     pub fn is_in_tag(&self, dialog: DialogRef, tag: &Identifier) -> bool {
         self.tags
             .get(tag)
-            .is_some_and(|dialogs| dialogs.iter().any(|d| *d == dialog.key))
+            .is_some_and(|dialogs| dialogs.contains(&dialog.key))
     }
 
     /// Gets all dialogs in a tag.

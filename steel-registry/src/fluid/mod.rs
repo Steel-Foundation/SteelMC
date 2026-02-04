@@ -250,7 +250,7 @@ impl FluidRegistry {
     pub fn is_in_tag(&self, fluid: FluidRef, tag: &Identifier) -> bool {
         self.tags
             .get(tag)
-            .is_some_and(|fluids| fluids.iter().any(|f| *f == fluid.key))
+            .is_some_and(|fluids| fluids.contains(&fluid.key))
     }
 
     /// Gives the access to all blocks to delete and add new entries

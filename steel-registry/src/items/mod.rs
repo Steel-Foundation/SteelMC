@@ -207,7 +207,7 @@ impl ItemRegistry {
     pub fn is_in_tag(&self, item: ItemRef, tag: &Identifier) -> bool {
         self.tags
             .get(tag)
-            .is_some_and(|items| items.iter().any(|i| item.key == *i))
+            .is_some_and(|items| items.contains(&item.key))
     }
 
     /// Gets all items in a tag.

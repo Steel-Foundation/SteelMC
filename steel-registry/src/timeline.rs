@@ -115,7 +115,7 @@ impl TimelineRegistry {
     pub fn is_in_tag(&self, timeline: TimelineRef, tag: &Identifier) -> bool {
         self.tags
             .get(tag)
-            .is_some_and(|timelines| timelines.iter().any(|f| *f == timeline.key))
+            .is_some_and(|timelines| timelines.contains(&timeline.key))
     }
 
     /// Gives the access to all blocks to delete and add new entries
