@@ -4,12 +4,7 @@
 
 use std::io::{self, Cursor};
 
-use crate::{
-    codec::VarInt,
-    math::Axis,
-    serial::ReadFrom,
-    types::BlockPos,
-};
+use crate::{codec::VarInt, math::Axis, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
 #[derive(Clone, Copy, Debug)]
@@ -47,7 +42,7 @@ impl ReadFrom for Direction {
 impl Direction {
     /// Returns the block position offset for this direction.
     #[must_use]
-    pub fn offset(&self) -> (i32, i32, i32) {
+    pub const fn offset(&self) -> (i32, i32, i32) {
         match self {
             Direction::Down => (0, -1, 0),
             Direction::Up => (0, 1, 0),
@@ -60,20 +55,18 @@ impl Direction {
 
     /// Returns the block position relative to the given position in this direction.
     #[must_use]
-    pub fn relative(&self, pos: &BlockPos) -> BlockPos {
+    pub const fn relative(&self, pos: &BlockPos) -> BlockPos {
         let (dx, dy, dz) = self.offset();
         pos.offset(dx, dy, dz)
     }
 
     /// Returns the axis this direction is on.
-    pub fn get_axis(&self) -> Axis {
+    #[must_use]
+    pub const fn get_axis(&self) -> Axis {
         match self {
-            Direction::Down => Axis::Y,
-            Direction::Up => Axis::Y,
-            Direction::North => Axis::Z,
-            Direction::South => Axis::Z,
-            Direction::West => Axis::X,
-            Direction::East => Axis::X,
+            Direction::Down | Direction::Up => Axis::Y,
+            Direction::North | Direction::South => Axis::Z,
+            Direction::West | Direction::East => Axis::X,
         }
     }
 
@@ -113,25 +106,24 @@ impl Direction {
     /// Only meaningful for horizontal directions.
     /// Vertical directions return 0.
     #[must_use]
-    pub fn to_yaw(&self) -> f32 {
+    pub const fn to_yaw(&self) -> f32 {
         match self {
             Direction::North => 180.0,
-            Direction::South => 0.0,
+            Direction::South | Direction::Up | Direction::Down => 0.0,
             Direction::West => 90.0,
             Direction::East => 270.0,
-            Direction::Up | Direction::Down => 0.0,
         }
     }
 
     /// Returns the axis this direction is on.
     #[must_use]
-    pub fn axis(&self) -> Axis {
+    pub const fn axis(&self) -> Axis {
         self.get_axis()
     }
 
     /// Returns whether this direction is horizontal (not up or down).
     #[must_use]
-    pub fn is_horizontal(&self) -> bool {
+    pub const fn is_horizontal(&self) -> bool {
         matches!(
             self,
             Direction::North | Direction::South | Direction::East | Direction::West
@@ -142,7 +134,7 @@ impl Direction {
     ///
     /// Vertical directions are unchanged.
     #[must_use]
-    pub fn rotate_y_clockwise(&self) -> Direction {
+    pub const fn rotate_y_clockwise(&self) -> Direction {
         match self {
             Direction::North => Direction::East,
             Direction::East => Direction::South,
@@ -156,7 +148,7 @@ impl Direction {
     ///
     /// Vertical directions are unchanged.
     #[must_use]
-    pub fn rotate_y_counter_clockwise(&self) -> Direction {
+    pub const fn rotate_y_counter_clockwise(&self) -> Direction {
         match self {
             Direction::North => Direction::West,
             Direction::West => Direction::South,
@@ -244,7 +236,7 @@ impl Direction {
     ///
     /// The order is: 3 primary directions by magnitude, then their opposites in reverse order.
     /// This matches vanilla's `Direction.makeDirectionArray()`.
-    fn make_direction_array(
+    const fn make_direction_array(
         axis1: Direction,
         axis2: Direction,
         axis3: Direction,
@@ -259,9 +251,9 @@ impl Direction {
         ]
     }
 
-    /// Returns the direction name as a string (for PropertyEnum compatibility).
+    /// Returns the direction name as a string (for `PropertyEnum` compatibility).
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             Direction::Down => "down",
             Direction::Up => "up",

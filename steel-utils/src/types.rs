@@ -265,86 +265,86 @@ impl BlockPos {
 
     /// Returns the position one block above (Y + 1).
     #[must_use]
-    pub fn above(&self) -> Self {
+    pub const fn above(&self) -> Self {
         self.offset(0, 1, 0)
     }
 
     /// Returns the position `n` blocks above (Y + n).
     #[must_use]
-    pub fn above_n(&self, n: i32) -> Self {
+    pub const fn above_n(&self, n: i32) -> Self {
         self.offset(0, n, 0)
     }
 
     /// Returns the position one block below (Y - 1).
     #[must_use]
-    pub fn below(&self) -> Self {
+    pub const fn below(&self) -> Self {
         self.offset(0, -1, 0)
     }
 
     /// Returns the position `n` blocks below (Y - n).
     #[must_use]
-    pub fn below_n(&self, n: i32) -> Self {
+    pub const fn below_n(&self, n: i32) -> Self {
         self.offset(0, -n, 0)
     }
 
     /// Returns the position one block to the north (Z - 1).
     #[must_use]
-    pub fn north(&self) -> Self {
+    pub const fn north(&self) -> Self {
         self.offset(0, 0, -1)
     }
 
     /// Returns the position `n` blocks to the north (Z - n).
     #[must_use]
-    pub fn north_n(&self, n: i32) -> Self {
+    pub const fn north_n(&self, n: i32) -> Self {
         self.offset(0, 0, -n)
     }
 
     /// Returns the position one block to the south (Z + 1).
     #[must_use]
-    pub fn south(&self) -> Self {
+    pub const fn south(&self) -> Self {
         self.offset(0, 0, 1)
     }
 
     /// Returns the position `n` blocks to the south (Z + n).
     #[must_use]
-    pub fn south_n(&self, n: i32) -> Self {
+    pub const fn south_n(&self, n: i32) -> Self {
         self.offset(0, 0, n)
     }
 
     /// Returns the position one block to the west (X - 1).
     #[must_use]
-    pub fn west(&self) -> Self {
+    pub const fn west(&self) -> Self {
         self.offset(-1, 0, 0)
     }
 
     /// Returns the position `n` blocks to the west (X - n).
     #[must_use]
-    pub fn west_n(&self, n: i32) -> Self {
+    pub const fn west_n(&self, n: i32) -> Self {
         self.offset(-n, 0, 0)
     }
 
     /// Returns the position one block to the east (X + 1).
     #[must_use]
-    pub fn east(&self) -> Self {
+    pub const fn east(&self) -> Self {
         self.offset(1, 0, 0)
     }
 
     /// Returns the position `n` blocks to the east (X + n).
     #[must_use]
-    pub fn east_n(&self, n: i32) -> Self {
+    pub const fn east_n(&self, n: i32) -> Self {
         self.offset(n, 0, 0)
     }
 
     /// Returns the position offset by one block in the given direction.
     #[must_use]
-    pub fn relative(&self, direction: Direction) -> Self {
+    pub const fn relative(&self, direction: Direction) -> Self {
         let (dx, dy, dz) = direction.offset();
         self.offset(dx, dy, dz)
     }
 
     /// Returns the position offset by `n` blocks in the given direction.
     #[must_use]
-    pub fn relative_n(&self, direction: Direction, n: i32) -> Self {
+    pub const fn relative_n(&self, direction: Direction, n: i32) -> Self {
         if n == 0 {
             *self
         } else {
@@ -355,7 +355,7 @@ impl BlockPos {
 
     /// Returns the position offset by `n` blocks along the given axis.
     #[must_use]
-    pub fn relative_axis(&self, axis: Axis, n: i32) -> Self {
+    pub const fn relative_axis(&self, axis: Axis, n: i32) -> Self {
         if n == 0 {
             *self
         } else {
@@ -369,13 +369,13 @@ impl BlockPos {
 
     /// Returns a new position with the same X and Z but the given Y.
     #[must_use]
-    pub fn at_y(&self, y: i32) -> Self {
+    pub const fn at_y(&self, y: i32) -> Self {
         Self::new(self.0.x, y, self.0.z)
     }
 
     /// Returns a new position with all coordinates multiplied by the given factor.
     #[must_use]
-    pub fn multiply(&self, factor: i32) -> Self {
+    pub const fn multiply(&self, factor: i32) -> Self {
         if factor == 1 {
             *self
         } else if factor == 0 {
@@ -408,21 +408,21 @@ impl BlockPos {
         )
     }
 
-    /// Creates a BlockPos containing the given floating-point coordinates.
+    /// Creates a `BlockPos` containing the given floating-point coordinates.
     #[must_use]
-    pub fn containing(x: f64, y: f64, z: f64) -> Self {
+    pub const fn containing(x: f64, y: f64, z: f64) -> Self {
         Self::new(x.floor() as i32, y.floor() as i32, z.floor() as i32)
     }
 
     /// Returns the minimum coordinates of two positions.
     #[must_use]
-    pub fn min(a: &BlockPos, b: &BlockPos) -> Self {
+    pub const fn min(a: &BlockPos, b: &BlockPos) -> Self {
         Self::new(a.0.x.min(b.0.x), a.0.y.min(b.0.y), a.0.z.min(b.0.z))
     }
 
     /// Returns the maximum coordinates of two positions.
     #[must_use]
-    pub fn max(a: &BlockPos, b: &BlockPos) -> Self {
+    pub const fn max(a: &BlockPos, b: &BlockPos) -> Self {
         Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
 }

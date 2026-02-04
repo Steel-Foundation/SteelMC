@@ -12,9 +12,9 @@
 #![allow(internal_features)]
 
 pub mod codec;
-mod front_vec;
 /// Direction enum for the six cardinal directions.
 pub mod direction;
+mod front_vec;
 /// CRC32C hashing for component validation.
 pub mod hash;
 /// A module for custom locks.
@@ -47,4 +47,3 @@ pub use types::ChunkPos;
 pub use types::Identifier;
 pub use types::SectionPos;
 pub use uuid_ext::UuidExt;
-
