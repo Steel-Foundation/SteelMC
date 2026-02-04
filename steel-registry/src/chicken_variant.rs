@@ -1,6 +1,5 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
 use crate::RegistryExt;
 
 /// Represents a full chicken variant definition from a data pack JSON file.
@@ -63,6 +62,17 @@ impl ChickenVariantRegistry {
             .insert(chicken_variant.key.clone(), id);
         self.chicken_variants_by_id.push(chicken_variant);
         id
+    }
+
+    /// Replaces a chicken at a given index.
+    /// Returns true if the chicken was replaced and false if the chicken wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, chicken: ChickenVariantRef, id: usize) -> bool {
+        if id >= self.chicken_variants_by_id.len() {
+            return false;
+        }
+        self.chicken_variants_by_id[id] = chicken;
+        true
     }
 
     #[must_use]

@@ -1,9 +1,9 @@
 //! Fluid registry for Minecraft fluids.
 
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use steel_utils::registry::registry_vanilla_or_custom_tag;
-use crate::RegistryExt;
 
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug, Clone)]
@@ -248,11 +248,9 @@ impl FluidRegistry {
     /// Checks if a fluid is in a given tag.
     #[must_use]
     pub fn is_in_tag(&self, fluid: FluidRef, tag: &Identifier) -> bool {
-        self.tags.get(tag).is_some_and(|fluids| {
-            fluids
-                .iter()
-                .any(|f| *f == fluid.key)
-        })
+        self.tags
+            .get(tag)
+            .is_some_and(|fluids| fluids.iter().any(|f| *f == fluid.key))
     }
 
     /// Gives the access to all blocks to delete and add new entries

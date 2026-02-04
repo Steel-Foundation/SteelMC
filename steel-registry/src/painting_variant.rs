@@ -1,8 +1,7 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
-
-use crate::RegistryExt;
 
 /// Represents a painting variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -44,6 +43,17 @@ impl PaintingVariantRegistry {
             .insert(painting_variant.key.clone(), id);
         self.painting_variants_by_id.push(painting_variant);
         id
+    }
+
+    /// Replaces a painting_variant at a given index.
+    /// Returns true if the painting_variant was replaced and false if the painting_variant wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, painting_variant: PaintingVariantRef, id: usize) -> bool {
+        if id >= self.painting_variants_by_id.len() {
+            return false;
+        }
+        self.painting_variants_by_id[id] = painting_variant;
+        true
     }
 
     #[must_use]

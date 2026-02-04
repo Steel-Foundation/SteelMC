@@ -64,8 +64,8 @@ impl DialogRegistry {
         id
     }
 
-    /// Replaces a fluid at a given index.
-    /// Returns true if the fluid was replaced and false if the fluid wasn't replaced
+    /// Replaces a dialog at a given index.
+    /// Returns true if the dialog was replaced and false if the dialog wasn't replaced
     #[must_use]
     pub fn replace(&mut self, dialog: DialogRef, id: usize) -> bool {
         if id >= self.dialogs_by_id.len() {

@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 #[derive(Debug)]
 pub struct Biome {
@@ -130,6 +129,17 @@ impl BiomeRegistry {
         self.biomes_by_key.insert(key, id);
         self.biomes_by_id.push(biome);
         id
+    }
+
+    /// Replaces a biome at a given index.
+    /// Returns true if the biome was replaced and false if the biome wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, biome: BiomeRef, id: usize) -> bool {
+        if id >= self.biomes_by_id.len() {
+            return false;
+        }
+        self.biomes_by_id[id] = biome;
+        true
     }
 
     #[must_use]

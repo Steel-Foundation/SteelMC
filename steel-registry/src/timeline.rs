@@ -42,7 +42,7 @@ impl TimelineRegistry {
     }
 
     /// Replaces a timelines at a given index.
-    /// Returns true if the fluid was replaced and false if the fluid wasn't replaced
+    /// Returns true if the timeline was replaced and false if the timeline wasn't replaced
     #[must_use]
     pub fn replace(&mut self, timeline: TimelineRef, id: usize) -> bool {
         if id >= self.timelines_by_id.len() {

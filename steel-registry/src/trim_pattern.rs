@@ -44,6 +44,17 @@ impl TrimPatternRegistry {
         id
     }
 
+    /// Replaces a trim_pattern at a given index.
+    /// Returns true if the trim_pattern was replaced and false if the trim_pattern wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, trim_pattern: TrimPatternRef, id: usize) -> bool {
+        if id >= self.trim_patterns_by_id.len() {
+            return false;
+        }
+        self.trim_patterns_by_id[id] = trim_pattern;
+        true
+    }
+
     #[must_use]
     pub fn by_id(&self, id: usize) -> Option<TrimPatternRef> {
         self.trim_patterns_by_id.get(id).copied()

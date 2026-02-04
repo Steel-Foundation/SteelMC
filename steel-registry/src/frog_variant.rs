@@ -1,6 +1,5 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
 use crate::RegistryExt;
 
 /// Represents a full frog variant definition from a data pack JSON file.
@@ -54,6 +53,17 @@ impl FrogVariantRegistry {
             .insert(frog_variant.key.clone(), id);
         self.frog_variants_by_id.push(frog_variant);
         id
+    }
+
+    /// Replaces a frog at a given index.
+    /// Returns true if the frog was replaced and false if the frog wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, frog: FrogVariantRef, id: usize) -> bool {
+        if id >= self.frog_variants_by_id.len() {
+            return false;
+        }
+        self.frog_variants_by_id[id] = frog;
+        true
     }
 
     #[must_use]
