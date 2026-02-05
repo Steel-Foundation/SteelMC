@@ -615,7 +615,7 @@ impl ChunkMap {
                 );
 
                 // Send initial chunk cache center to client
-                connection.send_packet(CSetChunkCenter {
+                player.send_packet(CSetChunkCenter {
                     x: new_view.center.0.x,
                     y: new_view.center.0.y,
                 });

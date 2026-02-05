@@ -390,6 +390,23 @@ impl Player {
         self.connection.send_encoded(encoded);
     }
 
+    /// Sends multiple packets as an atomic bundle.
+    ///
+    /// The closure receives a [`BundleBuilder`](networking::BundleBuilder) to add packets to.
+    /// All packets are encoded, then sent wrapped in bundle delimiters so the
+    /// client processes them together in a single game tick.
+    pub fn send_bundle<F>(&self, f: F)
+    where
+        F: FnOnce(&mut networking::BundleBuilder),
+    {
+        let mut builder = networking::BundleBuilder::new(self.connection.compression());
+        f(&mut builder);
+        let packets = builder.into_packets();
+        if !packets.is_empty() {
+            self.connection.send_encoded_bundle(packets);
+        }
+    }
+
     /// Disconnects the player with a reason message.
     pub fn disconnect(&self, reason: impl Into<TextComponent>) {
         self.connection.disconnect_with_reason(reason.into());

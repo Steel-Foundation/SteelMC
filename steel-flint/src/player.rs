@@ -14,6 +14,7 @@ use steel_core::inventory::container::Container;
 use steel_core::player::game_mode;
 use steel_core::player::player_inventory::PlayerInventory;
 use steel_core::player::{ClientInformation, GameProfile, Player};
+use steel_core::server::Server;
 use steel_core::world::World;
 use steel_registry::REGISTRY;
 use steel_registry::item_stack::ItemStack;
@@ -57,6 +58,7 @@ impl SteelTestPlayer {
                 gameprofile,
                 connection.clone(),
                 world,
+                sync::Weak::<Server>::new(),
                 -1, // Negative entity ID for test players
                 player_weak,
                 ClientInformation::default(),
@@ -85,7 +87,7 @@ impl SteelTestPlayer {
     /// Returns a reference to the underlying player.
     #[allow(dead_code)]
     #[must_use]
-    pub fn player(&self) -> &Arc<Player> {
+    pub const fn player(&self) -> &Arc<Player> {
         &self.player
     }
 }
@@ -97,7 +99,7 @@ impl SteelTestPlayer {
 /// - Hotbar slots 1-9 → indices 0-8
 /// - `OffHand` → `PlayerInventory::SLOT_OFFHAND`
 /// - Armor slots → indices 36-39 (boots to helmet)
-fn player_slot_to_index(slot: PlayerSlot) -> usize {
+const fn player_slot_to_index(slot: PlayerSlot) -> usize {
     match slot {
         PlayerSlot::Hotbar1 => 0,
         PlayerSlot::Hotbar2 => 1,

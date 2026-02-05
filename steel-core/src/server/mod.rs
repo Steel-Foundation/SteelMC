@@ -33,15 +33,8 @@ use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-use crate::behavior::init_behaviors;
-use crate::block_entity::init_block_entities;
-use crate::command::CommandDispatcher;
-use crate::config::STEEL_CONFIG;
 use crate::entity::init_entities;
-use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
-use crate::server::registry_cache::RegistryCache;
-use crate::world::{World, WorldTickTimings};
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;

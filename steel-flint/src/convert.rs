@@ -1,7 +1,7 @@
 //! Conversion utilities between Flint types and `SteelMC` types.
 
-use flint_core::test_spec::BlockFace;
 use flint_core::Block;
+use flint_core::test_spec::BlockFace;
 use rustc_hash::FxHashMap;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::Direction;
@@ -59,19 +59,19 @@ pub fn state_id_to_block(state_id: BlockStateId) -> Block {
 
 /// Convert Flint `BlockPos` to `SteelMC` `BlockPos`.
 #[allow(dead_code)]
-pub fn flint_pos_to_steel(pos: flint_core::BlockPos) -> SteelBlockPos {
+pub const fn flint_pos_to_steel(pos: flint_core::BlockPos) -> SteelBlockPos {
     SteelBlockPos::new(pos[0], pos[1], pos[2])
 }
 
 /// Convert `SteelMC` `BlockPos` to Flint `BlockPos`.
 #[allow(dead_code)]
-pub fn steel_pos_to_flint(pos: &SteelBlockPos) -> flint_core::BlockPos {
+pub const fn steel_pos_to_flint(pos: &SteelBlockPos) -> flint_core::BlockPos {
     [pos.x(), pos.y(), pos.z()]
 }
 
 /// Convert Flint `BlockFace` to `SteelMC` Direction.
 #[allow(dead_code)]
-pub fn flint_face_to_direction(face: BlockFace) -> Direction {
+pub const fn flint_face_to_direction(face: BlockFace) -> Direction {
     match face {
         BlockFace::Top => Direction::Up,
         BlockFace::Bottom => Direction::Down,
@@ -84,7 +84,7 @@ pub fn flint_face_to_direction(face: BlockFace) -> Direction {
 
 /// Convert `SteelMC` Direction to Flint `BlockFace`.
 #[allow(dead_code)]
-pub fn direction_to_flint_face(dir: Direction) -> BlockFace {
+pub const fn direction_to_flint_face(dir: Direction) -> BlockFace {
     match dir {
         Direction::Up => BlockFace::Top,
         Direction::Down => BlockFace::Bottom,

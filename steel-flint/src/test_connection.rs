@@ -39,7 +39,7 @@ pub struct FlintConnection {
 impl FlintConnection {
     /// Creates a new test connection.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             events: SyncMutex::new(Vec::new()),
             closed: AtomicBool::new(false),
@@ -79,6 +79,17 @@ impl NetworkConnection for FlintConnection {
             self.events.lock().push(PlayerEvent::PacketSent {
                 data: packet.encoded_data.as_slice().to_vec(),
             });
+        }
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        if !self.closed.load(Ordering::Relaxed) {
+            let mut events = self.events.lock();
+            for packet in packets {
+                events.push(PlayerEvent::PacketSent {
+                    data: packet.encoded_data.as_slice().to_vec(),
+                });
+            }
         }
     }
 

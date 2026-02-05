@@ -128,9 +128,7 @@ impl EntityTracker {
             // Send despawn to all tracking players
             for player_id in tracked.seen_by.read().iter() {
                 if let Some(player) = get_player(*player_id) {
-                    player
-                        .connection
-                        .send_packet(CRemoveEntities::single(entity_id));
+                    player.send_packet(CRemoveEntities::single(entity_id));
                 }
             }
         }
@@ -160,9 +158,7 @@ impl EntityTracker {
                         // For simplicity, we remove tracking - if the entity is in another visible chunk,
                         // the added_chunks pass will re-add it
                         if tracked.seen_by.write().remove(&player_id) {
-                            player
-                                .connection
-                                .send_packet(CRemoveEntities::single(entity_id));
+                            player.send_packet(CRemoveEntities::single(entity_id));
                         }
                     });
                 }
@@ -395,7 +391,7 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
     let entity_id = entity.id();
 
     // Send all spawn packets in a bundle so client processes them atomically
-    player.connection.send_bundle(|bundle| {
+    player.send_bundle(|bundle| {
         bundle.add(spawn_packet);
 
         // Send entity data if any

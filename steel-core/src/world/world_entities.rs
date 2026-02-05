@@ -107,7 +107,7 @@ impl World {
                 let existing_pos = *existing_player.position.lock();
                 let (existing_yaw, existing_pitch) = existing_player.rotation.load();
                 let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
-                player.connection.send_bundle(|bundle| {
+                player.send_bundle(|bundle| {
                     bundle.add(CAddEntity::player(
                         existing_player.id,
                         existing_player.gameprofile.id,
@@ -151,7 +151,7 @@ impl World {
             // Don't send spawn packet to self
             if p.gameprofile.id != player.gameprofile.id {
                 // Bundle spawn packet for atomic processing
-                p.connection.send_bundle(|bundle| {
+                p.send_bundle(|bundle| {
                     bundle.add(spawn_packet.clone());
                     // TODO: Add entity metadata and equipment packets here when implemented
                 });

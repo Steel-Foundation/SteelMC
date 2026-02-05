@@ -47,6 +47,15 @@ pub struct BundleBuilder {
 }
 
 impl BundleBuilder {
+    /// Creates a new `BundleBuilder` with the given compression settings.
+    #[must_use]
+    pub const fn new(compression: Option<CompressionInfo>) -> Self {
+        Self {
+            packets: Vec::new(),
+            compression,
+        }
+    }
+
     /// Adds a packet to the bundle.
     ///
     /// # Panics
@@ -55,6 +64,12 @@ impl BundleBuilder {
         let encoded = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             .expect("Failed to encode packet");
         self.packets.push(encoded);
+    }
+
+    /// Consumes the builder and returns the collected encoded packets.
+    #[must_use]
+    pub fn into_packets(self) -> Vec<EncodedPacket> {
+        self.packets
     }
 }
 
@@ -183,42 +198,6 @@ impl JavaConnection {
         if self.outgoing_packets.send(packet).is_err() {
             self.close();
         }
-    }
-
-    /// Sends multiple packets as an atomic bundle.
-    ///
-    /// The client will process all packets in the bundle together in a single game tick.
-    /// This is used for entity spawning to ensure spawn, metadata, and equipment packets
-    /// are applied atomically.
-    ///
-    /// # Panics
-    /// - If any packet fails to be encoded.
-    /// - If any packet fails to be sent through the channel.
-    pub fn send_bundle<F>(&self, f: F)
-    where
-        F: FnOnce(&mut BundleBuilder),
-    {
-        let mut builder = BundleBuilder {
-            packets: Vec::new(),
-            compression: self.compression,
-        };
-        f(&mut builder);
-
-        // Only send bundle delimiters if there are packets to bundle
-        if builder.packets.is_empty() {
-            return;
-        }
-
-        // Send start delimiter
-        self.send_packet(CBundleDelimiter);
-
-        // Send all bundled packets
-        for packet in builder.packets {
-            self.send_encoded_packet(packet);
-        }
-
-        // Send end delimiter
-        self.send_packet(CBundleDelimiter);
     }
 
     /// Closes the connection.
@@ -458,6 +437,14 @@ impl NetworkConnection for JavaConnection {
 
     fn send_encoded(&self, packet: EncodedPacket) {
         self.send_encoded_packet(packet);
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        self.send_packet(CBundleDelimiter);
+        for packet in packets {
+            self.send_encoded_packet(packet);
+        }
+        self.send_packet(CBundleDelimiter);
     }
 
     fn disconnect_with_reason(&self, reason: TextComponent) {

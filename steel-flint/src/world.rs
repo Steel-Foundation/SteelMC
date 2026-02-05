@@ -74,7 +74,7 @@ impl SteelTestWorld {
 
     /// Gets a reference to the underlying steel-core world.
     #[must_use]
-    pub fn inner(&self) -> &Arc<World> {
+    pub const fn inner(&self) -> &Arc<World> {
         &self.world
     }
 
@@ -108,7 +108,9 @@ impl SteelTestWorld {
         let storage = &chunk_map.storage;
         let level_clone = level.clone();
         let result = executor::block_on(async {
-            storage.load_chunk(chunk_pos, min_y, height, level_clone).await
+            storage
+                .load_chunk(chunk_pos, min_y, height, level_clone)
+                .await
         });
 
         match result {
@@ -140,7 +142,10 @@ impl SteelTestWorld {
 
                 // Run generator (fills blocks for flat world, no-op for empty world)
                 if let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) {
-                    chunk_map.world_gen_context.generator.fill_from_noise(&chunk);
+                    chunk_map
+                        .world_gen_context
+                        .generator
+                        .fill_from_noise(&chunk);
                 }
 
                 // Upgrade to full LevelChunk and notify Full status

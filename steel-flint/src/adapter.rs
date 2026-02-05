@@ -183,6 +183,8 @@ mod tests {
 
         let adapter = SteelAdapter::new();
         let runner = TestRunner::new(&adapter);
-        runner.run_tests(&specs).print_concise_summary();
+        let summary = runner.run_tests(&specs);
+        summary.print_test_summary(30);
+        assert_eq!(summary.failed_tests, 0, "No tests were run");
     }
 }
