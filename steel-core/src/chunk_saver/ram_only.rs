@@ -6,7 +6,7 @@ use steel_utils::{ChunkPos, locks::AsyncRwLock};
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::world::World;
 
-use super::{PreparedChunkSave, RegionManager};
+use super::{ChunkStorage, PreparedChunkSave};
 
 /// In-memory chunk storage.
 ///
@@ -55,7 +55,7 @@ impl RamOnlyStorage {
         if let Ok(true) = self.chunk_exists(pos).await {
             if let Some(storage) = self.saved_chunks.read().await.get(&pos) {
                 Ok(Some((
-                    RegionManager::persistent_to_chunk(
+                    ChunkStorage::persistent_to_chunk(
                         &storage.prepared.persistent,
                         pos,
                         storage.chunk_status,

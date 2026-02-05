@@ -31,7 +31,7 @@ use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask,
     world_gen_context::WorldGenContext,
 };
-use crate::chunk_saver::{ChunkStorage, RegionManager};
+use crate::chunk_saver::ChunkStorage;
 use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
@@ -480,7 +480,7 @@ impl ChunkMap {
                 .persisted_status()
                 .expect("The check above confirmed it exists");
 
-            let prepared = RegionManager::prepare_chunk_save(&chunk_guard);
+            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard);
 
             // Clear dirty flag while we still have the lock (only if we're actually saving)
             if prepared.is_some() {
@@ -689,7 +689,7 @@ impl ChunkMap {
                 let Some(status) = holder.persisted_status() else {
                     continue;
                 };
-                let Some(prepared) = RegionManager::prepare_chunk_save(&chunk) else {
+                let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
                     continue; // Not dirty
                 };
                 chunk.clear_dirty();
