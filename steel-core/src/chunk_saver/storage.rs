@@ -92,6 +92,7 @@ impl<'a> ChunkBuilder<'a> {
 ///
 /// This enum provides persistence for chunks, either to disk (region files)
 /// or in-memory (for testing/minigames).
+/// TODO: make it possible to give plugins the option to load a custom backend
 pub enum ChunkStorage {
     /// Disk-based storage using region files.
     Disk(RegionManager),
