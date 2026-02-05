@@ -10,7 +10,6 @@ members = [
     "steel-utils",
     "steel-core",
     "steel-crypto",
-    "steel-flint",
 ]
 
 [workspace.package]
