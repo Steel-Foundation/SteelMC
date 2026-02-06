@@ -11,15 +11,17 @@ use std::{
 use crate::chunk::chunk_map::ChunkMapTickTimings;
 
 use sha2::{Digest, Sha256};
-use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate, CRemoveEntities,
     CSound, CSystemChat, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
+use steel_protocol::{
+    packet_traits::{ClientPacket, EncodedPacket},
+    packets::game::CSetTime,
+};
 
 use simdnbt::owned::NbtCompound;
-use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -29,6 +31,7 @@ use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::RANDOM_TICK_SPEED;
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
+use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_game_rules::ADVANCE_TIME};
 
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::SyncRwLock;
@@ -506,6 +509,10 @@ impl World {
     /// Returns timing information for the world tick.
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
     pub fn tick_b(&self, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+        if runs_normally {
+            self.tick_time();
+        }
+
         let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
         let chunk_map_timings = self
@@ -532,6 +539,38 @@ impl World {
         WorldTickTimings {
             chunk_map: chunk_map_timings,
             player_tick,
+        }
+    }
+
+    /// Advances the gametime and the daytime (if `ADVANCE_TIME` gamerule is true) by one tick, and
+    /// then sends an update to all clients in this world every 20th tick.
+    fn tick_time(&self) {
+        let advance_time = self
+            .get_game_rule(ADVANCE_TIME)
+            .as_bool()
+            .expect("gamerule advance_time should always be a bool.");
+
+        let (game_time, day_time) = {
+            let mut lock = self.level_data.write();
+            let updated_game_time = lock.game_time() + 1;
+            lock.set_game_time(updated_game_time);
+            let current_day_time = lock.day_time();
+
+            if advance_time {
+                let updated_day_time = (current_day_time + 1) % 24000;
+                lock.set_day_time(updated_day_time);
+                (updated_game_time, updated_day_time)
+            } else {
+                (updated_game_time, current_day_time)
+            }
+        };
+
+        if game_time % 20 == 0 {
+            self.broadcast_to_all(CSetTime {
+                game_time,
+                day_time,
+                time_of_day_increasing: advance_time,
+            });
         }
     }
 

@@ -5,6 +5,7 @@ use std::sync::Weak;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId};
@@ -247,6 +248,23 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn get_analog_output_signal(&self, state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
         0
+    }
+
+    // === Fluid Methods ===
+
+    /// Returns the fluid state for this block state.
+    ///
+    /// The default implementation returns `FluidState::EMPTY`.
+    ///
+    /// Override this for:
+    /// - Liquid blocks (water, lava) to return the appropriate fluid based on LEVEL
+    /// - Waterlogged blocks to return water when the WATERLOGGED property is true
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    #[allow(unused_variables)]
+    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
+        FluidState::EMPTY
     }
 }
 

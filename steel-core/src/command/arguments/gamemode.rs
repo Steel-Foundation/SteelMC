@@ -42,22 +42,10 @@ impl CommandArgument for GameModeArgument {
         _suggestion_ctx: &super::SuggestionContext,
     ) -> Vec<SuggestionEntry> {
         let mut suggestions = vec![
-            SuggestionEntry {
-                text: String::from("survival"),
-                tooltip: None,
-            },
-            SuggestionEntry {
-                text: String::from("creative"),
-                tooltip: None,
-            },
-            SuggestionEntry {
-                text: String::from("adventure"),
-                tooltip: None,
-            },
-            SuggestionEntry {
-                text: String::from("spectator"),
-                tooltip: None,
-            },
+            SuggestionEntry::new("survival"),
+            SuggestionEntry::new("creative"),
+            SuggestionEntry::new("adventure"),
+            SuggestionEntry::new("spectator"),
         ];
 
         suggestions.retain(|s| s.text.starts_with(prefix));

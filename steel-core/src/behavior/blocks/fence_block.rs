@@ -8,6 +8,9 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::vanilla_block_tags::{FENCE_GATES_TAG, FENCES_TAG};
 use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::fluid::FluidState;
+use steel_registry::vanilla_fluids;
+use steel_utils::{BlockPos, BlockStateId, Identifier};
 
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
@@ -158,6 +161,14 @@ impl BlockBehaviour for FenceBlock {
             }
             // Vertical directions don't affect fence connections
             Direction::Up | Direction::Down => state,
+        }
+    }
+
+    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
+        if state.get_value(&Self::WATERLOGGED) {
+            FluidState::source(&vanilla_fluids::WATER)
+        } else {
+            FluidState::EMPTY
         }
     }
 }
