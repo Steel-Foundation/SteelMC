@@ -2,8 +2,6 @@
 //!
 //! Heightmaps are used for various purposes like spawning, pathfinding, and rendering.
 
-use std::sync::OnceLock;
-
 use rustc_hash::FxHashMap;
 
 use steel_registry::{
@@ -11,7 +9,7 @@ use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags,
 };
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::BlockStateId;
 
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

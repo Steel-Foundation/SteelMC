@@ -10,7 +10,7 @@ use steel_registry::{
     entity_data::Direction,
     vanilla_block_tags, vanilla_blocks,
 };
-use steel_utils::{Identifier, types::UpdateFlags};
+use steel_utils::types::UpdateFlags;
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
 

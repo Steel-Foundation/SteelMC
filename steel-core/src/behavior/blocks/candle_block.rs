@@ -14,7 +14,7 @@ use steel_registry::{
     vanilla_blocks, vanilla_item_tags,
 };
 use steel_utils::{
-    BlockPos, Identifier,
+    BlockPos,
     types::{self, UpdateFlags},
 };
 
