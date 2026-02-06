@@ -8,7 +8,6 @@ use std::ptr;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -52,7 +51,7 @@ impl CactusBlock {
     /// Survival requirements:
     /// 1. No solid blocks on horizontal neighbors
     /// 2. No lava on horizontal neighbors (TODO: fluid check)
-    /// 3. Block below must be CACTUS, SAND, or RED_SAND
+    /// 3. Block below must be `CACTUS`, `SAND`, or `RED_SAND`
     /// 4. Block above must not be liquid (TODO: fluid check)
     fn can_survive(world: &World, pos: BlockPos) -> bool {
         // Check horizontal neighbors - no solid blocks or lava
@@ -93,7 +92,9 @@ impl CactusBlock {
         // TODO: Block above must not be liquid
         let above = world.get_block_state(&pos.above());
 
-        if above.get_fluid_state().is_empty() { return false; }
+        if above.get_fluid_state().is_empty() {
+            return false;
+        }
 
         true
     }
@@ -113,7 +114,7 @@ impl BlockBehaviour for CactusBlock {
     ///
     /// HACK: Vanilla uses `scheduleTick` in `updateShape` to schedule destruction,
     /// then `tick()` performs the actual  on thedestruction next tick.
-    /// Since SteelMC doesn't have scheduled block ticks yet, we check survival
+    /// Since STEELMC doesn't have scheduled block ticks yet, we check survival
     /// immediately in `on_place` instead. This produces the same visible result
     /// but without the 1-tick delay.
     ///
