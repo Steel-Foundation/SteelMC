@@ -1,11 +1,9 @@
 //! Fluid registry for Minecraft fluids.
 
-use crate::RegistryExt;
+use crate::{RegistryExt, vanilla_fluids};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use steel_utils::registry::registry_vanilla_or_custom_tag;
-
-use crate::{RegistryExt, vanilla_fluids};
 
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug, Clone)]

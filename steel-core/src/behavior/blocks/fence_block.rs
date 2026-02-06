@@ -6,11 +6,10 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::vanilla_block_tags::{FENCE_GATES_TAG, FENCES_TAG};
-use steel_utils::{BlockPos, BlockStateId};
 use steel_registry::fluid::FluidState;
+use steel_registry::vanilla_block_tags::{FENCE_GATES_TAG, FENCES_TAG};
 use steel_registry::vanilla_fluids;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
