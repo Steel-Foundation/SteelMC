@@ -8,9 +8,11 @@ use std::ptr;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
@@ -66,12 +68,15 @@ impl CactusBlock {
             if neighbor.get_block().config.has_collision {
                 return false;
             }
-            // TODO: Check for lava fluid when fluid system is implemented
-            // if world.get_fluid_state(&neighbor_pos).is(FluidTags::LAVA) { return false; }
+
+            // TODO: Fluid check for lava
+            //if ptr::eq(world.get_block_state(&neighbor_pos).get_fluid_state(), FluidState::LAVA) {
+            //    return false;
+            //}
         }
 
         // Block below must be CACTUS or SAND variant
-        let below_pos = pos.offset(0, -1, 0);
+        let below_pos = pos.below();
         let below = world.get_block_state(&below_pos);
         let below_block = below.get_block();
 
@@ -86,8 +91,9 @@ impl CactusBlock {
         }
 
         // TODO: Block above must not be liquid
-        // let above = world.get_block_state(&pos.offset(0, 1, 0));
-        // if above.get_fluid_state().is_liquid() { return false; }
+        let above = world.get_block_state(&pos.above());
+
+        if above.get_fluid_state().is_empty() { return false; }
 
         true
     }
@@ -106,7 +112,7 @@ impl BlockBehaviour for CactusBlock {
     /// Called when this cactus block is placed.
     ///
     /// HACK: Vanilla uses `scheduleTick` in `updateShape` to schedule destruction,
-    /// then `tick()` performs the actual destruction on the next tick.
+    /// then `tick()` performs the actual  on thedestruction next tick.
     /// Since SteelMC doesn't have scheduled block ticks yet, we check survival
     /// immediately in `on_place` instead. This produces the same visible result
     /// but without the 1-tick delay.
@@ -168,8 +174,6 @@ impl BlockBehaviour for CactusBlock {
                 return;
             }
         }
-
-        // At this point, `i` is the cactus stack height (1 = just this block, 2 = one below, 3 = two below)
 
         // Vanilla lines 66-70: Cactus Flower logic (1.21+)
         // At age 8, there's a chance to spawn a cactus flower above
