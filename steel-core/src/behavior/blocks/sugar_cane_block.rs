@@ -5,11 +5,12 @@
 
 use std::ptr;
 
+use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehaviour;
@@ -47,13 +48,12 @@ impl SugarCaneBlock {
         }
 
         // 2. Check if placing on valid ground (Dirt or Sand tags)
-        let is_valid_ground = steel_registry::REGISTRY.blocks.is_in_tag(
-            below_block,
-            &steel_utils::Identifier::vanilla_static("dirt"),
-        ) || steel_registry::REGISTRY.blocks.is_in_tag(
-            below_block,
-            &steel_utils::Identifier::vanilla_static("sand"),
-        );
+        let is_valid_ground = REGISTRY
+            .blocks
+            .is_in_tag(below_block, &Identifier::vanilla_static("dirt"))
+            || REGISTRY
+                .blocks
+                .is_in_tag(below_block, &Identifier::vanilla_static("sand"));
 
         if is_valid_ground {
             // Check for adjacent water or frosted ice around the *ground* block
