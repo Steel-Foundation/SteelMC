@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -64,7 +64,7 @@ crossbeam = "0.8.4"
 parking_lot = { version = "0.12.5", features = ["nightly", "arc_lock"] }
 rayon = "1.11.0"
 scc = "3.5"
-arc-swap = "1.8.0"
+arc-swap = "1.8.1"
 
 # Data structures
 rustc-hash = "2.1.1"
@@ -98,10 +98,10 @@ reqwest = { version = "0.13.1", features = [
 ], default-features = false }
 
 # Cryptography
-rsa = { version = "0.10.0-rc.10", features = ["sha2"] }
-rand = "0.10.0-rc.5"
-aes = "0.9.0-rc.2"
-cfb8 = "0.9.0-rc.1"
+rsa = { version = "0.10.0-rc.15", features = ["sha2"] }
+rand = "0.10.0-rc.9"
+aes = "0.9.0-rc.4"
+cfb8 = "0.9.0-rc.3"
 sha1 = "0.10.6"
 sha2 = "0.10.9"
 md5 = "0.8.0"
@@ -115,7 +115,7 @@ text_components = { git = "https://github.com/Steel-Foundation/TextComponents.gi
 ] }
 
 # Compression
-flate2 = "1.1.8"
+flate2 = "1.1.9"
 zstd = "0.13"
 
 # Utilities
@@ -129,7 +129,7 @@ heck = "0.5.0"
 phf_codegen = "0.13.1"
 
 # Dev/Bench dependencies
-criterion = "0.8.1"
+criterion = "0.8.2"
 
 
 [profile.release]
@@ -165,6 +165,7 @@ cast_possible_wrap = "allow"
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 absolute_paths = "warn"
+missing_const_for_fn = "warn"
 
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }

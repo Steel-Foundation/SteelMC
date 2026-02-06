@@ -560,7 +560,7 @@ impl BlockBehaviour for CeilingHangingSignBlock {
 }
 
 /// Converts a rotation segment (0-15) to a cardinal direction, if applicable.
-fn rotation_to_direction(rotation: u8) -> Option<Direction> {
+const fn rotation_to_direction(rotation: u8) -> Option<Direction> {
     match rotation {
         0 => Some(Direction::South),
         4 => Some(Direction::West),

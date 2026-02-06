@@ -620,6 +620,12 @@ impl ChunkMap {
                     MAX_VIEW_DISTANCE.saturating_sub(new_view.view_distance),
                 );
 
+                // Send initial chunk cache center to client
+                connection.send_packet(CSetChunkCenter {
+                    x: new_view.center.0.x,
+                    y: new_view.center.0.y,
+                });
+
                 let mut chunk_sender = player.chunk_sender.lock();
                 new_view.for_each(|pos| {
                     chunk_sender.mark_chunk_pending_to_send(pos);

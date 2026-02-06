@@ -137,13 +137,13 @@ impl InventoryMenu {
 
     /// Returns a reference to the crafting container.
     #[must_use]
-    pub fn crafting_container(&self) -> &SyncCraftingContainer {
+    pub const fn crafting_container(&self) -> &SyncCraftingContainer {
         &self.crafting_container
     }
 
     /// Returns a reference to the result container.
     #[must_use]
-    pub fn result_container(&self) -> &SyncResultContainer {
+    pub const fn result_container(&self) -> &SyncResultContainer {
         &self.result_container
     }
 

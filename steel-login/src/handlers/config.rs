@@ -127,6 +127,6 @@ impl JavaTcpClient {
             .send(ConnectionUpdate::Upgrade(player.connection.clone()))
             .expect("Failed to send connection update");
 
-        self.server.add_player(player);
+        self.server.add_player(player).await;
     }
 }

@@ -4,7 +4,6 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
-use std::f32::consts::PI;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -15,16 +14,20 @@ use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemEntityData;
+use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::math::Vector3;
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason};
+use crate::entity::{Entity, EntityBase, RemovalReason};
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::world::World;
 
+use simdnbt::ToNbtTag;
+use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, CTakeItemEntity, calc_delta,
 };
@@ -61,19 +64,10 @@ const AIR_DRAG: f64 = 0.98;
 /// - Despawns after 5 minutes (6000 ticks)
 /// - Has pickup delay before players can collect it
 pub struct ItemEntity {
-    // === Core Identity ===
-    /// Unique network ID for this entity.
-    id: i32,
-    /// Persistent UUID for this entity.
-    uuid: Uuid,
-
-    // === World Reference ===
-    /// The world this entity is in. Mirrors vanilla's `Entity.level`.
-    world: Weak<World>,
+    /// Common entity fields (id, uuid, position, etc.).
+    base: EntityBase,
 
     // === Position & Physics ===
-    /// Current position in the world.
-    position: SyncMutex<Vector3<f64>>,
     /// Velocity in blocks per tick.
     velocity: SyncMutex<Vector3<f64>>,
     /// Rotation as (yaw, pitch) in degrees. Items have random yaw on spawn.
@@ -99,15 +93,7 @@ pub struct ItemEntity {
     /// Health (damage resistance). Item is destroyed when this reaches 0.
     health: AtomicI32,
 
-    // === Lifecycle ===
-    /// Whether this entity has been removed.
-    removed: AtomicBool,
-    /// Callback for entity lifecycle events.
-    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
-
     // === Item-specific ===
-    /// Random offset for client-side bobbing animation.
-    bob_offset: f32,
     /// UUID of the entity that threw/dropped this item.
     thrower: SyncMutex<Option<Uuid>>,
     /// UUID of the only entity that can pick up this item.
@@ -157,17 +143,12 @@ impl ItemEntity {
     ) -> Self {
         // Random yaw rotation for visual variety
         let yaw = rand::random::<f32>() * 360.0;
-        // Random bob offset for client-side animation
-        let bob_offset = rand::random::<f32>() * PI * 2.0;
 
         let mut entity_data = ItemEntityData::new();
         entity_data.item.set(item);
 
         Self {
-            id,
-            uuid: Uuid::new_v4(),
-            world,
-            position: SyncMutex::new(position),
+            base: EntityBase::new(id, position, world),
             velocity: SyncMutex::new(velocity),
             rotation: AtomicCell::new((yaw, 0.0)),
             on_ground: AtomicBool::new(false),
@@ -176,9 +157,6 @@ impl ItemEntity {
             tick_count: AtomicI32::new(0),
             pickup_delay: AtomicI32::new(0),
             health: AtomicI32::new(DEFAULT_HEALTH),
-            removed: AtomicBool::new(false),
-            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
-            bob_offset,
             thrower: SyncMutex::new(None),
             owner: SyncMutex::new(None),
             last_sent_velocity: SyncMutex::new(velocity),
@@ -188,42 +166,35 @@ impl ItemEntity {
         }
     }
 
-    /// Creates a new item entity with a specific UUID.
+    /// Creates an item entity from saved data with restored base state.
+    ///
+    /// Used when loading entities from disk. Type-specific data (item, age, etc.)
+    /// is restored via `load_additional()` after this constructor.
     #[must_use]
-    pub fn with_uuid(
+    pub fn from_saved(
         id: i32,
         position: Vector3<f64>,
         uuid: Uuid,
-        item: ItemStack,
+        velocity: Vector3<f64>,
+        rotation: (f32, f32),
+        on_ground: bool,
         world: Weak<World>,
     ) -> Self {
-        let yaw = rand::random::<f32>() * 360.0;
-        let bob_offset = rand::random::<f32>() * PI * 2.0;
-
-        let mut entity_data = ItemEntityData::new();
-        entity_data.item.set(item);
-
         Self {
-            id,
-            uuid,
-            world,
-            position: SyncMutex::new(position),
-            velocity: SyncMutex::new(Vector3::new(0.0, 0.0, 0.0)),
-            rotation: AtomicCell::new((yaw, 0.0)),
-            on_ground: AtomicBool::new(false),
-            entity_data: SyncMutex::new(entity_data),
+            base: EntityBase::with_uuid(id, uuid, position, world),
+            velocity: SyncMutex::new(velocity),
+            rotation: AtomicCell::new(rotation),
+            on_ground: AtomicBool::new(on_ground),
+            entity_data: SyncMutex::new(ItemEntityData::new()),
             age: AtomicI32::new(0),
             tick_count: AtomicI32::new(0),
             pickup_delay: AtomicI32::new(0),
             health: AtomicI32::new(DEFAULT_HEALTH),
-            removed: AtomicBool::new(false),
-            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
-            bob_offset,
             thrower: SyncMutex::new(None),
             owner: SyncMutex::new(None),
-            last_sent_velocity: SyncMutex::new(Vector3::new(0.0, 0.0, 0.0)),
+            last_sent_velocity: SyncMutex::new(velocity),
             last_sent_position: SyncMutex::new(position),
-            last_sent_on_ground: AtomicBool::new(false),
+            last_sent_on_ground: AtomicBool::new(on_ground),
             needs_sync: AtomicBool::new(false),
         }
     }
@@ -397,7 +368,7 @@ impl ItemEntity {
             let pos = self.position();
             let chunk_pos = steel_utils::ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
 
-            let take_packet = CTakeItemEntity::new(self.id, player.id, picked_up_count);
+            let take_packet = CTakeItemEntity::new(self.id(), player.id, picked_up_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
 
@@ -413,27 +384,19 @@ impl ItemEntity {
         }
     }
 
-    // === Visual ===
-
-    /// Gets the bob offset for client-side animation.
-    #[must_use]
-    pub fn bob_offset(&self) -> f32 {
-        self.bob_offset
-    }
-
     // === Merging ===
 
     /// Returns true if this item entity can be merged with others.
     ///
-    /// Mirrors vanilla's `ItemEntity.isMergable()`.
-    /// An item is mergable if:
+    /// Mirrors vanilla's `ItemEntity.isMergeable()`.
+    /// An item is mergeable if:
     /// - It's not removed
     /// - It doesn't have infinite pickup delay (32767)
     /// - It doesn't have infinite lifetime (-32768)
     /// - Its age is less than the despawn threshold (6000)
     /// - Its count is less than max stack size
     #[must_use]
-    pub fn is_mergable(&self) -> bool {
+    pub fn is_mergeable(&self) -> bool {
         let item = self.get_item();
         !self.is_removed()
             && self.pickup_delay.load(Ordering::Relaxed) != INFINITE_PICKUP_DELAY
@@ -444,11 +407,11 @@ impl ItemEntity {
 
     /// Checks if two item stacks can be merged together.
     ///
-    /// Mirrors vanilla's `ItemEntity.areMergable()`.
+    /// Mirrors vanilla's `ItemEntity.areMergeable()`.
     /// Returns true if the items are the same type with the same components,
     /// and their combined count wouldn't exceed max stack size.
     #[must_use]
-    pub fn are_mergable(this_stack: &ItemStack, other_stack: &ItemStack) -> bool {
+    pub fn are_mergeable(this_stack: &ItemStack, other_stack: &ItemStack) -> bool {
         // Combined count must not exceed max stack size
         if other_stack.count() + this_stack.count() > other_stack.max_stack_size() {
             return false;
@@ -470,7 +433,7 @@ impl ItemEntity {
             return;
         }
 
-        if !Self::are_mergable(&this_stack, &other_stack) {
+        if !Self::are_mergeable(&this_stack, &other_stack) {
             return;
         }
 
@@ -531,10 +494,10 @@ impl ItemEntity {
     /// Attempts to merge this item with nearby item entities.
     ///
     /// Mirrors vanilla's `ItemEntity.mergeWithNeighbours()`.
-    /// Searches for other mergable item entities within 0.5 blocks horizontally
+    /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
     pub fn merge_with_neighbours(&self, world: &World) {
-        if !self.is_mergable() {
+        if !self.is_mergeable() {
             return;
         }
 
@@ -544,14 +507,14 @@ impl ItemEntity {
         // Get all entities in the search area
         for entity in world.get_entities_in_aabb(&search_box) {
             // Skip self
-            if entity.id() == self.id {
+            if entity.id() == self.id() {
                 continue;
             }
 
             // Try to get as ItemEntity
             if let Some(other_item) = entity.as_item_entity() {
                 // Double-check mergability (might have changed)
-                if other_item.is_mergable() {
+                if other_item.is_mergeable() {
                     self.try_to_merge(&other_item);
 
                     // If we've been removed (merged into other), stop
@@ -586,7 +549,10 @@ impl ItemEntity {
         if should_sync {
             *self.last_sent_velocity.lock() = current;
             Some(CSetEntityMotion::new(
-                self.id, current.x, current.y, current.z,
+                self.id(),
+                current.x,
+                current.y,
+                current.z,
             ))
         } else {
             None
@@ -651,7 +617,7 @@ impl ItemEntity {
 
             let (yaw, pitch) = self.rotation.load();
             Some(PositionSyncPacket::Full(CEntityPositionSync {
-                entity_id: self.id,
+                entity_id: self.id(),
                 x: current_pos.x,
                 y: current_pos.y,
                 z: current_pos.z,
@@ -674,7 +640,7 @@ impl ItemEntity {
             *self.last_sent_position.lock() = current_pos;
 
             Some(PositionSyncPacket::Delta(CMoveEntityPos {
-                entity_id: self.id,
+                entity_id: self.id(),
                 dx,
                 dy,
                 dz,
@@ -693,20 +659,12 @@ enum PositionSyncPacket {
 }
 
 impl Entity for ItemEntity {
+    fn base(&self) -> Option<&EntityBase> {
+        Some(&self.base)
+    }
+
     fn entity_type(&self) -> EntityTypeRef {
         vanilla_entities::ITEM
-    }
-
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn uuid(&self) -> Uuid {
-        self.uuid
-    }
-
-    fn position(&self) -> Vector3<f64> {
-        *self.position.lock()
     }
 
     fn bounding_box(&self) -> AABBd {
@@ -769,8 +727,9 @@ impl Entity for ItemEntity {
         // (vanilla: ItemEntity.tick line 121)
         let vel = self.velocity();
         let horizontal_movement_sq = vel.x * vel.x + vel.z * vel.z;
-        let should_move =
-            !self.on_ground() || horizontal_movement_sq > 1.0e-5 || (tick_count + self.id) % 4 == 0;
+        let should_move = !self.on_ground()
+            || horizontal_movement_sq > 1.0e-5
+            || (tick_count + self.id()) % 4 == 0;
 
         if should_move {
             // Move with collision detection (do_move handles velocity zeroing on collision)
@@ -816,7 +775,7 @@ impl Entity for ItemEntity {
         let merge_rate = if moved_block { 2 } else { 40 };
 
         if tick_count % merge_rate == 0
-            && self.is_mergable()
+            && self.is_mergeable()
             && let Some(world) = self.level()
         {
             self.merge_with_neighbours(&world);
@@ -840,8 +799,6 @@ impl Entity for ItemEntity {
         if self.on_ground() != old_on_ground {
             self.needs_sync.store(true, Ordering::Relaxed);
         }
-
-        // Age-based despawn handled above; when `age == INFINITE_LIFETIME` vanilla never despawns.
     }
 
     fn send_changes(&self, tick_count: i32) {
@@ -899,10 +856,6 @@ impl Entity for ItemEntity {
         *self.entity_data.lock().no_gravity.get()
     }
 
-    fn level(&self) -> Option<Arc<World>> {
-        self.world.upgrade()
-    }
-
     fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
         Some(self)
     }
@@ -913,20 +866,6 @@ impl Entity for ItemEntity {
 
     fn pack_all_entity_data(&self) -> Vec<DataValue> {
         self.entity_data.lock().pack_all()
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed.load(Ordering::Relaxed)
-    }
-
-    fn set_removed(&self, reason: RemovalReason) {
-        if !self.removed.swap(true, Ordering::AcqRel) {
-            self.level_callback.lock().on_remove(reason);
-        }
-    }
-
-    fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
-        *self.level_callback.lock() = callback;
     }
 
     fn rotation(&self) -> (f32, f32) {
@@ -949,14 +888,64 @@ impl Entity for ItemEntity {
         self.on_ground.store(on_ground, Ordering::Relaxed);
     }
 
-    fn set_position(&self, pos: Vector3<f64>) {
-        let old_pos = {
-            let mut position = self.position.lock();
-            let old = *position;
-            *position = pos;
-            old
-        };
-        // Notify callback of movement
-        self.level_callback.lock().on_move(old_pos, pos);
+    fn save_additional(&self, nbt: &mut NbtCompound) {
+        // Match vanilla's ItemEntity.addAdditionalSaveData
+        nbt.insert("Health", self.health.load(Ordering::Relaxed) as i16);
+        nbt.insert("Age", self.age.load(Ordering::Relaxed) as i16);
+        nbt.insert(
+            "PickupDelay",
+            self.pickup_delay.load(Ordering::Relaxed) as i16,
+        );
+
+        if let Some(thrower) = self.get_thrower() {
+            nbt.insert("Thrower", NbtTag::IntArray(thrower.to_int_array().to_vec()));
+        }
+        if let Some(owner) = self.get_owner() {
+            nbt.insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
+        }
+
+        let item = self.get_item();
+        if !item.is_empty() {
+            nbt.insert("Item", item.to_nbt_tag());
+        }
+    }
+
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
+        // Convert to view type to access accessor methods
+        let nbt: NbtCompoundView<'_, '_> = nbt.into();
+
+        // Match vanilla's ItemEntity.readAdditionalSaveData
+        if let Some(health) = nbt.short("Health") {
+            self.health.store(i32::from(health), Ordering::Relaxed);
+        }
+        if let Some(age) = nbt.short("Age") {
+            self.age.store(i32::from(age), Ordering::Relaxed);
+        }
+        if let Some(pickup_delay) = nbt.short("PickupDelay") {
+            self.pickup_delay
+                .store(i32::from(pickup_delay), Ordering::Relaxed);
+        }
+
+        if let Some(thrower_arr) = nbt.int_array("Thrower")
+            && let Some(uuid) = Uuid::from_int_array(&thrower_arr)
+        {
+            *self.thrower.lock() = Some(uuid);
+        }
+        if let Some(owner_arr) = nbt.int_array("Owner")
+            && let Some(uuid) = Uuid::from_int_array(&owner_arr)
+        {
+            *self.owner.lock() = Some(uuid);
+        }
+
+        if let Some(item_tag) = nbt.compound("Item")
+            && let Some(item) = ItemStack::from_borrowed_compound(&item_tag)
+        {
+            self.entity_data.lock().item.set(item);
+        }
+
+        // Vanilla behavior: discard if item is empty after load
+        if self.get_item().is_empty() {
+            self.set_removed(RemovalReason::Discarded);
+        }
     }
 }

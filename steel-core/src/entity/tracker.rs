@@ -62,8 +62,18 @@ impl EntityTracker {
 
     /// Starts tracking an entity.
     ///
-    /// Registers the entity in all chunks within its tracking range.
-    pub fn add(&self, entity: &SharedEntity) {
+    /// Registers the entity in all chunks within its tracking range and sends
+    /// spawn packets to any players already watching those chunks.
+    ///
+    /// The `get_players_in_chunk` callback should return player IDs in a given chunk
+    /// (typically from `PlayerAreaMap::get_tracking_players`).
+    /// The `get_player` callback should resolve a player ID to a `Player` reference.
+    pub fn add(
+        &self,
+        entity: &SharedEntity,
+        get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
+        get_player: impl Fn(i32) -> Option<Arc<Player>>,
+    ) {
         let entity_id = entity.id();
         let range_chunks = entity.entity_type().client_tracking_range;
         let pos = entity.position();
@@ -79,14 +89,32 @@ impl EntityTracker {
             }
         }
 
+        // Collect players to notify (deduplicated since player might be in multiple chunks)
+        let mut players_to_notify = FxHashSet::default();
+        for &chunk in &registered_chunks {
+            for player_id in get_players_in_chunk(chunk) {
+                // Don't notify if the entity is the player itself
+                if player_id != entity_id {
+                    players_to_notify.insert(player_id);
+                }
+            }
+        }
+
         let tracked = TrackedEntity {
             entity: Arc::downgrade(entity),
             range_chunks,
             registered_chunks,
-            seen_by: SyncRwLock::new(FxHashSet::default()),
+            seen_by: SyncRwLock::new(players_to_notify.clone()),
         };
 
         let _ = self.entities.insert_sync(entity_id, tracked);
+
+        // Send spawn packets to all nearby players
+        for player_id in players_to_notify {
+            if let Some(player) = get_player(player_id) {
+                send_spawn_packets(entity, &player);
+            }
+        }
     }
 
     /// Stops tracking an entity and sends despawn to all tracking players.
@@ -302,22 +330,6 @@ impl EntityTracker {
         self.entities.len()
     }
 
-    /// Sends spawn packets to a specific player and marks them as tracking.
-    ///
-    /// Used when an entity is spawned and we need to notify nearby players.
-    pub fn send_spawn_to_player(&self, entity: &SharedEntity, player: &Player) {
-        let entity_id = entity.id();
-        let player_id = player.id;
-
-        self.entities.update_sync(&entity_id, |_, tracked| {
-            let mut seen_by = tracked.seen_by.write();
-            if !seen_by.contains(&player_id) {
-                seen_by.insert(player_id);
-                send_spawn_packets(entity, player);
-            }
-        });
-    }
-
     fn add_entity_to_chunk(&self, chunk: ChunkPos, entity_id: i32) {
         if self
             .chunks
@@ -357,7 +369,7 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
     let (yaw, pitch) = entity.rotation();
     let entity_type_id = *REGISTRY.entity_types.get_id(entity.entity_type()) as i32;
 
-    // Convert rotation from degrees to protocol byte format (256ths of a full rotation)
+    // Convert rotation from degrees to protocol byte format (256th of a full rotation)
     // Uses to_angle_byte which matches vanilla's Mth.packDegrees
     let x_rot = to_angle_byte(pitch);
     let y_rot = to_angle_byte(yaw);

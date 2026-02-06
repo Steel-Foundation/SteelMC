@@ -180,13 +180,13 @@ impl ChestMenu {
 
     /// Returns the number of rows in this chest menu.
     #[must_use]
-    pub fn rows(&self) -> usize {
+    pub const fn rows(&self) -> usize {
         self.rows
     }
 
     /// Returns a reference to the container.
     #[must_use]
-    pub fn container(&self) -> &ContainerRef {
+    pub const fn container(&self) -> &ContainerRef {
         &self.container
     }
 }
@@ -311,7 +311,7 @@ impl ChestMenuProvider {
     /// * `rows` - Number of rows (1-6)
     /// * `title` - Display title for the menu
     #[must_use]
-    pub fn new(
+    pub const fn new(
         inventory: SyncPlayerInv,
         container: ContainerRef,
         rows: usize,
@@ -327,7 +327,7 @@ impl ChestMenuProvider {
 
     /// Creates a provider for a 3-row chest menu (standard chest).
     #[must_use]
-    pub fn three_rows(
+    pub const fn three_rows(
         inventory: SyncPlayerInv,
         container: ContainerRef,
         title: TextComponent,
@@ -337,7 +337,7 @@ impl ChestMenuProvider {
 
     /// Creates a provider for a 6-row chest menu (double chest).
     #[must_use]
-    pub fn six_rows(
+    pub const fn six_rows(
         inventory: SyncPlayerInv,
         container: ContainerRef,
         title: TextComponent,

@@ -68,17 +68,56 @@ impl EntityStorage {
         self.entities.read().is_empty()
     }
 
+    /// Returns entities that should be saved when the chunk is persisted.
+    ///
+    /// Excludes:
+    /// - Removed entities
+    /// - Players (saved separately in playerdata)
+    /// - Entity types with `can_serialize = false`
+    #[must_use]
+    pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
+        self.entities
+            .read()
+            .values()
+            .filter(|e| {
+                !e.is_removed()
+                    && (*e).clone().as_player().is_none()
+                    && e.entity_type().can_serialize
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Ticks all entities in this chunk and broadcasts dirty entity data.
     ///
     /// Called from `LevelChunk::tick()`.
-    pub fn tick(&self, world: &Arc<World>, chunk_pos: ChunkPos, tick_count: i32) {
+    /// Returns `true` if any entities were ticked (chunk should be marked dirty).
+    ///
+    /// Uses `tick_count` to prevent double-ticking: if an entity moves to a
+    /// different chunk during its tick and that chunk is ticked later in the
+    /// same server tick, the entity will be skipped.
+    pub fn tick(&self, world: &Arc<World>, chunk_pos: ChunkPos, tick_count: i32) -> bool {
         // Clone to avoid holding lock during tick
         let entities: Vec<SharedEntity> = self.entities.read().values().cloned().collect();
 
+        let mut ticked_any = false;
         for entity in entities {
             if entity.is_removed() {
                 continue;
             }
+
+            // Skip entities that were already ticked this server tick.
+            // This happens when an entity moves from a chunk that was already
+            // ticked to this chunk within the same server tick.
+            if entity.was_ticked_this_tick(tick_count) {
+                continue;
+            }
+
+            ticked_any = true;
+
+            // Mark as ticked before running tick() to prevent double-tick
+            // even if the entity moves during its own tick
+            entity.mark_ticked(tick_count);
 
             // Entity-specific tick (entities access world via self.level())
             entity.tick();
@@ -95,6 +134,8 @@ impl EntityStorage {
 
         // Cleanup removed entities
         self.entities.write().retain(|_, e| !e.is_removed());
+
+        ticked_any
     }
 
     /// Clears all entities from storage.

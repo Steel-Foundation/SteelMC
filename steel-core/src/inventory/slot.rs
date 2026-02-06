@@ -273,7 +273,7 @@ pub struct ArmorSlot {
 
 impl ArmorSlot {
     /// Creates a new armor slot.
-    pub fn new(container: SyncPlayerInv, index: usize, slot: EquippableSlot) -> Self {
+    pub const fn new(container: SyncPlayerInv, index: usize, slot: EquippableSlot) -> Self {
         Self {
             container,
             index,
@@ -283,7 +283,7 @@ impl ArmorSlot {
 
     /// Returns the equipment slot this armor slot accepts.
     #[must_use]
-    pub fn equipment_slot(&self) -> EquippableSlot {
+    pub const fn equipment_slot(&self) -> EquippableSlot {
         self.slot
     }
 
@@ -363,7 +363,7 @@ pub struct CraftingGridSlot {
 
 impl CraftingGridSlot {
     /// Creates a new crafting grid slot for a 2x2 grid (player inventory).
-    pub fn new(
+    pub const fn new(
         container: SyncCraftingContainer,
         result_container: SyncResultContainer,
         index: usize,
@@ -377,7 +377,7 @@ impl CraftingGridSlot {
     }
 
     /// Creates a new crafting grid slot for a 3x3 grid (crafting table).
-    pub fn new_3x3(
+    pub const fn new_3x3(
         container: SyncCraftingContainer,
         result_container: SyncResultContainer,
         index: usize,
@@ -482,7 +482,7 @@ pub struct CraftingResultSlot {
 
 impl CraftingResultSlot {
     /// Creates a new crafting result slot for a 2x2 grid (player inventory).
-    pub fn new(
+    pub const fn new(
         result_container: SyncResultContainer,
         crafting_container: SyncCraftingContainer,
     ) -> Self {
@@ -494,7 +494,7 @@ impl CraftingResultSlot {
     }
 
     /// Creates a new crafting result slot for a 3x3 grid (crafting table).
-    pub fn new_3x3(
+    pub const fn new_3x3(
         result_container: SyncResultContainer,
         crafting_container: SyncCraftingContainer,
     ) -> Self {
@@ -507,7 +507,7 @@ impl CraftingResultSlot {
 
     /// Returns a reference to the crafting container.
     #[must_use]
-    pub fn crafting_container(&self) -> &SyncCraftingContainer {
+    pub const fn crafting_container(&self) -> &SyncCraftingContainer {
         &self.crafting_container
     }
 

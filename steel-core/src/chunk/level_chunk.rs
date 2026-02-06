@@ -25,7 +25,7 @@ use crate::chunk::{
     proto_chunk::ProtoChunk,
     section::Sections,
 };
-use crate::entity::EntityStorage;
+use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
 
 /// A chunk that is ready to be sent to the client.
@@ -74,7 +74,11 @@ impl LevelChunk {
 
         // Tick entities in this chunk
         if let Some(world) = self.get_level() {
-            self.entities.tick(&world, self.pos, tick_count);
+            let ticked_entities = self.entities.tick(&world, self.pos, tick_count);
+            if ticked_entities {
+                // Mark chunk dirty since entity state may have changed
+                self.dirty.store(true, Ordering::Release);
+            }
         }
 
         if random_tick_speed == 0 {
@@ -258,7 +262,7 @@ impl LevelChunk {
 
     /// Gets the section index for a given Y coordinate.
     #[must_use]
-    fn get_section_index(&self, y: i32) -> usize {
+    const fn get_section_index(&self, y: i32) -> usize {
         ((y - self.min_y) / 16) as usize
     }
 
@@ -297,6 +301,46 @@ impl LevelChunk {
         self.mark_unsaved();
     }
 
+    /// Adds an entity to this chunk and registers it with all world systems.
+    ///
+    /// This is the main entry point for adding entities. It handles:
+    /// 1. Adding to chunk's entity storage
+    /// 2. Setting up the level callback for position tracking
+    /// 3. Registering in entity cache for fast lookups
+    /// 4. Adding to entity tracker and sending spawn packets to nearby players
+    /// 5. Marking the chunk dirty for persistence
+    ///
+    /// Returns `false` if the world reference is no longer valid.
+    pub fn add_and_register_entity(&self, entity: SharedEntity) -> bool {
+        use crate::entity::EntityChunkCallback;
+
+        let Some(world) = self.level.upgrade() else {
+            return false;
+        };
+
+        // Add to chunk storage
+        self.entities.add(entity.clone());
+
+        // Set up callback for chunk/section tracking
+        let callback = Arc::new(EntityChunkCallback::new(&entity, Arc::downgrade(&world)));
+        entity.set_level_callback(callback);
+
+        // Register in entity cache (for fast lookups)
+        world.entity_cache().register(&entity);
+
+        // Add to entity tracker and send spawn packets to nearby players
+        world.entity_tracker().add(
+            &entity,
+            |chunk| world.player_area_map.get_tracking_players(chunk),
+            |id| world.players.get_by_entity_id(id),
+        );
+
+        // Mark chunk dirty for persistence
+        self.mark_unsaved();
+
+        true
+    }
+
     /// Updates the ticking status of a block entity.
     ///
     /// Call this when a block entity's ticking status may have changed
@@ -313,7 +357,7 @@ impl LevelChunk {
 
     /// Returns a reference to the block entity storage.
     #[must_use]
-    pub fn block_entity_storage(&self) -> &BlockEntityStorage {
+    pub const fn block_entity_storage(&self) -> &BlockEntityStorage {
         &self.block_entities
     }
 

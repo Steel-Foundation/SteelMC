@@ -18,8 +18,14 @@ struct EntityTypeEntry {
     fire_immune: bool,
     summonable: bool,
     can_spawn_far_from_player: bool,
+    #[serde(default = "default_can_serialize")]
+    can_serialize: bool,
     #[serde(default)]
     flags: Option<FlagsEntry>,
+}
+
+fn default_can_serialize() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -65,6 +71,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::entity_types::{EntityDimensions, EntityFlags, EntityType, EntityTypeRegistry, MobCategory};
+        use steel_utils::Identifier;
     });
 
     for entity_type in &entity_types {
@@ -85,6 +92,7 @@ pub(crate) fn build() -> TokenStream {
         let fire_immune = entity_type.fire_immune;
         let summonable = entity_type.summonable;
         let can_spawn_far = entity_type.can_spawn_far_from_player;
+        let can_serialize = entity_type.can_serialize;
 
         // Flags (with defaults for entities that don't have them, like fishing_bobber)
         let flags = entity_type.flags.as_ref();
@@ -101,7 +109,7 @@ pub(crate) fn build() -> TokenStream {
 
         stream.extend(quote! {
             pub static #entity_type_ident: &EntityType = &EntityType {
-                key: #entity_type_key,
+                key: Identifier::vanilla_static(#entity_type_key),
                 client_tracking_range: #client_tracking_range,
                 update_interval: #update_interval,
                 dimensions: EntityDimensions::new(#width, #height, #eye_height),
@@ -110,6 +118,7 @@ pub(crate) fn build() -> TokenStream {
                 fire_immune: #fire_immune,
                 summonable: #summonable,
                 can_spawn_far_from_player: #can_spawn_far,
+                can_serialize: #can_serialize,
                 flags: EntityFlags {
                     is_pushable: #is_pushable,
                     is_attackable: #is_attackable,

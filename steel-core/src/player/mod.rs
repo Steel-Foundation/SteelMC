@@ -9,6 +9,8 @@ mod message_validator;
 pub mod movement;
 /// This module contains the networking implementation for the player.
 pub mod networking;
+pub mod player_data;
+pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
@@ -488,7 +490,7 @@ impl Player {
     }
 
     /// Handles the end of a client tick.
-    pub fn handle_client_tick_end(&self) {
+    pub const fn handle_client_tick_end(&self) {
         //log::info!("Hello from the other side!");
     }
 
@@ -661,7 +663,7 @@ impl Player {
                     LastSeen::default()
                 };
 
-                log::info!("<{}> {}", player.gameprofile.name, chat_message);
+                steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
                 self.world.broadcast_chat(
                     chat_packet,
                     Arc::clone(&player),
@@ -690,7 +692,7 @@ impl Player {
             .send_packet(CSystemChatMessage::new(text, self, false));
     }
 
-    fn is_invalid_position(x: f64, y: f64, z: f64, rot_x: f32, rot_y: f32) -> bool {
+    const fn is_invalid_position(x: f64, y: f64, z: f64, rot_x: f32, rot_y: f32) -> bool {
         if x.is_nan() || y.is_nan() || z.is_nan() {
             return true;
         }
@@ -1574,7 +1576,7 @@ impl Player {
     ///
     /// Matches vanilla `LivingEntity.getGravity()` which reads from `Attributes.GRAVITY`.
     /// Default is 0.08 blocks/tick².
-    fn get_gravity(&self) -> f64 {
+    const fn get_gravity(&self) -> f64 {
         // TODO: Read from attribute system when implemented
         let _ = self; // Silence unused warning until attributes are implemented
         movement::DEFAULT_GRAVITY
@@ -2276,7 +2278,7 @@ impl Player {
     }
 
     /// Cleans up player resources.
-    pub fn cleanup(&self) {}
+    pub const fn cleanup(&self) {}
 }
 
 impl Entity for Player {

@@ -22,6 +22,13 @@ impl World {
         if self.players.remove(&uuid).await.is_some() {
             let start = Instant::now();
 
+            // Save player data before removal
+            if let Some(server) = player.server.upgrade()
+                && let Err(e) = server.player_data_storage.save(&player).await
+            {
+                log::error!("Failed to save player data for {uuid}: {e}");
+            }
+
             // Unregister from entity cache
             let pos = player.position();
             let section = steel_utils::SectionPos::new(
