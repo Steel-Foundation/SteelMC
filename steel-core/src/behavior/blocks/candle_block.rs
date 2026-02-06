@@ -11,7 +11,7 @@ use steel_registry::{
     entity_data::Direction,
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    vanilla_blocks,
+    vanilla_blocks, vanilla_item_tags,
 };
 use steel_utils::{
     BlockPos, Identifier,
@@ -105,10 +105,10 @@ impl BlockBehaviour for CandleBlock {
             return InteractionResult::Success;
         }
 
-        if REGISTRY.items.is_in_tag(
-            item_stack.item,
-            &Identifier::vanilla_static("creeper_igniters"),
-        ) {
+        if REGISTRY
+            .items
+            .is_in_tag(item_stack.item, &vanilla_item_tags::CREEPER_IGNITERS_TAG)
+        {
             if state.get_value(&LIT_PROPERTY) || state.get_value(&WATERLOGGED) {
                 return InteractionResult::Pass;
             }

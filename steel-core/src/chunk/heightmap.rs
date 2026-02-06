@@ -6,7 +6,11 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use steel_registry::{REGISTRY, blocks::BlockRef, blocks::block_state_ext::BlockStateExt};
+use steel_registry::{
+    REGISTRY,
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    vanilla_block_tags,
+};
 use steel_utils::{BlockStateId, Identifier};
 
 /// The different types of heightmaps.
@@ -69,9 +73,9 @@ impl HeightmapType {
 
     /// Checks if a block is in the leaves tag.
     fn is_leaves(block: BlockRef) -> bool {
-        static LEAVES_TAG: OnceLock<Identifier> = OnceLock::new();
-        let tag = LEAVES_TAG.get_or_init(|| Identifier::vanilla_static("leaves"));
-        REGISTRY.blocks.is_in_tag(block, tag)
+        REGISTRY
+            .blocks
+            .is_in_tag(block, &vanilla_block_tags::LEAVES_TAG)
     }
 }
 
