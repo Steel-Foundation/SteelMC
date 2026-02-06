@@ -234,19 +234,6 @@ impl BlockBehaviour for CactusBlock {
         state
     }
 
-    // TODO: Implement when BlockBehaviour trait supports collision shapes
-    // fn get_collision_shape(&self, _state: BlockStateId) -> VoxelShape {
-    //     // Vanilla: SHAPE_COLLISION = Block.column(14.0, 0.0, 15.0)
-    //     // Slightly smaller than full block (14/16 width, 15/16 height)
-    //     // This makes entities touch the cactus and take damage
-    // }
-
-    // TODO: Implement when BlockBehaviour trait supports outline shapes
-    // fn get_shape(&self, _state: BlockStateId) -> VoxelShape {
-    //     // Vanilla: SHAPE = Block.column(14.0, 0.0, 16.0)
-    //     // 14/16 width, full height for visual outline
-    // }
-
     // TODO: Implement when entity-block collision is supported
     // fn entity_inside(&self, _state: BlockStateId, world: &World, pos: BlockPos, entity: &Entity) {
     //     // Vanilla: entity.hurt(level.damageSources().cactus(), 1.0F);
