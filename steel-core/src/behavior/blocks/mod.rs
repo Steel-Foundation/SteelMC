@@ -14,6 +14,7 @@ mod liquid_block;
 mod redstone_torch_block;
 mod rotated_pillar_block;
 mod sign_block;
+mod sugar_cane_block;
 mod torch_block;
 
 pub use barrel_block::BarrelBlock;
@@ -29,4 +30,5 @@ pub use rotated_pillar_block::RotatedPillarBlock;
 pub use sign_block::{
     CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
 };
+pub use sugar_cane_block::SugarCaneBlock;
 pub use torch_block::{TorchBlock, WallTorchBlock};
