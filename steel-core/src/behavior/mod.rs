@@ -48,7 +48,10 @@ use item_behaviours::register_item_behaviors;
 pub use items::{BlockItemBehavior, DefaultItemBehavior, EnderEyeBehavior, FilledBucketBehavior};
 use std::ops::Deref;
 use std::sync::OnceLock;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::fluid::FluidState;
 use steel_registry::{vanilla_blocks, vanilla_items};
+use steel_utils::BlockStateId;
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
 pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
@@ -69,6 +72,25 @@ impl Deref for ItemBehaviorLock {
 
     fn deref(&self) -> &Self::Target {
         self.0.get().expect("Item behaviors not initialized")
+    }
+}
+
+/// Extension trait for `BlockStateId` that provides access to behavior-dependent methods.
+///
+/// This is separate from `BlockStateExt` (in steel-registry) because these methods
+/// require access to the behavior registry which lives in steel-core.
+pub trait BlockStateBehaviorExt {
+    /// Returns the fluid state for this block state.
+    ///
+    /// Delegates to the block's `BlockBehaviour::get_fluid_state` implementation.
+    fn get_fluid_state(&self) -> FluidState;
+}
+
+impl BlockStateBehaviorExt for BlockStateId {
+    fn get_fluid_state(&self) -> FluidState {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.get_fluid_state(*self)
     }
 }
 

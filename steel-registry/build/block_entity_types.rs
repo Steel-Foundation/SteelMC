@@ -28,6 +28,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static block entity type definitions
+    let mut register_stream = TokenStream::new();
     for block_entity_type_name in &block_entity_types.block_entity_types {
         let block_entity_type_ident = Ident::new(
             &block_entity_type_name.to_shouty_snake_case(),
@@ -42,15 +43,6 @@ pub(crate) fn build() -> TokenStream {
                 key: #key,
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for block_entity_type_name in &block_entity_types.block_entity_types {
-        let block_entity_type_ident = Ident::new(
-            &block_entity_type_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
             registry.register(#block_entity_type_ident);
         });

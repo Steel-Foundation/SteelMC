@@ -1,8 +1,7 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Categories for game rules, used for organization in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +125,17 @@ impl GameRuleRegistry {
         self.game_rules_by_key.insert(game_rule.key.clone(), id);
         self.game_rules_by_id.push(game_rule);
         id
+    }
+
+    /// Replaces a gamerule at a given index.
+    /// Returns true if the gamerule was replaced and false if the gamerule wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, gamerule: GameRuleRef, id: usize) -> bool {
+        if id >= self.game_rules_by_id.len() {
+            return false;
+        }
+        self.game_rules_by_id[id] = gamerule;
+        true
     }
 
     #[must_use]

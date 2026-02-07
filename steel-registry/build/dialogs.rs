@@ -95,6 +95,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static dialog definitions
+    let mut register_stream = TokenStream::new();
     for (dialog_name, dialog) in &dialogs {
         let dialog_ident = Ident::new(&dialog_name.to_shouty_snake_case(), Span::call_site());
         let dialog_name_str = dialog_name.clone();
@@ -142,12 +143,6 @@ pub(crate) fn build() -> TokenStream {
                 });
             }
         }
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (dialog_name, _) in &dialogs {
-        let dialog_ident = Ident::new(&dialog_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#dialog_ident);
         });

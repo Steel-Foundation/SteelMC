@@ -125,6 +125,7 @@ pub(crate) fn build() -> TokenStream {
         use steel_utils::Identifier;
     });
 
+    let mut register_stream = TokenStream::new();
     // Generate const arrays for each tag
     for (tag_name, timelines) in &sorted_tags {
         let tag_ident = Ident::new(
@@ -135,17 +136,8 @@ pub(crate) fn build() -> TokenStream {
         let timeline_strs = timelines.iter().map(|s| s.as_str());
 
         stream.extend(quote! {
-            pub static #tag_ident: &[&str] = &[#(#timeline_strs),*];
+            static #tag_ident: &[&str] = &[#(#timeline_strs),*];
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (tag_name, _) in &sorted_tags {
-        let tag_ident = Ident::new(
-            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
-            Span::call_site(),
-        );
         let tag_key = tag_name.clone();
 
         register_stream.extend(quote! {

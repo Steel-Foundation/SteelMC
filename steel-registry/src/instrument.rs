@@ -1,8 +1,7 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
-
-use crate::RegistryExt;
 
 /// Represents a musical instrument definition from a data pack JSON file,
 /// primarily used for Goat Horns.
@@ -43,6 +42,17 @@ impl InstrumentRegistry {
         self.instruments_by_key.insert(instrument.key.clone(), id);
         self.instruments_by_id.push(instrument);
         id
+    }
+
+    /// Replaces a instrument at a given index.
+    /// Returns true if the instrument was replaced and false if the instrument wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, instrument: InstrumentRef, id: usize) -> bool {
+        if id >= self.instruments_by_id.len() {
+            return false;
+        }
+        self.instruments_by_id[id] = instrument;
+        true
     }
 
     #[must_use]

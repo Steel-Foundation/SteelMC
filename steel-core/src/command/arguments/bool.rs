@@ -38,16 +38,7 @@ impl CommandArgument for BoolArgument {
         prefix: &str,
         _suggestion_ctx: &super::SuggestionContext,
     ) -> Vec<SuggestionEntry> {
-        let mut suggestions = vec![
-            SuggestionEntry {
-                text: String::from("true"),
-                tooltip: None,
-            },
-            SuggestionEntry {
-                text: String::from("false"),
-                tooltip: None,
-            },
-        ];
+        let mut suggestions = vec![SuggestionEntry::new("true"), SuggestionEntry::new("false")];
 
         suggestions.retain(|s| s.text.starts_with(prefix));
         suggestions

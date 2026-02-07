@@ -28,6 +28,7 @@ rand.workspace = true
 text_components.workspace = true
 # NBT
 simdnbt.workspace = true
+tracing.workspace = true
 
 [build-dependencies]
 # Internal crates

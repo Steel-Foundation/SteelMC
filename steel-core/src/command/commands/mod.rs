@@ -8,6 +8,7 @@ pub mod stop;
 pub mod summon;
 pub mod tellraw;
 pub mod tick;
+pub mod time;
 pub mod weather;
 
 use std::marker::PhantomData;
@@ -743,10 +744,7 @@ where
 
                 // Otherwise, respond with the current text as confirmation
                 return Some(SuggestionResult {
-                    suggestions: vec![SuggestionEntry {
-                        text: args.join(" "),
-                        tooltip: None,
-                    }],
+                    suggestions: vec![SuggestionEntry::new(args.join(" "))],
                     start: 0,
                     length: 0,
                 });

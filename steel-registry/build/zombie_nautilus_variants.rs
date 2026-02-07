@@ -109,6 +109,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static zombie nautilus variant definitions
+    let mut register_stream = TokenStream::new();
     for (zombie_nautilus_variant_name, zombie_nautilus_variant) in &zombie_nautilus_variants {
         let zombie_nautilus_variant_ident = Ident::new(
             &zombie_nautilus_variant_name.to_shouty_snake_case(),
@@ -137,11 +138,7 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (zombie_nautilus_variant_name, _) in &zombie_nautilus_variants {
         let zombie_nautilus_variant_ident = Ident::new(
             &zombie_nautilus_variant_name.to_shouty_snake_case(),
             Span::call_site(),

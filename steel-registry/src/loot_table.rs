@@ -1,9 +1,7 @@
+use crate::{REGISTRY, RegistryExt, blocks::block_state_ext::BlockStateExt, item_stack::ItemStack};
 use rand::RngExt;
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
-
-use crate::{REGISTRY, RegistryExt, blocks::block_state_ext::BlockStateExt, item_stack::ItemStack};
-
 // =============================================================================
 // Strongly-typed enums for string values
 // =============================================================================
@@ -1857,6 +1855,17 @@ impl LootTableRegistry {
         self.tables_by_key.insert(table.key.clone(), id);
         self.tables_by_id.push(table);
         id
+    }
+
+    /// Replaces a table at a given index.
+    /// Returns true if the table was replaced and false if the table wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, table: LootTableRef, id: usize) -> bool {
+        if id >= self.tables_by_id.len() {
+            return false;
+        }
+        self.tables_by_id[id] = table;
+        true
     }
 
     #[must_use]

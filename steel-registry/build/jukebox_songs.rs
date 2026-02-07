@@ -67,6 +67,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static jukebox song definitions
+    let mut register_stream = TokenStream::new();
     for (jukebox_song_name, jukebox_song) in &jukebox_songs {
         // Handle special case where song name is a number (e.g., "13" -> "MUSIC_DISC_13")
         let jukebox_song_ident = if jukebox_song_name.chars().next().unwrap().is_ascii_digit() {
@@ -94,19 +95,7 @@ pub(crate) fn build() -> TokenStream {
                 comparator_output: #comparator_output,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (jukebox_song_name, _) in &jukebox_songs {
-        let jukebox_song_ident = if jukebox_song_name.chars().next().unwrap().is_ascii_digit() {
-            Ident::new(
-                &format!("MUSIC_DISC_{}", jukebox_song_name.to_shouty_snake_case()),
-                Span::call_site(),
-            )
-        } else {
-            Ident::new(&jukebox_song_name.to_shouty_snake_case(), Span::call_site())
-        };
         register_stream.extend(quote! {
             registry.register(#jukebox_song_ident);
         });

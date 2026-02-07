@@ -651,6 +651,13 @@ impl Identifier {
             path: path.into(),
         }
     }
+    #[must_use]
+    pub const fn new_static(namespace: &'static str, path: &'static str) -> Self {
+        Identifier {
+            namespace: Cow::Borrowed(namespace),
+            path: Cow::Borrowed(path),
+        }
+    }
 
     /// Creates a new `Identifier` with the vanilla namespace.
     #[must_use]
