@@ -18,11 +18,12 @@ pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
 
-use steel_protocol::packet_traits::CompressionInfo;
 pub use abilities::Abilities;
+use steel_protocol::packet_traits::CompressionInfo;
 
 use block_breaking::BlockBreakingManager;
 use crossbeam::atomic::AtomicCell;
+use enum_dispatch::enum_dispatch;
 pub use game_profile::{GameProfile, GameProfileAction};
 use message_chain::SignedMessageChain;
 use message_validator::LastSeenMessagesValidator;
@@ -35,7 +36,6 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::CSystemChatMessage;
 use steel_protocol::packets::game::{
