@@ -52,18 +52,9 @@ impl CommandArgument for TimeArgument {
         let has_unit = prefix.chars().any(char::is_alphabetic);
         if !prefix.is_empty() && !has_unit {
             return vec![
-                SuggestionEntry {
-                    text: format!("{prefix}d"),
-                    tooltip: None,
-                },
-                SuggestionEntry {
-                    text: format!("{prefix}s"),
-                    tooltip: None,
-                },
-                SuggestionEntry {
-                    text: format!("{prefix}t"),
-                    tooltip: None,
-                },
+                SuggestionEntry::new(format!("{prefix}d")),
+                SuggestionEntry::new(format!("{prefix}s")),
+                SuggestionEntry::new(format!("{prefix}t")),
             ];
         }
         vec![]

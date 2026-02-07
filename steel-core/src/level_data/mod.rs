@@ -243,6 +243,12 @@ impl LevelDataManager {
         self.dirty = true;
     }
 
+    /// Calculates the day based on the game time
+    #[must_use]
+    pub const fn day(&self) -> i64 {
+        self.data.game_time / 24000
+    }
+
     /// Gets the day time.
     #[must_use]
     pub const fn day_time(&self) -> i64 {

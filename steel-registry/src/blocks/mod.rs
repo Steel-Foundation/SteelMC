@@ -123,7 +123,7 @@ pub type BlockRef = &'static Block;
 pub struct BlockRegistry {
     blocks_by_id: Vec<BlockRef>,
     blocks_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<BlockRef>>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
     pub state_to_block_lookup: Vec<BlockRef>,
     /// Maps state IDs to block IDs (parallel to `state_to_block_lookup` for O(1) lookup)
@@ -182,6 +182,17 @@ impl BlockRegistry {
         self.next_state_id += state_count as u16;
 
         id
+    }
+
+    /// Replaces a block at a given index.
+    /// Returns true if the block was replaced and false if the block wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, block: BlockRef, id: usize) -> bool {
+        if id >= self.blocks_by_id.len() {
+            return false;
+        }
+        self.blocks_by_id[id] = block;
+        true
     }
 
     #[must_use]
@@ -434,37 +445,63 @@ impl BlockRegistry {
             "Cannot register tags after registry has been frozen"
         );
 
-        let blocks: Vec<BlockRef> = block_keys
+        let identifier: Vec<Identifier> = block_keys
             .iter()
-            .filter_map(|key| self.by_key(&Identifier::vanilla_static(key)))
+            .filter_map(|key| {
+                let ident = registry_vanilla_or_custom_tag(key);
+                // Only include if the block actually exists
+                self.by_key(&ident).map(|_| ident)
+            })
             .collect();
 
-        self.tags.insert(tag, blocks);
+        self.tags.insert(tag, identifier);
+    }
+
+    /// Gives the access to all blocks to delete and add new entries
+    pub fn modify_tag(
+        &mut self,
+        tag: &Identifier,
+        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
+    ) {
+        let existing = self.tags.remove(tag).unwrap_or_default();
+        let new_items = f(existing)
+            .into_iter()
+            .filter(|block| {
+                let exists = self.blocks_by_key.contains_key(block);
+                if !exists {
+                    tracing::error!("block {block} not found in registry, skipping from tag {tag}");
+                }
+                exists
+            })
+            .collect();
+        self.tags.insert(tag.clone(), new_items);
     }
 
     /// Checks if a block is in a given tag.
     #[must_use]
     pub fn is_in_tag(&self, block: BlockRef, tag: &Identifier) -> bool {
-        self.tags.get(tag).is_some_and(|blocks| {
-            blocks
-                .iter()
-                .any(|&b| std::ptr::eq(std::ptr::from_ref(b), std::ptr::from_ref(block)))
-        })
+        self.tags
+            .get(tag)
+            .is_some_and(|ident| ident.contains(&block.key))
     }
 
     /// Gets all blocks in a tag.
     #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<&[BlockRef]> {
-        self.tags.get(tag).map(std::vec::Vec::as_slice)
+    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<BlockRef>> {
+        self.tags.get(tag).map(|idents| {
+            idents
+                .iter()
+                .filter_map(|ident| self.by_key(ident))
+                .collect()
+        })
     }
 
     /// Iterates over all blocks in a tag.
     pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = BlockRef> + '_ {
         self.tags
             .get(tag)
-            .map(|v| v.iter().copied())
             .into_iter()
-            .flatten()
+            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
     }
 
     /// Gets all tag keys.
@@ -564,6 +601,7 @@ macro_rules! offset {
 
 /// Re-export for easier access
 pub use offset;
+use steel_utils::registry::registry_vanilla_or_custom_tag;
 use steel_utils::{BlockStateId, Identifier};
 
 #[cfg(test)]

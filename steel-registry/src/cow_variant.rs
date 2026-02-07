@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a full cow variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -63,6 +62,17 @@ impl CowVariantRegistry {
         self.cow_variants_by_key.insert(cow_variant.key.clone(), id);
         self.cow_variants_by_id.push(cow_variant);
         id
+    }
+
+    /// Replaces a cow at a given index.
+    /// Returns true if the cow was replaced and false if the cow wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, cow: CowVariantRef, id: usize) -> bool {
+        if id >= self.cow_variants_by_id.len() {
+            return false;
+        }
+        self.cow_variants_by_id[id] = cow;
+        true
     }
 
     #[must_use]

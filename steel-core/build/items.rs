@@ -12,8 +12,8 @@ pub struct ItemClass {
     #[serde(default)]
     pub block: Option<String>,
     #[serde(default)]
-    #[serde(rename = "standingAndWallBlockItem")]
-    pub standing_and_wall_block_item: Option<String>,
+    #[serde(rename = "wallBlock")]
+    pub wall_block: Option<String>,
 }
 
 /// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
@@ -123,7 +123,7 @@ pub fn build(items: &[ItemClass]) -> String {
             "SignItem" => {
                 let block = item.block.as_ref().expect("SignItem missing `block`");
                 let wall_block = item
-                    .standing_and_wall_block_item
+                    .wall_block
                     .as_ref()
                     .expect("SignItem missing `standingAndWallBlockItem`");
                 let standing_const = to_block_const(block);
@@ -136,7 +136,7 @@ pub fn build(items: &[ItemClass]) -> String {
                     .as_ref()
                     .expect("HangingSignItem missing `block`");
                 let wall_block = item
-                    .standing_and_wall_block_item
+                    .wall_block
                     .as_ref()
                     .expect("HangingSignItem missing `standingAndWallBlockItem`");
                 let ceiling_const = to_block_const(block);
@@ -149,7 +149,7 @@ pub fn build(items: &[ItemClass]) -> String {
                     .as_ref()
                     .expect("StandingAndWallBlockItem missing `block`");
                 let wall_block = item
-                    .standing_and_wall_block_item
+                    .wall_block
                     .as_ref()
                     .expect("StandingAndWallBlockItem missing `standingAndWallBlockItem`");
                 let standing_const = to_block_const(block);

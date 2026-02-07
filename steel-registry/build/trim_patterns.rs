@@ -60,6 +60,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static trim pattern definitions
+    let mut register_stream = TokenStream::new();
     for (trim_pattern_name, trim_pattern) in &trim_patterns {
         let trim_pattern_ident =
             Ident::new(&trim_pattern_name.to_shouty_snake_case(), Span::call_site());
@@ -78,13 +79,7 @@ pub(crate) fn build() -> TokenStream {
                 decal: #decal,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (trim_pattern_name, _) in &trim_patterns {
-        let trim_pattern_ident =
-            Ident::new(&trim_pattern_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#trim_pattern_ident);
         });

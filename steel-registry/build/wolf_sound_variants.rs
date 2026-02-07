@@ -57,6 +57,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static wolf sound variant definitions
+    let mut register_stream = TokenStream::new();
     for (wolf_sound_variant_name, wolf_sound_variant) in &wolf_sound_variants {
         let wolf_sound_variant_ident = Ident::new(
             &wolf_sound_variant_name.to_shouty_snake_case(),
@@ -83,15 +84,7 @@ pub(crate) fn build() -> TokenStream {
                 whine_sound: #whine_sound,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (wolf_sound_variant_name, _) in &wolf_sound_variants {
-        let wolf_sound_variant_ident = Ident::new(
-            &wolf_sound_variant_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
             registry.register(#wolf_sound_variant_ident);
         });
