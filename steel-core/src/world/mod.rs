@@ -1,4 +1,6 @@
 //! This module contains the `World` struct, which represents a world.
+use crate::chunk::chunk_map::ChunkMapTickTimings;
+use std::path::Path;
 use std::{
     io,
     sync::{
@@ -7,8 +9,6 @@ use std::{
     },
     time::Duration,
 };
-
-use crate::chunk::chunk_map::ChunkMapTickTimings;
 
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
@@ -142,14 +142,10 @@ impl World {
         // Create or skip level data based on config
 
         let path = match &config.storage {
-            WorldStorageConfig::Disk { path } => path.clone(),
-            WorldStorageConfig::RamOnly => String::new(),
+            WorldStorageConfig::Disk { path } => Some(Path::new(path)),
+            WorldStorageConfig::RamOnly => None,
         };
-        let level_data = if path.is_empty() {
-            LevelDataManager::new_empty(seed)
-        } else {
-            LevelDataManager::new(path, seed).await?
-        };
+        let level_data = LevelDataManager::new(path, seed).await?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
         //     REGISTRY
         //         .blocks
@@ -182,7 +178,7 @@ impl World {
     /// `await_holding_lock` is safe here cause it's only done on shutdown
     #[allow(clippy::await_holding_lock)]
     pub async fn cleanup(&self, total_saved: &mut usize) {
-        match self.level_data.write().save_force().await {
+        match self.level_data.write().save().await {
             Ok(()) => log::info!(
                 "World {} level data saved successfully",
                 self.dimension.key.path
