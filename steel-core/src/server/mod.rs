@@ -14,7 +14,7 @@ use steel_protocol::packets::game::{
     CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
 };
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry};
 use steel_utils::locks::SyncRwLock;
@@ -90,9 +90,17 @@ impl Server {
             })
         };
 
-        let overworld = World::new(chunk_runtime, OVERWORLD, seed)
+        let overworld = World::new(chunk_runtime.clone(), OVERWORLD, seed)
             .await
             .expect("Failed to create overworld");
+
+        let nether = World::new(chunk_runtime.clone(), THE_NETHER, seed)
+            .await
+            .expect("Failed to create the nether");
+
+        let end = World::new(chunk_runtime.clone(), THE_END, seed)
+            .await
+            .expect("Failed to create the end");
 
         let player_data_storage = PlayerDataStorage::new()
             .await
@@ -101,7 +109,7 @@ impl Server {
         Server {
             cancel_token,
             key_store: KeyStore::create(),
-            worlds: vec![overworld],
+            worlds: vec![overworld, nether, end],
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),

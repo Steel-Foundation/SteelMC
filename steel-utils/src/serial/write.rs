@@ -211,3 +211,39 @@ impl From<Option<NbtCompound>> for OptionalNbt {
         Self(opt)
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct OptionalIdentifier(pub Option<Identifier>);
+
+impl WriteTo for OptionalIdentifier {
+    fn write(&self, writer: &mut impl Write) -> Result<()> {
+        match &self.0 {
+            Some(identifier) => identifier.write(writer),
+            None => Ok(()),
+        }
+    }
+}
+
+impl From<Option<Identifier>> for OptionalIdentifier {
+    fn from(opt: Option<Identifier>) -> Self {
+        Self(opt)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OptionalBlockPos(pub Option<BlockPos>);
+
+impl WriteTo for OptionalBlockPos {
+    fn write(&self, writer: &mut impl Write) -> Result<()> {
+        match &self.0 {
+            Some(pos) => pos.write(writer),
+            None => Ok(()),
+        }
+    }
+}
+
+impl From<Option<BlockPos>> for OptionalBlockPos {
+    fn from(opt: Option<BlockPos>) -> Self {
+        Self(opt)
+    }
+}

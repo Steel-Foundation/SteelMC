@@ -149,6 +149,10 @@ debug = true
 debug = 0
 #codegen-backend = "cranelift"
 
+[profile.dev-debug]
+inherits = "dev"
+debug = true
+
 [workspace.lints.rust]
 missing_docs = "warn"
 

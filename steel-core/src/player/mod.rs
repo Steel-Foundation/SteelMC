@@ -315,7 +315,6 @@ impl Player {
         Self {
             gameprofile,
             connection,
-
             world,
             server,
             id: entity_id,
@@ -2279,6 +2278,10 @@ impl Player {
 
     /// Cleans up player resources.
     pub const fn cleanup(&self) {}
+
+    pub fn respawn(&self) {
+
+    }
 }
 
 impl Entity for Player {

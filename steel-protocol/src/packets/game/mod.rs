@@ -72,6 +72,7 @@ mod s_sign_update;
 mod s_swing;
 mod s_use_item;
 mod s_use_item_on;
+mod c_respawn;
 
 pub use c_add_entity::{CAddEntity, write_lp_vec3};
 pub use c_animate::{AnimateAction, CAnimate};
