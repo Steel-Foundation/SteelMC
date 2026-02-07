@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use std::cell::OnceCell;
 use steel_core::config::{STEEL_CONFIG, ServerLinks};
 use steel_core::entity::next_entity_id;
+use steel_core::player::PlayerConnection;
 use steel_core::player::networking::JavaConnection;
 use steel_core::player::{ClientInformation, Player};
 use steel_protocol::packets::common::CCustomPayload;
@@ -103,22 +103,16 @@ impl JavaTcpClient {
         let world = self.server.worlds[0].clone();
         let entity_id = next_entity_id();
 
-        // We need a way to get the JavaConnection arc after player creation.
-        // Use a cell to pass it out of the new_cyclic callback.
-        let connection_cell: OnceCell<Arc<JavaConnection>> = OnceCell::new();
-
         let player = Arc::new_cyclic(|player_weak| {
-            let connection = Arc::new(JavaConnection::new(
+            let java_connection = JavaConnection::new(
                 self.outgoing_queue.clone(),
                 self.cancel_token.clone(),
                 self.compression.load(),
                 self.network_writer.clone(),
                 self.id,
                 player_weak.clone(),
-            ));
-
-            // Store the connection for later use
-            let _ = connection_cell.set(connection.clone());
+            );
+            let connection = Arc::new(PlayerConnection::Java(java_connection));
 
             Player::new(
                 gameprofile,
@@ -131,13 +125,8 @@ impl JavaTcpClient {
             )
         });
 
-        // Get the stored connection and send it for network handling
-        let java_connection = connection_cell
-            .into_inner()
-            .expect("Connection should have been set");
-
         self.connection_updates
-            .send(ConnectionUpdate::Upgrade(java_connection))
+            .send(ConnectionUpdate::Upgrade(player.connection.clone()))
             .expect("Failed to send connection update");
 
         self.server.add_player(player).await;

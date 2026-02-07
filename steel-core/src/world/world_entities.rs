@@ -10,6 +10,7 @@ use tokio::time::Instant;
 use crate::{
     entity::{Entity, PlayerEntityCallback, SharedEntity},
     player::Player,
+    player::connection::NetworkConnection,
     world::World,
 };
 

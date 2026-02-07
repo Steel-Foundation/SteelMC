@@ -3,6 +3,7 @@
 //! The trait is object-safe to allow using `dyn PlayerConnection` for both real network
 //! connections (`JavaConnection`) and test connections (`FlintConnection`).
 
+use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use text_components::TextComponent;
 
@@ -17,6 +18,7 @@ use text_components::TextComponent;
 /// This trait uses type erasure for packet sending - packets must be pre-encoded
 /// into `EncodedPacket` before being sent. The `Player` struct provides a generic
 /// `send_packet<P: ClientPacket>()` helper that handles encoding.
+#[enum_dispatch]
 pub trait NetworkConnection: Send + Sync {
     /// Returns compression info for packet encoding.
     ///
@@ -50,4 +52,38 @@ pub trait NetworkConnection: Send + Sync {
 
     /// Returns whether the connection is closed.
     fn closed(&self) -> bool;
+}
+
+impl NetworkConnection for Box<dyn NetworkConnection> {
+    fn compression(&self) -> Option<CompressionInfo> {
+        (**self).compression()
+    }
+
+    fn send_encoded(&self, packet: EncodedPacket) {
+        (**self).send_encoded(packet);
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        (**self).send_encoded_bundle(packets);
+    }
+
+    fn disconnect_with_reason(&self, reason: TextComponent) {
+        (**self).disconnect_with_reason(reason);
+    }
+
+    fn tick(&self) {
+        (**self).tick();
+    }
+
+    fn latency(&self) -> i32 {
+        (**self).latency()
+    }
+
+    fn close(&self) {
+        (**self).close();
+    }
+
+    fn closed(&self) -> bool {
+        (**self).closed()
+    }
 }

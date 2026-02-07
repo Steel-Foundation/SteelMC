@@ -219,7 +219,7 @@ impl JavaConnection {
     /// Processes a packet from the client.
     #[allow(clippy::too_many_lines)]
     pub fn process_packet(
-        self: &Arc<Self>,
+        &self,
         packet: RawPacket,
         player: Arc<Player>,
         server: Arc<Server>,
@@ -352,7 +352,7 @@ impl JavaConnection {
 
     /// Listens for packets from the client.
     pub async fn listener(
-        self: Arc<Self>,
+        &self,
         mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
         server: Arc<Server>,
     ) {
@@ -386,7 +386,7 @@ impl JavaConnection {
     ///
     /// # Panics
     /// - If the player is not available.
-    pub async fn sender(self: Arc<Self>, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
+    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
         loop {
             select! {
                 () = self.wait_for_close() => {

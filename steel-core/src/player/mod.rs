@@ -18,6 +18,7 @@ pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
 
+use steel_protocol::packet_traits::CompressionInfo;
 pub use abilities::Abilities;
 
 use block_breaking::BlockBreakingManager;
@@ -34,6 +35,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::CSystemChatMessage;
 use steel_protocol::packets::game::{
@@ -148,9 +150,23 @@ impl Default for ClientInformation {
     }
 }
 
+use crate::player::connection::NetworkConnection;
+
+/// Concrete player connection type using `enum_dispatch` for zero-cost dispatch.
+///
+/// The `Java` variant handles real network connections (hot path),
+/// while `Other` uses dynamic dispatch for test connections.
+#[enum_dispatch(NetworkConnection)]
+pub enum PlayerConnection {
+    /// A real Java client connection (zero-cost dispatch).
+    Java(JavaConnection),
+    /// A dynamic connection for tests or other backends.
+    Other(Box<dyn NetworkConnection>),
+}
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
-use crate::player::connection::NetworkConnection;
+use crate::player::networking::JavaConnection;
 use crate::world::World;
 
 /// A struct representing a player.
@@ -158,7 +174,7 @@ pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,
     /// The player's connection (abstracted for testing).
-    pub connection: Arc<dyn NetworkConnection>,
+    pub connection: Arc<PlayerConnection>,
 
     /// The world the player is in.
     pub world: Arc<World>,
@@ -306,7 +322,7 @@ impl Player {
     /// Creates a new player.
     pub fn new(
         gameprofile: GameProfile,
-        connection: Arc<dyn NetworkConnection>,
+        connection: Arc<PlayerConnection>,
         world: Arc<World>,
         server: Weak<Server>,
         entity_id: i32,

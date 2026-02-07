@@ -47,7 +47,7 @@ use crate::{
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     level_data::LevelDataManager,
-    player::{LastSeen, Player},
+    player::{LastSeen, Player, connection::NetworkConnection},
 };
 
 mod player_area_map;

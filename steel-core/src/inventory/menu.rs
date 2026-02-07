@@ -33,7 +33,7 @@ use crate::{
         lock::{ContainerId, ContainerLockGuard, ContainerRef},
         slot::{Slot, SlotType},
     },
-    player::{Player, connection::NetworkConnection},
+    player::{Player, PlayerConnection, connection::NetworkConnection},
 };
 use std::sync::Arc;
 
@@ -639,7 +639,7 @@ impl MenuBehavior {
     }
 
     /// Encodes and sends a packet through the connection.
-    fn send_packet<P: ClientPacket>(connection: &Arc<dyn NetworkConnection>, packet: P) {
+    fn send_packet<P: ClientPacket>(connection: &Arc<PlayerConnection>, packet: P) {
         let encoded =
             EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
                 .expect("Failed to encode packet");
@@ -651,7 +651,7 @@ impl MenuBehavior {
     /// - A menu is first opened
     /// - The client requests a full refresh
     /// - After certain operations that may have desynced the client
-    pub fn send_all_data_to_remote(&mut self, connection: &Arc<dyn NetworkConnection>) {
+    pub fn send_all_data_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
         // First, update last_slots from actual slot contents
@@ -691,7 +691,7 @@ impl MenuBehavior {
     /// Based on Java's `AbstractContainerMenu::broadcastChanges`.
     /// Note: This does NOT increment `state_id` - that only happens when
     /// processing client clicks (via `increment_state_id`).
-    pub fn broadcast_changes(&mut self, connection: &Arc<dyn NetworkConnection>) {
+    pub fn broadcast_changes(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
         // Update last_slots from actual slot contents
@@ -720,7 +720,7 @@ impl MenuBehavior {
     fn synchronize_data_slot_to_remote(
         &mut self,
         index: usize,
-        connection: &Arc<dyn NetworkConnection>,
+        connection: &Arc<PlayerConnection>,
     ) {
         if self.suppress_remote_updates || index >= self.data_slots.len() {
             return;
@@ -742,7 +742,7 @@ impl MenuBehavior {
 
     /// Sends a single slot update to the client.
     /// Based on Java's `AbstractContainerMenu::synchronizeSlotToRemote`.
-    fn synchronize_slot_to_remote(&mut self, slot: usize, connection: &Arc<dyn NetworkConnection>) {
+    fn synchronize_slot_to_remote(&mut self, slot: usize, connection: &Arc<PlayerConnection>) {
         if self.suppress_remote_updates || slot >= self.last_slots.len() {
             return;
         }
@@ -762,7 +762,7 @@ impl MenuBehavior {
 
     /// Sends the carried item (cursor) to the client.
     /// Based on Java's `AbstractContainerMenu::synchronizeCarriedToRemote`.
-    fn synchronize_carried_to_remote(&mut self, connection: &Arc<dyn NetworkConnection>) {
+    fn synchronize_carried_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
         if self.suppress_remote_updates {
             return;
         }
@@ -810,7 +810,7 @@ impl MenuBehavior {
     /// Based on Java's `AbstractContainerMenu::broadcastFullState`.
     ///
     /// Note: This does NOT increment `state_id` - it just forces a full resync.
-    pub fn broadcast_full_state(&mut self, connection: &Arc<dyn NetworkConnection>) {
+    pub fn broadcast_full_state(&mut self, connection: &Arc<PlayerConnection>) {
         self.send_all_data_to_remote(connection);
     }
 
