@@ -47,9 +47,11 @@ impl ChunkGenerator for FlatChunkGenerator {
                 // Dirt layers
                 chunk.set_relative_block(x, 1, z, self.dirt);
                 chunk.set_relative_block(x, 2, z, self.dirt);
+                chunk.set_relative_block(x, 3, z, self.dirt);
+                chunk.set_relative_block(x, 4, z, self.dirt);
 
                 // Grass block
-                chunk.set_relative_block(x, 3, z, self.grass);
+                chunk.set_relative_block(x, 5, z, self.grass);
             }
         }
     }
