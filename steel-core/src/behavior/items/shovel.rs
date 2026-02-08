@@ -8,9 +8,9 @@ use steel_registry::{
         properties::{BlockStateProperties, BoolProperty},
     },
     entity_data::Direction,
-    vanilla_blocks,
+    vanilla_block_tags, vanilla_blocks,
 };
-use steel_utils::{Identifier, types::UpdateFlags};
+use steel_utils::types::UpdateFlags;
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
 
@@ -37,9 +37,10 @@ impl ItemBehavior for ShovelBehaviour {
         let block_state = context.world.get_block_state(&context.hit_result.block_pos);
         let block = block_state.get_block();
 
-        let tag = Identifier::vanilla_static("campfires");
-
-        if REGISTRY.blocks.is_in_tag(block, &tag) {
+        if REGISTRY
+            .blocks
+            .is_in_tag(block, &vanilla_block_tags::CAMPFIRES_TAG)
+        {
             if !block_state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }

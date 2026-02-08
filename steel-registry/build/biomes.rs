@@ -560,6 +560,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static biome definitions
+    let mut register_stream = TokenStream::new();
     for (biome_name, biome) in &biomes {
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         let biome_name_str = biome_name.clone();
@@ -594,11 +595,6 @@ pub(crate) fn build() -> TokenStream {
                 features: #features,
             });
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (biome_name, _) in &biomes {
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(&#biome_ident, #biome_ident.key.clone());

@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a full pig variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -62,6 +61,17 @@ impl PigVariantRegistry {
         self.pig_variants_by_key.insert(pig_variant.key.clone(), id);
         self.pig_variants_by_id.push(pig_variant);
         id
+    }
+
+    /// Replaces a pig_variant at a given index.
+    /// Returns true if the pig_variant was replaced and false if the pig_variant wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, pig_variant: PigVariantRef, id: usize) -> bool {
+        if id >= self.pig_variants_by_id.len() {
+            return false;
+        }
+        self.pig_variants_by_id[id] = pig_variant;
+        true
     }
 
     #[must_use]

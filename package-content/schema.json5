@@ -71,6 +71,49 @@
             "description": "Whether to enforce secure chat",
             "default": false
         },
+      "world_generator": {
+        "type": "string",
+        "enum": [
+          "flat",
+          "empty"
+        ],
+        description: "World generation settings",
+      },
+      "world_storage_config": {
+        "description": "Defines which storage format and storage option should be used for the world.",
+        "oneOf": [
+          {
+            "description": "Standard disk persistence using region files.",
+            "type": "object",
+            "properties": {
+              "disk": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Path to the worlds directory (e.g., \"world\")."
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "disk"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "RAM-only storage with empty chunks created on demand. No data is persisted.",
+            "type": "string",
+            "enum": [
+              "ram_only"
+            ]
+          }
+        ]
+      },
         "compression": {
             "type": "object",
             "description": "Compression settings",

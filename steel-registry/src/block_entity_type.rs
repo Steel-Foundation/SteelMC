@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a block entity type in Minecraft.
 /// Block entities are used for blocks that need to store additional data
@@ -40,6 +39,17 @@ impl BlockEntityTypeRegistry {
             .insert(block_entity_type.key.clone(), id);
         self.block_entity_types_by_id.push(block_entity_type);
         id
+    }
+
+    /// Replaces a block_entity_type at a given index.
+    /// Returns true if the block_entity_type was replaced and false if the block_entity_type wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, block_entity_type: BlockEntityTypeRef, id: usize) -> bool {
+        if id >= self.block_entity_types_by_id.len() {
+            return false;
+        }
+        self.block_entity_types_by_id[id] = block_entity_type;
+        true
     }
 
     #[must_use]

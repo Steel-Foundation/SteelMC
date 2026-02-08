@@ -2934,6 +2934,7 @@ dependencies = [
  "steel-macros",
  "steel-utils",
  "text_components",
+ "tracing",
  "uuid",
 ]
 

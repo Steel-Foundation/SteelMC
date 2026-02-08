@@ -35,6 +35,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command::sender::CommandSender;
 use crate::player::Player;
+use crate::player::connection::NetworkConnection;
 use crate::server::Server;
 
 /// Builder for creating packet bundles.
@@ -46,6 +47,15 @@ pub struct BundleBuilder {
 }
 
 impl BundleBuilder {
+    /// Creates a new `BundleBuilder` with the given compression settings.
+    #[must_use]
+    pub const fn new(compression: Option<CompressionInfo>) -> Self {
+        Self {
+            packets: Vec::new(),
+            compression,
+        }
+    }
+
     /// Adds a packet to the bundle.
     ///
     /// # Panics
@@ -54,6 +64,12 @@ impl BundleBuilder {
         let encoded = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             .expect("Failed to encode packet");
         self.packets.push(encoded);
+    }
+
+    /// Consumes the builder and returns the collected encoded packets.
+    #[must_use]
+    pub fn into_packets(self) -> Vec<EncodedPacket> {
+        self.packets
     }
 }
 
@@ -184,42 +200,6 @@ impl JavaConnection {
         }
     }
 
-    /// Sends multiple packets as an atomic bundle.
-    ///
-    /// The client will process all packets in the bundle together in a single game tick.
-    /// This is used for entity spawning to ensure spawn, metadata, and equipment packets
-    /// are applied atomically.
-    ///
-    /// # Panics
-    /// - If any packet fails to be encoded.
-    /// - If any packet fails to be sent through the channel.
-    pub fn send_bundle<F>(&self, f: F)
-    where
-        F: FnOnce(&mut BundleBuilder),
-    {
-        let mut builder = BundleBuilder {
-            packets: Vec::new(),
-            compression: self.compression,
-        };
-        f(&mut builder);
-
-        // Only send bundle delimiters if there are packets to bundle
-        if builder.packets.is_empty() {
-            return;
-        }
-
-        // Send start delimiter
-        self.send_packet(CBundleDelimiter);
-
-        // Send all bundled packets
-        for packet in builder.packets {
-            self.send_encoded_packet(packet);
-        }
-
-        // Send end delimiter
-        self.send_packet(CBundleDelimiter);
-    }
-
     /// Closes the connection.
     pub fn close(&self) {
         self.cancel_token.cancel();
@@ -239,7 +219,7 @@ impl JavaConnection {
     /// Processes a packet from the client.
     #[allow(clippy::too_many_lines)]
     pub fn process_packet(
-        self: &Arc<Self>,
+        &self,
         packet: RawPacket,
         player: Arc<Player>,
         server: Arc<Server>,
@@ -363,9 +343,7 @@ impl JavaConnection {
             }
             play::S_PING_REQUEST => {
                 let packet = SPingRequest::read_packet(data)?;
-                player
-                    .connection
-                    .send_packet(CPongResponse::new(packet.time));
+                player.send_packet(CPongResponse::new(packet.time));
             }
             id => log::info!("play packet id {id} is not known"),
         }
@@ -374,7 +352,7 @@ impl JavaConnection {
 
     /// Listens for packets from the client.
     pub async fn listener(
-        self: Arc<Self>,
+        &self,
         mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
         server: Arc<Server>,
     ) {
@@ -408,7 +386,7 @@ impl JavaConnection {
     ///
     /// # Panics
     /// - If the player is not available.
-    pub async fn sender(self: Arc<Self>, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
+    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
         loop {
             select! {
                 () = self.wait_for_close() => {
@@ -449,5 +427,43 @@ impl TextResolutor for JavaConnection {
 
     fn translate(&self, _key: &str) -> Option<String> {
         None
+    }
+}
+
+impl NetworkConnection for JavaConnection {
+    fn compression(&self) -> Option<CompressionInfo> {
+        self.compression
+    }
+
+    fn send_encoded(&self, packet: EncodedPacket) {
+        self.send_encoded_packet(packet);
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        self.send_packet(CBundleDelimiter);
+        for packet in packets {
+            self.send_encoded_packet(packet);
+        }
+        self.send_packet(CBundleDelimiter);
+    }
+
+    fn disconnect_with_reason(&self, reason: TextComponent) {
+        self.disconnect(reason);
+    }
+
+    fn tick(&self) {
+        self.keep_connection_alive();
+    }
+
+    fn latency(&self) -> i32 {
+        *self.latency.lock() as i32
+    }
+
+    fn close(&self) {
+        self.cancel_token.cancel();
+    }
+
+    fn closed(&self) -> bool {
+        self.cancel_token.is_cancelled()
     }
 }

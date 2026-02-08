@@ -22,6 +22,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static menu type definitions
+    let mut register_stream = TokenStream::new();
     for menu_type_name in &menu_types {
         let menu_type_ident = Ident::new(&menu_type_name.to_shouty_snake_case(), Span::call_site());
         let menu_type_name_str = menu_type_name.clone();
@@ -33,12 +34,7 @@ pub(crate) fn build() -> TokenStream {
                 key: #key,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for menu_type_name in &menu_types {
-        let menu_type_ident = Ident::new(&menu_type_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#menu_type_ident);
         });

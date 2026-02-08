@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a banner pattern definition from a data pack JSON file.
 #[derive(Debug)]
@@ -40,6 +39,17 @@ impl BannerPatternRegistry {
             .insert(banner_pattern.key.clone(), id);
         self.banner_patterns_by_id.push(banner_pattern);
         id
+    }
+
+    /// Replaces a banner_pattern at a given index.
+    /// Returns true if the banner_pattern was replaced and false if the banner_pattern wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, banner_pattern: BannerPatternRef, id: usize) -> bool {
+        if id >= self.banner_patterns_by_id.len() {
+            return false;
+        }
+        self.banner_patterns_by_id[id] = banner_pattern;
+        true
     }
 
     #[must_use]

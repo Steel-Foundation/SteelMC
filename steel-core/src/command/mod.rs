@@ -37,6 +37,7 @@ impl CommandDispatcher {
         dispatcher.register(commands::stop::command_handler());
         dispatcher.register(commands::summon::command_handler());
         dispatcher.register(commands::tick::command_handler());
+        dispatcher.register(commands::time::command_handler());
         dispatcher.register(commands::weather::command_handler());
         dispatcher.register(commands::tellraw::command_handler());
         dispatcher
@@ -178,9 +179,7 @@ impl CommandDispatcher {
     ) {
         let (suggestions, start, length) =
             self.handle_suggestions(CommandSender::Player(Arc::clone(player)), command, server);
-        player
-            .connection
-            .send_packet(CCommandSuggestions::new(id, start, length, suggestions));
+        player.send_packet(CCommandSuggestions::new(id, start, length, suggestions));
     }
 
     /// Handles a command suggestion request from a player.

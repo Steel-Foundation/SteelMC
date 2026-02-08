@@ -112,6 +112,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static pig variant definitions
+    let mut register_stream = TokenStream::new();
     for (pig_variant_name, pig_variant) in &pig_variants {
         let pig_variant_ident =
             Ident::new(&pig_variant_name.to_shouty_snake_case(), Span::call_site());
@@ -135,13 +136,7 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (pig_variant_name, _) in &pig_variants {
-        let pig_variant_ident =
-            Ident::new(&pig_variant_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#pig_variant_ident);
         });

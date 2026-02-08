@@ -131,6 +131,17 @@ impl EntityTypeRegistry {
         self.types_by_id.push(entity_type);
     }
 
+    /// Replaces a entity_type at a given index.
+    /// Returns true if the entity_type was replaced and false if the entity_type wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, entity_type: EntityTypeRef, id: usize) -> bool {
+        if id >= self.types_by_id.len() {
+            return false;
+        }
+        self.types_by_id[id] = entity_type;
+        true
+    }
+
     #[must_use]
     pub fn by_id(&self, id: i32) -> Option<EntityTypeRef> {
         if id >= 0 {

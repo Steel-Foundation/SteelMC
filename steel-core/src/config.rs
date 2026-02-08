@@ -104,6 +104,30 @@ impl ServerLinks {
     }
 }
 
+/// The different types of world generators that can be used.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WordGeneratorTypes {
+    /// produces a flat gras world
+    Flat,
+    /// creates an empty world which can be used for test
+    Empty,
+}
+
+/// Configuration for world storage.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldStorageConfig {
+    /// Standard disk persistence using region files.
+    Disk {
+        /// Path to the world directory (e.g., "world/overworld").
+        path: String,
+    },
+    /// RAM-only storage with empty chunks created on demand.
+    /// No data is persisted - useful for testing and minigames.
+    RamOnly,
+}
+
 /// The server configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
@@ -133,6 +157,10 @@ pub struct ServerConfig {
     pub favicon: String,
     /// Whether to enforce secure chat.
     pub enforce_secure_chat: bool,
+    /// Defines which generator should be used for the world.
+    pub world_generator: WordGeneratorTypes,
+    /// Defines which storage format and storage option should be used for the world
+    pub world_storage_config: WorldStorageConfig,
     /// The compression settings for the server.
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links

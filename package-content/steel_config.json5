@@ -27,6 +27,13 @@
         threshold: 256,
         level: 4,
     },
+    // World generation settings
+    world_generator: "flat",
+    world_storage_config: {
+        "disk": {
+            "path": "world"
+        }
+    },
     // Logging configuration
     log: {
         // Time format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)

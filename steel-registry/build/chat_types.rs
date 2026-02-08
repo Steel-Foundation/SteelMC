@@ -123,6 +123,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static chat type definitions
+    let mut register_stream = TokenStream::new();
     for (chat_type_name, chat_type) in &chat_types {
         let chat_type_ident = Ident::new(&chat_type_name.to_shouty_snake_case(), Span::call_site());
         let chat_type_name_str = chat_type_name.clone();
@@ -138,12 +139,6 @@ pub(crate) fn build() -> TokenStream {
                 narration: #narration,
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (chat_type_name, _) in &chat_types {
-        let chat_type_ident = Ident::new(&chat_type_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#chat_type_ident);
         });

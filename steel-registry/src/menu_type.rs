@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a menu type (container/GUI type) in Minecraft.
 /// Menu types define the different inventory interfaces available,
@@ -39,6 +38,17 @@ impl MenuTypeRegistry {
         self.menu_types_by_key.insert(menu_type.key.clone(), id);
         self.menu_types_by_id.push(menu_type);
         id
+    }
+
+    /// Replaces a menu_type at a given index.
+    /// Returns true if the menu_type was replaced and false if the menu_type wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, menu_type: MenuTypeRef, id: usize) -> bool {
+        if id >= self.menu_types_by_id.len() {
+            return false;
+        }
+        self.menu_types_by_id[id] = menu_type;
+        true
     }
 
     #[must_use]

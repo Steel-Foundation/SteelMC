@@ -46,6 +46,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static timeline definitions
+    let mut register_stream = TokenStream::new();
     for timeline_name in &timelines {
         let timeline_ident = Ident::new(&timeline_name.to_shouty_snake_case(), Span::call_site());
         let timeline_name_str = timeline_name.clone();
@@ -57,12 +58,7 @@ pub(crate) fn build() -> TokenStream {
                 key: #key,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for timeline_name in &timelines {
-        let timeline_ident = Ident::new(&timeline_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#timeline_ident);
         });

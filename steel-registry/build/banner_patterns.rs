@@ -51,6 +51,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static banner pattern definitions
+    let mut register_stream = TokenStream::new();
     for (banner_pattern_name, banner_pattern) in &banner_patterns {
         let banner_pattern_ident = Ident::new(
             &banner_pattern_name.to_shouty_snake_case(),
@@ -69,15 +70,6 @@ pub(crate) fn build() -> TokenStream {
                 translation_key: #translation_key,
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (banner_pattern_name, _) in &banner_patterns {
-        let banner_pattern_ident = Ident::new(
-            &banner_pattern_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
             registry.register(#banner_pattern_ident);
         });

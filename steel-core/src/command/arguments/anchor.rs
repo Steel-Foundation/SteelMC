@@ -36,16 +36,7 @@ impl CommandArgument for AnchorArgument {
         prefix: &str,
         _suggestion_ctx: &super::SuggestionContext,
     ) -> Vec<SuggestionEntry> {
-        let mut suggestions = vec![
-            SuggestionEntry {
-                text: String::from("feet"),
-                tooltip: None,
-            },
-            SuggestionEntry {
-                text: String::from("eyes"),
-                tooltip: None,
-            },
-        ];
+        let mut suggestions = vec![SuggestionEntry::new("feet"), SuggestionEntry::new("eyes")];
 
         suggestions.retain(|s| s.text.starts_with(prefix));
         suggestions

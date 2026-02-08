@@ -10,4 +10,6 @@ profile.json.gz
 AGENTS.md
 CLAUDE.md
 .idea/
+.env
+steel-flint/.cache
 /players
