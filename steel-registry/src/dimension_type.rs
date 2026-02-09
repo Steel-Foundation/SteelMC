@@ -51,6 +51,11 @@ impl DimensionTypeRegistry {
         }
     }
 
+    #[must_use]
+    pub fn get_ids(&self) -> Vec<Identifier> {
+        self.dimension_types_by_key.keys().cloned().collect()
+    }
+
     pub fn register(&mut self, dimension_type: DimensionTypeRef) -> usize {
         assert!(
             self.allows_registering,

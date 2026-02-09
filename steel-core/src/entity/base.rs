@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
+use steel_utils::BlockPos;
 use steel_utils::locks::SyncMutex;
 use steel_utils::math::Vector3;
 use uuid::Uuid;
@@ -54,6 +55,10 @@ pub struct EntityBase {
     /// The server tick count when this entity was last ticked.
     /// Used to prevent double-ticking when moving between chunks.
     last_world_tick: AtomicI32,
+    /// Portal cooldown in ticks (prevents immediate re-entry after teleport).
+    portal_cooldown: AtomicI32,
+    /// Portal block detected this tick (set by `check_blocks_inside`, consumed by portal processing).
+    inside_portal: SyncMutex<Option<BlockPos>>,
 }
 
 impl EntityBase {
@@ -76,6 +81,8 @@ impl EntityBase {
             removed: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             last_world_tick: AtomicI32::new(-1),
+            portal_cooldown: AtomicI32::new(0),
+            inside_portal: SyncMutex::new(None),
         }
     }
 
@@ -148,5 +155,37 @@ impl EntityBase {
     #[inline]
     pub fn mark_ticked(&self, server_tick: i32) {
         self.last_world_tick.store(server_tick, Ordering::Release);
+    }
+
+    // === Portal Methods ===
+
+    /// Gets the portal cooldown in ticks.
+    #[inline]
+    pub fn portal_cooldown(&self) -> i32 {
+        self.portal_cooldown.load(Ordering::Relaxed)
+    }
+
+    /// Sets the portal cooldown in ticks.
+    #[inline]
+    pub fn set_portal_cooldown(&self, ticks: i32) {
+        self.portal_cooldown.store(ticks, Ordering::Relaxed);
+    }
+
+    /// Decrements the portal cooldown by 1 if it is greater than 0.
+    pub fn decrement_portal_cooldown(&self) {
+        let cooldown = self.portal_cooldown.load(Ordering::Relaxed);
+        if cooldown > 0 {
+            self.portal_cooldown.store(cooldown - 1, Ordering::Relaxed);
+        }
+    }
+
+    /// Stores the portal position detected this tick.
+    pub fn set_inside_portal(&self, pos: BlockPos) {
+        *self.inside_portal.lock() = Some(pos);
+    }
+
+    /// Takes and clears the portal position detected this tick.
+    pub fn take_inside_portal(&self) -> Option<BlockPos> {
+        self.inside_portal.lock().take()
     }
 }

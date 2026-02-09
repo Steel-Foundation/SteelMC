@@ -69,9 +69,9 @@ checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
 name = "anyhow"
-version = "1.0.100"
+version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "arc-swap"
@@ -744,6 +744,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -809,6 +815,37 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "flint-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "colored",
+ "rustc-hash 2.1.1",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "flint-steel"
+version = "1.0.0"
+dependencies = [
+ "dotenvy",
+ "flint-core",
+ "futures",
+ "rustc-hash 2.1.1",
+ "serde_json",
+ "steel-core",
+ "steel-protocol",
+ "steel-registry",
+ "steel-utils",
+ "text_components",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

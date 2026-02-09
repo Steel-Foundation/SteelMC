@@ -47,6 +47,15 @@ pub struct ChunkSender {
 }
 
 impl ChunkSender {
+    /// Resets all chunk sender state for a dimension change.
+    pub fn reset(&mut self) {
+        self.pending_chunks.clear();
+        self.unacknowledged_batches = 0;
+        self.desired_chunks_per_tick = START_CHUNKS_PER_TICK;
+        self.batch_quota = 0.0;
+        self.max_unacknowledged_batches = 1;
+    }
+
     /// Marks a chunk as pending to be sent to the client.
     pub fn mark_chunk_pending_to_send(&mut self, pos: ChunkPos) {
         self.pending_chunks.insert(pos);

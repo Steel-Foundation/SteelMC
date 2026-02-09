@@ -54,7 +54,7 @@ use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::{REGISTRY, vanilla_chat_types};
 
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 use steel_utils::types::GameType;
 use text_components::resolving::TextResolutor;
 use text_components::{Modifier, TextComponent};
@@ -78,7 +78,7 @@ use steel_protocol::packets::{
     common::{SClientInformation, SCustomPayload},
     game::{
         CBlockChangedAck, CBlockUpdate, CContainerClose, CGameEvent, CMoveEntityPosRot,
-        CMoveEntityRot, COpenScreen, CPlayerChat, CPlayerInfoUpdate, CRotateHead,
+        CMoveEntityRot, COpenScreen, CPlayerChat, CPlayerInfoUpdate, CRespawn, CRotateHead,
         CSetChunkCacheRadius, ChatTypeBound, FilterType, GameEventType, PreviousMessage, SChat,
         SChatAck, SChatSessionUpdate, SContainerButtonClick, SContainerClick, SContainerClose,
         SContainerSlotStateChanged, SMovePlayer, SPlayerInput, SSetCreativeModeSlot, SSignUpdate,
@@ -87,10 +87,13 @@ use steel_protocol::packets::{
 };
 use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
 
-use crate::behavior::{BLOCK_BEHAVIORS, InteractionResult};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockInsideEffect, InteractionResult};
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
+use crate::portal::TeleportTransition;
+use crate::portal::{nether_portal, portal_processor::PortalProcessor};
 use steel_utils::BlockPos;
+use steel_utils::serial::write::{OptionalBlockPos, OptionalIdentifier};
 
 use steel_utils::types::InteractionHand;
 use steel_utils::{ChunkPos, math::Vector3, translations};
@@ -177,7 +180,7 @@ pub struct Player {
     pub connection: Arc<PlayerConnection>,
 
     /// The world the player is in.
-    pub world: Arc<World>,
+    world: SyncRwLock<Arc<World>>,
 
     /// Reference to the server (for entity ID generation, etc.).
     #[allow(dead_code)]
@@ -311,6 +314,15 @@ pub struct Player {
     /// Last `on_ground` state sent to tracking players (for detecting changes).
     last_sent_on_ground: AtomicBool,
 
+    /// Whether the player is currently inside a portal block this tick.
+    inside_portal: SyncMutex<Option<BlockPos>>,
+
+    /// Portal standing state (tracks time inside portal).
+    portal_processor: SyncMutex<Option<PortalProcessor>>,
+
+    /// Portal cooldown in ticks (prevents immediate re-entry).
+    portal_cooldown: AtomicI32,
+
     /// Whether the player has been removed from the world.
     removed: AtomicBool,
 
@@ -337,7 +349,7 @@ impl Player {
         Self {
             gameprofile,
             connection,
-            world,
+            world: SyncRwLock::new(world),
             server,
             id: entity_id,
             client_loaded: AtomicBool::new(false),
@@ -382,8 +394,120 @@ impl Player {
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
             position_sync_delay: AtomicI32::new(0),
             last_sent_on_ground: AtomicBool::new(false),
+            inside_portal: SyncMutex::new(None),
+            portal_processor: SyncMutex::new(None),
+            portal_cooldown: AtomicI32::new(0),
             removed: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
+        }
+    }
+
+    /// Returns the world the player is currently in.
+    pub fn world(&self) -> Arc<World> {
+        self.world.read().clone()
+    }
+
+    /// Player half-width for AABB calculations.
+    const PLAYER_WIDTH: f64 = 0.6;
+    /// Player height for AABB calculations.
+    const PLAYER_HEIGHT: f64 = 1.8;
+
+    /// Checks all blocks the player's AABB overlaps and processes effects.
+    fn check_blocks_inside(&self) {
+        let world = self.world();
+        let pos = *self.position.lock();
+        let half_width = Self::PLAYER_WIDTH / 2.0;
+
+        let min_x = (pos.x - half_width).floor() as i32;
+        let max_x = (pos.x + half_width).floor() as i32;
+        let min_y = pos.y.floor() as i32;
+        let max_y = (pos.y + Self::PLAYER_HEIGHT).floor() as i32;
+        let min_z = (pos.z - half_width).floor() as i32;
+        let max_z = (pos.z + half_width).floor() as i32;
+
+        let block_behaviors = &*BLOCK_BEHAVIORS;
+
+        for bx in min_x..=max_x {
+            for by in min_y..=max_y {
+                for bz in min_z..=max_z {
+                    let block_pos = BlockPos::new(bx, by, bz);
+                    let state = world.get_block_state(&block_pos);
+                    if state.is_air() {
+                        continue;
+                    }
+                    let block = state.get_block();
+                    let effect = block_behaviors
+                        .get_behavior(block)
+                        .entity_inside(state, &world, block_pos);
+                    match effect {
+                        BlockInsideEffect::Portal(portal_pos) => {
+                            self.set_inside_portal(portal_pos);
+                        }
+                        BlockInsideEffect::None => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Processes portal state each tick.
+    fn process_portal(&self) {
+        use steel_registry::game_rules::GameRuleValue;
+        use steel_registry::vanilla_game_rules::{
+            PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
+        };
+
+        // Decrement portal cooldown
+        let cooldown = self.portal_cooldown.load(Ordering::Relaxed);
+        if cooldown > 0 {
+            self.portal_cooldown.store(cooldown - 1, Ordering::Relaxed);
+        }
+
+        let inside_portal = self.inside_portal.lock().take();
+
+        if let Some(portal_pos) = inside_portal {
+            if cooldown <= 0 {
+                let world = self.world();
+
+                // Get transition time from game rules
+                let game_mode = self.game_mode.load();
+                let transition_time =
+                    if game_mode == GameType::Creative || game_mode == GameType::Spectator {
+                        match world.get_game_rule(PLAYERS_NETHER_PORTAL_CREATIVE_DELAY) {
+                            GameRuleValue::Int(v) => v,
+                            GameRuleValue::Bool(_) => 1,
+                        }
+                    } else {
+                        match world.get_game_rule(PLAYERS_NETHER_PORTAL_DEFAULT_DELAY) {
+                            GameRuleValue::Int(v) => v,
+                            GameRuleValue::Bool(_) => 80,
+                        }
+                    };
+
+                let mut processor = self.portal_processor.lock();
+                let proc = processor
+                    .get_or_insert_with(|| PortalProcessor::new(portal_pos, transition_time));
+
+                if proc.tick() {
+                    // Time to teleport - queue the dimension change
+                    if let Some(server) = self.server.upgrade()
+                        && let Some(transition) =
+                            nether_portal::calculate_destination(&server, &world, portal_pos)
+                        && let Some(player_arc) = world.players.get_by_entity_id(self.id)
+                    {
+                        server.queue_dimension_change(player_arc, transition);
+                    }
+                    *processor = None;
+                }
+            }
+        } else {
+            // Not in a portal - decay the processor
+            let mut processor = self.portal_processor.lock();
+            if let Some(proc) = processor.as_mut()
+                && proc.decay()
+            {
+                *processor = None;
+            }
         }
     }
 
@@ -436,6 +560,10 @@ impl Player {
         // Reset first_good_position to current position at start of tick (vanilla: resetPosition)
         *self.first_good_position.lock() = *self.position.lock();
 
+        // Check blocks the player is standing inside (portal, etc.)
+        self.check_blocks_inside();
+        self.process_portal();
+
         // Apply gravity to delta_movement (vanilla: applyGravity in Entity.tick/LivingEntity.travel)
         // This must happen after resetPosition so the speed check has the correct expected velocity
         self.apply_gravity();
@@ -460,11 +588,12 @@ impl Player {
 
         *self.last_chunk_pos.lock() = chunk_pos;
 
-        self.world.chunk_map.update_player_status(self);
+        let world = self.world();
+        world.chunk_map.update_player_status(self);
 
         self.chunk_sender
             .lock()
-            .send_next_chunks(self.connection.clone(), &self.world, chunk_pos);
+            .send_next_chunks(self.connection.clone(), &world, chunk_pos);
 
         // Try to pick up nearby items (vanilla: Player.aiStep)
         self.touch_nearby_items();
@@ -473,7 +602,7 @@ impl Player {
         self.broadcast_inventory_changes();
 
         // Tick block breaking
-        self.block_breaking.lock().tick(self, &self.world);
+        self.block_breaking.lock().tick(self, &world);
 
         // Update pose based on current state
         self.update_pose();
@@ -499,7 +628,7 @@ impl Player {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
             let packet = CSetEntityData::new(self.id, dirty_values);
             let chunk_pos = *self.last_chunk_pos.lock();
-            self.world.broadcast_to_nearby(chunk_pos, packet, None);
+            self.world().broadcast_to_nearby(chunk_pos, packet, None);
         }
     }
 
@@ -517,11 +646,13 @@ impl Player {
         // Calculate pickup area (vanilla: Player.aiStep lines 454-458)
         let pickup_area = self.bounding_box().inflate_xyz(1.0, 0.5, 1.0);
 
+        let world = self.world();
+
         // Get all entities in the pickup area
-        let entities = self.world.get_entities_in_aabb(&pickup_area);
+        let entities = world.get_entities_in_aabb(&pickup_area);
 
         // Get player Arc for try_pickup (needed because try_pickup takes &Arc<Player>)
-        let Some(player_arc) = self.world.players.get_by_entity_id(self.id) else {
+        let Some(player_arc) = world.players.get_by_entity_id(self.id) else {
             return;
         };
 
@@ -724,21 +855,17 @@ impl Player {
                 };
 
                 steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-                self.world.broadcast_chat(
-                    chat_packet,
-                    Arc::clone(&player),
-                    last_seen,
-                    Some(sig_array),
-                );
+                let world = self.world();
+                world.broadcast_chat(chat_packet, Arc::clone(&player), last_seen, Some(sig_array));
             } else {
-                self.world.broadcast_unsigned_chat(
+                self.world().broadcast_unsigned_chat(
                     chat_packet,
                     &player.gameprofile.name,
                     &chat_message,
                 );
             }
         } else {
-            self.world.broadcast_unsigned_chat(
+            self.world().broadcast_unsigned_chat(
                 chat_packet,
                 &player.gameprofile.name,
                 &chat_message,
@@ -826,14 +953,15 @@ impl Player {
     /// Returns `true` if movement should be validated, `false` to skip validation.
     fn should_validate_movement(&self, is_fall_flying: bool) -> bool {
         // Check playerMovementCheck gamerule
-        let player_check = self.world.get_game_rule(PLAYER_MOVEMENT_CHECK);
+        let world = self.world();
+        let player_check = world.get_game_rule(PLAYER_MOVEMENT_CHECK);
         if player_check != GameRuleValue::Bool(true) {
             return false;
         }
 
         // If fall flying, also check elytraMovementCheck gamerule
         if is_fall_flying {
-            let elytra_check = self.world.get_game_rule(ELYTRA_MOVEMENT_CHECK);
+            let elytra_check = world.get_game_rule(ELYTRA_MOVEMENT_CHECK);
             return elytra_check == GameRuleValue::Bool(true);
         }
 
@@ -879,7 +1007,7 @@ impl Player {
         let is_fall_flying = self.fall_flying.load(Ordering::Relaxed);
         let was_on_ground = self.on_ground.load(Ordering::Relaxed);
         // Skip movement checks when tick rate is frozen (vanilla: tickRateManager().runsNormally())
-        let tick_frozen = !self.world.tick_runs_normally();
+        let tick_frozen = !self.world().tick_runs_normally();
 
         // Handle position updates
         if packet.has_pos {
@@ -925,8 +1053,9 @@ impl Player {
                 let skip_checks = is_spectator || is_creative || tick_frozen || gamerule_skip;
 
                 // Validate movement using physics simulation
+                let world = self.world();
                 let mut validation = movement::validate_movement(
-                    &self.world,
+                    &world,
                     &movement::MovementInput {
                         target_pos,
                         first_good_pos: first_good,
@@ -997,6 +1126,7 @@ impl Player {
 
         if packet.has_pos || packet.has_rot {
             let new_chunk = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+            let world = self.world();
 
             // Note: player_area_map is updated in chunk_map.update_player_status
             // which is called every tick and computes view diffs efficiently
@@ -1032,8 +1162,7 @@ impl Player {
                             pitch,
                             on_ground: packet.on_ground,
                         };
-                        self.world
-                            .broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
+                        world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
                     } else {
                         let move_packet = CMoveEntityPosRot {
                             entity_id: self.id,
@@ -1044,8 +1173,7 @@ impl Player {
                             x_rot: to_angle_byte(pitch),
                             on_ground: packet.on_ground,
                         };
-                        self.world
-                            .broadcast_to_nearby(new_chunk, move_packet, Some(self.id));
+                        world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id));
                     }
                 } else {
                     // Send absolute position sync (delta too big)
@@ -1066,8 +1194,7 @@ impl Player {
                         pitch,
                         on_ground: packet.on_ground,
                     };
-                    self.world
-                        .broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
+                    world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
                 }
             } else {
                 let rot_packet = CMoveEntityRot {
@@ -1076,8 +1203,7 @@ impl Player {
                     x_rot: to_angle_byte(pitch),
                     on_ground: packet.on_ground,
                 };
-                self.world
-                    .broadcast_to_nearby(new_chunk, rot_packet, Some(self.id));
+                world.broadcast_to_nearby(new_chunk, rot_packet, Some(self.id));
             }
 
             if packet.has_rot {
@@ -1085,8 +1211,7 @@ impl Player {
                     entity_id: self.id,
                     head_y_rot: to_angle_byte(yaw),
                 };
-                self.world
-                    .broadcast_to_nearby(new_chunk, head_packet, Some(self.id));
+                world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id));
             }
 
             *self.prev_position.lock() = pos;
@@ -1128,7 +1253,7 @@ impl Player {
         // Broadcast the chat session to all players so they can verify this player's signatures
         let update_packet =
             CPlayerInfoUpdate::update_chat_session(self.gameprofile.id, protocol_data);
-        self.world.broadcast_to_all(update_packet);
+        self.world().broadcast_to_all(update_packet);
     }
 
     /// Gets a reference to the player's chat session if present
@@ -1257,7 +1382,7 @@ impl Player {
         // This updates PlayerInfo on clients, which is used for isSpectator() checks
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.world.broadcast_to_all(update_packet);
+        self.world().broadcast_to_all(update_packet);
 
         true
     }
@@ -1731,14 +1856,15 @@ impl Player {
 
     /// Sends block update packets for a position and its neighbor.
     fn send_block_updates(&self, pos: &BlockPos, direction: Direction) {
-        let state = self.world.get_block_state(pos);
+        let world = self.world();
+        let state = world.get_block_state(pos);
         self.send_packet(CBlockUpdate {
             pos: *pos,
             block_state: state,
         });
 
         let neighbor_pos = direction.relative(pos);
-        let neighbor_state = self.world.get_block_state(&neighbor_pos);
+        let neighbor_state = world.get_block_state(&neighbor_pos);
         self.send_packet(CBlockUpdate {
             pos: neighbor_pos,
             block_state: neighbor_state,
@@ -1755,7 +1881,7 @@ impl Player {
 
         let chunk = *self.last_chunk_pos.lock();
         let exclude = if update_self { None } else { Some(self.id) };
-        self.world.broadcast_to_nearby(chunk, packet, exclude);
+        self.world().broadcast_to_nearby(chunk, packet, exclude);
     }
 
     /// Handles a player input packet (movement keys, sneaking, sprinting).
@@ -1807,7 +1933,8 @@ impl Player {
         }
 
         // 5. Validate Y height
-        if pos.y() >= self.world.max_build_height() {
+        let world = self.world();
+        if pos.y() >= world.max_build_height() {
             // TODO: Send "build.tooHigh" message to player
             self.send_block_updates(pos, direction);
             return;
@@ -1820,13 +1947,13 @@ impl Player {
         }
 
         // 7. Check may_interact permission
-        if !self.world.may_interact(self, pos) {
+        if !world.may_interact(self, pos) {
             self.send_block_updates(pos, direction);
             return;
         }
 
         // 8. Call use_item_on
-        let result = game_mode::use_item_on(self, &self.world, packet.hand, &packet.block_hit);
+        let result = game_mode::use_item_on(self, &world, packet.hand, &packet.block_hit);
 
         // 9. Handle result
         if let InteractionResult::Success = result {
@@ -1845,11 +1972,12 @@ impl Player {
     pub fn handle_player_action(&self, packet: SPlayerAction) {
         use block_breaking::BlockBreakAction;
 
+        let world = self.world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
                 self.block_breaking.lock().handle_block_break_action(
                     self,
-                    &self.world,
+                    &world,
                     packet.pos,
                     BlockBreakAction::Start,
                     packet.direction,
@@ -1860,7 +1988,7 @@ impl Player {
             PlayerAction::StopDestroyBlock => {
                 self.block_breaking.lock().handle_block_break_action(
                     self,
-                    &self.world,
+                    &world,
                     packet.pos,
                     BlockBreakAction::Stop,
                     packet.direction,
@@ -1871,7 +1999,7 @@ impl Player {
             PlayerAction::AbortDestroyBlock => {
                 self.block_breaking.lock().handle_block_break_action(
                     self,
-                    &self.world,
+                    &world,
                     packet.pos,
                     BlockBreakAction::Abort,
                     packet.direction,
@@ -1925,7 +2053,7 @@ impl Player {
         }
 
         // Get block state at position
-        let state = self.world.get_block_state(&packet.pos);
+        let state = self.world().get_block_state(&packet.pos);
         if state.is_air() {
             return;
         }
@@ -1999,7 +2127,7 @@ impl Player {
         }
 
         // Get the block entity at the position
-        let Some(block_entity) = self.world.get_block_entity(&packet.pos) else {
+        let Some(block_entity) = self.world().get_block_entity(&packet.pos) else {
             return;
         };
 
@@ -2051,7 +2179,7 @@ impl Player {
 
         // Broadcast block entity update to nearby players
         if let Some(nbt) = update_tag {
-            self.world
+            self.world()
                 .broadcast_block_entity_update(pos, block_entity_type, nbt);
         }
     }
@@ -2062,8 +2190,9 @@ impl Player {
     /// * `pos` - Position of the sign block
     /// * `is_front_text` - Whether to edit front (true) or back (false) text
     pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
+        let world = self.world();
         // Set this player as the one who may edit the sign
-        if let Some(block_entity) = self.world.get_block_entity(&pos) {
+        if let Some(block_entity) = world.get_block_entity(&pos) {
             let mut guard = block_entity.lock();
             if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
                 sign.set_player_who_may_edit(Some(self.gameprofile.id));
@@ -2071,7 +2200,7 @@ impl Player {
         }
 
         // Send the block update first to ensure client has latest state
-        let state = self.world.get_block_state(&pos);
+        let state = world.get_block_state(&pos);
         self.send_packet(CBlockUpdate {
             pos,
             block_state: state,
@@ -2271,7 +2400,7 @@ impl Player {
         let spawn_pos = Vector3::new(pos.x, spawn_y, pos.z);
 
         if let Some(entity) = self
-            .world
+            .world()
             .spawn_item_with_velocity(spawn_pos, item, velocity)
         {
             // Set pickup delay: 40 ticks (2 seconds) when thrown from hand
@@ -2331,6 +2460,116 @@ impl Player {
         }
     }
 
+    /// Changes the player's dimension (world).
+    ///
+    /// Handles the full dimension change flow: cleanup old world, reset state,
+    /// send `CRespawn` + teleport packets, and add to new world.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new world's dimension type is not registered.
+    pub fn change_dimension(self: &Arc<Self>, transition: TeleportTransition) {
+        let old_world = self.world();
+        let new_world = transition.target_world.clone();
+
+        // === Phase 1: Cleanup old world ===
+
+        // Close any open container menu
+        self.do_close_container();
+        self.send_packet(CContainerClose { container_id: 0 });
+
+        // Remove from old world (lightweight - stays in tab list)
+        old_world.remove_player_for_dimension_change(self);
+
+        // === Phase 2: Reset player state ===
+
+        // Update world reference
+        *self.world.write() = new_world.clone();
+
+        // Update position + rotation
+        *self.position.lock() = transition.position;
+        self.rotation.store(transition.rotation);
+
+        // Reset movement/physics state
+        self.on_ground.store(false, Ordering::Relaxed);
+        self.sleeping.store(false, Ordering::Relaxed);
+        self.fall_flying.store(false, Ordering::Relaxed);
+        self.sprinting.store(false, Ordering::Relaxed);
+        *self.delta_movement.lock() = Vector3::default();
+        self.client_loaded.store(false, Ordering::Relaxed);
+
+        // Reset movement validation state
+        *self.awaiting_position_from_client.lock() = None;
+        *self.first_good_position.lock() = transition.position;
+        *self.last_good_position.lock() = transition.position;
+        self.received_move_packet_count.store(0, Ordering::Relaxed);
+        self.known_move_packet_count.store(0, Ordering::Relaxed);
+
+        // Clear portal processor
+        *self.portal_processor.lock() = None;
+
+        // === Phase 3: Send packets ===
+
+        // CRespawn packet (client unloads old dimension, loads new one)
+        let dim_type_id = *(REGISTRY.dimension_types.get_id(
+            REGISTRY
+                .dimension_types
+                .by_key(&new_world.dimension.key)
+                .expect("Dimension type should be registered"),
+        )) as i32;
+
+        self.send_packet(CRespawn {
+            dimension_type: dim_type_id,
+            dimension_name: new_world.dimension.key.clone(),
+            hashed_seed: new_world.obfuscated_seed(),
+            gamemode: self.game_mode.load() as u8,
+            previous_gamemode: -1i8,
+            is_debug: false,
+            is_flat: true,
+            has_death_location: false,
+            death_dimension_name: OptionalIdentifier(None),
+            death_location: OptionalBlockPos(None),
+            portal_cooldown_ticks: transition.portal_cooldown,
+            sea_level: 63,
+            data_kept: 0,
+        });
+
+        // Reset chunk sender state
+        self.chunk_sender.lock().reset();
+        *self.last_tracking_view.lock() = None;
+        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
+
+        // Teleport (sends CPlayerPosition, sets awaiting_teleport for ack)
+        self.teleport(
+            transition.position.x,
+            transition.position.y,
+            transition.position.z,
+            transition.rotation.0,
+            transition.rotation.1,
+        );
+
+        // Re-send abilities
+        self.send_abilities();
+
+        // Re-send held item slot
+        self.send_packet(CSetHeldSlot {
+            slot: i32::from(self.inventory.lock().get_selected_slot()),
+        });
+
+        // === Phase 4: Set portal cooldown ===
+        self.portal_cooldown
+            .store(transition.portal_cooldown, Ordering::Relaxed);
+
+        // === Phase 5: Add to new world ===
+        new_world.add_player_for_dimension_change(self.clone());
+
+        log::info!(
+            "Player {} changed dimension to {}",
+            self.gameprofile.name,
+            new_world.dimension.key
+        );
+    }
+
     /// Cleans up player resources.
     pub const fn cleanup(&self) {}
 }
@@ -2374,7 +2613,7 @@ impl Entity for Player {
     }
 
     fn level(&self) -> Option<Arc<World>> {
-        Some(Arc::clone(&self.world))
+        Some(self.world())
     }
 
     fn is_removed(&self) -> bool {
@@ -2390,6 +2629,10 @@ impl Entity for Player {
 
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
         *self.level_callback.lock() = callback;
+    }
+
+    fn set_inside_portal(&self, pos: BlockPos) {
+        *self.inside_portal.lock() = Some(pos);
     }
 
     fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {

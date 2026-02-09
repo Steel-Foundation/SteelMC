@@ -5,6 +5,7 @@ use steel_protocol::packets::game::{
     CAddEntity, CGameEvent, CPlayerInfoUpdate, CRemoveEntities, CRemovePlayerInfo, GameEventType,
 };
 use steel_registry::{REGISTRY, vanilla_entities};
+use steel_utils::SectionPos;
 use tokio::time::Instant;
 
 use crate::{
@@ -168,6 +169,123 @@ impl World {
         player.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
             data: player.game_mode.load().into(),
+        });
+    }
+
+    /// Removes a player from this world for a dimension change.
+    ///
+    /// This is a lightweight removal that keeps the player connected and in the
+    /// tab list. Unlike `remove_player`, it does NOT:
+    /// - Save player data
+    /// - Send `CRemovePlayerInfo` (tab list entry persists)
+    /// - Close the connection
+    /// - Call `player.cleanup()`
+    pub fn remove_player_for_dimension_change(self: &Arc<Self>, player: &Arc<Player>) {
+        let uuid = player.gameprofile.id;
+        let entity_id = player.id;
+
+        if self.players.remove_sync(&uuid).is_some() {
+            // Unregister from entity cache
+            let pos = player.position();
+            let section = SectionPos::new(
+                (pos.x as i32) >> 4,
+                (pos.y as i32) >> 4,
+                (pos.z as i32) >> 4,
+            );
+            self.entity_cache.unregister(entity_id, uuid, section);
+
+            // Remove from entity tracking
+            self.entity_tracker().on_player_leave(entity_id);
+
+            // Remove from player area map
+            self.player_area_map.on_player_leave(player);
+
+            // Remove from chunk map (cleans up chunk tickets)
+            self.chunk_map.remove_player(player);
+
+            // Tell remaining players in this world to despawn this entity
+            // but do NOT remove from tab list
+            self.broadcast_to_all(CRemoveEntities::single(entity_id));
+        }
+    }
+
+    /// Adds a player to this world after a dimension change.
+    ///
+    /// This is a lightweight addition that skips tab list broadcasting since
+    /// the player's tab list entry persists across dimension changes.
+    /// Unlike `add_player`, it does NOT:
+    /// - Send `CPlayerInfoUpdate` (tab list entry already exists)
+    pub fn add_player_for_dimension_change(self: &Arc<Self>, player: Arc<Player>) {
+        if !self.players.insert(player.clone()) {
+            log::error!(
+                "Failed to insert player {} during dimension change",
+                player.gameprofile.id
+            );
+            return;
+        }
+
+        // Create new level callback pointing to this world
+        let pos = player.position();
+        let callback = Arc::new(PlayerEntityCallback::new(
+            player.id,
+            pos,
+            Arc::downgrade(self),
+        ));
+        player.set_level_callback(callback);
+
+        // Register in entity cache
+        self.entity_cache
+            .register(&(player.clone() as SharedEntity));
+
+        // Send existing players' entities to the switching player
+        // (tab list info already exists, just need entity spawn packets)
+        let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
+        self.players.iter_players(|_, existing_player| {
+            if existing_player.gameprofile.id != player.gameprofile.id {
+                let existing_pos = *existing_player.position.lock();
+                let (existing_yaw, existing_pitch) = existing_player.rotation.load();
+                player.send_bundle(|bundle| {
+                    bundle.add(CAddEntity::player(
+                        existing_player.id,
+                        existing_player.gameprofile.id,
+                        player_type_id,
+                        existing_pos.x,
+                        existing_pos.y,
+                        existing_pos.z,
+                        existing_yaw,
+                        existing_pitch,
+                    ));
+                });
+            }
+            true
+        });
+
+        // Broadcast this player's entity spawn to other players in the new world
+        let pos = *player.position.lock();
+        let (yaw, pitch) = player.rotation.load();
+        let spawn_packet = CAddEntity::player(
+            player.id,
+            player.gameprofile.id,
+            player_type_id,
+            pos.x,
+            pos.y,
+            pos.z,
+            yaw,
+            pitch,
+        );
+        self.players.iter_players(|_, p| {
+            if p.gameprofile.id != player.gameprofile.id {
+                p.send_bundle(|bundle| {
+                    bundle.add(spawn_packet.clone());
+                });
+            }
+            true
+        });
+
+        // Signal client to start loading chunks
+        player.send_packet(CGameEvent {
+            event: GameEventType::LevelChunksLoadStart,
+            data: 0.0,
         });
     }
 }

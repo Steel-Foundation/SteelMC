@@ -39,6 +39,15 @@ impl RemovalReason {
     pub const fn should_save(self) -> bool {
         matches!(self, Self::UnloadedToChunk)
     }
+
+    /// Returns true if nearby players should be notified of the entity's removal.
+    ///
+    /// All removal reasons broadcast except `UnloadedToChunk`, where the entity
+    /// is simply being stored and will reappear when the chunk loads again.
+    #[must_use]
+    pub const fn should_broadcast_removal(self) -> bool {
+        !matches!(self, Self::UnloadedToChunk)
+    }
 }
 
 /// Callback interface for entity lifecycle events.

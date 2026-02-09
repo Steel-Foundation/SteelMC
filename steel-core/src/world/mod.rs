@@ -2,7 +2,7 @@
 use crate::chunk::chunk_map::ChunkMapTickTimings;
 use std::path::Path;
 use std::{
-    io,
+    io, mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
@@ -34,7 +34,7 @@ use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_game_rules::ADVANCE_TIME};
 
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
-use steel_utils::locks::SyncRwLock;
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
@@ -109,6 +109,8 @@ pub struct World {
     entity_cache: EntityCache,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
+    /// Queued entity teleports to process after the tick (e.g., items entering nether portals).
+    pending_entity_teleports: SyncMutex<Vec<(SharedEntity, BlockPos)>>,
 }
 
 impl World {
@@ -171,6 +173,7 @@ impl World {
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
+            pending_entity_teleports: SyncMutex::new(Vec::new()),
         }))
     }
 
@@ -1413,11 +1416,25 @@ impl World {
             self.entity_cache
                 .unregister(entity_id, entity.uuid(), section);
 
-            // Broadcast remove packet if entity was destroyed
-            if reason.should_destroy() {
+            // Broadcast remove packet so nearby players despawn the entity
+            if reason.should_broadcast_removal() {
                 let packet = CRemoveEntities::single(entity_id);
                 self.broadcast_to_nearby(chunk_pos, packet, None);
             }
         }
+    }
+
+    // === Entity Portal Teleport Queue ===
+
+    /// Queues an entity for portal teleportation after the current tick.
+    pub fn queue_entity_teleport(&self, entity: SharedEntity, portal_pos: BlockPos) {
+        self.pending_entity_teleports
+            .lock()
+            .push((entity, portal_pos));
+    }
+
+    /// Drains and returns all pending entity teleports.
+    pub fn take_pending_entity_teleports(&self) -> Vec<(SharedEntity, BlockPos)> {
+        mem::take(&mut *self.pending_entity_teleports.lock())
     }
 }

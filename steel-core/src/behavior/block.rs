@@ -15,6 +15,14 @@ use crate::block_entity::SharedBlockEntity;
 use crate::player::Player;
 use crate::world::World;
 
+/// Effect returned by a block when an entity is inside it.
+pub enum BlockInsideEffect {
+    /// No effect.
+    None,
+    /// The entity is inside a portal at the given position.
+    Portal(BlockPos),
+}
+
 /// Trait defining the behavior of a block.
 ///
 /// This trait handles all dynamic/functional aspects of blocks:
@@ -183,6 +191,19 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
         // Default: no-op
+    }
+
+    /// Called when an entity is inside this block.
+    ///
+    /// Returns an effect describing what should happen to the entity.
+    #[allow(unused_variables)]
+    fn entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &World,
+        pos: BlockPos,
+    ) -> BlockInsideEffect {
+        BlockInsideEffect::None
     }
 
     // === Block Entity Methods ===

@@ -5,13 +5,16 @@ use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_utils::BlockPos;
 use steel_utils::math::Vector3;
 use uuid::Uuid;
 
+use crate::behavior::{BLOCK_BEHAVIORS, BlockInsideEffect};
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
@@ -343,6 +346,62 @@ pub trait Entity: Send + Sync {
     ///
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: &BaseNbtCompound<'_>) {}
+
+    // === Portal Methods ===
+
+    /// Called when the entity is inside a portal block.
+    fn set_inside_portal(&self, pos: BlockPos) {
+        if let Some(base) = self.base() {
+            base.set_inside_portal(pos);
+        }
+    }
+
+    /// Gets the portal cooldown in ticks.
+    fn portal_cooldown(&self) -> i32 {
+        self.base().map_or(0, EntityBase::portal_cooldown)
+    }
+
+    /// Checks all blocks the entity's AABB overlaps and processes effects.
+    fn check_blocks_inside(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let aabb = self.bounding_box();
+
+        let min_x = aabb.min_x.floor() as i32;
+        let max_x = aabb.max_x.floor() as i32;
+        let min_y = aabb.min_y.floor() as i32;
+        let max_y = aabb.max_y.floor() as i32;
+        let min_z = aabb.min_z.floor() as i32;
+        let max_z = aabb.max_z.floor() as i32;
+
+        let block_behaviors = &*BLOCK_BEHAVIORS;
+
+        for bx in min_x..=max_x {
+            for by in min_y..=max_y {
+                for bz in min_z..=max_z {
+                    let block_pos = BlockPos::new(bx, by, bz);
+                    let state = world.get_block_state(&block_pos);
+                    if state.is_air() {
+                        continue;
+                    }
+                    let block = state.get_block();
+                    let effect = block_behaviors
+                        .get_behavior(block)
+                        .entity_inside(state, &world, block_pos);
+                    match effect {
+                        BlockInsideEffect::Portal(portal_pos) => {
+                            self.set_inside_portal(portal_pos);
+                        }
+                        BlockInsideEffect::None => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Processes portal standing state (called during tick).
+    fn handle_portal(&self) {}
 
     // === Tick Tracking ===
     // These methods prevent double-ticking when an entity moves between chunks

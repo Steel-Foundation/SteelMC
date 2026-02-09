@@ -30,6 +30,7 @@ mod c_player_info_update;
 mod c_player_position;
 mod c_remove_entities;
 mod c_remove_player_info;
+mod c_respawn;
 mod c_rotate_head;
 mod c_section_blocks_update;
 mod c_set_chunk_cache_radius;
@@ -73,7 +74,6 @@ mod s_sign_update;
 mod s_swing;
 mod s_use_item;
 mod s_use_item_on;
-mod c_respawn;
 
 pub use c_add_entity::{CAddEntity, write_lp_vec3};
 pub use c_animate::{AnimateAction, CAnimate};
@@ -116,6 +116,7 @@ pub use c_player_info_update::{
 pub use c_player_position::{CPlayerPosition, RelativeMovement};
 pub use c_remove_entities::CRemoveEntities;
 pub use c_remove_player_info::CRemovePlayerInfo;
+pub use c_respawn::CRespawn;
 pub use c_rotate_head::CRotateHead;
 pub use c_section_blocks_update::{BlockChange, CSectionBlocksUpdate};
 pub use c_set_chunk_cache_radius::CSetChunkCacheRadius;

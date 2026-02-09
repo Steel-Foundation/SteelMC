@@ -15,5 +15,6 @@ pub mod inventory;
 pub mod level_data;
 pub mod physics;
 pub mod player;
+pub mod portal;
 pub mod server;
 pub mod world;

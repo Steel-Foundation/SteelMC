@@ -491,6 +491,29 @@ impl ItemEntity {
         }
     }
 
+    /// Processes portal detection and teleportation for this item entity.
+    ///
+    /// Non-player entities teleport instantly in vanilla (wait time is 0).
+    fn process_entity_portal(&self) {
+        let Some(base) = self.base() else {
+            return;
+        };
+
+        base.decrement_portal_cooldown();
+
+        let inside_portal = base.take_inside_portal();
+        if let Some(portal_pos) = inside_portal
+            && base.portal_cooldown() <= 0
+        {
+            // Non-player entities teleport immediately (vanilla: getPortalWaitTime() returns 0)
+            if let Some(world) = self.level()
+                && let Some(entity) = world.get_entity_by_id(self.id())
+            {
+                world.queue_entity_teleport(entity, portal_pos);
+            }
+        }
+    }
+
     /// Attempts to merge this item with nearby item entities.
     ///
     /// Mirrors vanilla's `ItemEntity.mergeWithNeighbours()`.
@@ -683,6 +706,10 @@ impl Entity for ItemEntity {
     }
 
     fn tick(&self) {
+        // Portal detection and processing
+        self.check_blocks_inside();
+        self.process_entity_portal();
+
         // Vanilla: `Entity.tickCount` increments every tick regardless of item age/lifetime.
         let tick_count = self.tick_count.fetch_add(1, Ordering::Relaxed) + 1;
 

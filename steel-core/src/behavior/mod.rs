@@ -40,12 +40,16 @@ pub mod block_behaviours;
 #[path = "generated/items.rs"]
 pub mod item_behaviours;
 
+pub use block::BlockInsideEffect;
 pub use block::{BlockBehaviorRegistry, BlockBehaviour, DefaultBlockBehaviour};
 use block_behaviours::register_block_behaviors;
 pub use context::{BlockHitResult, BlockPlaceContext, InteractionResult, UseOnContext};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviours::register_item_behaviors;
-pub use items::{BlockItemBehavior, DefaultItemBehavior, EnderEyeBehavior, FilledBucketBehavior};
+pub use items::{
+    BlockItemBehavior, DefaultItemBehavior, EnderEyeBehavior, FilledBucketBehavior,
+    FlintAndSteelBehavior,
+};
 use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -122,6 +126,12 @@ pub fn init_behaviors() {
 
     let mut item_behaviors = ItemBehaviorRegistry::new();
     register_item_behaviors(&mut item_behaviors);
+
+    // Register flint and steel behavior (not auto-generated)
+    item_behaviors.set_behavior(
+        &vanilla_items::ITEMS.flint_and_steel,
+        Box::new(FlintAndSteelBehavior),
+    );
 
     // Register bucket behaviors (not auto-generated since they're not block items)
     item_behaviors.set_behavior(

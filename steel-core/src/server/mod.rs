@@ -5,6 +5,7 @@ pub mod registry_cache;
 pub mod tick_rate_manager;
 
 use std::{
+    mem,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -27,14 +28,17 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-use steel_utils::locks::SyncRwLock;
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-use crate::entity::init_entities;
+use crate::entity::{Entity, SharedEntity, init_entities};
 use crate::player::player_data_storage::PlayerDataStorage;
+use crate::portal::TeleportTransition;
+use crate::portal::nether_portal;
+use steel_utils::BlockPos;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -55,6 +59,8 @@ pub struct Server {
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
+    /// Queued dimension changes to process after the tick.
+    pub pending_dimension_changes: SyncMutex<Vec<(Arc<Player>, TeleportTransition)>>,
 }
 
 impl Server {
@@ -63,6 +69,7 @@ impl Server {
     /// # Panics
     ///
     /// Panics if the global registry has already been initialized.
+    #[allow(clippy::too_many_lines)]
     pub async fn new(chunk_runtime: Arc<Runtime>, cancel_token: CancellationToken) -> Self {
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();
@@ -126,7 +133,9 @@ impl Server {
                     REGISTRY
                         .blocks
                         .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-                    REGISTRY.blocks.get_default_state_id(vanilla_blocks::NETHER_BRICKS),
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::NETHER_BRICKS),
                     REGISTRY
                         .blocks
                         .get_default_state_id(vanilla_blocks::NETHERRACK),
@@ -154,7 +163,9 @@ impl Server {
                     REGISTRY
                         .blocks
                         .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-                    REGISTRY.blocks.get_default_state_id(vanilla_blocks::END_STONE),
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::END_STONE),
                     REGISTRY
                         .blocks
                         .get_default_state_id(vanilla_blocks::END_STONE),
@@ -188,6 +199,7 @@ impl Server {
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             player_data_storage,
+            pending_dimension_changes: SyncMutex::new(Vec::new()),
         }
     }
 
@@ -232,7 +244,7 @@ impl Server {
         player.send_packet(CLogin {
             player_id: player.id,
             hardcore: false,
-            levels: vec![dimension_key.clone()],
+            levels: REGISTRY.dimension_types.get_ids(),
             max_players: STEEL_CONFIG.max_players as i32,
             chunk_radius: player.view_distance().into(),
             simulation_distance: STEEL_CONFIG.simulation_distance.into(),
@@ -296,6 +308,92 @@ impl Server {
         players
     }
 
+    /// Returns the overworld.
+    pub fn overworld(&self) -> &Arc<World> {
+        &self.worlds[0]
+    }
+
+    /// Returns the nether.
+    pub fn nether(&self) -> &Arc<World> {
+        &self.worlds[1]
+    }
+
+    /// Returns the end.
+    pub fn the_end(&self) -> &Arc<World> {
+        &self.worlds[2]
+    }
+
+    /// Queues a dimension change to be processed after the current tick.
+    pub fn queue_dimension_change(&self, player: Arc<Player>, transition: TeleportTransition) {
+        self.pending_dimension_changes
+            .lock()
+            .push((player, transition));
+    }
+
+    /// Processes a portal teleport for a non-player entity (e.g., dropped items).
+    fn process_entity_portal_teleport(
+        &self,
+        source_world: &Arc<World>,
+        entity: &SharedEntity,
+        portal_pos: BlockPos,
+    ) {
+        use crate::entity::{RemovalReason, entities::ItemEntity, next_entity_id};
+
+        // Skip if already removed
+        if entity.is_removed() {
+            return;
+        }
+
+        let Some(transition) = nether_portal::calculate_destination(self, source_world, portal_pos)
+        else {
+            return;
+        };
+
+        // Currently only handle ItemEntity teleportation
+        if let Some(item_entity) = entity.clone().as_item_entity() {
+            // Save state from old entity
+            let item = item_entity.get_item();
+            let velocity = Entity::velocity(item_entity.as_ref());
+            let pickup_delay = item_entity.get_pickup_delay();
+            let age = item_entity.get_age();
+            let thrower = item_entity.get_thrower();
+            let owner = item_entity.get_owner();
+
+            // Remove old entity
+            entity.set_removed(RemovalReason::ChangedDimension);
+
+            // Create new entity in target world
+            let new_id = next_entity_id();
+            let new_entity = Arc::new(ItemEntity::with_item_and_velocity(
+                new_id,
+                transition.position,
+                item,
+                velocity,
+                Arc::downgrade(&transition.target_world),
+            ));
+
+            // Restore saved state
+            new_entity.set_pickup_delay(pickup_delay);
+            new_entity.set_age(age);
+            if let Some(thrower) = thrower {
+                new_entity.set_thrower(thrower);
+            }
+            new_entity.set_owner(owner);
+
+            // Set portal cooldown to prevent bouncing
+            if let Some(base) = Entity::base(new_entity.as_ref()) {
+                base.set_portal_cooldown(transition.portal_cooldown);
+            }
+
+            transition.target_world.add_entity(new_entity);
+        } else {
+            log::debug!(
+                "Portal teleport for non-item entity type not yet supported (entity id={})",
+                entity.id()
+            );
+        }
+    }
+
     /// Runs the server tick loop.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
@@ -357,6 +455,20 @@ impl Server {
             // Always tick worlds (for chunk loading/gen), but pass runs_normally
             // so game elements like random ticks only run when not frozen
             self.tick_worlds(tick_count, runs_normally).await;
+
+            // Process queued dimension changes (safe - not inside player iteration)
+            let pending = mem::take(&mut *self.pending_dimension_changes.lock());
+            for (player, transition) in pending {
+                player.change_dimension(transition);
+            }
+
+            // Process queued entity portal teleports
+            for world in &self.worlds {
+                let pending = world.take_pending_entity_teleports();
+                for (entity, portal_pos) in pending {
+                    self.process_entity_portal_teleport(world, &entity, portal_pos);
+                }
+            }
 
             // Record tick duration for TPS/MSPT tracking
             let (tps, mspt) = {
