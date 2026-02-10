@@ -3,11 +3,12 @@
 //! Opens a 27-slot container menu when right-clicked.
 
 use steel_registry::blocks::BlockRef;
+use steel_registry::vanilla_blocks::{NETHER_PORTAL, OBSIDIAN};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
-use crate::portal::portal_shape::PortalShape;
+use crate::portal::portal_shape::{PortalShape, PortalTest};
 use crate::world::World;
 
 /// Behavior for barrel blocks.
@@ -39,8 +40,19 @@ impl BlockBehaviour for FireBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        if let Some(shape) = PortalShape::find_portal_shape(world, pos) {
-            shape.place_portal_blocks(world);
+        if let Some(tester) = PortalTest::find_portal_shape(
+            world,
+            pos,
+            &PortalShape {
+                min_x: 2,
+                max_x: 21,
+                min_y: 3,
+                max_y: 21,
+                frame: OBSIDIAN,
+                portal: NETHER_PORTAL,
+            },
+        ) {
+            tester.place_portal_blocks(world);
             // TODO: Play ignite sound, damage item
         } else {
         }

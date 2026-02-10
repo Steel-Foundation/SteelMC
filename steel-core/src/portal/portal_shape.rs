@@ -3,6 +3,7 @@
 use std::ptr;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks;
 use steel_utils::math::Axis;
@@ -12,7 +13,7 @@ use steel_utils::{BlockPos, Direction};
 use crate::world::World;
 
 /// A detected portal shape with axis, position, and dimensions.
-pub struct PortalShape {
+pub struct PortalTest {
     /// The axis of the portal (X or Z).
     pub axis: Axis,
     /// Bottom-left corner of the portal interior.
@@ -21,22 +22,40 @@ pub struct PortalShape {
     pub width: u32,
     /// Height of the interior (3-21).
     pub height: u32,
+    /// The block type of the frame.
+    pub portal: BlockRef,
 }
 
-impl PortalShape {
+/// Definition of a portal shape in rectangular form, like the nether portal frame.
+pub struct PortalShape{
+    /// min size of the portal in x direction
+    pub min_x: u32,
+    /// max size of the portal in x direction
+    pub max_x: u32,
+    /// min size of the portal in y direction
+    pub min_y: u32,
+    /// max size of the portal in y direction
+    pub max_y: u32,
+    /// The block type of the frame.
+    pub frame: BlockRef,
+    /// The block type of the portal.
+    pub portal: BlockRef,
+}
+
+impl PortalTest {
     const MIN_WIDTH: u32 = 2;
     const MAX_WIDTH: u32 = 21;
     const MIN_HEIGHT: u32 = 3;
     const MAX_HEIGHT: u32 = 21;
 
     /// Tries to find a valid portal shape from a position inside or adjacent to a frame.
-    pub fn find_portal_shape(world: &World, fire_pos: BlockPos) -> Option<Self> {
-        Self::try_axis(world, fire_pos, Axis::X)
-            .or_else(|| Self::try_axis(world, fire_pos, Axis::Z))
+    pub fn find_portal_shape(world: &World, fire_pos: BlockPos, shape: &PortalShape) -> Option<Self> {
+        Self::try_axis(world, fire_pos, Axis::X, shape)
+            .or_else(|| Self::try_axis(world, fire_pos, Axis::Z, shape))
     }
     /// Tries to find a valid portal
     /// It doesn't loop over the obsidian, it loops over the air in the portal, to get the size of the portal
-    fn try_axis(world: &World, pos: BlockPos, axis: Axis) -> Option<Self> {
+    fn try_axis(world: &World, pos: BlockPos, axis: Axis, shape: &PortalShape) -> Option<Self> {
         // Width direction: portal axis=X means width along Z, axis=Z means width along X
         let dir: Direction = match axis {
             Axis::X => Direction::East,
@@ -49,25 +68,25 @@ impl PortalShape {
         let mut cur = pos;
         for _ in 0..=Self::MAX_HEIGHT as i32 {
             let next = BlockPos::new(cur.x(), cur.y() - 1, cur.z());
-            if Self::is_frame_block(world, next) {
+            if Self::is_frame_block(world, next, shape) {
                 break;
             }
             cur = next;
         }
 
         // searches for the left obsidian (-1) because we don't want to be at the obsidian block
-        let to_left = Self::get_width(world, cur, dir);
+        let to_left = Self::get_width(world, cur, dir, shape);
         tracing::info!("to_left: {}", to_left);
         cur = cur.relative_n(dir, to_left as i32);
 
         tracing::info!("left_bottom: {:?}", cur);
 
-        let width = Self::get_width(world, cur, dir.opposite()) + 1;
+        let width = Self::get_width(world, cur, dir.opposite(), shape) + 1;
         tracing::info!("width: {}", width);
         if width < Self::MIN_WIDTH {
             return None;
         }
-        let height = Self::get_height(world, cur, dir);
+        let height = Self::get_height(world, cur, dir, shape);
         tracing::info!("height: {}", height);
         if height < Self::MIN_HEIGHT {
             return None;
@@ -75,7 +94,7 @@ impl PortalShape {
         // Measure width (walk right from bottom_left)
 
         // Validate entire frame
-        if !Self::validate_frame(world, cur, width, height, dir.opposite()) {
+        if !Self::validate_frame(world, cur, width, height, dir.opposite(), shape) {
             tracing::info!("invalid frame");
             return None;
         }
@@ -85,31 +104,32 @@ impl PortalShape {
             bottom_left: cur,
             width,
             height,
+            portal: shape.portal
         })
     }
 
     /// Returns the width - 1 of the portal interior starting from the given position.
-    fn get_width(world: &World, pos: BlockPos, direction: Direction) -> u32 {
+    fn get_width(world: &World, pos: BlockPos, direction: Direction, shape: &PortalShape) -> u32 {
         for i in 1..Self::MAX_WIDTH {
             let next = pos.relative_n(direction, i as i32);
-            if !Self::is_valid_interior(world, next) && Self::is_frame_block(world, next) {
+            if !Self::is_valid_interior(world, next) && Self::is_frame_block(world, next, shape) {
                 return i - 1;
             }
-            if !Self::is_frame_block(world, next.below()) {
+            if !Self::is_frame_block(world, next.below(), shape) {
                 return 0;
             }
         }
         0
     }
-    fn get_height(world: &World, pos: BlockPos, direction: Direction) -> u32 {
+    fn get_height(world: &World, pos: BlockPos, direction: Direction, shape: &PortalShape) -> u32 {
         let mut cur = pos;
         for i in 1..Self::MAX_HEIGHT {
             let next = cur.above();
             tracing::info!("next: {:?}", next);
-            if !Self::is_valid_interior(world, next) && Self::is_frame_block(world, next) {
+            if !Self::is_valid_interior(world, next) && Self::is_frame_block(world, next, shape) {
                 return i;
             }
-            if !Self::is_frame_block(world, next.relative(direction)) {
+            if !Self::is_frame_block(world, next.relative(direction), shape) {
                 return 0;
             }
             cur = next;
@@ -117,10 +137,9 @@ impl PortalShape {
         0
     }
 
-    fn is_frame_block(world: &World, pos: BlockPos) -> bool {
+    fn is_frame_block(world: &World, pos: BlockPos, shape: &PortalShape) -> bool {
         ptr::eq(
-            world.get_block_state(&pos).get_block(),
-            vanilla_blocks::OBSIDIAN,
+            world.get_block_state(&pos).get_block(),shape.frame,
         )
     }
 
@@ -135,11 +154,12 @@ impl PortalShape {
         width: u32,
         height: u32,
         direction: Direction,
+        shape: &PortalShape
     ) -> bool {
         // Check top frame row
         let top_row = bottom_left.above_n(height as i32);
         for w in 0..width as i32 {
-            if !Self::is_frame_block(world, top_row.relative_n(direction, w)) {
+            if !Self::is_frame_block(world, top_row.relative_n(direction, w), shape) {
                 return false;
             }
         }
@@ -148,7 +168,7 @@ impl PortalShape {
         for h in 0..height as i32 {
             // Right column
             let height_pos = bottom_left.above_n(h);
-            if !Self::is_frame_block(world, height_pos.relative_n(direction, width as i32)) {
+            if !Self::is_frame_block(world, height_pos.relative_n(direction, width as i32), shape) {
                 return false;
             }
 
@@ -165,7 +185,7 @@ impl PortalShape {
 
     /// Fills the interior with nether portal blocks.
     pub fn place_portal_blocks(&self, world: &World) {
-        let portal_state = vanilla_blocks::NETHER_PORTAL
+        let portal_state = self.portal
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_AXIS, self.axis);
         let dir = match self.axis {
