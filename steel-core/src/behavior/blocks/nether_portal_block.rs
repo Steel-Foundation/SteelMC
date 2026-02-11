@@ -1,7 +1,7 @@
 //! Nether portal block behavior.
 
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks::AIR;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -32,9 +32,8 @@ impl BlockBehaviour for NetherPortalBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if neighbor_state.is_air()
-        {
-            return AIR.default_state()
+        if neighbor_state.is_air() {
+            return AIR.default_state();
         }
         state
     }

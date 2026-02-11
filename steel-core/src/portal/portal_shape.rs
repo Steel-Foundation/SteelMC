@@ -2,8 +2,8 @@
 
 use std::ptr;
 
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks;
 use steel_utils::math::Axis;
@@ -27,7 +27,7 @@ pub struct PortalTest {
 }
 
 /// Definition of a portal shape in rectangular form, like the nether portal frame.
-pub struct PortalShape{
+pub struct PortalShape {
     /// min size of the portal in x direction
     pub min_x: u32,
     /// max size of the portal in x direction
@@ -49,7 +49,11 @@ impl PortalTest {
     const MAX_HEIGHT: u32 = 21;
 
     /// Tries to find a valid portal shape from a position inside or adjacent to a frame.
-    pub fn find_portal_shape(world: &World, fire_pos: BlockPos, shape: &PortalShape) -> Option<Self> {
+    pub fn find_portal_shape(
+        world: &World,
+        fire_pos: BlockPos,
+        shape: &PortalShape,
+    ) -> Option<Self> {
         Self::try_axis(world, fire_pos, Axis::X, shape)
             .or_else(|| Self::try_axis(world, fire_pos, Axis::Z, shape))
     }
@@ -104,7 +108,7 @@ impl PortalTest {
             bottom_left: cur,
             width,
             height,
-            portal: shape.portal
+            portal: shape.portal,
         })
     }
 
@@ -138,9 +142,7 @@ impl PortalTest {
     }
 
     fn is_frame_block(world: &World, pos: BlockPos, shape: &PortalShape) -> bool {
-        ptr::eq(
-            world.get_block_state(&pos).get_block(),shape.frame,
-        )
+        ptr::eq(world.get_block_state(&pos).get_block(), shape.frame)
     }
 
     fn is_valid_interior(world: &World, pos: BlockPos) -> bool {
@@ -154,7 +156,7 @@ impl PortalTest {
         width: u32,
         height: u32,
         direction: Direction,
-        shape: &PortalShape
+        shape: &PortalShape,
     ) -> bool {
         // Check top frame row
         let top_row = bottom_left.above_n(height as i32);
@@ -185,7 +187,8 @@ impl PortalTest {
 
     /// Fills the interior with nether portal blocks.
     pub fn place_portal_blocks(&self, world: &World) {
-        let portal_state = self.portal
+        let portal_state = self
+            .portal
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_AXIS, self.axis);
         let dir = match self.axis {

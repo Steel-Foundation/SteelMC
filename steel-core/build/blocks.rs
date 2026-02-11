@@ -142,7 +142,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let redstone_wall_torch_registrations =
         generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
     let fire_registrations = generate_registrations(fire_blocks.iter(), &fire_type);
-    let nether_portal_registrations = generate_registrations(nether_portal_blocks.iter(), &nether_portal_block);
+    let nether_portal_registrations =
+        generate_registrations(nether_portal_blocks.iter(), &nether_portal_block);
 
     let output = quote! {
         //! Generated block behavior assignments.
