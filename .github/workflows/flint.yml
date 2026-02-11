@@ -15,6 +15,9 @@ jobs:
       - name: Checkout SteelMC
         uses: actions/checkout@v4
 
+      - name: Add flint-steel to workspace
+        run: sed -i 's/"steel-crypto",/"steel-crypto",\n    "flint-steel",/' Cargo.toml
+
       - name: Checkout flint-steel
         uses: actions/checkout@v4
         with:
