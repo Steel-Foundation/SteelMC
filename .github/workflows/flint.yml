@@ -68,7 +68,7 @@ jobs:
         timeout-minutes: 15
         env:
           TEST_PATH: ${{ github.workspace }}/flint/JunkysGenerator
-        run: cargo test --lib -p flint-steel test_run_all_flint_benchmarks -- --nocapture
+        run: cargo test --release --lib -p flint-steel test_run_all_flint_benchmarks -- --nocapture
 
       - name: Upload Flint summary
         if: always()
