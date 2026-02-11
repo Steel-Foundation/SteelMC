@@ -11,7 +11,7 @@ use crate::world::World;
 
 /// Behavior for the nether portal block.
 pub struct NetherPortalBlock {
-    #[warn(unused)]
+    #[allow(dead_code)]
     block: BlockRef,
 }
 impl NetherPortalBlock {
