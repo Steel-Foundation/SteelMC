@@ -7,16 +7,30 @@
 //! # Key Types
 //!
 //! - [`DensityFunction`] - The density function enum with all operation types
-//! - [`DensityEvaluator`] - Evaluates density functions with noise generators
+//! - [`DensityFunctionOps`] - Trait providing `compute()` and `compute_cached()` methods
 //! - [`DensityContext`] - The position context for evaluation
+//! - [`EvalCache`] - Cache for avoiding redundant evaluations
 //! - [`NoiseRouter`] - Collection of all density functions for world generation
 //! - [`CubicSpline`] - Cubic spline interpolation for smooth terrain transitions
+//!
+//! # Struct-per-type pattern
+//!
+//! Each density function type has its own struct (e.g. [`Constant`], [`Noise`], [`Mapped`]),
+//! mirroring vanilla Minecraft's separate record/class pattern. The [`DensityFunction`] enum
+//! wraps them for dispatch.
+//!
+//! # Evaluation
+//!
+//! Density functions implement the [`DensityFunctionOps`] trait. Noise generators and
+//! registry references are baked into the tree at construction time via
+//! [`DensityFunction::resolve`], so evaluation needs only a [`DensityContext`].
 
-mod evaluator;
 mod types;
 
-pub use evaluator::{DensityEvaluator, EvalCache, NoiseParameters};
 pub use types::{
-    CubicSpline, DensityContext, DensityFunction, NoiseRouter, RarityValueMapper, SplinePoint,
-    SplineValue,
+    BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
+    DensityContext, DensityFunction, DensityFunctionOps, EndIslands, EvalCache, Mapped, MappedType,
+    Marker, MarkerType, Noise, NoiseParameters, NoiseRouter, RangeChoice, RarityValueMapper,
+    Reference, Shift, ShiftA, ShiftB, ShiftedNoise, Spline, SplinePoint, SplineValue, TwoArgType,
+    TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
 };

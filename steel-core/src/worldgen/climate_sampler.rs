@@ -14,16 +14,18 @@ use steel_registry::density_functions::{
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::density::{
-    CubicSpline, DensityContext, DensityEvaluator, DensityFunction, EvalCache, RarityValueMapper,
-    SplinePoint, SplineValue,
+    BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
+    DensityContext, DensityFunction, DensityFunctionOps, EndIslands, EvalCache, Mapped, MappedType,
+    Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference, Shift, ShiftA, ShiftB,
+    ShiftedNoise, Spline, SplinePoint, SplineValue, TwoArgType, TwoArgumentSimple,
+    WeirdScaledSampler, YClampedGradient,
 };
+use steel_utils::noise::NormalNoise;
 use steel_utils::random::{Random, xoroshiro::Xoroshiro};
 
 /// Climate sampler that uses the extracted vanilla density functions.
 pub struct VanillaClimateSampler {
-    /// The density evaluator with noise generators
-    evaluator: DensityEvaluator,
-    /// Temperature density function
+    /// Temperature density function (resolved with baked noises)
     temperature: Arc<DensityFunction>,
     /// Humidity/vegetation density function
     humidity: Arc<DensityFunction>,
@@ -45,29 +47,40 @@ impl VanillaClimateSampler {
         let mut rng = Xoroshiro::from_seed(seed);
         let splitter = rng.next_positional();
 
-        // Build noise parameters from vanilla datapack
-        let noise_params = get_noise_parameters();
-
-        // Create the density evaluator with noises
-        let mut evaluator = DensityEvaluator::new(&splitter, &noise_params);
-
-        // Build density function registry from generated code
-        let registry = build_density_function_registry();
-        for (id, func) in registry {
-            evaluator.add_to_registry(id, func);
+        // Build noise generators from vanilla datapack parameters
+        let noise_param_map = get_noise_parameters();
+        let mut noises = FxHashMap::default();
+        for (id, params) in &noise_param_map {
+            let noise = NormalNoise::create(&splitter, id, params.first_octave, &params.amplitudes);
+            noises.insert(id.clone(), noise);
         }
 
-        // Get the overworld noise router and convert to steel-utils types
+        // Build density function registry from generated code (unresolved)
+        let registry = build_density_function_registry();
+
+        // Get the overworld noise router and convert to steel-utils types (unresolved)
         let router = &*OVERWORLD_NOISE_ROUTER;
 
+        // Convert and then resolve each density function (bakes noises + registry)
+        let temperature =
+            Arc::new(convert_density_function(&router.temperature).resolve(&registry, &noises));
+        let humidity =
+            Arc::new(convert_density_function(&router.vegetation).resolve(&registry, &noises));
+        let continentalness =
+            Arc::new(convert_density_function(&router.continents).resolve(&registry, &noises));
+        let erosion =
+            Arc::new(convert_density_function(&router.erosion).resolve(&registry, &noises));
+        let depth = Arc::new(convert_density_function(&router.depth).resolve(&registry, &noises));
+        let weirdness =
+            Arc::new(convert_density_function(&router.ridges).resolve(&registry, &noises));
+
         Self {
-            evaluator,
-            temperature: convert_density_function(&router.temperature),
-            humidity: convert_density_function(&router.vegetation),
-            continentalness: convert_density_function(&router.continents),
-            erosion: convert_density_function(&router.erosion),
-            depth: convert_density_function(&router.depth),
-            weirdness: convert_density_function(&router.ridges),
+            temperature,
+            humidity,
+            continentalness,
+            erosion,
+            depth,
+            weirdness,
         }
     }
 
@@ -89,16 +102,12 @@ impl VanillaClimateSampler {
 
         let ctx = DensityContext::new(block_x, block_y, block_z);
 
-        let temp = self
-            .evaluator
-            .evaluate_cached(&self.temperature, &ctx, cache) as f32;
-        let humidity = self.evaluator.evaluate_cached(&self.humidity, &ctx, cache) as f32;
-        let cont = self
-            .evaluator
-            .evaluate_cached(&self.continentalness, &ctx, cache) as f32;
-        let erosion = self.evaluator.evaluate_cached(&self.erosion, &ctx, cache) as f32;
-        let depth = self.evaluator.evaluate_cached(&self.depth, &ctx, cache) as f32;
-        let weirdness = self.evaluator.evaluate_cached(&self.weirdness, &ctx, cache) as f32;
+        let temp = self.temperature.compute_cached(&ctx, cache) as f32;
+        let humidity = self.humidity.compute_cached(&ctx, cache) as f32;
+        let cont = self.continentalness.compute_cached(&ctx, cache) as f32;
+        let erosion = self.erosion.compute_cached(&ctx, cache) as f32;
+        let depth = self.depth.compute_cached(&ctx, cache) as f32;
+        let weirdness = self.weirdness.compute_cached(&ctx, cache) as f32;
 
         TargetPoint::new(
             quantize_coord(f64::from(temp)),
@@ -112,6 +121,9 @@ impl VanillaClimateSampler {
 }
 
 /// Build the density function registry from generated code.
+///
+/// These are returned as unresolved `DensityFunction` values; call
+/// [`DensityFunction::resolve`] on each root to bake noises + cross-references.
 fn build_density_function_registry() -> FxHashMap<String, Arc<DensityFunction>> {
     let mut registry = FxHashMap::default();
 
@@ -149,34 +161,41 @@ fn build_density_function_registry() -> FxHashMap<String, Arc<DensityFunction>> 
 }
 
 /// Convert a generated `DensityFunction` to the steel-utils `DensityFunction` type.
+///
+/// The returned function is *unresolved* — noise fields are `None` and references
+/// store only their string ID. Call [`DensityFunction::resolve`] to bake everything.
 #[allow(clippy::too_many_lines)]
 fn convert_density_function(df: &GenDensityFunction) -> Arc<DensityFunction> {
     Arc::new(match df {
-        GenDensityFunction::Constant(v) => DensityFunction::Constant(*v),
+        GenDensityFunction::Constant(v) => DensityFunction::Constant(Constant { value: *v }),
 
-        GenDensityFunction::Reference(id) => DensityFunction::Reference(id.to_string()),
+        GenDensityFunction::Reference(id) => DensityFunction::Reference(Reference {
+            id: id.to_string(),
+            resolved: None,
+        }),
 
         GenDensityFunction::YClampedGradient {
             from_y,
             to_y,
             from_value,
             to_value,
-        } => DensityFunction::YClampedGradient {
+        } => DensityFunction::YClampedGradient(YClampedGradient {
             from_y: *from_y,
             to_y: *to_y,
             from_value: *from_value,
             to_value: *to_value,
-        },
+        }),
 
         GenDensityFunction::Noise {
             noise_id,
             xz_scale,
             y_scale,
-        } => DensityFunction::Noise {
+        } => DensityFunction::Noise(Noise {
             noise_id: noise_id.to_string(),
             xz_scale: *xz_scale,
             y_scale: *y_scale,
-        },
+            noise: None,
+        }),
 
         GenDensityFunction::ShiftedNoise {
             shift_x,
@@ -185,60 +204,88 @@ fn convert_density_function(df: &GenDensityFunction) -> Arc<DensityFunction> {
             xz_scale,
             y_scale,
             noise_id,
-        } => DensityFunction::ShiftedNoise {
+        } => DensityFunction::ShiftedNoise(ShiftedNoise {
             shift_x: convert_density_function(shift_x),
             shift_y: convert_density_function(shift_y),
             shift_z: convert_density_function(shift_z),
             xz_scale: *xz_scale,
             y_scale: *y_scale,
             noise_id: noise_id.to_string(),
-        },
+            noise: None,
+        }),
 
-        GenDensityFunction::ShiftA { noise_id } => DensityFunction::ShiftA {
+        GenDensityFunction::ShiftA { noise_id } => DensityFunction::ShiftA(ShiftA {
             noise_id: noise_id.to_string(),
-        },
+            noise: None,
+        }),
 
-        GenDensityFunction::ShiftB { noise_id } => DensityFunction::ShiftB {
+        GenDensityFunction::ShiftB { noise_id } => DensityFunction::ShiftB(ShiftB {
             noise_id: noise_id.to_string(),
-        },
+            noise: None,
+        }),
 
-        GenDensityFunction::Shift { noise_id } => DensityFunction::Shift {
+        GenDensityFunction::Shift { noise_id } => DensityFunction::Shift(Shift {
             noise_id: noise_id.to_string(),
-        },
+            noise: None,
+        }),
 
-        GenDensityFunction::Clamp { input, min, max } => DensityFunction::Clamp {
+        GenDensityFunction::Clamp { input, min, max } => DensityFunction::Clamp(Clamp {
             input: convert_density_function(input),
             min: *min,
             max: *max,
-        },
+        }),
 
-        GenDensityFunction::Abs(f) => DensityFunction::Abs(convert_density_function(f)),
-        GenDensityFunction::Square(f) => DensityFunction::Square(convert_density_function(f)),
-        GenDensityFunction::Cube(f) => DensityFunction::Cube(convert_density_function(f)),
-        GenDensityFunction::HalfNegative(f) => {
-            DensityFunction::HalfNegative(convert_density_function(f))
-        }
-        GenDensityFunction::QuarterNegative(f) => {
-            DensityFunction::QuarterNegative(convert_density_function(f))
-        }
-        GenDensityFunction::Squeeze(f) => DensityFunction::Squeeze(convert_density_function(f)),
+        // Mapped operations (individual variants in generated code -> unified Mapped struct)
+        GenDensityFunction::Abs(input) => DensityFunction::Mapped(Mapped {
+            op: MappedType::Abs,
+            input: convert_density_function(input),
+        }),
+        GenDensityFunction::Square(input) => DensityFunction::Mapped(Mapped {
+            op: MappedType::Square,
+            input: convert_density_function(input),
+        }),
+        GenDensityFunction::Cube(input) => DensityFunction::Mapped(Mapped {
+            op: MappedType::Cube,
+            input: convert_density_function(input),
+        }),
+        GenDensityFunction::HalfNegative(input) => DensityFunction::Mapped(Mapped {
+            op: MappedType::HalfNegative,
+            input: convert_density_function(input),
+        }),
+        GenDensityFunction::QuarterNegative(input) => DensityFunction::Mapped(Mapped {
+            op: MappedType::QuarterNegative,
+            input: convert_density_function(input),
+        }),
+        GenDensityFunction::Squeeze(input) => DensityFunction::Mapped(Mapped {
+            op: MappedType::Squeeze,
+            input: convert_density_function(input),
+        }),
 
-        GenDensityFunction::Add(a, b) => {
-            DensityFunction::Add(convert_density_function(a), convert_density_function(b))
-        }
-        GenDensityFunction::Mul(a, b) => {
-            DensityFunction::Mul(convert_density_function(a), convert_density_function(b))
-        }
-        GenDensityFunction::Min(a, b) => {
-            DensityFunction::Min(convert_density_function(a), convert_density_function(b))
-        }
-        GenDensityFunction::Max(a, b) => {
-            DensityFunction::Max(convert_density_function(a), convert_density_function(b))
-        }
+        // Two-argument operations (individual variants -> unified TwoArgumentSimple struct)
+        GenDensityFunction::Add(a, b) => DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
+            op: TwoArgType::Add,
+            argument1: convert_density_function(a),
+            argument2: convert_density_function(b),
+        }),
+        GenDensityFunction::Mul(a, b) => DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
+            op: TwoArgType::Mul,
+            argument1: convert_density_function(a),
+            argument2: convert_density_function(b),
+        }),
+        GenDensityFunction::Min(a, b) => DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
+            op: TwoArgType::Min,
+            argument1: convert_density_function(a),
+            argument2: convert_density_function(b),
+        }),
+        GenDensityFunction::Max(a, b) => DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
+            op: TwoArgType::Max,
+            argument1: convert_density_function(a),
+            argument2: convert_density_function(b),
+        }),
 
-        GenDensityFunction::Spline(spline) => {
-            DensityFunction::Spline(Arc::new(convert_spline(spline)))
-        }
+        GenDensityFunction::Spline(spline) => DensityFunction::Spline(Spline {
+            spline: Arc::new(convert_spline(spline)),
+        }),
 
         GenDensityFunction::RangeChoice {
             input,
@@ -246,47 +293,60 @@ fn convert_density_function(df: &GenDensityFunction) -> Arc<DensityFunction> {
             max_exclusive,
             when_in_range,
             when_out_of_range,
-        } => DensityFunction::RangeChoice {
+        } => DensityFunction::RangeChoice(RangeChoice {
             input: convert_density_function(input),
             min_inclusive: *min_inclusive,
             max_exclusive: *max_exclusive,
             when_in_range: convert_density_function(when_in_range),
             when_out_of_range: convert_density_function(when_out_of_range),
-        },
+        }),
 
-        GenDensityFunction::Interpolated(f) => {
-            DensityFunction::Interpolated(convert_density_function(f))
-        }
-        GenDensityFunction::FlatCache(f) => DensityFunction::FlatCache(convert_density_function(f)),
-        GenDensityFunction::CacheOnce(f) => DensityFunction::CacheOnce(convert_density_function(f)),
-        GenDensityFunction::Cache2d(f) => DensityFunction::Cache2D(convert_density_function(f)),
-        GenDensityFunction::CacheAllInCell(f) => {
-            DensityFunction::CacheAllInCell(convert_density_function(f))
-        }
+        // Cache/marker variants (individual variants -> unified Marker struct)
+        GenDensityFunction::Interpolated(arg) => DensityFunction::Marker(Marker {
+            kind: MarkerType::Interpolated,
+            wrapped: convert_density_function(arg),
+        }),
+        GenDensityFunction::FlatCache(arg) => DensityFunction::Marker(Marker {
+            kind: MarkerType::FlatCache,
+            wrapped: convert_density_function(arg),
+        }),
+        GenDensityFunction::CacheOnce(arg) => DensityFunction::Marker(Marker {
+            kind: MarkerType::CacheOnce,
+            wrapped: convert_density_function(arg),
+        }),
+        GenDensityFunction::Cache2d(arg) => DensityFunction::Marker(Marker {
+            kind: MarkerType::Cache2D,
+            wrapped: convert_density_function(arg),
+        }),
+        GenDensityFunction::CacheAllInCell(arg) => DensityFunction::Marker(Marker {
+            kind: MarkerType::CacheAllInCell,
+            wrapped: convert_density_function(arg),
+        }),
 
-        GenDensityFunction::BlendOffset => DensityFunction::BlendOffset,
-        GenDensityFunction::BlendAlpha => DensityFunction::BlendAlpha,
-        GenDensityFunction::BlendDensity(f) => {
-            DensityFunction::BlendDensity(convert_density_function(f))
-        }
+        GenDensityFunction::BlendOffset => DensityFunction::BlendOffset(BlendOffset),
+        GenDensityFunction::BlendAlpha => DensityFunction::BlendAlpha(BlendAlpha),
+        GenDensityFunction::BlendDensity(input) => DensityFunction::BlendDensity(BlendDensity {
+            input: convert_density_function(input),
+        }),
 
         // TODO: Implement Beardifier for structure terrain adaptation.
         // Constant(0.0) is correct when structures are not yet generated.
-        GenDensityFunction::Beardifier => DensityFunction::Constant(0.0),
-        GenDensityFunction::EndIslands => DensityFunction::EndIslands,
+        GenDensityFunction::Beardifier => DensityFunction::Constant(Constant { value: 0.0 }),
+        GenDensityFunction::EndIslands => DensityFunction::EndIslands(EndIslands),
 
         GenDensityFunction::WeirdScaledSampler {
             input,
             noise_id,
             rarity_value_mapper,
-        } => DensityFunction::WeirdScaledSampler {
+        } => DensityFunction::WeirdScaledSampler(WeirdScaledSampler {
             input: convert_density_function(input),
             noise_id: noise_id.to_string(),
             rarity_value_mapper: match rarity_value_mapper {
                 GenRarityValueMapper::Tunnels => RarityValueMapper::Tunnels,
                 GenRarityValueMapper::Caves => RarityValueMapper::Caves,
             },
-        },
+            noise: None,
+        }),
 
         GenDensityFunction::OldBlendedNoise {
             xz_scale,
@@ -294,13 +354,14 @@ fn convert_density_function(df: &GenDensityFunction) -> Arc<DensityFunction> {
             xz_factor,
             y_factor,
             smear_scale_multiplier,
-        } => DensityFunction::BlendedNoise {
+        } => DensityFunction::BlendedNoise(BlendedNoise {
             xz_scale: *xz_scale,
             y_scale: *y_scale,
             xz_factor: *xz_factor,
             y_factor: *y_factor,
             smear_scale_multiplier: *smear_scale_multiplier,
-        },
+            noise: None,
+        }),
     })
 }
 
@@ -308,7 +369,7 @@ fn convert_density_function(df: &GenDensityFunction) -> Arc<DensityFunction> {
 fn convert_spline(spline: &GenCubicSpline) -> CubicSpline {
     match spline {
         GenCubicSpline::Constant(v) => CubicSpline {
-            coordinate: Arc::new(DensityFunction::Constant(0.0)),
+            coordinate: Arc::new(DensityFunction::constant(0.0)),
             points: vec![SplinePoint {
                 location: 0.0,
                 value: SplineValue::Constant(*v),
