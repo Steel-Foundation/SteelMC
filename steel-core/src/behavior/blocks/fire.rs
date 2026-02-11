@@ -54,7 +54,6 @@ impl BlockBehaviour for FireBlock {
         ) {
             tester.place_portal_blocks(world);
             // TODO: Play ignite sound, damage item
-        } else {
         }
     }
 }

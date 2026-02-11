@@ -11,10 +11,11 @@ use crate::world::World;
 
 /// Behavior for the nether portal block.
 pub struct NetherPortalBlock {
+    #[warn(unused)]
     block: BlockRef,
 }
 impl NetherPortalBlock {
-    /// Create a new NetherPortalBlock
+    /// Create a new `NetherPortalBlock`
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -29,9 +30,9 @@ impl BlockBehaviour for NetherPortalBlock {
         _pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
-        _neighbor_state: BlockStateId,
+        neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if _neighbor_state.is_air()
+        if neighbor_state.is_air()
         {
             return AIR.default_state()
         }

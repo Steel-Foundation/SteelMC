@@ -1,0 +1,74 @@
+name: Flint Tests
+
+on:
+  push:
+    branches: [main, dev,dimensions]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SteelMC
+        uses: actions/checkout@v4
+
+      - name: Checkout flint-steel
+        uses: actions/checkout@v4
+        with:
+          repository: FlintTestMC/flint-steel
+          path: flint-steel
+
+      - name: Clone JunkysGenerator
+        uses: actions/checkout@v4
+        with:
+          repository: FlintTestMC/JunkysGenerator
+          path: flint/JunkysGenerator
+
+      - name: Setup Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            flint/JunkysGenerator -> target
+
+      - name: Build test generators
+        working-directory: flint/JunkysGenerator
+        run: cargo build --release -p create-portal -p destroy-portal
+
+      - name: Generate create-portal tests
+        working-directory: flint/JunkysGenerator/create-portal
+        run: cargo run --release -p create-portal
+
+      - name: Generate destroy-portal tests
+        working-directory: flint/JunkysGenerator/destroy-portal
+        run: cargo run --release -p destroy-portal
+
+      - name: Check generated tests for created-portal
+        working-directory: flint/JunkysGenerator/create-portal
+        run: find ./test -type f -printf '.' | wc -c
+
+      - name: Check generated tests for destroy-portal
+        working-directory: flint/JunkysGenerator/destroy-portal
+        run: find ./test -type f -printf '.' | wc -c
+
+      - name: Clean up generator build artifacts
+        run: rm -rf flint/JunkysGenerator/target
+
+      - name: Run flint-steel tests
+        timeout-minutes: 15
+        env:
+          TEST_PATH: ${{ github.workspace }}/flint/JunkysGenerator
+        run: cargo test --lib -p flint-steel test_run_all_flint_benchmarks -- --nocapture
+
+      - name: Upload Flint summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-summary
+          path: flint-steel/log/flint_summary.json
