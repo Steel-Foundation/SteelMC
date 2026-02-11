@@ -9,7 +9,7 @@ members = [
     "steel-registry",
     "steel-utils",
     "steel-core",
-    "steel-crypto"
+    "steel-crypto",
 ]
 
 [workspace.package]
