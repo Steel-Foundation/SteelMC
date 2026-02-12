@@ -4,7 +4,7 @@ use rayon::{
 };
 use rustc_hash::FxBuildHasher;
 use std::{
-    io, mem,
+    io, mem, ptr,
     sync::{
         Arc, Weak,
         atomic::{AtomicUsize, Ordering},
@@ -14,12 +14,14 @@ use std::{
 use steel_protocol::packets::game::{
     BlockChange, CBlockUpdate, CSectionBlocksUpdate, CSetChunkCenter,
 };
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
@@ -34,6 +36,7 @@ use crate::chunk::{
 use crate::chunk_saver::ChunkStorage;
 use crate::player::Player;
 use crate::world::World;
+use crate::world::tick_scheduler::{BlockTick, FluidTick};
 
 /// Timing information for chunk map tick operations.
 #[derive(Debug, Default)]
@@ -330,23 +333,27 @@ impl ChunkMap {
         }
     }
 
-    /// Processes chunk updates and ticks chunks.
+    /// Processes chunk updates, ticks chunks, and executes ready scheduled ticks.
     ///
     /// # Arguments
+    /// * `world` - The world reference (needed for executing scheduled tick callbacks)
     /// * `tick_count` - The current server tick count
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick
     /// * `runs_normally` - Whether game elements should run (false when frozen)
     ///
     /// Returns timing information for each phase of the tick.
     #[allow(clippy::too_many_lines)]
-    #[instrument(level = "trace", skip(self), name = "chunk_map_tick")]
+    #[instrument(level = "trace", skip(self, world), name = "chunk_map_tick")]
     pub fn tick_b(
         self: &Arc<Self>,
+        world: &World,
         tick_count: u64,
         random_tick_speed: u32,
         runs_normally: bool,
     ) -> ChunkMapTickTimings {
         let mut timings = ChunkMapTickTimings::default();
+        let mut ready_block_ticks = Vec::new();
+        let mut ready_fluid_ticks = Vec::new();
 
         {
             let mut ct = self.chunk_tickets.lock();
@@ -454,14 +461,61 @@ impl ChunkMap {
                 // TODO: In the future we might want to tick different regions/islands in parallel
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.tick(random_tick_speed, tick_count as i32);
+                        chunk_guard.tick(
+                            random_tick_speed,
+                            tick_count as i32,
+                            &mut ready_block_ticks,
+                            &mut ready_fluid_ticks,
+                        );
                     }
                 }
                 timings.tick_chunks = start.elapsed();
             }
         }
 
+        // Execute scheduled ticks collected during chunk ticking
+        Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+
         timings
+    }
+
+    /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
+    fn execute_scheduled_ticks(
+        world: &World,
+        mut ready_block_ticks: Vec<BlockTick>,
+        mut ready_fluid_ticks: Vec<FluidTick>,
+    ) {
+        const MAX_TICKS: usize = usize::MAX; // Vanilla uses 65_536, the lion does not concern himself with vanilla hotpatching
+
+        if !ready_block_ticks.is_empty() {
+            ready_block_ticks.sort_by(|a, b| {
+                a.priority
+                    .cmp(&b.priority)
+                    .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
+            });
+
+            let block_behaviors = &*BLOCK_BEHAVIORS;
+            for tick in ready_block_ticks.iter().take(MAX_TICKS) {
+                let state = world.get_block_state(&tick.pos);
+                if !ptr::eq(state.get_block(), tick.tick_type) {
+                    continue;
+                }
+                block_behaviors
+                    .get_behavior(tick.tick_type)
+                    .tick(state, world, tick.pos);
+            }
+        }
+
+        if !ready_fluid_ticks.is_empty() {
+            ready_fluid_ticks.sort_by(|a, b| {
+                a.priority
+                    .cmp(&b.priority)
+                    .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
+            });
+
+            // TODO: Execute fluid ticks when FluidBehaviour trait exists
+            let _ = ready_fluid_ticks.len().min(MAX_TICKS);
+        }
     }
 
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.

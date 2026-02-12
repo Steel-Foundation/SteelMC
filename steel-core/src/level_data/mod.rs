@@ -264,4 +264,64 @@ impl LevelDataManager {
         self.data.day_time = time;
         self.dirty = true;
     }
+
+    /// Gets the clear weather time
+    #[must_use]
+    pub const fn clear_weather_time(&self) -> i32 {
+        self.data.weather.clear_weather_time
+    }
+
+    /// Sets the clear weather time
+    pub const fn set_clear_weather_time(&mut self, time: i32) {
+        self.data.weather.clear_weather_time = time;
+        self.dirty = true;
+    }
+
+    /// Gets the rain time
+    #[must_use]
+    pub const fn rain_time(&self) -> i32 {
+        self.data.weather.rain_time
+    }
+
+    /// Sets the rain time
+    pub const fn set_rain_time(&mut self, time: i32) {
+        self.data.weather.rain_time = time;
+        self.dirty = true;
+    }
+
+    /// Gets the thunder time
+    #[must_use]
+    pub const fn thunder_time(&self) -> i32 {
+        self.data.weather.thunder_time
+    }
+
+    /// Sets the thunder time
+    pub const fn set_thunder_time(&mut self, time: i32) {
+        self.data.weather.thunder_time = time;
+        self.dirty = true;
+    }
+
+    /// Checks if it's raining
+    #[must_use]
+    pub const fn is_raining(&self) -> bool {
+        self.data.weather.raining
+    }
+
+    /// Sets whether it's raining
+    pub const fn set_raining(&mut self, raining: bool) {
+        self.data.weather.raining = raining;
+        self.dirty = true;
+    }
+
+    /// Checks if it's thundering
+    #[must_use]
+    pub const fn is_thundering(&self) -> bool {
+        self.data.weather.thundering
+    }
+
+    /// Sets whether it's thundering
+    pub const fn set_thundering(&mut self, thundering: bool) {
+        self.data.weather.thundering = thundering;
+        self.dirty = true;
+    }
 }

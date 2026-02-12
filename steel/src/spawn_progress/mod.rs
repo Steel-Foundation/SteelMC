@@ -122,7 +122,7 @@ async fn generate_with_display(
     let mut last_render = Instant::now();
 
     loop {
-        world.chunk_map.tick_b(tick_count, 0, false);
+        world.chunk_map.tick_b(world, tick_count, 0, false);
 
         let mut completed = 0;
         let mut pending_dependencies = false;
@@ -201,7 +201,7 @@ async fn generate_without_display(world: &World, center_chunk: ChunkPos) {
     let mut tick_count: u64 = 1;
 
     loop {
-        world.chunk_map.tick_b(tick_count, 0, false);
+        world.chunk_map.tick_b(world, tick_count, 0, false);
 
         if count_full_spawn_chunks(world, center_chunk) == TOTAL_SPAWN_CHUNKS {
             break;

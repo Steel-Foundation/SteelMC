@@ -1,7 +1,9 @@
 //! This module contains the `Sections` and `ChunkSection` structs.
 use std::{fmt::Debug, io::Cursor};
 
+use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::vanilla_biomes;
 use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
@@ -147,10 +149,11 @@ impl ChunkSection {
 
     /// Creates a new empty chunk section.
     #[must_use]
-    pub const fn new_empty() -> Self {
+    pub fn new_empty() -> Self {
+        let plains_id = *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u8;
         Self {
             states: BlockPalette::Homogeneous(BlockStateId(0)),
-            biomes: BiomePalette::Homogeneous(0),
+            biomes: BiomePalette::Homogeneous(plains_id),
             non_empty_block_count: 0,
             ticking_block_count: 0,
         }

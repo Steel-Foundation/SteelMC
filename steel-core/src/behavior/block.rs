@@ -193,6 +193,21 @@ pub trait BlockBehaviour: Send + Sync {
         // Default: no-op
     }
 
+    /// Called when a scheduled tick fires for this block.
+    ///
+    /// Unlike `random_tick`, scheduled ticks are deterministic — they fire after
+    /// a precise delay set by `World::schedule_block_tick`. Used for buttons
+    /// unpressing, repeaters firing, fluids flowing, etc.
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    /// * `world` - The world the block is in
+    /// * `pos` - The position of the block
+    #[allow(unused_variables)]
+    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+        // Default: no-op
+    }
+
     /// Called when an entity is inside this block.
     ///
     /// Returns an effect describing what should happen to the entity.
