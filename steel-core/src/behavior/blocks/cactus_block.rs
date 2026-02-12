@@ -9,6 +9,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
@@ -50,9 +51,9 @@ impl CactusBlock {
     ///
     /// Survival requirements:
     /// 1. No solid blocks on horizontal neighbors
-    /// 2. No lava on horizontal neighbors (TODO: fluid check)
+    /// 2. No lava on horizontal neighbors
     /// 3. Block below must be `CACTUS`, `SAND`, or `RED_SAND`
-    /// 4. Block above must not be liquid (TODO: fluid check)
+    /// 4. Block above must not be liquid
     fn can_survive(world: &World, pos: BlockPos) -> bool {
         // Check horizontal neighbors - no solid blocks or lava
         for dir in [
@@ -68,10 +69,16 @@ impl CactusBlock {
                 return false;
             }
 
-            // TODO: Fluid check for lava
-            //if ptr::eq(world.get_block_state(&neighbor_pos).get_fluid_state(), FluidState::LAVA) {
-            //    return false;
-            //}
+            // Lava check
+            // when FluidRegistry has a lava tag then we can use it
+            // TODO: FluidRegistry::is_in_tag(fluid.fluid_id, &vanilla_fluid_tags::LAVA)
+            let fluid = neighbor.get_fluid_state();
+            if !fluid.is_empty()
+                && (ptr::eq(fluid.fluid_id, &raw const vanilla_fluids::LAVA)
+                    || ptr::eq(fluid.fluid_id, &raw const vanilla_fluids::FLOWING_LAVA))
+            {
+                return false;
+            }
         }
 
         // Block below must be CACTUS or SAND variant
@@ -89,10 +96,10 @@ impl CactusBlock {
             return false;
         }
 
-        // TODO: Block above must not be liquid
+        // Block above must not be liquid
         let above = world.get_block_state(&pos.above());
 
-        if above.get_fluid_state().is_empty() {
+        if !above.get_fluid_state().is_empty() {
             return false;
         }
 
@@ -112,13 +119,7 @@ impl BlockBehaviour for CactusBlock {
 
     /// Called when this cactus block is placed.
     ///
-    /// HACK: Vanilla uses `scheduleTick` in `updateShape` to schedule destruction,
-    /// then `tick()` performs the actual  on thedestruction next tick.
-    /// Since STEELMC doesn't have scheduled block ticks yet, we check survival
-    /// immediately in `on_place` instead. This produces the same visible result
-    /// but without the 1-tick delay.
-    ///
-    /// TODO: Replace with proper `scheduleTick` + `tick()` pattern when available.
+    /// Vanilla schedules a tick to check survival on the next game tick.
     fn on_place(
         &self,
         state: BlockStateId,
@@ -132,11 +133,12 @@ impl BlockBehaviour for CactusBlock {
             return;
         }
 
-        // HACK: Immediate destruction instead of vanilla's scheduled tick
+        world.schedule_block_tick_default(pos, self.block, 1);
+    }
+
+    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
         if !Self::can_survive(world, pos) {
-            // Play break particles and sound
             world.destroy_block_effect(pos, u32::from(state.0), None);
-            // Remove the block
             world.set_block(
                 pos,
                 vanilla_blocks::AIR.default_state(),
@@ -203,13 +205,22 @@ impl BlockBehaviour for CactusBlock {
             );
             // Reset age of current block to 0
             let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
-            world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+            world.set_block(
+                pos,
+                new_state,
+                UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
+            );
+            world.update_neighbors_at(&above_pos, vanilla_blocks::CACTUS);
         }
 
         // Vanilla lines 78-80: Increment age if < 15
         if age < 15 {
             let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
-            world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+            world.set_block(
+                pos,
+                new_state,
+                UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
+            );
         }
     }
 
@@ -222,14 +233,9 @@ impl BlockBehaviour for CactusBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // If we can't survive, destroy ourselves with animation
+        // Vanilla: only schedule a tick if the cactus can't survive
         if !Self::can_survive(world, pos) {
-            // Play break particles and sound
-            world.destroy_block_effect(pos, u32::from(state.0), None);
-
-            // TODO: Drop cactus item using pop_resource when Arc<World> is available
-            // For now, the block just disappears (loot table handles drops on player break)
-            return vanilla_blocks::AIR.default_state();
+            world.schedule_block_tick_default(pos, self.block, 1);
         }
         state
     }
