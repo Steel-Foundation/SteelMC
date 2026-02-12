@@ -141,6 +141,9 @@ panic = "abort"
 inherits = "release"
 debug = true
 
+[profile.flint]
+inherits = "dev"
+debug = true
 
 [profile.bench]
 debug = true

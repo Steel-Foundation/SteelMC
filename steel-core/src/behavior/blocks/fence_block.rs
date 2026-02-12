@@ -2,6 +2,9 @@
 //!
 //! Fences connect to adjacent fences, fence gates, and solid blocks.
 
+use crate::behavior::block::BlockBehaviour;
+use crate::behavior::context::BlockPlaceContext;
+use crate::world::World;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -10,10 +13,6 @@ use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_block_tags::{FENCE_GATES_TAG, FENCES_TAG};
 use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
-
-use crate::behavior::block::BlockBehaviour;
-use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
 
 /// Behavior for fence blocks.
 ///
@@ -122,18 +121,6 @@ impl FenceBlock {
 }
 
 impl BlockBehaviour for FenceBlock {
-    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        log::debug!(
-            "FenceBlock::get_state_for_placement called for {:?} at {:?}",
-            self.block.key,
-            context.relative_pos
-        );
-        Some(
-            self.get_connection_state(context.world, &context.relative_pos)
-                .set_value(&Self::WATERLOGGED, context.is_water_source()),
-        )
-    }
-
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -172,5 +159,14 @@ impl BlockBehaviour for FenceBlock {
         } else {
             FluidState::EMPTY
         }
+    }
+
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        log::debug!(
+            "FenceBlock::get_state_for_placement called for {:?} at {:?}",
+            self.block.key,
+            context.relative_pos
+        );
+        Some(self.get_connection_state(context.world, &context.relative_pos))
     }
 }

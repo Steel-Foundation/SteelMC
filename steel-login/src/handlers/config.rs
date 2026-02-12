@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use steel_core::config::{STEEL_CONFIG, ServerLinks};
 use steel_core::entity::next_entity_id;
+use steel_core::player::PlayerConnection;
 use steel_core::player::networking::JavaConnection;
 use steel_core::player::{ClientInformation, Player};
 use steel_protocol::packets::common::CCustomPayload;
@@ -103,14 +104,15 @@ impl JavaTcpClient {
         let entity_id = next_entity_id();
 
         let player = Arc::new_cyclic(|player_weak| {
-            let connection = Arc::new(JavaConnection::new(
+            let java_connection = JavaConnection::new(
                 self.outgoing_queue.clone(),
                 self.cancel_token.clone(),
                 self.compression.load(),
                 self.network_writer.clone(),
                 self.id,
                 player_weak.clone(),
-            ));
+            );
+            let connection = Arc::new(PlayerConnection::Java(java_connection));
 
             Player::new(
                 gameprofile,

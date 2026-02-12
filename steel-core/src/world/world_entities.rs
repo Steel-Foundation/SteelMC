@@ -10,6 +10,7 @@ use tokio::time::Instant;
 use crate::{
     entity::{Entity, PlayerEntityCallback, SharedEntity},
     player::Player,
+    player::connection::NetworkConnection,
     world::World,
 };
 
@@ -90,7 +91,7 @@ impl World {
                     None, // display_name
                     true, // show_hat
                 );
-                player.connection.send_packet(add_existing);
+                player.send_packet(add_existing);
 
                 // Send chat session if available
                 if let Some(session) = existing_player.chat_session()
@@ -100,14 +101,14 @@ impl World {
                         existing_player.gameprofile.id,
                         protocol_data,
                     );
-                    player.connection.send_packet(session_packet);
+                    player.send_packet(session_packet);
                 }
 
                 // Spawn existing player entity for new player (bundled for atomic processing)
                 let existing_pos = *existing_player.position.lock();
                 let (existing_yaw, existing_pitch) = existing_player.rotation.load();
                 let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
-                player.connection.send_bundle(|bundle| {
+                player.send_bundle(|bundle| {
                     bundle.add(CAddEntity::player(
                         existing_player.id,
                         existing_player.gameprofile.id,
@@ -147,11 +148,11 @@ impl World {
         );
 
         self.players.iter_players(|_, p| {
-            p.connection.send_packet(player_info_packet.clone());
+            p.send_packet(player_info_packet.clone());
             // Don't send spawn packet to self
             if p.gameprofile.id != player.gameprofile.id {
                 // Bundle spawn packet for atomic processing
-                p.connection.send_bundle(|bundle| {
+                p.send_bundle(|bundle| {
                     bundle.add(spawn_packet.clone());
                     // TODO: Add entity metadata and equipment packets here when implemented
                 });
@@ -159,12 +160,12 @@ impl World {
             true
         });
 
-        player.connection.send_packet(CGameEvent {
+        player.send_packet(CGameEvent {
             event: GameEventType::LevelChunksLoadStart,
             data: 0.0,
         });
 
-        player.connection.send_packet(CGameEvent {
+        player.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
             data: player.game_mode.load().into(),
         });

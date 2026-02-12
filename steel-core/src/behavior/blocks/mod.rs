@@ -4,6 +4,7 @@
 //! See `src/generated/behaviors.rs` for the generated registration code.
 
 mod barrel_block;
+mod button_block;
 mod candle_block;
 mod chain_block;
 mod copper_bars_block;
@@ -22,6 +23,7 @@ mod torch_block;
 mod wall_block;
 
 pub use barrel_block::BarrelBlock;
+pub use button_block::ButtonBlock;
 pub use candle_block::CandleBlock;
 pub use chain_block::ChainBlock;
 pub use copper_bars_block::WeatheringCopperBarsBlock;

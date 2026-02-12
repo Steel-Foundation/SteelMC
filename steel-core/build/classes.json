@@ -1100,7 +1100,10 @@
     },
     {
       "name": "stone_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 20,
+      "button_click_on": "BLOCK_STONE_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_STONE_BUTTON_CLICK_OFF"
     },
     {
       "name": "snow",
@@ -1768,43 +1771,73 @@
     },
     {
       "name": "oak_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "spruce_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "birch_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "jungle_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "acacia_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "cherry_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_CHERRY_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_CHERRY_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "dark_oak_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "pale_oak_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "mangrove_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "bamboo_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_BAMBOO_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_BAMBOO_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "skeleton_skull",
@@ -3584,11 +3617,17 @@
     },
     {
       "name": "crimson_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_NETHER_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "warped_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_NETHER_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "crimson_door",
@@ -3752,7 +3791,10 @@
     },
     {
       "name": "polished_blackstone_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 20,
+      "button_click_on": "BLOCK_STONE_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_STONE_BUTTON_CLICK_OFF"
     },
     {
       "name": "polished_blackstone_wall",

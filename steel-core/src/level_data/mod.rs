@@ -135,7 +135,7 @@ impl LevelData {
 /// Manages level data persistence for a world.
 pub struct LevelDataManager {
     /// Path to the level.json file.
-    path: PathBuf,
+    path: Option<PathBuf>,
     /// Cached level data.
     data: LevelData,
     /// Whether data has been modified since last save.
@@ -147,24 +147,30 @@ impl LevelDataManager {
     ///
     /// If `level.json` exists, it will be loaded (the provided seed is ignored).
     /// Otherwise, new data will be created with the provided seed.
-    pub async fn new(world_dir: impl AsRef<Path>, seed: i64) -> io::Result<Self> {
-        let path = world_dir.as_ref().join("level.json");
+    pub async fn new(world_dir: Option<impl AsRef<Path>>, seed: i64) -> io::Result<Self> {
+        let (data, path) = match &world_dir {
+            Some(dir) => {
+                let path = dir.as_ref().join("level.json");
 
-        let data = if path.exists() {
-            // Load existing level data (seed from file takes precedence)
-            let content = fs::read_to_string(&path).await?;
-            let mut loaded: LevelData = serde_json::from_str(&content).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid level.json: {e}"),
-                )
-            })?;
-            // Initialize runtime game rules from serialized values
-            loaded.load_game_rules();
-            loaded
-        } else {
-            // Create new level data with the provided seed
-            LevelData::new_with_seed(seed)
+                let data = if path.exists() {
+                    // Load existing level data (seed from file takes precedence)
+                    let content = fs::read_to_string(&path).await?;
+                    let mut loaded: LevelData = serde_json::from_str(&content).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Invalid level.json: {e}"),
+                        )
+                    })?;
+                    // Initialize runtime game rules from serialized values
+                    loaded.load_game_rules();
+                    loaded
+                } else {
+                    // Create new level data with the provided seed
+                    LevelData::new_with_seed(seed)
+                };
+                (data, Some(path))
+            }
+            None => (LevelData::new_with_seed(seed), None),
         };
 
         Ok(Self {
@@ -203,13 +209,11 @@ impl LevelDataManager {
             return Ok(());
         }
 
-        self.save_force().await
-    }
-
-    /// Saves the level data to disk unconditionally.
-    pub async fn save_force(&mut self) -> io::Result<()> {
-        // Ensure parent directory exists
-        if let Some(parent) = self.path.parent() {
+        let Some(world_path) = &self.path else {
+            self.dirty = false;
+            return Ok(());
+        };
+        if let Some(parent) = world_path.parent() {
             fs::create_dir_all(parent).await?;
         }
 
@@ -218,10 +222,10 @@ impl LevelDataManager {
 
         let content = serde_json::to_string_pretty(&self.data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        fs::write(&self.path, content).await?;
+        fs::write(world_path, content).await?;
         self.dirty = false;
 
-        log::debug!("Saved level data to {}", self.path.display());
+        log::debug!("Saved level data to {}", world_path.display());
         Ok(())
     }
 
@@ -258,6 +262,66 @@ impl LevelDataManager {
     /// Sets the day time.
     pub const fn set_day_time(&mut self, time: i64) {
         self.data.day_time = time;
+        self.dirty = true;
+    }
+
+    /// Gets the clear weather time
+    #[must_use]
+    pub const fn clear_weather_time(&self) -> i32 {
+        self.data.weather.clear_weather_time
+    }
+
+    /// Sets the clear weather time
+    pub const fn set_clear_weather_time(&mut self, time: i32) {
+        self.data.weather.clear_weather_time = time;
+        self.dirty = true;
+    }
+
+    /// Gets the rain time
+    #[must_use]
+    pub const fn rain_time(&self) -> i32 {
+        self.data.weather.rain_time
+    }
+
+    /// Sets the rain time
+    pub const fn set_rain_time(&mut self, time: i32) {
+        self.data.weather.rain_time = time;
+        self.dirty = true;
+    }
+
+    /// Gets the thunder time
+    #[must_use]
+    pub const fn thunder_time(&self) -> i32 {
+        self.data.weather.thunder_time
+    }
+
+    /// Sets the thunder time
+    pub const fn set_thunder_time(&mut self, time: i32) {
+        self.data.weather.thunder_time = time;
+        self.dirty = true;
+    }
+
+    /// Checks if it's raining
+    #[must_use]
+    pub const fn is_raining(&self) -> bool {
+        self.data.weather.raining
+    }
+
+    /// Sets whether it's raining
+    pub const fn set_raining(&mut self, raining: bool) {
+        self.data.weather.raining = raining;
+        self.dirty = true;
+    }
+
+    /// Checks if it's thundering
+    #[must_use]
+    pub const fn is_thundering(&self) -> bool {
+        self.data.weather.thundering
+    }
+
+    /// Sets whether it's thundering
+    pub const fn set_thundering(&mut self, thundering: bool) {
+        self.data.weather.thundering = thundering;
         self.dirty = true;
     }
 }

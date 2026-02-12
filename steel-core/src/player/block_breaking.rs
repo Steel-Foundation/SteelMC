@@ -141,7 +141,7 @@ impl BlockBreakingManager {
 
         // Validate Y coordinate
         if pos.y() >= world.max_build_height() {
-            player.connection.send_packet(CBlockUpdate {
+            player.send_packet(CBlockUpdate {
                 pos,
                 block_state: world.get_block_state(&pos),
             });
@@ -152,7 +152,7 @@ impl BlockBreakingManager {
             BlockBreakAction::Start => {
                 // Check may_interact permission
                 if !world.may_interact(player, &pos) {
-                    player.connection.send_packet(CBlockUpdate {
+                    player.send_packet(CBlockUpdate {
                         pos,
                         block_state: world.get_block_state(&pos),
                     });
@@ -183,7 +183,7 @@ impl BlockBreakingManager {
                         // Start breaking
                         if self.is_destroying_block {
                             // Send block update for the old position to cancel client prediction
-                            player.connection.send_packet(CBlockUpdate {
+                            player.send_packet(CBlockUpdate {
                                 pos: self.destroy_pos,
                                 block_state: world.get_block_state(&self.destroy_pos),
                             });
@@ -247,7 +247,7 @@ impl BlockBreakingManager {
     fn destroy_and_ack(&mut self, player: &Player, world: &World, pos: BlockPos) {
         if !self.destroy_block(player, world, pos) {
             // Send block update to resync client
-            player.connection.send_packet(CBlockUpdate {
+            player.send_packet(CBlockUpdate {
                 pos,
                 block_state: world.get_block_state(&pos),
             });

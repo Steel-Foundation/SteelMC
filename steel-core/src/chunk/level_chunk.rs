@@ -18,6 +18,8 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, codec::BitSet, locks::SyncRwLock, types::UpdateFlags,
 };
 
+use steel_utils::locks::SyncMutex;
+
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
@@ -27,6 +29,7 @@ use crate::chunk::{
 };
 use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
+use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
 
 /// A chunk that is ready to be sent to the client.
 ///
@@ -52,6 +55,10 @@ pub struct LevelChunk {
     block_entities: BlockEntityStorage,
     /// Entities stored in this chunk.
     pub entities: EntityStorage,
+    /// Scheduled block ticks pending in this chunk.
+    pub block_ticks: SyncMutex<BlockTickList>,
+    /// Scheduled fluid ticks pending in this chunk.
+    pub fluid_ticks: SyncMutex<FluidTickList>,
 }
 
 impl LevelChunk {
@@ -68,7 +75,17 @@ impl LevelChunk {
     ///
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
-    pub fn tick(&self, random_tick_speed: u32, tick_count: i32) {
+    pub fn tick(
+        &self,
+        random_tick_speed: u32,
+        tick_count: i32,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        // Drain ready scheduled ticks (decrement delays, collect those at 0)
+        ready_block_ticks.extend(self.block_ticks.lock().drain_ready());
+        ready_fluid_ticks.extend(self.fluid_ticks.lock().drain_ready());
+
         // Tick block entities regardless of random tick speed
         self.tick_block_entities();
 
@@ -189,6 +206,8 @@ impl LevelChunk {
             level,
             block_entities: BlockEntityStorage::new(),
             entities: EntityStorage::new(),
+            block_ticks: SyncMutex::new(BlockTickList::new()),
+            fluid_ticks: SyncMutex::new(FluidTickList::new()),
         }
     }
 
@@ -202,6 +221,8 @@ impl LevelChunk {
     /// * `min_y` - The minimum Y coordinate of the world
     /// * `height` - The total height of the world
     /// * `level` - Weak reference to the world (mirrors Java's `LevelChunk.level`)
+    /// * `block_ticks` - Scheduled block ticks loaded from disk
+    /// * `fluid_ticks` - Scheduled fluid ticks loaded from disk
     ///
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
@@ -212,6 +233,8 @@ impl LevelChunk {
         min_y: i32,
         height: i32,
         level: Weak<World>,
+        block_ticks: BlockTickList,
+        fluid_ticks: FluidTickList,
     ) -> Self {
         // Recalculate section counts for random tick optimization
         for section in &sections.sections {
@@ -228,6 +251,8 @@ impl LevelChunk {
             level,
             block_entities: BlockEntityStorage::new(),
             entities: EntityStorage::new(),
+            block_ticks: SyncMutex::new(block_ticks),
+            fluid_ticks: SyncMutex::new(fluid_ticks),
         }
     }
 

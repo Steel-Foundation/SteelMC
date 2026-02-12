@@ -11,7 +11,7 @@ use std::{
 };
 
 use crossbeam::atomic::AtomicCell;
-use steel_core::player::{ClientInformation, GameProfile, networking::JavaConnection};
+use steel_core::player::{ClientInformation, GameProfile, PlayerConnection};
 use steel_core::server::Server;
 use steel_protocol::{
     packet_reader::TCPNetworkDecoder,
@@ -53,7 +53,7 @@ pub enum ConnectionUpdate {
     /// Enable compression on the connection.
     EnableCompression(CompressionInfo),
     /// Upgrade the connection to the play state.
-    Upgrade(Arc<JavaConnection>),
+    Upgrade(Arc<PlayerConnection>),
 }
 
 impl Debug for ConnectionUpdate {
@@ -267,7 +267,10 @@ impl JavaTcpClient {
             drop(connection_updated);
 
             if let Some(connection) = connection {
-                connection.sender(sender_recv).await;
+                match &*connection {
+                    PlayerConnection::Java(java) => java.sender(sender_recv).await,
+                    PlayerConnection::Other(_) => unreachable!("Expected Java connection"),
+                }
             }
         });
     }
@@ -339,7 +342,10 @@ impl JavaTcpClient {
                 let server = self_clone.server.clone();
                 drop(self_clone);
 
-                connection.listener(reader, server).await;
+                match &*connection {
+                    PlayerConnection::Java(java) => java.listener(reader, server).await,
+                    PlayerConnection::Other(_) => unreachable!("Expected Java connection"),
+                }
             }
         });
     }

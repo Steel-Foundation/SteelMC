@@ -179,9 +179,7 @@ impl CommandDispatcher {
     ) {
         let (suggestions, start, length) =
             self.handle_suggestions(CommandSender::Player(Arc::clone(player)), command, server);
-        player
-            .connection
-            .send_packet(CCommandSuggestions::new(id, start, length, suggestions));
+        player.send_packet(CCommandSuggestions::new(id, start, length, suggestions));
     }
 
     /// Handles a command suggestion request from a player.
