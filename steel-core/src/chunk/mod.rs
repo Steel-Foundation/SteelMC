@@ -14,11 +14,12 @@ pub mod heightmap;
 /// Tracks the chunks that are visible to a player.
 pub mod player_chunk_view;
 
+/// Generates an empty world which can be used for testing
+pub mod empty_chunk_generator;
 /// Generates flat worlds with configurable layers.
 pub mod flat_chunk_generator;
 pub mod level_chunk;
 pub mod paletted_container;
 pub mod proto_chunk;
 pub mod section;
-
 pub mod world_gen_context;

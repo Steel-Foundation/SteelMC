@@ -8,6 +8,7 @@ pub mod stop;
 pub mod summon;
 pub mod tellraw;
 pub mod tick;
+pub mod time;
 pub mod weather;
 
 use std::marker::PhantomData;

@@ -1,34 +1,38 @@
 //! This module contains the `World` struct, which represents a world.
+use crate::chunk::chunk_map::ChunkMapTickTimings;
+use std::path::Path;
 use std::{
     io,
     sync::{
         Arc, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Duration,
 };
 
-use crate::chunk::chunk_map::ChunkMapTickTimings;
-
 use sha2::{Digest, Sha256};
-use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate, CRemoveEntities,
     CSound, CSystemChat, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
+use steel_protocol::{
+    packet_traits::{ClientPacket, EncodedPacket},
+    packets::game::CSetTime,
+};
 
 use simdnbt::owned::NbtCompound;
-use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::fluid::FluidRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::RANDOM_TICK_SPEED;
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
+use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_game_rules::ADVANCE_TIME};
 
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::SyncRwLock;
@@ -40,16 +44,20 @@ use crate::{
     ChunkMap,
     behavior::BLOCK_BEHAVIORS,
     block_entity::SharedBlockEntity,
+    chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     level_data::LevelDataManager,
-    player::{LastSeen, Player},
+    player::{LastSeen, Player, connection::NetworkConnection},
 };
 
 mod player_area_map;
 mod player_map;
+pub mod tick_scheduler;
 mod world_entities;
 
+use crate::chunk::world_gen_context::ChunkGeneratorType;
+pub use crate::config::WorldStorageConfig;
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
 
@@ -74,6 +82,15 @@ pub struct WorldTickTimings {
 /// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 
+/// Configuration for creating a new world.
+#[derive(Clone)]
+pub struct WorldConfig {
+    /// Storage configuration for chunk persistence.
+    pub storage: WorldStorageConfig,
+    /// World generator.
+    pub generator: Arc<ChunkGeneratorType>,
+}
+
 /// A struct that represents a world.
 pub struct World {
     /// The chunk map of the world.
@@ -94,24 +111,65 @@ pub struct World {
     entity_cache: EntityCache,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
+    /// Monotonic counter for `sub_tick_order` on scheduled ticks.
+    /// Provides stable ordering when multiple ticks fire on the same game tick
+    /// with the same priority.
+    sub_tick_count: AtomicI64,
 }
 
 impl World {
-    /// Creates a new world.
+    /// Creates a new world with custom configuration.
     ///
+    /// This allows specifying storage backend (disk or RAM-only) and other options.
     /// Uses `Arc::new_cyclic` to create a cyclic reference between
     /// the World and its `ChunkMap`'s `WorldGenContext`.
-    #[allow(clippy::new_without_default)]
-    pub async fn new(
+    ///
+    /// # Arguments
+    /// * `chunk_runtime` - The Tokio runtime for chunk operations
+    /// * `dimension` - The dimension type (overworld, nether, end)
+    /// * `seed` - The world seed
+    /// * `config` - World configuration including storage options
+    pub async fn new_with_config(
         chunk_runtime: Arc<Runtime>,
         dimension: DimensionTypeRef,
         seed: i64,
+        config: WorldConfig,
     ) -> io::Result<Arc<Self>> {
-        let level_data =
-            LevelDataManager::new(format!("world/{}", dimension.key.path), seed).await?;
+        // Create storage backend based on config
+        let storage: Arc<ChunkStorage> = match &config.storage {
+            WorldStorageConfig::Disk { path } => {
+                Arc::new(ChunkStorage::Disk(RegionManager::new(path.clone())))
+            }
+            WorldStorageConfig::RamOnly => {
+                Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world()))
+            }
+        };
+
+        // Create or skip level data based on config
+
+        let path = match &config.storage {
+            WorldStorageConfig::Disk { path } => Some(Path::new(path)),
+            WorldStorageConfig::RamOnly => None,
+        };
+        let level_data = LevelDataManager::new(path, seed).await?;
+        // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+        //     REGISTRY
+        //         .blocks
+        //         .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
+        //     REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT), // Dirt
+        //     REGISTRY
+        //         .blocks
+        //         .get_default_state_id(vanilla_blocks::GRASS_BLOCK), // Grass Block
+        // )));
 
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| Self {
-            chunk_map: Arc::new(ChunkMap::new(chunk_runtime, weak_self.clone(), &dimension)),
+            chunk_map: Arc::new(ChunkMap::new_with_storage(
+                chunk_runtime,
+                weak_self.clone(),
+                &dimension,
+                storage,
+                config.generator,
+            )),
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),
             dimension,
@@ -119,6 +177,7 @@ impl World {
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
+            sub_tick_count: AtomicI64::new(0),
         }))
     }
 
@@ -126,7 +185,7 @@ impl World {
     /// `await_holding_lock` is safe here cause it's only done on shutdown
     #[allow(clippy::await_holding_lock)]
     pub async fn cleanup(&self, total_saved: &mut usize) {
-        match self.level_data.write().save_force().await {
+        match self.level_data.write().save().await {
             Ok(()) => log::info!(
                 "World {} level data saved successfully",
                 self.dimension.key.path
@@ -395,7 +454,7 @@ impl World {
     /// Updates all neighbors of the given position about a block change.
     ///
     /// This is the Rust equivalent of vanilla's `Level.updateNeighborsAt()`.
-    fn update_neighbors_at(&self, pos: &BlockPos, source_block: BlockRef) {
+    pub fn update_neighbors_at(&self, pos: &BlockPos, source_block: BlockRef) {
         for direction in Self::NEIGHBOR_UPDATE_ORDER {
             let neighbor_pos = pos.relative(direction);
             self.neighbor_changed(neighbor_pos, source_block, false);
@@ -506,11 +565,15 @@ impl World {
     /// Returns timing information for the world tick.
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
     pub fn tick_b(&self, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+        if runs_normally {
+            self.tick_time();
+        }
+
         let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
-        let chunk_map_timings = self
-            .chunk_map
-            .tick_b(tick_count, random_tick_speed, runs_normally);
+        let chunk_map_timings =
+            self.chunk_map
+                .tick_b(self, tick_count, random_tick_speed, runs_normally);
 
         // Tick players (always tick players - they can move when frozen)
         let player_tick = {
@@ -532,6 +595,131 @@ impl World {
         WorldTickTimings {
             chunk_map: chunk_map_timings,
             player_tick,
+        }
+    }
+
+    // ========================================================================
+    // Scheduled Ticks
+    // ========================================================================
+
+    /// Schedules a block tick at the given position.
+    ///
+    /// The tick will fire after `delay` game ticks with the given priority.
+    /// Only one tick per `(pos, block)` pair can be active at a time — duplicates
+    /// are silently ignored.
+    pub fn schedule_block_tick(
+        &self,
+        pos: BlockPos,
+        block: BlockRef,
+        delay: i32,
+        priority: tick_scheduler::TickPriority,
+    ) {
+        let chunk_pos = Self::chunk_pos_for_block(&pos);
+        self.chunk_map.with_full_chunk(&chunk_pos, |chunk_access| {
+            if let Some(chunk) = chunk_access.as_full() {
+                let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
+                let tick = tick_scheduler::BlockTick {
+                    tick_type: block,
+                    pos,
+                    delay,
+                    priority,
+                    sub_tick_order: order,
+                };
+                chunk.block_ticks.lock().schedule(tick);
+            }
+        });
+    }
+
+    /// Schedules a block tick with `Normal` priority.
+    pub fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) {
+        self.schedule_block_tick(pos, block, delay, tick_scheduler::TickPriority::Normal);
+    }
+
+    /// Schedules a fluid tick at the given position.
+    ///
+    /// The tick will fire after `delay` game ticks with the given priority.
+    /// Only one tick per `(pos, fluid)` pair can be active at a time.
+    pub fn schedule_fluid_tick(
+        &self,
+        pos: BlockPos,
+        fluid: FluidRef,
+        delay: i32,
+        priority: tick_scheduler::TickPriority,
+    ) {
+        let chunk_pos = Self::chunk_pos_for_block(&pos);
+        self.chunk_map.with_full_chunk(&chunk_pos, |chunk_access| {
+            if let Some(chunk) = chunk_access.as_full() {
+                let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
+                let tick = tick_scheduler::FluidTick {
+                    tick_type: fluid,
+                    pos,
+                    delay,
+                    priority,
+                    sub_tick_order: order,
+                };
+                chunk.fluid_ticks.lock().schedule(tick);
+            }
+        });
+    }
+
+    /// Schedules a fluid tick with `Normal` priority.
+    pub fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) {
+        self.schedule_fluid_tick(pos, fluid, delay, tick_scheduler::TickPriority::Normal);
+    }
+
+    /// Returns `true` if a block tick is already scheduled for the given `(pos, block)`.
+    pub fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        let chunk_pos = Self::chunk_pos_for_block(&pos);
+        self.chunk_map
+            .with_full_chunk(&chunk_pos, |chunk_access| {
+                chunk_access
+                    .as_full()
+                    .is_some_and(|chunk| chunk.block_ticks.lock().has_tick(pos, block))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Returns `true` if a fluid tick is already scheduled for the given `(pos, fluid)`.
+    pub fn has_scheduled_fluid_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
+        let chunk_pos = Self::chunk_pos_for_block(&pos);
+        self.chunk_map
+            .with_full_chunk(&chunk_pos, |chunk_access| {
+                chunk_access
+                    .as_full()
+                    .is_some_and(|chunk| chunk.fluid_ticks.lock().has_tick(pos, fluid))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Advances the gametime and the daytime (if `ADVANCE_TIME` gamerule is true) by one tick, and
+    /// then sends an update to all clients in this world every 20th tick.
+    fn tick_time(&self) {
+        let advance_time = self
+            .get_game_rule(ADVANCE_TIME)
+            .as_bool()
+            .expect("gamerule advance_time should always be a bool.");
+
+        let (game_time, day_time) = {
+            let mut lock = self.level_data.write();
+            let updated_game_time = lock.game_time() + 1;
+            lock.set_game_time(updated_game_time);
+            let current_day_time = lock.day_time();
+
+            if advance_time {
+                let updated_day_time = (current_day_time + 1) % 24000;
+                lock.set_day_time(updated_day_time);
+                (updated_game_time, updated_day_time)
+            } else {
+                (updated_game_time, current_day_time)
+            }
+        };
+
+        if game_time % 20 == 0 {
+            self.broadcast_to_all(CSetTime {
+                game_time,
+                day_time,
+                time_of_day_increasing: advance_time,
+            });
         }
     }
 
@@ -595,7 +783,7 @@ impl World {
             packet.previous_messages.clone_from(&previous_messages);
 
             // Send the packet
-            recipient.connection.send_packet(packet.clone());
+            recipient.send_packet(packet.clone());
 
             // AFTER sending, update the recipient's cache using vanilla's push algorithm
             // This adds all lastSeen signatures + current signature to the cache
@@ -652,7 +840,7 @@ impl World {
             ) else {
                 return false;
             };
-            player.connection.send_encoded_packet(encoded);
+            player.connection.send_encoded(encoded);
             true
         });
     }
@@ -662,7 +850,7 @@ impl World {
     /// Use this when you have a pre-encoded packet to avoid re-encoding.
     pub fn broadcast_to_all_encoded(&self, packet: EncodedPacket) {
         self.players.iter_players(|_, player| {
-            player.connection.send_encoded_packet(packet.clone());
+            player.connection.send_encoded(packet.clone());
             true
         });
     }
@@ -680,7 +868,7 @@ impl World {
             let messages_received = recipient.get_and_increment_messages_received();
             packet.global_index = messages_received;
 
-            recipient.connection.send_packet(packet.clone());
+            recipient.send_packet(packet.clone());
             true
         });
     }
@@ -718,7 +906,7 @@ impl World {
                 continue;
             }
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                player.connection.send_encoded_packet(packet.clone());
+                player.connection.send_encoded(packet.clone());
             }
         }
     }
@@ -893,7 +1081,7 @@ impl World {
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded_packet(encoded.clone());
+                    player.connection.send_encoded(encoded.clone());
                 }
             }
         }
@@ -911,7 +1099,7 @@ impl World {
     pub fn global_level_event(&self, event_type: i32, pos: BlockPos, data: i32) {
         let packet = CLevelEvent::new(event_type, pos, data, true);
         self.players.iter_players(|_, player| {
-            player.connection.send_packet(packet.clone());
+            player.send_packet(packet.clone());
             true
         });
     }
@@ -976,7 +1164,7 @@ impl World {
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded_packet(encoded.clone());
+                    player.connection.send_encoded(encoded.clone());
                 }
             }
         }
@@ -1051,7 +1239,7 @@ impl World {
                 let dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded_packet(encoded.clone());
+                    player.connection.send_encoded(encoded.clone());
                 }
             }
         }

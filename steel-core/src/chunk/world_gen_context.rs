@@ -6,7 +6,7 @@ use enum_dispatch::enum_dispatch;
 
 use crate::chunk::{
     chunk_access::ChunkAccess, chunk_generator::ChunkGenerator,
-    flat_chunk_generator::FlatChunkGenerator,
+    empty_chunk_generator::EmptyChunkGenerator, flat_chunk_generator::FlatChunkGenerator,
 };
 use crate::world::World;
 
@@ -14,6 +14,7 @@ use crate::world::World;
 #[enum_dispatch(ChunkGenerator)]
 pub enum ChunkGeneratorType {
     Flat(FlatChunkGenerator),
+    Empty(EmptyChunkGenerator),
     //Custom(Box<dyn ChunkGenerator>),
 }
 

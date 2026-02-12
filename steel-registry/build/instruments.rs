@@ -67,6 +67,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static instrument definitions
+    let mut register_stream = TokenStream::new();
     for (instrument_name, instrument) in &instruments {
         let instrument_ident =
             Ident::new(&instrument_name.to_shouty_snake_case(), Span::call_site());
@@ -87,11 +88,6 @@ pub(crate) fn build() -> TokenStream {
                 description: #description,
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (instrument_name, _) in &instruments {
         let instrument_ident =
             Ident::new(&instrument_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {

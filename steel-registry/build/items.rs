@@ -249,6 +249,7 @@ pub(crate) fn build() -> TokenStream {
     let mut item_definitions = TokenStream::new();
     let mut item_construction = TokenStream::new();
 
+    let mut register_stream = TokenStream::new();
     for item in &item_assets.items {
         let item_ident = Ident::new(&item.name, Span::call_site());
         let item_name_str = item.name.clone();
@@ -303,13 +304,9 @@ pub(crate) fn build() -> TokenStream {
                 },
             });
         }
-    }
 
-    let mut register_stream = TokenStream::new();
-    for item in &item_assets.items {
-        let item_name = Ident::new(&item.name, Span::call_site());
         register_stream.extend(quote! {
-            registry.register(&ITEMS.#item_name);
+            registry.register(&ITEMS.#item_ident);
         });
     }
 

@@ -32,7 +32,11 @@
 
 mod bit_pack;
 mod format;
+mod ram_only;
 mod region_manager;
+mod storage;
 
 pub use format::*;
+pub use ram_only::*;
 pub use region_manager::*;
+pub use storage::*;

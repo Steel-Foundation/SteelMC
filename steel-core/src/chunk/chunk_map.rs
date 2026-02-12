@@ -1,26 +1,27 @@
+use rayon::{
+    ThreadPool, ThreadPoolBuilder,
+    iter::{IntoParallelIterator, ParallelIterator},
+};
+use rustc_hash::FxBuildHasher;
 use std::{
-    io, mem,
+    io, mem, ptr,
     sync::{
         Arc, Weak,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
-
-use rayon::{
-    ThreadPool, ThreadPoolBuilder,
-    iter::{IntoParallelIterator, ParallelIterator},
-};
-use rustc_hash::FxBuildHasher;
 use steel_protocol::packets::game::{
     BlockChange, CBlockUpdate, CSectionBlocksUpdate, CSetChunkCenter,
 };
-use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef, vanilla_blocks};
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::dimension_type::DimensionTypeRef;
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
@@ -30,11 +31,12 @@ use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::chunk::{chunk_access::ChunkAccess, chunk_ticket_manager::is_ticked};
 use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask,
-    flat_chunk_generator::FlatChunkGenerator, world_gen_context::WorldGenContext,
+    world_gen_context::WorldGenContext,
 };
-use crate::chunk_saver::RegionManager;
+use crate::chunk_saver::ChunkStorage;
 use crate::player::Player;
 use crate::world::World;
+use crate::world::tick_scheduler::{BlockTick, FluidTick};
 
 /// Timing information for chunk map tick operations.
 #[derive(Debug, Default)]
@@ -83,8 +85,8 @@ pub struct ChunkMap {
     //pub tick_pool: Arc<ThreadPool>,
     /// The runtime to use for chunk tasks.
     pub chunk_runtime: Arc<Runtime>,
-    /// Manager for chunk saving and loading.
-    pub region_manager: Arc<RegionManager>,
+    /// Storage backend for chunk saving and loading.
+    pub storage: Arc<ChunkStorage>,
     /// Chunk holders with pending block changes to broadcast.
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
@@ -92,24 +94,18 @@ pub struct ChunkMap {
 }
 
 impl ChunkMap {
-    /// Creates a new chunk map.
+    /// Creates a new chunk map with a custom storage backend.
+    ///
+    /// This allows using different storage implementations (disk, RAM, etc.).
     #[must_use]
     #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
-    pub fn new(
+    pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
-        dimension: &DimensionTypeRef,
+        _dimension: &DimensionTypeRef,
+        storage: Arc<ChunkStorage>,
+        generator: Arc<ChunkGeneratorType>,
     ) -> Self {
-        let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-            REGISTRY
-                .blocks
-                .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-            REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT), // Dirt
-            REGISTRY
-                .blocks
-                .get_default_state_id(vanilla_blocks::GRASS_BLOCK), // Grass Block
-        )));
-
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
@@ -120,7 +116,7 @@ impl ChunkMap {
             generation_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             //tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             chunk_runtime,
-            region_manager: Arc::new(RegionManager::new(format!("world/{}", dimension.key.path))),
+            storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
             last_tickable_len: AtomicUsize::new(0),
         }
@@ -211,7 +207,7 @@ impl ChunkMap {
 
                     for entity_id in &tracking_players {
                         if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                            player.connection.send_packet(update_packet.clone());
+                            player.send_packet(update_packet.clone());
                         }
                     }
                 } else {
@@ -242,7 +238,7 @@ impl ChunkMap {
 
                     for entity_id in &tracking_players {
                         if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                            player.connection.send_packet(packet.clone());
+                            player.send_packet(packet.clone());
                         }
                     }
                 }
@@ -337,23 +333,27 @@ impl ChunkMap {
         }
     }
 
-    /// Processes chunk updates and ticks chunks.
+    /// Processes chunk updates, ticks chunks, and executes ready scheduled ticks.
     ///
     /// # Arguments
+    /// * `world` - The world reference (needed for executing scheduled tick callbacks)
     /// * `tick_count` - The current server tick count
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick
     /// * `runs_normally` - Whether game elements should run (false when frozen)
     ///
     /// Returns timing information for each phase of the tick.
     #[allow(clippy::too_many_lines)]
-    #[instrument(level = "trace", skip(self), name = "chunk_map_tick")]
+    #[instrument(level = "trace", skip(self, world), name = "chunk_map_tick")]
     pub fn tick_b(
         self: &Arc<Self>,
+        world: &World,
         tick_count: u64,
         random_tick_speed: u32,
         runs_normally: bool,
     ) -> ChunkMapTickTimings {
         let mut timings = ChunkMapTickTimings::default();
+        let mut ready_block_ticks = Vec::new();
+        let mut ready_fluid_ticks = Vec::new();
 
         {
             let mut ct = self.chunk_tickets.lock();
@@ -461,14 +461,61 @@ impl ChunkMap {
                 // TODO: In the future we might want to tick different regions/islands in parallel
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.tick(random_tick_speed, tick_count as i32);
+                        chunk_guard.tick(
+                            random_tick_speed,
+                            tick_count as i32,
+                            &mut ready_block_ticks,
+                            &mut ready_fluid_ticks,
+                        );
                     }
                 }
                 timings.tick_chunks = start.elapsed();
             }
         }
 
+        // Execute scheduled ticks collected during chunk ticking
+        Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+
         timings
+    }
+
+    /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
+    fn execute_scheduled_ticks(
+        world: &World,
+        mut ready_block_ticks: Vec<BlockTick>,
+        mut ready_fluid_ticks: Vec<FluidTick>,
+    ) {
+        const MAX_TICKS: usize = usize::MAX; // Vanilla uses 65_536, the lion does not concern himself with vanilla hotpatching
+
+        if !ready_block_ticks.is_empty() {
+            ready_block_ticks.sort_by(|a, b| {
+                a.priority
+                    .cmp(&b.priority)
+                    .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
+            });
+
+            let block_behaviors = &*BLOCK_BEHAVIORS;
+            for tick in ready_block_ticks.iter().take(MAX_TICKS) {
+                let state = world.get_block_state(&tick.pos);
+                if !ptr::eq(state.get_block(), tick.tick_type) {
+                    continue;
+                }
+                block_behaviors
+                    .get_behavior(tick.tick_type)
+                    .tick(state, world, tick.pos);
+            }
+        }
+
+        if !ready_fluid_ticks.is_empty() {
+            ready_fluid_ticks.sort_by(|a, b| {
+                a.priority
+                    .cmp(&b.priority)
+                    .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
+            });
+
+            // TODO: Execute fluid ticks when FluidBehaviour trait exists
+            let _ = ready_fluid_ticks.len().min(MAX_TICKS);
+        }
     }
 
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
@@ -486,7 +533,7 @@ impl ChunkMap {
                 .persisted_status()
                 .expect("The check above confirmed it exists");
 
-            let prepared = RegionManager::prepare_chunk_save(&chunk_guard);
+            let prepared = ChunkStorage::prepare_chunk_save(&chunk_guard);
 
             // Clear dirty flag while we still have the lock (only if we're actually saving)
             if prepared.is_some() {
@@ -500,7 +547,7 @@ impl ChunkMap {
 
         // Save chunk data if dirty
         if let Some(prepared) = prepared {
-            let result = self.region_manager.save_chunk_data(prepared, status).await;
+            let result = self.storage.save_chunk_data(prepared, status).await;
 
             if let Err(e) = result {
                 tracing::error!("Error saving chunk: {e}");
@@ -535,7 +582,7 @@ impl ChunkMap {
                     let pos = *pos;
                     let map_clone = self.clone();
                     self.task_tracker.spawn(async move {
-                        if let Err(e) = map_clone.region_manager.release_chunk(pos).await {
+                        if let Err(e) = map_clone.storage.release_chunk(pos).await {
                             tracing::error!(?pos, "Error releasing chunk: {e}");
                         }
                     });
@@ -558,7 +605,6 @@ impl ChunkMap {
         if last_view_guard.as_ref() != Some(&new_view) {
             let mut chunk_tickets = self.chunk_tickets.lock();
 
-            let connection = &player.connection;
             let world = self.world_gen_context.world();
 
             if let Some(last_view) = last_view_guard.as_ref() {
@@ -574,7 +620,7 @@ impl ChunkMap {
                         MAX_VIEW_DISTANCE.saturating_sub(new_view.view_distance),
                     );
 
-                    connection.send_packet(CSetChunkCenter {
+                    player.send_packet(CSetChunkCenter {
                         x: new_view.center.0.x,
                         y: new_view.center.0.y,
                     });
@@ -586,6 +632,7 @@ impl ChunkMap {
 
                 // We lock here to ensure we have unique access for the duration of the diff
                 let mut chunk_sender = player.chunk_sender.lock();
+                let connection = &*player.connection;
                 PlayerChunkView::difference(
                     last_view,
                     &new_view,
@@ -621,7 +668,7 @@ impl ChunkMap {
                 );
 
                 // Send initial chunk cache center to client
-                connection.send_packet(CSetChunkCenter {
+                player.send_packet(CSetChunkCenter {
                     x: new_view.center.0.x,
                     y: new_view.center.0.y,
                 });
@@ -695,7 +742,7 @@ impl ChunkMap {
                 let Some(status) = holder.persisted_status() else {
                     continue;
                 };
-                let Some(prepared) = RegionManager::prepare_chunk_save(&chunk) else {
+                let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
                     continue; // Not dirty
                 };
                 chunk.clear_dirty();
@@ -703,7 +750,7 @@ impl ChunkMap {
             };
 
             let (prepared, status) = prepared;
-            match self.region_manager.save_chunk_data(prepared, status).await {
+            match self.storage.save_chunk_data(prepared, status).await {
                 Ok(true) => saved_count += 1,
                 Ok(false) => {} // Not dirty
                 Err(e) => {
@@ -713,7 +760,7 @@ impl ChunkMap {
         }
 
         // Close all region files (flushes headers and releases file handles)
-        if let Err(e) = self.region_manager.close_all().await {
+        if let Err(e) = self.storage.close_all().await {
             tracing::error!("Failed to close region files: {e}");
         }
 

@@ -5,6 +5,7 @@
 
 mod barrel_block;
 mod cactus_block;
+mod button_block;
 mod candle_block;
 mod crafting_table_block;
 mod crop_block;
@@ -19,6 +20,7 @@ mod torch_block;
 
 pub use barrel_block::BarrelBlock;
 pub use cactus_block::CactusBlock;
+pub use button_block::ButtonBlock;
 pub use candle_block::CandleBlock;
 pub use crafting_table_block::CraftingTableBlock;
 pub use crop_block::CropBlock;

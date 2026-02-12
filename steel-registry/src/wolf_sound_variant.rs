@@ -46,6 +46,17 @@ impl WolfSoundVariantRegistry {
         id
     }
 
+    /// Replaces a wolf_sound_variant at a given index.
+    /// Returns true if the wolf_sound_variant was replaced and false if the wolf_sound_variant wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, wolf_sound_variant: WolfSoundVariantRef, id: usize) -> bool {
+        if id >= self.wolf_sound_variants_by_id.len() {
+            return false;
+        }
+        self.wolf_sound_variants_by_id[id] = wolf_sound_variant;
+        true
+    }
+
     #[must_use]
     pub fn by_id(&self, id: usize) -> Option<WolfSoundVariantRef> {
         self.wolf_sound_variants_by_id.get(id).copied()

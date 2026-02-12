@@ -38,7 +38,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 
 /// Current format version. Increment when making breaking changes.
 /// v3: Added entity persistence (`PersistentEntity`).
-pub const FORMAT_VERSION: u16 = 3;
+/// v4: Added scheduled tick persistence (`PersistentTick`).
+pub const FORMAT_VERSION: u16 = 4;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -289,6 +290,10 @@ pub struct PersistentChunk {
     pub block_entities: Vec<PersistentBlockEntity>,
     /// Entities in this chunk (excludes players and non-serializable types).
     pub entities: Vec<PersistentEntity>,
+    /// Scheduled block ticks pending in this chunk.
+    pub block_ticks: Vec<PersistentTick>,
+    /// Scheduled fluid ticks pending in this chunk.
+    pub fluid_ticks: Vec<PersistentTick>,
 }
 
 /// A 16×16×16 section of a chunk.
@@ -373,6 +378,28 @@ pub struct PersistentEntity {
     pub on_ground: bool,
     /// Type-specific NBT data from `save_additional`.
     pub nbt_data: Vec<u8>,
+}
+
+/// A scheduled tick stored with a chunk.
+///
+/// Stores the tick's position relative to the chunk, its remaining delay,
+/// priority, ordering, and the block/fluid identifier.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentTick {
+    /// Relative X position within chunk (0-15).
+    pub x: u8,
+    /// Absolute Y position (world height).
+    pub y: i16,
+    /// Relative Z position within chunk (0-15).
+    pub z: u8,
+    /// Remaining delay in game ticks until this tick fires.
+    pub delay: i32,
+    /// Tick priority as `i8` (maps to `TickPriority` enum, -3 to 3).
+    pub priority: i8,
+    /// Sub-tick ordering value for stable sort within same priority.
+    pub sub_tick_order: i64,
+    /// Block or fluid identifier (e.g., "`minecraft:stone_button`").
+    pub tick_type: Identifier,
 }
 
 /// Position of a region in region coordinates.

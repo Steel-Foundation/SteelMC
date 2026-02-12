@@ -2,9 +2,11 @@
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
 
+use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk, CLevelChunkWithLight,
 };
+use steel_protocol::utils::ConnectionProtocol;
 use steel_utils::ChunkPos;
 use tokio::task::spawn_blocking;
 
@@ -13,7 +15,8 @@ use crate::{
         chunk_access::{ChunkAccess, ChunkStatus},
         chunk_holder::ChunkHolder,
     },
-    player::networking::JavaConnection,
+    player::PlayerConnection,
+    player::connection::NetworkConnection,
     world::World,
 };
 
@@ -50,10 +53,18 @@ impl ChunkSender {
     }
 
     /// Drops a chunk from the client's view.
-    pub fn drop_chunk(&mut self, connection: &JavaConnection, pos: ChunkPos) {
+    pub fn drop_chunk(&mut self, connection: &PlayerConnection, pos: ChunkPos) {
         if !self.pending_chunks.remove(&pos) && !connection.closed() {
-            connection.send_packet(CForgetLevelChunk { pos });
+            Self::send_packet(connection, CForgetLevelChunk { pos });
         }
+    }
+
+    /// Encodes and sends a packet through the connection.
+    fn send_packet<P: ClientPacket>(connection: &PlayerConnection, packet: P) {
+        let encoded =
+            EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
+                .expect("Failed to encode packet");
+        connection.send_encoded(encoded);
     }
 
     /// Sends the next batch of chunks to the client.
@@ -62,7 +73,7 @@ impl ChunkSender {
     /// Panics if a chunk is not at Full status when it should be.
     pub fn send_next_chunks(
         &mut self,
-        connection: Arc<JavaConnection>,
+        connection: Arc<PlayerConnection>,
         world: &World,
         player_chunk_pos: ChunkPos,
     ) {
@@ -76,6 +87,9 @@ impl ChunkSender {
                 if !chunks_to_process.is_empty() {
                     self.unacknowledged_batches += 1;
                     self.batch_quota -= chunks_to_process.len() as f32;
+
+                    // Pre-compute compression info for encoding inside the blocking task
+                    let compression = connection.compression();
 
                     #[allow(clippy::let_underscore_future)]
                     let _ = spawn_blocking(move || {
@@ -94,16 +108,36 @@ impl ChunkSender {
                             }
                         }
 
-                        connection.send_packet(CChunkBatchStart {});
+                        // Encode and send batch start
+                        let start_encoded = EncodedPacket::from_bare(
+                            CChunkBatchStart {},
+                            compression,
+                            ConnectionProtocol::Play,
+                        )
+                        .expect("Failed to encode packet");
+                        connection.send_encoded(start_encoded);
+
                         let batch_size = chunks_to_send.len();
 
                         for chunk in chunks_to_send {
-                            connection.send_packet(chunk);
+                            let chunk_encoded = EncodedPacket::from_bare(
+                                chunk,
+                                compression,
+                                ConnectionProtocol::Play,
+                            )
+                            .expect("Failed to encode chunk packet");
+                            connection.send_encoded(chunk_encoded);
                         }
 
-                        connection.send_packet(CChunkBatchFinished {
-                            batch_size: batch_size as i32,
-                        });
+                        let finish_encoded = EncodedPacket::from_bare(
+                            CChunkBatchFinished {
+                                batch_size: batch_size as i32,
+                            },
+                            compression,
+                            ConnectionProtocol::Play,
+                        )
+                        .expect("Failed to encode packet");
+                        connection.send_encoded(finish_encoded);
                     });
                 }
             }

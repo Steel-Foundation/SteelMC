@@ -74,6 +74,7 @@ pub(crate) fn build() -> TokenStream {
         use steel_utils::Identifier;
     });
 
+    let mut register_stream = TokenStream::new();
     for entity_type in &entity_types {
         let entity_type_ident =
             Ident::new(&entity_type.name.to_shouty_snake_case(), Span::call_site());
@@ -133,12 +134,6 @@ pub(crate) fn build() -> TokenStream {
                 },
             };
         });
-    }
-
-    let mut register_stream = TokenStream::new();
-    for entity_type in &entity_types {
-        let entity_type_ident =
-            Ident::new(&entity_type.name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#entity_type_ident);
         });
