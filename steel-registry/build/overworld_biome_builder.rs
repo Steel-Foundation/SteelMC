@@ -7,6 +7,15 @@
 use serde::Deserialize;
 use std::fs;
 
+// Weirdness boundary constants from vanilla OverworldBiomeBuilder.
+// These define the weirdness ranges for each terrain height category.
+const VALLEY_SIZE: f64 = 0.05;
+const LOW_START: f64 = 0.26666668;
+const HIGH_START: f64 = 0.4;
+const HIGH_END: f64 = 0.93333334;
+const PEAK_START: f64 = 0.56666666;
+const PEAK_END: f64 = 0.7666667;
+
 /// A parameter range [min, max]
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(from = "[f64; 2]")]
@@ -165,19 +174,19 @@ impl OverworldBiomeBuilder {
     }
 
     fn add_inland_biomes(&self, entries: &mut Vec<BiomeEntry>) {
-        self.add_mid_slice(entries, &Parameter::new(-1.0, -0.93333334));
-        self.add_high_slice(entries, &Parameter::new(-0.93333334, -0.7666667));
-        self.add_peaks(entries, &Parameter::new(-0.7666667, -0.56666666));
-        self.add_high_slice(entries, &Parameter::new(-0.56666666, -0.4));
-        self.add_mid_slice(entries, &Parameter::new(-0.4, -0.26666668));
-        self.add_low_slice(entries, &Parameter::new(-0.26666668, -0.05));
-        self.add_valleys(entries, &Parameter::new(-0.05, 0.05));
-        self.add_low_slice(entries, &Parameter::new(0.05, 0.26666668));
-        self.add_mid_slice(entries, &Parameter::new(0.26666668, 0.4));
-        self.add_high_slice(entries, &Parameter::new(0.4, 0.56666666));
-        self.add_peaks(entries, &Parameter::new(0.56666666, 0.7666667));
-        self.add_high_slice(entries, &Parameter::new(0.7666667, 0.93333334));
-        self.add_mid_slice(entries, &Parameter::new(0.93333334, 1.0));
+        self.add_mid_slice(entries, &Parameter::new(-1.0, -HIGH_END));
+        self.add_high_slice(entries, &Parameter::new(-HIGH_END, -PEAK_END));
+        self.add_peaks(entries, &Parameter::new(-PEAK_END, -PEAK_START));
+        self.add_high_slice(entries, &Parameter::new(-PEAK_START, -HIGH_START));
+        self.add_mid_slice(entries, &Parameter::new(-HIGH_START, -LOW_START));
+        self.add_low_slice(entries, &Parameter::new(-LOW_START, -VALLEY_SIZE));
+        self.add_valleys(entries, &Parameter::new(-VALLEY_SIZE, VALLEY_SIZE));
+        self.add_low_slice(entries, &Parameter::new(VALLEY_SIZE, LOW_START));
+        self.add_mid_slice(entries, &Parameter::new(LOW_START, HIGH_START));
+        self.add_high_slice(entries, &Parameter::new(HIGH_START, PEAK_START));
+        self.add_peaks(entries, &Parameter::new(PEAK_START, PEAK_END));
+        self.add_high_slice(entries, &Parameter::new(PEAK_END, HIGH_END));
+        self.add_mid_slice(entries, &Parameter::new(HIGH_END, 1.0));
     }
 
     fn add_peaks(&self, entries: &mut Vec<BiomeEntry>, weirdness: &Parameter) {

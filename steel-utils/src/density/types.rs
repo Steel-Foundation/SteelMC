@@ -356,6 +356,8 @@ pub enum MappedType {
     HalfNegative,
     /// Quarter negative: if v > 0 then v else v * 0.25
     QuarterNegative,
+    /// Invert: 1.0 / v
+    Invert,
     /// Squeeze: clamp(-1, 1) then apply c/2 - c^3/24
     Squeeze,
 }
@@ -1015,6 +1017,7 @@ fn apply_mapped(op: MappedType, v: f64) -> f64 {
                 v * 0.25
             }
         }
+        MappedType::Invert => 1.0 / v,
         MappedType::Squeeze => {
             let c = clamp(v, -1.0, 1.0);
             c / 2.0 - c * c * c / 24.0

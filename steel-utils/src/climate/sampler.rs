@@ -1,6 +1,6 @@
 //! Climate sampler for evaluating climate at positions.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use crate::density::{DensityContext, DensityFunction, DensityFunctionOps};
 
@@ -100,8 +100,7 @@ impl ClimateSampler {
 /// An empty climate sampler that returns zero for all parameters.
 ///
 /// Matches vanilla's `Climate.empty()`.
-#[must_use]
-pub fn empty_sampler() -> ClimateSampler {
+static EMPTY_SAMPLER: LazyLock<ClimateSampler> = LazyLock::new(|| {
     ClimateSampler::new(
         Arc::new(DensityFunction::constant(0.0)),
         Arc::new(DensityFunction::constant(0.0)),
@@ -110,6 +109,12 @@ pub fn empty_sampler() -> ClimateSampler {
         Arc::new(DensityFunction::constant(0.0)),
         Arc::new(DensityFunction::constant(0.0)),
     )
+});
+
+/// Returns a reference to the shared empty climate sampler.
+#[must_use]
+pub fn empty_sampler() -> &'static ClimateSampler {
+    &EMPTY_SAMPLER
 }
 
 #[cfg(test)]

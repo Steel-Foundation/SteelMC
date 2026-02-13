@@ -105,6 +105,8 @@ impl ChunkStatusTasks {
         // Sample biomes for each section
         for section_index in 0..section_count {
             let section_y = (min_y / 16) + section_index as i32;
+            let section = &chunk.sections().sections[section_index];
+            let mut section_guard = section.write();
 
             // For each biome position in the section (4x4x4)
             for local_quart_x in 0..4i32 {
@@ -136,9 +138,7 @@ impl ChunkStatusTasks {
                             .id_from_key(&Identifier::vanilla(biome_path))
                             .unwrap_or(0) as u8;
 
-                        // Set the biome in the section
-                        let section = &chunk.sections().sections[section_index];
-                        section.write().biomes.set(
+                        section_guard.biomes.set(
                             local_quart_x as usize,
                             local_quart_y as usize,
                             local_quart_z as usize,
@@ -147,6 +147,7 @@ impl ChunkStatusTasks {
                     }
                 }
             }
+            drop(section_guard);
         }
 
         chunk.mark_dirty();
