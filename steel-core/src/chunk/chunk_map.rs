@@ -346,7 +346,7 @@ impl ChunkMap {
     #[instrument(level = "trace", skip(self, world), name = "chunk_map_tick")]
     pub fn tick_b(
         self: &Arc<Self>,
-        world: &World,
+        world: &Arc<World>,
         tick_count: u64,
         random_tick_speed: u32,
         runs_normally: bool,
@@ -481,7 +481,7 @@ impl ChunkMap {
 
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
     fn execute_scheduled_ticks(
-        world: &World,
+        world: &Arc<World>,
         mut ready_block_ticks: Vec<BlockTick>,
         mut ready_fluid_ticks: Vec<FluidTick>,
     ) {

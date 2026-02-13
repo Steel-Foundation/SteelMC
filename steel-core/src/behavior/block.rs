@@ -1,6 +1,6 @@
 //! Block behavior trait and registry.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -181,7 +181,7 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `world` - The world the block is in
     /// * `pos` - The position of the block
     #[allow(unused_variables)]
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
     }
 
@@ -196,7 +196,7 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `world` - The world the block is in
     /// * `pos` - The position of the block
     #[allow(unused_variables)]
-    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
     }
 

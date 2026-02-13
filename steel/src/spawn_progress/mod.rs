@@ -109,7 +109,7 @@ pub async fn generate_spawn_chunks(
 /// Returns the elapsed generation time (excluding the final display delay).
 #[cfg(feature = "spawn_chunk_display")]
 async fn generate_with_display(
-    world: &World,
+    world: &Arc<World>,
     center_chunk: ChunkPos,
     logger: &Arc<CommandLogger>,
 ) -> Duration {
@@ -178,7 +178,7 @@ async fn generate_with_display(
 
 /// Counts how many chunks in the spawn area have reached Full status.
 #[cfg(not(feature = "spawn_chunk_display"))]
-fn count_full_spawn_chunks(world: &World, center_chunk: ChunkPos) -> usize {
+fn count_full_spawn_chunks(world: &Arc<World>, center_chunk: ChunkPos) -> usize {
     let mut completed = 0;
     for dz in -SPAWN_RADIUS..=SPAWN_RADIUS {
         for dx in -SPAWN_RADIUS..=SPAWN_RADIUS {
@@ -197,7 +197,7 @@ fn count_full_spawn_chunks(world: &World, center_chunk: ChunkPos) -> usize {
 }
 
 #[cfg(not(feature = "spawn_chunk_display"))]
-async fn generate_without_display(world: &World, center_chunk: ChunkPos) {
+async fn generate_without_display(world: &Arc<World>, center_chunk: ChunkPos) {
     let mut tick_count: u64 = 1;
 
     loop {

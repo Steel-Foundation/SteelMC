@@ -2,7 +2,7 @@
 use crate::chunk::chunk_map::ChunkMapTickTimings;
 use std::path::Path;
 use std::{
-    io,
+    io, ptr,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -25,16 +25,16 @@ use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
+use steel_registry::loot_table::LootContext;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_game_rules::RANDOM_TICK_SPEED;
+use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_game_rules::ADVANCE_TIME};
-
-use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::SyncRwLock;
 use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
@@ -564,7 +564,7 @@ impl World {
     ///
     /// Returns timing information for the world tick.
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
-    pub fn tick_b(&self, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+    pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
         if runs_normally {
             self.tick_time();
         }
@@ -1121,6 +1121,83 @@ impl World {
         );
     }
 
+    /// Destroys a block at the given position, optionally dropping its loot.
+    ///
+    /// - Gets the current block state (returns false if air)
+    /// - Sends destruction particles (level event 2001), skipping fire blocks
+    /// - Optionally drops resources via loot table
+    /// - Sets the block to air
+    ///
+    /// # Arguments
+    /// * `pos` - The position of the block to destroy
+    /// * `drop_items` - Whether to drop the block's loot
+    ///
+    pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
+        let state = self.get_block_state(&pos);
+
+        // Already air — nothing to destroy
+        if state.is_air() {
+            return false;
+        }
+
+        // Destruction particles (skip fire blocks, matching vanilla)
+        let block = state.get_block();
+        let is_fire =
+            ptr::eq(block, vanilla_blocks::FIRE) || ptr::eq(block, vanilla_blocks::SOUL_FIRE);
+        if !is_fire {
+            self.destroy_block_effect(pos, u32::from(state.0), None);
+        }
+
+        // Drop resources
+        if drop_items {
+            self.drop_resources(state, pos);
+        }
+
+        // Replace with air
+        // TODO: Vanilla uses fluidState.createLegacyBlock() instead of AIR here,
+        // so breaking a waterlogged block leaves water behind. Needs fluid system integration.
+        self.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        // TODO: Vanilla fires GameEvent.BLOCK_DESTROY here (game event system not implemented)
+        true
+    }
+
+    /// Drops the loot for a block using its loot table.
+    ///
+    /// Looks up the block's loot table and spawns each drop via `pop_resource`.
+    ///
+    /// # TODO
+    /// - Vanilla has overloads that also accept `BlockEntity`, `Entity`, and `ItemStack` (tool)
+    ///   for fortune/silk touch. Those are handled separately by `block_breaking::drop_block_loot`.
+    /// - `spawnAfterBreak` is not called (spawns XP orbs for ore blocks — needs XP system).
+    ///
+    /// # Arguments
+    /// * `state` - The block state to drop loot for
+    /// * `pos` - The position where drops should spawn
+    pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
+        let block = state.get_block();
+        let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
+
+        let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
+            return;
+        };
+
+        let mut rng = rand::rng();
+        let mut ctx = LootContext::new(&mut rng)
+            .with_block_state(state)
+            .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
+
+        let drops = loot_table.get_random_items(&mut ctx);
+        for item in drops {
+            if !item.is_empty() {
+                self.pop_resource(&pos, item);
+            }
+        }
+    }
+
     /// Broadcasts a block event to nearby players within 64 blocks.
     ///
     /// Block events are used for special block behaviors like pistons, note blocks,
@@ -1311,7 +1388,11 @@ impl World {
         pos: Vector3<f64>,
         item: ItemStack,
     ) -> Option<Arc<ItemEntity>> {
-        self.spawn_item_with_velocity(pos, item, Vector3::new(0.0, 0.0, 0.0))
+        // Vanilla default ItemEntity velocity (ItemEntity.java:61)
+        let vx = rand::random::<f64>() * 0.2 - 0.1;
+        let vy = 0.2;
+        let vz = rand::random::<f64>() * 0.2 - 0.1;
+        self.spawn_item_with_velocity(pos, item, Vector3::new(vx, vy, vz))
     }
 
     /// Spawns an item entity at the given position with initial velocity.
@@ -1356,6 +1437,11 @@ impl World {
         use steel_registry::vanilla_entities;
 
         if item.is_empty() {
+            return None;
+        }
+
+        // Vanilla checks doTileDrops (BLOCK_DROPS) gamerule before spawning items
+        if !self.get_game_rule(BLOCK_DROPS).as_bool().unwrap_or(true) {
             return None;
         }
 

@@ -4,7 +4,10 @@
 //! block breaking, including progress tracking and validation.
 
 use steel_protocol::packets::game::CBlockUpdate;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::loot_table::LootContext;
 use steel_registry::{REGISTRY, blocks::properties::Direction, vanilla_blocks};
+use steel_utils::Identifier;
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{GameType, InteractionHand, UpdateFlags},
@@ -424,10 +427,6 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
 /// Drops loot for a destroyed block using its loot table.
 #[allow(clippy::needless_pass_by_value)]
 fn drop_block_loot(player: &Player, _world: &World, pos: BlockPos, state: BlockStateId) {
-    use steel_registry::blocks::block_state_ext::BlockStateExt;
-    use steel_registry::loot_table::LootContext;
-    use steel_utils::Identifier;
-
     let block = state.get_block();
 
     // Build the loot table key: "blocks/{block_name}"
@@ -443,24 +442,11 @@ fn drop_block_loot(player: &Player, _world: &World, pos: BlockPos, state: BlockS
 
     // Create loot context
     let mut rng = rand::rng();
-    let mut ctx = LootContext {
-        rng: &mut rng,
-        luck: 0.0, // TODO: Get luck from player attributes
-        block_state: Some(state),
-        tool: Some(&tool),
-        explosion_radius: None,
-        killed_by_player: false,
-        origin: Some((f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()))),
-        game_time: None,
-        weather: None,
-        this_entity: None,
-        killer_entity: None,
-        direct_killer_entity: None,
-        last_damage_player: None,
-        damage_source: None,
-        block_entity: None,
-        interacting_entity: None,
-    };
+    // TODO: Get luck from player attributes
+    let mut ctx = LootContext::new(&mut rng)
+        .with_block_state(state)
+        .with_tool(&tool)
+        .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
 
     // Generate drops
     let drops = loot_table.get_random_items(&mut ctx);

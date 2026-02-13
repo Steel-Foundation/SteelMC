@@ -1,6 +1,7 @@
 //! Farmland block implementation.
 
 use std::ptr;
+use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -104,7 +105,7 @@ impl BlockBehaviour for FarmlandBlock {
         true
     }
 
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let moisture: u8 = state.get_value(&BlockStateProperties::MOISTURE);
 
         // TODO: Check for rain when weather is implemented

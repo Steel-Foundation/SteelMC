@@ -4,6 +4,7 @@
 //! and breaks if any solid block or lava is adjacent horizontally.
 
 use std::ptr;
+use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -136,15 +137,9 @@ impl BlockBehaviour for CactusBlock {
         world.schedule_block_tick_default(pos, self.block, 1);
     }
 
-    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !Self::can_survive(world, pos) {
-            world.destroy_block_effect(pos, u32::from(state.0), None);
-            world.set_block(
-                pos,
-                vanilla_blocks::AIR.default_state(),
-                UpdateFlags::UPDATE_ALL,
-            );
-            // TODO: Drop cactus item via pop_resource
+            world.destroy_block(pos, true);
         }
     }
 
@@ -152,7 +147,7 @@ impl BlockBehaviour for CactusBlock {
         true
     }
 
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let above_pos = pos.offset(0, 1, 0);
 
         // Vanilla line 56: if (serverLevel.isEmptyBlock(blockPos2))
