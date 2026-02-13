@@ -7,6 +7,7 @@ use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
 use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
+use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::io::Cursor;
@@ -20,7 +21,8 @@ use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     BIOMES_PER_SECTION, BLOCKS_PER_SECTION, PersistentBiomeData, PersistentBlockEntity,
-    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentSection, PreparedChunkSave,
+    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentSection, PersistentTick,
+    PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -206,7 +208,24 @@ impl ChunkStorage {
             .map(|c| c.entities.get_saveable_entities())
             .unwrap_or_default();
 
-        let persistent = Self::to_persistent(chunk.sections(), &block_entities, &entities, pos);
+        // Serialize scheduled ticks
+        let (block_ticks, fluid_ticks) = chunk
+            .as_full()
+            .map(|c| {
+                let bt = Self::block_ticks_to_persistent(&c.block_ticks.lock(), pos);
+                let ft = Self::fluid_ticks_to_persistent(&c.fluid_ticks.lock(), pos);
+                (bt, ft)
+            })
+            .unwrap_or_default();
+
+        let persistent = Self::to_persistent(
+            chunk.sections(),
+            &block_entities,
+            &entities,
+            block_ticks,
+            fluid_ticks,
+            pos,
+        );
 
         Some(PreparedChunkSave { pos, persistent })
     }
@@ -216,6 +235,8 @@ impl ChunkStorage {
         sections: &Sections,
         block_entities: &[SharedBlockEntity],
         entities: &[SharedEntity],
+        block_ticks: Vec<PersistentTick>,
+        fluid_ticks: Vec<PersistentTick>,
         chunk_pos: ChunkPos,
     ) -> PersistentChunk {
         let mut builder = ChunkBuilder::new(&REGISTRY);
@@ -294,6 +315,8 @@ impl ChunkStorage {
             sections: persistent_sections,
             block_entities: persistent_block_entities,
             entities: persistent_entities,
+            block_ticks,
+            fluid_ticks,
         }
     }
 
@@ -419,12 +442,18 @@ impl ChunkStorage {
 
         match status {
             ChunkStatus::Full => {
+                // Reconstruct scheduled ticks from persistent data
+                let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
+                let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
+
                 let chunk = LevelChunk::from_disk(
                     Sections::from_owned(sections.into_boxed_slice()),
                     pos,
                     min_y,
                     height,
                     level.clone(),
+                    block_ticks,
+                    fluid_ticks,
                 );
 
                 // Load block entities
@@ -586,6 +615,98 @@ impl ChunkStorage {
             level,
             &nbt,
         )
+    }
+
+    /// Converts block ticks to persistent format for saving.
+    fn block_ticks_to_persistent(
+        ticks: &BlockTickList,
+        chunk_pos: ChunkPos,
+    ) -> Vec<PersistentTick> {
+        ticks
+            .iter()
+            .map(|t| PersistentTick {
+                x: (t.pos.0.x - chunk_pos.0.x * 16) as u8,
+                y: t.pos.0.y as i16,
+                z: (t.pos.0.z - chunk_pos.0.y * 16) as u8,
+                delay: t.delay,
+                priority: t.priority as i8,
+                sub_tick_order: t.sub_tick_order,
+                tick_type: t.tick_type.key.clone(),
+            })
+            .collect()
+    }
+
+    /// Converts fluid ticks to persistent format for saving.
+    fn fluid_ticks_to_persistent(
+        ticks: &FluidTickList,
+        chunk_pos: ChunkPos,
+    ) -> Vec<PersistentTick> {
+        ticks
+            .iter()
+            .map(|t| PersistentTick {
+                x: (t.pos.0.x - chunk_pos.0.x * 16) as u8,
+                y: t.pos.0.y as i16,
+                z: (t.pos.0.z - chunk_pos.0.y * 16) as u8,
+                delay: t.delay,
+                priority: t.priority as i8,
+                sub_tick_order: t.sub_tick_order,
+                tick_type: t.tick_type.key.clone(),
+            })
+            .collect()
+    }
+
+    /// Reconstructs block tick list from persistent data.
+    fn persistent_to_block_ticks(
+        persistent: &[PersistentTick],
+        chunk_pos: ChunkPos,
+    ) -> BlockTickList {
+        let ticks: Vec<_> = persistent
+            .iter()
+            .filter_map(|pt| {
+                let block = REGISTRY.blocks.by_key(&pt.tick_type)?;
+                let pos = BlockPos::new(
+                    chunk_pos.0.x * 16 + i32::from(pt.x),
+                    i32::from(pt.y),
+                    chunk_pos.0.y * 16 + i32::from(pt.z),
+                );
+                let priority = TickPriority::from_i8(pt.priority).unwrap_or(TickPriority::Normal);
+                Some(ScheduledTick {
+                    tick_type: block,
+                    pos,
+                    delay: pt.delay,
+                    priority,
+                    sub_tick_order: pt.sub_tick_order,
+                })
+            })
+            .collect();
+        BlockTickList::from_ticks(ticks)
+    }
+
+    /// Reconstructs fluid tick list from persistent data.
+    fn persistent_to_fluid_ticks(
+        persistent: &[PersistentTick],
+        chunk_pos: ChunkPos,
+    ) -> FluidTickList {
+        let ticks: Vec<_> = persistent
+            .iter()
+            .filter_map(|pt| {
+                let fluid = REGISTRY.fluids.by_key(&pt.tick_type)?;
+                let pos = BlockPos::new(
+                    chunk_pos.0.x * 16 + i32::from(pt.x),
+                    i32::from(pt.y),
+                    chunk_pos.0.y * 16 + i32::from(pt.z),
+                );
+                let priority = TickPriority::from_i8(pt.priority).unwrap_or(TickPriority::Normal);
+                Some(ScheduledTick {
+                    tick_type: fluid,
+                    pos,
+                    delay: pt.delay,
+                    priority,
+                    sub_tick_order: pt.sub_tick_order,
+                })
+            })
+            .collect();
+        FluidTickList::from_ticks(ticks)
     }
 
     /// Converts a persistent section to runtime format.

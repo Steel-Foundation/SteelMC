@@ -21,7 +21,8 @@ use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
+    CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
@@ -210,6 +211,30 @@ impl Server {
         player.send_packet(CSetHeldSlot {
             slot: i32::from(player.inventory.lock().get_selected_slot()),
         });
+
+        if world.can_have_weather() {
+            let (rain_level, thunder_level) = {
+                let weather = world.weather.lock();
+                (weather.rain_level, weather.thunder_level)
+            };
+
+            if world.is_raining() {
+                player.send_packet(CGameEvent {
+                    event: GameEventType::StartRaining,
+                    data: 0.0,
+                });
+            }
+
+            player.send_packet(CGameEvent {
+                event: GameEventType::RainLevelChange,
+                data: rain_level,
+            });
+
+            player.send_packet(CGameEvent {
+                event: GameEventType::ThunderLevelChange,
+                data: thunder_level,
+            });
+        }
 
         let commands = self.command_dispatcher.read().get_commands();
         player.send_packet(commands);

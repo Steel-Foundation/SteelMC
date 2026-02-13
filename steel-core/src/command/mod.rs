@@ -29,17 +29,20 @@ impl CommandDispatcher {
     #[must_use]
     pub fn new() -> Self {
         let dispatcher = CommandDispatcher::new_empty();
+        dispatcher.register(commands::clear::command_handler());
         dispatcher.register(commands::execute::command_handler());
-        dispatcher.register(commands::flyspeed::command_handler());
+        dispatcher.register(commands::fly::command_handler());
         dispatcher.register(commands::gamemode::command_handler());
         dispatcher.register(commands::gamerule::command_handler());
+        dispatcher.register(commands::give::command_handler());
         dispatcher.register(commands::seed::command_handler());
         dispatcher.register(commands::stop::command_handler());
         dispatcher.register(commands::summon::command_handler());
+        dispatcher.register(commands::tellraw::command_handler());
         dispatcher.register(commands::tick::command_handler());
         dispatcher.register(commands::time::command_handler());
+        dispatcher.register(commands::tp::command_handler());
         dispatcher.register(commands::weather::command_handler());
-        dispatcher.register(commands::tellraw::command_handler());
         dispatcher
     }
 

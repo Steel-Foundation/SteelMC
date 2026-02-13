@@ -1,14 +1,17 @@
 //! This module contains the command building structs.
+pub mod clear;
 pub mod execute;
-pub mod flyspeed;
+pub mod fly;
 pub mod gamemode;
 pub mod gamerule;
+pub mod give;
 pub mod seed;
 pub mod stop;
 pub mod summon;
 pub mod tellraw;
 pub mod tick;
 pub mod time;
+pub mod tp;
 pub mod weather;
 
 use std::marker::PhantomData;
@@ -40,6 +43,15 @@ pub struct SuggestionResult {
 pub trait CommandExecutor<S> {
     /// Executes the command with the given type safe arguments.
     fn execute(&self, parsed: S, context: &mut CommandContext) -> Result<(), CommandError>;
+}
+
+impl<S, F> CommandExecutor<S> for F
+where
+    F: for<'a> Fn(S, &'a mut CommandContext) -> Result<(), CommandError> + Send + Sync + 'static,
+{
+    fn execute(&self, args: S, context: &mut CommandContext) -> Result<(), CommandError> {
+        (self)(args, context)
+    }
 }
 
 /// The builder struct that holds command handler data and executor.

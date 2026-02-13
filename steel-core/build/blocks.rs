@@ -11,6 +11,12 @@ pub struct BlockClass {
     pub class: String,
     /// Fluid identifier for `LiquidBlock` (e.g., "water", "lava").
     pub fluid: Option<String>,
+    /// Tick delay before the button unpresses (e.g., 20 for stone, 30 for wood).
+    pub ticks_to_stay_pressed: Option<i32>,
+    /// Sound event constant for button click on (e.g., `BLOCK_STONE_BUTTON_CLICK_ON`).
+    pub button_click_on: Option<String>,
+    /// Sound event constant for button click off (e.g., `BLOCK_STONE_BUTTON_CLICK_OFF`).
+    pub button_click_off: Option<String>,
 }
 
 fn to_const_ident(name: &str) -> Ident {
@@ -36,6 +42,7 @@ fn generate_registrations<'a>(
 #[allow(clippy::too_many_lines)]
 pub fn build(blocks: &[BlockClass]) -> String {
     let mut barrel_blocks = Vec::new();
+    let mut button_blocks: Vec<(Ident, i32, Ident, Ident)> = Vec::new();
     let mut candle_blocks = Vec::new();
     let mut crafting_table_blocks = Vec::new();
     let mut crop_blocks = Vec::new();
@@ -57,6 +64,26 @@ pub fn build(blocks: &[BlockClass]) -> String {
         let const_ident = to_const_ident(&block.name);
         match block.class.as_str() {
             "BarrelBlock" => barrel_blocks.push(const_ident),
+            "ButtonBlock" => {
+                let ticks = block
+                    .ticks_to_stay_pressed
+                    .expect("ButtonBlock must have ticks_to_stay_pressed");
+                let click_on = Ident::new(
+                    block
+                        .button_click_on
+                        .as_ref()
+                        .expect("ButtonBlock must have button_click_on"),
+                    Span::call_site(),
+                );
+                let click_off = Ident::new(
+                    block
+                        .button_click_off
+                        .as_ref()
+                        .expect("ButtonBlock must have button_click_off"),
+                    Span::call_site(),
+                );
+                button_blocks.push((const_ident, ticks, click_on, click_off));
+            }
             "CandleBlock" => candle_blocks.push(const_ident),
             "CraftingTableBlock" => crafting_table_blocks.push(const_ident),
             "CropBlock" => crop_blocks.push(const_ident),
@@ -99,6 +126,25 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
+    let button_registrations = {
+        let registrations =
+            button_blocks
+                .iter()
+                .map(|(block_ident, ticks, click_on, click_off)| {
+                    quote! {
+                        registry.set_behavior(
+                            vanilla_blocks::#block_ident,
+                            Box::new(ButtonBlock::new(
+                                vanilla_blocks::#block_ident,
+                                #ticks,
+                                sound_events::#click_on,
+                                sound_events::#click_off,
+                            )),
+                        );
+                    }
+                });
+        quote! { #(#registrations)* }
+    };
     let candle_registrations = generate_registrations(candle_blocks.iter(), &candle_type);
     let crafting_table_registrations =
         generate_registrations(crafting_table_blocks.iter(), &crafting_table_type);
@@ -139,17 +185,18 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let output = quote! {
         //! Generated block behavior assignments.
 
-        use steel_registry::{vanilla_blocks, vanilla_fluids};
+        use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
         use crate::behavior::BlockBehaviorRegistry;
         use crate::behavior::blocks::{
-            BarrelBlock, CandleBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock, FarmlandBlock,
-            FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
+            BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock,
+            FarmlandBlock, FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
             CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
             RedstoneTorchBlock, RedstoneWallTorchBlock,
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
             #barrel_registrations
+            #button_registrations
             #candle_registrations
             #crafting_table_registrations
             #crop_registrations

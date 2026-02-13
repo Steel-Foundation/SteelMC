@@ -358,11 +358,14 @@ impl Container for PlayerInventory {
         self.times_changed = self.times_changed.wrapping_add(1);
     }
 
-    fn clear_content(&mut self) {
+    fn clear_content(&mut self) -> i32 {
+        let mut count = 0;
         for item in &mut self.items {
+            count += item.count;
             *item = ItemStack::empty();
         }
         self.equipment.clear();
         self.set_changed();
+        count
     }
 }

@@ -25,7 +25,8 @@ pub fn command_handler() -> impl CommandHandlerDyn {
         argument("gamemode", GameModeArgument)
             .executes(GameModeCommandExecutor)
             .then(
-                argument("targets", PlayerArgument::new()).executes(GameModeTargetCommandExecutor),
+                argument("targets", PlayerArgument::multiple())
+                    .executes(GameModeTargetCommandExecutor),
             ),
     )
 }
