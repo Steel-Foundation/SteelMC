@@ -407,6 +407,14 @@ impl Player {
         self.world.read().clone()
     }
 
+    /// Sets the world the player is in.
+    ///
+    /// This is used when the correct world isn't known at construction time
+    /// (e.g., when loading saved player data determines the actual world).
+    pub fn set_world(&self, world: Arc<World>) {
+        *self.world.write() = world;
+    }
+
     /// Player half-width for AABB calculations.
     const PLAYER_WIDTH: f64 = 0.6;
     /// Player height for AABB calculations.
@@ -2484,7 +2492,7 @@ impl Player {
         // === Phase 2: Reset player state ===
 
         // Update world reference
-        *self.world.write() = new_world.clone();
+        self.set_world(new_world.clone());
 
         // Update position + rotation
         *self.position.lock() = transition.position;

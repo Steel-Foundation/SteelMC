@@ -55,6 +55,8 @@ impl World {
 
     /// Adds a player to the world.
     pub fn add_player(self: &Arc<Self>, player: Arc<Player>) {
+        player.set_world(Arc::clone(self));
+
         if !self.players.insert(player.clone()) {
             player.connection.close();
             return;

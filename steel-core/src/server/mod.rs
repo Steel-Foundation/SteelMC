@@ -4,12 +4,6 @@ pub mod registry_cache;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 
-use std::{
-    mem,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::empty_chunk_generator::EmptyChunkGenerator;
@@ -20,6 +14,12 @@ use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
 use crate::player::Player;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
+use rustc_hash::FxHashMap;
+use std::{
+    mem,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
     CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep,
@@ -39,7 +39,7 @@ use crate::entity::{Entity, SharedEntity, init_entities};
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::portal::TeleportTransition;
 use crate::portal::nether_portal;
-use steel_utils::BlockPos;
+use steel_utils::{BlockPos, Identifier};
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -53,7 +53,7 @@ pub struct Server {
     /// The registry cache for the server.
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
-    pub worlds: Vec<Arc<World>>,
+    pub worlds: FxHashMap<Identifier, Arc<World>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -191,11 +191,14 @@ impl Server {
         let player_data_storage = PlayerDataStorage::new()
             .await
             .expect("Failed to create player data storage");
-
+        let mut worlds: FxHashMap<Identifier, Arc<World>> = FxHashMap::default();
+        worlds.insert(OVERWORLD.key.clone(), overworld);
+        worlds.insert(THE_NETHER.key.clone(), nether);
+        worlds.insert(THE_END.key.clone(), end);
         Server {
             cancel_token,
             key_store: KeyStore::create(),
-            worlds: vec![overworld, nether, end],
+            worlds,
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -209,27 +212,35 @@ impl Server {
     /// # Panics
     /// Panics if the registry is not initialized.
     pub async fn add_player(&self, player: Arc<Player>) {
+        let world_key;
         // Load saved player data if it exists
         match self.player_data_storage.load(player.gameprofile.id).await {
             Ok(Some(saved_data)) => {
                 log::info!("Loaded saved data for player {}", player.gameprofile.name);
                 saved_data.apply_to_player(&player);
+                world_key = saved_data.dimension;
             }
             Ok(None) => {
                 log::debug!(
                     "No saved data for player {}, using defaults",
                     player.gameprofile.name
                 );
+                world_key = String::new();
             }
             Err(e) => {
                 log::error!(
                     "Failed to load player data for {}: {e}",
                     player.gameprofile.name
                 );
+                world_key = String::new();
             }
         }
 
-        let world = &self.worlds[0];
+        let world = world_key
+            .parse::<Identifier>()
+            .ok()
+            .and_then(|id| self.worlds.get(&id))
+            .unwrap_or_else(|| self.overworld()); // We can do here unwrap, because then Overworld doe
 
         // Get gamerule values
         let reduced_debug_info =
@@ -241,7 +252,7 @@ impl Server {
         // Get world data
         let hashed_seed = world.obfuscated_seed();
         let dimension_key = world.dimension.key.clone();
-
+        player.set_world(world.clone());
         player.send_packet(CLogin {
             player_id: player.id,
             hardcore: false,
@@ -316,7 +327,7 @@ impl Server {
 
         // Send position sync to client (ensures client is at the correct loaded position)
         // This must be sent after the player is added to the world
-        player.teleport(pos.x, pos.y, pos.z, yaw, pitch);
+        player.teleport(pos.x, pos.y + 1.0, pos.z, yaw, pitch);
 
         world.add_player(player.clone());
     }
@@ -324,7 +335,7 @@ impl Server {
     /// Gets all the players on the server
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.players.iter_players(|_, p| {
                 players.push(p.clone());
                 true
@@ -335,17 +346,32 @@ impl Server {
 
     /// Returns the overworld.
     pub fn overworld(&self) -> &Arc<World> {
-        &self.worlds[0]
+        self.worlds.get(&OVERWORLD.key).unwrap_or_else(|| {
+            self.worlds
+                .values()
+                .next()
+                .expect("At least one world must exist")
+        })
     }
 
     /// Returns the nether.
     pub fn nether(&self) -> &Arc<World> {
-        &self.worlds[1]
+        self.worlds.get(&THE_NETHER.key).unwrap_or_else(|| {
+            self.worlds
+                .values()
+                .next()
+                .expect("At least one world must exist")
+        })
     }
 
     /// Returns the end.
     pub fn the_end(&self) -> &Arc<World> {
-        &self.worlds[2]
+        self.worlds.get(&THE_END.key).unwrap_or_else(|| {
+            self.worlds
+                .values()
+                .next()
+                .expect("At least one world must exist")
+        })
     }
 
     /// Queues a dimension change to be processed after the current tick.
@@ -488,7 +514,7 @@ impl Server {
             }
 
             // Process queued entity portal teleports
-            for world in &self.worlds {
+            for world in self.worlds.values() {
                 let pending = world.take_pending_entity_teleports();
                 for (entity, portal_pos) in pending {
                     self.process_entity_portal_teleport(world, &entity, portal_pos);
@@ -518,7 +544,7 @@ impl Server {
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
                 world_clone.tick_b(tick_count, runs_normally)
@@ -590,7 +616,7 @@ impl Server {
         ]);
 
         // Broadcast to all players in all worlds
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all_with(|player| CTabList::new(&header, &footer, player));
         }
     }
@@ -606,7 +632,7 @@ impl Server {
             ])
             .into();
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all_with(|player| CSystemChat::new(&message, false, player));
         }
     }
@@ -618,7 +644,7 @@ impl Server {
         let packet = CTickingState::new(tick_manager.tick_rate(), tick_manager.is_frozen());
         drop(tick_manager);
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all(packet.clone());
         }
     }
@@ -630,7 +656,7 @@ impl Server {
         let packet = CTickingStep::new(tick_manager.frozen_ticks_to_run());
         drop(tick_manager);
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all(packet.clone());
         }
     }
