@@ -290,7 +290,7 @@ pub struct Player {
     sleeping: AtomicBool,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
-    abilities: SyncMutex<Abilities>,
+    pub abilities: SyncMutex<Abilities>,
 
     /// Whether the player is currently fall flying (elytra gliding).
     fall_flying: AtomicBool,

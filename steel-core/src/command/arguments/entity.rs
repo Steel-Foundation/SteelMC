@@ -22,7 +22,7 @@ pub struct EntityArgument {
 impl EntityArgument {
     /// Creates a selector for multiple entities
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn multiple() -> Self {
         EntityArgument { one: false }
     }
     /// Creates a selector for one entity

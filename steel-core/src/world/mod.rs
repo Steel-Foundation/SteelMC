@@ -1,5 +1,5 @@
 //! This module contains the `World` struct, which represents a world.
-use crate::chunk::chunk_map::ChunkMapTickTimings;
+
 use std::path::Path;
 use std::{
     io, ptr,
@@ -10,10 +10,12 @@ use std::{
     time::Duration,
 };
 
+use crate::{chunk::chunk_map::ChunkMapTickTimings, world::weather::Weather};
+
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate, CRemoveEntities,
-    CSound, CSystemChat, SoundSource,
+    CBlockDestruction, CBlockEvent, CGameEvent, CLevelEvent, CPlayerChat, CPlayerInfoUpdate,
+    CRemoveEntities, CSound, CSystemChat, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -22,7 +24,6 @@ use steel_protocol::{
 };
 
 use simdnbt::owned::NbtCompound;
-use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
@@ -34,8 +35,12 @@ use steel_registry::loot_table::LootContext;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
-use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_game_rules::ADVANCE_TIME};
-use steel_utils::locks::SyncRwLock;
+use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
+use steel_registry::{
+    blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
+};
+
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
@@ -54,6 +59,7 @@ use crate::{
 mod player_area_map;
 mod player_map;
 pub mod tick_scheduler;
+mod weather;
 mod world_entities;
 
 use crate::chunk::world_gen_context::ChunkGeneratorType;
@@ -111,6 +117,8 @@ pub struct World {
     entity_cache: EntityCache,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
+    /// Weather Data needed for animating starting and stopping of rain clientside
+    pub weather: SyncMutex<Weather>,
     /// Monotonic counter for `sub_tick_order` on scheduled ticks.
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
@@ -162,6 +170,14 @@ impl World {
         //         .get_default_state_id(vanilla_blocks::GRASS_BLOCK), // Grass Block
         // )));
 
+        let mut weather = Weather::default();
+        if level_data.is_raining() {
+            weather.rain_level = 1.0;
+            if level_data.is_thundering() {
+                weather.thunder_level = 1.0;
+            }
+        }
+
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| Self {
             chunk_map: Arc::new(ChunkMap::new_with_storage(
                 chunk_runtime,
@@ -177,6 +193,7 @@ impl World {
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
+            weather: SyncMutex::new(weather),
             sub_tick_count: AtomicI64::new(0),
         }))
     }
@@ -310,19 +327,43 @@ impl World {
     }
 
     /// Gets the value of a game rule.
+    /// WARNING: this function acquires a read lock on the level data.
+    /// if you already have a write lock on level data, this will DEADLOCK
     #[must_use]
     pub fn get_game_rule(&self, rule: GameRuleRef) -> GameRuleValue {
-        let level_data = self.level_data.read();
-        level_data
+        let guard = self.level_data.read();
+        self.get_game_rule_with_guard(rule, &guard)
+    }
+
+    /// Gets the value of a game rule on the `LevelDataManager` guard being passed in.
+    #[must_use]
+    pub fn get_game_rule_with_guard(
+        &self,
+        rule: GameRuleRef,
+        guard: &LevelDataManager,
+    ) -> GameRuleValue {
+        guard
             .data()
             .game_rules_values
             .get(rule, &REGISTRY.game_rules)
     }
 
     /// Sets the value of a game rule.
+    /// WARNING: this function acquires a write lock on the level data.
+    /// if you already have a read or write lock on level data, this will DEADLOCK
     pub fn set_game_rule(&self, rule: GameRuleRef, value: GameRuleValue) -> bool {
-        let mut level_data = self.level_data.write();
-        level_data
+        let mut guard = self.level_data.write();
+        self.set_game_rule_with_guard(rule, value, &mut guard)
+    }
+
+    /// Sets the value of a game rule on the `LevelDataManager` guard being passed in.
+    pub fn set_game_rule_with_guard(
+        &self,
+        rule: GameRuleRef,
+        value: GameRuleValue,
+        guard: &mut LevelDataManager,
+    ) -> bool {
+        guard
             .data_mut()
             .game_rules_values
             .set(rule, value, &REGISTRY.game_rules)
@@ -566,6 +607,7 @@ impl World {
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
     pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
         if runs_normally {
+            self.tick_weather();
             self.tick_time();
         }
 
@@ -598,9 +640,168 @@ impl World {
         }
     }
 
-    // ========================================================================
-    // Scheduled Ticks
-    // ========================================================================
+    #[expect(clippy::too_many_lines)]
+    fn tick_weather(&self) {
+        if !self.can_have_weather() {
+            return;
+        }
+
+        let mut weather = self.weather.lock();
+        let raining_before = self.is_raining_with_guard(&weather);
+
+        // Advance the weather state machine (only if gamerule allows)
+        {
+            let mut level_data = self.level_data.write();
+
+            if self
+                .get_game_rule_with_guard(ADVANCE_WEATHER, &level_data)
+                .as_bool()
+                .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
+            {
+                let clear_weather_time = level_data.clear_weather_time();
+                if clear_weather_time > 0 {
+                    level_data.set_clear_weather_time(clear_weather_time - 1);
+                    if level_data.is_thundering() {
+                        level_data.set_thunder_time(0);
+                        level_data.set_thundering(false);
+                    } else {
+                        level_data.set_thunder_time(1);
+                    }
+                    if level_data.is_raining() {
+                        level_data.set_rain_time(0);
+                        level_data.set_raining(false);
+                    } else {
+                        level_data.set_rain_time(1);
+                    }
+                } else {
+                    let thundering_time = level_data.thunder_time();
+                    if thundering_time > 0 {
+                        level_data.set_thunder_time(thundering_time - 1);
+                        if level_data.thunder_time() == 0 {
+                            let thundering = level_data.is_thundering();
+                            level_data.set_thundering(!thundering);
+                        }
+                    } else if level_data.is_thundering() {
+                        level_data.set_thunder_time(rand::random_range(3_600..=15_600));
+                    } else {
+                        level_data.set_thunder_time(rand::random_range(12_000..=180_000));
+                    }
+
+                    let rain_time = level_data.rain_time();
+                    if rain_time > 0 {
+                        level_data.set_rain_time(rain_time - 1);
+                        if level_data.rain_time() == 0 {
+                            let raining = level_data.is_raining();
+                            level_data.set_raining(!raining);
+                        }
+                    } else if level_data.is_raining() {
+                        level_data.set_rain_time(rand::random_range(12_000..=24_000));
+                    } else {
+                        level_data.set_rain_time(rand::random_range(12_000..=180_000));
+                    }
+                }
+            }
+        }
+
+        // Interpolate visual levels (always runs, even when ADVANCE_WEATHER is off)
+        let is_thundering = self.level_data.read().is_thundering();
+        let is_raining = self.level_data.read().is_raining();
+
+        weather.previous_thunder_level = weather.thunder_level;
+        if is_thundering {
+            weather.thunder_level += 0.01;
+        } else {
+            weather.thunder_level -= 0.01;
+        }
+        weather.thunder_level = weather.thunder_level.clamp(0.0, 1.0);
+
+        weather.previous_rain_level = weather.rain_level;
+        if is_raining {
+            weather.rain_level += 0.01;
+        } else {
+            weather.rain_level -= 0.01;
+        }
+        weather.rain_level = weather.rain_level.clamp(0.0, 1.0);
+
+        // Broadcast weather changes to clients
+        let raining_now = self.is_raining_with_guard(&weather);
+        if raining_before == raining_now {
+            #[expect(clippy::float_cmp)]
+            if weather.previous_rain_level != weather.rain_level {
+                self.broadcast_to_all(CGameEvent {
+                    event: GameEventType::RainLevelChange,
+                    data: weather.rain_level,
+                });
+            }
+
+            #[expect(clippy::float_cmp)]
+            if weather.previous_thunder_level != weather.thunder_level {
+                self.broadcast_to_all(CGameEvent {
+                    event: GameEventType::ThunderLevelChange,
+                    data: weather.thunder_level,
+                });
+            }
+        } else {
+            if raining_before {
+                self.broadcast_to_all(CGameEvent {
+                    event: GameEventType::StopRaining,
+                    data: 0.0,
+                });
+            } else {
+                self.broadcast_to_all(CGameEvent {
+                    event: GameEventType::StartRaining,
+                    data: 0.0,
+                });
+            }
+
+            self.broadcast_to_all(CGameEvent {
+                event: GameEventType::RainLevelChange,
+                data: weather.rain_level,
+            });
+
+            self.broadcast_to_all(CGameEvent {
+                event: GameEventType::ThunderLevelChange,
+                data: weather.thunder_level,
+            });
+        }
+    }
+
+    /// Checks whether the rain level is high enough to be considered raining.
+    /// Used for both visual rendering and gameplay logic (crop growth, fire, mob behavior).
+    ///
+    /// WARNING: this function acquires a lock on the `weather` field.
+    /// if you already have a lock on the `weather` field, this will DEADLOCK.
+    pub fn is_raining(&self) -> bool {
+        let guard = self.weather.lock();
+        self.is_raining_with_guard(&guard)
+    }
+
+    /// Checks whether the rain level is sufficient to render rain clientside using the provided guard.
+    pub fn is_raining_with_guard(&self, guard: &Weather) -> bool {
+        guard.rain_level > 0.2 && self.can_have_weather()
+    }
+
+    /// Checks whether the thunder level and rain level are high enough to be considered thundering.
+    /// Used for lightning spawning and gameplay logic.
+    ///
+    /// WARNING: this function acquires a lock on the `weather` field.
+    /// if you already have a lock on the `weather` field, this will DEADLOCK.
+    pub fn is_thundering(&self) -> bool {
+        let guard = self.weather.lock();
+        self.is_thundering_with_guard(&guard)
+    }
+
+    /// Checks whether the thunder level and rain level are sufficient to spawn thunderbolts using the provided guard.
+    pub fn is_thundering_with_guard(&self, guard: &Weather) -> bool {
+        guard.rain_level * guard.thunder_level > 0.9 && self.can_have_weather()
+    }
+
+    /// Checks whether the world can have weather.
+    pub fn can_have_weather(&self) -> bool {
+        self.dimension.has_skylight
+            && !self.dimension.has_ceiling
+            && self.dimension.key != vanilla_dimension_types::THE_END.key
+    }
 
     /// Schedules a block tick at the given position.
     ///

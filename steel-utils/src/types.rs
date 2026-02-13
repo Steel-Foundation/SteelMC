@@ -190,6 +190,16 @@ impl ReadFrom for ChunkPos {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockPos(pub Vector3<i32>);
 
+impl From<Vector3<f64>> for BlockPos {
+    fn from(value: Vector3<f64>) -> Self {
+        BlockPos(Vector3 {
+            x: value.x.floor() as i32,
+            y: value.y.floor() as i32,
+            z: value.z.floor() as i32,
+        })
+    }
+}
+
 impl BlockPos {
     // Define constants as per the Java logic
     const PACKED_HORIZONTAL_LEN: u32 = 26;

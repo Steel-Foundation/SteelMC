@@ -20,7 +20,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
         "minecraft:command.tellraw",
     )
     .then(
-        argument("targets", PlayerArgument::new())
+        argument("targets", PlayerArgument::multiple())
             .then(argument("message", TextComponentArgument).executes(TellrawCommandExecutor)),
     )
 }
