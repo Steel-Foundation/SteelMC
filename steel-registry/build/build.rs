@@ -181,7 +181,10 @@ pub fn main() {
         for entry in entries.flatten() {
             let path = entry.path();
             // Skip density_functions — the generated file is too large for rustfmt
-            if path.file_name().is_some_and(|n| n == "vanilla_density_functions.rs") {
+            if path
+                .file_name()
+                .is_some_and(|n| n == "vanilla_density_functions.rs")
+            {
                 continue;
             }
             let _ = Command::new("rustfmt").arg(path).output();
