@@ -112,6 +112,8 @@ pub enum WordGeneratorTypes {
     Flat,
     /// creates an empty world which can be used for test
     Empty,
+    /// generates vanilla terrain with noise-based biomes
+    Vanilla,
 }
 
 /// Configuration for world storage.

@@ -13,6 +13,7 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::empty_chunk_generator::EmptyChunkGenerator;
 use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
+use crate::chunk::vanilla_generator::VanillaGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
@@ -106,6 +107,9 @@ impl Server {
                 ))
             }
             WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+            WordGeneratorTypes::Vanilla => {
+                ChunkGeneratorType::Vanilla(VanillaGenerator::new(seed as u64))
+            }
         };
         let config = WorldConfig {
             storage: match &STEEL_CONFIG.world_storage_config {
@@ -196,8 +200,7 @@ impl Server {
                 game_type: player.game_mode.load(),
                 previous_game_type: None,
                 is_debug: false,
-                // TODO: Change once we add a normal generator
-                is_flat: true,
+                is_flat: matches!(STEEL_CONFIG.world_generator, WordGeneratorTypes::Flat),
                 last_death_location: None,
                 portal_cooldown: 0,
                 sea_level: 63, // Standard overworld sea level

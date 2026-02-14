@@ -105,7 +105,6 @@ impl ChunkMap {
         _dimension: &DimensionTypeRef,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
-        seed: i64,
     ) -> Self {
         Self {
             chunks: scc::HashMap::default(),
@@ -113,7 +112,7 @@ impl ChunkMap {
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
-            world_gen_context: Arc::new(WorldGenContext::new(generator, world, seed)),
+            world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
             generation_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             //tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             chunk_runtime,
