@@ -53,10 +53,7 @@ impl<'a> ChunkBuilder<'a> {
 
         let persistent = PersistentBlockState {
             name: block.key.clone(),
-            properties: properties
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
+            properties,
         };
 
         // Check if already exists
@@ -797,20 +794,12 @@ impl ChunkStorage {
 
     /// Resolves a chunk palette index to a runtime `BlockStateId`.
     fn resolve_block_state(chunk: &PersistentChunk, index: u16) -> BlockStateId {
-        if let Some(state) = chunk.block_states.get(index as usize) {
-            // Convert properties to the format expected by the registry
-            let properties: Vec<(&str, &str)> = state
-                .properties
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect();
-
-            if let Some(state_id) = REGISTRY
+        if let Some(state) = chunk.block_states.get(index as usize)
+            && let Some(state_id) = REGISTRY
                 .blocks
-                .state_id_from_properties(&state.name, &properties)
-            {
-                return state_id;
-            }
+                .state_id_from_properties(&state.name, &state.properties)
+        {
+            return state_id;
         }
         BlockStateId(0) // Air fallback
     }
