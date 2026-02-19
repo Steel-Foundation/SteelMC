@@ -271,6 +271,49 @@ impl Server {
         players
     }
 
+    /// Returns the total number of players currently online across all worlds.
+    #[must_use]
+    pub fn player_count(&self) -> usize {
+        self.worlds.iter().map(|w| w.players.len()).sum()
+    }
+
+    /// Returns a sample of up to 12 online players for the server list ping.
+    #[must_use]
+    pub fn player_sample(&self) -> Vec<(String, String)> {
+        const MAX_SAMPLE: usize = 12;
+
+        let players = self.get_players();
+        if players.is_empty() {
+            return vec![];
+        }
+
+        let sample_size = players.len().min(MAX_SAMPLE);
+        // Random starting offset into the player list
+        let offset = if players.len() > sample_size {
+            (rand::random::<u64>() as usize) % (players.len() - sample_size + 1)
+        } else {
+            0
+        };
+
+        let mut sample: Vec<(String, String)> = players[offset..offset + sample_size]
+            .iter()
+            .map(|p| {
+                (
+                    p.gameprofile.name.clone(),
+                    p.gameprofile.id.hyphenated().to_string(),
+                )
+            })
+            .collect();
+
+        // Shuffle using Fisher-Yates with random indices
+        for i in (1..sample.len()).rev() {
+            let j = (rand::random::<u64>() as usize) % (i + 1);
+            sample.swap(i, j);
+        }
+
+        sample
+    }
+
     /// Runs the server tick loop.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
