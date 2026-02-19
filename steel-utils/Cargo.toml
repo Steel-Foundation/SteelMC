@@ -11,7 +11,6 @@ steel-macros.workspace = true
 
 # Async runtime
 tokio.workspace = true
-tokio-util.workspace = true
 
 # Serialization
 serde.workspace = true
@@ -23,7 +22,6 @@ wincode.workspace = true
 parking_lot.workspace = true
 
 # Data structures
-rustc-hash.workspace = true
 bitflags.workspace = true
 phf.workspace = true
 
@@ -31,9 +29,7 @@ phf.workspace = true
 uuid.workspace = true
 
 # Logging
-log.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 
 # Cryptography
 md5.workspace = true
@@ -51,19 +47,18 @@ criterion.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
+
 # Proc macros
 proc-macro2.workspace = true
 quote.workspace = true
 
 # Data structures
-
-rustc-hash.workspace = true
 phf_codegen.workspace = true
 
 # Utilities
-
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
+
 [[bench]]
 name = "xoroshiro"
 harness = false

@@ -26,9 +26,7 @@ futures.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
-serde_json5.workspace = true
 wincode.workspace = true
-base64.workspace = true
 
 # Error handling
 thiserror.workspace = true
@@ -39,7 +37,6 @@ crossbeam.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true
 scc.workspace = true
-arc-swap.workspace = true
 
 # Data structures
 rustc-hash.workspace = true
@@ -62,7 +59,6 @@ flate2.workspace = true
 
 # Utilities
 enum_dispatch.workspace = true
-replace_with.workspace = true
 text_components.workspace = true
 simdnbt.workspace = true
 tracing.workspace = true

@@ -835,7 +835,7 @@ unsafe impl<C: Config> SchemaWrite<C> for Identifier {
         <str as SchemaWrite<C>>::size_of(&src.to_string())
     }
 
-    fn write(writer: &mut impl Writer, src: &Self::Src) -> wincode::WriteResult<()> {
+    fn write(writer: impl Writer, src: &Self::Src) -> wincode::WriteResult<()> {
         <str as SchemaWrite<C>>::write(writer, &src.to_string())
     }
 }
@@ -846,10 +846,7 @@ unsafe impl<C: Config> SchemaWrite<C> for Identifier {
 unsafe impl<'de, C: Config> SchemaRead<'de, C> for Identifier {
     type Dst = Identifier;
 
-    fn read(
-        reader: &mut impl Reader<'de>,
-        dst: &mut MaybeUninit<Self::Dst>,
-    ) -> wincode::ReadResult<()> {
+    fn read(reader: impl Reader<'de>, dst: &mut MaybeUninit<Self::Dst>) -> wincode::ReadResult<()> {
         let mut s = MaybeUninit::<String>::uninit();
         <String as SchemaRead<'de, C>>::read(reader, &mut s)?;
 
