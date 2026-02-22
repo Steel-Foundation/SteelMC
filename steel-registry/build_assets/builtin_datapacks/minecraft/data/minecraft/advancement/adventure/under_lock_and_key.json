@@ -31,7 +31,6 @@
       "translate": "advancements.adventure.under_lock_and_key.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:trial_key"
     },
     "title": {

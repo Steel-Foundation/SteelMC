@@ -13,6 +13,20 @@ pub struct JukeboxSong {
     pub comparator_output: i32,
 }
 
+impl JukeboxSong {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::ToNbtTag;
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        let sound_event = self.sound_event.to_string();
+        compound.insert("sound_event", sound_event.as_str());
+        compound.insert("description", (&self.description).to_nbt_tag());
+        compound.insert("length_in_seconds", self.length_in_seconds);
+        compound.insert("comparator_output", self.comparator_output);
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type JukeboxSongRef = &'static JukeboxSong;
 
 pub struct JukeboxSongRegistry {

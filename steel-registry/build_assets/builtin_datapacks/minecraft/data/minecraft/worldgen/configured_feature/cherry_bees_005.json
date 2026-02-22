@@ -7,12 +7,6 @@
         "probability": 0.05
       }
     ],
-    "dirt_provider": {
-      "type": "minecraft:simple_state_provider",
-      "state": {
-        "Name": "minecraft:dirt"
-      }
-    },
     "foliage_placer": {
       "type": "minecraft:cherry_foliage_placer",
       "corner_hole_chance": 0.25,
@@ -34,7 +28,6 @@
         }
       }
     },
-    "force_dirt": false,
     "ignore_vines": true,
     "minimum_size": {
       "type": "minecraft:two_layers_feature_size",

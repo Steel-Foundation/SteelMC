@@ -528,6 +528,10 @@ pub enum NoteBlockInstrument {
     WitherSkeleton,
     Piglin,
     CustomHead,
+    Trumpet,
+    TrumpetExposed,
+    TrumpetWeathered,
+    TrumpetOxidized,
 }
 
 impl PropertyEnum for NoteBlockInstrument {
@@ -556,6 +560,10 @@ impl PropertyEnum for NoteBlockInstrument {
             NoteBlockInstrument::WitherSkeleton => "wither_skeleton",
             NoteBlockInstrument::Piglin => "piglin",
             NoteBlockInstrument::CustomHead => "custom_head",
+            NoteBlockInstrument::Trumpet => "trumpet",
+            NoteBlockInstrument::TrumpetExposed => "trumpet_exposed",
+            NoteBlockInstrument::TrumpetWeathered => "trumpet_weathered",
+            NoteBlockInstrument::TrumpetOxidized => "trumpet_oxidized",
         }
     }
 }

@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct CatVariantJson {
     asset_id: Identifier,
+    baby_asset_id: Identifier,
     spawn_conditions: Vec<SpawnConditionEntry>,
 }
 
@@ -147,6 +148,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#cat_variant_name_str) };
         let asset_id = generate_identifier(&cat_variant.asset_id);
+        let baby_asset_id = generate_identifier(&cat_variant.baby_asset_id);
 
         let spawn_conditions: Vec<_> = cat_variant
             .spawn_conditions
@@ -158,6 +160,7 @@ pub(crate) fn build() -> TokenStream {
             pub static #cat_variant_ident: &CatVariant = &CatVariant {
                 key: #key,
                 asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });

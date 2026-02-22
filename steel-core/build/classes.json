@@ -46,7 +46,7 @@
     },
     {
       "name": "podzol",
-      "class": "SnowyDirtBlock"
+      "class": "SnowyBlock"
     },
     {
       "name": "cobblestone",
@@ -635,6 +635,10 @@
       "class": "FlowerBlock"
     },
     {
+      "name": "golden_dandelion",
+      "class": "FlowerBlock"
+    },
+    {
       "name": "torchflower",
       "class": "FlowerBlock"
     },
@@ -832,7 +836,7 @@
     },
     {
       "name": "farmland",
-      "class": "FarmBlock"
+      "class": "FarmlandBlock"
     },
     {
       "name": "furnace",
@@ -1499,7 +1503,7 @@
     },
     {
       "name": "lily_pad",
-      "class": "WaterlilyBlock"
+      "class": "LilyPadBlock"
     },
     {
       "name": "resin_block",
@@ -1695,6 +1699,10 @@
     },
     {
       "name": "potted_dandelion",
+      "class": "FlowerPotBlock"
+    },
+    {
+      "name": "potted_golden_dandelion",
       "class": "FlowerPotBlock"
     },
     {
@@ -3497,7 +3505,7 @@
     },
     {
       "name": "warped_fungus",
-      "class": "FungusBlock"
+      "class": "NetherFungusBlock"
     },
     {
       "name": "warped_wart_block",
@@ -3505,7 +3513,7 @@
     },
     {
       "name": "warped_roots",
-      "class": "RootsBlock"
+      "class": "NetherRootsBlock"
     },
     {
       "name": "nether_sprouts",
@@ -3533,7 +3541,7 @@
     },
     {
       "name": "crimson_fungus",
-      "class": "FungusBlock"
+      "class": "NetherFungusBlock"
     },
     {
       "name": "shroomlight",
@@ -3557,7 +3565,7 @@
     },
     {
       "name": "crimson_roots",
-      "class": "RootsBlock"
+      "class": "NetherRootsBlock"
     },
     {
       "name": "crimson_planks",
@@ -5858,6 +5866,11 @@
       "name": "dandelion",
       "class": "BlockItem",
       "block": "dandelion"
+    },
+    {
+      "name": "golden_dandelion",
+      "class": "BlockItem",
+      "block": "golden_dandelion"
     },
     {
       "name": "open_eyeblossom",

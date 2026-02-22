@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct CowVariantJson {
     asset_id: Identifier,
+    baby_asset_id: Identifier,
     #[serde(default)]
     model: String,
     spawn_conditions: Vec<SpawnConditionEntry>,
@@ -121,6 +122,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#cow_variant_name_str) };
         let asset_id = generate_identifier(&cow_variant.asset_id);
+        let baby_asset_id = generate_identifier(&cow_variant.baby_asset_id);
         let model = generate_cow_model_type(&cow_variant.model);
 
         let spawn_conditions: Vec<_> = cow_variant
@@ -133,6 +135,7 @@ pub(crate) fn build() -> TokenStream {
             pub static #cow_variant_ident: &CowVariant = &CowVariant {
                 key: #key,
                 asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
                 model: #model,
                 spawn_conditions: &[#(#spawn_conditions),*],
             };

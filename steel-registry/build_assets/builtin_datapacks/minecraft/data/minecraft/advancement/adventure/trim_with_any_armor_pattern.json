@@ -115,7 +115,6 @@
       "translate": "advancements.adventure.trim_with_any_armor_pattern.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:dune_armor_trim_smithing_template"
     },
     "title": {

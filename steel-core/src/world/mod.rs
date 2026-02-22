@@ -915,11 +915,7 @@ impl World {
         };
 
         if game_time % 20 == 0 {
-            self.broadcast_to_all(CSetTime {
-                game_time,
-                day_time,
-                time_of_day_increasing: advance_time,
-            });
+            self.broadcast_to_all(CSetTime::new(game_time, day_time, advance_time));
         }
     }
 

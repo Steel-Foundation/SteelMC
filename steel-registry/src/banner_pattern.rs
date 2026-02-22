@@ -95,6 +95,17 @@ impl Default for BannerPatternRegistry {
     }
 }
 
+impl BannerPattern {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        let asset_id = self.asset_id.to_string();
+        compound.insert("asset_id", asset_id.as_str());
+        compound.insert("translation_key", self.translation_key);
+        NbtTag::Compound(compound)
+    }
+}
+
 impl RegistryExt for BannerPatternRegistry {
     fn freeze(&mut self) {
         self.allows_registering = false;

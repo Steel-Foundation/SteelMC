@@ -1,4 +1,8 @@
 {
   "type": "minecraft:crafting_special_mapextending",
-  "category": "misc"
+  "map": "minecraft:filled_map",
+  "material": "minecraft:paper",
+  "result": {
+    "id": "minecraft:filled_map"
+  }
 }

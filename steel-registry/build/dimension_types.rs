@@ -24,6 +24,7 @@ pub struct DimensionTypeJson {
     ambient_light: f32,
     monster_spawn_light_level: MonsterSpawnLightLevelJson,
     monster_spawn_block_light_limit: i32,
+    has_ender_dragon_fight: bool,
 
     #[serde(default)]
     #[allow(dead_code)]
@@ -176,6 +177,7 @@ pub(crate) fn build() -> TokenStream {
         let monster_spawn_light_level =
             generate_monster_spawn_light_level(&dimension_type.monster_spawn_light_level);
         let monster_spawn_block_light_limit = dimension_type.monster_spawn_block_light_limit;
+        let has_ender_dragon_fight = dimension_type.has_ender_dragon_fight;
 
         stream.extend(quote! {
             pub static #dimension_type_ident: &DimensionType = &DimensionType {
@@ -194,6 +196,7 @@ pub(crate) fn build() -> TokenStream {
                 has_raids: #has_raids,
                 monster_spawn_light_level: #monster_spawn_light_level,
                 monster_spawn_block_light_limit: #monster_spawn_block_light_limit,
+                has_ender_dragon_fight: #has_ender_dragon_fight,
             };
         });
 

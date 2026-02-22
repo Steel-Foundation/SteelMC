@@ -2,12 +2,6 @@
   "type": "minecraft:tree",
   "config": {
     "decorators": [],
-    "dirt_provider": {
-      "type": "minecraft:simple_state_provider",
-      "state": {
-        "Name": "minecraft:dirt"
-      }
-    },
     "foliage_placer": {
       "type": "minecraft:pine_foliage_placer",
       "height": {
@@ -29,7 +23,6 @@
         }
       }
     },
-    "force_dirt": false,
     "ignore_vines": true,
     "minimum_size": {
       "type": "minecraft:two_layers_feature_size",

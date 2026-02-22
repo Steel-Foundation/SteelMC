@@ -18,6 +18,7 @@ pub struct DimensionType {
     pub ambient_light: f32,
     pub cloud_height: Option<i32>,
     pub has_raids: bool,
+    pub has_ender_dragon_fight: bool,
     pub monster_spawn_light_level: MonsterSpawnLightLevel,
     pub monster_spawn_block_light_limit: i32,
 }
@@ -31,6 +32,52 @@ pub enum MonsterSpawnLightLevel {
         min_inclusive: i32,
         max_inclusive: i32,
     },
+}
+
+impl DimensionType {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        if let Some(fixed_time) = self.fixed_time {
+            compound.insert("fixed_time", fixed_time);
+        }
+        compound.insert("has_skylight", self.has_skylight);
+        compound.insert("has_ceiling", self.has_ceiling);
+        compound.insert("coordinate_scale", self.coordinate_scale);
+        compound.insert("respawn_anchor_works", self.respawn_anchor_works);
+        compound.insert("min_y", self.min_y);
+        compound.insert("height", self.height);
+        compound.insert("logical_height", self.logical_height);
+        compound.insert("infiniburn", self.infiniburn);
+        compound.insert("ambient_light", self.ambient_light);
+        if let Some(cloud_height) = self.cloud_height {
+            compound.insert("cloud_height", cloud_height);
+        }
+        compound.insert("has_raids", self.has_raids);
+        compound.insert("has_ender_dragon_fight", self.has_ender_dragon_fight);
+        compound.insert(
+            "monster_spawn_light_level",
+            match &self.monster_spawn_light_level {
+                MonsterSpawnLightLevel::Simple(v) => NbtTag::Int(*v),
+                MonsterSpawnLightLevel::Complex {
+                    distribution_type,
+                    min_inclusive,
+                    max_inclusive,
+                } => {
+                    let mut inner = NbtCompound::new();
+                    inner.insert("type", *distribution_type);
+                    inner.insert("min_inclusive", *min_inclusive);
+                    inner.insert("max_inclusive", *max_inclusive);
+                    NbtTag::Compound(inner)
+                }
+            },
+        );
+        compound.insert(
+            "monster_spawn_block_light_limit",
+            self.monster_spawn_block_light_limit,
+        );
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type DimensionTypeRef = &'static DimensionType;

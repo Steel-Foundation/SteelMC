@@ -18,6 +18,27 @@ pub struct StyledTextComponent {
     pub color: Option<String>,
 }
 
+impl TrimMaterial {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        compound.insert("asset_name", self.asset_name.as_str());
+        let mut desc = NbtCompound::new();
+        desc.insert("translate", self.description.translate.as_str());
+        if let Some(color) = &self.description.color {
+            desc.insert("color", color.as_str());
+        }
+        compound.insert("description", NbtTag::Compound(desc));
+        let mut overrides = NbtCompound::new();
+        for (key, value) in &self.override_armor_assets {
+            let key_str = key.to_string();
+            overrides.insert(key_str.as_str(), value.as_str());
+        }
+        compound.insert("override_armor_assets", NbtTag::Compound(overrides));
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type TrimMaterialRef = &'static TrimMaterial;
 
 pub struct TrimMaterialRegistry {

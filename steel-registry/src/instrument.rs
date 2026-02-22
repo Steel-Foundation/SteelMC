@@ -14,6 +14,20 @@ pub struct Instrument {
     pub description: TextComponent,
 }
 
+impl Instrument {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::ToNbtTag;
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        let sound_event = self.sound_event.to_string();
+        compound.insert("sound_event", sound_event.as_str());
+        compound.insert("use_duration", self.use_duration);
+        compound.insert("range", self.range);
+        compound.insert("description", (&self.description).to_nbt_tag());
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type InstrumentRef = &'static Instrument;
 
 pub struct InstrumentRegistry {

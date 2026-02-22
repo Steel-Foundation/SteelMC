@@ -8,12 +8,8 @@
           "type": "minecraft:any_of",
           "predicates": [
             {
-              "type": "minecraft:matching_blocks",
-              "blocks": [
-                "minecraft:air",
-                "minecraft:cave_air",
-                "minecraft:void_air"
-              ]
+              "type": "minecraft:matching_block_tag",
+              "tag": "minecraft:air"
             },
             {
               "type": "minecraft:matching_block_tag",

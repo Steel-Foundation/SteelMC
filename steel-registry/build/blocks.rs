@@ -142,6 +142,10 @@ fn instrument_to_tokens(instrument: &str) -> TokenStream {
         }
         "PIGLIN" => quote! { NoteBlockInstrument::Piglin },
         "CUSTOM_HEAD" => quote! { NoteBlockInstrument::CustomHead },
+        "TRUMPET" => quote! { NoteBlockInstrument::Trumpet },
+        "TRUMPET_EXPOSED" => quote! { NoteBlockInstrument::TrumpetExposed },
+        "TRUMPET_WEATHERED" => quote! { NoteBlockInstrument::TrumpetWeathered },
+        "TRUMPET_OXIDIZED" => quote! { NoteBlockInstrument::TrumpetOxidized },
         _ => panic!("Unknown instrument: {}", instrument),
     }
 }
