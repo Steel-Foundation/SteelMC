@@ -31,7 +31,11 @@ struct KeyframeJson {
 
 fn quote_opt_identifier(s: &str) -> TokenStream {
     let (namespace, path) = s.split_once(':').expect("Identifier missing ':'");
-    assert_eq!(namespace, "minecraft", "Expected minecraft namespace in: {}", s);
+    assert_eq!(
+        namespace, "minecraft",
+        "Expected minecraft namespace in: {}",
+        s
+    );
     quote! { Some(Identifier::vanilla_static(#path)) }
 }
 
@@ -74,9 +78,7 @@ fn quote_keyframe_value(v: &serde_json::Value) -> TokenStream {
                 let f = n.as_f64().unwrap() as f32;
                 quote! { KeyframeValue::Float(#f) }
             } else {
-                let i = n
-                    .as_i64()
-                    .unwrap_or_else(|| n.as_u64().unwrap() as i64) as i32;
+                let i = n.as_i64().unwrap_or_else(|| n.as_u64().unwrap() as i64) as i32;
                 if i < 0 {
                     let abs = i.unsigned_abs();
                     let abs_lit = Literal::u32_unsuffixed(abs);
@@ -94,9 +96,7 @@ fn quote_keyframe_value(v: &serde_json::Value) -> TokenStream {
 fn quote_time_marker(name: &str, v: &serde_json::Value) -> TokenStream {
     match v {
         Value::Number(n) => {
-            let ticks = n
-                .as_i64()
-                .unwrap_or_else(|| n.as_u64().unwrap() as i64);
+            let ticks = n.as_i64().unwrap_or_else(|| n.as_u64().unwrap() as i64);
             quote! {
                 TimeMarker {
                     name: #name,

@@ -7,6 +7,7 @@
 )]
 #![allow(internal_features)]
 
+use crate::world_clock::WorldClockRegistry;
 use crate::{
     banner_pattern::BannerPatternRegistry,
     biome::BiomeRegistry,
@@ -46,7 +47,6 @@ use crate::{
 };
 use std::{fmt::Debug, ops::Deref, sync::OnceLock};
 use steel_utils::Identifier;
-use crate::world_clock::WorldClockRegistry;
 
 pub mod banner_pattern;
 pub mod biome;
@@ -84,8 +84,8 @@ pub mod trim_material;
 pub mod trim_pattern;
 pub mod wolf_sound_variant;
 pub mod wolf_variant;
-pub mod zombie_nautilus_variant;
 pub mod world_clock;
+pub mod zombie_nautilus_variant;
 
 #[allow(warnings)]
 #[rustfmt::skip]

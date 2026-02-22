@@ -70,7 +70,10 @@ impl Timeline {
                     Ease::Named(s) => tc.insert("ease", *s),
                     Ease::CubicBezier(coeffs) => {
                         let mut ec = NbtCompound::new();
-                        ec.insert("cubic_bezier", NbtTag::List(NbtList::Float(coeffs.to_vec())));
+                        ec.insert(
+                            "cubic_bezier",
+                            NbtTag::List(NbtList::Float(coeffs.to_vec())),
+                        );
                         tc.insert("ease", NbtTag::Compound(ec));
                     }
                 }

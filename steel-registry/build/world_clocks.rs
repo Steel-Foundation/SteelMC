@@ -7,8 +7,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
-pub struct WorldClockJson {
-}
+pub struct WorldClockJson {}
 
 pub(crate) fn build() -> TokenStream {
     println!(
@@ -43,7 +42,8 @@ pub(crate) fn build() -> TokenStream {
     // Generate static world_clock definitions
     let mut register_stream = TokenStream::new();
     for world_clock_name in &world_clocks {
-        let world_clock_ident = Ident::new(&world_clock_name.to_shouty_snake_case(), Span::call_site());
+        let world_clock_ident =
+            Ident::new(&world_clock_name.to_shouty_snake_case(), Span::call_site());
         let world_clock_name_str = world_clock_name.clone();
 
         let key = quote! { Identifier::vanilla_static(#world_clock_name_str) };

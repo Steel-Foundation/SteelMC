@@ -28,8 +28,10 @@ impl WriteTo for CSetTime {
 impl CSetTime {
     #[must_use]
     pub fn new(game_time: i64, day_time: i64, time_of_day_increasing: bool) -> Self {
-        use steel_registry::{vanilla_world_clocks, REGISTRY};
-        let clock_id = *REGISTRY.world_clocks.get_id(vanilla_world_clocks::OVERWORLD) as i32;
+        use steel_registry::{REGISTRY, vanilla_world_clocks};
+        let clock_id = *REGISTRY
+            .world_clocks
+            .get_id(vanilla_world_clocks::OVERWORLD) as i32;
         Self {
             game_time,
             clock_updates: vec![(clock_id, day_time, !time_of_day_increasing)],

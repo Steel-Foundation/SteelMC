@@ -10,7 +10,7 @@ pub struct CatSoundVariant {
     pub adult_sounds: CatAge,
     pub baby_sounds: CatAge,
 }
-#[derive( Debug)]
+#[derive(Debug)]
 pub struct CatAge {
     pub ambient_sound: Identifier,
     pub beg_for_food_sound: Identifier,
@@ -23,7 +23,7 @@ pub struct CatAge {
     pub stray_ambient_sound: Identifier,
 }
 
-impl CatAge{
+impl CatAge {
     pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut component = NbtCompound::new();

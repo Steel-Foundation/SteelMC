@@ -288,8 +288,7 @@ impl ChunkSection {
             .write(writer)
             .expect("Failed to write block count");
         // fluid count — steel doesn't track fluids separately, always 0
-        0u16.write(writer)
-            .expect("Failed to write fluid count");
+        0u16.write(writer).expect("Failed to write fluid count");
 
         self.states
             .write(writer)

@@ -43,8 +43,8 @@ mod trim_materials;
 mod trim_patterns;
 mod wolf_sound_variants;
 mod wolf_variants;
-mod zombie_nautilus_variants;
 mod world_clocks;
+mod zombie_nautilus_variants;
 
 const FMT: bool = cfg!(feature = "fmt");
 
