@@ -21,12 +21,14 @@ use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
+    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSetTime, CSystemChat, CTabList, CTickingState,
     CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
-use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
+use steel_registry::vanilla_game_rules::{
+    ADVANCE_TIME, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
+};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 use steel_utils::{entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
@@ -247,6 +249,18 @@ impl Server {
 
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
+
+        // Send current time to the joining player
+        {
+            let level_data = world.level_data.read();
+            let game_time = level_data.game_time();
+            let day_time = level_data.day_time();
+            let advance_time = world
+                .get_game_rule(ADVANCE_TIME)
+                .as_bool()
+                .expect("advance_time gamerule should be a bool");
+            player.send_packet(CSetTime::new(game_time, day_time, advance_time));
+        }
 
         // Get player position for teleport sync (must be done before add_player moves the Arc)
         let pos = *player.position.lock();
