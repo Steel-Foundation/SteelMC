@@ -11,18 +11,14 @@ use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
-use crate::entity::init_entities;
+use crate::entity::{init_entities, Entity, SharedEntity};
 use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 
 use small_map::FxSmallMap;
-use std::{
-    ptr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{mem, ptr, sync::Arc, time::{Duration, Instant}};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
@@ -39,8 +35,6 @@ use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-use crate::entity::{Entity, SharedEntity, init_entities};
-use crate::player::player_data_storage::PlayerDataStorage;
 use crate::portal::TeleportTransition;
 use crate::portal::nether_portal;
 use steel_utils::{BlockPos, Identifier};
