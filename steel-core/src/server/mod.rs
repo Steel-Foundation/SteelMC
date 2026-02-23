@@ -16,7 +16,7 @@ use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
-use rustc_hash::FxHashMap;
+use small_map::FxSmallMap;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -49,7 +49,7 @@ pub struct Server {
     /// The registry cache for the server.
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
-    pub worlds: FxHashMap<Identifier, Arc<World>>,
+    pub worlds: FxSmallMap<8, Identifier, Arc<World>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -125,7 +125,7 @@ impl Server {
         let player_data_storage = PlayerDataStorage::new()
             .await
             .expect("Failed to create player data storage");
-        let mut worlds: FxHashMap<Identifier, Arc<World>> = FxHashMap::default();
+        let mut worlds: FxSmallMap<8, Identifier, Arc<World>> = FxSmallMap::default();
         worlds.insert(OVERWORLD.key.clone(), overworld);
         worlds.insert(THE_NETHER.key.clone(), nether);
         worlds.insert(THE_END.key.clone(), end);
