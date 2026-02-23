@@ -11,7 +11,9 @@ use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
+use crate::entity::init_entities;
 use crate::player::Player;
+use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use rustc_hash::FxHashMap;
@@ -24,6 +26,7 @@ use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
     CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
+use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
@@ -33,9 +36,6 @@ use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
-
-use crate::entity::init_entities;
-use crate::player::player_data_storage::PlayerDataStorage;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -94,93 +94,33 @@ impl Server {
                 hash
             })
         };
-        let generator = match STEEL_CONFIG.world_generator {
-            WordGeneratorTypes::Flat => {
-                ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-                    REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT), // Dirt
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::GRASS_BLOCK), // Grass Block
-                ))
-            }
-            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-        };
-        let config = WorldConfig {
-            storage: match &STEEL_CONFIG.world_storage_config {
-                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
-                    path: format!("{}/{}", path, OVERWORLD.key.path),
-                },
-                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
-            },
-            generator: Arc::new(generator),
-        };
 
-        let overworld = World::new_with_config(chunk_runtime.clone(), OVERWORLD, seed, config)
-            .await
-            .expect("Failed to create overworld");
+        let overworld = World::new_with_config(
+            chunk_runtime.clone(),
+            OVERWORLD,
+            seed,
+            Self::make_world_config(OVERWORLD),
+        )
+        .await
+        .expect("Failed to create overworld");
 
-        let generator = match STEEL_CONFIG.world_generator {
-            WordGeneratorTypes::Flat => {
-                ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::NETHER_BRICKS),
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::NETHERRACK),
-                ))
-            }
-            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-        };
-        let config = WorldConfig {
-            storage: match &STEEL_CONFIG.world_storage_config {
-                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
-                    path: format!("{}/{}", path, THE_NETHER.key.path),
-                },
-                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
-            },
-            generator: Arc::new(generator),
-        };
+        let nether = World::new_with_config(
+            chunk_runtime.clone(),
+            THE_NETHER,
+            seed,
+            Self::make_world_config(THE_NETHER),
+        )
+        .await
+        .expect("Failed to create nether");
 
-        let nether = World::new_with_config(chunk_runtime.clone(), THE_NETHER, seed, config)
-            .await
-            .expect("Failed to create nether");
-
-        let generator = match STEEL_CONFIG.world_generator {
-            WordGeneratorTypes::Flat => {
-                ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::END_STONE),
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::END_STONE),
-                ))
-            }
-            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-        };
-        let config = WorldConfig {
-            storage: match &STEEL_CONFIG.world_storage_config {
-                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
-                    path: format!("{}/{}", path, THE_END.key.path),
-                },
-                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
-            },
-            generator: Arc::new(generator),
-        };
-
-        let end = World::new_with_config(chunk_runtime.clone(), THE_END, seed, config)
-            .await
-            .expect("Failed to create end");
+        let end = World::new_with_config(
+            chunk_runtime.clone(),
+            THE_END,
+            seed,
+            Self::make_world_config(THE_END),
+        )
+        .await
+        .expect("Failed to create end");
 
         let player_data_storage = PlayerDataStorage::new()
             .await
@@ -613,5 +553,60 @@ impl Server {
 
         player.send_packet(state_packet);
         player.send_packet(step_packet);
+    }
+    /// Selects the appropriate chunk generator for the given dimension type.
+    fn make_generator_for_dimension(dimension: DimensionTypeRef) -> ChunkGeneratorType {
+        match STEEL_CONFIG.world_generator {
+            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+            WordGeneratorTypes::Flat => {
+                if ptr::eq(dimension, THE_NETHER) {
+                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::NETHER_BRICKS),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::NETHERRACK),
+                    ))
+                } else if ptr::eq(dimension, THE_END) {
+                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::END_STONE),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::END_STONE),
+                    ))
+                } else {
+                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                        REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::GRASS_BLOCK),
+                    ))
+                }
+            }
+        }
+    }
+
+    fn make_world_config(dimension: DimensionTypeRef) -> WorldConfig {
+        WorldConfig {
+            storage: match &STEEL_CONFIG.world_storage_config {
+                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
+                    path: format!("{}/{}", path, dimension.key.path),
+                },
+                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
+            },
+            generator: Arc::new(Self::make_generator_for_dimension(dimension)),
+        }
     }
 }
