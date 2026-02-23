@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-
+use rustc_hash::FxHashMap;
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::empty_chunk_generator::EmptyChunkGenerator;
@@ -25,10 +25,10 @@ use steel_protocol::packets::game::{
     CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-use steel_utils::{entity_events::EntityStatus, locks::SyncRwLock};
+use steel_utils::{entity_events::EntityStatus, locks::SyncRwLock, Identifier};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -49,7 +49,7 @@ pub struct Server {
     /// The registry cache for the server.
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
-    pub worlds: Vec<Arc<World>>,
+    pub worlds: FxHashMap<Identifier, Arc<World>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -117,18 +117,82 @@ impl Server {
             generator: Arc::new(generator),
         };
 
-        let overworld = World::new_with_config(chunk_runtime, OVERWORLD, seed, config)
+        let overworld = World::new_with_config(chunk_runtime.clone(), OVERWORLD, seed, config)
             .await
             .expect("Failed to create overworld");
+
+        let generator = match STEEL_CONFIG.world_generator {
+            WordGeneratorTypes::Flat => {
+                ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::NETHER_BRICKS),
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::NETHERRACK),
+                ))
+            }
+            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+        };
+        let config = WorldConfig {
+            storage: match &STEEL_CONFIG.world_storage_config {
+                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
+                    path: format!("{}/{}", path, THE_NETHER.key.path),
+                },
+                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
+            },
+            generator: Arc::new(generator),
+        };
+
+        let nether = World::new_with_config(chunk_runtime.clone(), THE_NETHER, seed, config)
+            .await
+            .expect("Failed to create nether");
+
+        let generator = match STEEL_CONFIG.world_generator {
+            WordGeneratorTypes::Flat => {
+                ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::END_STONE),
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::END_STONE),
+                ))
+            }
+            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+        };
+        let config = WorldConfig {
+            storage: match &STEEL_CONFIG.world_storage_config {
+                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
+                    path: format!("{}/{}", path, THE_END.key.path),
+                },
+                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
+            },
+            generator: Arc::new(generator),
+        };
+
+        let end = World::new_with_config(chunk_runtime.clone(), THE_END, seed, config)
+            .await
+            .expect("Failed to create end");
 
         let player_data_storage = PlayerDataStorage::new()
             .await
             .expect("Failed to create player data storage");
+        let mut worlds: FxHashMap<Identifier, Arc<World>> = FxHashMap::default();
+        worlds.insert(OVERWORLD.key.clone(), overworld);
+        worlds.insert(THE_NETHER.key.clone(), nether);
+        worlds.insert(THE_END.key.clone(), end);
 
         Server {
             cancel_token,
             key_store: KeyStore::create(),
-            worlds: vec![overworld],
+            worlds,
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -161,7 +225,7 @@ impl Server {
             }
         }
 
-        let world = &self.worlds[0];
+        let world = &self.overworld();
 
         // Get gamerule values
         let reduced_debug_info =
@@ -262,7 +326,7 @@ impl Server {
     /// Gets all the players on the server
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.players.iter_players(|_, p| {
                 players.push(p.clone());
                 true
@@ -274,7 +338,7 @@ impl Server {
     /// Returns the total number of players currently online across all worlds.
     #[must_use]
     pub fn player_count(&self) -> usize {
-        self.worlds.iter().map(|w| w.players.len()).sum()
+        self.worlds.iter().map(|w| w.1.players.len()).sum()
     }
 
     /// Returns a sample of up to 12 online players for the server list ping.
@@ -312,6 +376,26 @@ impl Server {
         }
 
         sample
+    }
+
+    /// Returns the overworld or if not exists the first world.
+    pub fn overworld(&self) -> &Arc<World> {
+        self.worlds.get(&OVERWORLD.key).unwrap_or_else(|| {
+            self.worlds
+                .values()
+                .next()
+                .expect("At least one world must exist")
+        })
+    }
+
+    /// Returns the nether or if not exists None.
+    pub fn nether(&self) -> Option<&Arc<World>> {
+        self.worlds.get(&THE_NETHER.key)
+    }
+
+    /// Returns the end or if not exists None.
+    pub fn the_end(&self) -> Option<&Arc<World>> {
+        self.worlds.get(&THE_END.key)
     }
 
     /// Runs the server tick loop.
@@ -399,7 +483,7 @@ impl Server {
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
                 world_clone.tick_b(tick_count, runs_normally)
@@ -471,7 +555,7 @@ impl Server {
         ]);
 
         // Broadcast to all players in all worlds
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all_with(|player| CTabList::new(&header, &footer, player));
         }
     }
@@ -487,7 +571,7 @@ impl Server {
             ])
             .into();
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all_with(|player| CSystemChat::new(&message, false, player));
         }
     }
@@ -499,7 +583,7 @@ impl Server {
         let packet = CTickingState::new(tick_manager.tick_rate(), tick_manager.is_frozen());
         drop(tick_manager);
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all(packet.clone());
         }
     }
@@ -511,7 +595,7 @@ impl Server {
         let packet = CTickingStep::new(tick_manager.frozen_ticks_to_run());
         drop(tick_manager);
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all(packet.clone());
         }
     }

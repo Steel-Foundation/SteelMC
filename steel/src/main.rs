@@ -170,7 +170,7 @@ async fn run_server(
     task_tracker.close();
     task_tracker.wait().await;
 
-    for world in &server.worlds {
+    for world in server.worlds.values() {
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
     }
@@ -178,7 +178,7 @@ async fn run_server(
     // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
     let mut total_saved = 0;
-    for world in &server.worlds {
+    for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;
     }
     log::info!("Saved {total_saved} chunks");
@@ -186,7 +186,7 @@ async fn run_server(
     // Save all player data before shutdown
     log::info!("Saving player data...");
     let mut players_to_save = Vec::new();
-    for world in &server.worlds {
+    for world in server.worlds.values() {
         world.players.iter_players(|_, player| {
             players_to_save.push(player.clone());
             true
