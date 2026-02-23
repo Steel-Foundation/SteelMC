@@ -5,6 +5,7 @@ pub mod entity;
 pub mod float;
 pub mod gamemode;
 pub mod integer;
+pub mod item;
 pub mod player;
 pub mod rotation;
 pub mod text_component;

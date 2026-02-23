@@ -230,7 +230,7 @@ impl BlockRegistry {
     }
 
     #[must_use]
-    pub fn get_properties(&self, id: BlockStateId) -> Vec<(&str, &str)> {
+    pub fn get_properties(&self, id: BlockStateId) -> Vec<(&'static str, &'static str)> {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
         // If block has no properties, return empty vec

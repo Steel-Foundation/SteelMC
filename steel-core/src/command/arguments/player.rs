@@ -22,7 +22,7 @@ pub struct PlayerArgument {
 impl PlayerArgument {
     /// Creates a selector for multiple players
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn multiple() -> Self {
         PlayerArgument { one: false }
     }
     /// Creates a selector for one player
@@ -41,6 +41,9 @@ impl CommandArgument for PlayerArgument {
         context: &mut CommandContext,
     ) -> Option<(&'a [&'a str], Self::Output)> {
         let players = context.server.get_players();
+        if arg.is_empty() {
+            return None;
+        }
         if players.is_empty() {
             return Some((&arg[1..], vec![]));
         }

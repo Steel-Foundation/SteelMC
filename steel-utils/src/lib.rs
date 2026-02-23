@@ -23,6 +23,8 @@ pub mod locks;
 pub mod logger;
 pub mod math;
 pub mod random;
+/// helpful tools for registry
+pub mod registry;
 pub mod serial;
 pub mod text;
 /// A module for common types.
@@ -38,8 +40,10 @@ pub mod translations;
 #[path = "generated/vanilla_translations/registry.rs"]
 #[allow(missing_docs, warnings)]
 pub mod translations_registry;
-/// helpful tools for registry
-pub mod registry;
+#[rustfmt::skip]
+#[path = "generated/entity_events.rs"]
+#[allow(missing_docs, warnings)]
+pub mod entity_events;
 
 pub use direction::Direction;
 pub use front_vec::FrontVec;

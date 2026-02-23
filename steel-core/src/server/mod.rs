@@ -22,14 +22,14 @@ use std::{
 };
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
+    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-use steel_utils::locks::{SyncMutex, SyncRwLock};
+use steel_utils::{entity_events::EntityStatus, locks::SyncRwLock, locks::SyncMutex};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -273,7 +273,7 @@ impl Server {
                 dimension: dimension_key,
                 seed: hashed_seed,
                 game_type: player.game_mode.load(),
-                previous_game_type: None,
+                previous_game_type: Some(player.prev_game_mode.load()),
                 is_debug: false,
                 // TODO: Change once we add a normal generator
                 is_flat: true,
@@ -318,6 +318,12 @@ impl Server {
         let commands = self.command_dispatcher.read().get_commands();
         player.send_packet(commands);
 
+        // TODO: Set permissions level to match player's level
+        player.send_packet(CEntityEvent {
+            entity_id: player.id,
+            event: EntityStatus::PermissionLevelOwners,
+        });
+
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
 
@@ -342,6 +348,49 @@ impl Server {
             });
         }
         players
+    }
+
+    /// Returns the total number of players currently online across all worlds.
+    #[must_use]
+    pub fn player_count(&self) -> usize {
+        self.worlds.iter().map(|w| w.players.len()).sum()
+    }
+
+    /// Returns a sample of up to 12 online players for the server list ping.
+    #[must_use]
+    pub fn player_sample(&self) -> Vec<(String, String)> {
+        const MAX_SAMPLE: usize = 12;
+
+        let players = self.get_players();
+        if players.is_empty() {
+            return vec![];
+        }
+
+        let sample_size = players.len().min(MAX_SAMPLE);
+        // Random starting offset into the player list
+        let offset = if players.len() > sample_size {
+            (rand::random::<u64>() as usize) % (players.len() - sample_size + 1)
+        } else {
+            0
+        };
+
+        let mut sample: Vec<(String, String)> = players[offset..offset + sample_size]
+            .iter()
+            .map(|p| {
+                (
+                    p.gameprofile.name.clone(),
+                    p.gameprofile.id.hyphenated().to_string(),
+                )
+            })
+            .collect();
+
+        // Shuffle using Fisher-Yates with random indices
+        for i in (1..sample.len()).rev() {
+            let j = (rand::random::<u64>() as usize) % (i + 1);
+            sample.swap(i, j);
+        }
+
+        sample
     }
 
     /// Returns the overworld or if not exists the first world.

@@ -16,9 +16,6 @@ serde_json.workspace = true
 # Error handling
 thiserror.workspace = true
 
-# Concurrency
-parking_lot.workspace = true
-
 # Logging
 log.workspace = true
 

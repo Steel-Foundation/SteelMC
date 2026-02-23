@@ -22,9 +22,6 @@ simdnbt.workspace = true
 # Error handling
 thiserror.workspace = true
 
-# Concurrency
-crossbeam.workspace = true
-
 # Data structures
 rustc-hash.workspace = true
 

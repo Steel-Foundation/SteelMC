@@ -4,20 +4,23 @@ use std::{fs, path::Path, process::Command};
 
 use text_components::build::build_translations;
 
+mod entity_events;
 mod translations;
 
 const FMT: bool = true;
 
-const OUT_DIR: &str = "src/generated/vanilla_translations";
-const IDS: &str = "ids";
-const REGISTRY: &str = "registry";
+const OUT_DIR: &str = "src/generated";
+const IDS: &str = "vanilla_translations/ids";
+const REGISTRY: &str = "vanilla_translations/registry";
+const ENTITY_EVENTS: &str = "entity_events";
 
 /// Main build script entry point that generates translation constants.
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
 
-    if !Path::new(OUT_DIR).exists() {
-        fs::create_dir_all(OUT_DIR).expect("Failed to create output directory");
+    if !Path::new(&format!("{OUT_DIR}/vanilla_translations")).exists() {
+        fs::create_dir_all(format!("{OUT_DIR}/vanilla_translations"))
+            .expect("Failed to create output directory");
     }
 
     let content = build_translations("build_assets/en_us.json");
@@ -27,6 +30,10 @@ pub fn main() {
     let content = translations::build();
     fs::write(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string())
         .expect("Failed to write translations registry file");
+
+    let content = entity_events::build();
+    fs::write(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string())
+        .expect("Failed to write entity events file");
 
     if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
         for entry in entries.flatten() {
