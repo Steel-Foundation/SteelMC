@@ -17,10 +17,7 @@ use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use small_map::FxSmallMap;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{ptr, sync::Arc, time::{Duration, Instant}};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
@@ -268,7 +265,7 @@ impl Server {
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
         for world in self.worlds.values() {
-            world.players.iter_players(|_, p| {
+            world.players.iter_players(|_, p: &Arc<Player>| {
                 players.push(p.clone());
                 true
             });
