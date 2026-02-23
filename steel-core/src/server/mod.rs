@@ -394,6 +394,8 @@ impl Server {
     }
 
     /// Returns the overworld or if not exists the first world.
+    /// # Panic
+    /// if no world exists on this server crisis is there!
     pub fn overworld(&self) -> &Arc<World> {
         self.worlds.get(&OVERWORLD.key).unwrap_or_else(|| {
             self.worlds
