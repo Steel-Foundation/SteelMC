@@ -100,7 +100,7 @@ impl JavaTcpClient {
 
         let client_info = self.client_information.lock().await.clone();
 
-        let world = self.server.worlds[0].clone();
+        let world = self.server.overworld().clone();
         let entity_id = next_entity_id();
 
         let player = Arc::new_cyclic(|player_weak| {

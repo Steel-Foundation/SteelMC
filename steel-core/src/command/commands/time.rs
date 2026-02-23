@@ -70,7 +70,7 @@ impl CommandExecutor<((), i32)> for TimeExecutor {
     fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
         let mut day_time_option: Option<i64> = None;
 
-        context.server.worlds.iter().for_each(|world| {
+        context.server.worlds.values().for_each(|world| {
             let (game_time, new_day_time) = {
                 let mut lock = world.level_data.write();
 
@@ -111,7 +111,7 @@ struct TimeConstSetExecutor<const DAYTIME: i64>;
 
 impl<const DAYTIME: i64> CommandExecutor<()> for TimeConstSetExecutor<DAYTIME> {
     fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        context.server.worlds.iter().for_each(|world| {
+        context.server.worlds.values().for_each(|world| {
             let (game_time, new_day_time) = {
                 let mut lock = world.level_data.write();
 

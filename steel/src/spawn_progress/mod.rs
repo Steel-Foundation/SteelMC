@@ -53,7 +53,7 @@ pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
     #[allow(unused)] logger: &Arc<CommandLogger>,
 ) {
-    let world = &server.worlds[0];
+    let world = &server.overworld();
 
     let spawn_pos = world.level_data.read().data().spawn_pos();
     let center_chunk = ChunkPos::new(
