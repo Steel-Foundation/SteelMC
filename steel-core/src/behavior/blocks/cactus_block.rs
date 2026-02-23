@@ -200,22 +200,14 @@ impl BlockBehaviour for CactusBlock {
             );
             // Reset age of current block to 0
             let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
-            world.set_block(
-                pos,
-                new_state,
-                UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
-            );
-            world.update_neighbors_at(&above_pos, vanilla_blocks::CACTUS);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
+            world.neighbor_changed(above_pos, vanilla_blocks::CACTUS, false);
         }
 
         // Vanilla lines 78-80: Increment age if < 15
         if age < 15 {
             let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
-            world.set_block(
-                pos,
-                new_state,
-                UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
-            );
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
         }
     }
 
