@@ -11,7 +11,6 @@ use simdnbt::{
     owned::{NbtCompound, NbtList, NbtTag},
 };
 use steel_registry::item_stack::ItemStack;
-use steel_utils::types::GameType;
 
 use crate::inventory::container::Container;
 
@@ -64,6 +63,10 @@ pub struct PersistentPlayerData {
     /// Current game mode (0=survival, 1=creative, 2=adventure, 3=spectator).
     /// NBT tag: `playerGameType` (Int)
     pub game_mode: i32,
+
+    /// Previous game mode of the player
+    /// NBT tag: `previousPlayerGameType` (Int)
+    pub prev_game_mode: i32,
 
     /// Player abilities (flight, invulnerability, etc.).
     /// NBT tag: `abilities` (Compound)
@@ -146,6 +149,7 @@ impl PersistentPlayerData {
             fall_flying: player.fall_flying.load(Ordering::Relaxed),
             health: *entity_data.health.get(),
             game_mode: player.game_mode.load() as i32,
+            prev_game_mode: player.prev_game_mode.load() as i32,
             abilities: PersistentAbilities {
                 invulnerable: abilities.invulnerable,
                 flying: abilities.flying,
@@ -263,6 +267,7 @@ impl PersistentPlayerData {
         let fall_flying = nbt.byte("FallFlying").is_some_and(|b| b != 0);
         let health = nbt.float("Health").unwrap_or(20.0);
         let game_mode = nbt.int("playerGameType").unwrap_or(0);
+        let prev_game_mode = nbt.int("previousPlayerGameType").unwrap_or(0);
         let selected_slot = nbt.int("SelectedItemSlot").unwrap_or(0);
         let dimension = nbt.string("Dimension").map_or_else(
             || "minecraft:overworld".to_string(),
@@ -297,6 +302,7 @@ impl PersistentPlayerData {
             fall_flying,
             health,
             game_mode,
+            prev_game_mode,
             abilities,
             inventory,
             selected_slot,
@@ -405,13 +411,12 @@ impl PersistentPlayerData {
         player.entity_data.lock().health.set(self.health);
 
         // Game mode
-        let game_mode = match self.game_mode {
-            1 => GameType::Creative,
-            2 => GameType::Adventure,
-            3 => GameType::Spectator,
-            _ => GameType::Survival,
-        };
+        let game_mode = self.game_mode.into();
         player.game_mode.store(game_mode);
+
+        // Previous game mode
+        let prev_game_mode = self.prev_game_mode.into();
+        player.prev_game_mode.store(prev_game_mode);
 
         // Abilities
         *player.abilities.lock() = self.abilities.clone().into();

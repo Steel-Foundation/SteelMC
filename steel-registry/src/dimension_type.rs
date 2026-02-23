@@ -110,6 +110,11 @@ impl DimensionTypeRegistry {
     pub fn is_empty(&self) -> bool {
         self.dimension_types_by_id.is_empty()
     }
+
+    #[must_use]
+    pub fn get_ids(&self) -> Vec<Identifier> {
+        self.dimension_types_by_key.keys().cloned().collect()
+    }
 }
 
 impl RegistryExt for DimensionTypeRegistry {

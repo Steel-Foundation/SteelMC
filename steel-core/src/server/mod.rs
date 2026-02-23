@@ -4,11 +4,6 @@ pub mod registry_cache;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::empty_chunk_generator::EmptyChunkGenerator;
@@ -16,26 +11,32 @@ use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
+use crate::entity::init_entities;
 use crate::player::Player;
+use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
+use small_map::FxSmallMap;
+use std::{
+    ptr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
+    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
+use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_dimension_types::OVERWORLD;
+use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-use steel_utils::locks::SyncRwLock;
+use steel_utils::{Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
-
-use crate::entity::init_entities;
-use crate::player::player_data_storage::PlayerDataStorage;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -49,7 +50,7 @@ pub struct Server {
     /// The registry cache for the server.
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
-    pub worlds: Vec<Arc<World>>,
+    pub worlds: FxSmallMap<8, Identifier, Arc<World>>,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -64,6 +65,7 @@ impl Server {
     /// # Panics
     ///
     /// Panics if the global registry has already been initialized.
+    #[allow(clippy::too_many_lines)]
     pub async fn new(chunk_runtime: Arc<Runtime>, cancel_token: CancellationToken) -> Self {
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();
@@ -93,42 +95,46 @@ impl Server {
                 hash
             })
         };
-        let generator = match STEEL_CONFIG.world_generator {
-            WordGeneratorTypes::Flat => {
-                ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::BEDROCK), // Bedrock
-                    REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT), // Dirt
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::GRASS_BLOCK), // Grass Block
-                ))
-            }
-            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-        };
-        let config = WorldConfig {
-            storage: match &STEEL_CONFIG.world_storage_config {
-                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
-                    path: format!("{}/{}", path, OVERWORLD.key.path),
-                },
-                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
-            },
-            generator: Arc::new(generator),
-        };
 
-        let overworld = World::new_with_config(chunk_runtime, OVERWORLD, seed, config)
-            .await
-            .expect("Failed to create overworld");
+        let overworld = World::new_with_config(
+            chunk_runtime.clone(),
+            OVERWORLD,
+            seed,
+            Self::make_world_config(OVERWORLD),
+        )
+        .await
+        .expect("Failed to create overworld");
+
+        let nether = World::new_with_config(
+            chunk_runtime.clone(),
+            THE_NETHER,
+            seed,
+            Self::make_world_config(THE_NETHER),
+        )
+        .await
+        .expect("Failed to create nether");
+
+        let end = World::new_with_config(
+            chunk_runtime.clone(),
+            THE_END,
+            seed,
+            Self::make_world_config(THE_END),
+        )
+        .await
+        .expect("Failed to create end");
 
         let player_data_storage = PlayerDataStorage::new()
             .await
             .expect("Failed to create player data storage");
+        let mut worlds: FxSmallMap<8, Identifier, Arc<World>> = FxSmallMap::default();
+        worlds.insert(OVERWORLD.key.clone(), overworld);
+        worlds.insert(THE_NETHER.key.clone(), nether);
+        worlds.insert(THE_END.key.clone(), end);
 
         Server {
             cancel_token,
             key_store: KeyStore::create(),
-            worlds: vec![overworld],
+            worlds,
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
@@ -161,7 +167,7 @@ impl Server {
             }
         }
 
-        let world = &self.worlds[0];
+        let world = &self.overworld();
 
         // Get gamerule values
         let reduced_debug_info =
@@ -177,7 +183,7 @@ impl Server {
         player.send_packet(CLogin {
             player_id: player.id,
             hardcore: false,
-            levels: vec![dimension_key.clone()],
+            levels: REGISTRY.dimension_types.get_ids(),
             max_players: STEEL_CONFIG.max_players as i32,
             chunk_radius: player.view_distance().into(),
             simulation_distance: STEEL_CONFIG.simulation_distance.into(),
@@ -194,7 +200,7 @@ impl Server {
                 dimension: dimension_key,
                 seed: hashed_seed,
                 game_type: player.game_mode.load(),
-                previous_game_type: None,
+                previous_game_type: Some(player.prev_game_mode.load()),
                 is_debug: false,
                 // TODO: Change once we add a normal generator
                 is_flat: true,
@@ -239,6 +245,12 @@ impl Server {
         let commands = self.command_dispatcher.read().get_commands();
         player.send_packet(commands);
 
+        // TODO: Set permissions level to match player's level
+        player.send_packet(CEntityEvent {
+            entity_id: player.id,
+            event: EntityStatus::PermissionLevelOwners,
+        });
+
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
 
@@ -256,13 +268,78 @@ impl Server {
     /// Gets all the players on the server
     pub fn get_players(&self) -> Vec<Arc<Player>> {
         let mut players = vec![];
-        for world in &self.worlds {
-            world.players.iter_players(|_, p| {
+        for world in self.worlds.values() {
+            world.players.iter_players(|_, p: &Arc<Player>| {
                 players.push(p.clone());
                 true
             });
         }
         players
+    }
+
+    /// Returns the total number of players currently online across all worlds.
+    #[must_use]
+    pub fn player_count(&self) -> usize {
+        self.worlds.iter().map(|w| w.1.players.len()).sum()
+    }
+
+    /// Returns a sample of up to 12 online players for the server list ping.
+    #[must_use]
+    pub fn player_sample(&self) -> Vec<(String, String)> {
+        const MAX_SAMPLE: usize = 12;
+
+        let players = self.get_players();
+        if players.is_empty() {
+            return vec![];
+        }
+
+        let sample_size = players.len().min(MAX_SAMPLE);
+        // Random starting offset into the player list
+        let offset = if players.len() > sample_size {
+            (rand::random::<u64>() as usize) % (players.len() - sample_size + 1)
+        } else {
+            0
+        };
+
+        let mut sample: Vec<(String, String)> = players[offset..offset + sample_size]
+            .iter()
+            .map(|p| {
+                (
+                    p.gameprofile.name.clone(),
+                    p.gameprofile.id.hyphenated().to_string(),
+                )
+            })
+            .collect();
+
+        // Shuffle using Fisher-Yates with random indices
+        for i in (1..sample.len()).rev() {
+            let j = (rand::random::<u64>() as usize) % (i + 1);
+            sample.swap(i, j);
+        }
+
+        sample
+    }
+
+    /// Returns the overworld or if not exists the first world.
+    /// # Panics
+    /// if no world exists on this server crisis is there!
+    pub fn overworld(&self) -> &Arc<World> {
+        self.worlds.get(&OVERWORLD.key).unwrap_or_else(|| {
+            self.worlds
+                .values()
+                .next()
+                .expect("At least one world must exist")
+        })
+    }
+
+    /// Returns the nether or if not exists None.
+    pub fn nether(&self) -> Option<&Arc<World>> {
+        self.worlds.get(&THE_NETHER.key)
+    }
+
+    /// Returns the end or if not exists None.
+    pub fn the_end(&self) -> Option<&Arc<World>> {
+        self.worlds.get(&THE_END.key)
     }
 
     /// Runs the server tick loop.
@@ -350,7 +427,7 @@ impl Server {
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
                 world_clone.tick_b(tick_count, runs_normally)
@@ -422,7 +499,7 @@ impl Server {
         ]);
 
         // Broadcast to all players in all worlds
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all_with(|player| CTabList::new(&header, &footer, player));
         }
     }
@@ -438,7 +515,7 @@ impl Server {
             ])
             .into();
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all_with(|player| CSystemChat::new(&message, false, player));
         }
     }
@@ -450,7 +527,7 @@ impl Server {
         let packet = CTickingState::new(tick_manager.tick_rate(), tick_manager.is_frozen());
         drop(tick_manager);
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all(packet.clone());
         }
     }
@@ -462,7 +539,7 @@ impl Server {
         let packet = CTickingStep::new(tick_manager.frozen_ticks_to_run());
         drop(tick_manager);
 
-        for world in &self.worlds {
+        for world in self.worlds.values() {
             world.broadcast_to_all(packet.clone());
         }
     }
@@ -477,5 +554,60 @@ impl Server {
 
         player.send_packet(state_packet);
         player.send_packet(step_packet);
+    }
+    /// Selects the appropriate chunk generator for the given dimension type.
+    fn make_generator_for_dimension(dimension: DimensionTypeRef) -> ChunkGeneratorType {
+        match STEEL_CONFIG.world_generator {
+            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+            WordGeneratorTypes::Flat => {
+                if ptr::eq(dimension, THE_NETHER) {
+                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::NETHER_BRICKS),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::NETHERRACK),
+                    ))
+                } else if ptr::eq(dimension, THE_END) {
+                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::END_STONE),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::END_STONE),
+                    ))
+                } else {
+                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                        REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT),
+                        REGISTRY
+                            .blocks
+                            .get_default_state_id(vanilla_blocks::GRASS_BLOCK),
+                    ))
+                }
+            }
+        }
+    }
+
+    fn make_world_config(dimension: DimensionTypeRef) -> WorldConfig {
+        WorldConfig {
+            storage: match &STEEL_CONFIG.world_storage_config {
+                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
+                    path: format!("{}/{}", path, dimension.key.path),
+                },
+                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
+            },
+            generator: Arc::new(Self::make_generator_for_dimension(dimension)),
+        }
     }
 }

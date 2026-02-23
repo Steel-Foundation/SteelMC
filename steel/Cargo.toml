@@ -9,8 +9,6 @@ authors.workspace = true
 # Internal crates
 steel-core.workspace = true
 steel-login.workspace = true
-steel-protocol.workspace = true
-steel-registry.workspace = true
 steel-utils.workspace = true
 
 # Async runtime
@@ -19,28 +17,19 @@ tokio-util.workspace = true
 
 # Serialization
 serde.workspace = true
-serde_json.workspace = true
 serde_json5.workspace = true
 base64.workspace = true
 
-# Error handling
-thiserror.workspace = true
-
 # Concurrency
-crossbeam.workspace = true
 parking_lot = { workspace = true, features = [
     "deadlock_detection",
 ], optional = true }
-scc.workspace = true
 
-# UUID
-uuid.workspace = true
 
 # Logging
 log.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-tracing-log.workspace = true
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
@@ -48,16 +37,7 @@ tracing-opentelemetry = { workspace = true, optional = true }
 crossterm = { version = "0.29.0", features = ["osc52"] }
 chrono = "0.4.43"
 
-# Networking
-reqwest.workspace = true
-
 # Cryptography
-rand.workspace = true
-rsa.workspace = true
-rsa-der.workspace = true
-sha1.workspace = true
-sha2.workspace = true
-hex.workspace = true
 text_components.workspace = true
 
 # Memory

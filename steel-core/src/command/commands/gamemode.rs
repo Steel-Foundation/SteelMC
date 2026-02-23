@@ -48,17 +48,7 @@ impl CommandExecutor<((), GameType)> for GameModeCommandExecutor {
             .ok_or(CommandError::InvalidRequirement)?;
 
         // Set the player's game mode
-        if !player.set_game_mode(gamemode) {
-            // Player was already in the requested game mode
-            return Ok(());
-        }
-
-        // Send success message
-        context.sender.send_message(
-            &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
-                .message([get_gamemode_translation(gamemode)])
-                .into(),
-        );
+        player.set_game_mode(gamemode);
 
         Ok(())
     }
@@ -78,13 +68,6 @@ impl CommandExecutor<(((), GameType), Vec<Arc<Player>>)> for GameModeTargetComma
 
         for target in targets {
             if target.set_game_mode(gamemode) {
-                // Send message to target
-                target.send_message(
-                    &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
-                        .message([mode_translation])
-                        .into(),
-                );
-
                 // Send feedback to sender if sender is not the target
                 let sender_is_target = if let Some(sender_player) = context.sender.get_player() {
                     sender_player.id == target.id
@@ -109,7 +92,9 @@ impl CommandExecutor<(((), GameType), Vec<Arc<Player>>)> for GameModeTargetComma
     }
 }
 
-fn get_gamemode_translation(gamemode: GameType) -> &'static Translation<0> {
+/// Retrieves the translation for a `GameType`
+#[must_use]
+pub fn get_gamemode_translation(gamemode: GameType) -> &'static Translation<0> {
     match gamemode {
         GameType::Survival => &translations::GAME_MODE_SURVIVAL,
         GameType::Creative => &translations::GAME_MODE_CREATIVE,

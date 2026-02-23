@@ -269,7 +269,7 @@ pub struct PersistentBlockState {
     /// Block identifier (e.g., "`minecraft:oak_stairs`").
     pub name: Identifier,
     /// Block properties as key-value pairs (e.g., [("facing", "north")]).
-    pub properties: Vec<(String, String)>,
+    pub properties: Vec<(&'static str, &'static str)>,
 }
 
 /// A persistent chunk containing sections and metadata.
