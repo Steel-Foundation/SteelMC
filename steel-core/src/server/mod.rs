@@ -353,7 +353,7 @@ impl Server {
     /// Returns the total number of players currently online across all worlds.
     #[must_use]
     pub fn player_count(&self) -> usize {
-        self.worlds.iter().map(|w| w.players.len()).sum()
+        self.worlds.iter().map(|w| w.1.players.len()).sum()
     }
 
     /// Returns a sample of up to 12 online players for the server list ping.
