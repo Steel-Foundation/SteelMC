@@ -241,7 +241,7 @@ impl Server {
         player.send_packet(CLogin {
             player_id: player.id,
             hardcore: false,
-            levels: vec![dimension_key.clone()],
+            levels: REGISTRY.dimension_types.get_ids(),
             max_players: STEEL_CONFIG.max_players as i32,
             chunk_radius: player.view_distance().into(),
             simulation_distance: STEEL_CONFIG.simulation_distance.into(),
