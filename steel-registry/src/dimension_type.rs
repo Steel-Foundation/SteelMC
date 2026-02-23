@@ -115,7 +115,6 @@ impl DimensionTypeRegistry {
     pub fn get_ids(&self) -> Vec<Identifier> {
         self.dimension_types_by_key.keys().cloned().collect()
     }
-
 }
 
 impl RegistryExt for DimensionTypeRegistry {

@@ -4,11 +4,6 @@ pub mod registry_cache;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use rustc_hash::FxHashMap;
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::empty_chunk_generator::EmptyChunkGenerator;
@@ -19,6 +14,11 @@ use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
 use crate::player::Player;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
+use rustc_hash::FxHashMap;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
@@ -28,7 +28,7 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-use steel_utils::{entity_events::EntityStatus, locks::SyncRwLock, Identifier};
+use steel_utils::{Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
