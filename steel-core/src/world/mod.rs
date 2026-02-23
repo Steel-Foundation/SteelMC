@@ -547,7 +547,12 @@ impl World {
     /// Notifies a block that one of its neighbors changed.
     ///
     /// This is the Rust equivalent of vanilla's `Level.neighborChanged()`.
-    pub(crate) fn neighbor_changed(&self, pos: BlockPos, source_block: BlockRef, moved_by_piston: bool) {
+    pub(crate) fn neighbor_changed(
+        &self,
+        pos: BlockPos,
+        source_block: BlockRef,
+        moved_by_piston: bool,
+    ) {
         if !self.is_in_valid_bounds(&pos) {
             return;
         }
