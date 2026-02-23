@@ -729,10 +729,8 @@ impl Player {
                 };
 
                 steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-                if let Some(server) = self.server.upgrade()
-                {
-                    for world in server.worlds.values()
-                    {
+                if let Some(server) = self.server.upgrade() {
+                    for world in server.worlds.values() {
                         world.broadcast_chat(
                             chat_packet.clone(),
                             Arc::clone(&player),
@@ -742,8 +740,7 @@ impl Player {
                     }
                 }
             } else {
-                if let Some(server) = self.server.upgrade()
-                {
+                if let Some(server) = self.server.upgrade() {
                     for world in server.worlds.values() {
                         world.broadcast_unsigned_chat(
                             chat_packet.clone(),
@@ -754,8 +751,7 @@ impl Player {
                 }
             }
         } else {
-            if let Some(server) = self.server.upgrade()
-            {
+            if let Some(server) = self.server.upgrade() {
                 for world in server.worlds.values() {
                     world.broadcast_unsigned_chat(
                         chat_packet.clone(),
