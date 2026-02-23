@@ -125,9 +125,13 @@ impl NetherPortalForcer {
         }
 
         if let Some(pos) = full_position {
-            tracing::warn!("Created nether portal at x: {}, y: {}, z: {}", pos.x(), pos.y(), pos.z());
+            tracing::warn!(
+                "Created nether portal at x: {}, y: {}, z: {}",
+                pos.x(),
+                pos.y(),
+                pos.z()
+            );
         }
-
 
         let portal_block = vanilla_blocks::NETHER_PORTAL
             .default_state()
