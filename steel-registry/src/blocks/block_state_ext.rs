@@ -31,7 +31,7 @@ pub trait BlockStateExt {
     /// This matches vanilla's `BlockState.isSolid()` which is used by standing signs
     /// to check if they can be placed on a block.
     fn is_solid(&self) -> bool;
-
+    /// Returns if a block can be replaced extracted from the minecraft data
     fn is_replaceable(&self) -> bool;
 }
 
