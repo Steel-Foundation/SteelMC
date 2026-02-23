@@ -739,19 +739,7 @@ impl Player {
                         );
                     }
                 }
-            } else {
-                if let Some(server) = self.server.upgrade() {
-                    for world in server.worlds.values() {
-                        world.broadcast_unsigned_chat(
-                            chat_packet.clone(),
-                            &player.gameprofile.name,
-                            &chat_message,
-                        );
-                    }
-                }
-            }
-        } else {
-            if let Some(server) = self.server.upgrade() {
+            } else if let Some(server) = self.server.upgrade() {
                 for world in server.worlds.values() {
                     world.broadcast_unsigned_chat(
                         chat_packet.clone(),
@@ -759,6 +747,14 @@ impl Player {
                         &chat_message,
                     );
                 }
+            }
+        } else if let Some(server) = self.server.upgrade() {
+            for world in server.worlds.values() {
+                world.broadcast_unsigned_chat(
+                    chat_packet.clone(),
+                    &player.gameprofile.name,
+                    &chat_message,
+                );
             }
         }
     }
