@@ -238,7 +238,7 @@ fn generate_music_entry(entry: &MusicEntryJson) -> TokenStream {
 
 fn generate_background_music(bg: &BackgroundMusicJson) -> TokenStream {
     let default_entry = generate_music_entry(&bg.default);
-    let creative = generate_option(&bg.creative, |c| generate_music_entry(c));
+    let creative = generate_option(&bg.creative, generate_music_entry);
     quote! {
         BackgroundMusic {
             default: #default_entry,
