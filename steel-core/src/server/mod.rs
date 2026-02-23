@@ -17,7 +17,11 @@ use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use small_map::FxSmallMap;
-use std::{ptr, sync::Arc, time::{Duration, Instant}};
+use std::{
+    ptr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
