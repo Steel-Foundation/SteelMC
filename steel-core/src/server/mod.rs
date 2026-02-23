@@ -142,6 +142,7 @@ impl Server {
     ///
     /// # Panics
     /// Panics if the registry is not initialized.
+    #[allow(clippy::too_many_lines)]
     pub async fn add_player(&self, player: Arc<Player>) {
         // Load saved player data if it exists
         match self.player_data_storage.load(player.gameprofile.id).await {
