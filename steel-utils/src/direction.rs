@@ -4,6 +4,7 @@
 
 use std::io::{self, Cursor};
 
+use crate::math::vector3::AxisDirection;
 use crate::{codec::VarInt, math::Axis, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
@@ -67,6 +68,18 @@ impl Direction {
             Direction::Down | Direction::Up => Axis::Y,
             Direction::North | Direction::South => Axis::Z,
             Direction::West | Direction::East => Axis::X,
+        }
+    }
+    /// Returns the direction on the given axis and the given direction.
+    #[must_use]
+    pub const fn get_from_axis(axis: &Axis, direction: AxisDirection) -> Direction {
+        match (axis, direction) {
+            (Axis::X, AxisDirection::Negative) => Direction::West,
+            (Axis::X, AxisDirection::Positive) => Direction::East,
+            (Axis::Y, AxisDirection::Negative) => Direction::Down,
+            (Axis::Y, AxisDirection::Positive) => Direction::Up,
+            (Axis::Z, AxisDirection::Positive) => Direction::South,
+            (Axis::Z, AxisDirection::Negative) => Direction::North,
         }
     }
 

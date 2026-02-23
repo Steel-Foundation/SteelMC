@@ -2,13 +2,14 @@
 
 use std::ptr;
 use std::sync::Arc;
-
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_NETHER};
 use steel_utils::BlockPos;
-use steel_utils::math::Vector3;
+use steel_utils::math::{Axis, Vector3};
 
 use crate::portal::TeleportTransition;
-use crate::portal::portal_forcer::PortalForcer;
+use crate::portal::portal_forcer::NetherPortalForcer;
 use crate::server::Server;
 use crate::world::World;
 
@@ -24,13 +25,11 @@ pub fn calculate_destination(
     source_pos: BlockPos,
 ) -> Option<TeleportTransition> {
     // Determine target dimension (overworld <-> nether toggle)
-    let target_world = if ptr::eq(source_world.dimension, OVERWORLD) {
-        server.nether()
-    } else if ptr::eq(source_world.dimension, THE_NETHER) {
-        server.overworld()
-    } else {
-        return None; // Nether portals only work in overworld/nether
-    };
+    let target_world = match source_world.dimension {
+        d if ptr::eq(d, OVERWORLD) => server.nether(),
+        d if ptr::eq(d, THE_NETHER) => Some(server.overworld()),
+        _ => return None, // Nether portals only work in overworld/nether
+    }?;
 
     // Scale coordinates using coordinate_scale
     let scale = source_world.dimension.coordinate_scale / target_world.dimension.coordinate_scale;
@@ -50,7 +49,19 @@ pub fn calculate_destination(
     } else {
         128
     };
-    let exit_pos = PortalForcer::find_or_create(target_world, target_block, search_radius);
+    // Searches for an existing nether portal near the target position.
+    // If none is found, a new one is created at the target position.
+    let exit_pos = NetherPortalForcer::find_portal(target_world, target_block, search_radius)
+        .unwrap_or_else(|| {
+            NetherPortalForcer::create_portal(
+                target_world,
+                target_block,
+                source_world
+                    .get_block_state(&source_pos)
+                    .try_get_value(&BlockStateProperties::HORIZONTAL_AXIS)
+                    .unwrap_or_else(|| Axis::X),
+            )
+        });
 
     Some(TeleportTransition {
         target_world: Arc::clone(target_world),

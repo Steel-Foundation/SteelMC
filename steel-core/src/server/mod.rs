@@ -344,7 +344,7 @@ impl Server {
         players
     }
 
-    /// Returns the overworld.
+    /// Returns the overworld or if not exists the first world.
     pub fn overworld(&self) -> &Arc<World> {
         self.worlds.get(&OVERWORLD.key).unwrap_or_else(|| {
             self.worlds
@@ -354,24 +354,14 @@ impl Server {
         })
     }
 
-    /// Returns the nether.
-    pub fn nether(&self) -> &Arc<World> {
-        self.worlds.get(&THE_NETHER.key).unwrap_or_else(|| {
-            self.worlds
-                .values()
-                .next()
-                .expect("At least one world must exist")
-        })
+    /// Returns the nether or if not exists None.
+    pub fn nether(&self) -> Option<&Arc<World>> {
+        self.worlds.get(&THE_NETHER.key)
     }
 
-    /// Returns the end.
-    pub fn the_end(&self) -> &Arc<World> {
-        self.worlds.get(&THE_END.key).unwrap_or_else(|| {
-            self.worlds
-                .values()
-                .next()
-                .expect("At least one world must exist")
-        })
+    /// Returns the end or if not exists None.
+    pub fn the_end(&self) -> Option<&Arc<World>> {
+        self.worlds.get(&THE_END.key)
     }
 
     /// Queues a dimension change to be processed after the current tick.

@@ -30,6 +30,15 @@ pub enum Axis {
     Y,
     Z,
 }
+/// The direction of an axis.
+#[derive(Copy, Clone, Debug, Eq)]
+#[derive_const(PartialEq)]
+pub enum AxisDirection {
+    /// The axis goes towards positive.
+    Positive,
+    /// The axis goes towards negative.
+    Negative,
+}
 
 #[allow(missing_docs)]
 impl Axis {

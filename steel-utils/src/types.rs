@@ -421,6 +421,120 @@ impl BlockPos {
     pub const fn max(a: &BlockPos, b: &BlockPos) -> Self {
         Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
+
+    #[must_use]
+    pub const fn distance_squared(&self, other: &BlockPos) -> i32 {
+        let dx = self.0.x - other.0.x;
+        let dy = self.0.y - other.0.y;
+        let dz = self.0.z - other.0.z;
+        dx * dx + dy * dy + dz * dz
+    }
+
+    /// Returns an iterator that visits positions in an outward rectangular spiral
+    /// centered on `self`.
+    ///
+    /// The spiral is defined by two orthogonal directions, which become the four
+    /// axes of movement by also including their opposites. The iterator begins one
+    /// step in `second_direction.opposite()`, then winds outward in a growing
+    /// square pattern, cycling through the four directions every two "legs". Each
+    /// pair of legs grows by one step compared to the previous pair, producing the
+    /// classic expanding spiral shape.
+    ///
+    /// # Arguments
+    ///
+    /// * `radius` — Extent of the spiral. The iterator terminates after
+    ///   `radius * 4` legs have been completed.
+    /// * `first_direction` — Primary axis (e.g. `East`).
+    /// * `second_direction` — Secondary axis (e.g. `North`). **Must differ**
+    ///   from `first_direction`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `first_direction == second_direction`.
+    ///
+    /// # Visual Example
+    ///
+    /// With `first_direction = East`, `second_direction = North`, `radius = 2`,
+    /// cells are yielded in this numbered order (`S` = `self`):
+    ///
+    /// ```text
+    ///  y\x │ -2   -1    0   +1   +2
+    /// ─────┼─────────────────────────
+    ///   +1 │ 17   16   15   14   13
+    ///    0 │ 18    5   [S]   3   12
+    ///   -1 │ 19    6    1    2   11
+    ///   -2 │ 20    7    8    9   10
+    /// ```
+    ///
+    /// The winding path looks like this (each arrow = one step in that direction):
+    ///
+    /// ```text
+    ///   ←───←───←───←───┐
+    ///   │                │
+    ///   │   ←───←───┐   │
+    ///   │   │       │   │
+    ///   │   │  [S]──→   ↓
+    ///   │   │   ↑   ↓   ↓
+    ///   │   └───┘   ↓   ↓
+    ///   │           ↓   ↓
+    ///   └───────────┘   ↓
+    ///                   ↓  (stops)
+    /// ```
+    ///
+    /// # Algorithm Notes
+    ///
+    /// Internally the iterator tracks a `leg_length` counter and a `leg_index`
+    /// within the current leg. The direction of movement is always
+    /// `directions[(leg_length + 4) % 4]`, where `directions` cycles through
+    /// `[first, second, first.opposite(), second.opposite()]`. Once `leg_index`
+    /// reaches the current leg's size `((leg_length / 2) + 1)`, the leg advances.
+    /// Leg sizes increase by one every **two** legs, producing the widening spiral:
+    ///
+    /// ```text
+    ///  Leg  │  0   1   2   3   4   5   6   7
+    ///  Size │  1   1   2   2   3   3   4   4
+    ///  Dir  │  D0  D1  D2  D3  D0  D1  D2  D3
+    /// ```
+    ///
+    /// > ⚠️ Note: `self` itself may appear in the output sequence (at step 4 in
+    /// > the example above), as the spiral path can cross back through the origin.
+    #[must_use]
+    pub fn spiral_around(
+        &self,
+        radius: i32,
+        first_direction: Direction,
+        second_direction: Direction,
+    ) -> impl Iterator<Item = Self> {
+        assert!(
+            !matches!((first_direction, second_direction), (d1, d2) if d1 == d2),
+            "first_direction and second_direction must be different"
+        );
+        let direction = vec![
+            first_direction,
+            second_direction,
+            first_direction.opposite(),
+            second_direction.opposite(),
+        ];
+        let mut leg_length: i32 = -1;
+        let max_leg_length = radius * 4;
+        let mut leg_size = 0;
+        let mut leg_index = 0;
+        let pos = self.clone();
+        let mut last_pos = self.clone();
+        std::iter::from_fn(move || {
+            last_pos = last_pos.relative(direction[((leg_length + 4) as usize) % 4]);
+            if leg_index >= leg_size {
+                if leg_length >= max_leg_length {
+                    return None;
+                }
+                leg_length += 1;
+                leg_index = 0;
+                leg_size = ((leg_length / 2) + 1) as u32;
+            }
+            leg_index += 1;
+            return Some(pos);
+        })
+    }
 }
 
 impl ReadFrom for BlockPos {
@@ -429,6 +543,8 @@ impl ReadFrom for BlockPos {
         Ok(Self::from_i64(packed))
     }
 }
+
+pub struct SpiralAroundIter {}
 
 /// A chunk section position (16x16x16 region).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
