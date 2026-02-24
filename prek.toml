@@ -1,0 +1,59 @@
+# Prek pre-commit configuration for SteelMC
+# Install with: prek install
+# Run manually with: prek run --all-files
+
+exclude = '(\.json$|generated/)'
+
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "check-yaml" },
+    { id = "trailing-whitespace" },
+    { id = "end-of-file-fixer" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+    {
+        id = "cargo-fmt",
+        name = "cargo fmt",
+        language = "system",
+        entry = "cargo fmt --all -- --check",
+        types = ["rust"],
+        pass_filenames = false,
+    },
+    {
+        id = "cargo-clippy",
+        name = "cargo clippy",
+        language = "system",
+        entry = "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+        types = ["rust"],
+        pass_filenames = false,
+    },
+    {
+        id = "cargo-test",
+        name = "cargo test",
+        language = "system",
+        entry = "cargo test --workspace",
+        types = ["rust"],
+        pass_filenames = false,
+    },
+#    {
+#        id = "typos",
+#        name = "Spell Check (typos)",
+#        language = "system",
+#        entry = "typos",
+#        types = ["text"],
+#        pass_filenames = false,
+#    },
+    {
+        id = "cargo-audit",
+        name = "cargo audit",
+        language = "system",
+        entry = "cargo audit",
+        types = ["toml"],
+        files = "Cargo\\.(toml|lock)",
+        pass_filenames = false,
+    },
+]
