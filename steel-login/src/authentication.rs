@@ -56,8 +56,6 @@ pub enum TextureError {
     JSONError(String),
 }
 
-const MAX_RETRIES: u32 = 3;
-
 /// Authenticates a player with Mojang's servers.
 pub async fn mojang_authenticate(
     username: &str,
@@ -70,49 +68,34 @@ pub async fn mojang_authenticate(
     auth_url += SERVER_ID_ARG;
     auth_url += server_hash;
 
-    let mut last_error = AuthError::FailedResponse;
+    let Ok(response) = reqwest::get(&auth_url).await else {
+        return Err(AuthError::FailedResponse);
+    };
 
-    for _ in 0..MAX_RETRIES {
-        let Ok(response) = reqwest::get(&auth_url).await else {
-            last_error = AuthError::FailedResponse;
-            continue;
-        };
-
-        match response.status() {
-            StatusCode::OK => {
-                return response.json().await.map_err(|_| AuthError::FailedParse);
-            }
-            StatusCode::NO_CONTENT => last_error = AuthError::UnverifiedUsername,
-            other => last_error = AuthError::UnknownStatusCode(other),
+    match response.status() {
+        StatusCode::OK => response.json().await.map_err(|_| AuthError::FailedParse),
+        StatusCode::NO_CONTENT => {
+            log::warn!("Player {username} auth failed");
+            Err(AuthError::UnverifiedUsername)
         }
+        StatusCode::FORBIDDEN => Err(AuthError::Banned),
+        other => Err(AuthError::UnknownStatusCode(other)),
     }
-
-    log::warn!("Player {username} auth failed");
-
-    Err(last_error)
 }
 
 /// Converts a signed bytes big endian to a hex string.
+///
+/// Replicates Java's `new BigInteger(bytes).toString(16)`.
 #[must_use]
 pub fn signed_bytes_be_to_hex(bytes: &[u8]) -> String {
     if bytes.is_empty() {
         return "0".to_string();
     }
 
-    // Find the first non-zero byte to handle cases like `[0x00, 0x1a]`
-    let first_digit = bytes.iter().position(|&b| b != 0);
-
-    // If all bytes are zero, the number is 0.
-    let Some(start_index) = first_digit else {
-        return "0".to_string();
-    };
-
-    let significant_bytes = &bytes[start_index..];
-    let is_negative = (significant_bytes[0] & 0x80) != 0;
+    // Sign is determined by the MSB of the *first* byte (two's complement).
+    let is_negative = (bytes[0] & 0x80) != 0;
 
     if is_negative {
-        // Negative case: calculate two's complement of the original full byte array
-        // to preserve the correct number of bits for the calculation.
         let mut inverted_bytes: Vec<u8> = bytes.iter().map(|b| !*b).collect();
         for byte in inverted_bytes.iter_mut().rev() {
             let (result, carry) = byte.overflowing_add(1);
@@ -121,14 +104,16 @@ pub fn signed_bytes_be_to_hex(bytes: &[u8]) -> String {
                 break;
             }
         }
-
-        // Now, find the first significant digit of the *result*
-        let mag_start_index = inverted_bytes.iter().position(|&b| b != 0).unwrap_or(0);
-
-        // Format the result with a leading '-'
-        format!("-{}", hex::encode(&inverted_bytes[mag_start_index..]))
+        let hex = hex::encode(&inverted_bytes);
+        let trimmed = hex.trim_start_matches('0');
+        format!("-{}", if trimmed.is_empty() { "0" } else { trimmed })
     } else {
-        // Positive case: just encode the significant bytes.
-        hex::encode(significant_bytes)
+        let hex = hex::encode(bytes);
+        let trimmed = hex.trim_start_matches('0');
+        if trimmed.is_empty() {
+            "0".to_string()
+        } else {
+            trimmed.to_string()
+        }
     }
 }

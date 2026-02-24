@@ -1,8 +1,13 @@
 //! Login state packet handlers.
 
+use crate::{
+    AuthError, is_valid_player_name, mojang_authenticate, offline_uuid, signed_bytes_be_to_hex,
+    tcp_client::{ConnectionUpdate, JavaTcpClient},
+};
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
+use std::time::Duration;
 use steel_core::{config::STEEL_CONFIG, player::GameProfile};
 use steel_protocol::{
     packets::login::{CHello, CLoginCompression, CLoginFinished, SHello, SKey},
@@ -10,11 +15,7 @@ use steel_protocol::{
 };
 use steel_utils::translations;
 use text_components::TextComponent;
-
-use crate::{
-    AuthError, is_valid_player_name, mojang_authenticate, offline_uuid, signed_bytes_be_to_hex,
-    tcp_client::{ConnectionUpdate, JavaTcpClient},
-};
+use tokio::time::sleep;
 
 impl JavaTcpClient {
     /// Handles the hello packet during the login state.
@@ -84,26 +85,24 @@ impl JavaTcpClient {
             return;
         }
 
-        let Ok(secret_key) = self
-            .server
-            .key_store
-            .private_key
-            .decrypt(Pkcs1v15Encrypt, &packet.key)
-        else {
-            self.kick("Invalid key".into()).await;
-            return;
-        };
-
-        let secret_key: [u8; 16] = if let Ok(secret_key) = secret_key.try_into() {
-            secret_key
-        } else {
-            self.kick("Invalid key".into()).await;
-            return;
-        };
-
         let Ok(_) = self
             .connection_updates
-            .send(ConnectionUpdate::EnableEncryption(secret_key))
+            .send(ConnectionUpdate::EnableEncryption({
+                let Ok(secret_key) = self
+                    .server
+                    .key_store
+                    .private_key
+                    .decrypt(Pkcs1v15Encrypt, &packet.key)
+                else {
+                    self.kick("Invalid key".into()).await;
+                    return;
+                };
+                let Ok(secret_key) = secret_key.try_into() else {
+                    self.kick("Invalid key".into()).await;
+                    return;
+                };
+                secret_key
+            }))
         else {
             self.kick("Failed to send connection update".into()).await;
             return;
@@ -119,28 +118,54 @@ impl JavaTcpClient {
         };
 
         if STEEL_CONFIG.online_mode {
-            let server_hash = &Sha1::new()
-                .chain_update(secret_key)
-                .chain_update(&self.server.key_store.public_key_der)
-                .finalize();
-
-            let server_hash = signed_bytes_be_to_hex(server_hash);
-
-            match mojang_authenticate(&profile.name, &server_hash).await {
-                Ok(new_profile) => *profile = new_profile,
-                Err(error) => {
-                    self.kick(match error {
-                        AuthError::FailedResponse => TextComponent::translated(
-                            translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN.msg(),
-                        ),
-                        AuthError::UnverifiedUsername => TextComponent::translated(
-                            translations::MULTIPLAYER_DISCONNECT_UNVERIFIED_USERNAME.msg(),
-                        ),
-                        e => e.to_string().into(),
-                    })
-                    .await;
+            let mut i = 1;
+            let retries = 3;
+            let waiting_time = 1;
+            loop {
+                let Ok(secret_key) = self
+                    .server
+                    .key_store
+                    .private_key
+                    .decrypt(Pkcs1v15Encrypt, &packet.key)
+                else {
+                    self.kick("Invalid key".into()).await;
                     return;
+                };
+                let Ok(secret_key): Result<[u8; 16], _> = secret_key.try_into() else {
+                    self.kick("Invalid key".into()).await;
+                    return;
+                };
+                let server_hash = signed_bytes_be_to_hex(
+                    &Sha1::new()
+                        .chain_update(secret_key)
+                        .chain_update(&self.server.key_store.public_key_der)
+                        .finalize(),
+                );
+                let username = profile.name.clone();
+                match mojang_authenticate(&username, &server_hash).await {
+                    Ok(val) => {
+                        *profile = val;
+                        break;
+                    }
+                    Err(error) => {
+                        if i > retries {
+                            self.kick(match error {
+                                AuthError::FailedResponse => TextComponent::translated(
+                                    translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN.msg(),
+                                ),
+                                AuthError::UnverifiedUsername => TextComponent::translated(
+                                    translations::MULTIPLAYER_DISCONNECT_UNVERIFIED_USERNAME.msg(),
+                                ),
+                                e => e.to_string().into(),
+                            })
+                            .await;
+                            return;
+                        }
+                        i += 1;
+                    }
                 }
+                log::warn!("Player {username} auth failed");
+                sleep(Duration::from_secs(waiting_time)).await;
             }
         }
 
