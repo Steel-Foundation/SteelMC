@@ -50,3 +50,14 @@ It focuses on clean code, performance, extensibility, and ease of use.
 
 > [!IMPORTANT]
 > This project is still in a very early stage of development.
+
+### Precommit Hook
+This repository uses [prek](https://prek.j178.dev/) to ensure that all commits follow the style guide and makes sure the cicd will pass.
+To install the hook, some things needed to be installed first:
+```bash
+cargo install prek typos-cli --locked
+cargo install cargo-audit --locked --features=fix
+```
+
+Then you can run `prek install` to install the hook and it is configured to run automatically before every commit.
+It will fix some things already for you, but the commit will still fail and please check the changes.
