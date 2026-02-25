@@ -39,30 +39,30 @@ impl NetherPortalForcer {
         let mut sqrt_distance_partial = -1;
         let mut full_position: Option<BlockPos> = None;
         let mut partial_position: Option<BlockPos> = None;
-        for col in target.spiral_around(
+        
+        for mut column in target.spiral_around(
             Self::NETHER_PORTAL_RADIUS,
             Direction::East,
             Direction::South,
         ) {
             //TODO: worldborder check
-            let col = col.relative(direction.opposite());
             let height = cmp::min(max_placeable_y, world.get_height());
+            let mut y = height;
             // Bug 1 fix: iterate downward
-            for y in (world.get_min_y()..=height).rev() {
+            while y > world.get_min_y() {
                 // Bug 4 fix: use col.at_y(y) so col is never mutated
-                let pos = col.at_y(y);
-                if Self::can_replace_block(world, &pos) {
+                column = column.at_y(y);
+                if Self::can_replace_block(world, &column) {
                     let empty_y = y;
                     // Bug 3 fix: track last replaceable y with a separate counter
-                    let mut bottom_y = y;
-                    while bottom_y > world.get_min_y()
-                        && Self::can_replace_block(world, &col.at_y(bottom_y - 1))
+                    while y > world.get_min_y()
+                        && Self::can_replace_block(world, &column.at_y(y - 1))
                     {
-                        bottom_y -= 1;
+                        y -= 1;
                     }
-                    let column = col.at_y(bottom_y);
-                    if bottom_y + 4 <= max_placeable_y {
-                        let delta = empty_y - bottom_y;
+                    column = column.at_y(y);
+                    if y + 4 <= max_placeable_y {
+                        let delta = empty_y - y;
                         if delta <= 0 || delta >= 3 {
                             if Self::can_host_frame(world, &column, direction, 0) {
                                 let dis = target.distance_squared(&column);
@@ -83,6 +83,7 @@ impl NetherPortalForcer {
                         }
                     }
                 }
+                y -= 1;
             }
         }
         if full_position.is_none() {
@@ -124,19 +125,9 @@ impl NetherPortalForcer {
             full_position = Some(fallback);
         }
 
-        if let Some(pos) = full_position {
-            tracing::warn!(
-                "Created nether portal at x: {}, y: {}, z: {}",
-                pos.x(),
-                pos.y(),
-                pos.z()
-            );
-        }
-
         let portal_block = vanilla_blocks::NETHER_PORTAL
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_AXIS, Axis::Z);
-        let air = vanilla_blocks::AIR.default_state();
+            .set_value(&BlockStateProperties::HORIZONTAL_AXIS, Axis::X);
         let flags = UpdateFlags::UPDATE_ALL;
         let pos = full_position.unwrap();
         let base_x = pos.x();
@@ -165,7 +156,6 @@ impl NetherPortalForcer {
                 }
             }
         }
-
         // Return the bottom-left interior position
         BlockPos::new(base_x + 1, base_y + 1, base_z)
     }

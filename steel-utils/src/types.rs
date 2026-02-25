@@ -529,7 +529,6 @@ impl BlockPos {
         let max_leg_length = radius * 4;
         let mut leg_size = 0;
         let mut leg_index = 0;
-        let pos = self.clone();
         let mut last_pos = self.clone();
         std::iter::from_fn(move || {
             last_pos = last_pos.relative(direction[((leg_length + 4) as usize) % 4]);
@@ -542,7 +541,7 @@ impl BlockPos {
                 leg_size = ((leg_length / 2) + 1) as u32;
             }
             leg_index += 1;
-            return Some(pos);
+            return Some(last_pos);
         })
     }
 }

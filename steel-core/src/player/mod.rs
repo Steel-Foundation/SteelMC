@@ -96,7 +96,7 @@ use steel_utils::BlockPos;
 use steel_utils::serial::write::{OptionalBlockPos, OptionalIdentifier};
 
 use steel_utils::types::InteractionHand;
-use steel_utils::{ChunkPos, math::Vector3, translations};
+use steel_utils::{ChunkPos, SectionPos, math::Vector3, translations};
 
 use crate::entity::LivingEntity;
 use crate::inventory::{
@@ -497,19 +497,55 @@ impl Player {
                     };
 
                 let mut processor = self.portal_processor.lock();
+
+                // Pre-warm destination chunks on the first tick (when processor is None).
+                // This gives generation ~80 ticks (4 s) to complete before the timer fires.
+                if processor.is_none() {
+                    if let Some(server) = self.server.upgrade()
+                        && let Some((target_world, target_block, _)) =
+                            nether_portal::destination_block(&server, &world, portal_pos)
+                    {
+                        let cx = SectionPos::block_to_section_coord(target_block.x());
+                        let cz = SectionPos::block_to_section_coord(target_block.z());
+                        let mut tickets = target_world.chunk_map.chunk_tickets.lock();
+                        for dx in -2i32..=2 {
+                            for dz in -2i32..=2 {
+                                tickets.add_ticket(ChunkPos::new(cx + dx, cz + dz), 0);
+                            }
+                        }
+                    }
+                }
+
                 let proc = processor
                     .get_or_insert_with(|| PortalProcessor::new(portal_pos, transition_time));
 
                 if proc.tick() {
-                    // Time to teleport - queue the dimension change
+                    // proc.tick() keeps returning true once fired — natural retry loop.
+                    // Only proceed when the destination chunk is confirmed loaded.
                     if let Some(server) = self.server.upgrade()
-                        && let Some(transition) =
-                            nether_portal::calculate_destination(&server, &world, portal_pos)
-                        && let Some(player_arc) = world.players.get_by_entity_id(self.id)
+                        && let Some((target_world, target_block, _)) =
+                            nether_portal::destination_block(&server, &world, portal_pos)
                     {
-                        server.queue_dimension_change(player_arc, transition);
+                        let target_chunk = ChunkPos::new(
+                            SectionPos::block_to_section_coord(target_block.x()),
+                            SectionPos::block_to_section_coord(target_block.z()),
+                        );
+                        if target_world
+                            .chunk_map
+                            .with_full_chunk(&target_chunk, |_| ())
+                            .is_some()
+                        {
+                            // Chunk is loaded — safe to create/find portal and teleport.
+                            if let Some(transition) =
+                                nether_portal::calculate_destination(&server, &world, portal_pos)
+                                && let Some(player_arc) = world.players.get_by_entity_id(self.id)
+                            {
+                                server.queue_dimension_change(player_arc, transition);
+                            }
+                            *processor = None; // Stop retrying regardless of success/failure.
+                        }
+                        // else: chunk not ready yet — processor stays alive, retry next tick.
                     }
-                    *processor = None;
                 }
             }
         } else {
