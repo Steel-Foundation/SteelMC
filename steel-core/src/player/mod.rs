@@ -729,25 +729,33 @@ impl Player {
                 };
 
                 steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-                self.world.broadcast_chat(
-                    chat_packet,
-                    Arc::clone(&player),
-                    last_seen,
-                    Some(sig_array),
-                );
-            } else {
-                self.world.broadcast_unsigned_chat(
-                    chat_packet,
+                if let Some(server) = self.server.upgrade() {
+                    for world in server.worlds.values() {
+                        world.broadcast_chat(
+                            chat_packet.clone(),
+                            Arc::clone(&player),
+                            last_seen.clone(),
+                            Some(sig_array),
+                        );
+                    }
+                }
+            } else if let Some(server) = self.server.upgrade() {
+                for world in server.worlds.values() {
+                    world.broadcast_unsigned_chat(
+                        chat_packet.clone(),
+                        &player.gameprofile.name,
+                        &chat_message,
+                    );
+                }
+            }
+        } else if let Some(server) = self.server.upgrade() {
+            for world in server.worlds.values() {
+                world.broadcast_unsigned_chat(
+                    chat_packet.clone(),
                     &player.gameprofile.name,
                     &chat_message,
                 );
             }
-        } else {
-            self.world.broadcast_unsigned_chat(
-                chat_packet,
-                &player.gameprofile.name,
-                &chat_message,
-            );
         }
     }
 
