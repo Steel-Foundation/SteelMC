@@ -39,7 +39,7 @@ impl NetherPortalForcer {
         let mut sqrt_distance_partial = -1;
         let mut full_position: Option<BlockPos> = None;
         let mut partial_position: Option<BlockPos> = None;
-        
+        let start = std::time::Instant::now();
         for mut column in target.spiral_around(
             Self::NETHER_PORTAL_RADIUS,
             Direction::East,
@@ -90,6 +90,9 @@ impl NetherPortalForcer {
             full_position = partial_position;
         }
 
+        let elapsed = start.elapsed();
+        println!("Portal search took {}µs", elapsed.as_micros());
+
         let obsidian = vanilla_blocks::OBSIDIAN.default_state();
         let air = vanilla_blocks::AIR.default_state();
 
@@ -125,6 +128,9 @@ impl NetherPortalForcer {
             full_position = Some(fallback);
         }
 
+        let elapsed = start.elapsed();
+        println!("Portal create space to spawn took {}µs", elapsed.as_micros());
+
         let portal_block = vanilla_blocks::NETHER_PORTAL
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_AXIS, Axis::X);
@@ -156,6 +162,9 @@ impl NetherPortalForcer {
                 }
             }
         }
+
+        let elapsed = start.elapsed();
+        println!("Portal creation took {}µs", elapsed.as_micros());
         // Return the bottom-left interior position
         BlockPos::new(base_x + 1, base_y + 1, base_z)
     }
