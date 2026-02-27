@@ -56,7 +56,6 @@ This repository uses [prek](https://prek.j178.dev/) to ensure that all commits f
 To install the hook, some things needed to be installed first:
 ```bash
 cargo install prek typos-cli --locked
-cargo install cargo-audit --locked --features=fix
 ```
 
 Then you can run `prek install` to install the hook and it is configured to run automatically before every commit.

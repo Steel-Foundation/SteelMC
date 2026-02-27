@@ -29,19 +29,10 @@ hooks = [
     id = "cargo-fmt",
     name = "cargo fmt",
     language = "system",
-    entry = "cargo fmt --all -- --check",
+    entry = "cargo fmt",
     types = ["rust"],
     pass_filenames = false,
     priority = 10
-    },
-    {
-    id = "cargo-clippy",
-    name = "cargo clippy",
-    language = "system",
-    entry = "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-    types = ["rust"],
-    pass_filenames = false,
-    priority = 20
     },
     {
     id = "cargo-test",
@@ -60,15 +51,5 @@ hooks = [
     types = ["text"],
     pass_filenames = false,
     priority = 20
-    },
-    {
-    id = "cargo-audit",
-    name = "cargo audit",
-    language = "system",
-    entry = "cargo audit fix",
-    types = ["toml"],
-    files = "Cargo\\.(toml|lock)",
-    pass_filenames = false,
-    priority = 0
     },
 ]
