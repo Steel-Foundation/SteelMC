@@ -4,7 +4,7 @@
 //! - `MultiNoiseBiomeSource` — Overworld and Nether (climate parameter matching via `RTree`)
 //! - `TheEndBiomeSource` — The End (spatial + erosion threshold)
 //!
-//! Each dimension creates a different `BiomeSource` implementation. The chunk generator
+//! Each dimension creates a different `BiomeSourceKind` variant. The chunk generator
 //! calls `chunk_sampler()` per chunk to get a `ChunkBiomeSampler` that holds per-chunk
 //! caches (column cache, `RTree` warm-start index).
 
@@ -17,21 +17,58 @@ use steel_registry::vanilla_biomes;
 use super::end_islands::EndIslands;
 use super::{NetherClimateSampler, OverworldClimateSampler};
 
-/// Determines biomes at quart positions for a dimension.
+/// Dimension-specific biome source.
 ///
-/// Implementations hold shared state (noise generators, parameter lists) and
-/// create per-chunk samplers via [`chunk_sampler`](BiomeSource::chunk_sampler).
-pub trait BiomeSource: Send + Sync {
+/// Each variant holds shared state (noise generators, parameter lists) and
+/// creates per-chunk samplers via [`chunk_sampler`](BiomeSourceKind::chunk_sampler).
+pub enum BiomeSourceKind {
+    /// Overworld biome source (multi-noise climate matching).
+    Overworld(OverworldBiomeSource),
+    /// Nether biome source (multi-noise temperature/vegetation matching).
+    Nether(NetherBiomeSource),
+    /// End biome source (spatial distance + erosion threshold).
+    ///
+    /// Boxed because `EndIslands` is ~2KB (simplex noise permutation table),
+    /// while the other variants are pointer-sized.
+    End(Box<EndBiomeSource>),
+}
+
+impl BiomeSourceKind {
+    /// Create an overworld biome source with the given world seed.
+    #[must_use]
+    pub fn overworld(seed: u64) -> Self {
+        Self::Overworld(OverworldBiomeSource::new(seed))
+    }
+
+    /// Create a nether biome source with the given world seed.
+    #[must_use]
+    pub fn nether(seed: u64) -> Self {
+        Self::Nether(NetherBiomeSource::new(seed))
+    }
+
+    /// Create an end biome source with the given world seed.
+    #[must_use]
+    pub fn end(seed: u64) -> Self {
+        Self::End(Box::new(EndBiomeSource::new(seed)))
+    }
+
     /// Create a per-chunk biome sampler.
     ///
     /// The returned sampler holds per-chunk caches and should be dropped after
     /// the chunk's biomes are fully populated.
-    fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_>;
+    #[must_use]
+    pub fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
+        match self {
+            Self::Overworld(source) => source.chunk_sampler(),
+            Self::Nether(source) => source.chunk_sampler(),
+            Self::End(source) => source.chunk_sampler(),
+        }
+    }
 }
 
 /// Per-chunk biome sampler with internal caches.
 ///
-/// Created by [`BiomeSource::chunk_sampler`] for each chunk. Holds caches like
+/// Created by [`BiomeSourceKind::chunk_sampler`] for each chunk. Holds caches like
 /// column-level density function values and `RTree` warm-start indices that persist
 /// across positions within a single chunk.
 pub trait ChunkBiomeSampler {
@@ -63,9 +100,7 @@ impl OverworldBiomeSource {
     pub const fn climate_sampler(&self) -> &OverworldClimateSampler {
         &self.climate_sampler
     }
-}
 
-impl BiomeSource for OverworldBiomeSource {
     fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
         Box::new(OverworldChunkBiomeSampler {
             source: self,
@@ -111,9 +146,7 @@ impl NetherBiomeSource {
             climate_sampler: NetherClimateSampler::new(seed),
         }
     }
-}
 
-impl BiomeSource for NetherBiomeSource {
     fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
         Box::new(NetherChunkBiomeSampler {
             source: self,
@@ -170,9 +203,7 @@ impl EndBiomeSource {
             end_islands: EndIslands::new(seed),
         }
     }
-}
 
-impl BiomeSource for EndBiomeSource {
     fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
         Box::new(EndChunkBiomeSampler { source: self })
     }

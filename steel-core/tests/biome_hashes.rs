@@ -10,9 +10,7 @@ use std::thread;
 
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use steel_core::worldgen::{
-    BiomeSource, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
-};
+use steel_core::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
 use steel_registry::biome::BiomeRef;
 
 /// Top-level JSON structure for biome hashes.
@@ -81,8 +79,8 @@ fn chunk_biome_hash(
     format!("{:x}", ctx.finalize())
 }
 
-/// Verify biome hashes for a dimension using a [`BiomeSource`].
-fn verify_dimension(source: &dyn BiomeSource, dim: &DimensionHashes, dimension_name: &str) {
+/// Verify biome hashes for a dimension using a [`BiomeSourceKind`].
+fn verify_dimension(source: &BiomeSourceKind, dim: &DimensionHashes, dimension_name: &str) {
     let mut mismatches = Vec::new();
 
     for (chunk_x, chunk_z, expected_hash) in &dim.hashes {
@@ -118,7 +116,7 @@ fn overworld_biome_hashes_match_vanilla() {
     let builder = thread::Builder::new().stack_size(16 * 1024 * 1024);
     let handle = builder
         .spawn(move || {
-            let source = OverworldBiomeSource::new(expected.seed);
+            let source = BiomeSourceKind::overworld(expected.seed);
             verify_dimension(&source, &expected.overworld, "overworld");
         })
         .expect("failed to spawn test thread");
@@ -133,7 +131,7 @@ fn nether_biome_hashes_match_vanilla() {
     let builder = thread::Builder::new().stack_size(16 * 1024 * 1024);
     let handle = builder
         .spawn(move || {
-            let source = NetherBiomeSource::new(expected.seed);
+            let source = BiomeSourceKind::nether(expected.seed);
             verify_dimension(&source, &expected.the_nether, "the_nether");
         })
         .expect("failed to spawn test thread");
@@ -145,6 +143,6 @@ fn nether_biome_hashes_match_vanilla() {
 fn end_biome_hashes_match_vanilla() {
     let expected = load_expected_hashes();
 
-    let source = EndBiomeSource::new(expected.seed);
+    let source = BiomeSourceKind::end(expected.seed);
     verify_dimension(&source, &expected.the_end, "the_end");
 }

@@ -2,22 +2,22 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
-use crate::worldgen::BiomeSource;
+use crate::worldgen::BiomeSourceKind;
 
 /// A chunk generator for vanilla (normal) world generation.
 ///
 /// Matches vanilla's `NoiseBasedChunkGenerator`. The biome source is pluggable
 /// per-dimension — overworld, nether, and end each provide a different
-/// [`BiomeSource`] implementation.
+/// [`BiomeSourceKind`] variant.
 pub struct VanillaGenerator {
     /// Biome source for this dimension. Determines biomes at each quart position.
-    biome_source: Box<dyn BiomeSource>,
+    biome_source: BiomeSourceKind,
 }
 
 impl VanillaGenerator {
     /// Creates a new `VanillaGenerator` with the given biome source.
     #[must_use]
-    pub fn new(biome_source: Box<dyn BiomeSource>) -> Self {
+    pub const fn new(biome_source: BiomeSourceKind) -> Self {
         Self { biome_source }
     }
 }

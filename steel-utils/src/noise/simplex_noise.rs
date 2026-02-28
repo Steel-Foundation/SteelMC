@@ -208,7 +208,11 @@ mod tests {
         for i in 0..10 {
             let x = f64::from(i) * 13.7;
             let z = f64::from(i) * 7.3;
-            assert_eq!(noise1.get_value_2d(x, z), noise2.get_value_2d(x, z));
+            #[allow(clippy::float_cmp)]
+            // Determinism test: identical inputs must produce identical outputs
+            {
+                assert_eq!(noise1.get_value_2d(x, z), noise2.get_value_2d(x, z));
+            }
         }
     }
 

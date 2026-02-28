@@ -9,7 +9,7 @@ mod end_islands;
 mod nether_climate_sampler;
 
 pub use biome_source::{
-    BiomeSource, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
+    BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
 };
 pub use climate_sampler::OverworldClimateSampler;
 pub use nether_climate_sampler::NetherClimateSampler;
