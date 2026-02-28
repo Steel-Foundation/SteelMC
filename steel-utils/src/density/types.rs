@@ -465,6 +465,9 @@ pub struct BlendedNoise {
     pub noise: Option<NormalNoise>,
 }
 
+// TODO: BlendedNoise is currently a single-noise approximation. Vanilla uses three separate
+// PerlinNoise generators (minLimitNoise, maxLimitNoise, mainNoise) with multi-octave blending
+// via clampedLerp. Full implementation also requires `noiseWithDerivative` on ImprovedNoise.
 impl DensityFunctionOps for BlendedNoise {
     fn compute(&self, ctx: &DensityContext) -> f64 {
         if let Some(noise) = &self.noise {
@@ -923,23 +926,24 @@ fn resolve_spline(
     registry: &FxHashMap<String, Arc<DensityFunction>>,
     noises: &FxHashMap<String, NormalNoise>,
 ) -> CubicSpline {
-    CubicSpline {
-        coordinate: Arc::new(spline.coordinate.resolve_inner(registry, noises)),
-        points: spline
-            .points
-            .iter()
-            .map(|p| SplinePoint {
-                location: p.location,
-                value: match &p.value {
-                    SplineValue::Constant(v) => SplineValue::Constant(*v),
-                    SplineValue::Spline(nested) => {
-                        SplineValue::Spline(Arc::new(resolve_spline(nested, registry, noises)))
-                    }
-                },
-                derivative: p.derivative,
-            })
-            .collect(),
-    }
+    let points: Vec<SplinePoint> = spline
+        .points
+        .iter()
+        .map(|p| SplinePoint {
+            location: p.location,
+            value: match &p.value {
+                SplineValue::Constant(v) => SplineValue::Constant(*v),
+                SplineValue::Spline(nested) => {
+                    SplineValue::Spline(Arc::new(resolve_spline(nested, registry, noises)))
+                }
+            },
+            derivative: p.derivative,
+        })
+        .collect();
+    CubicSpline::new(
+        Arc::new(spline.coordinate.resolve_inner(registry, noises)),
+        points,
+    )
 }
 
 // ── Cache for density function evaluation ───────────────────────────────────
@@ -1046,7 +1050,7 @@ fn compute_spline_at(spline: &CubicSpline, input: f32, ctx: &DensityContext) -> 
 
     let last_index = spline.points.len() - 1;
 
-    let start = find_interval_start(&spline.points, input);
+    let start = find_interval_start(&spline.locations, input);
 
     if start < 0 {
         let p = &spline.points[0];
@@ -1096,7 +1100,7 @@ fn compute_spline_at_cached(
 
     let last_index = spline.points.len() - 1;
 
-    let start = find_interval_start(&spline.points, input);
+    let start = find_interval_start(&spline.locations, input);
 
     if start < 0 {
         let p = &spline.points[0];
@@ -1131,12 +1135,11 @@ fn get_spline_point_value_cached(
 
 // ── Shared spline helpers ───────────────────────────────────────────────────
 
-/// Binary search to find the interval start: largest i where points[i].location <= input.
+/// Binary search to find the interval start: largest i where locations[i] <= input.
 ///
 /// Returns -1 if input is before all points.
-fn find_interval_start(points: &[SplinePoint], input: f32) -> i32 {
-    let locations: Vec<f32> = points.iter().map(|p| p.location).collect();
-    super::spline_eval::find_interval(&locations, input)
+fn find_interval_start(locations: &[f32], input: f32) -> i32 {
+    super::spline_eval::find_interval(locations, input)
 }
 
 /// Hermite cubic interpolation between adjacent spline points (non-cached).
@@ -1239,6 +1242,8 @@ pub struct CubicSpline {
     pub coordinate: Arc<DensityFunction>,
     /// The spline points
     pub points: Vec<SplinePoint>,
+    /// Pre-extracted point locations for binary search (avoids allocation per eval).
+    pub locations: Vec<f32>,
 }
 
 /// A point in a cubic spline.
@@ -1264,8 +1269,13 @@ pub enum SplineValue {
 impl CubicSpline {
     /// Create a new cubic spline.
     #[must_use]
-    pub const fn new(coordinate: Arc<DensityFunction>, points: Vec<SplinePoint>) -> Self {
-        Self { coordinate, points }
+    pub fn new(coordinate: Arc<DensityFunction>, points: Vec<SplinePoint>) -> Self {
+        let locations = points.iter().map(|p| p.location).collect();
+        Self {
+            coordinate,
+            points,
+            locations,
+        }
     }
 }
 

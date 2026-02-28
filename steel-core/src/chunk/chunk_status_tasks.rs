@@ -105,6 +105,7 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    // TODO: Wire up to context.generator.build_surface() once surface generation is implemented
     pub fn generate_surface(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -114,6 +115,7 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    // TODO: Wire up to context.generator.apply_carvers() once carver generation is implemented
     pub fn generate_carvers(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -123,6 +125,7 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    // TODO: Wire up to context.generator.apply_biome_decorations() once feature generation is implemented
     pub fn generate_features(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,

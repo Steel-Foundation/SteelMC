@@ -100,7 +100,8 @@ pub fn lerp3(
 ///
 /// Clamps the interpolation factor to [0, 1] before interpolating.
 ///
-/// Java reference: `Mth.clampedLerp(double, double, double)`
+/// Java reference: `Mth.clampedLerp(double, double, double)`.
+/// Note: Vanilla's parameter order is `(factor, min, max)`, ours is `(min, max, factor)`.
 #[inline]
 #[must_use]
 pub fn clamped_lerp(min: f64, max: f64, factor: f64) -> f64 {

@@ -597,6 +597,7 @@ impl TranspileContext {
 
             DensityFunction::Spline(s) => self.gen_spline_expr(&s.spline, input, is_flat),
 
+            // TODO: Single-noise approximation — see BlendedNoise TODO in types.rs
             DensityFunction::BlendedNoise(bn) => {
                 let field = noise_field_ident("minecraft:offset");
                 let xz = Literal::f64_unsuffixed(bn.xz_scale / bn.xz_factor);

@@ -517,21 +517,21 @@ fn json_marker(kind: MarkerType, argument: &DensityFunctionJson) -> DensityFunct
 
 fn json_spline_to_cubic(spline: &SplineJson) -> CubicSpline {
     match spline {
-        SplineJson::Constant(v) => CubicSpline {
-            coordinate: Arc::new(DensityFunction::constant(0.0)),
-            points: vec![SplinePoint {
+        SplineJson::Constant(v) => CubicSpline::new(
+            Arc::new(DensityFunction::constant(0.0)),
+            vec![SplinePoint {
                 location: 0.0,
                 value: SplineValue::Constant(*v),
                 derivative: 0.0,
             }],
-        },
-        SplineJson::Multipoint { coordinate, points } => CubicSpline {
-            coordinate: Arc::new(DensityFunction::Reference(Reference {
+        ),
+        SplineJson::Multipoint { coordinate, points } => CubicSpline::new(
+            Arc::new(DensityFunction::Reference(Reference {
                 id: coordinate.clone(),
                 resolved: None,
             })),
-            points: points.iter().map(json_spline_point).collect(),
-        },
+            points.iter().map(json_spline_point).collect(),
+        ),
     }
 }
 

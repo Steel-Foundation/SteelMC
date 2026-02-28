@@ -15,7 +15,7 @@ pub struct FlatChunkGenerator {
     /// The block state id for grass blocks.
     pub grass: BlockStateId,
     /// The biome ID for plains (cached at construction).
-    biome_id: u8,
+    biome_id: u16,
 }
 
 impl FlatChunkGenerator {
@@ -25,7 +25,7 @@ impl FlatChunkGenerator {
         let biome_id = REGISTRY
             .biomes
             .id_from_key(&Identifier::vanilla("plains".to_string()))
-            .unwrap_or(0) as u8;
+            .unwrap_or(0) as u16;
 
         Self {
             bedrock,

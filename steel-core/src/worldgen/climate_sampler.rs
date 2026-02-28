@@ -9,6 +9,9 @@ use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::random::{Random, xoroshiro::Xoroshiro};
 
 /// Climate sampler that uses compiled vanilla density functions.
+///
+// TODO: Implement `spawn_target()` matching vanilla's `OverworldBiomeBuilder.spawnTarget()`
+// and `Climate.Sampler.spawnTarget` for spawn point selection.
 pub struct VanillaClimateSampler {
     /// All noise generators needed by the overworld density functions.
     /// Boxed because `OverworldNoises` is ~5600 bytes (35 `NormalNoise` fields).
@@ -49,6 +52,8 @@ impl VanillaClimateSampler {
         // Ensure column cache is populated for this (x, z)
         cache.ensure(block_x, block_z, &self.noises);
 
+        // Density functions return f64 but vanilla truncates to float before quantizing.
+        // The f64→f32→f64 round-trip through quantize_coord is intentional for parity.
         let temp =
             density_functions::router_temperature(&self.noises, cache, block_x, block_y, block_z)
                 as f32;

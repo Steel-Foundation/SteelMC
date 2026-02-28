@@ -14,7 +14,11 @@ use crate::random::{PositionalRandom, RandomSource, RandomSplitter};
 #[allow(clippy::unreadable_literal)]
 pub const INPUT_FACTOR: f64 = 1.0181268882175227;
 
-/// Value factor numerator matching vanilla's literal 0.16666666666666666 (1/6).
+/// Value factor numerator matching vanilla's inline literal `0.16666666666666666` (1/6).
+///
+/// Note: Vanilla declares a constant `TARGET_DEVIATION = 0.3333333333333333` (1/3) on
+/// `NormalNoise` but the actual value used inline in the constructor is 1/6. We match
+/// the inline value that's actually used.
 #[allow(clippy::unreadable_literal)]
 const TARGET_DEVIATION: f64 = 0.16666666666666666;
 

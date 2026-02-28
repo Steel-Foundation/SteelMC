@@ -599,6 +599,11 @@ impl<T> ParameterList<T> {
     ///
     /// Uses R-Tree search matching vanilla's `Climate.ParameterList.findValue()`.
     ///
+    /// Note: Vanilla warm-starts with `lastResult` via `ThreadLocal`, which can
+    /// affect tie-breaking on equal-distance candidates. This version starts
+    /// from `i64::MAX` (no warm-start). Use `find_value_cached` for the hot
+    /// path to match vanilla's tie-breaking behavior.
+    ///
     /// # Panics
     ///
     /// Panics if the R-Tree search fails to find any matching value.

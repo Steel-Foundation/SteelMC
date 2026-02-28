@@ -560,7 +560,12 @@ impl Server {
         match STEEL_CONFIG.world_generator {
             WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
             WorldGeneratorTypes::Vanilla => {
-                ChunkGeneratorType::Vanilla(VanillaGenerator::new(seed as u64))
+                if ptr::eq(dimension, OVERWORLD) {
+                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(seed as u64))
+                } else {
+                    // TODO: Implement nether/end generators
+                    ChunkGeneratorType::Empty(EmptyChunkGenerator::new())
+                }
             }
             WorldGeneratorTypes::Flat => {
                 if ptr::eq(dimension, THE_NETHER) {

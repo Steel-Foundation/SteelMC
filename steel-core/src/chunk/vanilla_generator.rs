@@ -66,7 +66,7 @@ impl ChunkGenerator for VanillaGenerator {
 
                         // Get the biome for this climate target
                         let biome = get_overworld_biome_cached(&target, &mut biome_cache);
-                        let biome_id = *REGISTRY.biomes.get_id(biome) as u8;
+                        let biome_id = *REGISTRY.biomes.get_id(biome) as u16;
 
                         section_guard.biomes.set(
                             local_quart_x as usize,

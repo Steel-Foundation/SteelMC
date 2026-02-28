@@ -33,6 +33,9 @@ const GRADIENT: [[i32; 3]; 16] = [
 /// This implements the improved Perlin noise algorithm as used in Minecraft.
 /// Each instance has a permutation table and offset values initialized from
 /// a random source.
+///
+// TODO: Implement `noise_with_derivative()` returning `(value, dx, dy, dz)` for
+// full BlendedNoise support and density function derivatives.
 #[derive(Debug, Clone)]
 pub struct ImprovedNoise {
     /// Permutation table (256 bytes)
@@ -111,8 +114,8 @@ impl ImprovedNoise {
             } else {
                 yr
             };
-            // SHIFT_UP_EPSILON = 1.0E-7F in Java
-            (fudge_limit / y_scale + 1.0e-7_f64).floor() * y_scale
+            // SHIFT_UP_EPSILON = 1.0E-7F in Java (float literal promoted to double)
+            (fudge_limit / y_scale + f64::from(1.0e-7_f32)).floor() * y_scale
         } else {
             0.0
         };
