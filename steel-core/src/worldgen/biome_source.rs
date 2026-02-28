@@ -224,7 +224,7 @@ impl EndBiomeSource {
         }
     }
 
-    fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
+    const fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
         ChunkBiomeSampler::End(EndChunkBiomeSampler { source: self })
     }
 }
