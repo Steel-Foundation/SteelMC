@@ -83,8 +83,13 @@ impl Random for LegacyRandom {
     }
 
     fn next_f64(&mut self) -> f64 {
-        (((self.next(26) as u64) << 27) | (self.next(27) as u64)) as f64
-            * f64::from(1.110_223e-16_f32)
+        // Matches vanilla's BitRandomSource.nextDouble():
+        //   combined * 1.110223E-16F
+        // Java's `long * float` promotes the long to float FIRST, then multiplies
+        // as float, then widens to double. This float-precision intermediate step
+        // is critical for vanilla-matching noise generation.
+        let combined = ((self.next(26) as u64) << 27) | (self.next(27) as u64);
+        f64::from(combined as f32 * 1.110_223e-16_f32)
     }
 
     fn next_bool(&mut self) -> bool {
@@ -205,17 +210,21 @@ mod test {
     fn test_next_f64() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble() which uses
+        // float-precision multiplication: `combined * 1.110223E-16F`.
+        // These differ from java.util.Random.nextDouble() which uses
+        // double-precision division.
         let values = [
-            0.730_967_787_376_657,
-            0.240_536_415_671_485_87,
-            0.637_417_425_350_108_3,
-            0.550_437_005_117_633_9,
-            0.597_545_277_797_201_8,
-            0.333_218_399_476_649_8,
-            0.385_189_184_740_718_5,
-            0.984_841_540_199_809,
-            0.879_182_517_872_480_1,
-            0.941_249_179_482_114_4,
+            0.73096776008605957,
+            0.24053642153739929,
+            0.63741743564605713,
+            0.55043703317642212,
+            0.59754526615142822,
+            0.33321839570999146,
+            0.38518917560577393,
+            0.98484152555465698,
+            0.87918251752853394,
+            0.94124919176101685,
         ];
 
         for value in values {
@@ -286,17 +295,18 @@ mod test {
     fn test_next_gaussian() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble() (float-precision path).
         let values = [
-            0.802_533_063_739_030_5,
-            -0.901_546_088_417_512_2,
-            2.080_920_790_428_163,
-            0.763_770_768_436_489_4,
-            0.984_574_532_882_512_8,
-            -1.683_412_258_767_342_8,
-            -0.027_290_262_907_887_285,
-            0.115_245_702_862_023_15,
-            -0.390_167_041_379_937_74,
-            -0.643_388_813_126_449,
+            0.80253309240512805,
+            -0.90154620676281771,
+            2.08092055963206990,
+            0.76377105139694879,
+            0.98457443577047854,
+            -1.68341233172519367,
+            -0.02729036060435087,
+            0.11524610277962266,
+            -0.39016702050836111,
+            -0.64338877488403268,
         ];
 
         for value in values {
@@ -309,17 +319,18 @@ mod test {
     fn test_triangle() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble() (float-precision path).
         let values = [
-            124.521_568_585_258_56,
-            104.349_021_011_623_72,
-            113.216_343_916_027_6,
-            70.017_382_227_045_47,
-            96.896_666_919_518_28,
-            107.302_840_758_085_41,
-            106.168_176_758_131_44,
-            79.112_644_826_080_78,
-            73.967_216_139_270_62,
-            81.724_195_210_806_46,
+            124.52156692743301392,
+            104.34902012348175049,
+            113.21634352207183838,
+            70.01738250255584717,
+            96.89666628837585449,
+            107.30284079909324646,
+            106.16817697882652283,
+            79.11264598369598389,
+            73.96721504628658295,
+            81.72419518232345581,
         ];
 
         for value in values {

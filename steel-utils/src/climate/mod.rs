@@ -11,10 +11,8 @@
 //! - [`ParameterPoint`] - Full biome parameter specification
 //! - [`ParameterList`] - Collection of biomes with their parameter points
 
-mod sampler;
 mod types;
 
-pub use sampler::{ClimateSampler, empty_sampler};
 pub use types::{Parameter, ParameterList, ParameterPoint, TargetPoint};
 
 /// Quantization factor used to convert floats to longs.

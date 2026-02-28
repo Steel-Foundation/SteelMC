@@ -3,41 +3,15 @@
 //! Each density function type is its own struct, mirroring vanilla's separate
 //! record/class pattern. The [`DensityFunction`] enum wraps them for dispatch.
 //!
-//! # Evaluation
-//!
-//! Density functions implement the [`DensityFunctionOps`] trait, which provides
-//! [`compute`](DensityFunctionOps::compute) and
-//! [`compute_cached`](DensityFunctionOps::compute_cached) methods.
-//! Noise generators and registry references are resolved ("baked") into the tree
-//! at construction time, so evaluation requires only a [`DensityContext`].
+//! These types are used at build time by the density function transpiler to parse
+//! JSON density function trees and generate native Rust code. Runtime evaluation
+//! is done by the transpiled code, not by interpreting this tree.
 
 use std::sync::Arc;
 
-use enum_dispatch::enum_dispatch;
 use rustc_hash::FxHashMap;
 
-use crate::math::{clamp, map_clamped};
 use crate::noise::NormalNoise;
-
-// ── DensityFunctionOps trait ────────────────────────────────────────────────
-
-/// Trait for evaluating density functions.
-///
-/// This is the core evaluation interface, matching vanilla's `DensityFunction.compute()`.
-/// Noise generators and registry references must be baked into the tree before calling
-/// these methods (see [`DensityFunction::resolve`]).
-#[enum_dispatch]
-pub trait DensityFunctionOps {
-    /// Evaluate this density function at the given position.
-    fn compute(&self, ctx: &DensityContext) -> f64;
-
-    /// Evaluate this density function with caching support.
-    ///
-    /// Like [`compute`](Self::compute) but uses an [`EvalCache`] to avoid redundant
-    /// evaluations. `CacheOnce` caches by last (x, y, z), `FlatCache`/`Cache2D` cache
-    /// by (x, z).
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64;
-}
 
 // ── Individual density function structs ──────────────────────────────────────
 
@@ -50,45 +24,16 @@ pub struct Constant {
     pub value: f64,
 }
 
-impl DensityFunctionOps for Constant {
-    fn compute(&self, _ctx: &DensityContext) -> f64 {
-        self.value
-    }
-
-    fn compute_cached(&self, _ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.value
-    }
-}
-
 /// A reference to another density function by ID.
 ///
 /// After resolution via [`DensityFunction::resolve`], `resolved` holds the
-/// target function and [`compute`](DensityFunctionOps::compute) delegates to it.
-/// Matches vanilla's `DensityFunctions.HolderHolder`.
+/// target function. Matches vanilla's `DensityFunctions.HolderHolder`.
 #[derive(Debug, Clone)]
 pub struct Reference {
     /// The density function ID (for debugging / serialization).
     pub id: String,
     /// Resolved target (set by [`DensityFunction::resolve`]).
     pub resolved: Option<Arc<DensityFunction>>,
-}
-
-impl DensityFunctionOps for Reference {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        if let Some(resolved) = &self.resolved {
-            resolved.compute(ctx)
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        if let Some(resolved) = &self.resolved {
-            resolved.compute_cached(ctx, cache)
-        } else {
-            0.0
-        }
-    }
 }
 
 /// A Y-axis clamped gradient.
@@ -108,22 +53,6 @@ pub struct YClampedGradient {
     pub to_value: f64,
 }
 
-impl DensityFunctionOps for YClampedGradient {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        map_clamped(
-            f64::from(ctx.y),
-            f64::from(self.from_y),
-            f64::from(self.to_y),
-            self.from_value,
-            self.to_value,
-        )
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.compute(ctx)
-    }
-}
-
 /// Sample from a noise generator.
 ///
 /// Matches vanilla's `DensityFunctions.Noise`.
@@ -137,24 +66,6 @@ pub struct Noise {
     pub y_scale: f64,
     /// Baked noise generator (set at construction time).
     pub noise: Option<NormalNoise>,
-}
-
-impl DensityFunctionOps for Noise {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        if let Some(noise) = &self.noise {
-            noise.get_value(
-                f64::from(ctx.x) * self.xz_scale,
-                f64::from(ctx.y) * self.y_scale,
-                f64::from(ctx.z) * self.xz_scale,
-            )
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.compute(ctx)
-    }
 }
 
 /// Sample from a shifted noise generator.
@@ -178,38 +89,6 @@ pub struct ShiftedNoise {
     pub noise: Option<NormalNoise>,
 }
 
-impl DensityFunctionOps for ShiftedNoise {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        let dx = self.shift_x.compute(ctx);
-        let dy = self.shift_y.compute(ctx);
-        let dz = self.shift_z.compute(ctx);
-        if let Some(noise) = &self.noise {
-            noise.get_value(
-                f64::from(ctx.x) * self.xz_scale + dx,
-                f64::from(ctx.y) * self.y_scale + dy,
-                f64::from(ctx.z) * self.xz_scale + dz,
-            )
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        let dx = self.shift_x.compute_cached(ctx, cache);
-        let dy = self.shift_y.compute_cached(ctx, cache);
-        let dz = self.shift_z.compute_cached(ctx, cache);
-        if let Some(noise) = &self.noise {
-            noise.get_value(
-                f64::from(ctx.x) * self.xz_scale + dx,
-                f64::from(ctx.y) * self.y_scale + dy,
-                f64::from(ctx.z) * self.xz_scale + dz,
-            )
-        } else {
-            0.0
-        }
-    }
-}
-
 /// Shift noise generator A for coordinate offsetting.
 ///
 /// Matches vanilla's `DensityFunctions.ShiftA`.
@@ -219,20 +98,6 @@ pub struct ShiftA {
     pub noise_id: String,
     /// Baked noise generator.
     pub noise: Option<NormalNoise>,
-}
-
-impl DensityFunctionOps for ShiftA {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        if let Some(noise) = &self.noise {
-            noise.get_value(f64::from(ctx.x) * 0.25, 0.0, f64::from(ctx.z) * 0.25) * 4.0
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.compute(ctx)
-    }
 }
 
 /// Shift noise generator B for coordinate offsetting.
@@ -246,20 +111,6 @@ pub struct ShiftB {
     pub noise: Option<NormalNoise>,
 }
 
-impl DensityFunctionOps for ShiftB {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        if let Some(noise) = &self.noise {
-            noise.get_value(f64::from(ctx.z) * 0.25, f64::from(ctx.x) * 0.25, 0.0) * 4.0
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.compute(ctx)
-    }
-}
-
 /// Generic shift noise generator for coordinate offsetting.
 ///
 /// Matches vanilla's `DensityFunctions.Shift`.
@@ -269,24 +120,6 @@ pub struct Shift {
     pub noise_id: String,
     /// Baked noise generator.
     pub noise: Option<NormalNoise>,
-}
-
-impl DensityFunctionOps for Shift {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        if let Some(noise) = &self.noise {
-            noise.get_value(
-                f64::from(ctx.x) * 0.25,
-                f64::from(ctx.y) * 0.25,
-                f64::from(ctx.z) * 0.25,
-            ) * 4.0
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.compute(ctx)
-    }
 }
 
 /// The type of two-argument operation.
@@ -315,30 +148,6 @@ pub struct TwoArgumentSimple {
     pub argument1: Arc<DensityFunction>,
     /// Second argument
     pub argument2: Arc<DensityFunction>,
-}
-
-impl DensityFunctionOps for TwoArgumentSimple {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        let a = self.argument1.compute(ctx);
-        let b = self.argument2.compute(ctx);
-        match self.op {
-            TwoArgType::Add => a + b,
-            TwoArgType::Mul => a * b,
-            TwoArgType::Min => a.min(b),
-            TwoArgType::Max => a.max(b),
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        let a = self.argument1.compute_cached(ctx, cache);
-        let b = self.argument2.compute_cached(ctx, cache);
-        match self.op {
-            TwoArgType::Add => a + b,
-            TwoArgType::Mul => a * b,
-            TwoArgType::Min => a.min(b),
-            TwoArgType::Max => a.max(b),
-        }
-    }
 }
 
 /// The type of mapped (pure transformer) operation.
@@ -374,18 +183,6 @@ pub struct Mapped {
     pub input: Arc<DensityFunction>,
 }
 
-impl DensityFunctionOps for Mapped {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        let v = self.input.compute(ctx);
-        apply_mapped(self.op, v)
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        let v = self.input.compute_cached(ctx, cache);
-        apply_mapped(self.op, v)
-    }
-}
-
 /// Clamp a density function value to a range.
 ///
 /// Matches vanilla's `DensityFunctions.Clamp`.
@@ -397,16 +194,6 @@ pub struct Clamp {
     pub min: f64,
     /// Maximum value
     pub max: f64,
-}
-
-impl DensityFunctionOps for Clamp {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        clamp(self.input.compute(ctx), self.min, self.max)
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        clamp(self.input.compute_cached(ctx, cache), self.min, self.max)
-    }
 }
 
 /// Choose between two functions based on input range.
@@ -424,26 +211,6 @@ pub struct RangeChoice {
     pub when_in_range: Arc<DensityFunction>,
     /// Function to use when out of range
     pub when_out_of_range: Arc<DensityFunction>,
-}
-
-impl DensityFunctionOps for RangeChoice {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        let v = self.input.compute(ctx);
-        if v >= self.min_inclusive && v < self.max_exclusive {
-            self.when_in_range.compute(ctx)
-        } else {
-            self.when_out_of_range.compute(ctx)
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        let v = self.input.compute_cached(ctx, cache);
-        if v >= self.min_inclusive && v < self.max_exclusive {
-            self.when_in_range.compute_cached(ctx, cache)
-        } else {
-            self.when_out_of_range.compute_cached(ctx, cache)
-        }
-    }
 }
 
 /// Blended (interpolated) 3D noise.
@@ -465,29 +232,6 @@ pub struct BlendedNoise {
     pub noise: Option<NormalNoise>,
 }
 
-// TODO: BlendedNoise is currently a single-noise approximation. Vanilla uses three separate
-// PerlinNoise generators (minLimitNoise, maxLimitNoise, mainNoise) with multi-octave blending
-// via clampedLerp. Full implementation also requires `noiseWithDerivative` on ImprovedNoise.
-impl DensityFunctionOps for BlendedNoise {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        if let Some(noise) = &self.noise {
-            let scaled_xz = self.xz_scale / self.xz_factor;
-            let scaled_y = self.y_scale / self.y_factor;
-            noise.get_value(
-                f64::from(ctx.x) * scaled_xz,
-                f64::from(ctx.y) * scaled_y,
-                f64::from(ctx.z) * scaled_xz,
-            ) * self.smear_scale_multiplier
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        self.compute(ctx)
-    }
-}
-
 /// Weird scaled sampler (for cave generation).
 ///
 /// Matches vanilla's `DensityFunctions.WeirdScaledSampler`.
@@ -503,42 +247,6 @@ pub struct WeirdScaledSampler {
     pub noise: Option<NormalNoise>,
 }
 
-impl DensityFunctionOps for WeirdScaledSampler {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        let rarity = self.input.compute(ctx);
-        let scale = self.rarity_value_mapper.get_values(rarity);
-        if let Some(noise) = &self.noise {
-            scale
-                * noise
-                    .get_value(
-                        f64::from(ctx.x) / scale,
-                        f64::from(ctx.y) / scale,
-                        f64::from(ctx.z) / scale,
-                    )
-                    .abs()
-        } else {
-            0.0
-        }
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        let rarity = self.input.compute_cached(ctx, cache);
-        let scale = self.rarity_value_mapper.get_values(rarity);
-        if let Some(noise) = &self.noise {
-            scale
-                * noise
-                    .get_value(
-                        f64::from(ctx.x) / scale,
-                        f64::from(ctx.y) / scale,
-                        f64::from(ctx.z) / scale,
-                    )
-                    .abs()
-        } else {
-            0.0
-        }
-    }
-}
-
 /// Blend density (for chunk blending).
 ///
 /// Matches vanilla's `DensityFunctions.BlendDensity`.
@@ -546,18 +254,6 @@ impl DensityFunctionOps for WeirdScaledSampler {
 pub struct BlendDensity {
     /// Input density function
     pub input: Arc<DensityFunction>,
-}
-
-impl DensityFunctionOps for BlendDensity {
-    // TODO: Implement Blender integration for chunk-boundary blending.
-    // Pass-through is correct when no Blender is active.
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        self.input.compute(ctx)
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        self.input.compute_cached(ctx, cache)
-    }
 }
 
 /// The type of cache/marker wrapper.
@@ -589,49 +285,6 @@ pub struct Marker {
     pub wrapped: Arc<DensityFunction>,
 }
 
-impl DensityFunctionOps for Marker {
-    // Cache markers are transparent in single-point evaluation.
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        self.wrapped.compute(ctx)
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        match self.kind {
-            // CacheOnce: cache the last (x, y, z) → value per node.
-            MarkerType::CacheOnce => {
-                let key = Arc::as_ptr(&self.wrapped) as usize;
-                if let Some(&(cx, cy, cz, val)) = cache.once.get(&key)
-                    && cx == ctx.x
-                    && cy == ctx.y
-                    && cz == ctx.z
-                {
-                    return val;
-                }
-                let val = self.wrapped.compute_cached(ctx, cache);
-                cache.once.insert(key, (ctx.x, ctx.y, ctx.z, val));
-                val
-            }
-
-            // FlatCache/Cache2D: cache by (x, z) per node, ignoring y.
-            MarkerType::FlatCache | MarkerType::Cache2D => {
-                let key = Arc::as_ptr(&self.wrapped) as usize;
-                let flat_key = (key, ctx.x, ctx.z);
-                if let Some(&val) = cache.flat.get(&flat_key) {
-                    return val;
-                }
-                let val = self.wrapped.compute_cached(ctx, cache);
-                cache.flat.insert(flat_key, val);
-                val
-            }
-
-            // CacheAllInCell/Interpolated: pass-through for now (used by terrain, not biomes).
-            MarkerType::CacheAllInCell | MarkerType::Interpolated => {
-                self.wrapped.compute_cached(ctx, cache)
-            }
-        }
-    }
-}
-
 /// Cubic spline density function wrapper.
 ///
 /// Wraps an `Arc<CubicSpline>` for spline-based density evaluation.
@@ -642,51 +295,11 @@ pub struct Spline {
     pub spline: Arc<CubicSpline>,
 }
 
-impl DensityFunctionOps for Spline {
-    fn compute(&self, ctx: &DensityContext) -> f64 {
-        compute_spline(&self.spline, ctx)
-    }
-
-    fn compute_cached(&self, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-        compute_spline_cached(&self.spline, ctx, cache)
-    }
-}
-
-/// End islands density function.
-///
-/// Matches vanilla's `DensityFunctions.EndIslands`.
-/// TODO: Implement `SimplexNoise` + island generation algorithm.
-#[derive(Debug, Clone, Copy)]
-pub struct EndIslands;
-
-impl DensityFunctionOps for EndIslands {
-    // TODO: Implement `SimplexNoise` + island generation algorithm.
-    fn compute(&self, _ctx: &DensityContext) -> f64 {
-        0.0
-    }
-
-    fn compute_cached(&self, _ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        0.0
-    }
-}
-
 /// Blend alpha density function (returns 1.0, placeholder for blending).
 ///
 /// Matches vanilla's `DensityFunctions.BlendAlpha`.
 #[derive(Debug, Clone, Copy)]
 pub struct BlendAlpha;
-
-impl DensityFunctionOps for BlendAlpha {
-    // BlendAlpha returns 1.0 (no blending). Vanilla also returns 1.0
-    // unless an active Blender overrides it in NoiseChunk.
-    fn compute(&self, _ctx: &DensityContext) -> f64 {
-        1.0
-    }
-
-    fn compute_cached(&self, _ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        1.0
-    }
-}
 
 /// Blend offset density function (returns 0.0, placeholder for blending).
 ///
@@ -694,31 +307,17 @@ impl DensityFunctionOps for BlendAlpha {
 #[derive(Debug, Clone, Copy)]
 pub struct BlendOffset;
 
-impl DensityFunctionOps for BlendOffset {
-    // BlendOffset returns 0.0 (no offset). Vanilla also returns 0.0
-    // unless an active Blender overrides it in NoiseChunk.
-    fn compute(&self, _ctx: &DensityContext) -> f64 {
-        0.0
-    }
-
-    fn compute_cached(&self, _ctx: &DensityContext, _cache: &mut EvalCache) -> f64 {
-        0.0
-    }
-}
-
 // ── DensityFunction enum (dispatch wrapper) ─────────────────────────────────
 
 /// A density function that can be evaluated at a position to get a density value.
 ///
 /// Density functions form a tree structure where complex functions are composed
 /// from simpler ones. Each variant wraps a separate struct matching vanilla's
-/// per-type class/record pattern. This matches vanilla's `DensityFunction` interface.
+/// per-type class/record pattern.
 ///
-/// Evaluation is done via the [`DensityFunctionOps`] trait, which provides
-/// [`compute`](DensityFunctionOps::compute) and
-/// [`compute_cached`](DensityFunctionOps::compute_cached).
+/// This tree is used at build time by the transpiler to generate native Rust code.
+/// Runtime evaluation is done by the transpiled output, not by interpreting this tree.
 #[derive(Debug, Clone)]
-#[enum_dispatch(DensityFunctionOps)]
 pub enum DensityFunction {
     /// A constant value.
     Constant(Constant),
@@ -765,8 +364,9 @@ pub enum DensityFunction {
     /// Weird scaled sampler (for cave generation).
     WeirdScaledSampler(WeirdScaledSampler),
 
-    /// End islands density function.
-    EndIslands(EndIslands),
+    /// End islands density function (transpiler emits 0.0; actual algorithm
+    /// lives in `steel-core::worldgen::end_islands::EndIslands`).
+    EndIslands,
 
     /// Blend alpha (returns 1.0, placeholder for blending).
     BlendAlpha(BlendAlpha),
@@ -816,7 +416,7 @@ impl DensityFunction {
     ) -> Self {
         match self {
             Self::Constant(_)
-            | Self::EndIslands(_)
+            | Self::EndIslands
             | Self::BlendAlpha(_)
             | Self::BlendOffset(_)
             | Self::YClampedGradient(_) => self.clone(),
@@ -946,38 +546,7 @@ fn resolve_spline(
     )
 }
 
-// ── Cache for density function evaluation ───────────────────────────────────
-
-/// Cache for density function evaluation, matching vanilla's per-node caching.
-///
-/// Create one per chunk or per evaluation batch and pass to
-/// [`DensityFunctionOps::compute_cached`].
-/// Cache keys are derived from stable `Arc` pointer addresses in the density function tree.
-pub struct EvalCache {
-    /// `CacheOnce`: caches last (x, y, z) → value per node.
-    once: FxHashMap<usize, (i32, i32, i32, f64)>,
-    /// `FlatCache`/`Cache2D`: caches (x, z) → value per node, keyed by (`node_key`, x, z).
-    flat: FxHashMap<(usize, i32, i32), f64>,
-}
-
-impl EvalCache {
-    /// Create a new empty evaluation cache.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            once: FxHashMap::default(),
-            flat: FxHashMap::default(),
-        }
-    }
-}
-
-impl Default for EvalCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ── Noise parameters ────────────────────────────────────────────────────────
+// ── Supporting types ────────────────────────────────────────────────────────
 
 /// Parameters for creating a noise generator.
 #[derive(Debug, Clone)]
@@ -999,197 +568,9 @@ impl NoiseParameters {
     }
 }
 
-// ── Shared evaluation helpers ───────────────────────────────────────────────
-
-/// Apply a mapped (unary) operation.
-fn apply_mapped(op: MappedType, v: f64) -> f64 {
-    match op {
-        MappedType::Abs => v.abs(),
-        MappedType::Square => v * v,
-        MappedType::Cube => v * v * v,
-        MappedType::HalfNegative => {
-            if v > 0.0 {
-                v
-            } else {
-                v * 0.5
-            }
-        }
-        MappedType::QuarterNegative => {
-            if v > 0.0 {
-                v
-            } else {
-                v * 0.25
-            }
-        }
-        MappedType::Invert => 1.0 / v,
-        MappedType::Squeeze => {
-            let c = clamp(v, -1.0, 1.0);
-            c / 2.0 - c * c * c / 24.0
-        }
-    }
-}
-
-// ── Spline evaluation (non-cached) ─────────────────────────────────────────
-
-/// Evaluate a cubic spline.
-fn compute_spline(spline: &CubicSpline, ctx: &DensityContext) -> f64 {
-    let input = spline.coordinate.compute(ctx) as f32;
-    f64::from(compute_spline_at(spline, input, ctx))
-}
-
-/// Evaluate a cubic spline at a given input value.
-///
-/// Matches vanilla's `CubicSpline.Multipoint.apply()`:
-/// - If input is before the first point, linear extrapolation using first derivative
-/// - If input is after the last point, linear extrapolation using last derivative
-/// - Otherwise, Hermite cubic interpolation between adjacent points
-fn compute_spline_at(spline: &CubicSpline, input: f32, ctx: &DensityContext) -> f32 {
-    if spline.points.is_empty() {
-        return 0.0;
-    }
-
-    let last_index = spline.points.len() - 1;
-
-    let start = find_interval_start(&spline.locations, input);
-
-    if start < 0 {
-        let p = &spline.points[0];
-        let value = get_spline_point_value(p, ctx);
-        return value + p.derivative * (input - p.location);
-    }
-
-    let start = start as usize;
-    if start == last_index {
-        let p = &spline.points[last_index];
-        let value = get_spline_point_value(p, ctx);
-        return value + p.derivative * (input - p.location);
-    }
-
-    hermite_interpolate(spline, start, input, ctx)
-}
-
-/// Get the value at a spline point.
-fn get_spline_point_value(point: &SplinePoint, ctx: &DensityContext) -> f32 {
-    match &point.value {
-        SplineValue::Constant(v) => *v,
-        SplineValue::Spline(nested) => {
-            let nested_input = nested.coordinate.compute(ctx) as f32;
-            compute_spline_at(nested, nested_input, ctx)
-        }
-    }
-}
-
-// ── Spline evaluation (cached) ─────────────────────────────────────────────
-
-/// Evaluate a cubic spline with caching.
-fn compute_spline_cached(spline: &CubicSpline, ctx: &DensityContext, cache: &mut EvalCache) -> f64 {
-    let input = spline.coordinate.compute_cached(ctx, cache) as f32;
-    f64::from(compute_spline_at_cached(spline, input, ctx, cache))
-}
-
-/// Evaluate a cubic spline at a given input value with caching.
-fn compute_spline_at_cached(
-    spline: &CubicSpline,
-    input: f32,
-    ctx: &DensityContext,
-    cache: &mut EvalCache,
-) -> f32 {
-    if spline.points.is_empty() {
-        return 0.0;
-    }
-
-    let last_index = spline.points.len() - 1;
-
-    let start = find_interval_start(&spline.locations, input);
-
-    if start < 0 {
-        let p = &spline.points[0];
-        let value = get_spline_point_value_cached(p, ctx, cache);
-        return value + p.derivative * (input - p.location);
-    }
-
-    let start = start as usize;
-    if start == last_index {
-        let p = &spline.points[last_index];
-        let value = get_spline_point_value_cached(p, ctx, cache);
-        return value + p.derivative * (input - p.location);
-    }
-
-    hermite_interpolate_cached(spline, start, input, ctx, cache)
-}
-
-/// Get the value at a spline point with caching.
-fn get_spline_point_value_cached(
-    point: &SplinePoint,
-    ctx: &DensityContext,
-    cache: &mut EvalCache,
-) -> f32 {
-    match &point.value {
-        SplineValue::Constant(v) => *v,
-        SplineValue::Spline(nested) => {
-            let nested_input = nested.coordinate.compute_cached(ctx, cache) as f32;
-            compute_spline_at_cached(nested, nested_input, ctx, cache)
-        }
-    }
-}
-
-// ── Shared spline helpers ───────────────────────────────────────────────────
-
-/// Binary search to find the interval start: largest i where locations[i] <= input.
-///
-/// Returns -1 if input is before all points.
-fn find_interval_start(locations: &[f32], input: f32) -> i32 {
-    super::spline_eval::find_interval(locations, input)
-}
-
-/// Hermite cubic interpolation between adjacent spline points (non-cached).
-fn hermite_interpolate(
-    spline: &CubicSpline,
-    start: usize,
-    input: f32,
-    ctx: &DensityContext,
-) -> f32 {
-    let p0 = &spline.points[start];
-    let p1 = &spline.points[start + 1];
-    let y1 = get_spline_point_value(p0, ctx);
-    let y2 = get_spline_point_value(p1, ctx);
-    super::spline_eval::hermite_interpolate(
-        p0.location,
-        p1.location,
-        y1,
-        y2,
-        p0.derivative,
-        p1.derivative,
-        input,
-    )
-}
-
-/// Hermite cubic interpolation between adjacent spline points (cached).
-fn hermite_interpolate_cached(
-    spline: &CubicSpline,
-    start: usize,
-    input: f32,
-    ctx: &DensityContext,
-    cache: &mut EvalCache,
-) -> f32 {
-    let p0 = &spline.points[start];
-    let p1 = &spline.points[start + 1];
-    let y1 = get_spline_point_value_cached(p0, ctx, cache);
-    let y2 = get_spline_point_value_cached(p1, ctx, cache);
-    super::spline_eval::hermite_interpolate(
-        p0.location,
-        p1.location,
-        y1,
-        y2,
-        p0.derivative,
-        p1.derivative,
-        input,
-    )
-}
-
-// ── Supporting types ────────────────────────────────────────────────────────
-
 /// Rarity value mapper for cave generation.
+///
+/// Used at runtime by transpiled `WeirdScaledSampler` code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RarityValueMapper {
     /// Mapper type `"type_1"` for tunnels.
@@ -1279,25 +660,6 @@ impl CubicSpline {
     }
 }
 
-/// Context for evaluating density functions at a position.
-#[derive(Debug, Clone, Copy)]
-pub struct DensityContext {
-    /// X coordinate (block position)
-    pub x: i32,
-    /// Y coordinate (block position)
-    pub y: i32,
-    /// Z coordinate (block position)
-    pub z: i32,
-}
-
-impl DensityContext {
-    /// Create a new density context.
-    #[must_use]
-    pub const fn new(x: i32, y: i32, z: i32) -> Self {
-        Self { x, y, z }
-    }
-}
-
 /// A noise router containing all the density functions for world generation.
 #[derive(Debug, Clone)]
 pub struct NoiseRouter {
@@ -1336,25 +698,6 @@ pub struct NoiseRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::random::Random;
-    use crate::random::xoroshiro::Xoroshiro;
-
-    fn make_test_noises() -> FxHashMap<String, NormalNoise> {
-        let mut rng = Xoroshiro::from_seed(12345);
-        let splitter = rng.next_positional();
-
-        let mut noises = FxHashMap::default();
-        let noise = NormalNoise::create(&splitter, "test_noise", -4, &[1.0, 1.0, 1.0, 1.0]);
-        noises.insert("test_noise".to_string(), noise);
-        noises
-    }
-
-    #[test]
-    fn test_constant() {
-        let func = DensityFunction::constant(42.0);
-        let ctx = DensityContext::new(0, 64, 0);
-        assert!((func.compute(&ctx) - 42.0).abs() < 1e-10);
-    }
 
     #[test]
     fn test_rarity_value_mapper_tunnels() {
@@ -1377,144 +720,17 @@ mod tests {
     }
 
     #[test]
-    fn test_y_clamped_gradient() {
-        let func = DensityFunction::YClampedGradient(YClampedGradient {
-            from_y: -64,
-            to_y: 320,
-            from_value: 1.0,
-            to_value: -1.0,
-        });
-
-        let ctx = DensityContext::new(0, -64, 0);
-        assert!((func.compute(&ctx) - 1.0).abs() < 1e-10);
-
-        let ctx = DensityContext::new(0, 320, 0);
-        assert!((func.compute(&ctx) - (-1.0)).abs() < 1e-10);
-
-        let ctx = DensityContext::new(0, 128, 0);
-        assert!(func.compute(&ctx).abs() < 0.1);
-    }
-
-    #[test]
-    fn test_add() {
-        let a = Arc::new(DensityFunction::constant(10.0));
-        let b = Arc::new(DensityFunction::constant(5.0));
-        let func = DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
-            op: TwoArgType::Add,
-            argument1: a,
-            argument2: b,
-        });
-        let ctx = DensityContext::new(0, 64, 0);
-        assert!((func.compute(&ctx) - 15.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_mul() {
-        let a = Arc::new(DensityFunction::constant(3.0));
-        let b = Arc::new(DensityFunction::constant(4.0));
-        let func = DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
-            op: TwoArgType::Mul,
-            argument1: a,
-            argument2: b,
-        });
-        let ctx = DensityContext::new(0, 64, 0);
-        assert!((func.compute(&ctx) - 12.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_clamp() {
-        let func = DensityFunction::Clamp(Clamp {
-            input: Arc::new(DensityFunction::constant(10.0)),
-            min: -1.0,
-            max: 1.0,
-        });
-        let ctx = DensityContext::new(0, 64, 0);
-        assert!((func.compute(&ctx) - 1.0).abs() < 1e-10);
-
-        let func = DensityFunction::Clamp(Clamp {
-            input: Arc::new(DensityFunction::constant(-10.0)),
-            min: -1.0,
-            max: 1.0,
-        });
-        assert!((func.compute(&ctx) - (-1.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_half_negative() {
-        let ctx = DensityContext::new(0, 64, 0);
-
-        let func = DensityFunction::Mapped(Mapped {
-            op: MappedType::HalfNegative,
-            input: Arc::new(DensityFunction::constant(2.0)),
-        });
-        assert!((func.compute(&ctx) - 2.0).abs() < 1e-10);
-
-        let func = DensityFunction::Mapped(Mapped {
-            op: MappedType::HalfNegative,
-            input: Arc::new(DensityFunction::constant(-2.0)),
-        });
-        assert!((func.compute(&ctx) - (-1.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_squeeze() {
-        let ctx = DensityContext::new(0, 64, 0);
-
-        let func = DensityFunction::Mapped(Mapped {
-            op: MappedType::Squeeze,
-            input: Arc::new(DensityFunction::constant(0.0)),
-        });
-        assert!(func.compute(&ctx).abs() < 1e-10);
-
-        let func = DensityFunction::Mapped(Mapped {
-            op: MappedType::Squeeze,
-            input: Arc::new(DensityFunction::constant(1.0)),
-        });
-        let v = func.compute(&ctx);
-        assert!((v - (0.5 - 1.0 / 24.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_noise_with_baked_noise() {
-        let noises = make_test_noises();
-        let func = DensityFunction::Noise(Noise {
-            noise_id: "test_noise".to_string(),
-            xz_scale: 1.0,
-            y_scale: 1.0,
-            noise: noises.get("test_noise").cloned(),
-        });
-        let ctx = DensityContext::new(100, 64, 200);
-        // Just verify it returns a non-zero value (noise is deterministic)
-        let v = func.compute(&ctx);
-        // noise can be 0 but unlikely at these coords; mainly verify it doesn't panic
-        let _ = v;
-        // More importantly, it shouldn't panic
-    }
-
-    #[test]
-    fn test_reference_resolved() {
-        let target = Arc::new(DensityFunction::constant(7.5));
-        let func = DensityFunction::Reference(Reference {
-            id: "test:ref".to_string(),
-            resolved: Some(target),
-        });
-        let ctx = DensityContext::new(0, 64, 0);
-        assert!((func.compute(&ctx) - 7.5).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_reference_unresolved() {
-        let func = DensityFunction::Reference(Reference {
-            id: "test:missing".to_string(),
-            resolved: None,
-        });
-        let ctx = DensityContext::new(0, 64, 0);
-        assert!((func.compute(&ctx) - 0.0).abs() < 1e-10);
-    }
-
-    #[test]
     fn test_resolve_bakes_noises() {
-        let noises = make_test_noises();
+        use crate::random::Random;
+        use crate::random::xoroshiro::Xoroshiro;
+
+        let mut rng = Xoroshiro::from_seed(12345);
+        let splitter = rng.next_positional();
+
+        let mut noises = FxHashMap::default();
+        let noise = NormalNoise::create(&splitter, "test_noise", -4, &[1.0, 1.0, 1.0, 1.0]);
+        noises.insert("test_noise".to_string(), noise);
+
         let registry = FxHashMap::default();
 
         let func = DensityFunction::Noise(Noise {
@@ -1524,20 +740,12 @@ mod tests {
             noise: None, // not yet baked
         });
 
-        // Before resolve, noise is None → returns 0.0
-        let ctx = DensityContext::new(100, 64, 200);
-        assert!((func.compute(&ctx) - 0.0).abs() < 1e-10);
-
-        // After resolve, noise is baked → returns actual noise value
+        // After resolve, noise should be baked
         let resolved = func.resolve(&registry, &noises);
-        let v = resolved.compute(&ctx);
-        // The resolved function should have a baked noise
         if let DensityFunction::Noise(n) = &resolved {
             assert!(n.noise.is_some());
         } else {
             panic!("Expected Noise variant");
         }
-        // Value may or may not be 0.0 depending on noise, but it shouldn't panic
-        let _ = v;
     }
 }

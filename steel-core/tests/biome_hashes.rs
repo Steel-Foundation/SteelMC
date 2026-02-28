@@ -11,7 +11,7 @@ use std::thread;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use steel_core::worldgen::{
-    BiomeSource, ChunkBiomeSampler, NetherBiomeSource, OverworldBiomeSource,
+    BiomeSource, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
 };
 use steel_registry::biome::BiomeRef;
 
@@ -21,7 +21,7 @@ struct BiomeHashesJson {
     seed: u64,
     overworld: DimensionHashes,
     the_nether: DimensionHashes,
-    // TODO: the_end once TheEndBiomeSource is implemented
+    the_end: DimensionHashes,
 }
 
 /// Per-dimension hash data.
@@ -139,4 +139,12 @@ fn nether_biome_hashes_match_vanilla() {
         .expect("failed to spawn test thread");
 
     handle.join().expect("test thread panicked");
+}
+
+#[test]
+fn end_biome_hashes_match_vanilla() {
+    let expected = load_expected_hashes();
+
+    let source = EndBiomeSource::new(expected.seed);
+    verify_dimension(&source, &expected.the_end, "the_end");
 }

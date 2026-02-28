@@ -163,7 +163,7 @@ impl TranspileContext {
             DensityFunction::Constant(_)
             | DensityFunction::BlendAlpha(_)
             | DensityFunction::BlendOffset(_)
-            | DensityFunction::EndIslands(_)
+            | DensityFunction::EndIslands
             | DensityFunction::YClampedGradient(_) => {}
 
             DensityFunction::Noise(n) => {
@@ -647,7 +647,9 @@ impl TranspileContext {
             }
 
             DensityFunction::BlendAlpha(_) => quote! { 1.0 },
-            DensityFunction::BlendOffset(_) | DensityFunction::EndIslands(_) => quote! { 0.0 },
+            // TODO: Transpile EndIslands properly if End terrain is ever transpiled.
+            // Currently only used via direct `EndIslands` in `EndBiomeSource`.
+            DensityFunction::BlendOffset(_) | DensityFunction::EndIslands => quote! { 0.0 },
             DensityFunction::BlendDensity(bd) => self.gen_expr(&bd.input, input, is_flat),
             DensityFunction::Marker(m) => self.gen_expr(&m.wrapped, input, is_flat),
 
@@ -781,7 +783,7 @@ fn uses_y(df: &DensityFunction) -> bool {
         | DensityFunction::ShiftB(_)
         | DensityFunction::BlendAlpha(_)
         | DensityFunction::BlendOffset(_)
-        | DensityFunction::EndIslands(_) => false,
+        | DensityFunction::EndIslands => false,
     }
 }
 

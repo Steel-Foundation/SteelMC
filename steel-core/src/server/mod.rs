@@ -17,7 +17,7 @@ use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
-use crate::worldgen::{NetherBiomeSource, OverworldBiomeSource};
+use crate::worldgen::{EndBiomeSource, NetherBiomeSource, OverworldBiomeSource};
 use small_map::FxSmallMap;
 use std::{
     ptr,
@@ -568,8 +568,8 @@ impl Server {
                     let biome_source = Box::new(NetherBiomeSource::new(seed as u64));
                     ChunkGeneratorType::Vanilla(VanillaGenerator::new(biome_source))
                 } else {
-                    // TODO: End needs TheEndBiomeSource
-                    ChunkGeneratorType::Empty(EmptyChunkGenerator::new())
+                    let biome_source = Box::new(EndBiomeSource::new(seed as u64));
+                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(biome_source))
                 }
             }
             WorldGeneratorTypes::Flat => {

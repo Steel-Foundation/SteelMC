@@ -12,7 +12,9 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::density_functions::nether::NetherColumnCache;
 use steel_registry::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
+use steel_registry::vanilla_biomes;
 
+use super::end_islands::EndIslands;
 use super::{NetherClimateSampler, OverworldClimateSampler};
 
 /// Determines biomes at quart positions for a dimension.
@@ -134,5 +136,82 @@ impl ChunkBiomeSampler for NetherChunkBiomeSampler<'_> {
                 .climate_sampler
                 .sample(quart_x, quart_y, quart_z, &mut self.column_cache);
         get_nether_biome_cached(&target, &mut self.biome_cache)
+    }
+}
+
+// ── The End ───────────────────────────────────────────────────────────────────
+
+/// Biome source for The End dimension.
+///
+/// Uses spatial distance from origin and the `EndIslands` density function for
+/// biome selection. Does NOT use climate parameters — biome choice is based on:
+///
+/// 1. **Central island** (`chunkX² + chunkZ² ≤ 4096`): always `the_end`
+/// 2. **Outer islands** (erosion from `EndIslands` at transformed coordinates):
+///    - `> 0.25` → `end_highlands`
+///    - `≥ -0.0625` → `end_midlands`
+///    - `< -0.21875` → `small_end_islands`
+///    - otherwise → `end_barrens`
+///
+/// Matches vanilla's `TheEndBiomeSource`.
+pub struct EndBiomeSource {
+    end_islands: EndIslands,
+}
+
+impl EndBiomeSource {
+    /// Create a new End biome source with the given world seed.
+    ///
+    /// The `EndIslands` density function is initialized with the world seed,
+    /// matching vanilla's `RandomState.NoiseWiringHelper.wrapNew()` which replaces
+    /// the default seed-0 instance with `EndIslandDensityFunction(worldSeed)`.
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
+        Self {
+            end_islands: EndIslands::new(seed),
+        }
+    }
+}
+
+impl BiomeSource for EndBiomeSource {
+    fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
+        Box::new(EndChunkBiomeSampler { source: self })
+    }
+}
+
+struct EndChunkBiomeSampler<'a> {
+    source: &'a EndBiomeSource,
+}
+
+impl ChunkBiomeSampler for EndChunkBiomeSampler<'_> {
+    fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
+        let block_x = quart_x << 2;
+        let block_y = quart_y << 2;
+        let block_z = quart_z << 2;
+        let chunk_x = block_x >> 4;
+        let chunk_z = block_z >> 4;
+
+        // Central island: if within 64 chunks of origin
+        if i64::from(chunk_x) * i64::from(chunk_x) + i64::from(chunk_z) * i64::from(chunk_z) <= 4096
+        {
+            return &vanilla_biomes::THE_END;
+        }
+
+        // Outer islands: sample erosion (EndIslands) at transformed coordinates
+        let weird_block_x = (chunk_x * 2 + 1) * 8;
+        let weird_block_z = (chunk_z * 2 + 1) * 8;
+        let erosion = self
+            .source
+            .end_islands
+            .sample(weird_block_x, block_y, weird_block_z);
+
+        if erosion > 0.25 {
+            &vanilla_biomes::END_HIGHLANDS
+        } else if erosion >= -0.0625 {
+            &vanilla_biomes::END_MIDLANDS
+        } else if erosion < -0.21875 {
+            &vanilla_biomes::SMALL_END_ISLANDS
+        } else {
+            &vanilla_biomes::END_BARRENS
+        }
     }
 }
