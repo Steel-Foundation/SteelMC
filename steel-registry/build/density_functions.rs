@@ -385,9 +385,7 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         DensityFunctionData::Abs { input } => json_mapped(MappedType::Abs, input),
         DensityFunctionData::Square { input } => json_mapped(MappedType::Square, input),
         DensityFunctionData::Cube { input } => json_mapped(MappedType::Cube, input),
-        DensityFunctionData::HalfNegative { input } => {
-            json_mapped(MappedType::HalfNegative, input)
-        }
+        DensityFunctionData::HalfNegative { input } => json_mapped(MappedType::HalfNegative, input),
         DensityFunctionData::QuarterNegative { input } => {
             json_mapped(MappedType::QuarterNegative, input)
         }
@@ -411,11 +409,9 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             argument2,
         } => json_two_arg(TwoArgType::Max, argument1, argument2),
 
-        DensityFunctionData::Spline { spline } => {
-            DensityFunction::Spline(Spline {
-                spline: Arc::new(json_spline_to_cubic(spline)),
-            })
-        }
+        DensityFunctionData::Spline { spline } => DensityFunction::Spline(Spline {
+            spline: Arc::new(json_spline_to_cubic(spline)),
+        }),
 
         DensityFunctionData::RangeChoice {
             input,
@@ -434,12 +430,8 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         DensityFunctionData::Interpolated { argument } => {
             json_marker(MarkerType::Interpolated, argument)
         }
-        DensityFunctionData::FlatCache { argument } => {
-            json_marker(MarkerType::FlatCache, argument)
-        }
-        DensityFunctionData::CacheOnce { argument } => {
-            json_marker(MarkerType::CacheOnce, argument)
-        }
+        DensityFunctionData::FlatCache { argument } => json_marker(MarkerType::FlatCache, argument),
+        DensityFunctionData::CacheOnce { argument } => json_marker(MarkerType::CacheOnce, argument),
         DensityFunctionData::Cache2d { argument } => json_marker(MarkerType::Cache2D, argument),
         DensityFunctionData::CacheAllInCell { argument } => {
             json_marker(MarkerType::CacheAllInCell, argument)
@@ -455,9 +447,7 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
 
         // TODO: Implement Beardifier for structure terrain adaptation.
         // Constant(0.0) is correct when structures are not yet generated.
-        DensityFunctionData::Beardifier {} => {
-            DensityFunction::Constant(Constant { value: 0.0 })
-        }
+        DensityFunctionData::Beardifier {} => DensityFunction::Constant(Constant { value: 0.0 }),
         DensityFunctionData::EndIslands {} => DensityFunction::EndIslands(EndIslands),
 
         DensityFunctionData::WeirdScaledSampler {

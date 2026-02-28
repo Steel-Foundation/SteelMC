@@ -7,7 +7,7 @@
 ///
 /// Returns -1 if `input` is before all locations.
 #[inline]
-#[must_use] 
+#[must_use]
 pub fn find_interval(locations: &[f32], input: f32) -> i32 {
     let mut lo = 0i32;
     let mut hi = locations.len() as i32;
@@ -29,7 +29,7 @@ pub fn find_interval(locations: &[f32], input: f32) -> i32 {
 ///
 /// Matches vanilla's formula: `lerp(t, y1, y2) + t * (1 - t) * lerp(t, a, b)`.
 #[inline]
-#[must_use] 
+#[must_use]
 pub fn hermite_interpolate(
     x1: f32,
     x2: f32,

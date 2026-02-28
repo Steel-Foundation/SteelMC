@@ -1,7 +1,7 @@
-use steel_registry::REGISTRY;
 use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::multi_noise::get_overworld_biome_cached;
-use steel_utils::Identifier;
+use steel_registry::{REGISTRY, vanilla_blocks};
+use steel_utils::{BlockStateId, Identifier};
 
 use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};
 use crate::worldgen::VanillaClimateSampler;
@@ -92,7 +92,22 @@ impl ChunkGenerator for VanillaGenerator {
         chunk.mark_dirty();
     }
 
-    fn fill_from_noise(&self, _chunk: &ChunkAccess) {}
+    fn fill_from_noise(&self, chunk: &ChunkAccess) {
+        // TEMP FOR SEEING BIOMES
+        for x in 0..16 {
+            for z in 0..16 {
+                // Bedrock at bottom
+                chunk.set_relative_block(
+                    x,
+                    0,
+                    z,
+                    REGISTRY
+                        .blocks
+                        .get_default_state_id(vanilla_blocks::GRASS_BLOCK),
+                );
+            }
+        }
+    }
 
     fn build_surface(&self, _chunk: &ChunkAccess) {}
 

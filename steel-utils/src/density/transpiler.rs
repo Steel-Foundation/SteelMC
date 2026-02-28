@@ -43,7 +43,7 @@ pub struct TranspilerInput {
 /// - `OverworldColumnCache` struct with fields for flat-cached (xz-only) values
 /// - Private `compute_*` functions for each named density function
 /// - Public `router_*` functions for each noise router entry point
-#[must_use] 
+#[must_use]
 pub fn transpile(input: &TranspilerInput) -> TokenStream {
     let mut ctx = TranspileContext::new();
 
@@ -117,9 +117,10 @@ impl TranspileContext {
         // Mark explicitly flat-cached functions
         for name in &self.used_names {
             if let Some(df) = input.registry.get(name)
-                && is_flat_cached(df) {
-                    self.flat_cached.insert(name.clone());
-                }
+                && is_flat_cached(df)
+            {
+                self.flat_cached.insert(name.clone());
+            }
         }
 
         // Infer flatness: a function is flat if it doesn't use y and all its
@@ -168,9 +169,15 @@ impl TranspileContext {
                 self.walk_df(&sn.shift_z, input);
                 self.noise_ids.insert(sn.noise_id.clone());
             }
-            DensityFunction::ShiftA(s) => { self.noise_ids.insert(s.noise_id.clone()); }
-            DensityFunction::ShiftB(s) => { self.noise_ids.insert(s.noise_id.clone()); }
-            DensityFunction::Shift(s) => { self.noise_ids.insert(s.noise_id.clone()); }
+            DensityFunction::ShiftA(s) => {
+                self.noise_ids.insert(s.noise_id.clone());
+            }
+            DensityFunction::ShiftB(s) => {
+                self.noise_ids.insert(s.noise_id.clone());
+            }
+            DensityFunction::Shift(s) => {
+                self.noise_ids.insert(s.noise_id.clone());
+            }
             DensityFunction::TwoArgumentSimple(t) => {
                 self.walk_df(&t.argument1, input);
                 self.walk_df(&t.argument2, input);
@@ -790,10 +797,9 @@ fn collect_references(df: &DensityFunction) -> Vec<String> {
 
 fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
     match df {
-        DensityFunction::Reference(r)
-            if !refs.contains(&r.id) => {
-                refs.push(r.id.clone());
-            }
+        DensityFunction::Reference(r) if !refs.contains(&r.id) => {
+            refs.push(r.id.clone());
+        }
         DensityFunction::Marker(m) => collect_refs_inner(&m.wrapped, refs),
         DensityFunction::TwoArgumentSimple(t) => {
             collect_refs_inner(&t.argument1, refs);

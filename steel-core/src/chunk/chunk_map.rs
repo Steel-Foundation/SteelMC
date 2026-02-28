@@ -113,7 +113,14 @@ impl ChunkMap {
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
             world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
-            generation_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
+            generation_pool: Arc::new({
+                let mut builder = ThreadPoolBuilder::new();
+                // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
+                if cfg!(debug_assertions) {
+                    builder = builder.stack_size(8 * 1024 * 1024);
+                }
+                builder.build().unwrap()
+            }),
             //tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             chunk_runtime,
             storage,

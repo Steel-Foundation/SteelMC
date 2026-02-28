@@ -46,24 +46,26 @@ impl VanillaClimateSampler {
         // Ensure column cache is populated for this (x, z)
         cache.ensure(block_x, block_z, &self.noises);
 
-        let temp = density_functions::router_temperature(
-            &self.noises, cache, block_x, block_y, block_z,
-        ) as f32;
-        let humidity = density_functions::router_vegetation(
-            &self.noises, cache, block_x, block_y, block_z,
-        ) as f32;
+        let temp =
+            density_functions::router_temperature(&self.noises, cache, block_x, block_y, block_z)
+                as f32;
+        let humidity =
+            density_functions::router_vegetation(&self.noises, cache, block_x, block_y, block_z)
+                as f32;
         let cont = density_functions::router_continentalness(
-            &self.noises, cache, block_x, block_y, block_z,
+            &self.noises,
+            cache,
+            block_x,
+            block_y,
+            block_z,
         ) as f32;
-        let erosion = density_functions::router_erosion(
-            &self.noises, cache, block_x, block_y, block_z,
-        ) as f32;
-        let depth = density_functions::router_depth(
-            &self.noises, cache, block_x, block_y, block_z,
-        ) as f32;
-        let weirdness = density_functions::router_ridges(
-            &self.noises, cache, block_x, block_y, block_z,
-        ) as f32;
+        let erosion =
+            density_functions::router_erosion(&self.noises, cache, block_x, block_y, block_z)
+                as f32;
+        let depth =
+            density_functions::router_depth(&self.noises, cache, block_x, block_y, block_z) as f32;
+        let weirdness =
+            density_functions::router_ridges(&self.noises, cache, block_x, block_y, block_z) as f32;
 
         TargetPoint::new(
             quantize_coord(f64::from(temp)),
