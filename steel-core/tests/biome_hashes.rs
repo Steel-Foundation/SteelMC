@@ -19,8 +19,6 @@ use steel_registry::biome::BiomeRef;
 #[derive(Deserialize)]
 struct BiomeHashesJson {
     seed: u64,
-    #[allow(dead_code)]
-    radius: i32,
     overworld: DimensionHashes,
     the_nether: DimensionHashes,
     // TODO: the_end once TheEndBiomeSource is implemented
