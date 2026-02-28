@@ -65,9 +65,9 @@ use text_components::{
 };
 use uuid::Uuid;
 
-use crate::inventory::SyncPlayerInv;
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
+use crate::{command::commands::gamemode::get_gamemode_translation, inventory::SyncPlayerInv};
 use crate::{
     config::STEEL_CONFIG,
     entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason},
@@ -237,6 +237,9 @@ pub struct Player {
     /// The player's current game mode (Survival, Creative, Adventure, Spectator)
     pub game_mode: AtomicCell<GameType>,
 
+    /// The player's last game mode
+    pub prev_game_mode: AtomicCell<GameType>,
+
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: SyncPlayerInv,
 
@@ -360,6 +363,7 @@ impl Player {
             chat_session: SyncMutex::new(None),
             message_chain: SyncMutex::new(None),
             game_mode: AtomicCell::new(GameType::Survival),
+            prev_game_mode: AtomicCell::new(GameType::Survival),
             inventory: inventory.clone(),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
@@ -725,25 +729,33 @@ impl Player {
                 };
 
                 steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-                self.world.broadcast_chat(
-                    chat_packet,
-                    Arc::clone(&player),
-                    last_seen,
-                    Some(sig_array),
-                );
-            } else {
-                self.world.broadcast_unsigned_chat(
-                    chat_packet,
+                if let Some(server) = self.server.upgrade() {
+                    for world in server.worlds.values() {
+                        world.broadcast_chat(
+                            chat_packet.clone(),
+                            Arc::clone(&player),
+                            last_seen.clone(),
+                            Some(sig_array),
+                        );
+                    }
+                }
+            } else if let Some(server) = self.server.upgrade() {
+                for world in server.worlds.values() {
+                    world.broadcast_unsigned_chat(
+                        chat_packet.clone(),
+                        &player.gameprofile.name,
+                        &chat_message,
+                    );
+                }
+            }
+        } else if let Some(server) = self.server.upgrade() {
+            for world in server.worlds.values() {
+                world.broadcast_unsigned_chat(
+                    chat_packet.clone(),
                     &player.gameprofile.name,
                     &chat_message,
                 );
             }
-        } else {
-            self.world.broadcast_unsigned_chat(
-                chat_packet,
-                &player.gameprofile.name,
-                &chat_message,
-            );
         }
     }
 
@@ -1241,6 +1253,7 @@ impl Player {
             return false;
         }
 
+        self.prev_game_mode.store(self.game_mode.load());
         self.game_mode.store(gamemode);
 
         // Update abilities based on new game mode (mirrors vanilla GameType.updatePlayerAbilities)
@@ -1259,6 +1272,12 @@ impl Player {
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.world.broadcast_to_all(update_packet);
+
+        self.send_message(
+            &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
+                .message([get_gamemode_translation(gamemode)])
+                .into(),
+        );
 
         true
     }
@@ -1477,20 +1496,31 @@ impl Player {
     }
 
     /// Returns true if player is within block interaction range.
-    /// Base range is ~4.5 blocks, plus 1.0 tolerance.
+    ///
+    /// Uses eye position and AABB distance (nearest point on block surface),
+    /// matching vanilla's `Player.isWithinBlockInteractionRange(pos, 1.0)`.
     #[must_use]
     pub fn is_within_block_interaction_range(&self, pos: &BlockPos) -> bool {
         let player_pos = *self.position.lock();
-        let block_center_x = f64::from(pos.x()) + 0.5;
-        let block_center_y = f64::from(pos.y()) + 0.5;
-        let block_center_z = f64::from(pos.z()) + 0.5;
+        let eye_y = player_pos.y + self.get_eye_height();
 
-        // Base range is ~4.5 blocks, plus 1.0 tolerance
+        // Block AABB is [x, y, z] to [x+1, y+1, z+1]
+        let min_x = f64::from(pos.x());
+        let min_y = f64::from(pos.y());
+        let min_z = f64::from(pos.z());
+        let max_x = min_x + 1.0;
+        let max_y = min_y + 1.0;
+        let max_z = min_z + 1.0;
+
+        // Distance from eye to nearest point on block AABB (0 if inside on that axis)
+        let dx = f64::max(f64::max(min_x - player_pos.x, player_pos.x - max_x), 0.0);
+        let dy = f64::max(f64::max(min_y - eye_y, eye_y - max_y), 0.0);
+        let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
+        let dist_sq = dx * dx + dy * dy + dz * dz;
+
+        // Base range is 4.5 blocks + 1.0 buffer
         let max_range = 4.5 + 1.0;
-        let dx = player_pos.x - block_center_x;
-        let dy = player_pos.y - block_center_y;
-        let dz = player_pos.z - block_center_z;
-        (dx * dx + dy * dy + dz * dz).sqrt() <= max_range
+        dist_sq < max_range * max_range
     }
 
     /// Returns true if player is sneaking (secondary use active).

@@ -3,7 +3,7 @@
 use steel_core::config::STEEL_CONFIG;
 use steel_protocol::packets::{
     common::{CPongResponse, SPingRequest},
-    status::{CStatusResponse, Players, Status, Version},
+    status::{CStatusResponse, Players, Sample, Status, Version},
 };
 use steel_registry::packets::CURRENT_MC_PROTOCOL;
 
@@ -16,9 +16,13 @@ impl JavaTcpClient {
             description: &STEEL_CONFIG.motd,
             players: Some(Players {
                 max: STEEL_CONFIG.max_players.cast_signed(),
-                //TODO: Get online players count
-                online: 0,
-                sample: vec![],
+                online: self.server.player_count() as i32,
+                sample: self
+                    .server
+                    .player_sample()
+                    .into_iter()
+                    .map(|(name, id)| Sample { name, id })
+                    .collect(),
             }),
             enforce_secure_chat: STEEL_CONFIG.enforce_secure_chat,
             favicon: load_favicon(),

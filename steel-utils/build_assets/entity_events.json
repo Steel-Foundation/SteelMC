@@ -1,0 +1,250 @@
+[
+  {
+    "name": "tipped_arrow",
+    "value": 0
+  },
+  {
+    "name": "jump",
+    "value": 1
+  },
+  {
+    "name": "kinetic_hit",
+    "value": 2
+  },
+  {
+    "name": "death",
+    "value": 3
+  },
+  {
+    "name": "start_attacking",
+    "value": 4
+  },
+  {
+    "name": "stop_attacking",
+    "value": 5
+  },
+  {
+    "name": "taming_failed",
+    "value": 6
+  },
+  {
+    "name": "taming_succeeded",
+    "value": 7
+  },
+  {
+    "name": "shake_wetness",
+    "value": 8
+  },
+  {
+    "name": "use_item_complete",
+    "value": 9
+  },
+  {
+    "name": "eat_grass",
+    "value": 10
+  },
+  {
+    "name": "offer_flower",
+    "value": 11
+  },
+  {
+    "name": "love_hearts",
+    "value": 12
+  },
+  {
+    "name": "villager_angry",
+    "value": 13
+  },
+  {
+    "name": "villager_happy",
+    "value": 14
+  },
+  {
+    "name": "witch_hat_magic",
+    "value": 15
+  },
+  {
+    "name": "zombie_converting",
+    "value": 16
+  },
+  {
+    "name": "fireworks_explode",
+    "value": 17
+  },
+  {
+    "name": "in_love_hearts",
+    "value": 18
+  },
+  {
+    "name": "squid_anim_synch",
+    "value": 19
+  },
+  {
+    "name": "silverfish_merge_anim",
+    "value": 20
+  },
+  {
+    "name": "guardian_attack_sound",
+    "value": 21
+  },
+  {
+    "name": "reduced_debug_info",
+    "value": 22
+  },
+  {
+    "name": "full_debug_info",
+    "value": 23
+  },
+  {
+    "name": "permission_level_all",
+    "value": 24
+  },
+  {
+    "name": "permission_level_moderators",
+    "value": 25
+  },
+  {
+    "name": "permission_level_gamemasters",
+    "value": 26
+  },
+  {
+    "name": "permission_level_admins",
+    "value": 27
+  },
+  {
+    "name": "permission_level_owners",
+    "value": 28
+  },
+  {
+    "name": "fishing_rod_reel_in",
+    "value": 31
+  },
+  {
+    "name": "armorstand_wobble",
+    "value": 32
+  },
+  {
+    "name": "stop_offer_flower",
+    "value": 34
+  },
+  {
+    "name": "protected_from_death",
+    "value": 35
+  },
+  {
+    "name": "dolphin_looking_for_treasure",
+    "value": 38
+  },
+  {
+    "name": "ravager_stunned",
+    "value": 39
+  },
+  {
+    "name": "trusting_failed",
+    "value": 40
+  },
+  {
+    "name": "trusting_succeeded",
+    "value": 41
+  },
+  {
+    "name": "villager_sweat",
+    "value": 42
+  },
+  {
+    "name": "fox_eat",
+    "value": 45
+  },
+  {
+    "name": "teleport",
+    "value": 46
+  },
+  {
+    "name": "mainhand_break",
+    "value": 47
+  },
+  {
+    "name": "offhand_break",
+    "value": 48
+  },
+  {
+    "name": "head_break",
+    "value": 49
+  },
+  {
+    "name": "chest_break",
+    "value": 50
+  },
+  {
+    "name": "legs_break",
+    "value": 51
+  },
+  {
+    "name": "feet_break",
+    "value": 52
+  },
+  {
+    "name": "honey_slide",
+    "value": 53
+  },
+  {
+    "name": "honey_jump",
+    "value": 54
+  },
+  {
+    "name": "swap_hands",
+    "value": 55
+  },
+  {
+    "name": "cancel_shake_wetness",
+    "value": 56
+  },
+  {
+    "name": "start_ram",
+    "value": 58
+  },
+  {
+    "name": "end_ram",
+    "value": 59
+  },
+  {
+    "name": "poof",
+    "value": 60
+  },
+  {
+    "name": "tendrils_shiver",
+    "value": 61
+  },
+  {
+    "name": "sonic_charge",
+    "value": 62
+  },
+  {
+    "name": "sniffer_digging_sound",
+    "value": 63
+  },
+  {
+    "name": "armadillo_peek",
+    "value": 64
+  },
+  {
+    "name": "body_break",
+    "value": 65
+  },
+  {
+    "name": "shake",
+    "value": 66
+  },
+  {
+    "name": "drown_particles",
+    "value": 67
+  },
+  {
+    "name": "saddle_break",
+    "value": 68
+  },
+  {
+    "name": "ravager_roared",
+    "value": 69
+  }
+]

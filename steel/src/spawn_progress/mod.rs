@@ -67,7 +67,7 @@ pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
     #[allow(unused)] logger: &Arc<CommandLogger>,
 ) {
-    let world = &server.worlds[0];
+    let world = &server.overworld();
     let pregen_radius = get_pregen_radius();
 
     // For large pregeneration, use center at 0,0; otherwise use spawn position

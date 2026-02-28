@@ -17,12 +17,10 @@ tokio.workspace = true
 tokio-util.workspace = true
 
 # Serialization
-serde.workspace = true
 base64.workspace = true
 
 # Concurrency
 crossbeam.workspace = true
-parking_lot.workspace = true
 
 # UUID
 uuid.workspace = true

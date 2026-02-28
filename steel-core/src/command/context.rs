@@ -44,7 +44,7 @@ impl CommandContext {
         let player = sender.get_player().cloned();
         let world = player
             .as_ref()
-            .map_or(server.worlds[0].clone(), |p| Arc::clone(&p.world));
+            .map_or(server.overworld().clone(), |p| Arc::clone(&p.world));
         let world_spawn = world.level_data.read().data().spawn.clone();
         let position = player
             .as_ref()

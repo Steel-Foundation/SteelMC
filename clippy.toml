@@ -26,6 +26,8 @@ disallowed-types = [
     # Use AsyncMutex and AsyncRwLock instead of tokio::sync::Mutex and tokio::sync::RwLock.
     { path = "tokio::sync::Mutex", reason = "Use steel_utils::locks::AsyncMutex instead of tokio::sync::Mutex." },
     { path = "tokio::sync::RwLock", reason = "Use steel_utils::locks::AsyncRwLock instead of tokio::sync::RwLock." },
+    # Use FxSmallMap instead of SmallMap
+    { path = "small_map::SmallMap", reason = "Use small_map::FxSmallMap instead of small_map::SmallMap." },
 ]
 
 disallowed-methods = [

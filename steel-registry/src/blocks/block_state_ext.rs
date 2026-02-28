@@ -31,6 +31,8 @@ pub trait BlockStateExt {
     /// This matches vanilla's `BlockState.isSolid()` which is used by standing signs
     /// to check if they can be placed on a block.
     fn is_solid(&self) -> bool;
+    /// Returns if a block can be replaced extracted from the minecraft data
+    fn is_replaceable(&self) -> bool;
 }
 
 impl BlockStateExt for BlockStateId {
@@ -102,5 +104,9 @@ impl BlockStateExt for BlockStateId {
         // Check if the collision shape is a full block
         let shape = self.get_collision_shape();
         blocks::shapes::is_shape_full_block(shape)
+    }
+
+    fn is_replaceable(&self) -> bool {
+        self.get_block().config.replaceable
     }
 }
