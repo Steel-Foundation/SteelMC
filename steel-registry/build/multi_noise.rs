@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 
 use crate::overworld_biome_builder::{BiomeEntry, OverworldBiomeBuilder};
@@ -20,6 +20,8 @@ pub(crate) fn build() -> TokenStream {
         //! The biome entries are generated at build time using the OverworldBiomeBuilder logic.
         //! Do not edit manually.
 
+        use crate::biome::BiomeRef;
+        use crate::vanilla_biomes;
         use steel_utils::climate::{Parameter, ParameterList, ParameterPoint};
         use std::sync::LazyLock;
     });
@@ -29,23 +31,23 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         /// Overworld biome parameter list for multi-noise biome selection.
-        pub static OVERWORLD_BIOME_PARAMETERS: LazyLock<ParameterList<&'static str>> = LazyLock::new(|| {
+        pub static OVERWORLD_BIOME_PARAMETERS: LazyLock<ParameterList<BiomeRef>> = LazyLock::new(|| {
             let entries = vec![
                 #overworld_entries
             ];
             ParameterList::new(entries)
         });
 
-        /// Get the biome ID for a target point in the overworld.
+        /// Get the biome for a target point in the overworld.
         #[inline]
-        pub fn get_overworld_biome(target: &steel_utils::climate::TargetPoint) -> &'static str {
-            OVERWORLD_BIOME_PARAMETERS.find_value(target)
+        pub fn get_overworld_biome(target: &steel_utils::climate::TargetPoint) -> BiomeRef {
+            *OVERWORLD_BIOME_PARAMETERS.find_value(target)
         }
 
-        /// Get the biome ID with lastResult caching (matches vanilla's ThreadLocal warm-start).
+        /// Get the biome with lastResult caching (matches vanilla's ThreadLocal warm-start).
         #[inline]
-        pub fn get_overworld_biome_cached(target: &steel_utils::climate::TargetPoint, cache: &mut Option<usize>) -> &'static str {
-            OVERWORLD_BIOME_PARAMETERS.find_value_cached(target, cache)
+        pub fn get_overworld_biome_cached(target: &steel_utils::climate::TargetPoint, cache: &mut Option<usize>) -> BiomeRef {
+            *OVERWORLD_BIOME_PARAMETERS.find_value_cached(target, cache)
         }
     });
 
@@ -58,6 +60,13 @@ pub(crate) fn build() -> TokenStream {
 /// Casting to f32 first ensures bit-exact matching with Java's float precision.
 fn quantize(v: f64) -> i64 {
     ((v as f32) * 10000.0f32) as i64
+}
+
+/// Convert a biome name like `"minecraft:plains"` to the vanilla_biomes constant
+/// identifier `PLAINS`.
+fn biome_ident(name: &str) -> Ident {
+    let path = name.strip_prefix("minecraft:").unwrap_or(name);
+    Ident::new(&path.to_uppercase(), Span::call_site())
 }
 
 fn generate_biome_entries(entries: &[BiomeEntry]) -> TokenStream {
@@ -79,7 +88,7 @@ fn generate_biome_entries(entries: &[BiomeEntry]) -> TokenStream {
             let weird_max = quantize(entry.weirdness.max);
             let offset = quantize(entry.offset);
 
-            let biome = &entry.biome;
+            let biome = biome_ident(&entry.biome);
 
             quote! {
                 (
@@ -92,7 +101,7 @@ fn generate_biome_entries(entries: &[BiomeEntry]) -> TokenStream {
                         Parameter::new(#weird_min, #weird_max),
                         #offset,
                     ),
-                    #biome,
+                    &*vanilla_biomes::#biome,
                 ),
             }
         })

@@ -1,9 +1,9 @@
 use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::multi_noise::get_overworld_biome_cached;
 use steel_registry::{REGISTRY, vanilla_blocks};
-use steel_utils::Identifier;
 
-use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};
+use crate::chunk::chunk_access::ChunkAccess;
+use crate::chunk::chunk_generator::ChunkGenerator;
 use crate::worldgen::VanillaClimateSampler;
 
 /// A chunk generator for vanilla (normal) world generation.
@@ -64,18 +64,9 @@ impl ChunkGenerator for VanillaGenerator {
                             &mut column_cache,
                         );
 
-                        // Get the biome for this climate
-                        let biome_name = get_overworld_biome_cached(&target, &mut biome_cache);
-
-                        // Convert biome name to ID (strip "minecraft:" prefix if present)
-                        let biome_path = biome_name
-                            .strip_prefix("minecraft:")
-                            .unwrap_or(biome_name)
-                            .to_string();
-                        let biome_id = REGISTRY
-                            .biomes
-                            .id_from_key(&Identifier::vanilla(biome_path))
-                            .unwrap_or(0) as u8;
+                        // Get the biome for this climate target
+                        let biome = get_overworld_biome_cached(&target, &mut biome_cache);
+                        let biome_id = *REGISTRY.biomes.get_id(biome) as u8;
 
                         section_guard.biomes.set(
                             local_quart_x as usize,

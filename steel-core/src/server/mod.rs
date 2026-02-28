@@ -11,7 +11,7 @@ use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
 use crate::chunk::vanilla_generator::VanillaGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
-use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
+use crate::config::{STEEL_CONFIG, WorldGeneratorTypes, WorldStorageConfig};
 use crate::entity::init_entities;
 use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
@@ -203,7 +203,7 @@ impl Server {
                 game_type: player.game_mode.load(),
                 previous_game_type: Some(player.prev_game_mode.load()),
                 is_debug: false,
-                is_flat: matches!(STEEL_CONFIG.world_generator, WordGeneratorTypes::Flat),
+                is_flat: matches!(STEEL_CONFIG.world_generator, WorldGeneratorTypes::Flat),
                 last_death_location: None,
                 portal_cooldown: 0,
                 sea_level: 63, // Standard overworld sea level
@@ -558,11 +558,11 @@ impl Server {
     /// Selects the appropriate chunk generator for the given dimension type.
     fn make_generator_for_dimension(dimension: DimensionTypeRef, seed: i64) -> ChunkGeneratorType {
         match STEEL_CONFIG.world_generator {
-            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-            WordGeneratorTypes::Vanilla => {
+            WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+            WorldGeneratorTypes::Vanilla => {
                 ChunkGeneratorType::Vanilla(VanillaGenerator::new(seed as u64))
             }
-            WordGeneratorTypes::Flat => {
+            WorldGeneratorTypes::Flat => {
                 if ptr::eq(dimension, THE_NETHER) {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY

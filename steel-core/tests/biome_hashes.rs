@@ -50,7 +50,7 @@ fn chunk_biome_hash(sampler: &VanillaClimateSampler, chunk_x: i32, chunk_z: i32)
 
                     let target = sampler.sample(quart_x, quart_y, quart_z, &mut eval_cache);
                     let biome = get_overworld_biome_cached(&target, &mut biome_cache);
-                    biomes.insert((section_y, x, y, z), biome);
+                    biomes.insert((section_y, x, y, z), &biome.key);
                 }
             }
         }
@@ -63,9 +63,8 @@ fn chunk_biome_hash(sampler: &VanillaClimateSampler, chunk_x: i32, chunk_z: i32)
         for y in 0..4i32 {
             for z in 0..4i32 {
                 for x in 0..4i32 {
-                    let biome = biomes[&(section_y, x, y, z)];
-                    let name = biome.strip_prefix("minecraft:").unwrap_or(biome);
-                    ctx.consume(name.as_bytes());
+                    let key = biomes[&(section_y, x, y, z)];
+                    ctx.consume(key.path.as_bytes());
                 }
             }
         }
