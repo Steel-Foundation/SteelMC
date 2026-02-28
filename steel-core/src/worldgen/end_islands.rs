@@ -49,8 +49,7 @@ impl EndIslands {
     /// Used by `EndBiomeSource` to determine biome thresholds. Converts block
     /// coordinates to section coordinates internally (divides by 8).
     #[must_use]
-    pub fn sample(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
-        let _ = block_y; // Y is unused in End islands (2D noise)
+    pub fn sample(&self, block_x: i32, _block_y: i32, block_z: i32) -> f64 {
         // Widen to f64 BEFORE subtracting 8.0, matching Java's `float - 8.0` (double literal)
         // where the float is promoted to double first.
         (f64::from(Self::get_height_value(
@@ -71,8 +70,13 @@ impl EndIslands {
         let sub_section_x = section_x % 2;
         let sub_section_z = section_z % 2;
 
-        // Distance-based falloff from the origin
-        let dist = ((section_x as f32).powi(2) + (section_z as f32).powi(2)).sqrt();
+        // Distance-based falloff from the origin.
+        // Vanilla does integer multiply THEN casts to float: `Mth.sqrt(sectionX * sectionX + ...)`.
+        // Integer overflow wraps in Java; we use wrapping_mul/wrapping_add to match.
+        let dist_sq = section_x
+            .wrapping_mul(section_x)
+            .wrapping_add(section_z.wrapping_mul(section_z));
+        let dist = (dist_sq as f32).sqrt();
         let mut doffs = (100.0_f32 - dist * 8.0).clamp(-100.0, 80.0);
 
         // Check 25×25 neighborhood for island contributions

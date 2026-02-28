@@ -498,7 +498,7 @@ impl DensityFunction {
                 xz_factor: bn.xz_factor,
                 y_factor: bn.y_factor,
                 smear_scale_multiplier: bn.smear_scale_multiplier,
-                noise: noises.get("offset").cloned(),
+                noise: noises.get("minecraft:offset").cloned(),
             }),
 
             Self::WeirdScaledSampler(ws) => Self::WeirdScaledSampler(WeirdScaledSampler {

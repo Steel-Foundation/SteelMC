@@ -4,27 +4,8 @@
 //! Supports 2D and 3D sampling with the same gradient vectors as Perlin noise.
 
 use crate::math::floor;
+use crate::noise::GRADIENT;
 use crate::random::Random;
-
-/// Gradient vectors shared with Perlin noise (from vanilla `SimplexNoise.GRADIENT`).
-const GRADIENT: [[i32; 3]; 16] = [
-    [1, 1, 0],
-    [-1, 1, 0],
-    [1, -1, 0],
-    [-1, -1, 0],
-    [1, 0, 1],
-    [-1, 0, 1],
-    [1, 0, -1],
-    [-1, 0, -1],
-    [0, 1, 1],
-    [0, -1, 1],
-    [0, 1, -1],
-    [0, -1, -1],
-    [1, 1, 0],
-    [0, -1, 1],
-    [-1, 1, 0],
-    [0, -1, -1],
-];
 
 #[allow(clippy::unreadable_literal)]
 const SQRT_3: f64 = 1.7320508075688772;
@@ -69,6 +50,11 @@ impl SimplexNoise {
         for i in 0..256 {
             let offset = random.next_i32_bounded((256 - i) as i32) as usize;
             p.swap(i, offset + i);
+        }
+
+        // Mirror first 256 entries to second half (matching vanilla)
+        for i in 0..256 {
+            p[i + 256] = p[i];
         }
 
         Self { p, xo, yo, zo }
@@ -130,20 +116,22 @@ impl SimplexNoise {
         70.0 * (n0 + n1 + n2)
     }
 
+    /// Skewing factor for 3D simplex: `1/3`
+    const F3: f64 = 1.0 / 3.0;
+    /// Unskewing factor for 3D simplex: `1/6`
+    const G3: f64 = 1.0 / 6.0;
+
     /// Sample 3D simplex noise at the given coordinates.
     ///
     /// Returns a value typically in the range `[-1, 1]` (scaled by 32).
     #[must_use]
     #[allow(clippy::many_single_char_names)]
     pub fn get_value_3d(&self, xin: f64, yin: f64, zin: f64) -> f64 {
-        let f3 = 1.0 / 3.0;
-        let g3 = 1.0 / 6.0;
-
-        let s = (xin + yin + zin) * f3;
+        let s = (xin + yin + zin) * Self::F3;
         let i = floor(xin + s);
         let j = floor(yin + s);
         let k = floor(zin + s);
-        let t = f64::from(i + j + k) * g3;
+        let t = f64::from(i + j + k) * Self::G3;
         let x0 = xin - (f64::from(i) - t);
         let y0 = yin - (f64::from(j) - t);
         let z0 = zin - (f64::from(k) - t);
@@ -165,12 +153,12 @@ impl SimplexNoise {
             (0, 1, 0, 1, 1, 0)
         };
 
-        let x1 = x0 - f64::from(i1) + g3;
-        let y1 = y0 - f64::from(j1) + g3;
-        let z1 = z0 - f64::from(k1) + g3;
-        let x2 = x0 - f64::from(i2) + f3;
-        let y2 = y0 - f64::from(j2) + f3;
-        let z2 = z0 - f64::from(k2) + f3;
+        let x1 = x0 - f64::from(i1) + Self::G3;
+        let y1 = y0 - f64::from(j1) + Self::G3;
+        let z1 = z0 - f64::from(k1) + Self::G3;
+        let x2 = x0 - f64::from(i2) + Self::F3;
+        let y2 = y0 - f64::from(j2) + Self::F3;
+        let z2 = z0 - f64::from(k2) + Self::F3;
         let x3 = x0 - 1.0 + 0.5;
         let y3 = y0 - 1.0 + 0.5;
         let z3 = z0 - 1.0 + 0.5;
@@ -237,9 +225,12 @@ mod tests {
         rng.consume_count(17292);
         let noise = SimplexNoise::new(&mut rng);
 
-        // The noise should produce non-trivial values
+        // Verify the noise produces a finite, non-zero value at a known coordinate
         let v = noise.get_value_2d(10.0, 10.0);
-        assert!(v.abs() > 0.0 || v == 0.0, "Should produce a finite value");
-        assert!(v.is_finite());
+        assert!(v.is_finite(), "Noise should produce a finite value");
+        assert!(
+            v.abs() > 1e-10,
+            "Noise at (10, 10) should be non-zero, got {v}"
+        );
     }
 }

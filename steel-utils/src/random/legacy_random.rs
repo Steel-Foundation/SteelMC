@@ -7,7 +7,7 @@ use crate::random::{
 /// This implementation mirrors Java's `java.util.Random` which Minecraft originally used.
 pub struct LegacyRandom {
     seed: i64,
-    next_gauissian: Option<f64>,
+    next_gaussian: Option<f64>,
 }
 
 /// A positional random number generator factory for the legacy Minecraft LCG algorithm.
@@ -23,7 +23,7 @@ impl LegacyRandom {
     pub const fn from_seed(seed: u64) -> Self {
         Self {
             seed: (seed as i64 ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF,
-            next_gauissian: None,
+            next_gaussian: None,
         }
     }
 
@@ -41,11 +41,11 @@ impl LegacyRandom {
 
 impl MarsagliaPolarGaussian for LegacyRandom {
     fn stored_next_gaussian(&self) -> Option<f64> {
-        self.next_gauissian
+        self.next_gaussian
     }
 
     fn set_stored_next_gaussian(&mut self, value: Option<f64>) {
-        self.next_gauissian = value;
+        self.next_gaussian = value;
     }
 }
 

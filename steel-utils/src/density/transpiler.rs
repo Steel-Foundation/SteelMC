@@ -621,7 +621,9 @@ impl TranspileContext {
 
             DensityFunction::Spline(s) => self.gen_spline_expr(&s.spline, input, is_flat),
 
-            // TODO: Single-noise approximation — see BlendedNoise TODO in types.rs
+            // TODO: BlendedNoise requires three PerlinNoise generators (min_limit, max_limit, main)
+            // with cell-based trilinear interpolation. This single-noise approximation produces
+            // incorrect terrain shapes. Implement full BlendedNoise before terrain generation.
             DensityFunction::BlendedNoise(bn) => {
                 let field = noise_field_ident("minecraft:offset");
                 let xz = Literal::f64_unsuffixed(bn.xz_scale / bn.xz_factor);
@@ -870,8 +872,15 @@ fn named_fn_ident(name: &str) -> Ident {
     format_ident!("compute_{}", sanitize_name(name))
 }
 
+/// Converts a namespaced ID to a valid Rust identifier.
+///
 /// `"minecraft:overworld/continents"` → `"overworld__continents"`
+/// `"mymod:custom/noise"` → `"custom__noise"`
 fn sanitize_name(id: &str) -> String {
-    let stripped = id.strip_prefix("minecraft:").unwrap_or(id);
-    stripped.replace('/', "__").replace('-', "_")
+    // Take just the path component, stripping any namespace (e.g. "minecraft:", "mymod:")
+    let path = match id.split_once(':') {
+        Some((_, path)) => path,
+        None => id,
+    };
+    path.replace('/', "__").replace('-', "_")
 }

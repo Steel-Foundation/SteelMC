@@ -21,6 +21,7 @@ use super::{NetherClimateSampler, OverworldClimateSampler};
 ///
 /// Each variant holds shared state (noise generators, parameter lists) and
 /// creates per-chunk samplers via [`chunk_sampler`](BiomeSourceKind::chunk_sampler).
+#[non_exhaustive]
 pub enum BiomeSourceKind {
     /// Overworld biome source (multi-noise climate matching).
     Overworld(OverworldBiomeSource),

@@ -568,6 +568,7 @@ impl Server {
                     let source = BiomeSourceKind::nether(seed as u64);
                     ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
                 } else {
+                    // TODO: Handle custom dimensions for modding support
                     let source = BiomeSourceKind::end(seed as u64);
                     ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
                 }

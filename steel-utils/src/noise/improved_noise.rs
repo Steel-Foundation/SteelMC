@@ -3,30 +3,8 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use crate::math::{floor, lerp3, smoothstep};
+use crate::noise::GRADIENT;
 use crate::random::Random;
-
-/// Gradient vectors for Perlin noise.
-///
-/// These are the 16 gradient vectors used in the dot product calculation.
-/// From vanilla SimplexNoise.GRADIENT.
-const GRADIENT: [[i32; 3]; 16] = [
-    [1, 1, 0],
-    [-1, 1, 0],
-    [1, -1, 0],
-    [-1, -1, 0],
-    [1, 0, 1],
-    [-1, 0, 1],
-    [1, 0, -1],
-    [-1, 0, -1],
-    [0, 1, 1],
-    [0, -1, 1],
-    [0, 1, -1],
-    [0, -1, -1],
-    [1, 1, 0],
-    [0, -1, 1],
-    [-1, 1, 0],
-    [0, -1, -1],
-];
 
 /// Improved Perlin noise generator.
 ///

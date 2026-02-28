@@ -14,7 +14,7 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::{REGISTRY, Registry};
+use steel_registry::{REGISTRY, Registry, vanilla_biomes};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 
 use super::ram_only::RamOnlyStorage;
@@ -811,6 +811,6 @@ impl ChunkStorage {
         {
             return id as u16;
         }
-        0 // Plains fallback
+        *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u16
     }
 }

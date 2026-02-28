@@ -68,7 +68,7 @@ impl ChunkGenerator for VanillaGenerator {
     }
 
     fn fill_from_noise(&self, chunk: &ChunkAccess) {
-        // TEMP FOR SEEING BIOMES
+        // TODO: Implement actual noise-based terrain generation (NoiseChunk + trilinear interpolation)
         for x in 0..16 {
             for z in 0..16 {
                 chunk.set_relative_block(

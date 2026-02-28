@@ -16,11 +16,12 @@ pub const INPUT_FACTOR: f64 = 1.0181268882175227;
 
 /// Value factor numerator matching vanilla's inline literal `0.16666666666666666` (1/6).
 ///
-/// Note: Vanilla declares a constant `TARGET_DEVIATION = 0.3333333333333333` (1/3) on
-/// `NormalNoise` but the actual value used inline in the constructor is 1/6. We match
-/// the inline value that's actually used.
+/// Vanilla declares a constant `TARGET_DEVIATION = 0.3333333333333333` (1/3) but never
+/// uses it — the constructor hardcodes `0.16666666666666666` (1/6) as the numerator in
+/// `valueFactor = 0.16666... / expectedDeviation(span)`. We name this differently to
+/// avoid confusion with vanilla's dead `TARGET_DEVIATION` constant.
 #[allow(clippy::unreadable_literal)]
-const TARGET_DEVIATION: f64 = 0.16666666666666666;
+const VALUE_FACTOR_NUMERATOR: f64 = 0.16666666666666666;
 
 /// Normal (Double Perlin) noise generator.
 ///
@@ -115,7 +116,7 @@ impl NormalNoise {
 
         // Calculate value factor based on octave span
         let octave_span = max_octave - min_octave;
-        let value_factor = TARGET_DEVIATION / expected_deviation(octave_span);
+        let value_factor = VALUE_FACTOR_NUMERATOR / expected_deviation(octave_span);
         let max_value = (first.max_value() + second.max_value()) * value_factor;
 
         Self {
