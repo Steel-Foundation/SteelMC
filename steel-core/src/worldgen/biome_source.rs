@@ -58,7 +58,7 @@ impl BiomeSourceKind {
     /// The returned sampler holds per-chunk caches and should be dropped after
     /// the chunk's biomes are fully populated.
     #[must_use]
-    pub fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
+    pub fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
         match self {
             Self::Overworld(source) => source.chunk_sampler(),
             Self::Nether(source) => source.chunk_sampler(),
@@ -72,9 +72,28 @@ impl BiomeSourceKind {
 /// Created by [`BiomeSourceKind::chunk_sampler`] for each chunk. Holds caches like
 /// column-level density function values and `RTree` warm-start indices that persist
 /// across positions within a single chunk.
-pub trait ChunkBiomeSampler {
+///
+/// Uses enum dispatch instead of `dyn` to avoid vtable overhead on the hot
+/// per-quart sampling path (1536 calls per overworld chunk).
+pub enum ChunkBiomeSampler<'a> {
+    /// Overworld sampler (climate → R-tree lookup).
+    Overworld(OverworldChunkBiomeSampler<'a>),
+    /// Nether sampler (climate → R-tree lookup).
+    Nether(NetherChunkBiomeSampler<'a>),
+    /// End sampler (spatial distance thresholds).
+    End(EndChunkBiomeSampler<'a>),
+}
+
+impl ChunkBiomeSampler<'_> {
     /// Get the biome at the given quart position.
-    fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef;
+    #[inline]
+    pub fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
+        match self {
+            Self::Overworld(s) => s.sample(quart_x, quart_y, quart_z),
+            Self::Nether(s) => s.sample(quart_x, quart_y, quart_z),
+            Self::End(s) => s.sample(quart_x, quart_y, quart_z),
+        }
+    }
 }
 
 /// Multi-noise biome source for the overworld.
@@ -102,8 +121,8 @@ impl OverworldBiomeSource {
         &self.climate_sampler
     }
 
-    fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
-        Box::new(OverworldChunkBiomeSampler {
+    fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
+        ChunkBiomeSampler::Overworld(OverworldChunkBiomeSampler {
             source: self,
             column_cache: OverworldColumnCache::new(),
             biome_cache: None,
@@ -111,13 +130,13 @@ impl OverworldBiomeSource {
     }
 }
 
-struct OverworldChunkBiomeSampler<'a> {
+pub struct OverworldChunkBiomeSampler<'a> {
     source: &'a OverworldBiomeSource,
     column_cache: OverworldColumnCache,
     biome_cache: Option<usize>,
 }
 
-impl ChunkBiomeSampler for OverworldChunkBiomeSampler<'_> {
+impl OverworldChunkBiomeSampler<'_> {
     fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
         let target =
             self.source
@@ -148,8 +167,8 @@ impl NetherBiomeSource {
         }
     }
 
-    fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
-        Box::new(NetherChunkBiomeSampler {
+    fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
+        ChunkBiomeSampler::Nether(NetherChunkBiomeSampler {
             source: self,
             column_cache: NetherColumnCache::new(),
             biome_cache: None,
@@ -157,13 +176,13 @@ impl NetherBiomeSource {
     }
 }
 
-struct NetherChunkBiomeSampler<'a> {
+pub struct NetherChunkBiomeSampler<'a> {
     source: &'a NetherBiomeSource,
     column_cache: NetherColumnCache,
     biome_cache: Option<usize>,
 }
 
-impl ChunkBiomeSampler for NetherChunkBiomeSampler<'_> {
+impl NetherChunkBiomeSampler<'_> {
     fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
         let target =
             self.source
@@ -205,16 +224,16 @@ impl EndBiomeSource {
         }
     }
 
-    fn chunk_sampler(&self) -> Box<dyn ChunkBiomeSampler + '_> {
-        Box::new(EndChunkBiomeSampler { source: self })
+    fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
+        ChunkBiomeSampler::End(EndChunkBiomeSampler { source: self })
     }
 }
 
-struct EndChunkBiomeSampler<'a> {
+pub struct EndChunkBiomeSampler<'a> {
     source: &'a EndBiomeSource,
 }
 
-impl ChunkBiomeSampler for EndChunkBiomeSampler<'_> {
+impl EndChunkBiomeSampler<'_> {
     fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
         let block_x = quart_x << 2;
         let block_y = quart_y << 2;

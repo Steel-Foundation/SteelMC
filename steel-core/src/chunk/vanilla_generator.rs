@@ -35,19 +35,22 @@ impl ChunkGenerator for VanillaGenerator {
 
         let mut sampler = self.biome_source.chunk_sampler();
 
-        // Sample biomes for each section
-        for section_index in 0..section_count {
-            let section_y = (min_y / 16) + section_index as i32;
-            let section = &chunk.sections().sections[section_index];
-            let mut section_guard = section.write();
+        // Column-major iteration: sample all Y values for each (X, Z) column
+        // before moving to the next column. This keeps the column cache effective —
+        // column-level density functions (continents, erosion, ridges, etc.) are
+        // computed once per column instead of once per sample.
+        for local_quart_x in 0..4i32 {
+            for local_quart_z in 0..4i32 {
+                let quart_x = chunk_x * 4 + local_quart_x;
+                let quart_z = chunk_z * 4 + local_quart_z;
 
-            // For each biome position in the section (4x4x4)
-            for local_quart_x in 0..4i32 {
-                for local_quart_y in 0..4i32 {
-                    for local_quart_z in 0..4i32 {
-                        let quart_x = chunk_x * 4 + local_quart_x;
+                for section_index in 0..section_count {
+                    let section_y = (min_y / 16) + section_index as i32;
+                    let section = &chunk.sections().sections[section_index];
+                    let mut section_guard = section.write();
+
+                    for local_quart_y in 0..4i32 {
                         let quart_y = section_y * 4 + local_quart_y;
-                        let quart_z = chunk_z * 4 + local_quart_z;
 
                         let biome = sampler.sample(quart_x, quart_y, quart_z);
                         let biome_id = *REGISTRY.biomes.get_id(biome) as u16;
@@ -61,7 +64,6 @@ impl ChunkGenerator for VanillaGenerator {
                     }
                 }
             }
-            drop(section_guard);
         }
 
         chunk.mark_dirty();

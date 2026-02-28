@@ -85,6 +85,9 @@ struct TranspileContext {
     noise_ids: BTreeSet<String>,
     /// Named functions that are flat-cached (xz-only).
     flat_cached: BTreeSet<String>,
+    /// Router entries that are Y-independent (inferred flat).
+    /// Their results are cached in the column cache.
+    flat_routers: BTreeSet<String>,
     /// Named functions in topological order (dependencies first).
     topo_order: Vec<String>,
     /// Named functions that are actually reachable from router entries.
@@ -104,6 +107,7 @@ impl TranspileContext {
         Self {
             noise_ids: BTreeSet::new(),
             flat_cached: BTreeSet::new(),
+            flat_routers: BTreeSet::new(),
             topo_order: Vec::new(),
             used_names: BTreeSet::new(),
             spline_counter: 0,
@@ -152,6 +156,22 @@ impl TranspileContext {
             }
             if !changed {
                 break;
+            }
+        }
+
+        // Infer flatness for router entries: a router entry is flat if it doesn't
+        // use y and all its Reference dependencies are flat-cached named functions.
+        // This catches cases like temperature/vegetation that are Y-independent but
+        // lack explicit FlatCache markers in vanilla's JSON.
+        for (name, df) in &input.router_entries {
+            let inner = unwrap_markers(df);
+            if is_flat_cached(df)
+                || (!uses_y(inner)
+                    && collect_references(inner)
+                        .iter()
+                        .all(|dep| self.flat_cached.contains(dep)))
+            {
+                self.flat_routers.insert(name.clone());
             }
         }
 
@@ -348,6 +368,39 @@ impl TranspileContext {
             })
             .collect();
 
+        // Flat router entries: cached alongside named functions.
+        // Computed after all named functions since they may depend on them.
+        let router_fields: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                quote! { pub #field: f64 }
+            })
+            .collect();
+
+        let router_ensure_stmts: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                let compute_fn = router_compute_fn_ident(name);
+                quote! {
+                    let val = #compute_fn(noises, &*self, x, z);
+                    self.#field = val;
+                }
+            })
+            .collect();
+
+        let router_default_fields: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                quote! { #field: 0.0 }
+            })
+            .collect();
+
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         quote! {
@@ -361,7 +414,8 @@ impl TranspileContext {
                 /// Cached z block coordinate.
                 pub z: i32,
                 valid: bool,
-                #(#cache_fields),*
+                #(#cache_fields,)*
+                #(#router_fields),*
             }
 
             impl #cache {
@@ -372,14 +426,16 @@ impl TranspileContext {
                         x: 0,
                         z: 0,
                         valid: false,
-                        #(#default_fields),*
+                        #(#default_fields,)*
+                        #(#router_default_fields),*
                     }
                 }
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
                 ///
                 /// If the cache already holds values for this column, this is a no-op.
-                /// Computes all flat-cached density functions in topological order.
+                /// Computes all flat-cached density functions in topological order,
+                /// then any Y-independent router entries.
                 pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
                     if self.valid && self.x == x && self.z == z {
                         return;
@@ -387,6 +443,7 @@ impl TranspileContext {
                     self.x = x;
                     self.z = z;
                     #(#ensure_stmts)*
+                    #(#router_ensure_stmts)*
                     self.valid = true;
                 }
             }
@@ -451,28 +508,59 @@ impl TranspileContext {
     }
 
     /// Generate the router entry point functions.
+    ///
+    /// Flat (Y-independent) routers read their result from the column cache.
+    /// A private `compute_router_*` function is also emitted for each flat
+    /// router, called by `ensure()` to populate the cache.
     fn gen_router_functions(&mut self, input: &TranspilerInput) -> TokenStream {
         let mut fns = Vec::new();
 
         for (name, df) in &input.router_entries {
             let fn_name = format_ident!("router_{}", sanitize_name(name));
-            let inner = unwrap_markers(df);
-            let is_flat = is_flat_cached(df);
-
-            let body = self.gen_expr(inner, input, is_flat);
-
-            let params = self.fn_params_router(is_flat);
-
             let doc = Literal::string(&format!("Noise router entry: `{name}`"));
-            fns.push(quote! {
-                #[doc = #doc]
-                #[inline]
-                pub fn #fn_name(#params) -> f64 {
-                    let x = cache.x;
-                    let z = cache.z;
-                    #body
-                }
-            });
+
+            if self.flat_routers.contains(name) {
+                // Flat router: result is cached in the column cache.
+                // Generate private compute function used by ensure().
+                let compute_fn_name = router_compute_fn_ident(name);
+                let inner = unwrap_markers(df);
+                let compute_body = self.gen_expr(inner, input, true);
+                let compute_params = self.fn_params(true);
+
+                fns.push(quote! {
+                    #[inline]
+                    fn #compute_fn_name(#compute_params) -> f64 {
+                        #compute_body
+                    }
+                });
+
+                // Public router function returns the cached value.
+                // Keeps the full (noises, cache, x, y, z) signature for API consistency.
+                let cache_field = router_cache_field_ident(name);
+                let full_params = self.fn_params_router(false);
+                fns.push(quote! {
+                    #[doc = #doc]
+                    #[inline]
+                    pub fn #fn_name(#full_params) -> f64 {
+                        cache.#cache_field
+                    }
+                });
+            } else {
+                let inner = unwrap_markers(df);
+                let is_flat = is_flat_cached(df);
+                let body = self.gen_expr(inner, input, is_flat);
+                let params = self.fn_params_router(is_flat);
+
+                fns.push(quote! {
+                    #[doc = #doc]
+                    #[inline]
+                    pub fn #fn_name(#params) -> f64 {
+                        let x = cache.x;
+                        let z = cache.z;
+                        #body
+                    }
+                });
+            }
         }
 
         let spline_fns = mem::take(&mut self.spline_fns);
@@ -717,8 +805,8 @@ impl TranspileContext {
             .collect();
 
         quote! {{
-            static LOCATIONS: [f32; #n_lit] = [#(#locations),*];
-            static DERIVATIVES: [f32; #n_lit] = [#(#derivatives),*];
+            const LOCATIONS: [f32; #n_lit] = [#(#locations),*];
+            const DERIVATIVES: [f32; #n_lit] = [#(#derivatives),*];
             let coord = (#coord) as f32;
             f64::from(spline_eval::evaluate_spline(&LOCATIONS, &DERIVATIVES, coord, |__i| {
                 match __i {
@@ -870,6 +958,14 @@ fn named_fn_field_ident(name: &str) -> Ident {
 
 fn named_fn_ident(name: &str) -> Ident {
     format_ident!("compute_{}", sanitize_name(name))
+}
+
+fn router_cache_field_ident(name: &str) -> Ident {
+    format_ident!("router_{}", sanitize_name(name))
+}
+
+fn router_compute_fn_ident(name: &str) -> Ident {
+    format_ident!("compute_router_{}", sanitize_name(name))
 }
 
 /// Converts a namespaced ID to a valid Rust identifier.

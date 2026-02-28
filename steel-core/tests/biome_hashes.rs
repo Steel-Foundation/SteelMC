@@ -40,7 +40,7 @@ fn load_expected_hashes() -> BiomeHashesJson {
 /// Samples biomes in vanilla's generation iteration order (section → X → Y → Z),
 /// then hashes in deterministic Y → Z → X order with `section_y` markers.
 fn chunk_biome_hash(
-    sampler: &mut dyn ChunkBiomeSampler,
+    sampler: &mut ChunkBiomeSampler<'_>,
     chunk_x: i32,
     chunk_z: i32,
     min_section_y: i32,
@@ -86,7 +86,7 @@ fn verify_dimension(source: &BiomeSourceKind, dim: &DimensionHashes, dimension_n
     for (chunk_x, chunk_z, expected_hash) in &dim.hashes {
         let mut sampler = source.chunk_sampler();
         let actual_hash = chunk_biome_hash(
-            &mut *sampler,
+            &mut sampler,
             *chunk_x,
             *chunk_z,
             dim.min_section_y,
