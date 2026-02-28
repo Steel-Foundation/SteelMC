@@ -514,7 +514,7 @@ impl ChunkMap {
             });
 
             // TODO: Execute fluid ticks when FluidBehaviour trait exists
-            let _ = ready_fluid_ticks.len().min(MAX_TICKS);
+            let _ = ready_fluid_ticks.len();
         }
     }
 
