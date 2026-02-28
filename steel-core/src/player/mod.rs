@@ -1496,20 +1496,31 @@ impl Player {
     }
 
     /// Returns true if player is within block interaction range.
-    /// Base range is ~4.5 blocks, plus 1.0 tolerance.
+    ///
+    /// Uses eye position and AABB distance (nearest point on block surface),
+    /// matching vanilla's `Player.isWithinBlockInteractionRange(pos, 1.0)`.
     #[must_use]
     pub fn is_within_block_interaction_range(&self, pos: &BlockPos) -> bool {
         let player_pos = *self.position.lock();
-        let block_center_x = f64::from(pos.x()) + 0.5;
-        let block_center_y = f64::from(pos.y()) + 0.5;
-        let block_center_z = f64::from(pos.z()) + 0.5;
+        let eye_y = player_pos.y + self.get_eye_height();
 
-        // Base range is ~4.5 blocks, plus 1.0 tolerance
+        // Block AABB is [x, y, z] to [x+1, y+1, z+1]
+        let min_x = f64::from(pos.x());
+        let min_y = f64::from(pos.y());
+        let min_z = f64::from(pos.z());
+        let max_x = min_x + 1.0;
+        let max_y = min_y + 1.0;
+        let max_z = min_z + 1.0;
+
+        // Distance from eye to nearest point on block AABB (0 if inside on that axis)
+        let dx = f64::max(f64::max(min_x - player_pos.x, player_pos.x - max_x), 0.0);
+        let dy = f64::max(f64::max(min_y - eye_y, eye_y - max_y), 0.0);
+        let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
+        let dist_sq = dx * dx + dy * dy + dz * dz;
+
+        // Base range is 4.5 blocks + 1.0 buffer
         let max_range = 4.5 + 1.0;
-        let dx = player_pos.x - block_center_x;
-        let dy = player_pos.y - block_center_y;
-        let dz = player_pos.z - block_center_z;
-        (dx * dx + dy * dy + dz * dz).sqrt() <= max_range
+        dist_sq < max_range * max_range
     }
 
     /// Returns true if player is sneaking (secondary use active).

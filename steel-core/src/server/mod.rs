@@ -8,14 +8,16 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::empty_chunk_generator::EmptyChunkGenerator;
 use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
+use crate::chunk::vanilla_generator::VanillaGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
-use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
+use crate::config::{STEEL_CONFIG, WorldGeneratorTypes, WorldStorageConfig};
 use crate::entity::init_entities;
 use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
+use crate::worldgen::BiomeSourceKind;
 use small_map::FxSmallMap;
 use std::{
     ptr,
@@ -100,7 +102,7 @@ impl Server {
             chunk_runtime.clone(),
             OVERWORLD,
             seed,
-            Self::make_world_config(OVERWORLD),
+            Self::make_world_config(OVERWORLD, seed),
         )
         .await
         .expect("Failed to create overworld");
@@ -109,7 +111,7 @@ impl Server {
             chunk_runtime.clone(),
             THE_NETHER,
             seed,
-            Self::make_world_config(THE_NETHER),
+            Self::make_world_config(THE_NETHER, seed),
         )
         .await
         .expect("Failed to create nether");
@@ -118,7 +120,7 @@ impl Server {
             chunk_runtime.clone(),
             THE_END,
             seed,
-            Self::make_world_config(THE_END),
+            Self::make_world_config(THE_END, seed),
         )
         .await
         .expect("Failed to create end");
@@ -202,8 +204,7 @@ impl Server {
                 game_type: player.game_mode.load(),
                 previous_game_type: Some(player.prev_game_mode.load()),
                 is_debug: false,
-                // TODO: Change once we add a normal generator
-                is_flat: true,
+                is_flat: matches!(STEEL_CONFIG.world_generator, WorldGeneratorTypes::Flat),
                 last_death_location: None,
                 portal_cooldown: 0,
                 sea_level: 63, // Standard overworld sea level
@@ -556,10 +557,23 @@ impl Server {
         player.send_packet(step_packet);
     }
     /// Selects the appropriate chunk generator for the given dimension type.
-    fn make_generator_for_dimension(dimension: DimensionTypeRef) -> ChunkGeneratorType {
+    fn make_generator_for_dimension(dimension: DimensionTypeRef, seed: i64) -> ChunkGeneratorType {
         match STEEL_CONFIG.world_generator {
-            WordGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-            WordGeneratorTypes::Flat => {
+            WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
+            WorldGeneratorTypes::Vanilla => {
+                if ptr::eq(dimension, OVERWORLD) {
+                    let source = BiomeSourceKind::overworld(seed as u64);
+                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
+                } else if ptr::eq(dimension, THE_NETHER) {
+                    let source = BiomeSourceKind::nether(seed as u64);
+                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
+                } else {
+                    // TODO: Handle custom dimensions for modding support
+                    let source = BiomeSourceKind::end(seed as u64);
+                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
+                }
+            }
+            WorldGeneratorTypes::Flat => {
                 if ptr::eq(dimension, THE_NETHER) {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
@@ -599,7 +613,7 @@ impl Server {
         }
     }
 
-    fn make_world_config(dimension: DimensionTypeRef) -> WorldConfig {
+    fn make_world_config(dimension: DimensionTypeRef, seed: i64) -> WorldConfig {
         WorldConfig {
             storage: match &STEEL_CONFIG.world_storage_config {
                 WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
@@ -607,7 +621,7 @@ impl Server {
                 },
                 WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
             },
-            generator: Arc::new(Self::make_generator_for_dimension(dimension)),
+            generator: Arc::new(Self::make_generator_for_dimension(dimension, seed)),
         }
     }
 }

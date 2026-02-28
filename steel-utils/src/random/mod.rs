@@ -54,7 +54,7 @@ pub trait Random {
 
     fn consume_count(&mut self, count: i32) {
         for _ in 0..count {
-            self.next_i64();
+            self.next_i32();
         }
     }
 }

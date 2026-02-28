@@ -71,5 +71,13 @@ proc-macro2.workspace = true
 quote.workspace = true
 heck.workspace = true
 
+[dev-dependencies]
+md5.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "biome_generation"
+harness = false
+
 [lints]
 workspace = true

@@ -14,7 +14,7 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::{REGISTRY, Registry};
+use steel_registry::{REGISTRY, Registry, vanilla_biomes};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 
 use super::ram_only::RamOnlyStorage;
@@ -68,7 +68,7 @@ impl<'a> ChunkBuilder<'a> {
     }
 
     /// Ensures a biome exists in the chunk's palette, returning its index.
-    fn ensure_biome(&mut self, biome_id: u8) -> u16 {
+    fn ensure_biome(&mut self, biome_id: u16) -> u16 {
         // Get biome identifier from registry
         let biome = self
             .registry
@@ -371,7 +371,7 @@ impl ChunkStorage {
 
     /// Converts runtime biome data to persistent format.
     fn biomes_to_persistent(
-        biomes: &PalettedContainer<u8, 4>,
+        biomes: &PalettedContainer<u16, 4>,
         builder: &mut ChunkBuilder,
     ) -> PersistentBiomeData {
         match biomes {
@@ -760,7 +760,7 @@ impl ChunkStorage {
     fn persistent_to_biomes(
         persistent: &PersistentBiomeData,
         chunk: &PersistentChunk,
-    ) -> PalettedContainer<u8, 4> {
+    ) -> PalettedContainer<u16, 4> {
         match persistent {
             PersistentBiomeData::Homogeneous { biome } => {
                 let biome_id = Self::resolve_biome(chunk, *biome);
@@ -774,12 +774,12 @@ impl ChunkStorage {
                 let indices = unpack_indices(biome_data, *bits_per_entry, BIOMES_PER_SECTION);
 
                 // Resolve section-local palette -> chunk palette -> runtime
-                let runtime_palette: Vec<u8> = palette
+                let runtime_palette: Vec<u16> = palette
                     .iter()
                     .map(|&idx| Self::resolve_biome(chunk, idx))
                     .collect();
 
-                let mut cube = Box::new([[[0u8; 4]; 4]; 4]);
+                let mut cube = Box::new([[[0u16; 4]; 4]; 4]);
                 for (i, &idx) in indices.iter().enumerate() {
                     let y = i / 16;
                     let z = (i / 4) % 4;
@@ -805,12 +805,12 @@ impl ChunkStorage {
     }
 
     /// Resolves a chunk palette index to a runtime biome ID.
-    fn resolve_biome(chunk: &PersistentChunk, index: u16) -> u8 {
+    fn resolve_biome(chunk: &PersistentChunk, index: u16) -> u16 {
         if let Some(biome_key) = chunk.biomes.get(index as usize)
             && let Some(id) = REGISTRY.biomes.id_from_key(biome_key)
         {
-            return id as u8;
+            return id as u16;
         }
-        0 // Plains fallback
+        *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u16
     }
 }

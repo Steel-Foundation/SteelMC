@@ -31,7 +31,7 @@ tracing.workspace = true
 
 [build-dependencies]
 # Internal crates
-steel-utils.workspace = true
+steel-utils = { workspace = true, features = ["codegen"] }
 
 # UUID
 uuid.workspace = true

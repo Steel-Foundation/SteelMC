@@ -20,7 +20,7 @@ impl ToGlobalId for BlockStateId {
     }
 }
 
-impl ToGlobalId for u8 {
+impl ToGlobalId for u16 {
     fn to_global_id(&self) -> u32 {
         u32::from(*self)
     }
@@ -269,7 +269,7 @@ fn pack_bits(indices: &[u32], bits: usize) -> Vec<u64> {
 /// A palette container for blocks.
 pub type BlockPalette = PalettedContainer<BlockStateId, 16>;
 /// A palette container for biomes.
-pub type BiomePalette = PalettedContainer<u8, 4>;
+pub type BiomePalette = PalettedContainer<u16, 4>;
 
 impl BlockPalette {
     /// Gets the number of non-empty blocks in the container.

@@ -1,8 +1,12 @@
-use steel_utils::BlockStateId;
+use steel_registry::REGISTRY;
+use steel_utils::{BlockStateId, Identifier};
 
 use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};
 
 /// A chunk generator that generates a flat world.
+///
+/// Uses a fixed biome (plains) for all positions, matching vanilla's
+/// `FlatLevelSource` with `FixedBiomeSource`.
 pub struct FlatChunkGenerator {
     /// The block state id for bedrock.
     pub bedrock: BlockStateId,
@@ -10,16 +14,24 @@ pub struct FlatChunkGenerator {
     pub dirt: BlockStateId,
     /// The block state id for grass blocks.
     pub grass: BlockStateId,
+    /// The biome ID for plains (cached at construction).
+    biome_id: u16,
 }
 
 impl FlatChunkGenerator {
     /// Creates a new `FlatChunkGenerator`.
     #[must_use]
-    pub const fn new(bedrock: BlockStateId, dirt: BlockStateId, grass: BlockStateId) -> Self {
+    pub fn new(bedrock: BlockStateId, dirt: BlockStateId, grass: BlockStateId) -> Self {
+        let biome_id = REGISTRY
+            .biomes
+            .id_from_key(&Identifier::vanilla("plains".to_string()))
+            .unwrap_or(0) as u16;
+
         Self {
             bedrock,
             dirt,
             grass,
+            biome_id,
         }
     }
 }
@@ -27,7 +39,30 @@ impl FlatChunkGenerator {
 impl ChunkGenerator for FlatChunkGenerator {
     fn create_structures(&self, _chunk: &ChunkAccess) {}
 
-    fn create_biomes(&self, _chunk: &ChunkAccess) {}
+    fn create_biomes(&self, chunk: &ChunkAccess) {
+        let section_count = chunk.sections().sections.len();
+
+        for section_index in 0..section_count {
+            let section = &chunk.sections().sections[section_index];
+            let mut section_guard = section.write();
+
+            for local_quart_x in 0..4usize {
+                for local_quart_y in 0..4usize {
+                    for local_quart_z in 0..4usize {
+                        section_guard.biomes.set(
+                            local_quart_x,
+                            local_quart_y,
+                            local_quart_z,
+                            self.biome_id,
+                        );
+                    }
+                }
+            }
+            drop(section_guard);
+        }
+
+        chunk.mark_dirty();
+    }
 
     fn fill_from_noise(&self, chunk: &ChunkAccess) {
         // Layers:

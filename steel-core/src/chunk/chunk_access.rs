@@ -227,6 +227,16 @@ impl ChunkAccess {
         }
     }
 
+    /// Returns the minimum Y coordinate of the world this chunk belongs to.
+    #[must_use]
+    pub const fn min_y(&self) -> i32 {
+        match self {
+            Self::Full(chunk) => chunk.min_y(),
+            Self::Proto(proto_chunk) => proto_chunk.min_y(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns a reference to the sections.
     #[must_use]
     pub const fn sections(&self) -> &Sections {

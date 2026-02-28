@@ -22,4 +22,6 @@ pub mod level_chunk;
 pub mod paletted_container;
 pub mod proto_chunk;
 pub mod section;
+/// Generates vanilla worlds using noise-based biomes and terrain.
+pub mod vanilla_generator;
 pub mod world_gen_context;
