@@ -1,7 +1,7 @@
 use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::multi_noise::get_overworld_biome_cached;
 use steel_registry::{REGISTRY, vanilla_blocks};
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::Identifier;
 
 use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};
 use crate::worldgen::VanillaClimateSampler;

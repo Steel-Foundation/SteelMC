@@ -11,7 +11,8 @@ use steel_utils::random::{Random, xoroshiro::Xoroshiro};
 /// Climate sampler that uses compiled vanilla density functions.
 pub struct VanillaClimateSampler {
     /// All noise generators needed by the overworld density functions.
-    noises: OverworldNoises,
+    /// Boxed because `OverworldNoises` is ~5600 bytes (35 `NormalNoise` fields).
+    noises: Box<OverworldNoises>,
 }
 
 impl VanillaClimateSampler {
@@ -23,7 +24,9 @@ impl VanillaClimateSampler {
         let noise_params = get_noise_parameters();
         let noises = OverworldNoises::create(&splitter, &noise_params);
 
-        Self { noises }
+        Self {
+            noises: Box::new(noises),
+        }
     }
 
     /// Sample climate at a quart position.

@@ -18,6 +18,7 @@
 //! Gated behind the `codegen` feature flag.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::sync::Arc;
 
 use proc_macro2::{Ident, Literal, TokenStream};
@@ -413,7 +414,7 @@ impl TranspileContext {
             });
         }
 
-        let spline_fns = std::mem::take(&mut self.spline_fns);
+        let spline_fns = mem::take(&mut self.spline_fns);
 
         quote! {
             #(#fns)*
@@ -450,7 +451,7 @@ impl TranspileContext {
             });
         }
 
-        let spline_fns = std::mem::take(&mut self.spline_fns);
+        let spline_fns = mem::take(&mut self.spline_fns);
         quote! {
             #(#fns)*
             #(#spline_fns)*
@@ -462,6 +463,7 @@ impl TranspileContext {
     /// Generate a `TokenStream` expression that computes a density function value.
     ///
     /// `is_flat` indicates this expression tree is xz-only (no y available).
+    #[allow(clippy::too_many_lines)]
     fn gen_expr(
         &mut self,
         df: &DensityFunction,
@@ -620,9 +622,8 @@ impl TranspileContext {
             }
 
             DensityFunction::BlendAlpha(_) => quote! { 1.0 },
-            DensityFunction::BlendOffset(_) => quote! { 0.0 },
+            DensityFunction::BlendOffset(_) | DensityFunction::EndIslands(_) => quote! { 0.0 },
             DensityFunction::BlendDensity(bd) => self.gen_expr(&bd.input, input, is_flat),
-            DensityFunction::EndIslands(_) => quote! { 0.0 },
             DensityFunction::Marker(m) => self.gen_expr(&m.wrapped, input, is_flat),
 
             DensityFunction::Reference(r) => {
@@ -735,11 +736,12 @@ impl TranspileContext {
 /// Does NOT recurse into References (those are handled by the flat inference loop).
 fn uses_y(df: &DensityFunction) -> bool {
     match df {
-        DensityFunction::YClampedGradient(_) => true,
+        // uses y * 0.25
+        DensityFunction::YClampedGradient(_)
+        | DensityFunction::Shift(_)
+        | DensityFunction::BlendedNoise(_) => true,
         DensityFunction::Noise(n) => n.y_scale != 0.0,
         DensityFunction::ShiftedNoise(sn) => sn.y_scale != 0.0 || uses_y(&sn.shift_y),
-        DensityFunction::Shift(_) => true, // uses y * 0.25
-        DensityFunction::BlendedNoise(_) => true,
         DensityFunction::WeirdScaledSampler(ws) => uses_y(&ws.input),
         DensityFunction::TwoArgumentSimple(t) => uses_y(&t.argument1) || uses_y(&t.argument2),
         DensityFunction::Mapped(m) => uses_y(&m.input),
@@ -750,10 +752,10 @@ fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::BlendDensity(bd) => uses_y(&bd.input),
         DensityFunction::Marker(m) => uses_y(&m.wrapped),
         DensityFunction::Spline(s) => uses_y_spline(&s.spline),
-        // References are handled at the analysis level, not here
-        DensityFunction::Reference(_) => false,
-        // These don't use y
-        DensityFunction::Constant(_)
+        // References are handled at the analysis level, not here.
+        // Constants and shift-a/b/blend/end-islands don't use y.
+        DensityFunction::Reference(_)
+        | DensityFunction::Constant(_)
         | DensityFunction::ShiftA(_)
         | DensityFunction::ShiftB(_)
         | DensityFunction::BlendAlpha(_)
