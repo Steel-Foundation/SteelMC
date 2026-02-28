@@ -89,6 +89,45 @@ impl PerlinNoise {
         Self::from_parts(noise_levels, amplitudes, zero_octave_index)
     }
 
+    /// Create a [`PerlinNoise`] using the legacy nether biome initialization path.
+    ///
+    /// Unlike [`create_from_random`](Self::create_from_random) which uses positional/hash-based
+    /// seeding, this creates `ImprovedNoise` instances directly from a sequential random source.
+    /// Matches vanilla's `PerlinNoise(random, pair, useNewInitialization=false)`.
+    #[must_use]
+    pub fn create_legacy_for_nether(
+        random: &mut RandomSource,
+        first_octave: i32,
+        amplitudes: &[f64],
+    ) -> Self {
+        let octaves = amplitudes.len();
+        let zero_octave_index = (-first_octave) as usize;
+
+        let mut noise_levels = vec![None; octaves];
+
+        // Create the zero-octave noise level first (directly from random)
+        let zero_octave = ImprovedNoise::new(random);
+        if zero_octave_index < octaves && amplitudes[zero_octave_index] != 0.0 {
+            noise_levels[zero_octave_index] = Some(zero_octave);
+        }
+
+        // Walk backwards from zero-octave, creating or skipping octaves
+        for ix in (0..zero_octave_index).rev() {
+            if ix < octaves {
+                if amplitudes[ix] == 0.0 {
+                    // Skip: consume 262 values to advance random state
+                    random.consume_count(262);
+                } else {
+                    noise_levels[ix] = Some(ImprovedNoise::new(random));
+                }
+            } else {
+                random.consume_count(262);
+            }
+        }
+
+        Self::from_parts(noise_levels, amplitudes, zero_octave_index)
+    }
+
     /// Build a [`PerlinNoise`] from pre-computed noise levels.
     #[must_use]
     fn from_parts(

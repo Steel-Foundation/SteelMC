@@ -1,27 +1,24 @@
-use steel_registry::density_functions::OverworldColumnCache;
-use steel_registry::multi_noise::get_overworld_biome_cached;
 use steel_registry::{REGISTRY, vanilla_blocks};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
-use crate::worldgen::VanillaClimateSampler;
+use crate::worldgen::BiomeSource;
 
 /// A chunk generator for vanilla (normal) world generation.
 ///
-/// Uses the multi-noise climate sampler to determine biomes at each position,
-/// matching vanilla's `NoiseBasedChunkGenerator` with `MultiNoiseBiomeSource`.
+/// Matches vanilla's `NoiseBasedChunkGenerator`. The biome source is pluggable
+/// per-dimension — overworld, nether, and end each provide a different
+/// [`BiomeSource`] implementation.
 pub struct VanillaGenerator {
-    /// Climate sampler for biome generation (compiled density functions).
-    climate_sampler: VanillaClimateSampler,
+    /// Biome source for this dimension. Determines biomes at each quart position.
+    biome_source: Box<dyn BiomeSource>,
 }
 
 impl VanillaGenerator {
-    /// Creates a new `VanillaGenerator` with the given seed.
+    /// Creates a new `VanillaGenerator` with the given biome source.
     #[must_use]
-    pub fn new(seed: u64) -> Self {
-        Self {
-            climate_sampler: VanillaClimateSampler::new(seed),
-        }
+    pub fn new(biome_source: Box<dyn BiomeSource>) -> Self {
+        Self { biome_source }
     }
 }
 
@@ -36,10 +33,7 @@ impl ChunkGenerator for VanillaGenerator {
         let chunk_x = pos.0.x;
         let chunk_z = pos.0.y;
 
-        // Per-chunk biome lookup cache
-        let mut biome_cache: Option<usize> = None;
-        // Column cache for flat-cached density function values (xz-only)
-        let mut column_cache = OverworldColumnCache::new();
+        let mut sampler = self.biome_source.chunk_sampler();
 
         // Sample biomes for each section
         for section_index in 0..section_count {
@@ -51,21 +45,11 @@ impl ChunkGenerator for VanillaGenerator {
             for local_quart_x in 0..4i32 {
                 for local_quart_y in 0..4i32 {
                     for local_quart_z in 0..4i32 {
-                        // Calculate global quart position
                         let quart_x = chunk_x * 4 + local_quart_x;
                         let quart_y = section_y * 4 + local_quart_y;
                         let quart_z = chunk_z * 4 + local_quart_z;
 
-                        // Sample climate at this quart position
-                        let target = self.climate_sampler.sample(
-                            quart_x,
-                            quart_y,
-                            quart_z,
-                            &mut column_cache,
-                        );
-
-                        // Get the biome for this climate target
-                        let biome = get_overworld_biome_cached(&target, &mut biome_cache);
+                        let biome = sampler.sample(quart_x, quart_y, quart_z);
                         let biome_id = *REGISTRY.biomes.get_id(biome) as u16;
 
                         section_guard.biomes.set(
@@ -87,7 +71,6 @@ impl ChunkGenerator for VanillaGenerator {
         // TEMP FOR SEEING BIOMES
         for x in 0..16 {
             for z in 0..16 {
-                // Bedrock at bottom
                 chunk.set_relative_block(
                     x,
                     0,

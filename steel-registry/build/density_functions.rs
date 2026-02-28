@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use quote::quote;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -285,9 +286,9 @@ fn read_density_function_registry() -> BTreeMap<String, DensityFunctionJson> {
     registry
 }
 
-/// Read the overworld noise settings from the datapack.
-fn read_overworld_noise_router() -> NoiseRouterJson {
-    let path = format!("{DATAPACK_BASE}/noise_settings/overworld.json");
+/// Read noise settings for a dimension from the datapack.
+fn read_noise_router(dimension: &str) -> NoiseRouterJson {
+    let path = format!("{DATAPACK_BASE}/noise_settings/{dimension}.json");
     println!("cargo:rerun-if-changed={path}");
     let content =
         fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
@@ -552,65 +553,82 @@ fn json_spline_point(p: &SplinePointJson) -> SplinePoint {
 
 use steel_utils::density::transpiler::{TranspilerInput, transpile};
 
+/// Convert a noise router JSON into a `BTreeMap` of router entries.
+fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFunction> {
+    let mut entries = BTreeMap::new();
+    entries.insert("barrier".to_string(), json_to_df(&router.barrier));
+    entries.insert(
+        "fluid_level_floodedness".to_string(),
+        json_to_df(&router.fluid_level_floodedness),
+    );
+    entries.insert(
+        "fluid_level_spread".to_string(),
+        json_to_df(&router.fluid_level_spread),
+    );
+    entries.insert("lava".to_string(), json_to_df(&router.lava));
+    entries.insert("temperature".to_string(), json_to_df(&router.temperature));
+    entries.insert("vegetation".to_string(), json_to_df(&router.vegetation));
+    entries.insert(
+        "continentalness".to_string(),
+        json_to_df(&router.continents),
+    );
+    entries.insert("erosion".to_string(), json_to_df(&router.erosion));
+    entries.insert("depth".to_string(), json_to_df(&router.depth));
+    entries.insert("ridges".to_string(), json_to_df(&router.ridges));
+    entries.insert(
+        "final_density".to_string(),
+        json_to_df(&router.final_density),
+    );
+    entries.insert("vein_toggle".to_string(), json_to_df(&router.vein_toggle));
+    entries.insert("vein_ridged".to_string(), json_to_df(&router.vein_ridged));
+    entries.insert("vein_gap".to_string(), json_to_df(&router.vein_gap));
+    if let Some(ref psl) = router.preliminary_surface_level {
+        entries.insert("preliminary_surface_level".to_string(), json_to_df(psl));
+    }
+    entries
+}
+
+/// Transpile density functions for a single dimension.
+fn transpile_dimension(
+    dimension: &str,
+    prefix: &str,
+    registry: &BTreeMap<String, DensityFunction>,
+) -> TokenStream {
+    let router_json = read_noise_router(dimension);
+    let router_entries = router_to_entries(&router_json);
+
+    let input = TranspilerInput {
+        registry: registry.clone(),
+        router_entries,
+        prefix: prefix.to_string(),
+    };
+
+    transpile(&input)
+}
+
 /// Generate the complete density functions module using the transpiler.
+///
+/// Transpiles density functions for all dimensions (overworld and nether).
+/// Overworld types are at the top level for backward compatibility.
+/// Nether types are in a `nether` submodule.
 pub(crate) fn build() -> TokenStream {
-    let router_json = read_overworld_noise_router();
     let registry_json = read_density_function_registry();
 
-    // Convert JSON registry to DensityFunction values
+    // Convert JSON registry to DensityFunction values (shared across dimensions)
     let registry: BTreeMap<String, DensityFunction> = registry_json
         .iter()
         .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
 
-    // Convert router entries to DensityFunction values
-    let mut router_entries = BTreeMap::new();
-    router_entries.insert("barrier".to_string(), json_to_df(&router_json.barrier));
-    router_entries.insert(
-        "fluid_level_floodedness".to_string(),
-        json_to_df(&router_json.fluid_level_floodedness),
-    );
-    router_entries.insert(
-        "fluid_level_spread".to_string(),
-        json_to_df(&router_json.fluid_level_spread),
-    );
-    router_entries.insert("lava".to_string(), json_to_df(&router_json.lava));
-    router_entries.insert(
-        "temperature".to_string(),
-        json_to_df(&router_json.temperature),
-    );
-    router_entries.insert(
-        "vegetation".to_string(),
-        json_to_df(&router_json.vegetation),
-    );
-    router_entries.insert(
-        "continentalness".to_string(),
-        json_to_df(&router_json.continents),
-    );
-    router_entries.insert("erosion".to_string(), json_to_df(&router_json.erosion));
-    router_entries.insert("depth".to_string(), json_to_df(&router_json.depth));
-    router_entries.insert("ridges".to_string(), json_to_df(&router_json.ridges));
-    router_entries.insert(
-        "final_density".to_string(),
-        json_to_df(&router_json.final_density),
-    );
-    router_entries.insert(
-        "vein_toggle".to_string(),
-        json_to_df(&router_json.vein_toggle),
-    );
-    router_entries.insert(
-        "vein_ridged".to_string(),
-        json_to_df(&router_json.vein_ridged),
-    );
-    router_entries.insert("vein_gap".to_string(), json_to_df(&router_json.vein_gap));
-    if let Some(ref psl) = router_json.preliminary_surface_level {
-        router_entries.insert("preliminary_surface_level".to_string(), json_to_df(psl));
+    let overworld = transpile_dimension("overworld", "Overworld", &registry);
+    let nether = transpile_dimension("nether", "Nether", &registry);
+
+    quote! {
+        #overworld
+
+        /// Nether density functions.
+        pub mod nether {
+            #nether
+        }
     }
-
-    let input = TranspilerInput {
-        registry,
-        router_entries,
-    };
-
-    transpile(&input)
 }

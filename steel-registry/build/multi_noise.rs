@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 
 use proc_macro2::{Ident, Span, TokenStream};
@@ -30,7 +30,7 @@ pub(crate) fn build() -> TokenStream {
 
     let content = fs::read_to_string("build_assets/multi_noise_biome_source_parameters.json")
         .expect("Failed to read multi_noise_biome_source_parameters.json");
-    let presets: HashMap<String, Vec<BiomeEntry>> =
+    let presets: BTreeMap<String, Vec<BiomeEntry>> =
         serde_json::from_str(&content).expect("Failed to parse multi-noise biome parameters JSON");
 
     let mut stream = TokenStream::new();
@@ -54,23 +54,21 @@ pub(crate) fn build() -> TokenStream {
             .unwrap_or(preset_name);
         let upper_name = short_name.to_uppercase();
 
-        let static_ident = Ident::new(
-            &format!("{upper_name}_BIOME_PARAMETERS"),
-            Span::call_site(),
-        );
-        let get_fn = Ident::new(
-            &format!("get_{short_name}_biome"),
-            Span::call_site(),
-        );
-        let get_cached_fn = Ident::new(
-            &format!("get_{short_name}_biome_cached"),
-            Span::call_site(),
-        );
+        let static_ident = Ident::new(&format!("{upper_name}_BIOME_PARAMETERS"), Span::call_site());
+        let get_fn = Ident::new(&format!("get_{short_name}_biome"), Span::call_site());
+        let get_cached_fn =
+            Ident::new(&format!("get_{short_name}_biome_cached"), Span::call_site());
 
         let entry_tokens = generate_biome_entries(entries);
-        let doc_static = format!("{} biome parameter list for multi-noise biome selection.", capitalize(short_name));
+        let doc_static = format!(
+            "{} biome parameter list for multi-noise biome selection.",
+            capitalize(short_name)
+        );
         let doc_get = format!("Get the biome for a target point in the {}.", short_name);
-        let doc_cached = format!("Get the biome with lastResult caching for the {} (matches vanilla's ThreadLocal warm-start).", short_name);
+        let doc_cached = format!(
+            "Get the biome with lastResult caching for the {} (matches vanilla's ThreadLocal warm-start).",
+            short_name
+        );
 
         stream.extend(quote! {
             #[doc = #doc_static]

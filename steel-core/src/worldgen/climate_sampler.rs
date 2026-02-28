@@ -1,25 +1,32 @@
-//! Climate sampler for vanilla world generation.
+//! Climate sampler for overworld world generation.
 //!
-//! Uses the compiled density functions from steel-registry for fast evaluation,
-//! bypassing the runtime tree interpreter entirely.
+//! Uses the compiled overworld density functions from steel-registry for fast
+//! evaluation, bypassing the runtime tree interpreter entirely.
+//!
+//! This is overworld-specific because it uses `OverworldNoises` and the overworld
+//! noise router (`router_temperature`, `router_vegetation`, etc.). Other dimensions
+//! need their own climate samplers with their own transpiled density functions.
 
 use steel_registry::density_functions::{self, OverworldColumnCache, OverworldNoises};
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::random::{Random, xoroshiro::Xoroshiro};
 
-/// Climate sampler that uses compiled vanilla density functions.
+/// Climate sampler for the overworld using compiled density functions.
+///
+/// Evaluates the overworld noise router (temperature, vegetation, continentalness,
+/// erosion, depth, ridges) to produce `TargetPoint` values for biome lookup.
 ///
 // TODO: Implement `spawn_target()` matching vanilla's `OverworldBiomeBuilder.spawnTarget()`
 // and `Climate.Sampler.spawnTarget` for spawn point selection.
-pub struct VanillaClimateSampler {
+pub struct OverworldClimateSampler {
     /// All noise generators needed by the overworld density functions.
     /// Boxed because `OverworldNoises` is ~5600 bytes (35 `NormalNoise` fields).
     noises: Box<OverworldNoises>,
 }
 
-impl VanillaClimateSampler {
-    /// Create a new vanilla climate sampler with the given seed.
+impl OverworldClimateSampler {
+    /// Create a new overworld climate sampler with the given seed.
     #[must_use]
     pub fn new(seed: u64) -> Self {
         let mut rng = Xoroshiro::from_seed(seed);

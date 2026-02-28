@@ -35,18 +35,20 @@ pub struct TranspilerInput {
     pub registry: BTreeMap<String, DensityFunction>,
     /// Noise router entry points (like `"temperature"`, `"final_density"`).
     pub router_entries: BTreeMap<String, DensityFunction>,
+    /// Prefix for generated struct names (e.g., `"Overworld"` → `OverworldNoises`, `OverworldColumnCache`).
+    pub prefix: String,
 }
 
 /// Compile density function trees into a `TokenStream` of Rust code.
 ///
 /// The generated code contains:
-/// - `OverworldNoises` struct with one `NormalNoise` field per noise used
-/// - `OverworldColumnCache` struct with fields for flat-cached (xz-only) values
+/// - `{Prefix}Noises` struct with one `NormalNoise` field per noise used
+/// - `{Prefix}ColumnCache` struct with fields for flat-cached (xz-only) values
 /// - Private `compute_*` functions for each named density function
 /// - Public `router_*` functions for each noise router entry point
 #[must_use]
 pub fn transpile(input: &TranspilerInput) -> TokenStream {
-    let mut ctx = TranspileContext::new();
+    let mut ctx = TranspileContext::new(&input.prefix);
 
     // Phase 1: Analyze the graph
     ctx.analyze(input);
@@ -58,12 +60,9 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     let column_cache = ctx.gen_column_cache(input);
     let router_fns = ctx.gen_router_functions(input);
 
+    // Imports are emitted here so each dimension's output is self-contained
+    // when wrapped in a module by the caller.
     quote! {
-        #![doc = r" Generated density function code for terrain generation."]
-        #![doc = r""]
-        #![doc = r" Compiled from vanilla datapack JSON at build time by the density function transpiler."]
-        #![doc = r" Do not edit manually."]
-
         use steel_utils::density::spline_eval;
         use steel_utils::density::RarityValueMapper;
         use steel_utils::math::{clamp, map_clamped};
@@ -94,10 +93,14 @@ struct TranspileContext {
     spline_counter: usize,
     /// Generated spline helper functions.
     spline_fns: Vec<TokenStream>,
+    /// Generated ident for the noises struct (e.g., `OverworldNoises`).
+    noises_ident: Ident,
+    /// Generated ident for the column cache struct (e.g., `OverworldColumnCache`).
+    cache_ident: Ident,
 }
 
 impl TranspileContext {
-    const fn new() -> Self {
+    fn new(prefix: &str) -> Self {
         Self {
             noise_ids: BTreeSet::new(),
             flat_cached: BTreeSet::new(),
@@ -105,6 +108,8 @@ impl TranspileContext {
             used_names: BTreeSet::new(),
             spline_counter: 0,
             spline_fns: Vec::new(),
+            noises_ident: format_ident!("{prefix}Noises"),
+            cache_ident: format_ident!("{prefix}ColumnCache"),
         }
     }
 
@@ -262,11 +267,12 @@ impl TranspileContext {
             })
             .collect();
 
+        let noises = &self.noises_ident;
         quote! {
-            /// All noise generators needed by the overworld density functions.
+            /// All noise generators needed by this dimension's density functions.
             ///
-            /// Created at runtime from a seed via [`OverworldNoises::create`].
-            pub struct OverworldNoises {
+            /// Created at runtime from a seed via the `create` method.
+            pub struct #noises {
                 #(#fields),*
             }
         }
@@ -288,8 +294,9 @@ impl TranspileContext {
             })
             .collect();
 
+        let noises = &self.noises_ident;
         quote! {
-            impl OverworldNoises {
+            impl #noises {
                 /// Create all noise generators from a seed's positional splitter and noise parameters.
                 pub fn create(
                     splitter: &RandomSplitter,
@@ -303,7 +310,7 @@ impl TranspileContext {
         }
     }
 
-    /// Generate the `OverworldColumnCache` struct and its `ensure` method.
+    /// Generate the column cache struct and its `ensure` method.
     fn gen_column_cache(&mut self, _input: &TranspilerInput) -> TokenStream {
         let flat_names: Vec<&String> = self
             .topo_order
@@ -341,12 +348,14 @@ impl TranspileContext {
             })
             .collect();
 
+        let noises = &self.noises_ident;
+        let cache = &self.cache_ident;
         quote! {
             /// Column-level cache for flat-cached (xz-only) density function results.
             ///
             /// Call [`ensure`](Self::ensure) before reading values. Values are recomputed
             /// only when `(x, z)` changes.
-            pub struct OverworldColumnCache {
+            pub struct #cache {
                 /// Cached x block coordinate.
                 pub x: i32,
                 /// Cached z block coordinate.
@@ -355,7 +364,7 @@ impl TranspileContext {
                 #(#cache_fields),*
             }
 
-            impl OverworldColumnCache {
+            impl #cache {
                 /// Create a new, empty column cache.
                 #[must_use]
                 pub fn new() -> Self {
@@ -371,7 +380,7 @@ impl TranspileContext {
                 ///
                 /// If the cache already holds values for this column, this is a no-op.
                 /// Computes all flat-cached density functions in topological order.
-                pub fn ensure(&mut self, x: i32, z: i32, noises: &OverworldNoises) {
+                pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
                     if self.valid && self.x == x && self.z == z {
                         return;
                     }
@@ -381,6 +390,29 @@ impl TranspileContext {
                     self.valid = true;
                 }
             }
+        }
+    }
+
+    /// Generate the function parameter list for a density function.
+    fn fn_params(&self, is_flat: bool) -> TokenStream {
+        let noises = &self.noises_ident;
+        let cache = &self.cache_ident;
+        if is_flat {
+            quote! { noises: &#noises, cache: &#cache, x: i32, z: i32 }
+        } else {
+            quote! { noises: &#noises, cache: &#cache, x: i32, y: i32, z: i32 }
+        }
+    }
+
+    /// Generate the function parameter list for a router entry point.
+    /// Router functions read x/z from the cache, so flat variants omit explicit coords.
+    fn fn_params_router(&self, is_flat: bool) -> TokenStream {
+        let noises = &self.noises_ident;
+        let cache = &self.cache_ident;
+        if is_flat {
+            quote! { noises: &#noises, cache: &#cache }
+        } else {
+            quote! { noises: &#noises, cache: &#cache, x: i32, y: i32, z: i32 }
         }
     }
 
@@ -398,11 +430,7 @@ impl TranspileContext {
 
             let body = self.gen_expr(&inner, input, is_flat);
 
-            let params = if is_flat {
-                quote! { noises: &OverworldNoises, cache: &OverworldColumnCache, x: i32, z: i32 }
-            } else {
-                quote! { noises: &OverworldNoises, cache: &OverworldColumnCache, x: i32, y: i32, z: i32 }
-            };
+            let params = self.fn_params(is_flat);
 
             let doc = Literal::string(&format!("`{name}`"));
             fns.push(quote! {
@@ -433,11 +461,7 @@ impl TranspileContext {
 
             let body = self.gen_expr(inner, input, is_flat);
 
-            let params = if is_flat {
-                quote! { noises: &OverworldNoises, cache: &OverworldColumnCache }
-            } else {
-                quote! { noises: &OverworldNoises, cache: &OverworldColumnCache, x: i32, y: i32, z: i32 }
-            };
+            let params = self.fn_params_router(is_flat);
 
             let doc = Literal::string(&format!("Noise router entry: `{name}`"));
             fns.push(quote! {
@@ -714,11 +738,7 @@ impl TranspileContext {
 
         let body = self.gen_spline_expr(spline, input, is_flat);
 
-        let params = if is_flat {
-            quote! { noises: &OverworldNoises, cache: &OverworldColumnCache, x: i32, z: i32 }
-        } else {
-            quote! { noises: &OverworldNoises, cache: &OverworldColumnCache, x: i32, y: i32, z: i32 }
-        };
+        let params = self.fn_params(is_flat);
 
         self.spline_fns.push(quote! {
             #[inline]

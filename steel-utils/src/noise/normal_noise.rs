@@ -73,6 +73,24 @@ impl NormalNoise {
         Self::create_from_random(&mut random, first_octave, amplitudes)
     }
 
+    /// Create a `NormalNoise` using the legacy nether biome initialization path.
+    ///
+    /// This uses `PerlinNoise::create_legacy_for_nether` instead of the hash-based
+    /// positional seeding. The `ImprovedNoise` instances are created directly from
+    /// a sequential `LegacyRandomSource`. Matches vanilla's
+    /// `NormalNoise.createLegacyNetherBiome()`.
+    #[must_use]
+    pub fn create_legacy_nether_biome(
+        random: &mut RandomSource,
+        first_octave: i32,
+        amplitudes: &[f64],
+    ) -> Self {
+        let first = PerlinNoise::create_legacy_for_nether(random, first_octave, amplitudes);
+        let second = PerlinNoise::create_legacy_for_nether(random, first_octave, amplitudes);
+
+        Self::finish(first, second, amplitudes)
+    }
+
     /// Finish construction with the two `PerlinNoise` instances.
     fn finish(first: PerlinNoise, second: PerlinNoise, amplitudes: &[f64]) -> Self {
         // Find the span of non-zero octaves
@@ -83,6 +101,16 @@ impl NormalNoise {
                 min_octave = min_octave.min(i as i32);
                 max_octave = max_octave.max(i as i32);
             }
+        }
+
+        // All-zero amplitudes: silent noise, always returns 0.
+        if min_octave == i32::MAX {
+            return Self {
+                first,
+                second,
+                value_factor: 0.0,
+                max_value: 0.0,
+            };
         }
 
         // Calculate value factor based on octave span
