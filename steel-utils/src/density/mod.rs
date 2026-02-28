@@ -25,7 +25,11 @@
 //! registry references are baked into the tree at construction time via
 //! [`DensityFunction::resolve`], so evaluation needs only a [`DensityContext`].
 
+pub mod spline_eval;
 mod types;
+
+#[cfg(feature = "codegen")]
+pub mod transpiler;
 
 pub use types::{
     BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,

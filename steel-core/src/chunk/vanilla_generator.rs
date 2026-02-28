@@ -1,7 +1,7 @@
 use steel_registry::REGISTRY;
+use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::multi_noise::get_overworld_biome_cached;
 use steel_utils::Identifier;
-use steel_utils::density::EvalCache;
 
 use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};
 use crate::worldgen::VanillaClimateSampler;
@@ -11,7 +11,7 @@ use crate::worldgen::VanillaClimateSampler;
 /// Uses the multi-noise climate sampler to determine biomes at each position,
 /// matching vanilla's `NoiseBasedChunkGenerator` with `MultiNoiseBiomeSource`.
 pub struct VanillaGenerator {
-    /// Climate sampler for biome generation (resolved density functions).
+    /// Climate sampler for biome generation (compiled density functions).
     climate_sampler: VanillaClimateSampler,
 }
 
@@ -38,8 +38,8 @@ impl ChunkGenerator for VanillaGenerator {
 
         // Per-chunk biome lookup cache
         let mut biome_cache: Option<usize> = None;
-        // Density function evaluation cache (FlatCache, CacheOnce)
-        let mut eval_cache = EvalCache::new();
+        // Column cache for flat-cached density function values (xz-only)
+        let mut column_cache = OverworldColumnCache::new();
 
         // Sample biomes for each section
         for section_index in 0..section_count {
@@ -57,9 +57,12 @@ impl ChunkGenerator for VanillaGenerator {
                         let quart_z = chunk_z * 4 + local_quart_z;
 
                         // Sample climate at this quart position
-                        let target =
-                            self.climate_sampler
-                                .sample(quart_x, quart_y, quart_z, &mut eval_cache);
+                        let target = self.climate_sampler.sample(
+                            quart_x,
+                            quart_y,
+                            quart_z,
+                            &mut column_cache,
+                        );
 
                         // Get the biome for this climate
                         let biome_name = get_overworld_biome_cached(&target, &mut biome_cache);

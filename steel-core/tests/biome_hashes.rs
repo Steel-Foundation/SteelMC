@@ -10,7 +10,7 @@ use std::thread;
 
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use steel_core::worldgen::{EvalCache, VanillaClimateSampler};
+use steel_core::worldgen::{OverworldColumnCache, VanillaClimateSampler};
 use steel_registry::multi_noise::get_overworld_biome_cached;
 
 /// JSON structure for biome hashes
@@ -38,7 +38,7 @@ fn chunk_biome_hash(sampler: &VanillaClimateSampler, chunk_x: i32, chunk_z: i32)
     // so the cache tie-breaking matches vanilla/Steel world generation.
     let mut biomes = FxHashMap::default();
     let mut biome_cache: Option<usize> = None;
-    let mut eval_cache = EvalCache::new();
+    let mut eval_cache = OverworldColumnCache::new();
 
     for section_y in -4i32..20 {
         for x in 0..4i32 {

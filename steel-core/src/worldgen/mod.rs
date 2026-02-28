@@ -6,4 +6,4 @@
 mod climate_sampler;
 
 pub use climate_sampler::VanillaClimateSampler;
-pub use steel_utils::density::EvalCache;
+pub use steel_registry::density_functions::OverworldColumnCache;

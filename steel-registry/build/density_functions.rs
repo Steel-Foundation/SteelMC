@@ -1,8 +1,8 @@
 use proc_macro2::TokenStream;
-use quote::quote;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::{fs, path::PathBuf};
 
 /// Parsed density function from datapack JSON.
@@ -296,97 +296,31 @@ fn read_overworld_noise_router() -> NoiseRouterJson {
     settings.noise_router
 }
 
-// ── Code generation using runtime types ─────────────────────────────────────
+// ── JSON → DensityFunction conversion ───────────────────────────────────────
 
-/// Generate the complete density functions module.
-pub(crate) fn build() -> TokenStream {
-    let router = read_overworld_noise_router();
-    let registry = read_density_function_registry();
+use steel_utils::density::*;
 
-    let mut stream = TokenStream::new();
-
-    stream.extend(quote! {
-        //! Generated density function data for terrain generation.
-        //!
-        //! This file is auto-generated from the vanilla datapack files.
-        //! Do not edit manually.
-        //!
-        //! Types are imported from `steel_utils::density` — only data is generated.
-
-        use std::sync::{Arc, LazyLock};
-        use steel_utils::density::*;
-    });
-
-    stream.extend(generate_noise_router_instance(&router));
-    stream.extend(generate_density_function_registry(&registry));
-
-    stream
-}
-
-fn generate_noise_router_instance(router: &NoiseRouterJson) -> TokenStream {
-    let barrier = gen_df(&router.barrier);
-    let fluid_floodedness = gen_df(&router.fluid_level_floodedness);
-    let fluid_spread = gen_df(&router.fluid_level_spread);
-    let lava = gen_df(&router.lava);
-    let temperature = gen_df(&router.temperature);
-    let vegetation = gen_df(&router.vegetation);
-    let continents = gen_df(&router.continents);
-    let erosion = gen_df(&router.erosion);
-    let depth = gen_df(&router.depth);
-    let ridges = gen_df(&router.ridges);
-    let final_density = gen_df(&router.final_density);
-    let vein_toggle = gen_df(&router.vein_toggle);
-    let vein_ridged = gen_df(&router.vein_ridged);
-    let vein_gap = gen_df(&router.vein_gap);
-
-    let preliminary = if let Some(ref psl) = router.preliminary_surface_level {
-        let code = gen_df(psl);
-        quote! { #code }
-    } else {
-        quote! { Arc::new(DensityFunction::constant(0.0)) }
-    };
-
-    quote! {
-        /// Overworld noise router with all density functions (unresolved).
-        pub static OVERWORLD_NOISE_ROUTER: LazyLock<NoiseRouter> = LazyLock::new(|| {
-            NoiseRouter {
-                barrier_noise: #barrier,
-                fluid_level_floodedness: #fluid_floodedness,
-                fluid_level_spread: #fluid_spread,
-                lava: #lava,
-                temperature: #temperature,
-                vegetation: #vegetation,
-                continentalness: #continents,
-                erosion: #erosion,
-                depth: #depth,
-                ridges: #ridges,
-                preliminary_surface_level: #preliminary,
-                final_density: #final_density,
-                vein_toggle: #vein_toggle,
-                vein_ridged: #vein_ridged,
-                vein_gap: #vein_gap,
-            }
-        });
-    }
-}
-
-/// Generate a `TokenStream` that constructs an `Arc<DensityFunction>`.
-fn gen_df(json: &DensityFunctionJson) -> TokenStream {
+/// Convert a JSON density function to a runtime `DensityFunction` value.
+///
+/// Noises are left as `None` (baked at runtime from seed).
+/// References are left unresolved (the transpiler handles them via the registry).
+fn json_to_df(json: &DensityFunctionJson) -> DensityFunction {
     match json {
         DensityFunctionJson::Constant(value) => {
-            quote! { Arc::new(DensityFunction::Constant(Constant { value: #value })) }
+            DensityFunction::Constant(Constant { value: *value })
         }
-        DensityFunctionJson::Reference(id) => {
-            quote! { Arc::new(DensityFunction::Reference(Reference { id: #id.to_string(), resolved: None })) }
-        }
-        DensityFunctionJson::Data(data) => gen_data(data),
+        DensityFunctionJson::Reference(id) => DensityFunction::Reference(Reference {
+            id: id.clone(),
+            resolved: None,
+        }),
+        DensityFunctionJson::Data(data) => json_data_to_df(data),
     }
 }
 
-fn gen_data(data: &DensityFunctionData) -> TokenStream {
+fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
     match data {
         DensityFunctionData::Constant { value } => {
-            quote! { Arc::new(DensityFunction::Constant(Constant { value: #value })) }
+            DensityFunction::Constant(Constant { value: *value })
         }
 
         DensityFunctionData::YClampedGradient {
@@ -394,21 +328,23 @@ fn gen_data(data: &DensityFunctionData) -> TokenStream {
             to_y,
             from_value,
             to_value,
-        } => {
-            quote! { Arc::new(DensityFunction::YClampedGradient(YClampedGradient {
-                from_y: #from_y, to_y: #to_y, from_value: #from_value, to_value: #to_value,
-            })) }
-        }
+        } => DensityFunction::YClampedGradient(YClampedGradient {
+            from_y: *from_y,
+            to_y: *to_y,
+            from_value: *from_value,
+            to_value: *to_value,
+        }),
 
         DensityFunctionData::Noise {
             xz_scale,
             y_scale,
             noise,
-        } => {
-            quote! { Arc::new(DensityFunction::Noise(Noise {
-                noise_id: #noise.to_string(), xz_scale: #xz_scale, y_scale: #y_scale, noise: None,
-            })) }
-        }
+        } => DensityFunction::Noise(Noise {
+            noise_id: noise.clone(),
+            xz_scale: *xz_scale,
+            y_scale: *y_scale,
+            noise: None,
+        }),
 
         DensityFunctionData::ShiftedNoise {
             shift_x,
@@ -417,64 +353,68 @@ fn gen_data(data: &DensityFunctionData) -> TokenStream {
             xz_scale,
             y_scale,
             noise,
-        } => {
-            let sx = gen_df(shift_x);
-            let sy = gen_df(shift_y);
-            let sz = gen_df(shift_z);
-            quote! { Arc::new(DensityFunction::ShiftedNoise(ShiftedNoise {
-                shift_x: #sx, shift_y: #sy, shift_z: #sz,
-                xz_scale: #xz_scale, y_scale: #y_scale,
-                noise_id: #noise.to_string(), noise: None,
-            })) }
-        }
+        } => DensityFunction::ShiftedNoise(ShiftedNoise {
+            shift_x: Arc::new(json_to_df(shift_x)),
+            shift_y: Arc::new(json_to_df(shift_y)),
+            shift_z: Arc::new(json_to_df(shift_z)),
+            xz_scale: *xz_scale,
+            y_scale: *y_scale,
+            noise_id: noise.clone(),
+            noise: None,
+        }),
 
-        DensityFunctionData::ShiftA { noise } => {
-            quote! { Arc::new(DensityFunction::ShiftA(ShiftA { noise_id: #noise.to_string(), noise: None })) }
-        }
-        DensityFunctionData::ShiftB { noise } => {
-            quote! { Arc::new(DensityFunction::ShiftB(ShiftB { noise_id: #noise.to_string(), noise: None })) }
-        }
-        DensityFunctionData::Shift { noise } => {
-            quote! { Arc::new(DensityFunction::Shift(Shift { noise_id: #noise.to_string(), noise: None })) }
-        }
+        DensityFunctionData::ShiftA { noise } => DensityFunction::ShiftA(ShiftA {
+            noise_id: noise.clone(),
+            noise: None,
+        }),
+        DensityFunctionData::ShiftB { noise } => DensityFunction::ShiftB(ShiftB {
+            noise_id: noise.clone(),
+            noise: None,
+        }),
+        DensityFunctionData::Shift { noise } => DensityFunction::Shift(Shift {
+            noise_id: noise.clone(),
+            noise: None,
+        }),
 
-        DensityFunctionData::Clamp { input, min, max } => {
-            let input_code = gen_df(input);
-            quote! { Arc::new(DensityFunction::Clamp(Clamp { input: #input_code, min: #min, max: #max })) }
-        }
+        DensityFunctionData::Clamp { input, min, max } => DensityFunction::Clamp(Clamp {
+            input: Arc::new(json_to_df(input)),
+            min: *min,
+            max: *max,
+        }),
 
-        DensityFunctionData::Abs { input } => gen_mapped(MappedTypeKind::Abs, input),
-        DensityFunctionData::Square { input } => gen_mapped(MappedTypeKind::Square, input),
-        DensityFunctionData::Cube { input } => gen_mapped(MappedTypeKind::Cube, input),
+        DensityFunctionData::Abs { input } => json_mapped(MappedType::Abs, input),
+        DensityFunctionData::Square { input } => json_mapped(MappedType::Square, input),
+        DensityFunctionData::Cube { input } => json_mapped(MappedType::Cube, input),
         DensityFunctionData::HalfNegative { input } => {
-            gen_mapped(MappedTypeKind::HalfNegative, input)
+            json_mapped(MappedType::HalfNegative, input)
         }
         DensityFunctionData::QuarterNegative { input } => {
-            gen_mapped(MappedTypeKind::QuarterNegative, input)
+            json_mapped(MappedType::QuarterNegative, input)
         }
-        DensityFunctionData::Invert { input } => gen_mapped(MappedTypeKind::Invert, input),
-        DensityFunctionData::Squeeze { input } => gen_mapped(MappedTypeKind::Squeeze, input),
+        DensityFunctionData::Invert { input } => json_mapped(MappedType::Invert, input),
+        DensityFunctionData::Squeeze { input } => json_mapped(MappedType::Squeeze, input),
 
         DensityFunctionData::Add {
             argument1,
             argument2,
-        } => gen_two_arg(TwoArgKind::Add, argument1, argument2),
+        } => json_two_arg(TwoArgType::Add, argument1, argument2),
         DensityFunctionData::Mul {
             argument1,
             argument2,
-        } => gen_two_arg(TwoArgKind::Mul, argument1, argument2),
+        } => json_two_arg(TwoArgType::Mul, argument1, argument2),
         DensityFunctionData::Min {
             argument1,
             argument2,
-        } => gen_two_arg(TwoArgKind::Min, argument1, argument2),
+        } => json_two_arg(TwoArgType::Min, argument1, argument2),
         DensityFunctionData::Max {
             argument1,
             argument2,
-        } => gen_two_arg(TwoArgKind::Max, argument1, argument2),
+        } => json_two_arg(TwoArgType::Max, argument1, argument2),
 
         DensityFunctionData::Spline { spline } => {
-            let spline_code = gen_spline(spline);
-            quote! { Arc::new(DensityFunction::Spline(Spline { spline: Arc::new(#spline_code) })) }
+            DensityFunction::Spline(Spline {
+                spline: Arc::new(json_spline_to_cubic(spline)),
+            })
         }
 
         DensityFunctionData::RangeChoice {
@@ -483,60 +423,58 @@ fn gen_data(data: &DensityFunctionData) -> TokenStream {
             max_exclusive,
             when_in_range,
             when_out_of_range,
-        } => {
-            let input_code = gen_df(input);
-            let in_range = gen_df(when_in_range);
-            let out_range = gen_df(when_out_of_range);
-            quote! { Arc::new(DensityFunction::RangeChoice(RangeChoice {
-                input: #input_code, min_inclusive: #min_inclusive, max_exclusive: #max_exclusive,
-                when_in_range: #in_range, when_out_of_range: #out_range,
-            })) }
-        }
+        } => DensityFunction::RangeChoice(RangeChoice {
+            input: Arc::new(json_to_df(input)),
+            min_inclusive: *min_inclusive,
+            max_exclusive: *max_exclusive,
+            when_in_range: Arc::new(json_to_df(when_in_range)),
+            when_out_of_range: Arc::new(json_to_df(when_out_of_range)),
+        }),
 
         DensityFunctionData::Interpolated { argument } => {
-            gen_marker(MarkerKind::Interpolated, argument)
+            json_marker(MarkerType::Interpolated, argument)
         }
-        DensityFunctionData::FlatCache { argument } => gen_marker(MarkerKind::FlatCache, argument),
-        DensityFunctionData::CacheOnce { argument } => gen_marker(MarkerKind::CacheOnce, argument),
-        DensityFunctionData::Cache2d { argument } => gen_marker(MarkerKind::Cache2D, argument),
+        DensityFunctionData::FlatCache { argument } => {
+            json_marker(MarkerType::FlatCache, argument)
+        }
+        DensityFunctionData::CacheOnce { argument } => {
+            json_marker(MarkerType::CacheOnce, argument)
+        }
+        DensityFunctionData::Cache2d { argument } => json_marker(MarkerType::Cache2D, argument),
         DensityFunctionData::CacheAllInCell { argument } => {
-            gen_marker(MarkerKind::CacheAllInCell, argument)
+            json_marker(MarkerType::CacheAllInCell, argument)
         }
 
-        DensityFunctionData::BlendOffset {} => {
-            quote! { Arc::new(DensityFunction::BlendOffset(BlendOffset)) }
-        }
-        DensityFunctionData::BlendAlpha {} => {
-            quote! { Arc::new(DensityFunction::BlendAlpha(BlendAlpha)) }
-        }
+        DensityFunctionData::BlendOffset {} => DensityFunction::BlendOffset(BlendOffset),
+        DensityFunctionData::BlendAlpha {} => DensityFunction::BlendAlpha(BlendAlpha),
         DensityFunctionData::BlendDensity { input } => {
-            let input_code = gen_df(input);
-            quote! { Arc::new(DensityFunction::BlendDensity(BlendDensity { input: #input_code })) }
+            DensityFunction::BlendDensity(BlendDensity {
+                input: Arc::new(json_to_df(input)),
+            })
         }
 
         // TODO: Implement Beardifier for structure terrain adaptation.
         // Constant(0.0) is correct when structures are not yet generated.
         DensityFunctionData::Beardifier {} => {
-            quote! { Arc::new(DensityFunction::Constant(Constant { value: 0.0 })) }
+            DensityFunction::Constant(Constant { value: 0.0 })
         }
-        DensityFunctionData::EndIslands {} => {
-            quote! { Arc::new(DensityFunction::EndIslands(EndIslands)) }
-        }
+        DensityFunctionData::EndIslands {} => DensityFunction::EndIslands(EndIslands),
 
         DensityFunctionData::WeirdScaledSampler {
             input,
             noise,
             rarity_value_mapper,
         } => {
-            let input_code = gen_df(input);
             let mapper = match rarity_value_mapper.as_str() {
-                "type_1" => quote! { RarityValueMapper::Tunnels },
-                _ => quote! { RarityValueMapper::Caves },
+                "type_1" => RarityValueMapper::Tunnels,
+                _ => RarityValueMapper::Caves,
             };
-            quote! { Arc::new(DensityFunction::WeirdScaledSampler(WeirdScaledSampler {
-                input: #input_code, noise_id: #noise.to_string(),
-                rarity_value_mapper: #mapper, noise: None,
-            })) }
+            DensityFunction::WeirdScaledSampler(WeirdScaledSampler {
+                input: Arc::new(json_to_df(input)),
+                noise_id: noise.clone(),
+                rarity_value_mapper: mapper,
+                noise: None,
+            })
         }
 
         DensityFunctionData::OldBlendedNoise {
@@ -545,137 +483,144 @@ fn gen_data(data: &DensityFunctionData) -> TokenStream {
             xz_factor,
             y_factor,
             smear_scale_multiplier,
-        } => {
-            quote! { Arc::new(DensityFunction::BlendedNoise(BlendedNoise {
-                xz_scale: #xz_scale, y_scale: #y_scale, xz_factor: #xz_factor,
-                y_factor: #y_factor, smear_scale_multiplier: #smear_scale_multiplier, noise: None,
-            })) }
-        }
+        } => DensityFunction::BlendedNoise(BlendedNoise {
+            xz_scale: *xz_scale,
+            y_scale: *y_scale,
+            xz_factor: *xz_factor,
+            y_factor: *y_factor,
+            smear_scale_multiplier: *smear_scale_multiplier,
+            noise: None,
+        }),
 
         DensityFunctionData::FindTopSurface {} => {
             // find_top_surface is unused; treat as constant 0
-            quote! { Arc::new(DensityFunction::Constant(Constant { value: 0.0 })) }
+            DensityFunction::Constant(Constant { value: 0.0 })
         }
     }
 }
 
-// Helper enums to avoid importing runtime types in the build script
-
-enum MappedTypeKind {
-    Abs,
-    Square,
-    Cube,
-    HalfNegative,
-    QuarterNegative,
-    Invert,
-    Squeeze,
-}
-enum TwoArgKind {
-    Add,
-    Mul,
-    Min,
-    Max,
-}
-enum MarkerKind {
-    Interpolated,
-    FlatCache,
-    CacheOnce,
-    Cache2D,
-    CacheAllInCell,
+fn json_mapped(op: MappedType, input: &DensityFunctionJson) -> DensityFunction {
+    DensityFunction::Mapped(Mapped {
+        op,
+        input: Arc::new(json_to_df(input)),
+    })
 }
 
-fn gen_mapped(kind: MappedTypeKind, input: &DensityFunctionJson) -> TokenStream {
-    let input_code = gen_df(input);
-    let op = match kind {
-        MappedTypeKind::Abs => quote! { MappedType::Abs },
-        MappedTypeKind::Square => quote! { MappedType::Square },
-        MappedTypeKind::Cube => quote! { MappedType::Cube },
-        MappedTypeKind::HalfNegative => quote! { MappedType::HalfNegative },
-        MappedTypeKind::QuarterNegative => quote! { MappedType::QuarterNegative },
-        MappedTypeKind::Invert => quote! { MappedType::Invert },
-        MappedTypeKind::Squeeze => quote! { MappedType::Squeeze },
-    };
-    quote! { Arc::new(DensityFunction::Mapped(Mapped { op: #op, input: #input_code })) }
+fn json_two_arg(
+    op: TwoArgType,
+    a: &DensityFunctionJson,
+    b: &DensityFunctionJson,
+) -> DensityFunction {
+    DensityFunction::TwoArgumentSimple(TwoArgumentSimple {
+        op,
+        argument1: Arc::new(json_to_df(a)),
+        argument2: Arc::new(json_to_df(b)),
+    })
 }
 
-fn gen_two_arg(kind: TwoArgKind, a: &DensityFunctionJson, b: &DensityFunctionJson) -> TokenStream {
-    let a_code = gen_df(a);
-    let b_code = gen_df(b);
-    let op = match kind {
-        TwoArgKind::Add => quote! { TwoArgType::Add },
-        TwoArgKind::Mul => quote! { TwoArgType::Mul },
-        TwoArgKind::Min => quote! { TwoArgType::Min },
-        TwoArgKind::Max => quote! { TwoArgType::Max },
-    };
-    quote! { Arc::new(DensityFunction::TwoArgumentSimple(TwoArgumentSimple { op: #op, argument1: #a_code, argument2: #b_code })) }
+fn json_marker(kind: MarkerType, argument: &DensityFunctionJson) -> DensityFunction {
+    DensityFunction::Marker(Marker {
+        kind,
+        wrapped: Arc::new(json_to_df(argument)),
+    })
 }
 
-fn gen_marker(kind: MarkerKind, argument: &DensityFunctionJson) -> TokenStream {
-    let arg_code = gen_df(argument);
-    let mk = match kind {
-        MarkerKind::Interpolated => quote! { MarkerType::Interpolated },
-        MarkerKind::FlatCache => quote! { MarkerType::FlatCache },
-        MarkerKind::CacheOnce => quote! { MarkerType::CacheOnce },
-        MarkerKind::Cache2D => quote! { MarkerType::Cache2D },
-        MarkerKind::CacheAllInCell => quote! { MarkerType::CacheAllInCell },
-    };
-    quote! { Arc::new(DensityFunction::Marker(Marker { kind: #mk, wrapped: #arg_code })) }
-}
-
-fn gen_spline(spline: &SplineJson) -> TokenStream {
+fn json_spline_to_cubic(spline: &SplineJson) -> CubicSpline {
     match spline {
-        SplineJson::Constant(v) => {
-            quote! { CubicSpline {
-                coordinate: Arc::new(DensityFunction::constant(0.0)),
-                points: vec![SplinePoint { location: 0.0, value: SplineValue::Constant(#v), derivative: 0.0 }],
-            } }
-        }
-        SplineJson::Multipoint { coordinate, points } => {
-            let points_code: Vec<TokenStream> = points
-                .iter()
-                .map(|p| {
-                    let loc = p.location;
-                    let val = gen_spline_value(&p.value);
-                    let deriv = p.derivative;
-                    quote! { SplinePoint { location: #loc, value: #val, derivative: #deriv } }
-                })
-                .collect();
-            quote! { CubicSpline {
-                coordinate: Arc::new(DensityFunction::Reference(Reference { id: #coordinate.to_string(), resolved: None })),
-                points: vec![#(#points_code),*],
-            } }
-        }
+        SplineJson::Constant(v) => CubicSpline {
+            coordinate: Arc::new(DensityFunction::constant(0.0)),
+            points: vec![SplinePoint {
+                location: 0.0,
+                value: SplineValue::Constant(*v),
+                derivative: 0.0,
+            }],
+        },
+        SplineJson::Multipoint { coordinate, points } => CubicSpline {
+            coordinate: Arc::new(DensityFunction::Reference(Reference {
+                id: coordinate.clone(),
+                resolved: None,
+            })),
+            points: points.iter().map(json_spline_point).collect(),
+        },
     }
 }
 
-fn gen_spline_value(spline: &SplineJson) -> TokenStream {
-    match spline {
-        SplineJson::Constant(v) => quote! { SplineValue::Constant(#v) },
-        SplineJson::Multipoint { .. } => {
-            let spline_code = gen_spline(spline);
-            quote! { SplineValue::Spline(Arc::new(#spline_code)) }
-        }
+fn json_spline_point(p: &SplinePointJson) -> SplinePoint {
+    SplinePoint {
+        location: p.location,
+        value: match &p.value {
+            SplineJson::Constant(v) => SplineValue::Constant(*v),
+            multi @ SplineJson::Multipoint { .. } => {
+                SplineValue::Spline(Arc::new(json_spline_to_cubic(multi)))
+            }
+        },
+        derivative: p.derivative,
     }
 }
 
-fn generate_density_function_registry(
-    registry: &BTreeMap<String, DensityFunctionJson>,
-) -> TokenStream {
-    let entries: Vec<TokenStream> = registry
+// ── Build entry point ───────────────────────────────────────────────────────
+
+use steel_utils::density::transpiler::{TranspilerInput, transpile};
+
+/// Generate the complete density functions module using the transpiler.
+pub(crate) fn build() -> TokenStream {
+    let router_json = read_overworld_noise_router();
+    let registry_json = read_density_function_registry();
+
+    // Convert JSON registry to DensityFunction values
+    let registry: BTreeMap<String, DensityFunction> = registry_json
         .iter()
-        .map(|(id, df)| {
-            let df_code = gen_df(df);
-            quote! { #id => Some(#df_code) }
-        })
+        .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
 
-    quote! {
-        /// Get density function by ID from the registry.
-        pub fn get_density_function(id: &str) -> Option<Arc<DensityFunction>> {
-            match id {
-                #(#entries,)*
-                _ => None,
-            }
-        }
+    // Convert router entries to DensityFunction values
+    let mut router_entries = BTreeMap::new();
+    router_entries.insert("barrier".to_string(), json_to_df(&router_json.barrier));
+    router_entries.insert(
+        "fluid_level_floodedness".to_string(),
+        json_to_df(&router_json.fluid_level_floodedness),
+    );
+    router_entries.insert(
+        "fluid_level_spread".to_string(),
+        json_to_df(&router_json.fluid_level_spread),
+    );
+    router_entries.insert("lava".to_string(), json_to_df(&router_json.lava));
+    router_entries.insert(
+        "temperature".to_string(),
+        json_to_df(&router_json.temperature),
+    );
+    router_entries.insert(
+        "vegetation".to_string(),
+        json_to_df(&router_json.vegetation),
+    );
+    router_entries.insert(
+        "continentalness".to_string(),
+        json_to_df(&router_json.continents),
+    );
+    router_entries.insert("erosion".to_string(), json_to_df(&router_json.erosion));
+    router_entries.insert("depth".to_string(), json_to_df(&router_json.depth));
+    router_entries.insert("ridges".to_string(), json_to_df(&router_json.ridges));
+    router_entries.insert(
+        "final_density".to_string(),
+        json_to_df(&router_json.final_density),
+    );
+    router_entries.insert(
+        "vein_toggle".to_string(),
+        json_to_df(&router_json.vein_toggle),
+    );
+    router_entries.insert(
+        "vein_ridged".to_string(),
+        json_to_df(&router_json.vein_ridged),
+    );
+    router_entries.insert("vein_gap".to_string(), json_to_df(&router_json.vein_gap));
+    if let Some(ref psl) = router_json.preliminary_surface_level {
+        router_entries.insert("preliminary_surface_level".to_string(), json_to_df(psl));
     }
+
+    let input = TranspilerInput {
+        registry,
+        router_entries,
+    };
+
+    transpile(&input)
 }

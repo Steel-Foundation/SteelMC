@@ -1135,17 +1135,8 @@ fn get_spline_point_value_cached(
 ///
 /// Returns -1 if input is before all points.
 fn find_interval_start(points: &[SplinePoint], input: f32) -> i32 {
-    let mut lo = 0i32;
-    let mut hi = points.len() as i32;
-    while lo < hi {
-        let mid = i32::midpoint(lo, hi);
-        if input < points[mid as usize].location {
-            hi = mid;
-        } else {
-            lo = mid + 1;
-        }
-    }
-    lo - 1
+    let locations: Vec<f32> = points.iter().map(|p| p.location).collect();
+    super::spline_eval::find_interval(&locations, input)
 }
 
 /// Hermite cubic interpolation between adjacent spline points (non-cached).
@@ -1157,21 +1148,17 @@ fn hermite_interpolate(
 ) -> f32 {
     let p0 = &spline.points[start];
     let p1 = &spline.points[start + 1];
-    let x1 = p0.location;
-    let x2 = p1.location;
-    let t = (input - x1) / (x2 - x1);
     let y1 = get_spline_point_value(p0, ctx);
     let y2 = get_spline_point_value(p1, ctx);
-    let d1 = p0.derivative;
-    let d2 = p1.derivative;
-
-    // Vanilla formula: lerp(t, y1, y2) + t * (1 - t) * lerp(t, a, b)
-    let h = x2 - x1;
-    let a = d1 * h - (y2 - y1);
-    let b = -d2 * h + (y2 - y1);
-    let lerp_y = y1 + t * (y2 - y1);
-    let lerp_ab = a + t * (b - a);
-    lerp_y + t * (1.0 - t) * lerp_ab
+    super::spline_eval::hermite_interpolate(
+        p0.location,
+        p1.location,
+        y1,
+        y2,
+        p0.derivative,
+        p1.derivative,
+        input,
+    )
 }
 
 /// Hermite cubic interpolation between adjacent spline points (cached).
@@ -1184,20 +1171,17 @@ fn hermite_interpolate_cached(
 ) -> f32 {
     let p0 = &spline.points[start];
     let p1 = &spline.points[start + 1];
-    let x1 = p0.location;
-    let x2 = p1.location;
-    let t = (input - x1) / (x2 - x1);
     let y1 = get_spline_point_value_cached(p0, ctx, cache);
     let y2 = get_spline_point_value_cached(p1, ctx, cache);
-    let d1 = p0.derivative;
-    let d2 = p1.derivative;
-
-    let h = x2 - x1;
-    let a = d1 * h - (y2 - y1);
-    let b = -d2 * h + (y2 - y1);
-    let lerp_y = y1 + t * (y2 - y1);
-    let lerp_ab = a + t * (b - a);
-    lerp_y + t * (1.0 - t) * lerp_ab
+    super::spline_eval::hermite_interpolate(
+        p0.location,
+        p1.location,
+        y1,
+        y2,
+        p0.derivative,
+        p1.derivative,
+        input,
+    )
 }
 
 // ── Supporting types ────────────────────────────────────────────────────────
