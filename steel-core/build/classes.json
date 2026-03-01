@@ -9664,15 +9664,18 @@
     },
     {
       "name": "bucket",
-      "class": "BucketItem"
+      "class": "BucketItem",
+      "fluid": "empty"
     },
     {
       "name": "water_bucket",
-      "class": "BucketItem"
+      "class": "BucketItem",
+      "fluid": "water"
     },
     {
       "name": "lava_bucket",
-      "class": "BucketItem"
+      "class": "BucketItem",
+      "fluid": "lava"
     },
     {
       "name": "powder_snow_bucket",
@@ -9693,27 +9696,33 @@
     },
     {
       "name": "pufferfish_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "salmon_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "cod_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "tropical_fish_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "axolotl_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "tadpole_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "brick",
