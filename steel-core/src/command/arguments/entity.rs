@@ -54,7 +54,7 @@ impl CommandArgument for EntityArgument {
                 let position = context.position;
                 let mut near_dist = (f64::MAX, players[0].clone());
                 for player in players {
-                    let dist = player.get_position().squared_distance_to_vec(position);
+                    let dist = player.position().squared_distance_to_vec(position);
                     if dist < near_dist.0 {
                         near_dist = (dist, player);
                     }

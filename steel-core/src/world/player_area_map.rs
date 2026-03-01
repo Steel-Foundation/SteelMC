@@ -65,7 +65,14 @@ impl PlayerAreaMap {
 
     /// Removes a player from all tracked chunks.
     pub fn on_player_leave(&self, player: &Arc<Player>) {
-        let entity_id = player.id;
+        self.remove_by_entity_id(player.id);
+    }
+
+    /// Removes a player from all tracked chunks by entity ID.
+    ///
+    /// This is useful when you don't have an `Arc<Player>` reference,
+    /// such as during respawn cleanup.
+    pub fn remove_by_entity_id(&self, entity_id: i32) {
         if let Some((_, chunks)) = self.player_chunks.remove_sync(&entity_id) {
             for chunk in chunks {
                 self.remove_from_chunk(chunk, entity_id);

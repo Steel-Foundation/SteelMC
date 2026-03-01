@@ -150,7 +150,7 @@ impl ChunkSection {
     /// Creates a new empty chunk section.
     #[must_use]
     pub fn new_empty() -> Self {
-        let plains_id = *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u8;
+        let plains_id = *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u16;
         Self {
             states: BlockPalette::Homogeneous(BlockStateId(0)),
             biomes: BiomePalette::Homogeneous(plains_id),

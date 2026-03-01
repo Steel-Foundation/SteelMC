@@ -2813,12 +2813,14 @@ name = "steel-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "criterion",
  "crossbeam",
  "enum_dispatch",
  "flate2",
  "futures",
  "heck",
  "log",
+ "md5",
  "parking_lot",
  "proc-macro2",
  "quote",
@@ -2953,6 +2955,7 @@ dependencies = [
  "phf_codegen",
  "proc-macro2",
  "quote",
+ "rustc-hash 2.1.1",
  "serde",
  "serde_json",
  "simdnbt",

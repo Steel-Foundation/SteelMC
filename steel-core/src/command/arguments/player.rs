@@ -1,9 +1,9 @@
 //! A player argument.
+use crate::command::arguments::CommandArgument;
 use crate::command::arguments::SuggestionContext;
 use crate::command::context::CommandContext;
 use crate::entity::Entity;
 use crate::player::Player;
-use crate::{command::arguments::CommandArgument, entity::LivingEntity};
 use rand::seq::IteratorRandom;
 use std::sync::Arc;
 use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
@@ -53,7 +53,7 @@ impl CommandArgument for PlayerArgument {
                 let position = context.position;
                 let mut near_dist = (f64::MAX, players[0].clone());
                 for player in players {
-                    let dist = player.get_position().squared_distance_to_vec(position);
+                    let dist = player.position().squared_distance_to_vec(position);
                     if dist < near_dist.0 {
                         near_dist = (dist, player);
                     }

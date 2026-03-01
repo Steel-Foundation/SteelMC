@@ -1,0 +1,55 @@
+# Prek pre-commit configuration for SteelMC
+# Install with: prek install
+# Run manually with: prek run --all-files
+
+exclude = '(\.json$|generated/|.mcmeta)'
+
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "check-yaml", priority = 0},
+    { id = "check-toml", priority = 0},
+    { id = "detect-private-key", priority = 0},
+    { id = "check-added-large-files", priority = 0},
+    { id = "check-merge-conflict", priority = 0 },
+    { id = "no-commit-to-branch", priority = 0, args = ["--branch", "master"] },
+    { id = "check-case-conflict", priority = 0 },
+    { id = "trailing-whitespace", priority = 5, args = ["--markdown-linebreak-ext=md"] },
+    { id = "end-of-file-fixer", args = ["--fix"], priority = 6  },
+    { id = "fix-byte-order-marker", priority = 6 },
+]
+[[repos]]
+repo = "meta"
+hooks = [{ id = "check-useless-excludes", priority = 0 }]
+
+[[repos]]
+repo = "local"
+hooks = [
+    {
+    id = "cargo-fmt",
+    name = "cargo fmt",
+    language = "system",
+    entry = "cargo fmt",
+    types = ["rust"],
+    pass_filenames = false,
+    priority = 10
+    },
+    {
+    id = "cargo-test",
+    name = "cargo test",
+    language = "system",
+    entry = "cargo test --workspace",
+    types = ["rust"],
+    pass_filenames = false,
+    priority = 30
+    },
+    {
+    id = "typos",
+    name = "Spell Check (typos)",
+    language = "system",
+    entry = "typos",
+    types = ["text"],
+    pass_filenames = false,
+    priority = 20
+    },
+]

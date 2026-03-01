@@ -7,6 +7,7 @@ use enum_dispatch::enum_dispatch;
 use crate::chunk::{
     chunk_access::ChunkAccess, chunk_generator::ChunkGenerator,
     empty_chunk_generator::EmptyChunkGenerator, flat_chunk_generator::FlatChunkGenerator,
+    vanilla_generator::VanillaGenerator,
 };
 use crate::world::World;
 
@@ -15,6 +16,7 @@ use crate::world::World;
 pub enum ChunkGeneratorType {
     Flat(FlatChunkGenerator),
     Empty(EmptyChunkGenerator),
+    Vanilla(VanillaGenerator),
     //Custom(Box<dyn ChunkGenerator>),
 }
 
@@ -28,11 +30,6 @@ pub struct WorldGenContext {
     /// Weak reference to the world (to avoid circular Arc reference).
     /// Use `world()` to get a strong reference when needed.
     world: Weak<World>,
-    // Add other fields as needed:
-    // pub structure_manager: StructureTemplateManager,
-    // pub light_engine: ThreadedLevelLightEngine,
-    // pub main_thread_executor: Executor,
-    // pub unsaved_listener: UnsavedListener,
 }
 
 impl WorldGenContext {

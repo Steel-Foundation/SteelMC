@@ -7,7 +7,7 @@ use crate::random::{
 /// This implementation mirrors Java's `java.util.Random` which Minecraft originally used.
 pub struct LegacyRandom {
     seed: i64,
-    next_gauissian: Option<f64>,
+    next_gaussian: Option<f64>,
 }
 
 /// A positional random number generator factory for the legacy Minecraft LCG algorithm.
@@ -23,7 +23,7 @@ impl LegacyRandom {
     pub const fn from_seed(seed: u64) -> Self {
         Self {
             seed: (seed as i64 ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF,
-            next_gauissian: None,
+            next_gaussian: None,
         }
     }
 
@@ -41,11 +41,11 @@ impl LegacyRandom {
 
 impl MarsagliaPolarGaussian for LegacyRandom {
     fn stored_next_gaussian(&self) -> Option<f64> {
-        self.next_gauissian
+        self.next_gaussian
     }
 
     fn set_stored_next_gaussian(&mut self, value: Option<f64>) {
-        self.next_gauissian = value;
+        self.next_gaussian = value;
     }
 }
 
@@ -83,8 +83,13 @@ impl Random for LegacyRandom {
     }
 
     fn next_f64(&mut self) -> f64 {
-        (((self.next(26) as u64) << 27) | (self.next(27) as u64)) as f64
-            * f64::from(1.110_223e-16_f32)
+        // Matches vanilla's BitRandomSource.nextDouble():
+        //   combined * 1.110223E-16F
+        // Java's `long * float` promotes the long to float FIRST, then multiplies
+        // as float, then widens to double. This float-precision intermediate step
+        // is critical for vanilla-matching noise generation.
+        let combined = ((self.next(26) as u64) << 27) | (self.next(27) as u64);
+        f64::from(combined as f32 * 1.110_223e-16_f32)
     }
 
     fn next_bool(&mut self) -> bool {
@@ -205,17 +210,21 @@ mod test {
     fn test_next_f64() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble() which uses
+        // float-precision multiplication: `combined * 1.110223E-16F`.
+        // These differ from java.util.Random.nextDouble() which uses
+        // double-precision division.
         let values = [
-            0.730_967_787_376_657,
-            0.240_536_415_671_485_87,
-            0.637_417_425_350_108_3,
-            0.550_437_005_117_633_9,
-            0.597_545_277_797_201_8,
-            0.333_218_399_476_649_8,
-            0.385_189_184_740_718_5,
-            0.984_841_540_199_809,
-            0.879_182_517_872_480_1,
-            0.941_249_179_482_114_4,
+            0.730_967_760_086_059_6,
+            0.240_536_421_537_399_3,
+            0.637_417_435_646_057_1,
+            0.550_437_033_176_422_1,
+            0.597_545_266_151_428_2,
+            0.333_218_395_709_991_46,
+            0.385_189_175_605_773_9,
+            0.984_841_525_554_657,
+            0.879_182_517_528_533_9,
+            0.941_249_191_761_016_8,
         ];
 
         for value in values {
@@ -286,17 +295,18 @@ mod test {
     fn test_next_gaussian() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble() (float-precision path).
         let values = [
-            0.802_533_063_739_030_5,
-            -0.901_546_088_417_512_2,
-            2.080_920_790_428_163,
-            0.763_770_768_436_489_4,
-            0.984_574_532_882_512_8,
-            -1.683_412_258_767_342_8,
-            -0.027_290_262_907_887_285,
-            0.115_245_702_862_023_15,
-            -0.390_167_041_379_937_74,
-            -0.643_388_813_126_449,
+            0.802_533_092_405_128,
+            -0.901_546_206_762_817_7,
+            2.080_920_559_632_07,
+            0.763_771_051_396_948_8,
+            0.984_574_435_770_478_5,
+            -1.683_412_331_725_193_7,
+            -0.027_290_360_604_350_87,
+            0.115_246_102_779_622_66,
+            -0.390_167_020_508_361_1,
+            -0.643_388_774_884_032_7,
         ];
 
         for value in values {
@@ -309,17 +319,18 @@ mod test {
     fn test_triangle() {
         let mut rand = LegacyRandom::from_seed(0);
 
+        // Values match vanilla's BitRandomSource.nextDouble() (float-precision path).
         let values = [
-            124.521_568_585_258_56,
-            104.349_021_011_623_72,
-            113.216_343_916_027_6,
-            70.017_382_227_045_47,
-            96.896_666_919_518_28,
-            107.302_840_758_085_41,
-            106.168_176_758_131_44,
-            79.112_644_826_080_78,
-            73.967_216_139_270_62,
-            81.724_195_210_806_46,
+            124.521_566_927_433_01,
+            104.349_020_123_481_75,
+            113.216_343_522_071_84,
+            70.017_382_502_555_85,
+            96.896_666_288_375_85,
+            107.302_840_799_093_25,
+            106.168_176_978_826_52,
+            79.112_645_983_695_98,
+            73.967_215_046_286_58,
+            81.724_195_182_323_46,
         ];
 
         for value in values {

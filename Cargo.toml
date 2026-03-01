@@ -153,6 +153,10 @@ debug = true
 debug = 0
 #codegen-backend = "cranelift"
 
+
+#[profile.dev.package.steel-registry]
+#opt-level = 1
+
 [workspace.lints.rust]
 missing_docs = "warn"
 

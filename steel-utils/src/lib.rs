@@ -11,7 +11,11 @@
 )]
 #![allow(internal_features)]
 
+/// Climate system for biome selection.
+pub mod climate;
 pub mod codec;
+/// Density function system for world generation.
+pub mod density;
 /// Direction enum for the six cardinal directions.
 pub mod direction;
 mod front_vec;
@@ -22,6 +26,8 @@ pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
 pub mod math;
+/// Noise generation utilities for world generation.
+pub mod noise;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;

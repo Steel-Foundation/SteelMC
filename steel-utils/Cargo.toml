@@ -24,6 +24,7 @@ parking_lot.workspace = true
 # Data structures
 bitflags.workspace = true
 phf.workspace = true
+rustc-hash.workspace = true
 
 # UUID
 uuid.workspace = true
@@ -39,6 +40,13 @@ crc32c = "0.6"
 enum_dispatch.workspace = true
 num-traits.workspace = true
 text_components.workspace = true
+
+# Code generation (build-time only, used by transpiler)
+proc-macro2 = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
+
+[features]
+codegen = ["dep:proc-macro2", "dep:quote"]
 
 [dev-dependencies]
 criterion.workspace = true

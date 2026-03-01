@@ -13,12 +13,13 @@ use steel_protocol::packets::common::{
 };
 use steel_protocol::packets::game::{
     CBundleDelimiter, SAcceptTeleportation, SChangeGameMode, SChat, SChatAck, SChatCommand,
-    SChatSessionUpdate, SChunkBatchReceived, SClientTickEnd, SCommandSuggestion,
+    SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd, SCommandSuggestion,
     SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged,
     SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SPickItemFromBlock,
     SPlayerAbilities, SPlayerAction, SPlayerInput, SPlayerLoad, SSetCarriedItem,
     SSetCreativeModeSlot, SSignUpdate, SSwing, SUseItem, SUseItemOn,
 };
+
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
@@ -340,6 +341,10 @@ impl JavaConnection {
             play::S_SIGN_UPDATE => {
                 let packet = SSignUpdate::read_packet(data)?;
                 player.handle_sign_update(packet);
+            }
+            play::S_CLIENT_COMMAND => {
+                let packet = SClientCommand::read_packet(data)?;
+                player.handle_client_command(packet.action);
             }
             play::S_PING_REQUEST => {
                 let packet = SPingRequest::read_packet(data)?;
