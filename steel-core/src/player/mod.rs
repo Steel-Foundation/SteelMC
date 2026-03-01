@@ -36,6 +36,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::time::Instant;
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::CSystemChatMessage;
 use steel_protocol::packets::game::{
@@ -70,7 +71,7 @@ use crate::server::Server;
 use crate::{command::commands::gamemode::get_gamemode_translation, inventory::SyncPlayerInv};
 use crate::{
     config::STEEL_CONFIG,
-    entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason},
+    entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason, SharedEntity},
 };
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes, signature::NoValidation};
@@ -91,7 +92,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockInsideEffect, InteractionResult};
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
 use crate::portal::TeleportTransition;
-use crate::portal::{nether_portal, portal_processor::PortalProcessor};
+use crate::portal::{DimensionChangeRequest, nether_portal, portal_processor::PortalProcessor};
 use steel_utils::BlockPos;
 use steel_utils::serial::write::{OptionalBlockPos, OptionalIdentifier};
 
@@ -326,6 +327,9 @@ pub struct Player {
     /// Portal cooldown in ticks (prevents immediate re-entry).
     portal_cooldown: AtomicI32,
 
+    /// Instant when the current dimension change started (for profiling).
+    dimension_change_start: SyncMutex<Option<Instant>>,
+
     /// Whether the player has been removed from the world.
     removed: AtomicBool,
 
@@ -401,6 +405,7 @@ impl Player {
             inside_portal: SyncMutex::new(None),
             portal_processor: SyncMutex::new(None),
             portal_cooldown: AtomicI32::new(0),
+            dimension_change_start: SyncMutex::new(None),
             removed: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
@@ -463,6 +468,7 @@ impl Player {
     }
 
     /// Processes portal state each tick.
+    #[allow(clippy::too_many_lines)]
     fn process_portal(&self) {
         use steel_registry::game_rules::GameRuleValue;
         use steel_registry::vanilla_game_rules::{
@@ -500,20 +506,24 @@ impl Player {
 
                 // Pre-warm destination chunks on the first tick (when processor is None).
                 // This gives generation ~80 ticks (4 s) to complete before the timer fires.
-                if processor.is_none() {
-                    if let Some(server) = self.server.upgrade()
-                        && let Some((target_world, target_block, _)) =
-                            nether_portal::destination_block(&server, &world, portal_pos)
-                    {
-                        let cx = SectionPos::block_to_section_coord(target_block.x());
-                        let cz = SectionPos::block_to_section_coord(target_block.z());
-                        let mut tickets = target_world.chunk_map.chunk_tickets.lock();
-                        for dx in -2i32..=2 {
-                            for dz in -2i32..=2 {
-                                tickets.add_ticket(ChunkPos::new(cx + dx, cz + dz), 0);
-                            }
+                // Cache the destination so we don't recompute it every tick.
+                if processor.is_none()
+                    && let Some(server) = self.server.upgrade()
+                    && let Some(dest) =
+                        nether_portal::destination_block(&server, &world, &portal_pos)
+                {
+                    let cx = SectionPos::block_to_section_coord(dest.1.x());
+                    let cz = SectionPos::block_to_section_coord(dest.1.z());
+                    let mut tickets = dest.0.chunk_map.chunk_tickets.lock();
+                    for dx in -2i32..=2 {
+                        for dz in -2i32..=2 {
+                            tickets.add_ticket(ChunkPos::new(cx + dx, cz + dz), 0);
                         }
                     }
+                    drop(tickets);
+                    let mut proc = PortalProcessor::new(portal_pos, transition_time);
+                    proc.cached_destination = Some(dest);
+                    *processor = Some(proc);
                 }
 
                 let proc = processor
@@ -522,10 +532,13 @@ impl Player {
                 if proc.tick() {
                     // proc.tick() keeps returning true once fired — natural retry loop.
                     // Only proceed when the destination chunk is confirmed loaded.
-                    if let Some(server) = self.server.upgrade()
-                        && let Some((target_world, target_block, _)) =
-                            nether_portal::destination_block(&server, &world, portal_pos)
-                    {
+                    // Use cached destination to avoid recomputing every tick.
+                    let dest = proc.cached_destination.clone().or_else(|| {
+                        self.server
+                            .upgrade()
+                            .and_then(|s| nether_portal::destination_block(&s, &world, &portal_pos))
+                    });
+                    if let Some((target_world, target_block, _)) = dest {
                         let target_chunk = ChunkPos::new(
                             SectionPos::block_to_section_coord(target_block.x()),
                             SectionPos::block_to_section_coord(target_block.z()),
@@ -535,16 +548,34 @@ impl Player {
                             .with_full_chunk(&target_chunk, |_| ())
                             .is_some()
                         {
+                            tracing::info!(
+                                "Destination chunk ready for {}",
+                                self.gameprofile.name
+                            );
                             // Chunk is loaded — safe to create/find portal and teleport.
-                            if let Some(transition) =
-                                nether_portal::calculate_destination(&server, &world, portal_pos)
+                            let calc_start = Instant::now();
+                            if let Some(server) = self.server.upgrade()
+                                && let Some(transition) =
+                                    nether_portal::calculate_destination(&server, &world, &portal_pos)
                                 && let Some(player_arc) = world.players.get_by_entity_id(self.id)
                             {
-                                server.queue_dimension_change(player_arc, transition);
+                                tracing::info!(
+                                    "calculate_destination for {} took {}us",
+                                    self.gameprofile.name,
+                                    calc_start.elapsed().as_micros()
+                                );
+                                server.queue_dimension_change(
+                                    player_arc as SharedEntity,
+                                    DimensionChangeRequest::Computed(transition),
+                                );
                             }
                             *processor = None; // Stop retrying regardless of success/failure.
+                        } else {
+                            tracing::debug!(
+                                "Destination chunk not ready for {}, retrying next tick",
+                                self.gameprofile.name
+                            );
                         }
-                        // else: chunk not ready yet — processor stays alive, retry next tick.
                     }
                 }
             }
@@ -1928,6 +1959,15 @@ impl Player {
 
             // Clear awaiting state
             *awaiting = None;
+
+            // Log dimension change teleport ack timing
+            if let Some(start) = *self.dimension_change_start.lock() {
+                tracing::info!(
+                    "Teleport acked for {} in {}ms after dimension change",
+                    self.gameprofile.name,
+                    start.elapsed().as_millis()
+                );
+            }
         }
         // If ID doesn't match, silently ignore (could be old/delayed packet)
     }
@@ -2538,116 +2578,6 @@ impl Player {
         }
     }
 
-    /// Changes the player's dimension (world).
-    ///
-    /// Handles the full dimension change flow: cleanup old world, reset state,
-    /// send `CRespawn` + teleport packets, and add to new world.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the new world's dimension type is not registered.
-    pub fn change_dimension(self: &Arc<Self>, transition: TeleportTransition) {
-        let old_world = self.world();
-        let new_world = transition.target_world.clone();
-
-        // === Phase 1: Cleanup old world ===
-
-        // Close any open container menu
-        self.do_close_container();
-        self.send_packet(CContainerClose { container_id: 0 });
-
-        // Remove from old world (lightweight - stays in tab list)
-        old_world.remove_player_for_dimension_change(self);
-
-        // === Phase 2: Reset player state ===
-
-        // Update world reference
-        self.set_world(new_world.clone());
-
-        // Update position + rotation
-        *self.position.lock() = transition.position;
-        self.rotation.store(transition.rotation);
-
-        // Reset movement/physics state
-        self.on_ground.store(false, Ordering::Relaxed);
-        self.sleeping.store(false, Ordering::Relaxed);
-        self.fall_flying.store(false, Ordering::Relaxed);
-        self.sprinting.store(false, Ordering::Relaxed);
-        *self.delta_movement.lock() = Vector3::default();
-        self.client_loaded.store(false, Ordering::Relaxed);
-
-        // Reset movement validation state
-        *self.awaiting_position_from_client.lock() = None;
-        *self.first_good_position.lock() = transition.position;
-        *self.last_good_position.lock() = transition.position;
-        self.received_move_packet_count.store(0, Ordering::Relaxed);
-        self.known_move_packet_count.store(0, Ordering::Relaxed);
-
-        // Clear portal processor
-        *self.portal_processor.lock() = None;
-
-        // === Phase 3: Send packets ===
-
-        // CRespawn packet (client unloads old dimension, loads new one)
-        let dim_type_id = *(REGISTRY.dimension_types.get_id(
-            REGISTRY
-                .dimension_types
-                .by_key(&new_world.dimension.key)
-                .expect("Dimension type should be registered"),
-        )) as i32;
-
-        self.send_packet(CRespawn {
-            dimension_type: dim_type_id,
-            dimension_name: new_world.dimension.key.clone(),
-            hashed_seed: new_world.obfuscated_seed(),
-            gamemode: self.game_mode.load() as u8,
-            previous_gamemode: -1i8,
-            is_debug: false,
-            is_flat: true,
-            has_death_location: false,
-            death_dimension_name: OptionalIdentifier(None),
-            death_location: OptionalBlockPos(None),
-            portal_cooldown_ticks: transition.portal_cooldown,
-            sea_level: 63,
-            data_kept: 0,
-        });
-
-        // Reset chunk sender state
-        self.chunk_sender.lock().reset();
-        *self.last_tracking_view.lock() = None;
-        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
-
-        // Teleport (sends CPlayerPosition, sets awaiting_teleport for ack)
-        self.teleport(
-            transition.position.x,
-            transition.position.y,
-            transition.position.z,
-            transition.rotation.0,
-            transition.rotation.1,
-        );
-
-        // Re-send abilities
-        self.send_abilities();
-
-        // Re-send held item slot
-        self.send_packet(CSetHeldSlot {
-            slot: i32::from(self.inventory.lock().get_selected_slot()),
-        });
-
-        // === Phase 4: Set portal cooldown ===
-        self.portal_cooldown
-            .store(transition.portal_cooldown, Ordering::Relaxed);
-
-        // === Phase 5: Add to new world ===
-        new_world.add_player_for_dimension_change(self.clone());
-
-        log::info!(
-            "Player {} changed dimension to {}",
-            self.gameprofile.name,
-            new_world.dimension.key
-        );
-    }
-
     /// Cleans up player resources.
     pub const fn cleanup(&self) {}
 }
@@ -2744,6 +2674,126 @@ impl Entity for Player {
             // Standing and all other poses use default player eye height
             _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
         }
+    }
+
+    fn change_dimension(self: Arc<Self>, transition: &TeleportTransition) {
+        let dim_start = Instant::now();
+        *self.dimension_change_start.lock() = Some(dim_start);
+
+        let old_world = self.world();
+        let new_world = transition.target_world.clone();
+
+        // === Phase 1: Cleanup old world ===
+
+        // Close any open container menu
+        self.do_close_container();
+        self.send_packet(CContainerClose { container_id: 0 });
+
+        // Remove from old world (lightweight - stays in tab list)
+        old_world.remove_player_for_dimension_change(&self);
+        let phase1_elapsed = dim_start.elapsed();
+
+        // === Phase 2: Reset player state ===
+
+        // Update world reference
+        self.set_world(new_world.clone());
+
+        // Update position + rotation
+        *self.position.lock() = transition.position;
+        self.rotation.store(transition.rotation);
+
+        // Reset movement/physics state
+        self.on_ground.store(false, Ordering::Relaxed);
+        self.sleeping.store(false, Ordering::Relaxed);
+        self.fall_flying.store(false, Ordering::Relaxed);
+        self.sprinting.store(false, Ordering::Relaxed);
+        *self.delta_movement.lock() = Vector3::default();
+        self.client_loaded.store(false, Ordering::Relaxed);
+
+        // Reset movement validation state
+        *self.awaiting_position_from_client.lock() = None;
+        *self.first_good_position.lock() = transition.position;
+        *self.last_good_position.lock() = transition.position;
+        self.received_move_packet_count.store(0, Ordering::Relaxed);
+        self.known_move_packet_count.store(0, Ordering::Relaxed);
+
+        // Clear portal processor
+        *self.portal_processor.lock() = None;
+        let phase2_elapsed = dim_start.elapsed();
+
+        // === Phase 3: Send packets ===
+
+        // CRespawn packet (client unloads old dimension, loads new one)
+        let dim_type_id = *(REGISTRY.dimension_types.get_id(
+            REGISTRY
+                .dimension_types
+                .by_key(&new_world.dimension.key)
+                .expect("Dimension type should be registered"),
+        )) as i32;
+
+        self.send_packet(CRespawn {
+            dimension_type: dim_type_id,
+            dimension_name: new_world.dimension.key.clone(),
+            hashed_seed: new_world.obfuscated_seed(),
+            gamemode: self.game_mode.load() as u8,
+            previous_gamemode: -1i8,
+            is_debug: false,
+            is_flat: true,
+            has_death_location: false,
+            death_dimension_name: OptionalIdentifier(None),
+            death_location: OptionalBlockPos(None),
+            portal_cooldown_ticks: transition.portal_cooldown,
+            sea_level: 63,
+            data_kept: 0,
+        });
+
+        // Reset chunk sender state
+        self.chunk_sender.lock().reset();
+        *self.last_tracking_view.lock() = None;
+        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
+
+        // Teleport (sends CPlayerPosition, sets awaiting_teleport for ack)
+        self.teleport(
+            transition.position.x,
+            transition.position.y,
+            transition.position.z,
+            transition.rotation.0,
+            transition.rotation.1,
+        );
+
+        // Re-send abilities
+        self.send_abilities();
+
+        // Re-send held item slot
+        self.send_packet(CSetHeldSlot {
+            slot: i32::from(self.inventory.lock().get_selected_slot()),
+        });
+
+        let phase3_elapsed = dim_start.elapsed();
+
+        // === Phase 4: Set portal cooldown ===
+        self.portal_cooldown
+            .store(transition.portal_cooldown, Ordering::Relaxed);
+
+        // === Phase 5: Add to new world ===
+        new_world.add_player_for_dimension_change(self.clone());
+        let total_elapsed = dim_start.elapsed();
+
+        tracing::info!(
+            "Dimension change for {}: cleanup={}us reset={}us packets={}us add_world={}us total={}us",
+            self.gameprofile.name,
+            phase1_elapsed.as_micros(),
+            phase2_elapsed.saturating_sub(phase1_elapsed).as_micros(),
+            phase3_elapsed.saturating_sub(phase2_elapsed).as_micros(),
+            total_elapsed.saturating_sub(phase3_elapsed).as_micros(),
+            total_elapsed.as_micros(),
+        );
+
+        log::info!(
+            "Player {} changed dimension to {}",
+            self.gameprofile.name,
+            new_world.dimension.key
+        );
     }
 }
 

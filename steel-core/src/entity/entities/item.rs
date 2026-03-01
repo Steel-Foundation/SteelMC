@@ -19,10 +19,11 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::math::Vector3;
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, RemovalReason};
+use crate::entity::{Entity, EntityBase, RemovalReason, next_entity_id};
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
+use crate::portal::{DimensionChangeRequest, TeleportTransition};
 use crate::world::World;
 
 use simdnbt::ToNbtTag;
@@ -509,7 +510,13 @@ impl ItemEntity {
             if let Some(world) = self.level()
                 && let Some(entity) = world.get_entity_by_id(self.id())
             {
-                world.queue_entity_teleport(entity, portal_pos);
+                world.queue_dimension_change(
+                    entity,
+                    DimensionChangeRequest::Portal {
+                        source_world: world.clone(),
+                        portal_pos,
+                    },
+                );
             }
         }
     }
@@ -913,6 +920,39 @@ impl Entity for ItemEntity {
 
     fn set_on_ground(&self, on_ground: bool) {
         self.on_ground.store(on_ground, Ordering::Relaxed);
+    }
+
+    fn change_dimension(self: Arc<Self>, transition: &TeleportTransition) {
+        let item = self.get_item();
+        let velocity = Entity::velocity(self.as_ref());
+        let pickup_delay = self.get_pickup_delay();
+        let age = self.get_age();
+        let thrower = self.get_thrower();
+        let owner = self.get_owner();
+
+        self.set_removed(RemovalReason::ChangedDimension);
+
+        let new_id = next_entity_id();
+        let new_entity = Arc::new(ItemEntity::with_item_and_velocity(
+            new_id,
+            transition.position,
+            item,
+            velocity,
+            Arc::downgrade(&transition.target_world),
+        ));
+
+        new_entity.set_pickup_delay(pickup_delay);
+        new_entity.set_age(age);
+        if let Some(thrower) = thrower {
+            new_entity.set_thrower(thrower);
+        }
+        new_entity.set_owner(owner);
+
+        if let Some(base) = Entity::base(new_entity.as_ref()) {
+            base.set_portal_cooldown(transition.portal_cooldown);
+        }
+
+        transition.target_world.add_entity(new_entity);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

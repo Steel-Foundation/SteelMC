@@ -2,6 +2,7 @@
 
 use std::ptr;
 use std::sync::Arc;
+use tokio::time::Instant;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_NETHER};
@@ -14,7 +15,7 @@ use crate::server::Server;
 use crate::world::World;
 
 /// Default portal cooldown in ticks (15 seconds).
-const PORTAL_COOLDOWN_TICKS: i32 = 300;
+const PORTAL_COOLDOWN_TICKS: i32 = 10;
 
 /// Returns `(target_world, target_block, search_radius)` from source coords.
 ///
@@ -22,7 +23,7 @@ const PORTAL_COOLDOWN_TICKS: i32 = 300;
 pub fn destination_block(
     server: &Server,
     source_world: &World,
-    source_pos: BlockPos,
+    source_pos: &BlockPos,
 ) -> Option<(Arc<World>, BlockPos, i32)> {
     let target_world = match source_world.dimension {
         d if ptr::eq(d, OVERWORLD) => server.nether(),
@@ -55,8 +56,10 @@ pub fn destination_block(
 pub fn calculate_destination(
     server: &Server,
     source_world: &World,
-    source_pos: BlockPos,
+    source_pos: &BlockPos,
 ) -> Option<TeleportTransition> {
+    let start = Instant::now();
+
     let (target_world, target_block, search_radius) =
         destination_block(server, source_world, source_pos)?;
 
@@ -69,6 +72,11 @@ pub fn calculate_destination(
     // If none is found, a new one is created at the target position.
     let exit_pos = NetherPortalForcer::find_portal(&target_world, target_block, search_radius)
         .unwrap_or_else(|| NetherPortalForcer::create_portal(&target_world, target_block, axis));
+
+    tracing::info!(
+        "calculate_destination took {}us (find_portal + create_portal)",
+        start.elapsed().as_micros()
+    );
 
     Some(TeleportTransition {
         target_world: Arc::clone(&target_world),

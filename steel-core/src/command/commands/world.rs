@@ -3,7 +3,8 @@
 use crate::command::commands::{CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
-use crate::portal::TeleportTransition;
+use crate::entity::SharedEntity;
+use crate::portal::{DimensionChangeRequest, TeleportTransition};
 
 // ---------- /overworld ----------
 
@@ -27,13 +28,13 @@ impl CommandExecutor<()> for OverworldExecutor {
         let rot = player.rotation.load();
         let target = context.server.overworld().clone();
         context.server.queue_dimension_change(
-            player,
-            TeleportTransition {
+            player as SharedEntity,
+            DimensionChangeRequest::Computed(TeleportTransition {
                 target_world: target,
                 position: pos,
                 rotation: rot,
                 portal_cooldown: 0,
-            },
+            }),
         );
         Ok(())
     }
@@ -66,13 +67,13 @@ impl CommandExecutor<()> for NetherExecutor {
         pos.y = 10.0;
         let rot = player.rotation.load();
         context.server.queue_dimension_change(
-            player,
-            TeleportTransition {
+            player as SharedEntity,
+            DimensionChangeRequest::Computed(TeleportTransition {
                 target_world: target,
                 position: pos,
                 rotation: rot,
                 portal_cooldown: 0,
-            },
+            }),
         );
         Ok(())
     }
@@ -105,13 +106,13 @@ impl CommandExecutor<()> for EndExecutor {
         pos.y = 10.0;
         let rot = player.rotation.load();
         context.server.queue_dimension_change(
-            player,
-            TeleportTransition {
+            player as SharedEntity,
+            DimensionChangeRequest::Computed(TeleportTransition {
                 target_world: target,
                 position: pos,
                 rotation: rot,
                 portal_cooldown: 0,
-            },
+            }),
         );
         Ok(())
     }

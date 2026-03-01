@@ -18,6 +18,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockInsideEffect};
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
+use crate::portal::TeleportTransition;
 use crate::world::World;
 use crate::{inventory::equipment::EquipmentSlot, player::Player};
 
@@ -402,6 +403,12 @@ pub trait Entity: Send + Sync {
 
     /// Processes portal standing state (called during tick).
     fn handle_portal(&self) {}
+
+    /// Performs the dimension change for this entity.
+    ///
+    /// Players send packets and swap worlds; other entities clone themselves
+    /// into the target world. Default implementation does nothing.
+    fn change_dimension(self: Arc<Self>, _transition: &TeleportTransition) {}
 
     // === Tick Tracking ===
     // These methods prevent double-ticking when an entity moves between chunks

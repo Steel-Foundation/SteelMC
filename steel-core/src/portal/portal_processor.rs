@@ -1,6 +1,10 @@
 //! Per-entity state for standing inside a portal.
 
+use std::sync::Arc;
+
 use steel_utils::BlockPos;
+
+use crate::world::World;
 
 /// Tracks how long an entity has been standing in a portal.
 pub struct PortalProcessor {
@@ -10,6 +14,8 @@ pub struct PortalProcessor {
     pub portal_time: i32,
     /// How many ticks required to trigger the teleport.
     pub transition_time: i32,
+    /// Cached destination from the pre-warming phase.
+    pub cached_destination: Option<(Arc<World>, BlockPos, i32)>,
 }
 
 impl PortalProcessor {
@@ -20,6 +26,7 @@ impl PortalProcessor {
             portal_pos,
             portal_time: 0,
             transition_time,
+            cached_destination: None,
         }
     }
 

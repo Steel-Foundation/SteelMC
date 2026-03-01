@@ -11,14 +11,20 @@ use crate::chunk::flat_chunk_generator::FlatChunkGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WordGeneratorTypes, WorldStorageConfig};
-use crate::entity::{init_entities, Entity, SharedEntity};
+use crate::entity::{SharedEntity, init_entities};
 use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 
 use small_map::FxSmallMap;
-use std::{mem, ptr, sync::Arc, time::{Duration, Instant}};
+use std::{
+    mem,
+    ptr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use std::sync::atomic::{AtomicBool, Ordering};
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
@@ -29,15 +35,15 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-use steel_utils::{entity_events::EntityStatus, locks::SyncMutex, locks::SyncRwLock};
+use steel_utils::{entity_events::EntityStatus, locks::{SyncMutex, SyncRwLock}};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-use crate::portal::TeleportTransition;
+use crate::portal::DimensionChangeRequest;
 use crate::portal::nether_portal;
-use steel_utils::{BlockPos, Identifier};
+use steel_utils::Identifier;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
@@ -59,7 +65,9 @@ pub struct Server {
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
     /// Queued dimension changes to process after the tick.
-    pub pending_dimension_changes: SyncMutex<Vec<(Arc<Player>, TeleportTransition)>>,
+    pub pending_dimension_changes: SyncMutex<Vec<(SharedEntity, DimensionChangeRequest)>>,
+    /// Fast-path flag to skip locking when no dimension changes are queued.
+    pub has_dimension_changes: AtomicBool,
 }
 
 impl Server {
@@ -143,6 +151,7 @@ impl Server {
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             player_data_storage,
             pending_dimension_changes: SyncMutex::new(Vec::new()),
+            has_dimension_changes: AtomicBool::new(false),
         }
     }
 
@@ -355,73 +364,19 @@ impl Server {
     }
 
     /// Queues a dimension change to be processed after the current tick.
-    pub fn queue_dimension_change(&self, player: Arc<Player>, transition: TeleportTransition) {
-        self.pending_dimension_changes
-            .lock()
-            .push((player, transition));
+    pub fn queue_dimension_change(&self, entity: SharedEntity, request: DimensionChangeRequest) {
+        self.pending_dimension_changes.lock().push((entity, request));
+        self.has_dimension_changes.store(true, Ordering::Relaxed);
     }
 
-    /// Processes a portal teleport for a non-player entity (e.g., dropped items).
-    fn process_entity_portal_teleport(
-        &self,
-        source_world: &Arc<World>,
-        entity: &SharedEntity,
-        portal_pos: BlockPos,
-    ) {
-        use crate::entity::{RemovalReason, entities::ItemEntity, next_entity_id};
-
-        // Skip if already removed
-        if entity.is_removed() {
-            return;
-        }
-
-        let Some(transition) = nether_portal::calculate_destination(self, source_world, portal_pos)
-        else {
-            return;
-        };
-
-        // Currently only handle ItemEntity teleportation
-        if let Some(item_entity) = entity.clone().as_item_entity() {
-            // Save state from old entity
-            let item = item_entity.get_item();
-            let velocity = Entity::velocity(item_entity.as_ref());
-            let pickup_delay = item_entity.get_pickup_delay();
-            let age = item_entity.get_age();
-            let thrower = item_entity.get_thrower();
-            let owner = item_entity.get_owner();
-
-            // Remove old entity
-            entity.set_removed(RemovalReason::ChangedDimension);
-
-            // Create new entity in target world
-            let new_id = next_entity_id();
-            let new_entity = Arc::new(ItemEntity::with_item_and_velocity(
-                new_id,
-                transition.position,
-                item,
-                velocity,
-                Arc::downgrade(&transition.target_world),
-            ));
-
-            // Restore saved state
-            new_entity.set_pickup_delay(pickup_delay);
-            new_entity.set_age(age);
-            if let Some(thrower) = thrower {
-                new_entity.set_thrower(thrower);
-            }
-            new_entity.set_owner(owner);
-
-            // Set portal cooldown to prevent bouncing
-            if let Some(base) = Entity::base(new_entity.as_ref()) {
-                base.set_portal_cooldown(transition.portal_cooldown);
-            }
-
-            transition.target_world.add_entity(new_entity);
-        } else {
-            log::debug!(
-                "Portal teleport for non-item entity type not yet supported (entity id={})",
-                entity.id()
-            );
+    /// Initializes world back-references to this server.
+    ///
+    /// Must be called after `Arc::new(server)` so worlds can queue dimension
+    /// changes through the server.
+    pub fn init_world_server_refs(self: &Arc<Self>) {
+        let weak = Arc::downgrade(self);
+        for world in self.worlds.values() {
+            world.set_server(weak.clone());
         }
     }
 
@@ -488,16 +443,37 @@ impl Server {
             self.tick_worlds(tick_count, runs_normally).await;
 
             // Process queued dimension changes (safe - not inside player iteration)
-            let pending = mem::take(&mut *self.pending_dimension_changes.lock());
-            for (player, transition) in pending {
-                player.change_dimension(transition);
-            }
+            if self.has_dimension_changes.load(Ordering::Relaxed) {
+                let changes = mem::take(&mut *self.pending_dimension_changes.lock());
+                self.has_dimension_changes.store(false, Ordering::Relaxed);
 
-            // Process queued entity portal teleports
-            for world in self.worlds.values() {
-                let pending = world.take_pending_entity_teleports();
-                for (entity, portal_pos) in pending {
-                    self.process_entity_portal_teleport(world, &entity, portal_pos);
+                for (entity, request) in changes {
+                    if entity.is_removed() {
+                        continue;
+                    }
+                    match request {
+                        DimensionChangeRequest::Computed(transition) => {
+                            entity.change_dimension(&transition);
+                        }
+                        DimensionChangeRequest::Portal {
+                            source_world,
+                            portal_pos,
+                        } => {
+                            // Run portal search/creation on a blocking thread
+                            // to avoid stalling the tick loop.
+                            let server = self.clone();
+                            spawn_blocking(move || {
+                                if entity.is_removed() {
+                                    return;
+                                }
+                                if let Some(transition) =
+                                    nether_portal::calculate_destination(&server, &source_world, &portal_pos)
+                                {
+                                    entity.change_dimension(&transition);
+                                }
+                            });
+                        }
+                    }
                 }
             }
 

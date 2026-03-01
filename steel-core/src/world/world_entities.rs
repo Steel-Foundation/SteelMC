@@ -22,8 +22,6 @@ impl World {
         let entity_id = player.id;
 
         if self.players.remove(&uuid).await.is_some() {
-            let start = Instant::now();
-
             // Save player data before removal
             if let Some(server) = player.server.upgrade()
                 && let Err(e) = server.player_data_storage.save(&player).await
@@ -33,7 +31,7 @@ impl World {
 
             // Unregister from entity cache
             let pos = player.position();
-            let section = steel_utils::SectionPos::new(
+            let section = SectionPos::new(
                 (pos.x as i32) >> 4,
                 (pos.y as i32) >> 4,
                 (pos.z as i32) >> 4,
@@ -49,7 +47,6 @@ impl World {
 
             self.chunk_map.remove_player(&player);
             player.cleanup();
-            log::info!("Player {uuid} removed in {:?}", start.elapsed());
         }
     }
 
@@ -183,6 +180,7 @@ impl World {
     /// - Close the connection
     /// - Call `player.cleanup()`
     pub fn remove_player_for_dimension_change(self: &Arc<Self>, player: &Arc<Player>) {
+        let start = Instant::now();
         let uuid = player.gameprofile.id;
         let entity_id = player.id;
 
@@ -209,6 +207,11 @@ impl World {
             // but do NOT remove from tab list
             self.broadcast_to_all(CRemoveEntities::single(entity_id));
         }
+        tracing::info!(
+            "remove_player_for_dimension_change for {} took {}us",
+            player.gameprofile.name,
+            start.elapsed().as_micros()
+        );
     }
 
     /// Adds a player to this world after a dimension change.
@@ -218,6 +221,7 @@ impl World {
     /// Unlike `add_player`, it does NOT:
     /// - Send `CPlayerInfoUpdate` (tab list entry already exists)
     pub fn add_player_for_dimension_change(self: &Arc<Self>, player: Arc<Player>) {
+        let start = Instant::now();
         if !self.players.insert(player.clone()) {
             log::error!(
                 "Failed to insert player {} during dimension change",
@@ -239,11 +243,24 @@ impl World {
         self.entity_cache
             .register(&(player.clone() as SharedEntity));
 
-        // Send existing players' entities to the switching player
-        // (tab list info already exists, just need entity spawn packets)
+        // Exchange entity spawn packets between the switching player and existing
+        // players in a single iteration (tab list info already exists).
         let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
+        let pos = *player.position.lock();
+        let (yaw, pitch) = player.rotation.load();
+        let spawn_packet = CAddEntity::player(
+            player.id,
+            player.gameprofile.id,
+            player_type_id,
+            pos.x,
+            pos.y,
+            pos.z,
+            yaw,
+            pitch,
+        );
         self.players.iter_players(|_, existing_player| {
             if existing_player.gameprofile.id != player.gameprofile.id {
+                // Send existing player entity to the switching player
                 let existing_pos = *existing_player.position.lock();
                 let (existing_yaw, existing_pitch) = existing_player.rotation.load();
                 player.send_bundle(|bundle| {
@@ -258,26 +275,9 @@ impl World {
                         existing_pitch,
                     ));
                 });
-            }
-            true
-        });
 
-        // Broadcast this player's entity spawn to other players in the new world
-        let pos = *player.position.lock();
-        let (yaw, pitch) = player.rotation.load();
-        let spawn_packet = CAddEntity::player(
-            player.id,
-            player.gameprofile.id,
-            player_type_id,
-            pos.x,
-            pos.y,
-            pos.z,
-            yaw,
-            pitch,
-        );
-        self.players.iter_players(|_, p| {
-            if p.gameprofile.id != player.gameprofile.id {
-                p.send_bundle(|bundle| {
+                // Send this player's entity to existing player
+                existing_player.send_bundle(|bundle| {
                     bundle.add(spawn_packet.clone());
                 });
             }
@@ -289,5 +289,10 @@ impl World {
             event: GameEventType::LevelChunksLoadStart,
             data: 0.0,
         });
+        tracing::info!(
+            "add_player_for_dimension_change for {} took {}us",
+            player.gameprofile.name,
+            start.elapsed().as_micros()
+        );
     }
 }

@@ -2,9 +2,9 @@
 
 use std::path::Path;
 use std::{
-    io, mem,
+    io,
     sync::{
-        Arc, Weak,
+        Arc, OnceLock, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::Duration,
@@ -47,12 +47,15 @@ use tokio::{runtime::Runtime, time::Instant};
 use crate::{
     ChunkMap,
     behavior::BLOCK_BEHAVIORS,
+    chunk::chunk_holder::ChunkHolder,
     block_entity::SharedBlockEntity,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     level_data::LevelDataManager,
     player::{LastSeen, Player, connection::NetworkConnection},
+    portal::DimensionChangeRequest,
+    server::Server,
 };
 
 mod player_area_map;
@@ -86,6 +89,9 @@ pub struct WorldTickTimings {
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
 /// Matches vanilla `PlayerList.SEND_PLAYER_INFO_INTERVAL`.
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
+
+/// Cache for `get_block_state_cached` — holds the last looked-up chunk holder.
+pub type ChunkCache = Option<(ChunkPos, Arc<ChunkHolder>)>;
 
 /// Configuration for creating a new world.
 #[derive(Clone)]
@@ -122,8 +128,8 @@ pub struct World {
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
     sub_tick_count: AtomicI64,
-    /// Queued entity teleports to process after the tick (e.g., items entering nether portals).
-    pending_entity_teleports: SyncMutex<Vec<(SharedEntity, BlockPos)>>,
+    /// Back-reference to the server for queuing dimension changes.
+    server: OnceLock<Weak<Server>>,
 }
 
 impl World {
@@ -194,9 +200,9 @@ impl World {
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
-            pending_entity_teleports: SyncMutex::new(Vec::new()),
             weather: SyncMutex::new(weather),
             sub_tick_count: AtomicI64::new(0),
+            server: OnceLock::new(),
         }))
     }
 
@@ -406,6 +412,47 @@ impl World {
         self.chunk_map
             .with_full_chunk(&chunk_pos, |chunk| chunk.get_block_state(*pos))
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR))
+    }
+
+    /// Gets the block state at the given position, using a chunk cache for locality.
+    ///
+    /// When scanning many blocks in the same chunk (e.g. spiral/vertical searches),
+    /// this avoids repeated hashmap lookups by caching the last `ChunkHolder`.
+    #[must_use]
+    pub fn get_block_state_cached(
+        &self,
+        pos: &BlockPos,
+        cache: &mut ChunkCache,
+    ) -> BlockStateId {
+        use crate::chunk::chunk_access::ChunkStatus;
+
+        let air = REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR);
+        if !self.is_in_valid_bounds(pos) {
+            return air;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+
+        // Check cache first
+        if let Some((ref cached_pos, ref holder)) = *cache
+            && *cached_pos == chunk_pos
+            && let Some(guard) = holder.try_chunk(ChunkStatus::Full)
+        {
+            return guard.get_block_state(*pos);
+        }
+
+        // Cache miss — look up and cache
+        let holder = self
+            .chunk_map
+            .chunks
+            .read_sync(&chunk_pos, |_, h| h.clone());
+        if let Some(ref h) = holder {
+            *cache = Some((chunk_pos, h.clone()));
+            if let Some(guard) = h.try_chunk(ChunkStatus::Full) {
+                return guard.get_block_state(*pos);
+            }
+        }
+        air
     }
 
     /// Sets a block at the given position.
@@ -1724,17 +1771,22 @@ impl World {
         }
     }
 
-    // === Entity Portal Teleport Queue ===
+    // === Server Back-Reference ===
 
-    /// Queues an entity for portal teleportation after the current tick.
-    pub fn queue_entity_teleport(&self, entity: SharedEntity, portal_pos: BlockPos) {
-        self.pending_entity_teleports
-            .lock()
-            .push((entity, portal_pos));
+    /// Sets the server back-reference (called once during server init).
+    pub fn set_server(&self, server: Weak<Server>) {
+        let _ = self.server.set(server);
     }
 
-    /// Drains and returns all pending entity teleports.
-    pub fn take_pending_entity_teleports(&self) -> Vec<(SharedEntity, BlockPos)> {
-        mem::take(&mut *self.pending_entity_teleports.lock())
+    /// Gets a strong reference to the server, if available.
+    pub fn server(&self) -> Option<Arc<Server>> {
+        self.server.get().and_then(Weak::upgrade)
+    }
+
+    /// Queues a dimension change through the server.
+    pub fn queue_dimension_change(&self, entity: SharedEntity, request: DimensionChangeRequest) {
+        if let Some(server) = self.server() {
+            server.queue_dimension_change(entity, request);
+        }
     }
 }

@@ -49,6 +49,9 @@ impl SteelServer {
 
         let server = Server::new(chunk_runtime, cancel_token.clone()).await;
 
+        let server = Arc::new(server);
+        server.init_world_server_refs();
+
         Self {
             tcp_listener: TcpListener::bind(SocketAddrV4::new(
                 Ipv4Addr::UNSPECIFIED,
@@ -58,7 +61,7 @@ impl SteelServer {
             .expect("Failed to bind to server address"),
             cancel_token,
             client_id: 0,
-            server: Arc::new(server),
+            server,
         }
     }
 

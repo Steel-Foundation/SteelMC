@@ -1,7 +1,7 @@
 //! Finds existing portals or creates new ones at the target destination.
 
 use crate::behavior::BlockStateBehaviorExt;
-use crate::world::World;
+use crate::world::{ChunkCache, World};
 use std::cmp;
 use std::cmp::max;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -40,6 +40,7 @@ impl NetherPortalForcer {
         let mut full_position: Option<BlockPos> = None;
         let mut partial_position: Option<BlockPos> = None;
         let start = std::time::Instant::now();
+        let mut cache: ChunkCache = None;
         for mut column in target.spiral_around(
             Self::NETHER_PORTAL_RADIUS,
             Direction::East,
@@ -52,11 +53,11 @@ impl NetherPortalForcer {
             while y > world.get_min_y() {
                 // Bug 4 fix: use col.at_y(y) so col is never mutated
                 column = column.at_y(y);
-                if Self::can_replace_block(world, &column) {
+                if Self::can_replace_block(world, &column, &mut cache) {
                     let empty_y = y;
                     // Bug 3 fix: track last replaceable y with a separate counter
                     while y > world.get_min_y()
-                        && Self::can_replace_block(world, &column.at_y(y - 1))
+                        && Self::can_replace_block(world, &column.at_y(y - 1), &mut cache)
                     {
                         y -= 1;
                     }
@@ -64,10 +65,12 @@ impl NetherPortalForcer {
                     if y + 4 <= max_placeable_y {
                         let delta = empty_y - y;
                         if delta <= 0 || delta >= 3 {
-                            if Self::can_host_frame(world, &column, direction, 0) {
+                            if Self::can_host_frame(world, &column, direction, 0, &mut cache) {
                                 let dis = target.distance_squared(&column);
-                                if Self::can_host_frame(world, &column, direction, 1)
-                                    && Self::can_host_frame(world, &column, direction, -1)
+                                if Self::can_host_frame(world, &column, direction, 1, &mut cache)
+                                    && Self::can_host_frame(
+                                        world, &column, direction, -1, &mut cache,
+                                    )
                                     && (sqrt_distance_full == -1 || sqrt_distance_full > dis)
                                 {
                                     sqrt_distance_full = dis;
@@ -91,7 +94,7 @@ impl NetherPortalForcer {
         }
 
         let elapsed = start.elapsed();
-        println!("Portal search took {}µs", elapsed.as_micros());
+        tracing::warn!("Portal search took {}µs", elapsed.as_micros());
 
         let obsidian = vanilla_blocks::OBSIDIAN.default_state();
         let air = vanilla_blocks::AIR.default_state();
@@ -121,7 +124,7 @@ impl NetherPortalForcer {
                             height,
                             width * dir_off.2 + box_off * cw_off.2,
                         );
-                        world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL);
+                        world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
                     }
                 }
             }
@@ -129,12 +132,12 @@ impl NetherPortalForcer {
         }
 
         let elapsed = start.elapsed();
-        println!("Portal create space to spawn took {}µs", elapsed.as_micros());
+        tracing::warn!("Portal create space to spawn took {}µs", elapsed.as_micros());
 
         let portal_block = vanilla_blocks::NETHER_PORTAL
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_AXIS, Axis::X);
-        let flags = UpdateFlags::UPDATE_ALL;
+        let flags = UpdateFlags::UPDATE_CLIENTS;
         let pos = full_position.unwrap();
         let base_x = pos.x();
         let base_y = pos.y();
@@ -164,17 +167,27 @@ impl NetherPortalForcer {
         }
 
         let elapsed = start.elapsed();
-        println!("Portal creation took {}µs", elapsed.as_micros());
+        tracing::warn!("Portal creation took {}µs", elapsed.as_micros());
         // Return the bottom-left interior position
         BlockPos::new(base_x + 1, base_y + 1, base_z)
     }
 
-    fn can_replace_block(world: &World, pos: &BlockPos) -> bool {
-        let state = world.get_block_state(pos);
+    fn can_replace_block(
+        world: &World,
+        pos: &BlockPos,
+        cache: &mut ChunkCache,
+    ) -> bool {
+        let state = world.get_block_state_cached(pos, cache);
         state.get_fluid_state().is_empty() && state.is_replaceable()
     }
 
-    fn can_host_frame(world: &World, pos: &BlockPos, direction: Direction, offset: i32) -> bool {
+    fn can_host_frame(
+        world: &World,
+        pos: &BlockPos,
+        direction: Direction,
+        offset: i32,
+        cache: &mut ChunkCache,
+    ) -> bool {
         let rotated = direction.rotate_y_clockwise();
         for width in Self::FRAME_WIDTH_START..Self::FRAME_WIDTH_END {
             for height in Self::FRAME_HEIGHT_START..Self::FRAME_HEIGHT_END {
@@ -183,10 +196,14 @@ impl NetherPortalForcer {
                     height,
                     direction.offset().2 * width + rotated.offset().2 * offset,
                 );
-                if height < 0 && !world.get_block_state(&prope_pos).is_solid() {
+                if height < 0
+                    && !world
+                        .get_block_state_cached(&prope_pos, cache)
+                        .is_solid()
+                {
                     return false;
                 }
-                if height >= 0 && !Self::can_replace_block(world, &prope_pos) {
+                if height >= 0 && !Self::can_replace_block(world, &prope_pos, cache) {
                     return false;
                 }
             }
