@@ -3,6 +3,8 @@
 use std::sync::Arc;
 
 use steel_core::config::{STEEL_CONFIG, ServerLinks};
+use steel_core::entity::next_entity_id;
+use steel_core::player::PlayerConnection;
 use steel_core::player::networking::JavaConnection;
 use steel_core::player::{ClientInformation, Player};
 use steel_protocol::packets::common::CCustomPayload;
@@ -98,23 +100,25 @@ impl JavaTcpClient {
 
         let client_info = self.client_information.lock().await.clone();
 
-        let world = self.server.worlds[0].clone();
-        let entity_id = self.server.next_entity_id();
+        let world = self.server.overworld().clone();
+        let entity_id = next_entity_id();
 
         let player = Arc::new_cyclic(|player_weak| {
-            let connection = Arc::new(JavaConnection::new(
+            let java_connection = JavaConnection::new(
                 self.outgoing_queue.clone(),
                 self.cancel_token.clone(),
                 self.compression.load(),
                 self.network_writer.clone(),
                 self.id,
                 player_weak.clone(),
-            ));
+            );
+            let connection = Arc::new(PlayerConnection::Java(java_connection));
 
             Player::new(
                 gameprofile,
                 connection,
                 world,
+                Arc::downgrade(&self.server),
                 entity_id,
                 player_weak,
                 client_info,
@@ -125,6 +129,6 @@ impl JavaTcpClient {
             .send(ConnectionUpdate::Upgrade(player.connection.clone()))
             .expect("Failed to send connection update");
 
-        self.server.add_player(player);
+        self.server.add_player(player).await;
     }
 }

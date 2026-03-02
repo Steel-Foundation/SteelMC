@@ -113,6 +113,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static cow variant definitions
+    let mut register_stream = TokenStream::new();
     for (cow_variant_name, cow_variant) in &cow_variants {
         let cow_variant_ident =
             Ident::new(&cow_variant_name.to_shouty_snake_case(), Span::call_site());
@@ -136,11 +137,6 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (cow_variant_name, _) in &cow_variants {
         let cow_variant_ident =
             Ident::new(&cow_variant_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {

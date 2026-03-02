@@ -6,6 +6,7 @@ use wincode::{SchemaRead, SchemaWrite};
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
+use crate::world::tick_scheduler::{BlockTick, FluidTick};
 
 /// The status of a chunk.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, SchemaWrite, SchemaRead)]
@@ -45,7 +46,7 @@ impl ChunkStatus {
 
     /// Gets the status from an index.
     #[must_use]
-    pub fn from_index(index: usize) -> Option<Self> {
+    pub const fn from_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(Self::Empty),
             1 => Some(Self::StructureStarts),
@@ -69,7 +70,7 @@ impl ChunkStatus {
     /// # Panics
     /// This function will panic if the chunk is at the Full status.
     #[must_use]
-    pub fn next(self) -> Option<Self> {
+    pub const fn next(self) -> Option<Self> {
         match self {
             Self::Empty => Some(Self::StructureStarts),
             Self::StructureStarts => Some(Self::StructureReferences),
@@ -88,7 +89,7 @@ impl ChunkStatus {
 
     /// Gets the parent status in the generation order.
     #[must_use]
-    pub fn parent(self) -> Option<Self> {
+    pub const fn parent(self) -> Option<Self> {
         match self {
             Self::Empty => None,
             Self::StructureStarts => Some(Self::Empty),
@@ -131,6 +132,8 @@ impl ChunkStatus {
 }
 
 /// An enum that allows access to a chunk in different states.
+// Always stored behind `SyncRwLock` in `ChunkHolder`, so variant size doesn't matter.
+#[allow(clippy::large_enum_variant)]
 pub enum ChunkAccess {
     /// A fully generated chunk.
     Full(LevelChunk),
@@ -224,6 +227,16 @@ impl ChunkAccess {
         }
     }
 
+    /// Returns the minimum Y coordinate of the world this chunk belongs to.
+    #[must_use]
+    pub const fn min_y(&self) -> i32 {
+        match self {
+            Self::Full(chunk) => chunk.min_y(),
+            Self::Proto(proto_chunk) => proto_chunk.min_y(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns a reference to the sections.
     #[must_use]
     pub const fn sections(&self) -> &Sections {
@@ -272,11 +285,22 @@ impl ChunkAccess {
 
     /// Ticks the chunk if it's a full chunk.
     ///
-    /// # Arguments
-    /// * `random_tick_speed` - Number of random blocks to tick per section per tick
-    pub fn tick(&self, random_tick_speed: u32) {
+    /// Drains ready scheduled ticks into the provided vecs, then processes
+    /// block entities, entities, and random ticks.
+    pub fn tick(
+        &self,
+        random_tick_speed: u32,
+        tick_count: i32,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
         if let Self::Full(chunk) = self {
-            chunk.tick(random_tick_speed);
+            chunk.tick(
+                random_tick_speed,
+                tick_count,
+                ready_block_ticks,
+                ready_fluid_ticks,
+            );
         }
     }
 }

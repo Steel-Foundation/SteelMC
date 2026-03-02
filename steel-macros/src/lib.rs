@@ -416,21 +416,21 @@ fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> 
         }
     }
 
-    let read_discriminant = match strategy.as_ref().map(Strategy::name_str) {
+    let read_discriminant = match &strategy.as_ref().map(Strategy::name_str) {
         // Default: read a VarInt (i32)
         None => {
             quote! { steel_utils::codec::VarInt::read(data)?.into() }
         }
         // Explicit VarInt
-        Some(ref s) if s == "VarInt" => {
+        Some(s) if s == "VarInt" => {
             quote! { steel_utils::codec::VarInt::read(data)?.into() }
         }
         // VarLong
-        Some(ref s) if s == "VarLong" => {
+        Some(s) if s == "VarLong" => {
             quote! { steel_utils::codec::VarLong::read(data)?.into() }
         }
         // Primitive numeric type (u8, i32, etc.)
-        Some(ref s) if ALLOWED_TYPES.contains(&s.as_str()) => {
+        Some(s) if ALLOWED_TYPES.contains(&s.as_str()) => {
             let enum_type = Ident::new(s, Span::call_site());
             let _ = bound; // `bound` currently unused for primitive reads
             quote! { <#enum_type as steel_utils::serial::ReadFrom>::read(data)? }

@@ -139,6 +139,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static cat variant definitions
+    let mut register_stream = TokenStream::new();
     for (cat_variant_name, cat_variant) in &cat_variants {
         let cat_variant_ident =
             Ident::new(&cat_variant_name.to_shouty_snake_case(), Span::call_site());
@@ -160,13 +161,6 @@ pub(crate) fn build() -> TokenStream {
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (cat_variant_name, _) in &cat_variants {
-        let cat_variant_ident =
-            Ident::new(&cat_variant_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#cat_variant_ident);
         });

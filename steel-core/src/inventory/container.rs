@@ -108,10 +108,27 @@ pub trait Container {
     }
 
     /// Clears all items from this container.
-    fn clear_content(&mut self) {
+    fn clear_content(&mut self) -> i32 {
+        let mut count = 0;
         for i in 0..self.get_container_size() {
-            self.set_item(i, ItemStack::empty());
+            let item = self.get_item_mut(i);
+            count += item.count;
+            *item = ItemStack::empty();
         }
+        count
+    }
+
+    /// Clears all items from this container.
+    fn clear_content_matching(&mut self, predicate: &mut dyn FnMut(&mut ItemStack) -> bool) -> i32 {
+        let mut count = 0;
+        for i in 0..self.get_container_size() {
+            let item = self.get_item_mut(i);
+            if predicate(item) {
+                count += item.count;
+                *item = ItemStack::empty();
+            }
+        }
+        count
     }
 
     /// Tries to add an item to the container.

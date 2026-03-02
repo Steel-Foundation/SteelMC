@@ -5,6 +5,7 @@ pub mod entity;
 pub mod float;
 pub mod gamemode;
 pub mod integer;
+pub mod item;
 pub mod player;
 pub mod rotation;
 pub mod text_component;
@@ -42,7 +43,7 @@ pub enum ParsedValue {
 impl SuggestionContext {
     /// Creates a new empty suggestion context.
     #[must_use]
-    pub fn new(server: Arc<Server>) -> Self {
+    pub const fn new(server: Arc<Server>) -> Self {
         Self {
             parsed_values: vec![],
             server,

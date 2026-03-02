@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use rand::Rng;
+use rand::RngExt;
 use steel_protocol::packets::game::{
     BlockEntityInfo, ChunkPacketData, HeightmapType as ProtocolHeightmapType, Heightmaps,
     LightUpdatePacketData,
@@ -18,6 +18,8 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, codec::BitSet, locks::SyncRwLock, types::UpdateFlags,
 };
 
+use steel_utils::locks::SyncMutex;
+
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
@@ -25,7 +27,9 @@ use crate::chunk::{
     proto_chunk::ProtoChunk,
     section::Sections,
 };
+use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
+use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
 
 /// A chunk that is ready to be sent to the client.
 ///
@@ -49,6 +53,12 @@ pub struct LevelChunk {
     level: Weak<World>,
     /// Block entities stored in this chunk.
     block_entities: BlockEntityStorage,
+    /// Entities stored in this chunk.
+    pub entities: EntityStorage,
+    /// Scheduled block ticks pending in this chunk.
+    pub block_ticks: SyncMutex<BlockTickList>,
+    /// Scheduled fluid ticks pending in this chunk.
+    pub fluid_ticks: SyncMutex<FluidTickList>,
 }
 
 impl LevelChunk {
@@ -61,12 +71,32 @@ impl LevelChunk {
     /// # Arguments
     /// * `random_tick_speed` - Number of random blocks to tick per section per tick.
     ///   This is controlled by the `randomTickSpeed` game rule.
+    /// * `tick_count` - Current server tick count (for entity sync timing).
     ///
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
-    pub fn tick(&self, random_tick_speed: u32) {
+    pub fn tick(
+        &self,
+        random_tick_speed: u32,
+        tick_count: i32,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        // Drain ready scheduled ticks (decrement delays, collect those at 0)
+        ready_block_ticks.extend(self.block_ticks.lock().drain_ready());
+        ready_fluid_ticks.extend(self.fluid_ticks.lock().drain_ready());
+
         // Tick block entities regardless of random tick speed
         self.tick_block_entities();
+
+        // Tick entities in this chunk
+        if let Some(world) = self.get_level() {
+            let ticked_entities = self.entities.tick(&world, self.pos, tick_count);
+            if ticked_entities {
+                // Mark chunk dirty since entity state may have changed
+                self.dirty.store(true, Ordering::Release);
+            }
+        }
 
         if random_tick_speed == 0 {
             return;
@@ -175,6 +205,9 @@ impl LevelChunk {
             height,
             level,
             block_entities: BlockEntityStorage::new(),
+            entities: EntityStorage::new(),
+            block_ticks: SyncMutex::new(BlockTickList::new()),
+            fluid_ticks: SyncMutex::new(FluidTickList::new()),
         }
     }
 
@@ -188,6 +221,8 @@ impl LevelChunk {
     /// * `min_y` - The minimum Y coordinate of the world
     /// * `height` - The total height of the world
     /// * `level` - Weak reference to the world (mirrors Java's `LevelChunk.level`)
+    /// * `block_ticks` - Scheduled block ticks loaded from disk
+    /// * `fluid_ticks` - Scheduled fluid ticks loaded from disk
     ///
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
@@ -198,6 +233,8 @@ impl LevelChunk {
         min_y: i32,
         height: i32,
         level: Weak<World>,
+        block_ticks: BlockTickList,
+        fluid_ticks: FluidTickList,
     ) -> Self {
         // Recalculate section counts for random tick optimization
         for section in &sections.sections {
@@ -213,6 +250,9 @@ impl LevelChunk {
             height,
             level,
             block_entities: BlockEntityStorage::new(),
+            entities: EntityStorage::new(),
+            block_ticks: SyncMutex::new(block_ticks),
+            fluid_ticks: SyncMutex::new(fluid_ticks),
         }
     }
 
@@ -247,7 +287,7 @@ impl LevelChunk {
 
     /// Gets the section index for a given Y coordinate.
     #[must_use]
-    fn get_section_index(&self, y: i32) -> usize {
+    const fn get_section_index(&self, y: i32) -> usize {
         ((y - self.min_y) / 16) as usize
     }
 
@@ -286,6 +326,46 @@ impl LevelChunk {
         self.mark_unsaved();
     }
 
+    /// Adds an entity to this chunk and registers it with all world systems.
+    ///
+    /// This is the main entry point for adding entities. It handles:
+    /// 1. Adding to chunk's entity storage
+    /// 2. Setting up the level callback for position tracking
+    /// 3. Registering in entity cache for fast lookups
+    /// 4. Adding to entity tracker and sending spawn packets to nearby players
+    /// 5. Marking the chunk dirty for persistence
+    ///
+    /// Returns `false` if the world reference is no longer valid.
+    pub fn add_and_register_entity(&self, entity: SharedEntity) -> bool {
+        use crate::entity::EntityChunkCallback;
+
+        let Some(world) = self.level.upgrade() else {
+            return false;
+        };
+
+        // Add to chunk storage
+        self.entities.add(entity.clone());
+
+        // Set up callback for chunk/section tracking
+        let callback = Arc::new(EntityChunkCallback::new(&entity, Arc::downgrade(&world)));
+        entity.set_level_callback(callback);
+
+        // Register in entity cache (for fast lookups)
+        world.entity_cache().register(&entity);
+
+        // Add to entity tracker and send spawn packets to nearby players
+        world.entity_tracker().add(
+            &entity,
+            |chunk| world.player_area_map.get_tracking_players(chunk),
+            |id| world.players.get_by_entity_id(id),
+        );
+
+        // Mark chunk dirty for persistence
+        self.mark_unsaved();
+
+        true
+    }
+
     /// Updates the ticking status of a block entity.
     ///
     /// Call this when a block entity's ticking status may have changed
@@ -302,7 +382,7 @@ impl LevelChunk {
 
     /// Returns a reference to the block entity storage.
     #[must_use]
-    pub fn block_entity_storage(&self) -> &BlockEntityStorage {
+    pub const fn block_entity_storage(&self) -> &BlockEntityStorage {
         &self.block_entities
     }
 

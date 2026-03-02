@@ -2,6 +2,8 @@
 name = "steel-protocol"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 # Internal crates
@@ -19,9 +21,6 @@ simdnbt.workspace = true
 
 # Error handling
 thiserror.workspace = true
-
-# Concurrency
-crossbeam.workspace = true
 
 # Data structures
 rustc-hash.workspace = true

@@ -18,10 +18,12 @@
 
 use std::mem;
 
+use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CContainerSetContent, CContainerSetData, CContainerSetSlot, CSetCursorItem, ClickType,
     HashedPatchMap, HashedStack,
 };
+use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::{
     REGISTRY, data_components::DataComponentPatch, item_stack::ItemStack, menu_type::MenuTypeRef,
 };
@@ -31,7 +33,7 @@ use crate::{
         lock::{ContainerId, ContainerLockGuard, ContainerRef},
         slot::{Slot, SlotType},
     },
-    player::{Player, networking::JavaConnection},
+    player::{Player, PlayerConnection, connection::NetworkConnection},
 };
 use std::sync::Arc;
 
@@ -55,7 +57,7 @@ pub enum RemoteSlot {
 impl RemoteSlot {
     /// Creates an unknown remote slot.
     #[must_use]
-    pub fn unknown() -> Self {
+    pub const fn unknown() -> Self {
         Self::Unknown
     }
 
@@ -224,27 +226,27 @@ pub const SLOT_SIZE: i32 = 18;
 /// Extracts the quickcraft type from a button mask.
 /// Type is stored in bits 2-3.
 #[must_use]
-pub fn get_quickcraft_type(button: i32) -> i32 {
+pub const fn get_quickcraft_type(button: i32) -> i32 {
     (button >> 2) & 3
 }
 
 /// Extracts the quickcraft header (phase) from a button mask.
 /// Header is stored in bits 0-1.
 #[must_use]
-pub fn get_quickcraft_header(button: i32) -> i32 {
+pub const fn get_quickcraft_header(button: i32) -> i32 {
     button & 3
 }
 
 /// Creates a quickcraft button mask from header and type.
 #[must_use]
-pub fn get_quickcraft_mask(header: i32, quickcraft_type: i32) -> i32 {
+pub const fn get_quickcraft_mask(header: i32, quickcraft_type: i32) -> i32 {
     (header & 3) | ((quickcraft_type & 3) << 2)
 }
 
 /// Checks if a quickcraft type is valid for the given player.
 /// Type 2 (clone) requires creative mode (infinite materials).
 #[must_use]
-pub fn is_valid_quickcraft_type(quickcraft_type: i32, has_infinite_materials: bool) -> bool {
+pub const fn is_valid_quickcraft_type(quickcraft_type: i32, has_infinite_materials: bool) -> bool {
     match quickcraft_type {
         0 | 1 => true,
         2 => has_infinite_materials,
@@ -406,7 +408,7 @@ impl MenuBehavior {
     /// Returns true if a slot can be dragged to during quickcraft.
     /// Menus can override this via the Menu trait.
     #[must_use]
-    pub fn can_drag_to(&self, _slot_index: usize) -> bool {
+    pub const fn can_drag_to(&self, _slot_index: usize) -> bool {
         true
     }
 
@@ -512,19 +514,19 @@ impl MenuBehavior {
 
     /// Returns the current state ID.
     #[must_use]
-    pub fn get_state_id(&self) -> u32 {
+    pub const fn get_state_id(&self) -> u32 {
         self.state_id
     }
 
     /// Suppresses remote updates during click handling.
     /// Call this before processing a click.
-    pub fn suppress_remote_updates(&mut self) {
+    pub const fn suppress_remote_updates(&mut self) {
         self.suppress_remote_updates = true;
     }
 
     /// Resumes remote updates after click handling.
     /// Call this after processing a click.
-    pub fn resume_remote_updates(&mut self) {
+    pub const fn resume_remote_updates(&mut self) {
         self.suppress_remote_updates = false;
     }
 
@@ -567,13 +569,13 @@ impl MenuBehavior {
     /// -999 is used for clicking outside the inventory.
     /// -1 is also accepted (matches Java behavior, though not used by vanilla clients).
     #[must_use]
-    pub fn is_valid_slot_index(&self, slot: i16) -> bool {
+    pub const fn is_valid_slot_index(&self, slot: i16) -> bool {
         slot == -1 || slot == -999 || (slot >= 0 && (slot as usize) < self.slots.len())
     }
 
     /// Returns the number of slots in this menu.
     #[must_use]
-    pub fn slot_count(&self) -> usize {
+    pub const fn slot_count(&self) -> usize {
         self.slots.len()
     }
 
@@ -585,7 +587,7 @@ impl MenuBehavior {
 
     /// Gets the carried item (cursor).
     #[must_use]
-    pub fn get_carried(&self) -> &ItemStack {
+    pub const fn get_carried(&self) -> &ItemStack {
         &self.carried
     }
 
@@ -595,7 +597,7 @@ impl MenuBehavior {
     }
 
     /// Increments and returns the new state ID.
-    pub fn increment_state_id(&mut self) -> u32 {
+    pub const fn increment_state_id(&mut self) -> u32 {
         self.state_id = self.state_id.wrapping_add(1) & 0x7FFF; // Keep it within 15 bits
         self.state_id
     }
@@ -636,12 +638,20 @@ impl MenuBehavior {
         self.remote_carried.force(&self.carried);
     }
 
+    /// Encodes and sends a packet through the connection.
+    fn send_packet<P: ClientPacket>(connection: &Arc<PlayerConnection>, packet: P) {
+        let encoded =
+            EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
+                .expect("Failed to encode packet");
+        connection.send_encoded(encoded);
+    }
+
     /// Sends all slots and carried item to the client (full sync).
     /// This is called when:
     /// - A menu is first opened
     /// - The client requests a full refresh
     /// - After certain operations that may have desynced the client
-    pub fn send_all_data_to_remote(&mut self, connection: &Arc<JavaConnection>) {
+    pub fn send_all_data_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
         // First, update last_slots from actual slot contents
@@ -655,7 +665,7 @@ impl MenuBehavior {
             carried_item: self.carried.clone(),
         };
 
-        connection.send_packet(packet);
+        Self::send_packet(connection, packet);
 
         // Mark all slots and carried as synced
         for i in 0..self.last_slots.len() {
@@ -671,7 +681,7 @@ impl MenuBehavior {
                 id: i as i16,
                 value: self.data_slots[i],
             };
-            connection.send_packet(packet);
+            Self::send_packet(connection, packet);
         }
     }
 
@@ -681,7 +691,7 @@ impl MenuBehavior {
     /// Based on Java's `AbstractContainerMenu::broadcastChanges`.
     /// Note: This does NOT increment `state_id` - that only happens when
     /// processing client clicks (via `increment_state_id`).
-    pub fn broadcast_changes(&mut self, connection: &Arc<JavaConnection>) {
+    pub fn broadcast_changes(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
         // Update last_slots from actual slot contents
@@ -707,7 +717,11 @@ impl MenuBehavior {
 
     /// Sends a data slot update to the client if it has changed.
     /// Based on Java's `AbstractContainerMenu::synchronizeDataSlotToRemote`.
-    fn synchronize_data_slot_to_remote(&mut self, index: usize, connection: &Arc<JavaConnection>) {
+    fn synchronize_data_slot_to_remote(
+        &mut self,
+        index: usize,
+        connection: &Arc<PlayerConnection>,
+    ) {
         if self.suppress_remote_updates || index >= self.data_slots.len() {
             return;
         }
@@ -722,13 +736,13 @@ impl MenuBehavior {
                 id: index as i16,
                 value: current,
             };
-            connection.send_packet(packet);
+            Self::send_packet(connection, packet);
         }
     }
 
     /// Sends a single slot update to the client.
     /// Based on Java's `AbstractContainerMenu::synchronizeSlotToRemote`.
-    fn synchronize_slot_to_remote(&mut self, slot: usize, connection: &Arc<JavaConnection>) {
+    fn synchronize_slot_to_remote(&mut self, slot: usize, connection: &Arc<PlayerConnection>) {
         if self.suppress_remote_updates || slot >= self.last_slots.len() {
             return;
         }
@@ -742,13 +756,13 @@ impl MenuBehavior {
             item_stack: item.clone(),
         };
 
-        connection.send_packet(packet);
+        Self::send_packet(connection, packet);
         self.mark_slot_synced(slot);
     }
 
     /// Sends the carried item (cursor) to the client.
     /// Based on Java's `AbstractContainerMenu::synchronizeCarriedToRemote`.
-    fn synchronize_carried_to_remote(&mut self, connection: &Arc<JavaConnection>) {
+    fn synchronize_carried_to_remote(&mut self, connection: &Arc<PlayerConnection>) {
         if self.suppress_remote_updates {
             return;
         }
@@ -757,7 +771,7 @@ impl MenuBehavior {
             item_stack: self.carried.clone(),
         };
 
-        connection.send_packet(packet);
+        Self::send_packet(connection, packet);
         self.mark_carried_synced();
     }
 
@@ -796,7 +810,7 @@ impl MenuBehavior {
     /// Based on Java's `AbstractContainerMenu::broadcastFullState`.
     ///
     /// Note: This does NOT increment `state_id` - it just forces a full resync.
-    pub fn broadcast_full_state(&mut self, connection: &Arc<JavaConnection>) {
+    pub fn broadcast_full_state(&mut self, connection: &Arc<PlayerConnection>) {
         self.send_all_data_to_remote(connection);
     }
 
@@ -928,13 +942,13 @@ impl MenuBehavior {
                 if button == 0 {
                     // Left click outside - drop all carried items
                     let to_drop = mem::take(&mut self.carried);
-                    player.drop_item(to_drop, true);
+                    player.drop_item(to_drop, false, true);
                 } else {
                     // Right click outside - drop one carried item
                     let mut to_drop = self.carried.clone();
                     to_drop.set_count(1);
                     self.carried.shrink(1);
-                    player.drop_item(to_drop, true);
+                    player.drop_item(to_drop, false, true);
                 }
             }
             return;
@@ -1127,7 +1141,7 @@ impl MenuBehavior {
 
         let dropped = slot.remove(&mut guard, amount);
         if !dropped.is_empty() {
-            player.drop_item(dropped.clone(), true);
+            player.drop_item(dropped.clone(), false, true);
         }
         slot.set_changed(&mut guard);
 
@@ -1150,7 +1164,7 @@ impl MenuBehavior {
                 if more_dropped.is_empty() {
                     break;
                 }
-                player.drop_item(more_dropped, true);
+                player.drop_item(more_dropped, false, true);
                 slot.set_changed(&mut guard);
             }
         }
@@ -1196,7 +1210,7 @@ pub trait Menu {
         // Default: drop the carried item
         let carried = mem::take(&mut self.behavior_mut().carried);
         if !carried.is_empty() {
-            player.drop_item(carried, false);
+            player.drop_item(carried, false, true);
         }
     }
 

@@ -143,6 +143,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static dimension type definitions
+    let mut register_stream = TokenStream::new();
     for (dimension_type_name, dimension_type) in &dimension_types {
         let dimension_type_ident = Ident::new(
             &dimension_type_name.to_shouty_snake_case(),
@@ -195,15 +196,7 @@ pub(crate) fn build() -> TokenStream {
                 monster_spawn_block_light_limit: #monster_spawn_block_light_limit,
             };
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (dimension_type_name, _) in &dimension_types {
-        let dimension_type_ident = Ident::new(
-            &dimension_type_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
             registry.register(#dimension_type_ident);
         });

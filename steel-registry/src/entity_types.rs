@@ -1,4 +1,5 @@
 use rustc_hash::FxHashMap;
+use steel_utils::Identifier;
 
 use crate::RegistryExt;
 
@@ -69,7 +70,7 @@ pub struct EntityFlags {
 
 #[derive(Debug)]
 pub struct EntityType {
-    pub key: &'static str,
+    pub key: Identifier,
     pub client_tracking_range: i32,
     pub update_interval: i32,
 
@@ -86,6 +87,9 @@ pub struct EntityType {
     pub summonable: bool,
     /// Whether this entity can spawn far from players.
     pub can_spawn_far_from_player: bool,
+    /// Whether this entity type can be serialized to disk.
+    /// Set to false for transient entities (lightning, fishing hooks, players).
+    pub can_serialize: bool,
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,
@@ -95,7 +99,7 @@ pub type EntityTypeRef = &'static EntityType;
 
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
-    types_by_key: FxHashMap<&'static str, usize>,
+    types_by_key: FxHashMap<Identifier, usize>,
     allows_registering: bool,
 }
 
@@ -123,8 +127,19 @@ impl EntityTypeRegistry {
             "Cannot register entity types after the registry has been frozen"
         );
         let idx = self.types_by_id.len();
-        self.types_by_key.insert(entity_type.key, idx);
+        self.types_by_key.insert(entity_type.key.clone(), idx);
         self.types_by_id.push(entity_type);
+    }
+
+    /// Replaces a entity_type at a given index.
+    /// Returns true if the entity_type was replaced and false if the entity_type wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, entity_type: EntityTypeRef, id: usize) -> bool {
+        if id >= self.types_by_id.len() {
+            return false;
+        }
+        self.types_by_id[id] = entity_type;
+        true
     }
 
     #[must_use]
@@ -137,7 +152,7 @@ impl EntityTypeRegistry {
     }
 
     #[must_use]
-    pub fn by_key(&self, key: &str) -> Option<EntityTypeRef> {
+    pub fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
         self.types_by_key
             .get(key)
             .and_then(|&idx| self.types_by_id.get(idx).copied())
@@ -147,7 +162,7 @@ impl EntityTypeRegistry {
     #[must_use]
     pub fn get_id(&self, entity_type: EntityTypeRef) -> &usize {
         self.types_by_key
-            .get(entity_type.key)
+            .get(&entity_type.key)
             .expect("Entity type not found")
     }
 

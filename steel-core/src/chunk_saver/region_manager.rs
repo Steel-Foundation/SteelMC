@@ -5,38 +5,25 @@
 //! format, avoiding memory duplication.
 
 use std::{
-    io::{self, Cursor},
+    io::{self},
     path::PathBuf,
-    sync::{Weak, atomic::Ordering},
-    time::{SystemTime, UNIX_EPOCH},
+    sync::Weak,
 };
 
 use rustc_hash::FxHashMap;
-use simdnbt::borrow::read_compound as read_borrowed_compound;
-use simdnbt::owned::NbtCompound;
-use steel_registry::{REGISTRY, Registry};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier, locks::AsyncRwLock};
+use steel_utils::{ChunkPos, locks::AsyncRwLock};
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
 
-use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
-use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
-    level_chunk::LevelChunk,
-    paletted_container::PalettedContainer,
-    proto_chunk::ProtoChunk,
-    section::{ChunkSection, SectionHolder, Sections},
-};
+use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::world::World;
 
 use super::{
-    bit_pack::{bits_for_palette_len, pack_indices, unpack_indices},
+    ChunkStorage, PersistentChunk,
     format::{
-        BIOMES_PER_SECTION, BLOCKS_PER_SECTION, CHUNK_TABLE_SIZE, FILE_HEADER_SIZE,
-        FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE, PersistentBiomeData,
-        PersistentBlockEntity, PersistentBlockState, PersistentChunk, PersistentSection,
+        CHUNK_TABLE_SIZE, FILE_HEADER_SIZE, FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE,
         REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
     },
 };
@@ -58,7 +45,7 @@ pub struct PreparedChunkSave {
     /// The chunk position.
     pub pos: ChunkPos,
     /// The serialized chunk data.
-    persistent: PersistentChunk,
+    pub persistent: PersistentChunk,
 }
 
 /// An open region file with its header.
@@ -73,71 +60,6 @@ struct RegionHandle {
     header_dirty: bool,
     /// Current file size in sectors.
     file_sectors: u32,
-}
-
-/// Builder for creating a persistent chunk with its own palettes.
-struct ChunkBuilder<'a> {
-    block_states: Vec<PersistentBlockState>,
-    biomes: Vec<Identifier>,
-    registry: &'a Registry,
-}
-
-impl<'a> ChunkBuilder<'a> {
-    fn new(registry: &'a Registry) -> Self {
-        Self {
-            block_states: Vec::new(),
-            biomes: Vec::new(),
-            registry,
-        }
-    }
-
-    /// Ensures a block state exists in the chunk's palette, returning its index.
-    fn ensure_block_state(&mut self, block_id: BlockStateId) -> u16 {
-        // Get block and properties from registry
-        let block = self
-            .registry
-            .blocks
-            .by_state_id(block_id)
-            .expect("Invalid block state ID");
-        let properties = self.registry.blocks.get_properties(block_id);
-
-        let persistent = PersistentBlockState {
-            name: block.key.clone(),
-            properties: properties
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
-        };
-
-        // Check if already exists
-        if let Some(idx) = self.block_states.iter().position(|s| s == &persistent) {
-            return idx as u16;
-        }
-
-        // Add new entry
-        let idx = self.block_states.len();
-        self.block_states.push(persistent);
-        idx as u16
-    }
-
-    /// Ensures a biome exists in the chunk's palette, returning its index.
-    fn ensure_biome(&mut self, biome_id: u8) -> u16 {
-        // Get biome identifier from registry
-        let biome = self
-            .registry
-            .biomes
-            .by_id(biome_id as usize)
-            .expect("Invalid biome ID");
-        let identifier = biome.key.clone();
-
-        if let Some(idx) = self.biomes.iter().position(|b| b == &identifier) {
-            return idx as u16;
-        }
-
-        let idx = self.biomes.len();
-        self.biomes.push(identifier);
-        idx as u16
-    }
 }
 
 impl RegionManager {
@@ -297,35 +219,6 @@ impl RegionManager {
         Ok(())
     }
 
-    /// Saves a chunk to the appropriate region.
-    ///
-    /// The chunk is serialized, compressed, and written to disk immediately.
-    /// If the region was already open (has loaded chunks), the header update is
-    /// deferred. If this call opened the region, it will be closed after saving.
-    ///
-    /// If the chunk is not dirty, this is a no-op and returns `Ok(false)`.
-    /// Returns `Ok(true)` if the chunk was saved.
-    /// Prepares chunk data for saving. Call this while holding the chunk lock,
-    /// then pass the result to `save_chunk_data` after releasing the lock.
-    #[must_use]
-    pub fn prepare_chunk_save(chunk: &ChunkAccess) -> Option<PreparedChunkSave> {
-        if !chunk.is_dirty() {
-            return None;
-        }
-
-        let pos = chunk.pos();
-
-        // Get block entities if this is a full chunk
-        let block_entities: Vec<SharedBlockEntity> = chunk
-            .as_full()
-            .map(super::super::chunk::level_chunk::LevelChunk::get_block_entities)
-            .unwrap_or_default();
-
-        let persistent = Self::to_persistent(chunk.sections(), &block_entities, pos);
-
-        Some(PreparedChunkSave { pos, persistent })
-    }
-
     /// Saves prepared chunk data to disk. This is the async part that doesn't
     /// need to hold the chunk lock.
     #[allow(clippy::missing_panics_doc)]
@@ -467,7 +360,8 @@ impl RegionManager {
 
         // Convert to runtime format (persistent is dropped after this - no duplication!)
         let status = entry.status;
-        let chunk = Self::persistent_to_chunk(&persistent, pos, status, min_y, height, level);
+        let chunk =
+            ChunkStorage::persistent_to_chunk(&persistent, pos, status, min_y, height, level);
 
         Ok(Some((chunk, status)))
     }
@@ -598,360 +492,5 @@ impl RegionManager {
         }
 
         Ok(())
-    }
-
-    /// Converts chunk data to persistent format.
-    fn to_persistent(
-        sections: &Sections,
-        block_entities: &[SharedBlockEntity],
-        chunk_pos: ChunkPos,
-    ) -> PersistentChunk {
-        let mut builder = ChunkBuilder::new(&REGISTRY);
-
-        let persistent_sections = sections
-            .sections
-            .iter()
-            .map(|section| Self::section_to_persistent(section, &mut builder))
-            .collect();
-
-        // Serialize block entities
-        let persistent_block_entities: Vec<PersistentBlockEntity> = block_entities
-            .iter()
-            .map(|entity| {
-                let guard = entity.lock();
-                let pos = guard.get_block_pos();
-
-                // Serialize NBT data
-                let mut nbt = NbtCompound::new();
-                guard.save_additional(&mut nbt);
-                let mut nbt_bytes = Vec::new();
-                nbt.write(&mut nbt_bytes);
-
-                PersistentBlockEntity {
-                    x: (pos.0.x - chunk_pos.0.x * 16) as u8,
-                    y: pos.0.y as i16,
-                    z: (pos.0.z - chunk_pos.0.y * 16) as u8,
-                    entity_type: guard.get_type().key.clone(),
-                    nbt_data: nbt_bytes,
-                }
-            })
-            .collect();
-
-        PersistentChunk {
-            last_modified: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs() as u32),
-            block_states: builder.block_states,
-            biomes: builder.biomes,
-            sections: persistent_sections,
-            block_entities: persistent_block_entities,
-        }
-    }
-
-    /// Converts a runtime section to persistent format.
-    fn section_to_persistent(
-        section: &SectionHolder,
-        builder: &mut ChunkBuilder,
-    ) -> PersistentSection {
-        let section = section.read();
-        let biomes = Self::biomes_to_persistent(&section.biomes, builder);
-
-        match &section.states {
-            PalettedContainer::Homogeneous(block_id) => {
-                let block_idx = builder.ensure_block_state(*block_id);
-                PersistentSection::Homogeneous {
-                    block_state: block_idx,
-                    biomes,
-                }
-            }
-            PalettedContainer::Heterogeneous(data) => {
-                // Build section-local palette (indices into chunk's block_states)
-                let palette: Vec<u16> = data
-                    .palette
-                    .iter()
-                    .map(|(block_id, _)| builder.ensure_block_state(*block_id))
-                    .collect();
-
-                // Pack block indices (indices into section-local palette)
-                let bits = bits_for_palette_len(palette.len())
-                    .expect("Heterogeneous section should have palette length >= 2");
-                let indices: Vec<u32> = data
-                    .cube
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .map(|block_id| {
-                        data.palette
-                            .iter()
-                            .position(|(v, _)| v == block_id)
-                            .unwrap_or(0) as u32
-                    })
-                    .collect();
-
-                let block_data = pack_indices(&indices, bits);
-
-                PersistentSection::Heterogeneous {
-                    palette,
-                    bits_per_entry: bits,
-                    block_data,
-                    biomes,
-                }
-            }
-        }
-    }
-
-    /// Converts runtime biome data to persistent format.
-    fn biomes_to_persistent(
-        biomes: &PalettedContainer<u8, 4>,
-        builder: &mut ChunkBuilder,
-    ) -> PersistentBiomeData {
-        match biomes {
-            PalettedContainer::Homogeneous(biome_id) => {
-                let biome_idx = builder.ensure_biome(*biome_id);
-                PersistentBiomeData::Homogeneous { biome: biome_idx }
-            }
-            PalettedContainer::Heterogeneous(data) => {
-                // Build section-local palette (indices into chunk's biomes)
-                let palette: Vec<u16> = data
-                    .palette
-                    .iter()
-                    .map(|(biome_id, _)| builder.ensure_biome(*biome_id))
-                    .collect();
-
-                let bits = bits_for_palette_len(palette.len())
-                    .expect("Heterogeneous biome data should have palette length >= 2");
-                let indices: Vec<u32> = data
-                    .cube
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .map(|biome_id| {
-                        data.palette
-                            .iter()
-                            .position(|(v, _)| v == biome_id)
-                            .unwrap_or(0) as u32
-                    })
-                    .collect();
-
-                let biome_data = pack_indices(&indices, bits);
-
-                PersistentBiomeData::Heterogeneous {
-                    palette,
-                    bits_per_entry: bits,
-                    biome_data,
-                }
-            }
-        }
-    }
-
-    /// Converts a persistent chunk to runtime format.
-    /// The returned chunk is not dirty (freshly loaded from disk).
-    ///
-    /// # Arguments
-    /// * `persistent` - The persistent chunk data
-    /// * `pos` - The chunk position
-    /// * `status` - The chunk status
-    /// * `min_y` - The minimum Y coordinate of the world
-    /// * `height` - The total height of the world
-    /// * `level` - Weak reference to the world for `LevelChunk`
-    fn persistent_to_chunk(
-        persistent: &PersistentChunk,
-        pos: ChunkPos,
-        status: ChunkStatus,
-        min_y: i32,
-        height: i32,
-        level: Weak<World>,
-    ) -> ChunkAccess {
-        let sections: Vec<ChunkSection> = persistent
-            .sections
-            .iter()
-            .map(|section| Self::persistent_to_section(section, persistent))
-            .collect();
-
-        match status {
-            ChunkStatus::Full => {
-                let chunk = LevelChunk::from_disk(
-                    Sections::from_owned(sections.into_boxed_slice()),
-                    pos,
-                    min_y,
-                    height,
-                    level,
-                );
-
-                // Load block entities
-                for persistent_be in &persistent.block_entities {
-                    if let Some(block_entity) =
-                        Self::persistent_to_block_entity(persistent_be, pos, &chunk)
-                    {
-                        chunk.add_and_register_block_entity(block_entity);
-                    }
-                }
-
-                // Clear dirty flag since we just loaded (add_and_register marks dirty)
-                chunk.dirty.store(false, Ordering::Release);
-
-                ChunkAccess::Full(chunk)
-            }
-            _ => ChunkAccess::Proto(ProtoChunk::from_disk(
-                Sections::from_owned(sections.into_boxed_slice()),
-                pos,
-                status,
-                min_y,
-                height,
-            )),
-        }
-    }
-
-    /// Converts a persistent block entity to runtime format.
-    fn persistent_to_block_entity(
-        persistent: &PersistentBlockEntity,
-        chunk_pos: ChunkPos,
-        chunk: &LevelChunk,
-    ) -> Option<SharedBlockEntity> {
-        // Calculate absolute position
-        let abs_x = chunk_pos.0.x * 16 + i32::from(persistent.x);
-        let abs_z = chunk_pos.0.y * 16 + i32::from(persistent.z);
-        let pos = BlockPos::new(abs_x, i32::from(persistent.y), abs_z);
-
-        // Get the block state at this position
-        let state = chunk.get_block_state(pos);
-
-        // Look up the block entity type
-        let block_entity_type = REGISTRY
-            .block_entity_types
-            .by_key(&persistent.entity_type)?;
-
-        // Get the world reference from the chunk
-        let level = chunk.level_weak();
-
-        // Parse and load NBT data
-        if persistent.nbt_data.is_empty() {
-            // No NBT data, just create the entity without loading
-            BLOCK_ENTITIES.create(block_entity_type, level, pos, state)
-        } else {
-            // Parse NBT from bytes as borrowed
-            let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&persistent.nbt_data)) else {
-                return BLOCK_ENTITIES.create(block_entity_type, level, pos, state);
-            };
-
-            // Create the block entity and load NBT
-            BLOCK_ENTITIES.create_and_load(block_entity_type, level, pos, state, &nbt)
-        }
-    }
-
-    /// Converts a persistent section to runtime format.
-    fn persistent_to_section(
-        persistent: &PersistentSection,
-        chunk: &PersistentChunk,
-    ) -> ChunkSection {
-        match persistent {
-            PersistentSection::Homogeneous {
-                block_state,
-                biomes,
-            } => {
-                let block_id = Self::resolve_block_state(chunk, *block_state);
-                let biome_data = Self::persistent_to_biomes(biomes, chunk);
-
-                ChunkSection::new_with_biomes(PalettedContainer::Homogeneous(block_id), biome_data)
-            }
-            PersistentSection::Heterogeneous {
-                palette,
-                bits_per_entry,
-                block_data,
-                biomes,
-            } => {
-                // Unpack indices (into section-local palette)
-                let indices = unpack_indices(block_data, *bits_per_entry, BLOCKS_PER_SECTION);
-
-                // Build runtime palette by resolving section-local -> chunk -> runtime
-                let runtime_palette: Vec<BlockStateId> = palette
-                    .iter()
-                    .map(|&idx| Self::resolve_block_state(chunk, idx))
-                    .collect();
-
-                // Build cube
-                let mut cube = Box::new([[[BlockStateId(0); 16]; 16]; 16]);
-                for (i, &idx) in indices.iter().enumerate() {
-                    let y = i / 256;
-                    let z = (i / 16) % 16;
-                    let x = i % 16;
-                    cube[y][z][x] = runtime_palette
-                        .get(idx as usize)
-                        .copied()
-                        .unwrap_or(BlockStateId(0));
-                }
-
-                let states = PalettedContainer::from_cube(cube);
-                let biome_data = Self::persistent_to_biomes(biomes, chunk);
-
-                ChunkSection::new_with_biomes(states, biome_data)
-            }
-        }
-    }
-
-    /// Converts persistent biome data to runtime format.
-    fn persistent_to_biomes(
-        persistent: &PersistentBiomeData,
-        chunk: &PersistentChunk,
-    ) -> PalettedContainer<u8, 4> {
-        match persistent {
-            PersistentBiomeData::Homogeneous { biome } => {
-                let biome_id = Self::resolve_biome(chunk, *biome);
-                PalettedContainer::Homogeneous(biome_id)
-            }
-            PersistentBiomeData::Heterogeneous {
-                palette,
-                bits_per_entry,
-                biome_data,
-            } => {
-                let indices = unpack_indices(biome_data, *bits_per_entry, BIOMES_PER_SECTION);
-
-                // Resolve section-local palette -> chunk palette -> runtime
-                let runtime_palette: Vec<u8> = palette
-                    .iter()
-                    .map(|&idx| Self::resolve_biome(chunk, idx))
-                    .collect();
-
-                let mut cube = Box::new([[[0u8; 4]; 4]; 4]);
-                for (i, &idx) in indices.iter().enumerate() {
-                    let y = i / 16;
-                    let z = (i / 4) % 4;
-                    let x = i % 4;
-                    cube[y][z][x] = runtime_palette.get(idx as usize).copied().unwrap_or(0);
-                }
-
-                PalettedContainer::from_cube(cube)
-            }
-        }
-    }
-
-    /// Resolves a chunk palette index to a runtime `BlockStateId`.
-    fn resolve_block_state(chunk: &PersistentChunk, index: u16) -> BlockStateId {
-        if let Some(state) = chunk.block_states.get(index as usize) {
-            // Convert properties to the format expected by the registry
-            let properties: Vec<(&str, &str)> = state
-                .properties
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect();
-
-            if let Some(state_id) = REGISTRY
-                .blocks
-                .state_id_from_properties(&state.name, &properties)
-            {
-                return state_id;
-            }
-        }
-        BlockStateId(0) // Air fallback
-    }
-
-    /// Resolves a chunk palette index to a runtime biome ID.
-    fn resolve_biome(chunk: &PersistentChunk, index: u16) -> u8 {
-        if let Some(biome_key) = chunk.biomes.get(index as usize)
-            && let Some(id) = REGISTRY.biomes.id_from_key(biome_key)
-        {
-            return id as u8;
-        }
-        0 // Plains fallback
     }
 }

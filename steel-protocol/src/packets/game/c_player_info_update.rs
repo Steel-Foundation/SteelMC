@@ -250,7 +250,7 @@ impl steel_utils::serial::WriteTo for CPlayerInfoUpdate {
             entry.uuid.write(writer)?;
 
             if self.actions & (PlayerInfoAction::AddPlayer as u8) != 0
-                && let Some(ref name) = entry.name
+                && let Some(name) = &entry.name
             {
                 name.write_prefixed::<VarInt>(writer)?;
                 // Write properties (including skin textures)
@@ -262,7 +262,7 @@ impl steel_utils::serial::WriteTo for CPlayerInfoUpdate {
 
             if self.actions & (PlayerInfoAction::InitializeChat as u8) != 0 {
                 // Write nullable chat session data
-                if let Some(ref session_data) = entry.chat_session {
+                if let Some(session_data) = &entry.chat_session {
                     true.write(writer)?;
                     session_data.write(writer)?;
                 } else {

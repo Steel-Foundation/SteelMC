@@ -222,7 +222,7 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
         let val = bp.replaceable;
         builder_calls.push(quote! { .replaceable(#val) });
     }
-    if let Some(ref sound_type) = bp.sound_type {
+    if let Some(sound_type) = &bp.sound_type {
         let sound_type_ident = Ident::new(sound_type, Span::call_site());
         builder_calls.push(quote! { .sound_type(crate::sound_types::#sound_type_ident) });
     }

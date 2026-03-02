@@ -53,7 +53,9 @@ pub use items::{
 };
 use std::ops::Deref;
 use std::sync::OnceLock;
-use steel_registry::{vanilla_blocks, vanilla_items};
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::fluid::FluidState;
+use steel_utils::BlockStateId;
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
 pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
@@ -74,6 +76,25 @@ impl Deref for ItemBehaviorLock {
 
     fn deref(&self) -> &Self::Target {
         self.0.get().expect("Item behaviors not initialized")
+    }
+}
+
+/// Extension trait for `BlockStateId` that provides access to behavior-dependent methods.
+///
+/// This is separate from `BlockStateExt` (in steel-registry) because these methods
+/// require access to the behavior registry which lives in steel-core.
+pub trait BlockStateBehaviorExt {
+    /// Returns the fluid state for this block state.
+    ///
+    /// Delegates to the block's `BlockBehaviour::get_fluid_state` implementation.
+    fn get_fluid_state(&self) -> FluidState;
+}
+
+impl BlockStateBehaviorExt for BlockStateId {
+    fn get_fluid_state(&self) -> FluidState {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.get_fluid_state(*self)
     }
 }
 
@@ -117,27 +138,6 @@ pub fn init_behaviors() {
 
     let mut item_behaviors = ItemBehaviorRegistry::new();
     register_item_behaviors(&mut item_behaviors);
-
-    // Register bucket behaviors (not auto-generated since they're not block items)
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.bucket,
-        Box::new(EmptyBucketBehavior::new()),
-    );
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.water_bucket,
-        Box::new(FilledBucketBehavior::new(
-            vanilla_blocks::WATER,
-            &vanilla_items::ITEMS.bucket,
-        )),
-    );
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.lava_bucket,
-        Box::new(FilledBucketBehavior::new(
-            vanilla_blocks::LAVA,
-            &vanilla_items::ITEMS.bucket,
-        )),
-    );
-
     assert!(
         ITEM_BEHAVIORS.0.set(item_behaviors).is_ok(),
         "Item behavior registry already initialized"

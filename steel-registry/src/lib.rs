@@ -271,9 +271,23 @@ pub mod sound_types;
 #[path = "generated/vanilla_packets.rs"]
 pub mod packets;
 
-// Re-export fluid types for convenience
-pub use fluid::fluid_tags;
-pub use fluid::{Fluid, FluidState};
+/// Multi-noise biome parameters for climate-based biome selection.
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_multi_noise.rs"]
+pub mod multi_noise;
+
+/// Noise parameters for world generation.
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_noise_parameters.rs"]
+pub mod noise_parameters;
+
+/// Density functions and noise router for terrain generation.
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_density_functions.rs"]
+pub mod density_functions;
 
 pub struct RegistryLock(OnceLock<Registry>);
 

@@ -48,6 +48,17 @@ impl TrimMaterialRegistry {
         id
     }
 
+    /// Replaces a trim_material at a given index.
+    /// Returns true if the trim_material was replaced and false if the trim_material wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, trim_material: TrimMaterialRef, id: usize) -> bool {
+        if id >= self.trim_materials_by_id.len() {
+            return false;
+        }
+        self.trim_materials_by_id[id] = trim_material;
+        true
+    }
+
     #[must_use]
     pub fn by_id(&self, id: usize) -> Option<TrimMaterialRef> {
         self.trim_materials_by_id.get(id).copied()

@@ -1,5 +1,5 @@
 //! A time argument.
-use steel_protocol::packets::game::{ArgumentType, SuggestionType};
+use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
 
 use crate::command::arguments::CommandArgument;
 use crate::command::context::CommandContext;
@@ -38,5 +38,25 @@ impl CommandArgument for TimeArgument {
 
     fn usage(&self) -> (ArgumentType, Option<SuggestionType>) {
         (ArgumentType::Time { min: 0 }, None)
+    }
+
+    /// ONLY FOR THE CONSOLE\
+    /// (If you want to also suggest to the client,
+    /// put the `SuggestionType` to `AskServer`)
+    fn suggest(
+        &self,
+        prefix: &str,
+        _suggestion_ctx: &super::SuggestionContext,
+    ) -> Vec<SuggestionEntry> {
+        // Check if prefix already has a unit suffix
+        let has_unit = prefix.chars().any(char::is_alphabetic);
+        if !prefix.is_empty() && !has_unit {
+            return vec![
+                SuggestionEntry::new(format!("{prefix}d")),
+                SuggestionEntry::new(format!("{prefix}s")),
+                SuggestionEntry::new(format!("{prefix}t")),
+            ];
+        }
+        vec![]
     }
 }

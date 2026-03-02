@@ -1,8 +1,7 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
-
-use crate::RegistryExt;
 
 /// Represents a jukebox song definition from a data pack JSON file.
 #[derive(Debug)]
@@ -43,6 +42,17 @@ impl JukeboxSongRegistry {
             .insert(jukebox_song.key.clone(), id);
         self.jukebox_songs_by_id.push(jukebox_song);
         id
+    }
+
+    /// Replaces a song at a given index.
+    /// Returns true if the song was replaced and false if the song wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, song: JukeboxSongRef, id: usize) -> bool {
+        if id >= self.jukebox_songs_by_id.len() {
+            return false;
+        }
+        self.jukebox_songs_by_id[id] = song;
+        true
     }
 
     #[must_use]

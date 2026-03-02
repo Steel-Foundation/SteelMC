@@ -1,9 +1,9 @@
 //! Fluid registry for Minecraft fluids.
 
+use crate::{RegistryExt, vanilla_fluids};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
+use steel_utils::registry::registry_vanilla_or_custom_tag;
 
 pub mod fluid_tags;
 
@@ -32,13 +32,21 @@ pub struct Fluid {
 
 pub type FluidRef = &'static Fluid;
 
+impl PartialEq for FluidRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for FluidRef {}
+
 /// A fluid state instance with amount and falling properties.
 ///
 /// This is computed on-demand from block states rather than stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FluidState {
     /// The fluid type (water, lava, empty).
-    pub fluid_id: u8,
+    pub fluid_id: FluidRef,
     /// The fluid amount (1-8, where 8 is a full block/source).
     pub amount: u8,
     /// Whether the fluid is falling (flows downward faster).
@@ -48,16 +56,16 @@ pub struct FluidState {
 impl FluidState {
     /// The empty fluid state.
     pub const EMPTY: Self = Self {
-        fluid_id: 0,
+        fluid_id: &vanilla_fluids::EMPTY,
         amount: 0,
         falling: false,
     };
 
     /// Creates a new fluid state.
     #[must_use]
-    pub const fn new(fluid_id: u8, amount: u8, falling: bool) -> Self {
+    pub const fn new(fluid: FluidRef, amount: u8, falling: bool) -> Self {
         Self {
-            fluid_id,
+            fluid_id: fluid,
             amount,
             falling,
         }
@@ -65,9 +73,9 @@ impl FluidState {
 
     /// Creates a source fluid state (amount=8, not falling).
     #[must_use]
-    pub const fn source(fluid_id: u8) -> Self {
+    pub const fn source(fluid: FluidRef) -> Self {
         Self {
-            fluid_id,
+            fluid_id: fluid,
             amount: 8,
             falling: false,
         }
@@ -75,9 +83,9 @@ impl FluidState {
 
     /// Creates a flowing fluid state.
     #[must_use]
-    pub const fn flowing(fluid_id: u8, amount: u8, falling: bool) -> Self {
+    pub const fn flowing(fluid: FluidRef, amount: u8, falling: bool) -> Self {
         Self {
-            fluid_id,
+            fluid_id: fluid,
             amount,
             falling,
         }
@@ -86,7 +94,7 @@ impl FluidState {
     /// Returns true if this is the empty fluid.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.fluid_id == 0 || self.amount == 0
+        self.fluid_id.is_empty || self.amount == 0
     }
 
     /// Returns true if this is a source block (full fluid, not falling).
@@ -111,16 +119,16 @@ impl FluidState {
     /// - LEVEL 1-7 = flowing levels 7-1 (amount = 8 - level)
     /// - LEVEL 8-15 = falling fluid (amount=8, falling=true, but clamped)
     #[must_use]
-    pub const fn from_block_level(fluid_id: u8, level: u8) -> Self {
+    pub const fn from_block_level(fluid: FluidRef, level: u8) -> Self {
         if level == 0 {
             // Source block
-            Self::source(fluid_id)
+            Self::source(fluid)
         } else if level <= 7 {
             // Flowing fluid: level 1 = amount 7, level 7 = amount 1
-            Self::flowing(fluid_id, 8 - level, false)
+            Self::flowing(fluid, 8 - level, false)
         } else {
             // Falling fluid (level 8-15)
-            Self::flowing(fluid_id, 8, true)
+            Self::flowing(fluid, 8, true)
         }
     }
 
@@ -142,7 +150,7 @@ impl FluidState {
 pub struct FluidRegistry {
     fluids_by_id: Vec<FluidRef>,
     fluids_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<FluidRef>>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -175,6 +183,17 @@ impl FluidRegistry {
         self.fluids_by_key.insert(fluid.key.clone(), id);
         self.fluids_by_id.push(fluid);
         id
+    }
+
+    /// Replaces a fluid at a given index.
+    /// Returns true if the fluid was replaced and false if the fluid wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, item: FluidRef, id: usize) -> bool {
+        if id >= self.fluids_by_id.len() {
+            return false;
+        }
+        self.fluids_by_id[id] = item;
+        true
     }
 
     /// Gets a fluid by its numeric ID.
@@ -224,37 +243,63 @@ impl FluidRegistry {
             "Cannot register tags after registry has been frozen"
         );
 
-        let fluids: Vec<FluidRef> = fluid_keys
+        let identifier: Vec<Identifier> = fluid_keys
             .iter()
-            .filter_map(|key| self.by_key(&Identifier::vanilla_static(key)))
+            .filter_map(|key| {
+                let ident = registry_vanilla_or_custom_tag(key);
+                // Only include if the item actually exists
+                self.by_key(&ident).map(|_| ident)
+            })
             .collect();
 
-        self.tags.insert(tag, fluids);
+        self.tags.insert(tag, identifier);
     }
 
     /// Checks if a fluid is in a given tag.
     #[must_use]
     pub fn is_in_tag(&self, fluid: FluidRef, tag: &Identifier) -> bool {
-        self.tags.get(tag).is_some_and(|fluids| {
-            fluids
-                .iter()
-                .any(|&f| std::ptr::eq(std::ptr::from_ref(f), std::ptr::from_ref(fluid)))
-        })
+        self.tags
+            .get(tag)
+            .is_some_and(|fluids| fluids.contains(&fluid.key))
+    }
+
+    /// Gives the access to all blocks to delete and add new entries
+    pub fn modify_tag(
+        &mut self,
+        tag: &Identifier,
+        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
+    ) {
+        let existing = self.tags.remove(tag).unwrap_or_default();
+        let fluids = f(existing)
+            .into_iter()
+            .filter(|fluid| {
+                let exists = self.fluids_by_key.contains_key(fluid);
+                if !exists {
+                    tracing::error!("fluid {fluid} not found in registry, skipping from tag {tag}");
+                }
+                exists
+            })
+            .collect();
+        self.tags.insert(tag.clone(), fluids);
     }
 
     /// Gets all fluids in a tag.
     #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<&[FluidRef]> {
-        self.tags.get(tag).map(std::vec::Vec::as_slice)
+    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<FluidRef>> {
+        self.tags.get(tag).map(|idents| {
+            idents
+                .iter()
+                .filter_map(|ident| self.by_key(ident))
+                .collect()
+        })
     }
 
     /// Iterates over all fluids in a tag.
     pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = FluidRef> + '_ {
         self.tags
             .get(tag)
-            .map(|v| v.iter().copied())
             .into_iter()
-            .flatten()
+            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
     }
 
     /// Gets all tag keys.

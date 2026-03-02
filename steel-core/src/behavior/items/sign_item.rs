@@ -2,6 +2,9 @@
 //!
 //! Places sign blocks and opens the sign editor after placement.
 //! Handles both standing signs (on ground) and wall signs (on walls).
+//!
+//! **Vanilla reference:** `SignItem` extends `StandingAndWallBlockItem` and only
+//! overrides `updateCustomBlockEntityTag` to open the sign editor after placement.
 
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -11,19 +14,19 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::world::World;
 
 /// Behavior for sign items that place sign blocks and open the editor.
 ///
-/// Sign items can place either standing signs (on ground) or wall signs (on walls),
-/// depending on where the player clicks.
+/// In vanilla, `SignItem` extends `StandingAndWallBlockItem` with `attachmentDirection = DOWN`.
+/// We use composition here - wrapping `StandingAndWallBlockItem` and adding sign-specific
+/// behavior (opening the sign editor after placement).
 pub struct SignItemBehavior {
-    /// The standing sign block (placed on ground).
-    pub standing_block: BlockRef,
-    /// The wall sign block (attached to walls).
-    pub wall_block: BlockRef,
+    /// The underlying standing and wall block item behavior.
+    inner: StandingAndWallBlockItem,
 }
 
 impl SignItemBehavior {
@@ -31,109 +34,9 @@ impl SignItemBehavior {
     #[must_use]
     pub const fn new(standing_block: BlockRef, wall_block: BlockRef) -> Self {
         Self {
-            standing_block,
-            wall_block,
+            inner: StandingAndWallBlockItem::new(standing_block, wall_block, Direction::Down),
         }
     }
-
-    /// Tries to get a valid placement state, following vanilla's `StandingAndWallBlockItem` logic.
-    ///
-    /// Iterates through directions ordered by player look direction (with clicked face opposite
-    /// prioritized when not replacing), trying standing sign for DOWN and wall sign for horizontals.
-    fn get_placement_state(
-        &self,
-        context: &BlockPlaceContext<'_>,
-        place_pos: &BlockPos,
-        pitch: f32,
-    ) -> Option<steel_utils::BlockStateId> {
-        let block_behaviors = &*BLOCK_BEHAVIORS;
-
-        // Get nearest looking directions - this matches vanilla's getNearestLookingDirections()
-        let directions = get_nearest_looking_directions(
-            context.rotation,
-            pitch,
-            context.clicked_face,
-            context.replace_clicked,
-        );
-
-        for direction in directions {
-            // Skip UP - signs don't attach to ceilings (attachmentDirection.getOpposite() == UP)
-            if direction == Direction::Up {
-                continue;
-            }
-
-            // Try standing sign for DOWN, wall sign for horizontal directions
-            let (_block, state) = if direction == Direction::Down {
-                let behavior = block_behaviors.get_behavior(self.standing_block);
-                if let Some(state) = behavior.get_state_for_placement(context) {
-                    (self.standing_block, state)
-                } else {
-                    continue;
-                }
-            } else {
-                let behavior = block_behaviors.get_behavior(self.wall_block);
-                if let Some(state) = behavior.get_state_for_placement(context) {
-                    (self.wall_block, state)
-                } else {
-                    continue;
-                }
-            };
-
-            // Check canSurvive (canPlace in vanilla's StandingAndWallBlockItem)
-            let can_survive = if direction == Direction::Down {
-                can_survive_standing(context.world, place_pos)
-            } else {
-                true // Wall sign's get_state_for_placement already checks survival
-            };
-
-            if can_survive {
-                // Check collision (isUnobstructed)
-                let collision_shape = state.get_collision_shape();
-                if context.world.is_unobstructed(collision_shape, place_pos) {
-                    return Some(state);
-                }
-            }
-        }
-
-        None
-    }
-}
-
-/// Checks if a standing sign can survive at the given position.
-///
-/// Vanilla uses `isSolid()` which checks if the collision shape is a full cube.
-/// This means signs cannot be placed on other signs, fences, walls, etc.
-fn can_survive_standing(world: &World, pos: &BlockPos) -> bool {
-    let below_pos = BlockPos::new(pos.x(), pos.y() - 1, pos.z());
-    let below_state = world.get_block_state(&below_pos);
-    below_state.is_solid()
-}
-
-/// Gets the nearest looking directions for sign placement.
-///
-/// This matches vanilla's `BlockPlaceContext.getNearestLookingDirections()` behavior:
-/// - When not replacing the clicked block, the opposite of the clicked face comes first
-/// - Otherwise, directions are ordered by player look direction
-fn get_nearest_looking_directions(
-    rotation: f32,
-    pitch: f32,
-    clicked_face: Direction,
-    replace_clicked: bool,
-) -> Vec<Direction> {
-    // Get all directions ordered by how closely they match player's look direction
-    let mut directions = Direction::ordered_by_nearest(rotation, pitch);
-
-    // If not replacing the clicked block, put the opposite of clicked face first
-    // This is how vanilla prioritizes wall placement when clicking on a block's side
-    if !replace_clicked {
-        let opposite = clicked_face.opposite();
-        if let Some(pos) = directions.iter().position(|&d| d == opposite) {
-            directions.remove(pos);
-            directions.insert(0, opposite);
-        }
-    }
-
-    directions
 }
 
 impl ItemBehavior for SignItemBehavior {
@@ -183,10 +86,8 @@ impl ItemBehavior for SignItemBehavior {
             world: context.world,
         };
 
-        // Try to get a valid placement state (standing or wall)
-        let Some(new_state) =
-            self.get_placement_state(&place_context, &place_pos, place_context.pitch)
-        else {
+        // Use StandingAndWallBlockItem's placement logic
+        let Some(new_state) = self.inner.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
         };
 
@@ -198,13 +99,22 @@ impl ItemBehavior for SignItemBehavior {
             return InteractionResult::Fail;
         }
 
+        // Play place sound
+        let block = self.inner.get_block_for_state(new_state);
+        let sound_type = &block.config.sound_type;
+        context.world.play_block_sound(
+            sound_type.place_sound,
+            place_pos,
+            sound_type.volume,
+            sound_type.pitch,
+            Some(context.player.id),
+        );
+
         // Consume one item from the stack
         context.item_stack.shrink(1);
 
-        // Open the sign editor for the player (front text by default)
+        // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
-
-        // TODO: Play place sound
 
         InteractionResult::Success
     }
@@ -353,12 +263,13 @@ impl ItemBehavior for HangingSignItemBehavior {
 
         // Try ceiling hanging sign first if clicked from below, otherwise try wall
         let blocks_to_try = if context.hit_result.direction == Direction::Down {
-            vec![self.ceiling_block, self.wall_block]
+            [self.ceiling_block, self.wall_block]
         } else {
-            vec![self.wall_block, self.ceiling_block]
+            [self.wall_block, self.ceiling_block]
         };
 
         let mut new_state = None;
+        let mut placed_block = None;
         for block in blocks_to_try {
             let behavior = block_behaviors.get_behavior(block);
             if let Some(state) = behavior.get_state_for_placement(&place_context) {
@@ -370,6 +281,7 @@ impl ItemBehavior for HangingSignItemBehavior {
                 let collision_shape = state.get_collision_shape();
                 if context.world.is_unobstructed(collision_shape, &place_pos) {
                     new_state = Some(state);
+                    placed_block = Some(block);
                     break;
                 }
             }
@@ -387,13 +299,23 @@ impl ItemBehavior for HangingSignItemBehavior {
             return InteractionResult::Fail;
         }
 
+        // Play place sound
+        if let Some(block) = placed_block {
+            let sound_type = &block.config.sound_type;
+            context.world.play_block_sound(
+                sound_type.place_sound,
+                place_pos,
+                sound_type.volume,
+                sound_type.pitch,
+                Some(context.player.id),
+            );
+        }
+
         // Consume one item from the stack
         context.item_stack.shrink(1);
 
         // Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
-
-        // TODO: Play place sound
 
         InteractionResult::Success
     }

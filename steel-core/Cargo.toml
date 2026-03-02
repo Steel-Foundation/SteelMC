@@ -2,6 +2,8 @@
 name = "steel-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 build = "build/build.rs"
 
 [features]
@@ -24,9 +26,7 @@ futures.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
-serde_json5.workspace = true
 wincode.workspace = true
-base64.workspace = true
 
 # Error handling
 thiserror.workspace = true
@@ -37,11 +37,11 @@ crossbeam.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true
 scc.workspace = true
-arc-swap.workspace = true
 
 # Data structures
 rustc-hash.workspace = true
 smallvec.workspace = true
+small-map.workspace = true
 
 # UUID
 uuid.workspace = true
@@ -56,10 +56,10 @@ sha2.workspace = true
 
 # Compression
 zstd.workspace = true
+flate2.workspace = true
 
 # Utilities
 enum_dispatch.workspace = true
-replace_with.workspace = true
 text_components.workspace = true
 simdnbt.workspace = true
 tracing.workspace = true
@@ -70,6 +70,14 @@ serde_json.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 heck.workspace = true
+
+[dev-dependencies]
+md5.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "biome_generation"
+harness = false
 
 [lints]
 workspace = true

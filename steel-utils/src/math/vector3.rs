@@ -34,7 +34,7 @@ pub enum Axis {
 #[allow(missing_docs)]
 impl Axis {
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             Axis::X => "x",
             Axis::Y => "y",

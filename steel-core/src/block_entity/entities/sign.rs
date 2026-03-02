@@ -186,12 +186,12 @@ impl SignBlockEntity {
 
     /// Gets the UUID of the player currently allowed to edit this sign.
     #[must_use]
-    pub fn get_player_who_may_edit(&self) -> Option<Uuid> {
+    pub const fn get_player_who_may_edit(&self) -> Option<Uuid> {
         self.player_who_may_edit
     }
 
     /// Sets the player allowed to edit this sign.
-    pub fn set_player_who_may_edit(&mut self, player: Option<Uuid>) {
+    pub const fn set_player_who_may_edit(&mut self, player: Option<Uuid>) {
         self.player_who_may_edit = player;
     }
 
@@ -204,7 +204,7 @@ impl SignBlockEntity {
 
     /// Gets the text for a side.
     #[must_use]
-    pub fn get_text(&self, front: bool) -> &SignText {
+    pub const fn get_text(&self, front: bool) -> &SignText {
         if front {
             &self.front_text
         } else {
@@ -213,7 +213,7 @@ impl SignBlockEntity {
     }
 
     /// Gets mutable text for a side.
-    pub fn get_text_mut(&mut self, front: bool) -> &mut SignText {
+    pub const fn get_text_mut(&mut self, front: bool) -> &mut SignText {
         if front {
             &mut self.front_text
         } else {
@@ -343,7 +343,7 @@ impl BlockEntity for SignBlockEntity {
 }
 
 /// Converts a dye color to its string representation.
-fn dye_color_to_str(color: DyeColor) -> &'static str {
+const fn dye_color_to_str(color: DyeColor) -> &'static str {
     match color {
         DyeColor::White => "white",
         DyeColor::Orange => "orange",

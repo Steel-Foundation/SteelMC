@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a chat type definition from the data packs.
 #[derive(Debug)]
@@ -58,6 +57,17 @@ impl ChatTypeRegistry {
         self.chat_types_by_key.insert(chat_type.key.clone(), id);
         self.chat_types_by_id.push(chat_type);
         id
+    }
+
+    /// Replaces a chat_types at a given index.
+    /// Returns true if the chat_types was replaced and false if the chat_types wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, chat_types: ChatTypeRef, id: usize) -> bool {
+        if id >= self.chat_types_by_id.len() {
+            return false;
+        }
+        self.chat_types_by_id[id] = chat_types;
+        true
     }
 
     #[must_use]

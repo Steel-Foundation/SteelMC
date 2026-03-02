@@ -6,16 +6,21 @@ use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct Item {
     pub id: u16,
     pub name: String,
+    #[serde(default)]
     pub components: BTreeMap<String, Value>,
+    #[serde(default)]
     pub block_item: Option<String>,
+    #[serde(default)]
     pub is_double: bool,
+    #[serde(default)]
     pub is_scaffolding: bool,
+    #[serde(default)]
     pub is_water_placable: bool,
 }
 
@@ -244,6 +249,7 @@ pub(crate) fn build() -> TokenStream {
     let mut item_definitions = TokenStream::new();
     let mut item_construction = TokenStream::new();
 
+    let mut register_stream = TokenStream::new();
     for item in &item_assets.items {
         let item_ident = Ident::new(&item.name, Span::call_site());
         let item_name_str = item.name.clone();
@@ -298,13 +304,9 @@ pub(crate) fn build() -> TokenStream {
                 },
             });
         }
-    }
 
-    let mut register_stream = TokenStream::new();
-    for item in &item_assets.items {
-        let item_name = Ident::new(&item.name, Span::call_site());
         register_stream.extend(quote! {
-            registry.register(&ITEMS.#item_name);
+            registry.register(&ITEMS.#item_ident);
         });
     }
 

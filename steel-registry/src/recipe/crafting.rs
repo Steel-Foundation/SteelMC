@@ -51,7 +51,7 @@ pub struct ShapedRecipe {
     pub width: usize,
     pub height: usize,
     /// Pattern ingredients in row-major order (width * height).
-    pub pattern: Vec<Ingredient>,
+    pub pattern: &'static [Ingredient],
     pub result: RecipeResult,
     pub show_notification: bool,
     /// Pre-computed: whether the pattern is horizontally symmetric.
@@ -66,11 +66,11 @@ impl ShapedRecipe {
         category: CraftingCategory,
         width: usize,
         height: usize,
-        pattern: Vec<Ingredient>,
+        pattern: &'static [Ingredient],
         result: RecipeResult,
         show_notification: bool,
     ) -> Self {
-        let symmetrical = Self::compute_symmetrical(width, &pattern);
+        let symmetrical = Self::compute_symmetrical(width, pattern);
         Self {
             id,
             category,
@@ -177,7 +177,7 @@ impl ShapedRecipe {
 pub struct ShapelessRecipe {
     pub id: Identifier,
     pub category: CraftingCategory,
-    pub ingredients: Vec<Ingredient>,
+    pub ingredients: &'static [Ingredient],
     pub result: RecipeResult,
 }
 
@@ -205,7 +205,7 @@ impl ShapelessRecipe {
         let non_empty: Vec<&ItemStack> = input.items.iter().filter(|s| !s.is_empty()).collect();
         let mut used = vec![false; non_empty.len()];
 
-        for ingredient in &self.ingredients {
+        for ingredient in self.ingredients {
             let mut found = false;
             for (i, item) in non_empty.iter().enumerate() {
                 if !used[i] && ingredient.test(item) {

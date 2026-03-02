@@ -29,15 +29,21 @@ impl CommandDispatcher {
     #[must_use]
     pub fn new() -> Self {
         let dispatcher = CommandDispatcher::new_empty();
+        dispatcher.register(commands::clear::command_handler());
         dispatcher.register(commands::execute::command_handler());
-        dispatcher.register(commands::flyspeed::command_handler());
+        dispatcher.register(commands::fly::command_handler());
         dispatcher.register(commands::gamemode::command_handler());
         dispatcher.register(commands::gamerule::command_handler());
+        dispatcher.register(commands::kill::command_handler());
+        dispatcher.register(commands::give::command_handler());
         dispatcher.register(commands::seed::command_handler());
         dispatcher.register(commands::stop::command_handler());
-        dispatcher.register(commands::tick::command_handler());
-        dispatcher.register(commands::weather::command_handler());
+        dispatcher.register(commands::summon::command_handler());
         dispatcher.register(commands::tellraw::command_handler());
+        dispatcher.register(commands::tick::command_handler());
+        dispatcher.register(commands::time::command_handler());
+        dispatcher.register(commands::tp::command_handler());
+        dispatcher.register(commands::weather::command_handler());
         dispatcher
     }
 
@@ -98,7 +104,7 @@ impl CommandDispatcher {
         };
 
         // TODO: Implement permission checking logic here
-        // if let CommandSender::Player(ref player) = sender
+        // if let CommandSender::Player(&player) = sender
         //     && !server.player_has_permission(player, &handler.permission)
         // {
         //     return Err(PermissionDenied);
@@ -168,13 +174,25 @@ impl CommandDispatcher {
     }
 
     /// Handles a command suggestion request from a player.
-    pub fn handle_suggestions(
+    pub fn handle_player_suggestions(
         &self,
         player: &Arc<Player>,
         id: i32,
         command: &str,
         server: Arc<Server>,
     ) {
+        let (suggestions, start, length) =
+            self.handle_suggestions(CommandSender::Player(Arc::clone(player)), command, server);
+        player.send_packet(CCommandSuggestions::new(id, start, length, suggestions));
+    }
+
+    /// Handles a command suggestion request from a player.
+    pub fn handle_suggestions(
+        &self,
+        sender: CommandSender,
+        command: &str,
+        server: Arc<Server>,
+    ) -> (Vec<SuggestionEntry>, i32, i32) {
         // Remove leading slash if present
         let command = command.strip_prefix('/').unwrap_or(command);
 
@@ -193,23 +211,14 @@ impl CommandDispatcher {
             let prefix = parts.first().copied().unwrap_or("");
             let suggestions = self.get_command_suggestions(prefix);
             // Start position is 1 (after the slash)
-            player.connection.send_packet(CCommandSuggestions::new(
-                id,
-                1,
-                prefix.len() as i32,
-                suggestions,
-            ));
-            return;
+            return (suggestions, 1, prefix.len() as i32);
         }
 
         // Get the command handler
         let command_name = parts[0];
         let Some(handler) = self.handlers.read_sync(command_name, |_, v| v.clone()) else {
             // Unknown command - no suggestions
-            player
-                .connection
-                .send_packet(CCommandSuggestions::new(id, 0, 0, vec![]));
-            return;
+            return (vec![], 0, 0);
         };
 
         // Calculate where args start (after "command_name ")
@@ -219,22 +228,15 @@ impl CommandDispatcher {
         let args = &parts[1..];
 
         // Create context for suggestion
-        let mut context = CommandContext::new(CommandSender::Player(Arc::clone(player)), server);
+        let mut context = CommandContext::new(sender, server);
 
         // Get suggestions from handler
         if let Some(result) = handler.suggest(args, args_start_pos, &mut context) {
             // Adjust start position to account for leading slash
-            player.connection.send_packet(CCommandSuggestions::new(
-                id,
-                result.start + 1, // +1 for leading slash
-                result.length,
-                result.suggestions,
-            ));
+            (result.suggestions, result.start + 1, result.length)
         } else {
             // No suggestions
-            player
-                .connection
-                .send_packet(CCommandSuggestions::new(id, 0, 0, vec![]));
+            (vec![], 0, 0)
         }
     }
 

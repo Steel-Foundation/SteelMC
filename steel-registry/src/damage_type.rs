@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a damage type definition from a data pack JSON file.
 #[derive(Debug)]
@@ -69,6 +68,17 @@ impl DamageTypeRegistry {
         self.damage_types_by_key.insert(damage_type.key.clone(), id);
         self.damage_types_by_id.push(damage_type);
         id
+    }
+
+    /// Replaces damage at a given index.
+    /// Returns true if the damage was replaced and false if the damage wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, damage: DamageTypeRef, id: usize) -> bool {
+        if id >= self.damage_types_by_id.len() {
+            return false;
+        }
+        self.damage_types_by_id[id] = damage;
+        true
     }
 
     #[must_use]

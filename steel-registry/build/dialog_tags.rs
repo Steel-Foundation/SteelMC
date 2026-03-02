@@ -126,6 +126,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate const arrays for each tag
+    let mut register_stream = TokenStream::new();
     for (tag_name, dialogs) in &sorted_tags {
         let tag_ident = Ident::new(
             &format!("{}_TAG", tag_name.to_shouty_snake_case()),
@@ -135,17 +136,8 @@ pub(crate) fn build() -> TokenStream {
         let dialog_strs = dialogs.iter().map(|s| s.as_str());
 
         stream.extend(quote! {
-            pub static #tag_ident: &[&str] = &[#(#dialog_strs),*];
+            static #tag_ident: &[&str] = &[#(#dialog_strs),*];
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (tag_name, _) in &sorted_tags {
-        let tag_ident = Ident::new(
-            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
-            Span::call_site(),
-        );
         let tag_key = tag_name.clone();
 
         register_stream.extend(quote! {

@@ -1,9 +1,9 @@
 //! A player argument.
+use crate::command::arguments::CommandArgument;
 use crate::command::arguments::SuggestionContext;
 use crate::command::context::CommandContext;
 use crate::entity::Entity;
 use crate::player::Player;
-use crate::{command::arguments::CommandArgument, entity::LivingEntity};
 use rand::seq::IteratorRandom;
 use std::sync::Arc;
 use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
@@ -22,12 +22,12 @@ pub struct PlayerArgument {
 impl PlayerArgument {
     /// Creates a selector for multiple players
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn multiple() -> Self {
         PlayerArgument { one: false }
     }
     /// Creates a selector for one player
     #[must_use]
-    pub fn one() -> Self {
+    pub const fn one() -> Self {
         PlayerArgument { one: true }
     }
 }
@@ -41,13 +41,19 @@ impl CommandArgument for PlayerArgument {
         context: &mut CommandContext,
     ) -> Option<(&'a [&'a str], Self::Output)> {
         let players = context.server.get_players();
+        if arg.is_empty() {
+            return None;
+        }
+        if players.is_empty() {
+            return Some((&arg[1..], vec![]));
+        }
         let entities = match arg[0] {
             "@a" => players,
             "@p" => {
-                let position = context.position?;
+                let position = context.position;
                 let mut near_dist = (f64::MAX, players[0].clone());
                 for player in players {
-                    let dist = player.get_position().squared_distance_to_vec(position);
+                    let dist = player.position().squared_distance_to_vec(position);
                     if dist < near_dist.0 {
                         near_dist = (dist, player);
                     }
@@ -58,7 +64,11 @@ impl CommandArgument for PlayerArgument {
                 vec![players.into_iter().choose(&mut rand::rng())?]
             }
             "@s" => {
-                vec![context.player.clone()?]
+                if let Some(player) = &context.player {
+                    vec![player.clone()]
+                } else {
+                    vec![]
+                }
             }
             name => {
                 let uuid = if let Ok(uuid) = Uuid::parse_str(name) {
@@ -67,7 +77,7 @@ impl CommandArgument for PlayerArgument {
                     Uuid::nil()
                 };
                 let player = players.into_iter().find_map(|p| {
-                    if p.gameprofile.name == name || p.get_uuid() == uuid {
+                    if p.gameprofile.name == name || p.uuid() == uuid {
                         Some(p)
                     } else {
                         None

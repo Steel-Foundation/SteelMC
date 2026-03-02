@@ -64,6 +64,17 @@ impl WolfVariantRegistry {
         id
     }
 
+    /// Replaces a wolf_variant at a given index.
+    /// Returns true if the wolf_variant was replaced and false if the wolf_variant wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, wolf_variant: WolfVariantRef, id: usize) -> bool {
+        if id >= self.wolf_variants_by_id.len() {
+            return false;
+        }
+        self.wolf_variants_by_id[id] = wolf_variant;
+        true
+    }
+
     #[must_use]
     pub fn by_id(&self, id: usize) -> Option<WolfVariantRef> {
         self.wolf_variants_by_id.get(id).copied()

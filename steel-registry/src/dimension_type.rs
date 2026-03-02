@@ -1,7 +1,6 @@
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-
-use crate::RegistryExt;
 
 /// Represents a full dimension type definition from a data pack JSON file.
 #[derive(Debug)]
@@ -65,6 +64,17 @@ impl DimensionTypeRegistry {
         id
     }
 
+    /// Replaces a dimension at a given index.
+    /// Returns true if the dimension was replaced and false if the dimension wasn't replaced
+    #[must_use]
+    pub fn replace(&mut self, dimension: DimensionTypeRef, id: usize) -> bool {
+        if id >= self.dimension_types_by_id.len() {
+            return false;
+        }
+        self.dimension_types_by_id[id] = dimension;
+        true
+    }
+
     #[must_use]
     pub fn by_id(&self, id: usize) -> Option<DimensionTypeRef> {
         self.dimension_types_by_id.get(id).copied()
@@ -99,6 +109,11 @@ impl DimensionTypeRegistry {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.dimension_types_by_id.is_empty()
+    }
+
+    #[must_use]
+    pub fn get_ids(&self) -> Vec<Identifier> {
+        self.dimension_types_by_key.keys().cloned().collect()
     }
 }
 

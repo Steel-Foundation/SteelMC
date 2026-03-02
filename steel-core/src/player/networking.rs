@@ -12,12 +12,14 @@ use steel_protocol::packets::common::{
     SPingRequest,
 };
 use steel_protocol::packets::game::{
-    SAcceptTeleportation, SChat, SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived,
-    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
-    SMovePlayerStatusOnly, SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerInput,
-    SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSwing, SUseItem, SUseItemOn,
+    CBundleDelimiter, SAcceptTeleportation, SChangeGameMode, SChat, SChatAck, SChatCommand,
+    SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd, SCommandSuggestion,
+    SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged,
+    SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SPickItemFromBlock,
+    SPlayerAbilities, SPlayerAction, SPlayerInput, SPlayerLoad, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSwing, SUseItem, SUseItemOn,
 };
+
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
@@ -34,7 +36,43 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command::sender::CommandSender;
 use crate::player::Player;
+use crate::player::connection::NetworkConnection;
 use crate::server::Server;
+
+/// Builder for creating packet bundles.
+///
+/// Used with [`JavaConnection::send_bundle`] to send multiple packets atomically.
+pub struct BundleBuilder {
+    packets: Vec<EncodedPacket>,
+    compression: Option<CompressionInfo>,
+}
+
+impl BundleBuilder {
+    /// Creates a new `BundleBuilder` with the given compression settings.
+    #[must_use]
+    pub const fn new(compression: Option<CompressionInfo>) -> Self {
+        Self {
+            packets: Vec::new(),
+            compression,
+        }
+    }
+
+    /// Adds a packet to the bundle.
+    ///
+    /// # Panics
+    /// Panics if the packet fails to encode.
+    pub fn add<P: ClientPacket>(&mut self, packet: P) {
+        let encoded = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            .expect("Failed to encode packet");
+        self.packets.push(encoded);
+    }
+
+    /// Consumes the builder and returns the collected encoded packets.
+    #[must_use]
+    pub fn into_packets(self) -> Vec<EncodedPacket> {
+        self.packets
+    }
+}
 
 #[allow(clippy::struct_field_names)]
 struct KeepAliveTracker {
@@ -58,7 +96,7 @@ pub struct JavaConnection {
 
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
-    pub fn new(
+    pub const fn new(
         outgoing_packets: UnboundedSender<EncodedPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
@@ -182,7 +220,7 @@ impl JavaConnection {
     /// Processes a packet from the client.
     #[allow(clippy::too_many_lines)]
     pub fn process_packet(
-        self: &Arc<Self>,
+        &self,
         packet: RawPacket,
         player: Arc<Player>,
         server: Arc<Server>,
@@ -249,7 +287,7 @@ impl JavaConnection {
             }
             play::S_COMMAND_SUGGESTION => {
                 let packet = SCommandSuggestion::read_packet(data)?;
-                server.command_dispatcher.read().handle_suggestions(
+                server.command_dispatcher.read().handle_player_suggestions(
                     &player,
                     packet.id,
                     &packet.command,
@@ -304,11 +342,18 @@ impl JavaConnection {
                 let packet = SSignUpdate::read_packet(data)?;
                 player.handle_sign_update(packet);
             }
+            play::S_CLIENT_COMMAND => {
+                let packet = SClientCommand::read_packet(data)?;
+                player.handle_client_command(packet.action);
+            }
             play::S_PING_REQUEST => {
                 let packet = SPingRequest::read_packet(data)?;
-                player
-                    .connection
-                    .send_packet(CPongResponse::new(packet.time));
+                player.send_packet(CPongResponse::new(packet.time));
+            }
+            play::S_CHANGE_GAME_MODE => {
+                // TODO: Check player permission level (Or gamemode permission)
+                let packet = SChangeGameMode::read_packet(data)?;
+                player.set_game_mode(packet.gamemode);
             }
             id => log::info!("play packet id {id} is not known"),
         }
@@ -317,7 +362,7 @@ impl JavaConnection {
 
     /// Listens for packets from the client.
     pub async fn listener(
-        self: Arc<Self>,
+        &self,
         mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
         server: Arc<Server>,
     ) {
@@ -351,7 +396,7 @@ impl JavaConnection {
     ///
     /// # Panics
     /// - If the player is not available.
-    pub async fn sender(self: Arc<Self>, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
+    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<EncodedPacket>) {
         loop {
             select! {
                 () = self.wait_for_close() => {
@@ -392,5 +437,43 @@ impl TextResolutor for JavaConnection {
 
     fn translate(&self, _key: &str) -> Option<String> {
         None
+    }
+}
+
+impl NetworkConnection for JavaConnection {
+    fn compression(&self) -> Option<CompressionInfo> {
+        self.compression
+    }
+
+    fn send_encoded(&self, packet: EncodedPacket) {
+        self.send_encoded_packet(packet);
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        self.send_packet(CBundleDelimiter);
+        for packet in packets {
+            self.send_encoded_packet(packet);
+        }
+        self.send_packet(CBundleDelimiter);
+    }
+
+    fn disconnect_with_reason(&self, reason: TextComponent) {
+        self.disconnect(reason);
+    }
+
+    fn tick(&self) {
+        self.keep_connection_alive();
+    }
+
+    fn latency(&self) -> i32 {
+        *self.latency.lock() as i32
+    }
+
+    fn close(&self) {
+        self.cancel_token.cancel();
+    }
+
+    fn closed(&self) -> bool {
+        self.cancel_token.is_cancelled()
     }
 }

@@ -119,7 +119,7 @@ impl EntityPhysicsState {
 
     /// Returns the current eye height.
     #[must_use]
-    pub fn eye_height(&self) -> f32 {
+    pub const fn eye_height(&self) -> f32 {
         self.dimensions.eye_height
     }
 

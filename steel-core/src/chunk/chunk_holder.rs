@@ -48,12 +48,12 @@ pub enum ChunkResult {
 struct ChunkGuard(SyncRwLock<ChunkAccess>);
 
 impl ChunkGuard {
-    pub fn new(chunk_access: ChunkAccess) -> Self {
+    pub const fn new(chunk_access: ChunkAccess) -> Self {
         ChunkGuard(SyncRwLock::new(chunk_access))
     }
 
     pub fn read(&self) -> RwLockReadGuard<'_, ChunkAccess> {
-        self.0.read()
+        self.0.read_recursive()
     }
 
     pub fn with_write<F, R>(&self, f: F) -> R
@@ -101,17 +101,17 @@ pub struct ChunkHolder {
 
 impl ChunkHolder {
     /// Gets the chunk position.
-    pub fn get_pos(&self) -> ChunkPos {
+    pub const fn get_pos(&self) -> ChunkPos {
         self.pos
     }
 
     /// Gets the minimum Y coordinate of the world.
-    pub fn min_y(&self) -> i32 {
+    pub const fn min_y(&self) -> i32 {
         self.min_y
     }
 
     /// Gets the total height of the world.
-    pub fn height(&self) -> i32 {
+    pub const fn height(&self) -> i32 {
         self.height
     }
 
@@ -330,19 +330,16 @@ impl ChunkHolder {
         // This is one of the `crate::chunk::chunk_status_tasks` functions.
         let task = step.task;
         let self_clone = self.clone();
-        let region_manager = chunk_map.region_manager.clone();
+        let storage = chunk_map.storage.clone();
 
         let future = chunk_map.task_tracker.spawn(async move {
             if target_status == ChunkStatus::Empty {
                 // Acquire the region first (creates if needed, increments ref count)
-                let chunk_exists = region_manager
-                    .acquire_chunk(self_clone.pos)
-                    .await
-                    .unwrap_or(false);
+                let chunk_exists = storage.acquire_chunk(self_clone.pos).await.unwrap_or(false);
 
                 if chunk_exists {
                     // Try to load the chunk from disk
-                    if let Ok(Some((chunk, status))) = region_manager
+                    if let Ok(Some((chunk, status))) = storage
                         .load_chunk(
                             self_clone.pos,
                             self_clone.min_y(),
@@ -513,7 +510,7 @@ impl ChunkHolder {
 
     /// Notifies watchers that the chunk has reached a status.
     /// Called by the drainer task after `insert_chunk_no_notify`.
-    pub(crate) fn notify_status(&self, status: ChunkStatus) {
+    pub fn notify_status(&self, status: ChunkStatus) {
         self.sender.send_replace(ChunkResult::Ok(status));
     }
 

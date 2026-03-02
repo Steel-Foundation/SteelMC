@@ -91,6 +91,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static trim material definitions
+    let mut register_stream = TokenStream::new();
     for (trim_material_name, trim_material) in &trim_materials {
         let trim_material_ident = Ident::new(
             &trim_material_name.to_shouty_snake_case(),
@@ -119,15 +120,7 @@ pub(crate) fn build() -> TokenStream {
                 override_armor_assets: #override_armor_assets,
             });
         });
-    }
 
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (trim_material_name, _) in &trim_materials {
-        let trim_material_ident = Ident::new(
-            &trim_material_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
         register_stream.extend(quote! {
             registry.register(&#trim_material_ident, #trim_material_ident.key.clone());
         });

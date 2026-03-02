@@ -22,20 +22,34 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::{get_fluid_state, is_water_state};
 use crate::world::World;
 
-/// Behavior for liquid blocks (water, lava).
+
+//! Liquid block behavior implementation for water and lava.
+
+use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::fluid::{FluidRef, FluidState};
+use steel_utils::BlockStateId;
+
+use crate::behavior::block::BlockBehaviour;
+use crate::behavior::context::BlockPlaceContext;
+
+/// Behavior for liquid blocks (water and lava).
 ///
-/// Key behavior: when a neighbor changes, schedule a tick for this block
-/// so it can recalculate and potentially de-propagate.
-pub struct LiquidBlockBehavior {
+/// Liquid blocks have a LEVEL property (0-15) that determines the fluid state:
+/// - LEVEL 0 = source block (full fluid)
+/// - LEVEL 1-7 = flowing fluid with decreasing height
+/// - LEVEL 8-15 = falling fluid
+pub struct LiquidBlock {
     block: BlockRef,
-    tick_delay: u32,
+    fluid: FluidRef,
 }
 
-impl LiquidBlockBehavior {
+impl LiquidBlock {
     /// Creates a new liquid block behavior.
     #[must_use]
-    pub const fn new(block: BlockRef, tick_delay: u32) -> Self {
-        Self { block, tick_delay }
+    pub const fn new(block: BlockRef, fluid: FluidRef) -> Self {
+        Self { block, fluid }
     }
 
     /// Checks if this liquid should spread and handles lava-water interactions.
@@ -97,11 +111,15 @@ impl LiquidBlockBehavior {
     }
 }
 
-impl BlockBehaviour for LiquidBlockBehavior {
+impl BlockBehaviour for LiquidBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
 
+    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
+        let level = state.get_value(&BlockStateProperties::LEVEL);
+        FluidState::from_block_level(self.fluid, level)
+    }
     /// Called when the block is placed.
     fn on_place(
         &self,

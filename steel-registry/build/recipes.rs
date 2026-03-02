@@ -1,4 +1,13 @@
 //! Build script for generating vanilla recipe definitions.
+//!
+//! This module generates recipe definitions using a hybrid approach:
+//! - `LazyLock` for the RECIPES struct (required because ITEMS uses LazyLock)
+//! - `Box::leak` to create `&'static [Ingredient]` slices at runtime
+//! - `#[inline(never)]` creator functions to prevent stack overflow
+//!
+//! The `Box::leak` pattern is intentional: vanilla recipes live for the entire
+//! program lifetime, so leaking the memory is correct. This gives us zero-cost
+//! access to recipe data after initialization.
 
 use std::{fs, path::Path};
 
@@ -41,48 +50,50 @@ fn default_count() -> i32 {
     1
 }
 
-/// Generates the ingredient token stream from a JSON value.
-fn generate_ingredient(value: &Value) -> TokenStream {
+/// Represents a parsed ingredient from JSON.
+#[derive(Clone)]
+enum ParsedIngredient {
+    Empty,
+    Item(String),        // item identifier
+    Tag(String),         // tag identifier
+    Choice(Vec<String>), // list of item identifiers
+}
+
+/// Parses an ingredient from a JSON value.
+fn parse_ingredient(value: &Value) -> ParsedIngredient {
     match value {
         Value::String(s) => {
             if let Some(tag) = s.strip_prefix('#') {
-                // Tag reference
                 let tag_id = tag.strip_prefix("minecraft:").unwrap_or(tag);
-                quote! { Ingredient::Tag(Identifier::vanilla_static(#tag_id)) }
+                ParsedIngredient::Tag(tag_id.to_string())
             } else {
-                // Single item
                 let item_id = s.strip_prefix("minecraft:").unwrap_or(s);
-                let item_ident = Ident::new(item_id, Span::call_site());
-                quote! { Ingredient::Item(&ITEMS.#item_ident) }
+                ParsedIngredient::Item(item_id.to_string())
             }
         }
         Value::Array(arr) => {
-            // Choice of items
-            let items: Vec<TokenStream> = arr
+            let items: Vec<String> = arr
                 .iter()
                 .filter_map(|v| v.as_str())
                 .map(|s| {
                     let item_id = s.strip_prefix("minecraft:").unwrap_or(s);
-                    let item_ident = Ident::new(item_id, Span::call_site());
-                    quote! { &ITEMS.#item_ident }
+                    item_id.to_string()
                 })
                 .collect();
-            quote! { Ingredient::Choice(vec![#(#items),*]) }
+            ParsedIngredient::Choice(items)
         }
         Value::Object(obj) => {
-            // Object with "item" or "tag" key (older format)
             if let Some(item) = obj.get("item").and_then(|v| v.as_str()) {
                 let item_id = item.strip_prefix("minecraft:").unwrap_or(item);
-                let item_ident = Ident::new(item_id, Span::call_site());
-                quote! { Ingredient::Item(&ITEMS.#item_ident) }
+                ParsedIngredient::Item(item_id.to_string())
             } else if let Some(tag) = obj.get("tag").and_then(|v| v.as_str()) {
                 let tag_id = tag.strip_prefix("minecraft:").unwrap_or(tag);
-                quote! { Ingredient::Tag(Identifier::vanilla_static(#tag_id)) }
+                ParsedIngredient::Tag(tag_id.to_string())
             } else {
-                quote! { Ingredient::Empty }
+                ParsedIngredient::Empty
             }
         }
-        _ => quote! { Ingredient::Empty },
+        _ => ParsedIngredient::Empty,
     }
 }
 
@@ -92,7 +103,7 @@ struct ShapedRecipeData {
     category: TokenStream,
     width: usize,
     height: usize,
-    pattern_tokens: Vec<TokenStream>,
+    pattern_data: Vec<ParsedIngredient>,
     result_item_ident: Ident,
     result_count: i32,
     show_notification: bool,
@@ -103,12 +114,12 @@ struct ShapelessRecipeData {
     name: String,
     ident: Ident,
     category: TokenStream,
-    ingredient_tokens: Vec<TokenStream>,
+    ingredient_data: Vec<ParsedIngredient>,
     result_item_ident: Ident,
     result_count: i32,
 }
 
-/// Generates a shaped recipe.
+/// Parses a shaped recipe from JSON.
 fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedRecipeData> {
     let pattern = recipe.pattern.as_ref()?;
     let key = recipe.key.as_ref()?;
@@ -123,17 +134,17 @@ fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedR
         .unwrap_or(0);
 
     // Build ingredient map from key
-    let mut ingredient_map: FxHashMap<char, TokenStream> = FxHashMap::default();
-    ingredient_map.insert(' ', quote! { Ingredient::Empty });
+    let mut ingredient_map: FxHashMap<char, ParsedIngredient> = FxHashMap::default();
+    ingredient_map.insert(' ', ParsedIngredient::Empty);
 
     for (key_char, value) in key {
         if let Some(c) = key_char.chars().next() {
-            ingredient_map.insert(c, generate_ingredient(value));
+            ingredient_map.insert(c, parse_ingredient(value));
         }
     }
 
     // Build pattern vector and character grid for symmetry check
-    let mut pattern_tokens = Vec::new();
+    let mut pattern_data = Vec::new();
     let mut char_grid: Vec<char> = Vec::new();
     for row in pattern {
         // Pad row to width
@@ -143,13 +154,12 @@ fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedR
             let ingredient = ingredient_map
                 .get(&c)
                 .cloned()
-                .unwrap_or_else(|| quote! { Ingredient::Empty });
-            pattern_tokens.push(ingredient);
+                .unwrap_or(ParsedIngredient::Empty);
+            pattern_data.push(ingredient);
         }
     }
 
     // Check horizontal symmetry using the character grid
-    // A pattern is symmetric if for each row, the left half mirrors the right half
     let symmetrical = is_pattern_symmetrical(width, height, &char_grid);
 
     // Result item
@@ -165,13 +175,15 @@ fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedR
         _ => quote! { CraftingCategory::Misc },
     };
 
+    let snake_name = recipe_name.to_snake_case();
+
     Some(ShapedRecipeData {
         name: recipe_name.to_string(),
-        ident: Ident::new(&recipe_name.to_snake_case(), Span::call_site()),
+        ident: Ident::new(&snake_name, Span::call_site()),
         category,
         width,
         height,
-        pattern_tokens,
+        pattern_data,
         result_item_ident,
         result_count: result.count,
         show_notification: recipe.show_notification.unwrap_or(true),
@@ -196,13 +208,13 @@ fn is_pattern_symmetrical(width: usize, height: usize, chars: &[char]) -> bool {
     true
 }
 
-/// Generates a shapeless recipe.
+/// Parses a shapeless recipe from JSON.
 fn parse_shapeless_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapelessRecipeData> {
     let ingredients = recipe.ingredients.as_ref()?;
     let result = recipe.result.as_ref()?;
 
     // Build ingredients vector
-    let ingredient_tokens: Vec<TokenStream> = ingredients.iter().map(generate_ingredient).collect();
+    let ingredient_data: Vec<ParsedIngredient> = ingredients.iter().map(parse_ingredient).collect();
 
     // Result item
     let result_item_id = result.id.strip_prefix("minecraft:").unwrap_or(&result.id);
@@ -217,14 +229,44 @@ fn parse_shapeless_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Shap
         _ => quote! { CraftingCategory::Misc },
     };
 
+    let snake_name = recipe_name.to_snake_case();
+
     Some(ShapelessRecipeData {
         name: recipe_name.to_string(),
-        ident: Ident::new(&recipe_name.to_snake_case(), Span::call_site()),
+        ident: Ident::new(&snake_name, Span::call_site()),
         category,
-        ingredient_tokens,
+        ingredient_data,
         result_item_ident,
         result_count: result.count,
     })
+}
+
+/// Generates a TokenStream for an ingredient.
+/// For Choice ingredients, uses Box::leak to create a static slice.
+fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
+    match ingredient {
+        ParsedIngredient::Empty => quote! { Ingredient::Empty },
+        ParsedIngredient::Item(item_id) => {
+            let item_ident = Ident::new(item_id, Span::call_site());
+            quote! { Ingredient::Item(&ITEMS.#item_ident) }
+        }
+        ParsedIngredient::Tag(tag_id) => {
+            quote! { Ingredient::Tag(Identifier::vanilla_static(#tag_id)) }
+        }
+        ParsedIngredient::Choice(items) => {
+            let item_refs: Vec<TokenStream> = items
+                .iter()
+                .map(|item_id| {
+                    let item_ident = Ident::new(item_id, Span::call_site());
+                    quote! { &ITEMS.#item_ident }
+                })
+                .collect();
+            // Use Box::leak to create a static slice for Choice items
+            quote! {
+                Ingredient::Choice(Box::leak(Box::new([#(#item_refs),*])))
+            }
+        }
+    }
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -289,6 +331,93 @@ pub(crate) fn build() -> TokenStream {
         &mut shapeless_recipes,
     );
 
+    // Generate individual creator functions for each shaped recipe.
+    // Each function creates just one recipe in its own stack frame,
+    // preventing stack overflow from large struct literals.
+    // Uses Box::leak to create &'static [Ingredient] slices.
+    let shaped_creator_fns: Vec<TokenStream> = shaped_recipes
+        .iter()
+        .map(|r| {
+            let fn_ident = Ident::new(&format!("create_shaped_{}", r.ident), Span::call_site());
+            let name = &r.name;
+            let category = &r.category;
+            let width = r.width;
+            let height = r.height;
+            let result_item_ident = &r.result_item_ident;
+            let result_count = r.result_count;
+            let show_notification = r.show_notification;
+            let symmetrical = r.symmetrical;
+
+            let pattern_tokens: Vec<TokenStream> = r
+                .pattern_data
+                .iter()
+                .map(generate_ingredient_tokens)
+                .collect();
+
+            quote! {
+                #[inline(never)]
+                fn #fn_ident() -> ShapedRecipe {
+                    // Box::leak creates a &'static [Ingredient] from the Vec.
+                    // This is intentional: vanilla recipes live forever.
+                    let pattern: &'static [Ingredient] = Box::leak(
+                        vec![#(#pattern_tokens),*].into_boxed_slice()
+                    );
+                    ShapedRecipe {
+                        id: Identifier::vanilla_static(#name),
+                        category: #category,
+                        width: #width,
+                        height: #height,
+                        pattern,
+                        result: RecipeResult {
+                            item: &ITEMS.#result_item_ident,
+                            count: #result_count,
+                        },
+                        show_notification: #show_notification,
+                        symmetrical: #symmetrical,
+                    }
+                }
+            }
+        })
+        .collect();
+
+    // Generate individual creator functions for each shapeless recipe.
+    let shapeless_creator_fns: Vec<TokenStream> = shapeless_recipes
+        .iter()
+        .map(|r| {
+            let fn_ident = Ident::new(&format!("create_shapeless_{}", r.ident), Span::call_site());
+            let name = &r.name;
+            let category = &r.category;
+            let result_item_ident = &r.result_item_ident;
+            let result_count = r.result_count;
+
+            let ingredient_tokens: Vec<TokenStream> = r
+                .ingredient_data
+                .iter()
+                .map(generate_ingredient_tokens)
+                .collect();
+
+            quote! {
+                #[inline(never)]
+                fn #fn_ident() -> ShapelessRecipe {
+                    // Box::leak creates a &'static [Ingredient] from the Vec.
+                    // This is intentional: vanilla recipes live forever.
+                    let ingredients: &'static [Ingredient] = Box::leak(
+                        vec![#(#ingredient_tokens),*].into_boxed_slice()
+                    );
+                    ShapelessRecipe {
+                        id: Identifier::vanilla_static(#name),
+                        category: #category,
+                        ingredients,
+                        result: RecipeResult {
+                            item: &ITEMS.#result_item_ident,
+                            count: #result_count,
+                        },
+                    }
+                }
+            }
+        })
+        .collect();
+
     // Generate struct fields
     let shaped_fields: Vec<TokenStream> = shaped_recipes
         .iter()
@@ -306,60 +435,22 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
-    // Generate recipe initializers
-    let shaped_inits: Vec<TokenStream> = shaped_recipes
+    // Generate field initializers that call the creator functions
+    let shaped_field_inits: Vec<TokenStream> = shaped_recipes
         .iter()
         .map(|r| {
             let ident = &r.ident;
-            let name = &r.name;
-            let category = &r.category;
-            let width = r.width;
-            let height = r.height;
-            let pattern_tokens = &r.pattern_tokens;
-            let result_item_ident = &r.result_item_ident;
-            let result_count = r.result_count;
-            let show_notification = r.show_notification;
-            let symmetrical = r.symmetrical;
-
-            quote! {
-                #ident: ShapedRecipe {
-                    id: Identifier::vanilla_static(#name),
-                    category: #category,
-                    width: #width,
-                    height: #height,
-                    pattern: vec![#(#pattern_tokens),*],
-                    result: RecipeResult {
-                        item: &ITEMS.#result_item_ident,
-                        count: #result_count,
-                    },
-                    show_notification: #show_notification,
-                    symmetrical: #symmetrical,
-                },
-            }
+            let fn_ident = Ident::new(&format!("create_shaped_{}", r.ident), Span::call_site());
+            quote! { #ident: #fn_ident(), }
         })
         .collect();
 
-    let shapeless_inits: Vec<TokenStream> = shapeless_recipes
+    let shapeless_field_inits: Vec<TokenStream> = shapeless_recipes
         .iter()
         .map(|r| {
             let ident = &r.ident;
-            let name = &r.name;
-            let category = &r.category;
-            let ingredient_tokens = &r.ingredient_tokens;
-            let result_item_ident = &r.result_item_ident;
-            let result_count = r.result_count;
-
-            quote! {
-                #ident: ShapelessRecipe {
-                    id: Identifier::vanilla_static(#name),
-                    category: #category,
-                    ingredients: vec![#(#ingredient_tokens),*],
-                    result: RecipeResult {
-                        item: &ITEMS.#result_item_ident,
-                        count: #result_count,
-                    },
-                },
-            }
+            let fn_ident = Ident::new(&format!("create_shapeless_{}", r.ident), Span::call_site());
+            quote! { #ident: #fn_ident(), }
         })
         .collect();
 
@@ -391,6 +482,11 @@ pub(crate) fn build() -> TokenStream {
         use steel_utils::Identifier;
         use std::sync::LazyLock;
 
+        /// Global vanilla recipes instance.
+        ///
+        /// Uses `LazyLock` for thread-safe lazy initialization.
+        /// Recipe data (patterns/ingredients) uses `Box::leak` to create
+        /// `&'static` slices, providing zero-cost access after initialization.
         pub static RECIPES: LazyLock<Recipes> = LazyLock::new(Recipes::init);
 
         pub struct ShapedRecipes {
@@ -406,19 +502,34 @@ pub(crate) fn build() -> TokenStream {
             pub shapeless: ShapelessRecipes,
         }
 
+        // Individual recipe creator functions.
+        //
+        // Each function is marked `#[inline(never)]` to ensure it gets its own
+        // stack frame. This prevents stack overflow that would occur if all
+        // recipes were initialized in a single large struct literal.
+        //
+        // Each function uses `Box::leak` to convert the ingredient Vec into
+        // a `&'static [Ingredient]`. This is intentional and correct:
+        // - Vanilla recipes live for the entire program lifetime
+        // - The leaked memory is a one-time cost at startup
+        // - Access to recipe data after init is zero-cost (just pointer + length)
+        #(#shaped_creator_fns)*
+        #(#shapeless_creator_fns)*
+
         impl Recipes {
             fn init() -> Self {
                 Self {
                     shaped: ShapedRecipes {
-                        #(#shaped_inits)*
+                        #(#shaped_field_inits)*
                     },
                     shapeless: ShapelessRecipes {
-                        #(#shapeless_inits)*
+                        #(#shapeless_field_inits)*
                     },
                 }
             }
         }
 
+        /// Registers all vanilla recipes with the recipe registry.
         pub fn register_recipes(registry: &mut RecipeRegistry) {
             // Force initialization of RECIPES
             let _ = &*RECIPES;

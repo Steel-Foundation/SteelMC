@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+    # Marvin Attack: timing sidechannel in rsa crate. No fixed version available.
+    # Tracked at https://rustsec.org/advisories/RUSTSEC-2023-0071
+    "RUSTSEC-2023-0071",
+]

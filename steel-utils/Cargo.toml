@@ -2,9 +2,13 @@
 name = "steel-utils"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
+steel-macros.workspace = true
+
 # Async runtime
 tokio.workspace = true
 
@@ -18,15 +22,15 @@ wincode.workspace = true
 parking_lot.workspace = true
 
 # Data structures
-rustc-hash.workspace = true
 bitflags.workspace = true
 phf.workspace = true
+rustc-hash.workspace = true
 
 # UUID
 uuid.workspace = true
 
 # Logging
-log.workspace = true
+tracing.workspace = true
 
 # Cryptography
 md5.workspace = true
@@ -37,25 +41,32 @@ enum_dispatch.workspace = true
 num-traits.workspace = true
 text_components.workspace = true
 
+# Code generation (build-time only, used by transpiler)
+proc-macro2 = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
+
+[features]
+codegen = ["dep:proc-macro2", "dep:quote"]
+
 [dev-dependencies]
 criterion.workspace = true
 
 [build-dependencies]
 # Serialization
+serde.workspace = true
 serde_json.workspace = true
+
 # Proc macros
 proc-macro2.workspace = true
 quote.workspace = true
 
 # Data structures
-
-rustc-hash.workspace = true
 phf_codegen.workspace = true
 
 # Utilities
-
 heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
+
 [[bench]]
 name = "xoroshiro"
 harness = false

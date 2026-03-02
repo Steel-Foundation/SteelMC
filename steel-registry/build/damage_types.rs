@@ -109,6 +109,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static damage type definitions
+    let mut register_stream = TokenStream::new();
     for (damage_type_name, damage_type) in &damage_types {
         let damage_type_ident =
             Ident::new(&damage_type_name.to_shouty_snake_case(), Span::call_site());
@@ -131,13 +132,6 @@ pub(crate) fn build() -> TokenStream {
                 death_message_type: #death_message_type,
             };
         });
-    }
-
-    // Generate registration function
-    let mut register_stream = TokenStream::new();
-    for (damage_type_name, _) in &damage_types {
-        let damage_type_ident =
-            Ident::new(&damage_type_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
             registry.register(#damage_type_ident);
         });

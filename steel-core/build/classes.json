@@ -142,11 +142,13 @@
     },
     {
       "name": "water",
-      "class": "LiquidBlock"
+      "class": "LiquidBlock",
+      "fluid": "water"
     },
     {
       "name": "lava",
-      "class": "LiquidBlock"
+      "class": "LiquidBlock",
+      "fluid": "lava"
     },
     {
       "name": "sand",
@@ -1098,7 +1100,10 @@
     },
     {
       "name": "stone_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 20,
+      "button_click_on": "BLOCK_STONE_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_STONE_BUTTON_CLICK_OFF"
     },
     {
       "name": "snow",
@@ -1766,43 +1771,73 @@
     },
     {
       "name": "oak_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "spruce_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "birch_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "jungle_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "acacia_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "cherry_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_CHERRY_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_CHERRY_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "dark_oak_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "pale_oak_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "mangrove_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
     },
     {
       "name": "bamboo_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_BAMBOO_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_BAMBOO_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "skeleton_skull",
@@ -3582,11 +3617,17 @@
     },
     {
       "name": "crimson_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_NETHER_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "warped_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 30,
+      "button_click_on": "BLOCK_NETHER_WOOD_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF"
     },
     {
       "name": "crimson_door",
@@ -3750,7 +3791,10 @@
     },
     {
       "name": "polished_blackstone_button",
-      "class": "ButtonBlock"
+      "class": "ButtonBlock",
+      "ticks_to_stay_pressed": 20,
+      "button_click_on": "BLOCK_STONE_BUTTON_CLICK_ON",
+      "button_click_off": "BLOCK_STONE_BUTTON_CLICK_OFF"
     },
     {
       "name": "polished_blackstone_wall",
@@ -6278,7 +6322,8 @@
     {
       "name": "torch",
       "class": "StandingAndWallBlockItem",
-      "block": "torch"
+      "block": "torch",
+      "wallBlock": "wall_torch"
     },
     {
       "name": "end_rod",
@@ -6493,12 +6538,14 @@
     {
       "name": "soul_torch",
       "class": "StandingAndWallBlockItem",
-      "block": "soul_torch"
+      "block": "soul_torch",
+      "wallBlock": "soul_wall_torch"
     },
     {
       "name": "copper_torch",
       "class": "StandingAndWallBlockItem",
-      "block": "copper_torch"
+      "block": "copper_torch",
+      "wallBlock": "copper_wall_torch"
     },
     {
       "name": "glowstone",
@@ -8013,52 +8060,62 @@
     {
       "name": "tube_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "tube_coral_fan"
+      "block": "tube_coral_fan",
+      "wallBlock": "tube_coral_wall_fan"
     },
     {
       "name": "brain_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "brain_coral_fan"
+      "block": "brain_coral_fan",
+      "wallBlock": "brain_coral_wall_fan"
     },
     {
       "name": "bubble_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "bubble_coral_fan"
+      "block": "bubble_coral_fan",
+      "wallBlock": "bubble_coral_wall_fan"
     },
     {
       "name": "fire_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "fire_coral_fan"
+      "block": "fire_coral_fan",
+      "wallBlock": "fire_coral_wall_fan"
     },
     {
       "name": "horn_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "horn_coral_fan"
+      "block": "horn_coral_fan",
+      "wallBlock": "horn_coral_wall_fan"
     },
     {
       "name": "dead_tube_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_tube_coral_fan"
+      "block": "dead_tube_coral_fan",
+      "wallBlock": "dead_tube_coral_wall_fan"
     },
     {
       "name": "dead_brain_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_brain_coral_fan"
+      "block": "dead_brain_coral_fan",
+      "wallBlock": "dead_brain_coral_wall_fan"
     },
     {
       "name": "dead_bubble_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_bubble_coral_fan"
+      "block": "dead_bubble_coral_fan",
+      "wallBlock": "dead_bubble_coral_wall_fan"
     },
     {
       "name": "dead_fire_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_fire_coral_fan"
+      "block": "dead_fire_coral_fan",
+      "wallBlock": "dead_fire_coral_wall_fan"
     },
     {
       "name": "dead_horn_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_horn_coral_fan"
+      "block": "dead_horn_coral_fan",
+      "wallBlock": "dead_horn_coral_wall_fan"
     },
     {
       "name": "blue_ice",
@@ -8258,7 +8315,8 @@
     {
       "name": "redstone_torch",
       "class": "StandingAndWallBlockItem",
-      "block": "redstone_torch"
+      "block": "redstone_torch",
+      "wallBlock": "redstone_wall_torch"
     },
     {
       "name": "redstone_block",
@@ -9463,134 +9521,161 @@
     {
       "name": "oak_sign",
       "class": "SignItem",
-      "block": "oak_sign"
+      "block": "oak_sign",
+      "wallBlock": "oak_wall_sign"
     },
     {
       "name": "spruce_sign",
       "class": "SignItem",
-      "block": "spruce_sign"
+      "block": "spruce_sign",
+      "wallBlock": "spruce_wall_sign"
     },
     {
       "name": "birch_sign",
       "class": "SignItem",
-      "block": "birch_sign"
+      "block": "birch_sign",
+      "wallBlock": "birch_wall_sign"
     },
     {
       "name": "jungle_sign",
       "class": "SignItem",
-      "block": "jungle_sign"
+      "block": "jungle_sign",
+      "wallBlock": "jungle_wall_sign"
     },
     {
       "name": "acacia_sign",
       "class": "SignItem",
-      "block": "acacia_sign"
+      "block": "acacia_sign",
+      "wallBlock": "acacia_wall_sign"
     },
     {
       "name": "cherry_sign",
       "class": "SignItem",
-      "block": "cherry_sign"
+      "block": "cherry_sign",
+      "wallBlock": "cherry_wall_sign"
     },
     {
       "name": "dark_oak_sign",
       "class": "SignItem",
-      "block": "dark_oak_sign"
+      "block": "dark_oak_sign",
+      "wallBlock": "dark_oak_wall_sign"
     },
     {
       "name": "pale_oak_sign",
       "class": "SignItem",
-      "block": "pale_oak_sign"
+      "block": "pale_oak_sign",
+      "wallBlock": "pale_oak_wall_sign"
     },
     {
       "name": "mangrove_sign",
       "class": "SignItem",
-      "block": "mangrove_sign"
+      "block": "mangrove_sign",
+      "wallBlock": "mangrove_wall_sign"
     },
     {
       "name": "bamboo_sign",
       "class": "SignItem",
-      "block": "bamboo_sign"
+      "block": "bamboo_sign",
+      "wallBlock": "bamboo_wall_sign"
     },
     {
       "name": "crimson_sign",
       "class": "SignItem",
-      "block": "crimson_sign"
+      "block": "crimson_sign",
+      "wallBlock": "crimson_wall_sign"
     },
     {
       "name": "warped_sign",
       "class": "SignItem",
-      "block": "warped_sign"
+      "block": "warped_sign",
+      "wallBlock": "warped_wall_sign"
     },
     {
       "name": "oak_hanging_sign",
       "class": "HangingSignItem",
-      "block": "oak_hanging_sign"
+      "block": "oak_hanging_sign",
+      "wallBlock": "oak_wall_hanging_sign"
     },
     {
       "name": "spruce_hanging_sign",
       "class": "HangingSignItem",
-      "block": "spruce_hanging_sign"
+      "block": "spruce_hanging_sign",
+      "wallBlock": "spruce_wall_hanging_sign"
     },
     {
       "name": "birch_hanging_sign",
       "class": "HangingSignItem",
-      "block": "birch_hanging_sign"
+      "block": "birch_hanging_sign",
+      "wallBlock": "birch_wall_hanging_sign"
     },
     {
       "name": "jungle_hanging_sign",
       "class": "HangingSignItem",
-      "block": "jungle_hanging_sign"
+      "block": "jungle_hanging_sign",
+      "wallBlock": "jungle_wall_hanging_sign"
     },
     {
       "name": "acacia_hanging_sign",
       "class": "HangingSignItem",
-      "block": "acacia_hanging_sign"
+      "block": "acacia_hanging_sign",
+      "wallBlock": "acacia_wall_hanging_sign"
     },
     {
       "name": "cherry_hanging_sign",
       "class": "HangingSignItem",
-      "block": "cherry_hanging_sign"
+      "block": "cherry_hanging_sign",
+      "wallBlock": "cherry_wall_hanging_sign"
     },
     {
       "name": "dark_oak_hanging_sign",
       "class": "HangingSignItem",
-      "block": "dark_oak_hanging_sign"
+      "block": "dark_oak_hanging_sign",
+      "wallBlock": "dark_oak_wall_hanging_sign"
     },
     {
       "name": "pale_oak_hanging_sign",
       "class": "HangingSignItem",
-      "block": "pale_oak_hanging_sign"
+      "block": "pale_oak_hanging_sign",
+      "wallBlock": "pale_oak_wall_hanging_sign"
     },
     {
       "name": "mangrove_hanging_sign",
       "class": "HangingSignItem",
-      "block": "mangrove_hanging_sign"
+      "block": "mangrove_hanging_sign",
+      "wallBlock": "mangrove_wall_hanging_sign"
     },
     {
       "name": "bamboo_hanging_sign",
       "class": "HangingSignItem",
-      "block": "bamboo_hanging_sign"
+      "block": "bamboo_hanging_sign",
+      "wallBlock": "bamboo_wall_hanging_sign"
     },
     {
       "name": "crimson_hanging_sign",
       "class": "HangingSignItem",
-      "block": "crimson_hanging_sign"
+      "block": "crimson_hanging_sign",
+      "wallBlock": "crimson_wall_hanging_sign"
     },
     {
       "name": "warped_hanging_sign",
       "class": "HangingSignItem",
-      "block": "warped_hanging_sign"
+      "block": "warped_hanging_sign",
+      "wallBlock": "warped_wall_hanging_sign"
     },
     {
       "name": "bucket",
-      "class": "BucketItem"
+      "class": "BucketItem",
+      "fluid": "empty"
     },
     {
       "name": "water_bucket",
-      "class": "BucketItem"
+      "class": "BucketItem",
+      "fluid": "water"
     },
     {
       "name": "lava_bucket",
-      "class": "BucketItem"
+      "class": "BucketItem",
+      "fluid": "lava"
     },
     {
       "name": "powder_snow_bucket",
@@ -9611,27 +9696,33 @@
     },
     {
       "name": "pufferfish_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "salmon_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "cod_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "tropical_fish_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "axolotl_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "tadpole_bucket",
-      "class": "MobBucketItem"
+      "class": "MobBucketItem",
+      "fluid": "water"
     },
     {
       "name": "brick",
@@ -10496,37 +10587,44 @@
     {
       "name": "skeleton_skull",
       "class": "StandingAndWallBlockItem",
-      "block": "skeleton_skull"
+      "block": "skeleton_skull",
+      "wallBlock": "skeleton_wall_skull"
     },
     {
       "name": "wither_skeleton_skull",
       "class": "StandingAndWallBlockItem",
-      "block": "wither_skeleton_skull"
+      "block": "wither_skeleton_skull",
+      "wallBlock": "wither_skeleton_wall_skull"
     },
     {
       "name": "player_head",
       "class": "PlayerHeadItem",
-      "block": "player_head"
+      "block": "player_head",
+      "wallBlock": "player_wall_head"
     },
     {
       "name": "zombie_head",
       "class": "StandingAndWallBlockItem",
-      "block": "zombie_head"
+      "block": "zombie_head",
+      "wallBlock": "zombie_wall_head"
     },
     {
       "name": "creeper_head",
       "class": "StandingAndWallBlockItem",
-      "block": "creeper_head"
+      "block": "creeper_head",
+      "wallBlock": "creeper_wall_head"
     },
     {
       "name": "dragon_head",
       "class": "StandingAndWallBlockItem",
-      "block": "dragon_head"
+      "block": "dragon_head",
+      "wallBlock": "dragon_wall_head"
     },
     {
       "name": "piglin_head",
       "class": "StandingAndWallBlockItem",
-      "block": "piglin_head"
+      "block": "piglin_head",
+      "wallBlock": "piglin_wall_head"
     },
     {
       "name": "nether_star",
@@ -10635,82 +10733,98 @@
     {
       "name": "white_banner",
       "class": "BannerItem",
-      "block": "white_banner"
+      "block": "white_banner",
+      "wallBlock": "white_wall_banner"
     },
     {
       "name": "orange_banner",
       "class": "BannerItem",
-      "block": "orange_banner"
+      "block": "orange_banner",
+      "wallBlock": "orange_wall_banner"
     },
     {
       "name": "magenta_banner",
       "class": "BannerItem",
-      "block": "magenta_banner"
+      "block": "magenta_banner",
+      "wallBlock": "magenta_wall_banner"
     },
     {
       "name": "light_blue_banner",
       "class": "BannerItem",
-      "block": "light_blue_banner"
+      "block": "light_blue_banner",
+      "wallBlock": "light_blue_wall_banner"
     },
     {
       "name": "yellow_banner",
       "class": "BannerItem",
-      "block": "yellow_banner"
+      "block": "yellow_banner",
+      "wallBlock": "yellow_wall_banner"
     },
     {
       "name": "lime_banner",
       "class": "BannerItem",
-      "block": "lime_banner"
+      "block": "lime_banner",
+      "wallBlock": "lime_wall_banner"
     },
     {
       "name": "pink_banner",
       "class": "BannerItem",
-      "block": "pink_banner"
+      "block": "pink_banner",
+      "wallBlock": "pink_wall_banner"
     },
     {
       "name": "gray_banner",
       "class": "BannerItem",
-      "block": "gray_banner"
+      "block": "gray_banner",
+      "wallBlock": "gray_wall_banner"
     },
     {
       "name": "light_gray_banner",
       "class": "BannerItem",
-      "block": "light_gray_banner"
+      "block": "light_gray_banner",
+      "wallBlock": "light_gray_wall_banner"
     },
     {
       "name": "cyan_banner",
       "class": "BannerItem",
-      "block": "cyan_banner"
+      "block": "cyan_banner",
+      "wallBlock": "cyan_wall_banner"
     },
     {
       "name": "purple_banner",
       "class": "BannerItem",
-      "block": "purple_banner"
+      "block": "purple_banner",
+      "wallBlock": "purple_wall_banner"
     },
     {
       "name": "blue_banner",
       "class": "BannerItem",
-      "block": "blue_banner"
+      "block": "blue_banner",
+      "wallBlock": "blue_wall_banner"
     },
     {
       "name": "brown_banner",
       "class": "BannerItem",
-      "block": "brown_banner"
+      "block": "brown_banner",
+      "wallBlock": "brown_wall_banner"
     },
     {
       "name": "green_banner",
       "class": "BannerItem",
-      "block": "green_banner"
+      "block": "green_banner",
+      "wallBlock": "green_wall_banner"
     },
     {
       "name": "red_banner",
       "class": "BannerItem",
-      "block": "red_banner"
+      "block": "red_banner",
+      "wallBlock": "red_wall_banner"
     },
     {
       "name": "black_banner",
       "class": "BannerItem",
-      "block": "black_banner"
+      "block": "black_banner",
+      "wallBlock": "black_wall_banner"
     },
     {
       "name": "end_crystal",

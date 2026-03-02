@@ -2,6 +2,8 @@
 name = "steel-crypto"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 # Internal crates
@@ -13,9 +15,6 @@ serde_json.workspace = true
 
 # Error handling
 thiserror.workspace = true
-
-# Concurrency
-parking_lot.workspace = true
 
 # Logging
 log.workspace = true
