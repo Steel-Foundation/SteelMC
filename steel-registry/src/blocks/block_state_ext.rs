@@ -124,9 +124,9 @@ impl FluidReplaceableExt for BlockStateId {
         }
 
         // Bloc contenant déjà un fluide
-        if self.contains_fluid() {
-            return false;
-        }
+        //if self.contains_fluid() {
+        //    return false;
+        //}
 
         if std::ptr::eq(fluid, vanilla_blocks::WATER)
             && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)

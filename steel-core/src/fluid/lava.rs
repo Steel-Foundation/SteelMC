@@ -13,14 +13,15 @@ use steel_registry::blocks::properties::Direction;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_fluids;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
 use crate::world::World;
 
 use super::{
-    FluidBehaviour, FluidState, can_hold_any_fluid, fluid_state_to_block, get_fluid_state,
-    get_new_liquid, get_spread, is_hole, is_lava, is_water, lava_id,
+    FluidBehaviour, FluidRef, FluidState, can_hold_any_fluid, fluid_state_to_block,
+    get_fluid_state, get_new_liquid, get_spread, is_hole, is_lava, is_water, lava_id,
 };
 
 /// Lava fluid behavior.
@@ -58,7 +59,7 @@ impl LavaFluid {
         world: &World,
         pos: BlockPos,
         _fluid_state: FluidState,
-        current_tick: u64,
+        _current_tick: u64,
     ) -> bool {
         let below = pos.offset(0, -1, 0);
 
@@ -93,7 +94,11 @@ impl LavaFluid {
         let block_state = fluid_state_to_block(new_fluid);
 
         if world.set_block(below, block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
-            world.schedule_fluid_tick(below, current_tick, self.tick_delay());
+            world.schedule_fluid_tick_default(
+                below,
+                &vanilla_fluids::LAVA,
+                self.tick_delay() as i32,
+            );
             return true;
         }
 
@@ -148,7 +153,7 @@ impl LavaFluid {
         world: &World,
         pos: BlockPos,
         fluid_state: FluidState,
-        current_tick: u64,
+        _current_tick: u64,
         slope_find_distance: u8,
     ) {
         // Calculate spread amount - vanilla: fluidState.getAmount() - dropOff
@@ -167,7 +172,7 @@ impl LavaFluid {
         let spreads = get_spread(world, pos, lava_id(), self.drop_off(), slope_find_distance);
 
         for (direction, new_fluid) in spreads {
-            let neighbor = direction.relative(&pos);
+            let neighbor: BlockPos = direction.relative(&pos);
 
             // Check if the position can hold fluid
             if !can_hold_any_fluid(world, &neighbor) {
@@ -207,14 +212,18 @@ impl LavaFluid {
             let block_state = fluid_state_to_block(new_fluid);
 
             if world.set_block(neighbor, block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
-                world.schedule_fluid_tick(neighbor, current_tick, self.tick_delay());
+                world.schedule_fluid_tick_default(
+                    neighbor,
+                    &vanilla_fluids::LAVA,
+                    self.tick_delay() as i32,
+                );
             }
         }
     }
 }
 
 impl FluidBehaviour for LavaFluid {
-    fn fluid_type(&self) -> u8 {
+    fn fluid_type(&self) -> FluidRef {
         lava_id()
     }
 
@@ -233,7 +242,7 @@ impl FluidBehaviour for LavaFluid {
     fn tick(&self, world: &World, pos: BlockPos, current_tick: u64) {
         let tick_delay = 30;
 
-        let current_fluid = get_fluid_state(world, &pos);
+        let mut current_fluid = get_fluid_state(world, &pos);
 
         if current_fluid.is_empty() || !is_lava(current_fluid.fluid_id) {
             return; // No lava here anymore
@@ -247,24 +256,20 @@ impl FluidBehaviour for LavaFluid {
             let new_fluid = get_new_liquid(world, pos, lava_id(), self.drop_off());
 
             if new_fluid.is_empty() {
-                // No support - remove the lava
-                // Note: set_block will trigger neighbor fluid ticks via the world logic
+                current_fluid = new_fluid;
                 let air = fluid_state_to_block(FluidState::EMPTY);
                 world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
-                return;
-            }
-
-            if new_fluid != current_fluid {
+            } else if new_fluid != current_fluid {
                 // Update to new state
+                current_fluid = new_fluid;
                 let block_state = fluid_state_to_block(new_fluid);
                 world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-                // If lava is shrinking, re-schedule self to continue checking
-                // Don't schedule all neighbors - let natural tick propagation handle it
-                if new_fluid.amount < current_fluid.amount {
-                    world.schedule_fluid_tick(pos, current_tick, tick_delay);
-                    return; // Don't spread when shrinking
-                }
+                world.schedule_fluid_tick_default(
+                    pos,
+                    &vanilla_fluids::LAVA,
+                    tick_delay as i32,
+                );
             }
         }
 
@@ -321,7 +326,7 @@ impl FluidBehaviour for LavaFluid {
         fluid_state: FluidState,
         _world: &World,
         _pos: BlockPos,
-        other_fluid: u8,
+        other_fluid: FluidRef,
         _direction: Direction,
     ) -> bool {
         // Lava can be replaced if its height >= 0.44444445F (4/9 of a block)

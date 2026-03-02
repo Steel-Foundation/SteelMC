@@ -8,10 +8,12 @@
 //       needs to read neighbor block states which requires the same locks -> DEADLOCK
 
 use std::ptr;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::vanilla_blocks;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
@@ -21,18 +23,6 @@ use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::{get_fluid_state, is_water_state};
 use crate::world::World;
-
-
-//! Liquid block behavior implementation for water and lava.
-
-use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::fluid::{FluidRef, FluidState};
-use steel_utils::BlockStateId;
-
-use crate::behavior::block::BlockBehaviour;
-use crate::behavior::context::BlockPlaceContext;
 
 /// Behavior for liquid blocks (water and lava).
 ///
@@ -62,7 +52,6 @@ impl LiquidBlock {
         if !ptr::eq(self.block, vanilla_blocks::LAVA) {
             return true;
         }
-
         // Check if there's soul soil below (for basalt generation)
         let below_pos = pos.offset(0, -1, 0);
         let below_state = world.get_block_state(&below_pos);
@@ -71,14 +60,15 @@ impl LiquidBlock {
         // Get fluid state to check if this is a source
         let fluid_state = get_fluid_state(world, &pos);
 
-        // Check all 4 horizontal directions for water or blue ice
+        // Check adjacent directions (Up, North, South, East, West) for water or blue ice
         for direction in [
+            Direction::Up,
             Direction::North,
             Direction::South,
             Direction::East,
             Direction::West,
         ] {
-            let neighbor_pos = direction.opposite().relative(&pos);
+            let neighbor_pos = direction.relative(&pos);
             let neighbor_fluid = get_fluid_state(world, &neighbor_pos);
 
             // Check for water (including flowing_water and waterlogged blocks)
@@ -120,6 +110,7 @@ impl BlockBehaviour for LiquidBlock {
         let level = state.get_value(&BlockStateProperties::LEVEL);
         FluidState::from_block_level(self.fluid, level)
     }
+
     /// Called when the block is placed.
     fn on_place(
         &self,
@@ -135,12 +126,12 @@ impl BlockBehaviour for LiquidBlock {
         //
         // If you uncomment the line below, placing lava will deadlock the server:
         // if self.should_spread_liquid(world, pos, state) {
-        //     world.schedule_fluid_tick(pos, world.game_time(), self.tick_delay);
+        //     world.schedule_fluid_tick_default(pos, self.fluid, self.fluid.tick_delay as i32);
         // }
         //
         // For now, we just schedule the tick and let the fluid behavior handle
         // the interaction check when the tick fires (outside of set_block locks).
-        world.schedule_fluid_tick(pos, world.game_time(), self.tick_delay);
+        world.schedule_fluid_tick_default(pos, self.fluid, self.fluid.tick_delay as i32);
     }
 
     /// Called when a neighboring block changes.
@@ -157,7 +148,7 @@ impl BlockBehaviour for LiquidBlock {
     ) {
         // This is safe because we're not inside set_block locks
         if self.should_spread_liquid(world, pos, state) {
-            world.schedule_fluid_tick(pos, world.game_time(), self.tick_delay);
+            world.schedule_fluid_tick_default(pos, self.fluid, self.fluid.tick_delay as i32);
         }
     }
 
@@ -165,12 +156,23 @@ impl BlockBehaviour for LiquidBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &World,
-        _pos: BlockPos,
+        world: &World,
+        pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
-        _neighbor_state: BlockStateId,
+        neighbor_state: BlockStateId,
     ) -> BlockStateId {
+        let fluid_state = self.get_fluid_state(state);
+        let neighbor_fluid = crate::fluid::get_fluid_state_from_block(neighbor_state);
+
+        if fluid_state.is_source() || neighbor_fluid.is_source() {
+            world.schedule_fluid_tick_default(
+                pos.clone(),
+                self.fluid,
+                self.fluid.tick_delay as i32,
+            );
+        }
+
         state
     }
 }

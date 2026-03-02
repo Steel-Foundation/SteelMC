@@ -481,7 +481,7 @@ impl ChunkMap {
         }
 
         // Execute scheduled ticks collected during chunk ticking
-        Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+        Self::execute_scheduled_ticks(world, tick_count, ready_block_ticks, ready_fluid_ticks);
 
         timings
     }
@@ -489,6 +489,7 @@ impl ChunkMap {
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
     fn execute_scheduled_ticks(
         world: &World,
+        tick_count: u64,
         mut ready_block_ticks: Vec<BlockTick>,
         mut ready_fluid_ticks: Vec<FluidTick>,
     ) {
@@ -520,8 +521,20 @@ impl ChunkMap {
                     .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
             });
 
-            // TODO: Execute fluid ticks when FluidBehaviour trait exists
-            let _ = ready_fluid_ticks.len();
+            let fluid_behaviors = &*crate::behavior::FLUID_BEHAVIORS;
+            for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
+                let state = world.get_block_state(&tick.pos);
+                let fluid_state = crate::fluid::get_fluid_state_from_block(state);
+
+                // Only execute if the fluid at this location still matches the scheduled tick
+                if !std::ptr::eq(fluid_state.fluid_id, tick.tick_type) {
+                    continue;
+                }
+
+                fluid_behaviors
+                    .get_behavior(tick.tick_type)
+                    .tick(world, tick.pos, tick_count);
+            }
         }
     }
 

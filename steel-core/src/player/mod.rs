@@ -290,7 +290,7 @@ pub struct Player {
 impl Player {
     /// Returns true if the player is shifting (sneaking).
     pub fn is_shifting(&self) -> bool {
-        self.shift_key_down.load(Ordering::Relaxed)
+        self.entity_state.lock().crouching
     }
 
     /// Creates a new player.
@@ -2911,20 +2911,6 @@ impl LivingEntity for Player {
 
     fn living_base(&self) -> &SyncMutex<LivingEntityBase> {
         &self.living_base
-    }
-
-    fn eye_position(&self) -> Vector3<f64> {
-        let eye_height = if self.shift_key_down.load(Ordering::Relaxed) {
-            1.27
-        } else {
-            1.62
-        };
-        let pos = self.get_position();
-        Vector3::new(pos.x, pos.y + eye_height, pos.z)
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
     }
 
     fn get_absorption_amount(&self) -> f32 {

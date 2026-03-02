@@ -27,6 +27,7 @@
 mod block;
 pub mod blocks;
 mod context;
+pub mod fluid;
 mod item;
 pub mod items;
 
@@ -45,6 +46,7 @@ use block_behaviours::register_block_behaviors;
 pub use context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, UseItemContext, UseOnContext,
 };
+pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviours::register_item_behaviors;
 pub use items::{
@@ -55,6 +57,8 @@ use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::fluid::FluidState;
+use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
@@ -121,19 +125,41 @@ pub fn init_behaviors() {
 
     // Register liquid block behaviors for proper de-propagation
     // When a neighbor changes, these blocks schedule a tick for themselves
-    // Water tick delay = 5, Lava tick delay = 30 (vanilla values)
     block_behaviors.set_behavior(
         vanilla_blocks::WATER,
-        Box::new(blocks::LiquidBlockBehavior::new(vanilla_blocks::WATER, 5)),
+        Box::new(blocks::LiquidBlock::new(
+            vanilla_blocks::WATER,
+            &vanilla_fluids::WATER,
+        )),
     );
     block_behaviors.set_behavior(
         vanilla_blocks::LAVA,
-        Box::new(blocks::LiquidBlockBehavior::new(vanilla_blocks::LAVA, 30)),
+        Box::new(blocks::LiquidBlock::new(
+            vanilla_blocks::LAVA,
+            &vanilla_fluids::LAVA,
+        )),
     );
 
     assert!(
         BLOCK_BEHAVIORS.0.set(block_behaviors).is_ok(),
         "Block behavior registry already initialized"
+    );
+
+    let mut fluid_behaviors = FluidBehaviorRegistry::new();
+    fluid_behaviors.set_behavior(&vanilla_fluids::WATER, Box::new(crate::fluid::WaterFluid));
+    fluid_behaviors.set_behavior(
+        &vanilla_fluids::FLOWING_WATER,
+        Box::new(crate::fluid::WaterFluid),
+    );
+    fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, Box::new(crate::fluid::LavaFluid));
+    fluid_behaviors.set_behavior(
+        &vanilla_fluids::FLOWING_LAVA,
+        Box::new(crate::fluid::LavaFluid),
+    );
+
+    assert!(
+        FLUID_BEHAVIORS.0.set(fluid_behaviors).is_ok(),
+        "Fluid behavior registry already initialized"
     );
 
     let mut item_behaviors = ItemBehaviorRegistry::new();

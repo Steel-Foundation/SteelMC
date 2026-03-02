@@ -5,7 +5,8 @@
 // TODO: This file is minimal - consider if EmptyFluid needs more methods when modded fluids are added
 
 use steel_registry::blocks::properties::Direction;
-use steel_registry::fluid_tags;
+use steel_registry::fluid::FluidRef;
+use steel_registry::vanilla_fluids;
 use steel_utils::types::BlockPos;
 
 use crate::fluid::FluidBehaviour;
@@ -16,8 +17,8 @@ use crate::world::World;
 pub struct EmptyFluid;
 
 impl FluidBehaviour for EmptyFluid {
-    fn fluid_type(&self) -> u8 {
-        fluid_tags::EMPTY
+    fn fluid_type(&self) -> FluidRef {
+        &vanilla_fluids::EMPTY
     }
 
     fn tick(&self, _world: &World, _pos: BlockPos, _current_tick: u64) {
@@ -48,7 +49,7 @@ impl FluidBehaviour for EmptyFluid {
         _fluid_state: FluidState,
         _world: &World,
         _pos: BlockPos,
-        _other_fluid: u8,
+        _other_fluid: FluidRef,
         _direction: Direction,
     ) -> bool {
         // Empty can always be replaced by any fluid

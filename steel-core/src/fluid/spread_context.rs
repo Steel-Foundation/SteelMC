@@ -10,6 +10,7 @@ use rustc_hash::FxHashMap;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::is_shape_full_block;
+use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
@@ -74,7 +75,7 @@ impl<'a> SpreadContext<'a> {
 
     /// Checks if the position is a hole (can fluid flow down into it?), with caching.
     #[must_use]
-    pub fn is_hole(&mut self, pos: BlockPos, fluid_id: u8) -> bool {
+    pub fn is_hole(&mut self, pos: BlockPos, fluid_id: FluidRef) -> bool {
         let dx = pos.0.x as i8;
         let dz = pos.0.z as i8;
         let key = Self::encode_key(dx, dz);
@@ -89,7 +90,7 @@ impl<'a> SpreadContext<'a> {
     ///
     /// This uses the cached block state for efficiency.
     #[must_use]
-    pub fn can_pass_horizontally(&mut self, pos: BlockPos, fluid_id: u8) -> bool {
+    pub fn can_pass_horizontally(&mut self, pos: BlockPos, fluid_id: FluidRef) -> bool {
         let state = self.get_block_state(pos);
         let block = state.get_block();
 
@@ -104,7 +105,7 @@ impl<'a> SpreadContext<'a> {
         // If shape is a full block, can't pass through (unless same fluid)
         if is_shape_full_block(shape) {
             let fluid_state = get_fluid_state_from_block(state);
-            if fluid_state.fluid_id == fluid_id && !fluid_state.is_source() {
+            if std::ptr::eq(fluid_state.fluid_id, fluid_id) && !fluid_state.is_source() {
                 return true;
             }
             return false;
@@ -117,7 +118,7 @@ impl<'a> SpreadContext<'a> {
 
         // Can flow into same fluid type if not source
         let fluid_state = get_fluid_state_from_block(state);
-        if fluid_state.fluid_id == fluid_id && !fluid_state.is_source() {
+        if std::ptr::eq(fluid_state.fluid_id, fluid_id) && !fluid_state.is_source() {
             return true;
         }
 
@@ -133,7 +134,7 @@ impl<'a> SpreadContext<'a> {
 
 /// Internal helper for hole check that doesn't use caching.
 /// This is used by `SpreadContext` for cache misses.
-pub fn is_hole_internal(world: &World, pos: BlockPos, fluid_id: u8) -> bool {
+pub fn is_hole_internal(world: &World, pos: BlockPos, fluid_id: FluidRef) -> bool {
     let below_pos = pos.offset(0, -1, 0);
 
     if !world.is_in_valid_bounds(&below_pos) {
@@ -154,7 +155,7 @@ pub fn is_hole_internal(world: &World, pos: BlockPos, fluid_id: u8) -> bool {
     if is_shape_full_block(below_shape) {
         // Full block below - check if it's the same fluid type
         let below_fluid = get_fluid_state_from_block(below_state);
-        if below_fluid.fluid_id == fluid_id && !below_fluid.is_source() {
+        if std::ptr::eq(below_fluid.fluid_id, fluid_id) && !below_fluid.is_source() {
             return true;
         }
         return false;
@@ -167,7 +168,7 @@ pub fn is_hole_internal(world: &World, pos: BlockPos, fluid_id: u8) -> bool {
 
     // Can flow into same fluid type
     let below_fluid = get_fluid_state_from_block(below_state);
-    if below_fluid.fluid_id == fluid_id && !below_fluid.is_source() {
+    if std::ptr::eq(below_fluid.fluid_id, fluid_id) && !below_fluid.is_source() {
         return true;
     }
 

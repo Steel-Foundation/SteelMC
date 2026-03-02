@@ -24,7 +24,7 @@ pub use crafting_table_block::CraftingTableBlock;
 pub use crop_block::CropBlock;
 pub use end_portal_frame_block::EndPortalFrameBlock;
 pub use farmland_block::FarmlandBlock;
-pub use fence_block::FenceBlock
+pub use fence_block::FenceBlock;
 pub use liquid_block::LiquidBlock;
 pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use rotated_pillar_block::RotatedPillarBlock;

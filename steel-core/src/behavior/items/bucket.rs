@@ -18,6 +18,7 @@ use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::items::ItemRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
@@ -26,13 +27,14 @@ use steel_utils::types::UpdateFlags;
 
 use crate::behavior::ItemBehavior;
 use crate::behavior::context::InteractionResult;
-use crate::entity::LivingEntity;
+use crate::entity::Entity;
 use crate::fluid::flowing::{get_fluid_state_from_block, is_lava_state, is_water_state};
 use crate::player::Player;
 
 /// Computes the start (eye position) and end positions for a raytrace.
 fn get_ray_endpoints(player: &Player) -> (Vector3<f64>, Vector3<f64>) {
-    let start_pos = player.eye_position();
+    let pos = player.position();
+    let start_pos = Vector3::new(pos.x, player.get_eye_y(), pos.z);
     let (yaw, pitch) = player.rotation();
     let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
     let block_interaction_range = 4.5;
@@ -97,6 +99,8 @@ impl ItemBehavior for FilledBucketBehavior {
             true
         });
 
+        log::info!("Raytrace result: block={:?}, direction={:?}", ray_block, ray_dir);
+
         let (Some(clicked_pos), Some(direction)) = (ray_block, ray_dir) else {
             return InteractionResult::Fail;
         };
@@ -105,6 +109,7 @@ impl ItemBehavior for FilledBucketBehavior {
             return InteractionResult::Fail;
         }
 
+        log::info!("Clicked block position: {:?}, direction: {:?}", clicked_pos, direction);
         let clicked_state = context.world.get_block_state(&clicked_pos);
 
         // Define fluid placement logic as a closure to reuse for primary/secondary targets
@@ -139,11 +144,10 @@ impl ItemBehavior for FilledBucketBehavior {
                         1.0,
                         None,
                     );
-
                     // Schedule tick for fluid spread
                     context
                         .world
-                        .schedule_fluid_tick(pos, context.world.game_time(), 5);
+                        .schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, 5);
 
                     // Consume bucket
                     if !context.player.has_infinite_materials() {
@@ -153,8 +157,10 @@ impl ItemBehavior for FilledBucketBehavior {
                 }
             }
 
+            log::info!("Attempting standard fluid placement at {:?} with state {:?} and fluid_state {:?}", pos, state, fluid_state);
             // 2. Try Standard Placement (Replaceable block)
             if state.can_be_replaced_by_fluid(self.fluid_block) {
+                log::info!("Block at {:?} is replaceable by fluid", pos);
                 // If same fluid already exists and is source, just consume bucket (parity)
                 // Use FluidState check
                 let is_same_fluid = if is_water_bucket {
@@ -179,9 +185,14 @@ impl ItemBehavior for FilledBucketBehavior {
                 ) {
                     let tick_delay = if is_water_bucket { 5 } else { 30 };
 
+                    let fluid_ref = if is_water_bucket {
+                        &vanilla_fluids::WATER
+                    } else {
+                        &vanilla_fluids::LAVA
+                    };
                     context
                         .world
-                        .schedule_fluid_tick(pos, context.world.game_time(), tick_delay);
+                        .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
 
                     let sound_id = if is_water_bucket {
                         sound_events::ITEM_BUCKET_EMPTY
@@ -324,8 +335,11 @@ impl ItemBehavior for EmptyBucketBehavior {
             }
         }
 
-        // Schedule ticks for de-propagation
-        let current_tick = context.world.game_time();
+        let fluid_ref = if ptr::eq(fluid_block, vanilla_blocks::WATER) {
+            &vanilla_fluids::WATER
+        } else {
+            &vanilla_fluids::LAVA
+        };
 
         // IMPORTANT: Schedule ticks for neighbors so infinite sources regenerate
         // TODO: Visual sync issue - client sees air before regenerated water
@@ -341,7 +355,7 @@ impl ItemBehavior for EmptyBucketBehavior {
             let neighbor = hit_pos.offset(offset.0, offset.1, offset.2);
             context
                 .world
-                .schedule_fluid_tick(neighbor, current_tick, tick_delay);
+                .schedule_fluid_tick_default(neighbor, fluid_ref, tick_delay);
         }
 
         // Play bucket fill sound

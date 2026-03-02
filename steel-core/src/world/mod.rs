@@ -66,7 +66,7 @@ use crate::chunk::world_gen_context::ChunkGeneratorType;
 pub use crate::config::WorldStorageConfig;
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
-pub use tick_scheduler::{ScheduledTick, TickScheduler, TickType};
+pub use tick_scheduler::ScheduledTick;
 
 /// Generates a random value using triangle distribution.
 ///
@@ -325,72 +325,6 @@ impl World {
     pub fn set_tick_runs_normally(&self, runs_normally: bool) {
         self.tick_runs_normally
             .store(runs_normally, Ordering::Relaxed);
-    }
-
-    /// Schedules a tick at the given position.
-    ///
-    /// # Arguments
-    /// * `pos` - Block position
-    /// * `tick_type` - Type of tick (Block or Fluid)
-    /// * `current_tick` - Current game tick
-    /// * `delay` - Ticks to wait before executing
-    pub fn schedule_tick(&self, pos: BlockPos, tick_type: TickType, current_tick: u64, delay: u32) {
-        self.tick_scheduler
-            .lock()
-            .schedule(pos, tick_type, current_tick, delay, 0);
-    }
-
-    /// Schedules a fluid tick with default priority.
-    pub fn schedule_fluid_tick(&self, pos: BlockPos, current_tick: u64, delay: u32) {
-        self.tick_scheduler
-            .lock()
-            .schedule_fluid(pos, current_tick, delay);
-    }
-
-    /// Schedules a block tick with default priority.
-    pub fn schedule_block_tick(&self, pos: BlockPos, current_tick: u64, delay: u32) {
-        self.tick_scheduler
-            .lock()
-            .schedule_block(pos, current_tick, delay);
-    }
-
-    /// Processes all scheduled ticks that are due.
-    ///
-    /// Returns the number of ticks processed.
-    fn process_scheduled_ticks(&self, current_tick: u64) -> usize {
-        use crate::fluid::{
-            FluidBehaviour, LavaFluid, WaterFluid, get_fluid_state, is_lava, is_water,
-        };
-        use steel_registry::fluid_tags;
-
-        let due_ticks = self.tick_scheduler.lock().get_due_ticks(current_tick);
-        let count = due_ticks.len();
-
-        for tick in due_ticks {
-            match tick.tick_type {
-                TickType::Fluid => {
-                    // Get the fluid type at this position
-                    let fluid_state = get_fluid_state(self, &tick.pos);
-                    let fluid_id = fluid_state.fluid_id;
-
-                    if is_water(fluid_id) {
-                        WaterFluid.tick(self, tick.pos, current_tick);
-                    } else if is_lava(fluid_id) {
-                        LavaFluid.tick(self, tick.pos, current_tick);
-                    } else if fluid_id == fluid_tags::EMPTY {
-                        // Fluid was removed, nothing to do
-                    } else {
-                        // Unknown fluid type
-                    }
-                }
-                TickType::Block => {
-                    // TODO: Call block behavior tick
-                    log::trace!("Processing block tick at {:?}", tick.pos);
-                }
-            }
-        }
-
-        count
     }
 
     /// Gets the value of a game rule.
@@ -710,10 +644,7 @@ impl World {
             self.chunk_map
                 .tick_b(self, tick_count, random_tick_speed, runs_normally);
 
-        // Process scheduled ticks (blocks and fluids) when running normally
-        if runs_normally {
-            self.process_scheduled_ticks(tick_count);
-        }
+        // Scheduled ticks are now processed per-chunk in ChunkMap::execute_scheduled_ticks()
 
         // Tick players (always tick players - they can move when frozen)
         let player_tick = {

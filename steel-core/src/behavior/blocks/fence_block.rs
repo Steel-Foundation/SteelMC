@@ -172,13 +172,4 @@ impl BlockBehaviour for FenceBlock {
             FluidState::EMPTY
         }
     }
-
-    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        log::debug!(
-            "FenceBlock::get_state_for_placement called for {:?} at {:?}",
-            self.block.key,
-            context.relative_pos
-        );
-        Some(self.get_connection_state(context.world, &context.relative_pos))
-    }
 }
