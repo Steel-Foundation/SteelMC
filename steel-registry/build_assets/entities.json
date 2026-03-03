@@ -18398,7 +18398,7 @@
     "name": "rabbit",
     "width": 0.49,
     "height": 0.6,
-    "eye_height": 0.63,
+    "eye_height": 0.59,
     "fixed": false,
     "attachments": {
       "passenger": [
@@ -18433,7 +18433,7 @@
     "baby_dimensions": {
       "width": 0.24,
       "height": 0.4,
-      "eye_height": 0.44
+      "eye_height": 0.39
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,

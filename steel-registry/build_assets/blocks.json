@@ -46763,7 +46763,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -46807,7 +46807,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -46851,7 +46851,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -46895,7 +46895,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -46939,7 +46939,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -46983,7 +46983,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -47027,7 +47027,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -47071,7 +47071,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -47115,7 +47115,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -47159,7 +47159,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -50163,7 +50163,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -50306,7 +50306,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -50449,7 +50449,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -50592,7 +50592,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -50735,7 +50735,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -50878,7 +50878,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -51021,7 +51021,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -51164,7 +51164,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -51307,7 +51307,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -51450,7 +51450,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -51593,7 +51593,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -51736,7 +51736,7 @@
       ],
       "default_properties": [
         "bool_false",
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -130059,7 +130059,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130101,7 +130101,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130143,7 +130143,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130185,7 +130185,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130227,7 +130227,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130269,7 +130269,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130311,7 +130311,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130353,7 +130353,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130395,7 +130395,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130437,7 +130437,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130479,7 +130479,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130521,7 +130521,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130563,7 +130563,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130605,7 +130605,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130647,7 +130647,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -130689,7 +130689,7 @@
         "ROTATION_16"
       ],
       "default_properties": [
-        "int_0"
+        "int_8"
       ]
     },
     {
@@ -250877,7 +250877,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },
@@ -250921,7 +250921,7 @@
         "WATERLOGGED"
       ],
       "default_properties": [
-        "int_0",
+        "int_8",
         "bool_false"
       ]
     },

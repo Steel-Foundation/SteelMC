@@ -52,8 +52,8 @@ impl NetherClimateSampler {
 
         let noises = NetherNoises {
             n_offset,
-            n_temperature,
-            n_vegetation,
+            n_nether__temperature: n_temperature,
+            n_nether__vegetation: n_vegetation,
         };
 
         Self {

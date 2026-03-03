@@ -73,6 +73,7 @@
     "minecraft:wandering_trader/emerald_wildflowers",
     "minecraft:wandering_trader/emerald_dry_tall_grass",
     "minecraft:wandering_trader/emerald_firefly_bush",
-    "minecraft:wandering_trader/emerald_golden_dandelion"
+    "minecraft:wandering_trader/emerald_golden_dandelion",
+    "minecraft:wandering_trader/emerald_name_tag"
   ]
 }
