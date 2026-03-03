@@ -15,7 +15,8 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt, vanilla_blocks};
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, codec::BitSet, locks::SyncRwLock, types::UpdateFlags,
+    BlockPos, BlockStateId, ChunkPos, SectionPos, codec::BitSet, locks::SyncRwLock,
+    types::UpdateFlags,
 };
 
 use steel_utils::locks::SyncMutex;
@@ -194,6 +195,22 @@ impl LevelChunk {
         let structure_starts = proto_chunk.structure_starts.into_inner();
         let structure_references = proto_chunk.structure_references.into_inner();
 
+        if let Some(world) = level.upgrade() {
+            let mut poi_storage = world.poi_storage.lock();
+            for (i, section) in proto_chunk.sections.sections.iter().enumerate() {
+                let section_y = min_y / 16 + i as i32;
+                let section_pos = SectionPos::new(
+                    proto_chunk.pos.0.x,
+                    section_y,
+                    proto_chunk.pos.0.y,
+                );
+                let guard = section.read();
+                if !guard.is_empty() {
+                    poi_storage.scan_and_populate(&guard, section_pos);
+                }
+            }
+        }
+
         Self {
             sections: proto_chunk.sections,
             pos: proto_chunk.pos,
@@ -244,6 +261,18 @@ impl LevelChunk {
         // Recalculate section counts for random tick optimization
         for section in &sections.sections {
             section.write().recalculate_counts();
+        }
+
+        if let Some(world) = level.upgrade() {
+            let mut poi_storage = world.poi_storage.lock();
+            for (i, section) in sections.sections.iter().enumerate() {
+                let section_y = min_y / 16 + i as i32;
+                let section_pos = SectionPos::new(pos.0.x, section_y, pos.0.y);
+                let guard = section.read();
+                if !guard.is_empty() {
+                    poi_storage.scan_and_populate(&guard, section_pos);
+                }
+            }
         }
 
         Self {
@@ -512,6 +541,14 @@ impl LevelChunk {
             .get_block();
         if !ptr::eq(current_block, new_block) {
             return None;
+        }
+
+        // Update POI storage when block states change
+        if let Some(level) = self.get_level() {
+            level
+                .poi_storage
+                .lock()
+                .on_block_state_change(pos, old_state, state);
         }
 
         if let Some(level) = self.get_level() {

@@ -123,6 +123,8 @@ pub struct World {
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
     sub_tick_count: AtomicI64,
+    /// Point of interest storage for efficient spatial queries of special blocks.
+    pub poi_storage: SyncMutex<crate::poi::PointOfInterestStorage>,
 }
 
 impl World {
@@ -195,6 +197,7 @@ impl World {
             entity_tracker: EntityTracker::new(),
             weather: SyncMutex::new(weather),
             sub_tick_count: AtomicI64::new(0),
+            poi_storage: SyncMutex::new(crate::poi::PointOfInterestStorage::new()),
         }))
     }
 

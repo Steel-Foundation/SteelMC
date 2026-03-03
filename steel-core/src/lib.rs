@@ -15,6 +15,7 @@ pub mod inventory;
 pub mod level_data;
 pub mod physics;
 pub mod player;
+pub mod poi;
 pub mod server;
 pub mod world;
 pub mod worldgen;

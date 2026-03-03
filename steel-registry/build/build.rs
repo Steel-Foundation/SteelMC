@@ -20,6 +20,7 @@ mod fluids;
 
 mod frog_variants;
 mod game_rules;
+mod poi_types;
 mod instruments;
 mod item_tags;
 mod items;
@@ -80,6 +81,7 @@ const VANILLA_ENTITIES: &str = "entities";
 const ENTITY_DATA: &str = "entity_data";
 const FLUIDS: &str = "fluids";
 const FLUID_TAGS: &str = "fluid_tags";
+const POI_TYPES: &str = "poi_types";
 
 const LOOT_TABLES: &str = "loot_tables";
 const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
@@ -147,6 +149,7 @@ pub fn main() {
         (multi_noise::build(), MULTI_NOISE),
         (noise_parameters::build(), NOISE_PARAMETERS),
         (density_functions::build(), DENSITY_FUNCTIONS),
+        (poi_types::build(), POI_TYPES),
     ];
 
     // Track which files we're generating this run
