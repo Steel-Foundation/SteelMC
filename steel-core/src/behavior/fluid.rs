@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use steel_registry::REGISTRY;
 use steel_registry::fluid::FluidRef;
 
-use crate::fluid::{EmptyFluid, FluidBehaviour};
+use crate::fluid::{EmptyFluid, FluidBehavior};
 
 /// Wrapper for the global fluid behavior registry that implements `Deref`.
 pub struct FluidBehaviorLock(pub OnceLock<FluidBehaviorRegistry>);
@@ -29,7 +29,7 @@ pub static FLUID_BEHAVIORS: FluidBehaviorLock = FluidBehaviorLock(OnceLock::new(
 /// Created after the main registry is frozen. All fluids are initialized with
 /// default behavior (EmptyFluid), then custom behaviors are registered.
 pub struct FluidBehaviorRegistry {
-    behaviors: Vec<Box<dyn FluidBehaviour>>,
+    behaviors: Vec<Box<dyn FluidBehavior>>,
 }
 
 impl FluidBehaviorRegistry {
@@ -37,7 +37,7 @@ impl FluidBehaviorRegistry {
     #[must_use]
     pub fn new() -> Self {
         let fluid_count = REGISTRY.fluids.len();
-        let mut behaviors: Vec<Box<dyn FluidBehaviour>> = Vec::with_capacity(fluid_count);
+        let mut behaviors: Vec<Box<dyn FluidBehavior>> = Vec::with_capacity(fluid_count);
 
         // Initialize all fluids with default behavior (EmptyFluid)
         for _ in 0..fluid_count {
@@ -48,14 +48,14 @@ impl FluidBehaviorRegistry {
     }
 
     /// Sets a custom behavior for a fluid.
-    pub fn set_behavior(&mut self, fluid: FluidRef, behavior: Box<dyn FluidBehaviour>) {
+    pub fn set_behavior(&mut self, fluid: FluidRef, behavior: Box<dyn FluidBehavior>) {
         let id = *REGISTRY.fluids.get_id(fluid).unwrap();
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for a fluid.
     #[must_use]
-    pub fn get_behavior(&self, fluid: FluidRef) -> &dyn FluidBehaviour {
+    pub fn get_behavior(&self, fluid: FluidRef) -> &dyn FluidBehavior {
         let id = *REGISTRY.fluids.get_id(fluid).unwrap();
         self.behaviors[id].as_ref()
     }

@@ -19,8 +19,8 @@ use steel_utils::types::UpdateFlags;
 
 use crate::world::World;
 
-use super::{
-    FluidBehaviour, FluidRef, FluidState, can_hold_any_fluid, fluid_state_to_block,
+use crate::fluid::{
+    FluidBehavior, FluidRef, FluidState, can_hold_any_fluid, fluid_state_to_block,
     get_fluid_state, get_new_liquid, get_spread, is_hole, is_lava, is_water, lava_id,
 };
 
@@ -222,7 +222,7 @@ impl LavaFluid {
     }
 }
 
-impl FluidBehaviour for LavaFluid {
+impl FluidBehavior for LavaFluid {
     fn fluid_type(&self) -> FluidRef {
         lava_id()
     }

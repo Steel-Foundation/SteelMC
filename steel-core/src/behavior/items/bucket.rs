@@ -28,8 +28,9 @@ use steel_utils::types::UpdateFlags;
 use crate::behavior::ItemBehavior;
 use crate::behavior::context::InteractionResult;
 use crate::entity::Entity;
-use crate::fluid::flowing::{get_fluid_state_from_block, is_lava_state, is_water_state};
+use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
 use crate::player::Player;
+use crate::world::World;
 
 /// Computes the start (eye position) and end positions for a raytrace.
 fn get_ray_endpoints(player: &Player) -> (Vector3<f64>, Vector3<f64>) {
@@ -55,6 +56,30 @@ fn is_source_fluid(state: BlockStateId, block: BlockRef) -> bool {
     }
 
     state.try_get_value(&BlockStateProperties::LEVEL) == Some(0)
+}
+
+
+pub trait BucketPickup {
+    /// Called when a player uses an empty bucket on this block.
+    ///
+    /// Should:
+    /// - Remove or modify the block
+    /// - Return the filled bucket item to give
+    ///
+    /// Return None if pickup failed.
+    fn pickup_block(
+        &self,
+        world: &mut World,
+        pos: BlockPos,
+        state: BlockStateId,
+        player: Option<&Player>,
+    ) -> Option<PickupResult>;
+}
+
+pub struct PickupResult {
+    pub resulting_block_state: BlockStateId,
+    pub filled_bucket: ItemRef,
+    pub sound: Option<i32>,
 }
 
 /// Behavior for filled bucket items (water bucket, lava bucket)

@@ -9,14 +9,12 @@
 use rustc_hash::FxHashMap;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::shapes::is_shape_full_block;
 use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
-use crate::fluid::get_fluid_state_from_block;
 use crate::world::World;
-
+use crate::fluid::collision::can_pass_horizontally_internal;
 /// Context for fluid spread calculations with local caching.
 ///
 /// This is created fresh for each `get_spread()` call and caches:
@@ -83,7 +81,7 @@ impl<'a> SpreadContext<'a> {
         *self
             .hole_cache
             .entry(key)
-            .or_insert_with(|| is_hole_internal(self.world, pos, fluid_id))
+            .or_insert_with(|| crate::fluid::is_hole(self.world, &pos, fluid_id))
     }
 
     /// Checks if fluid can pass horizontally to the given position.
@@ -92,37 +90,7 @@ impl<'a> SpreadContext<'a> {
     #[must_use]
     pub fn can_pass_horizontally(&mut self, pos: BlockPos, fluid_id: FluidRef) -> bool {
         let state = self.get_block_state(pos);
-        let block = state.get_block();
-
-        // Can always pass through air and replaceable blocks
-        if block.config.is_air || block.config.replaceable {
-            return true;
-        }
-
-        // Check collision shape
-        let shape = state.get_collision_shape();
-
-        // If shape is a full block, can't pass through (unless same fluid)
-        if is_shape_full_block(shape) {
-            let fluid_state = get_fluid_state_from_block(state);
-            if std::ptr::eq(fluid_state.fluid_id, fluid_id) && !fluid_state.is_source() {
-                return true;
-            }
-            return false;
-        }
-
-        // If shape is empty, can pass through
-        if shape.is_empty() {
-            return true;
-        }
-
-        // Can flow into same fluid type if not source
-        let fluid_state = get_fluid_state_from_block(state);
-        if std::ptr::eq(fluid_state.fluid_id, fluid_id) && !fluid_state.is_source() {
-            return true;
-        }
-
-        false
+        can_pass_horizontally_internal(state, fluid_id)
     }
 
     /// Returns a reference to the world.
@@ -130,47 +98,4 @@ impl<'a> SpreadContext<'a> {
     pub fn world(&self) -> &'a World {
         self.world
     }
-}
-
-/// Internal helper for hole check that doesn't use caching.
-/// This is used by `SpreadContext` for cache misses.
-pub fn is_hole_internal(world: &World, pos: BlockPos, fluid_id: FluidRef) -> bool {
-    let below_pos = pos.offset(0, -1, 0);
-
-    if !world.is_in_valid_bounds(&below_pos) {
-        return false;
-    }
-
-    let below_state = world.get_block_state(&below_pos);
-    let below_block = below_state.get_block();
-
-    // Air/replaceable below = hole (can flow down)
-    if below_block.config.is_air || below_block.config.replaceable {
-        return true;
-    }
-
-    // Check if we can pass through the block below
-    // This is similar to can_pass_horizontally but for downward flow
-    let below_shape = below_state.get_collision_shape();
-    if is_shape_full_block(below_shape) {
-        // Full block below - check if it's the same fluid type
-        let below_fluid = get_fluid_state_from_block(below_state);
-        if std::ptr::eq(below_fluid.fluid_id, fluid_id) && !below_fluid.is_source() {
-            return true;
-        }
-        return false;
-    }
-
-    // Empty or non-full shape = can flow into it
-    if below_shape.is_empty() {
-        return true;
-    }
-
-    // Can flow into same fluid type
-    let below_fluid = get_fluid_state_from_block(below_state);
-    if std::ptr::eq(below_fluid.fluid_id, fluid_id) && !below_fluid.is_source() {
-        return true;
-    }
-
-    false
 }

@@ -9,14 +9,14 @@ use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_fluids;
 use steel_utils::types::BlockPos;
 
-use crate::fluid::FluidBehaviour;
+use crate::fluid::FluidBehavior;
 use crate::fluid::FluidState;
 use crate::world::World;
 
 /// Empty fluid behavior - represents the absence of fluid.
 pub struct EmptyFluid;
 
-impl FluidBehaviour for EmptyFluid {
+impl FluidBehavior for EmptyFluid {
     fn fluid_type(&self) -> FluidRef {
         &vanilla_fluids::EMPTY
     }

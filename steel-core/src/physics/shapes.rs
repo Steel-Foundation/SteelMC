@@ -3,8 +3,9 @@
 //! Implements vanilla's `Shapes` class methods for AABB-list based collision.
 //! Uses the existing `VoxelShape` type (slice of AABBs) from steel-registry.
 
-use steel_registry::blocks::shapes::{AABB, AABBd};
+use steel_registry::blocks::shapes::{AABB, AABBd, VoxelShape, is_shape_full_block};
 use steel_utils::math::{Axis, Vector3};
+use steel_registry::blocks::properties::Direction;
 
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
 ///
@@ -330,4 +331,84 @@ mod tests {
         assert_eq!(result.max_y, 64.5);
         assert_eq!(result.max_z, -4.0);
     }
+}
+
+/// Checks if two voxel shapes fully occlude the face between them.
+/// Returns true if fluid/objects cannot pass through the face.
+///
+/// Uses a 16x16 grid rasterization of the face to check if the union
+/// of both shapes completely covers the face.
+#[must_use]
+pub fn merged_face_occludes(shape1: VoxelShape, shape2: VoxelShape, direction: Direction) -> bool {
+    // Fast path for empty/full shapes
+    let is_s1_full = is_shape_full_block(shape1);
+    let is_s2_full = is_shape_full_block(shape2);
+    
+    if is_s1_full && is_s2_full {
+        return true;
+    }
+    
+    if shape1.is_empty() && shape2.is_empty() {
+        return false;
+    }
+
+    let mut grid = [false; 256];
+    let mut coverage_count = 0;
+
+    // Project shape1
+    coverage_count += project_shape_onto_grid(shape1, direction, &mut grid);
+    if coverage_count == 256 {
+        return true;
+    }
+
+    // Project shape2
+    coverage_count += project_shape_onto_grid(shape2, direction.opposite(), &mut grid);
+    coverage_count == 256
+}
+
+fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool; 256]) -> usize {
+    let mut added_coverage = 0;
+    
+    for aabb in shape {
+        let touches_face = match face {
+            Direction::Down => aabb.min_y <= 1.0e-5,
+            Direction::Up => aabb.max_y >= 1.0 - 1.0e-5,
+            Direction::North => aabb.min_z <= 1.0e-5,
+            Direction::South => aabb.max_z >= 1.0 - 1.0e-5,
+            Direction::West => aabb.min_x <= 1.0e-5,
+            Direction::East => aabb.max_x >= 1.0 - 1.0e-5,
+        };
+
+        if !touches_face {
+            continue;
+        }
+
+        let (min_u, max_u, min_v, max_v) = match face {
+            Direction::Down | Direction::Up => (aabb.min_x, aabb.max_x, aabb.min_z, aabb.max_z),
+            Direction::North | Direction::South => (aabb.min_x, aabb.max_x, aabb.min_y, aabb.max_y),
+            Direction::West | Direction::East => (aabb.min_z, aabb.max_z, aabb.min_y, aabb.max_y),
+        };
+
+        let u_start = (min_u * 16.0).round() as i32;
+        let u_end = (max_u * 16.0).round() as i32;
+        let v_start = (min_v * 16.0).round() as i32;
+        let v_end = (max_v * 16.0).round() as i32;
+
+        let u_start = u_start.clamp(0, 16) as usize;
+        let u_end = u_end.clamp(0, 16) as usize;
+        let v_start = v_start.clamp(0, 16) as usize;
+        let v_end = v_end.clamp(0, 16) as usize;
+
+        for u in u_start..u_end {
+            for v in v_start..v_end {
+                let idx = u * 16 + v;
+                if !grid[idx] {
+                    grid[idx] = true;
+                    added_coverage += 1;
+                }
+            }
+        }
+    }
+    
+    added_coverage
 }
