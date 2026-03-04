@@ -141,7 +141,9 @@ impl PointOfInterestStorage {
     }
 
     pub fn release_ticket(&self, pos: BlockPos) -> bool {
-        self.with_poi_mut(pos, |poi| poi.release_ticket(max_tickets_for(poi.poi_type_id)))
+        self.with_poi_mut(pos, |poi| {
+            poi.release_ticket(max_tickets_for(poi.poi_type_id))
+        })
     }
 
     pub fn get_in_chunk(

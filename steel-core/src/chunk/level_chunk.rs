@@ -199,11 +199,8 @@ impl LevelChunk {
             let mut poi_storage = world.poi_storage.lock();
             for (i, section) in proto_chunk.sections.sections.iter().enumerate() {
                 let section_y = min_y / 16 + i as i32;
-                let section_pos = SectionPos::new(
-                    proto_chunk.pos.0.x,
-                    section_y,
-                    proto_chunk.pos.0.y,
-                );
+                let section_pos =
+                    SectionPos::new(proto_chunk.pos.0.x, section_y, proto_chunk.pos.0.y);
                 let guard = section.read();
                 if !guard.is_empty() {
                     poi_storage.scan_and_populate(&guard, section_pos);

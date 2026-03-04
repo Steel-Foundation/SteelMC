@@ -20,7 +20,6 @@ mod fluids;
 
 mod frog_variants;
 mod game_rules;
-mod poi_types;
 mod instruments;
 mod item_tags;
 mod items;
@@ -31,6 +30,7 @@ mod menu_types;
 mod packets;
 mod painting_variants;
 mod pig_variants;
+mod poi_types;
 mod recipes;
 mod sound_events;
 mod sound_types;

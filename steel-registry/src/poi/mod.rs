@@ -77,7 +77,6 @@ impl PoiTypeRegistry {
         self.types_by_key.get(key).and_then(|id| self.by_id(*id))
     }
 
-    /// The critical lookup used during chunk scanning and block changes.
     #[must_use]
     pub fn type_for_state(&self, state_id: BlockStateId) -> Option<PoiTypeRef> {
         self.state_to_type
