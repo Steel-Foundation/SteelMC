@@ -38,9 +38,16 @@ use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 
-use crate::fluid::get_fluid_state_from_block;
+
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
+
+pub enum RaytraceAction {
+    Pass,
+    CheckShape,
+    ImmediateHit,
+}
+
 use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
@@ -1277,7 +1284,7 @@ impl World {
         let bounding_boxes = state.get_outline_shape();
 
         if bounding_boxes.is_empty() {
-            return (true, None);
+            return (false, None);
         }
 
         for shape in bounding_boxes {
@@ -1392,7 +1399,7 @@ impl World {
         hit_check: F,
     ) -> (Option<BlockPos>, Option<Direction>)
     where
-        F: Fn(&BlockPos, &Self) -> bool,
+        F: Fn(&BlockPos, &Self) -> crate::world::RaytraceAction,
     {
         if start_pos == end_pos {
             return (None, None);
@@ -1408,11 +1415,15 @@ impl World {
             from.z.floor() as i32,
         );
 
-        if hit_check(&block, self) {
-            let (hit, face) = self.ray_outline_check(&block, start_pos, end_pos);
-            if hit {
-                return (Some(block), face);
+        match hit_check(&block, self) {
+            crate::world::RaytraceAction::ImmediateHit => return (Some(block), None),
+            crate::world::RaytraceAction::CheckShape => {
+                let (hit, face) = self.ray_outline_check(&block, start_pos, end_pos);
+                if hit {
+                    return (Some(block), face);
+                }
             }
+            crate::world::RaytraceAction::Pass => {}
         }
 
         let difference = to.sub(&from);
@@ -1489,20 +1500,17 @@ impl World {
                 }
             };
 
-            let state = self.get_block_state(&block);
-
-            // Check if it's a fluid block
-            let fluid_state = get_fluid_state_from_block(state);
-            if !fluid_state.is_empty() && fluid_state.is_source() {
-                return (Some(block), Some(block_direction));
-            }
-
-            // normal block test
-            if hit_check(&block, self) {
-                let (hit, face) = self.ray_outline_check(&block, start_pos, end_pos);
-                if hit {
-                    return (Some(block), face);
+            match hit_check(&block, self) {
+                crate::world::RaytraceAction::ImmediateHit => {
+                    return (Some(block), Some(block_direction));
                 }
+                crate::world::RaytraceAction::CheckShape => {
+                    let (hit, face) = self.ray_outline_check(&block, start_pos, end_pos);
+                    if hit {
+                        return (Some(block), face);
+                    }
+                }
+                crate::world::RaytraceAction::Pass => {}
             }
         }
 

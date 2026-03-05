@@ -2,7 +2,6 @@
 //!
 //! Represents the absence of fluid in a block space.
 //!
-// TODO: This file is minimal - consider if EmptyFluid needs more methods when modded fluids are added
 
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidRef;
@@ -29,15 +28,15 @@ impl FluidBehavior for EmptyFluid {
         // Vanilla: nothing
     }
 
-    fn tick_delay(&self) -> u32 {
+    fn tick_delay(&self, _world: &World) -> i32 {
         0
     }
 
-    fn drop_off(&self) -> u8 {
+    fn drop_off(&self, _world: &World) -> u8 {
         0
     }
 
-    fn slope_find_distance(&self) -> u8 {
+    fn slope_find_distance(&self, _world: &World) -> u8 {
         0
     }
 

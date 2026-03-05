@@ -15,6 +15,12 @@ use crate::block_entity::SharedBlockEntity;
 use crate::player::Player;
 use crate::world::World;
 
+pub struct PickupResult {
+    pub resulting_block_state: BlockStateId,
+    pub filled_bucket: steel_registry::items::ItemRef,
+    pub sound: Option<i32>,
+}
+
 /// Trait defining the behavior of a block.
 ///
 /// This trait handles all dynamic/functional aspects of blocks:
@@ -23,6 +29,23 @@ use crate::world::World;
 /// - Player interactions
 /// - State changes
 pub trait BlockBehaviour: Send + Sync {
+    /// Called when a player uses an empty bucket on this block.
+    ///
+    /// Should:
+    /// - Remove or modify the block
+    /// - Return the filled bucket item to give
+    ///
+    /// Return None if pickup failed.
+    #[allow(unused_variables)]
+    fn pickup_block(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        player: Option<&Player>,
+    ) -> Option<PickupResult> {
+        None
+    }
     /// Called when a neighboring block changes shape.
     /// Returns the new state for this block after considering the neighbor change.
     fn update_shape(

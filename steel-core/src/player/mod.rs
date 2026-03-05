@@ -1978,6 +1978,13 @@ impl Player {
             packet.y_rot,
             packet.x_rot
         );
+
+        // Ack block changes up to this sequence number.
+        // Vanilla: handleUseItem calls ackBlockChangesUpTo(packet.getSequence()) first.
+        // Without this, client-side prediction stays active and overrides server block updates
+        // (e.g. water regeneration after picking it up with a bucket is invisible to the actor).
+        self.ack_block_changes_up_to(packet.sequence);
+
         // Call use_item
         let result = game_mode::use_item(self, &self.world, packet.hand);
 

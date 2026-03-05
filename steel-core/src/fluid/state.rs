@@ -63,13 +63,12 @@ pub fn fluid_state_to_block_with_existing(fluid_state: FluidState, existing_stat
         return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
     } 
     
-    // If it's water, check if the block can be waterlogged
+    // If it's water, check if the block can be waterlogged.
+    // Vanilla's FlowingFluid.spreadTo() calls LiquidBlockContainer.placeLiquid()
+    // for any fluid level (source or flowing), so we waterlog regardless of amount.
     if is_water(fluid_id) {
         if existing_state.try_get_value(&BlockStateProperties::WATERLOGGED).is_some() {
-            // Can only waterlog with source blocks in vanilla (or level 8)
-            if fluid_state.is_source() {
-                return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
-            }
+            return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
         }
         
         // If not waterloggable, fall back to pure water block
@@ -151,4 +150,36 @@ pub fn water_id() -> FluidRef {
 #[must_use]
 pub fn lava_id() -> FluidRef {
     &vanilla_fluids::LAVA
+}
+
+/// Returns the fluid's own height as a fraction of a full block.
+///
+/// Vanilla parity: `FlowingFluid.getOwnHeight(FluidState)`.
+/// `amount / 9.0` — source blocks have `amount = 8`, giving `0.888..`.
+/// Flowing blocks range from `amount = 1` (thin) to `7` (tall).
+#[must_use]
+pub fn get_own_height(fluid_state: FluidState) -> f32 {
+    fluid_state.amount as f32 / 9.0
+}
+
+/// Returns the effective fluid height at a position, accounting for fluid above.
+///
+/// Vanilla parity: `FlowingFluid.getHeight(FluidState, BlockGetter, BlockPos)`.
+///
+/// If the same fluid type occupies the block directly above (`hasSameAbove`),
+/// the height is `1.0` (full block). Otherwise it is `get_own_height(fluid_state)`.
+///
+/// This matters for:
+/// - `LavaFluid.canBeReplacedWith` (threshold `>= 0.444`)
+/// - `LavaFluid.getSpreadDelay` (uphill detection via height comparison)
+/// - Entity head-in-fluid detection (future)
+#[must_use]
+pub fn get_height(world: &crate::world::World, pos: &BlockPos, fluid_state: FluidState) -> f32 {
+    let above = pos.offset(0, 1, 0);
+    let above_fluid = get_fluid_state(world, &above);
+    if std::ptr::eq(above_fluid.fluid_id, fluid_state.fluid_id) {
+        1.0
+    } else {
+        get_own_height(fluid_state)
+    }
 }

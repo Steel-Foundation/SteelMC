@@ -82,7 +82,9 @@ impl LiquidBlock {
                 };
 
                 let new_state = REGISTRY.blocks.get_default_state_id(new_block);
-                world.set_block(pos, new_state, UpdateFlags::UPDATE_IMMEDIATE);
+                // UPDATE_ALL_IMMEDIATE so neighbor blocks (e.g. the water that triggered
+                // this) also receive shape and neighbor-changed updates.
+                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
                 return false; // Don't schedule fluid tick - block was converted
             }
 
@@ -114,25 +116,28 @@ impl BlockBehaviour for LiquidBlock {
     /// Called when the block is placed.
     fn on_place(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &World,
         pos: BlockPos,
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        // DEADLOCK WARNING: Calling should_spread_liquid here causes deadlock
-        // because set_block holds chunk locks when calling on_place, and
-        // should_spread_liquid needs to read neighbor block states.
+        // NOTE: The old deadlock warning here is no longer valid.
         //
-        // If you uncomment the line below, placing lava will deadlock the server:
-        // if self.should_spread_liquid(world, pos, state) {
-        //     world.schedule_fluid_tick_default(pos, self.fluid, self.fluid.tick_delay as i32);
-        // }
+        // The section write lock in LevelChunk::set_block_state is a temporary guard
+        // dropped at the end of `.write().set_block_state(…)`, well before on_place is
+        // called (level_chunk.rs line ~542). Reading neighbour block states from on_place
+        // only acquires read locks, which is perfectly safe under parking_lot's RwLock.
         //
-        // For now, we just schedule the tick and let the fluid behavior handle
-        // the interaction check when the tick fires (outside of set_block locks).
-        world.schedule_fluid_tick_default(pos, self.fluid, self.fluid.tick_delay as i32);
+        // Vanilla parity: LiquidBlock.onPlace calls shouldSpreadLiquid immediately so
+        // that lava placed or spread next to water converts to cobblestone/obsidian
+        // without any visible intermediate lava state.
+        if self.should_spread_liquid(world, pos, state) {
+            let delay = crate::behavior::FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+            world.schedule_fluid_tick_default(pos, self.fluid, delay);
+        }
     }
+
 
     /// Called when a neighboring block changes.
     ///
@@ -148,7 +153,8 @@ impl BlockBehaviour for LiquidBlock {
     ) {
         // This is safe because we're not inside set_block locks
         if self.should_spread_liquid(world, pos, state) {
-            world.schedule_fluid_tick_default(pos, self.fluid, self.fluid.tick_delay as i32);
+            let delay = crate::behavior::FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+            world.schedule_fluid_tick_default(pos, self.fluid, delay);
         }
     }
 
@@ -166,13 +172,48 @@ impl BlockBehaviour for LiquidBlock {
         let neighbor_fluid = crate::fluid::get_fluid_state_from_block(neighbor_state);
 
         if fluid_state.is_source() || neighbor_fluid.is_source() {
+            let delay = crate::behavior::FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
             world.schedule_fluid_tick_default(
                 pos.clone(),
                 self.fluid,
-                self.fluid.tick_delay as i32,
+                delay,
             );
         }
 
         state
+    }
+
+    fn pickup_block(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        _player: Option<&crate::player::Player>,
+    ) -> Option<crate::behavior::block::PickupResult> {
+        if state.try_get_value(&steel_registry::blocks::properties::BlockStateProperties::LEVEL) == Some(0) {
+            let air = steel_registry::REGISTRY.blocks.get_default_state_id(steel_registry::vanilla_blocks::AIR);
+            world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+
+            // Give the right bucket based on the liquid type
+            let bucket = if std::ptr::eq(self.block, steel_registry::vanilla_blocks::WATER) {
+                &steel_registry::vanilla_items::ITEMS.water_bucket
+            } else {
+                &steel_registry::vanilla_items::ITEMS.lava_bucket
+            };
+
+            let sound = if std::ptr::eq(self.block, steel_registry::vanilla_blocks::WATER) {
+                steel_registry::sound_events::ITEM_BUCKET_FILL
+            } else {
+                steel_registry::sound_events::ITEM_BUCKET_FILL_LAVA
+            };
+
+            Some(crate::behavior::block::PickupResult {
+                resulting_block_state: air,
+                filled_bucket: bucket,
+                sound: Some(sound),
+            })
+        } else {
+            None
+        }
     }
 }

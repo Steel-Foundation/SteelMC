@@ -98,9 +98,13 @@ impl FluidState {
     }
 
     /// Returns true if this is a source block (full fluid, not falling).
+    ///
+    /// Checks both the registry `fluid_id.is_source` flag (primary discriminator,
+    /// equivalent to vanilla checking if the type is a `SourceFluid`) and the
+    /// data invariant `amount == 8 && !falling`, guarding against malformed chunk data.
     #[must_use]
     pub const fn is_source(&self) -> bool {
-        self.amount == 8 && !self.falling
+        self.fluid_id.is_source && self.amount == 8 && !self.falling
     }
 
     /// Returns the fluid's own height (0.0 to ~0.89).

@@ -101,9 +101,33 @@ impl BlockStateExt for BlockStateId {
             return false;
         }
 
-        // Check if the collision shape is a full block
         let shape = self.get_collision_shape();
-        blocks::shapes::is_shape_full_block(shape)
+        if shape.is_empty() {
+            return false;
+        }
+
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut min_z = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        let mut max_z = f32::MIN;
+
+        for aabb in shape {
+            min_x = min_x.min(aabb.min_x);
+            min_y = min_y.min(aabb.min_y);
+            min_z = min_z.min(aabb.min_z);
+            max_x = max_x.max(aabb.max_x);
+            max_y = max_y.max(aabb.max_y);
+            max_z = max_z.max(aabb.max_z);
+        }
+
+        let dx = (max_x - min_x) as f64;
+        let dy = (max_y - min_y) as f64;
+        let dz = (max_z - min_z) as f64;
+        let volume = dx * dy * dz;
+
+        volume >= 0.7291666666666666 || dy >= 1.0
     }
 
     fn is_replaceable(&self) -> bool {
@@ -123,18 +147,14 @@ impl FluidReplaceableExt for BlockStateId {
             return true;
         }
 
-        // Bloc contenant déjà un fluide
-        //if self.contains_fluid() {
-        //    return false;
-        //}
-
         if std::ptr::eq(fluid, vanilla_blocks::WATER)
             && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)
         {
             return true;
         }
 
-        block.config.replaceable
+        // Like vanilla's `BlockState.canBeReplaced(Fluid)`
+        block.config.replaceable || !self.is_solid()
     }
 }
 

@@ -13,16 +13,17 @@
 //! - Bucket place/pickup mechanics
 //! - Basic Collision checking with VoxelShapes (`can_pass_through_wall` using `merged_face_occludes`)
 //! - Basic Waterlogging (preserves `WATERLOGGED` block states when fluids flow down/horizontally)
+//! - Block Exclusions in `can_hold_any_fluid` (doors, signs, ladders, sugar canes, portals, etc.)
+//! - VoxelShape checks for downward flow (`can_spread_down` uses `can_pass_through_wall`)
+//! - Block destruction effects when fluid replaces non-air blocks (`beforeDestroyingBlock`)
 //! 
 //! ### TODO: PARITY ❌ (What's Missing)
 //! - TODO: PARITY: Full `LiquidBlockContainer` API (so blocks like stairs/slabs can dynamically `canPlaceLiquid` / `placeLiquid`).
-//! - TODO: PARITY: Block Exclusions in `can_hold_any_fluid` (prevent flow through doors, signs, ladders, sugar canes, gates).
-//! - TODO: PARITY: Lava/Water Chemistry (generate Obsidian, Cobblestone, Stone when fluids mix).
-//! - TODO: PARITY: Tick Scheduling (Fluids need to be scheduled on a tick list like Vanilla, not just immediate arbitrary updates).
-//! - TODO: PARITY: Dimension-based Lava Flow (Lava flows 8 blocks in Nether, 4 in Overworld, with different tick speeds).
-//! - TODO: PARITY: Sound & Particle Events (Fizzing sounds, bubbling particles).
+//! - TODO: PARITY: Tick Scheduling (Implement proper enqueueing logic instead of just UPDATE_ALL_IMMEDIATE when fluids *spread*)
+//! - TODO: PARITY: Particle Events (underwater bubbles, splash — needs `CLevelParticles` packet).
 //! - TODO: PARITY: Entity Interactions (pushing, drowning, extinguishing, lava damage).
-//! - TODO: PARITY: Fluid Tags (`minecraft:water`, `minecraft:lava`).
+//! - TODO: PARITY: Block item drops when water destroys blocks (needs Arc<World> for item spawning).
+//! - TODO: PARITY: Lava random tick fire spread.
 //!
 //! ### Issues ⚠️
 //! - Bucket stacks cause deadlocks (disabled)
@@ -42,12 +43,14 @@ pub use steel_registry::fluid::{Fluid, FluidRef, FluidState};
 // Re-export specific structs/functions
 pub use fluids::{EmptyFluid, LavaFluid, WaterFluid};
 pub use fluid_behavior::FluidBehavior;
-pub use flowing_fluid::FlowingFluidBehavior;
+pub use flowing_fluid::FlowingFluid;
 
 // Re-export utility functions from their respective modules
-pub use collision::{can_hold_any_fluid, can_pass_through_wall};
+pub use collision::{can_hold_any_fluid, can_hold_any_fluid_state, can_pass_through_wall};
 pub use state::{
-    fluid_state_to_block, get_fluid_state, get_fluid_state_from_block, 
+    fluid_state_to_block, fluid_state_to_block_with_existing, get_fluid_state, get_fluid_state_from_block,
+    get_height, get_own_height,
     is_lava, is_lava_state, is_water, is_water_state, lava_id, water_id,
 };
 pub use conversion::{get_new_liquid, get_spread, is_hole};
+

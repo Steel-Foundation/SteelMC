@@ -61,6 +61,8 @@ use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
+use crate::fluid::{FlowingFluid, FluidBehavior, LavaFluid, WaterFluid};
+
 /// Wrapper for the global block behavior registry that implements `Deref`.
 pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
 
@@ -146,15 +148,22 @@ pub fn init_behaviors() {
     );
 
     let mut fluid_behaviors = FluidBehaviorRegistry::new();
-    fluid_behaviors.set_behavior(&vanilla_fluids::WATER, Box::new(crate::fluid::WaterFluid));
+
+    // Water: WaterFluid implements FluidBehavior directly
+    let water_behavior: Box<dyn FluidBehavior> = Box::new(WaterFluid);
+    // Both WATER and FLOWING_WATER share the same behavior
+    fluid_behaviors.set_behavior(&vanilla_fluids::WATER, water_behavior);
     fluid_behaviors.set_behavior(
         &vanilla_fluids::FLOWING_WATER,
-        Box::new(crate::fluid::WaterFluid),
+        Box::new(WaterFluid),
     );
-    fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, Box::new(crate::fluid::LavaFluid));
+
+    // Lava: LavaFluid implements FluidBehavior directly
+    let lava_behavior: Box<dyn FluidBehavior> = Box::new(LavaFluid);
+    fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, lava_behavior);
     fluid_behaviors.set_behavior(
         &vanilla_fluids::FLOWING_LAVA,
-        Box::new(crate::fluid::LavaFluid),
+        Box::new(LavaFluid),
     );
 
     assert!(
