@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! World-level POI storage manager.
 
 use rustc_hash::FxHashMap;

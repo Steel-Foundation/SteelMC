@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 pub mod poi_instance;
 pub mod poi_set;
 pub mod poi_storage;

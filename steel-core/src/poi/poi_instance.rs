@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use steel_utils::BlockPos;
 
 #[derive(Debug, Clone)]

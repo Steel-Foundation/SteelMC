@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::poi_instance::PointOfInterest;
@@ -191,7 +193,7 @@ mod tests {
         assert_eq!(set.get_by_type(1, OccupationStatus::Any, 1).len(), 1);
         assert_eq!(set.get_by_type(0, OccupationStatus::Free, 1).len(), 2);
 
-        set.get_mut(p1).unwrap().reserve_ticket();
+        set.get_mut(p1).expect("p1 was just added").reserve_ticket();
         assert_eq!(set.get_by_type(0, OccupationStatus::Free, 1).len(), 1);
         assert_eq!(set.get_by_type(0, OccupationStatus::Occupied, 1).len(), 1);
     }
