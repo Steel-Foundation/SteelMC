@@ -31,13 +31,13 @@ impl PointOfInterestSet {
 
     #[inline]
     #[must_use]
-    pub fn pack_local_pos(x: u8, y: u8, z: u8) -> u16 {
-        u16::from(y) << 8 | u16::from(z) << 4 | u16::from(x)
+    pub const fn pack_local_pos(x: u8, y: u8, z: u8) -> u16 {
+        (y as u16) << 8 | (z as u16) << 4 | (x as u16)
     }
 
     #[inline]
     #[must_use]
-    pub fn unpack_local_pos(packed: u16) -> (u8, u8, u8) {
+    pub const fn unpack_local_pos(packed: u16) -> (u8, u8, u8) {
         let x = (packed & 0xF) as u8;
         let z = ((packed >> 4) & 0xF) as u8;
         let y = ((packed >> 8) & 0xF) as u8;
@@ -82,6 +82,7 @@ impl PointOfInterestSet {
         self.pois_by_pos.get_mut(&packed_pos)
     }
 
+    #[must_use]
     pub fn get_by_type(
         &self,
         type_id: usize,
@@ -115,11 +116,11 @@ impl PointOfInterestSet {
     }
 
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
+    pub const fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    pub fn clear_dirty(&mut self) {
+    pub const fn clear_dirty(&mut self) {
         self.dirty = false;
     }
 

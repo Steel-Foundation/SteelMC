@@ -18,7 +18,7 @@ pub enum OccupationStatus {
 
 impl OccupationStatus {
     #[must_use]
-    pub fn matches(&self, poi: &PointOfInterest, max_tickets: u32) -> bool {
+    pub const fn matches(&self, poi: &PointOfInterest, max_tickets: u32) -> bool {
         match self {
             Self::Any => true,
             Self::Free => poi.has_space(),
@@ -38,7 +38,7 @@ impl Default for PointOfInterestStorage {
 }
 
 #[inline]
-fn resolve_pos(pos: BlockPos) -> (SectionPos, u16) {
+const fn resolve_pos(pos: BlockPos) -> (SectionPos, u16) {
     let section_pos = SectionPos::from_block_pos(pos);
     let packed = PointOfInterestSet::pack_local_pos(
         (pos.0.x & 15) as u8,
@@ -56,9 +56,9 @@ fn max_tickets_for(type_id: usize) -> u32 {
 }
 
 fn distance_sq(a: BlockPos, b: BlockPos) -> i64 {
-    let dx = (a.0.x - b.0.x) as i64;
-    let dy = (a.0.y - b.0.y) as i64;
-    let dz = (a.0.z - b.0.z) as i64;
+    let dx = i64::from(a.0.x - b.0.x);
+    let dy = i64::from(a.0.y - b.0.y);
+    let dz = i64::from(a.0.z - b.0.z);
     dx * dx + dy * dy + dz * dz
 }
 
@@ -137,9 +137,10 @@ impl PointOfInterestStorage {
     }
 
     pub fn reserve_ticket(&self, pos: BlockPos) -> bool {
-        self.with_poi_mut(pos, |poi| poi.reserve_ticket())
+        self.with_poi_mut(pos, PointOfInterest::reserve_ticket)
     }
 
+    #[must_use]
     pub fn release_ticket(&self, pos: BlockPos) -> bool {
         self.with_poi_mut(pos, |poi| {
             poi.release_ticket(max_tickets_for(poi.poi_type_id))
@@ -221,7 +222,7 @@ impl PointOfInterestStorage {
         radius: i32,
         status: OccupationStatus,
     ) -> Vec<(BlockPos, usize)> {
-        let radius_sq = (radius as i64) * (radius as i64);
+        let radius_sq = i64::from(radius) * i64::from(radius);
         self.get_in_square(type_predicate, center, radius, status)
             .into_iter()
             .filter(|(pos, _)| distance_sq(*pos, center) <= radius_sq)
@@ -265,6 +266,8 @@ impl PointOfInterestStorage {
             .len()
     }
 
+    /// # Panics
+    /// Panics if the POI type registry contains an inconsistent state-to-type mapping.
     pub fn scan_and_populate(&mut self, section: &ChunkSection, section_pos: SectionPos) {
         let registry = &REGISTRY.poi_types;
         let section_lock = self.get_or_create_section(section_pos);
@@ -278,11 +281,13 @@ impl PointOfInterestStorage {
                     let Some(poi_type_id) = registry.type_id_for_state(state_id) else {
                         continue;
                     };
-                    let poi_type = registry.by_id(poi_type_id).unwrap();
+                    let poi_type = registry
+                        .by_id(poi_type_id)
+                        .expect("POI type ID from state lookup must be valid");
                     let block_pos = BlockPos::new(
-                        (section_pos.x() << 4) + x as i32,
-                        (section_pos.y() << 4) + y as i32,
-                        (section_pos.z() << 4) + z as i32,
+                        (section_pos.x() << 4) + i32::from(x),
+                        (section_pos.y() << 4) + i32::from(y),
+                        (section_pos.z() << 4) + i32::from(z),
                     );
                     let packed = PointOfInterestSet::pack_local_pos(x, y, z);
                     set.add(
@@ -294,6 +299,8 @@ impl PointOfInterestStorage {
         }
     }
 
+    /// # Panics
+    /// Panics if the POI type registry contains an inconsistent state-to-type mapping.
     pub fn on_block_state_change(
         &mut self,
         pos: BlockPos,
@@ -313,7 +320,9 @@ impl PointOfInterestStorage {
         }
 
         if let Some(type_id) = new_poi {
-            let poi_type = registry.by_id(type_id).unwrap();
+            let poi_type = registry
+                .by_id(type_id)
+                .expect("POI type ID from state lookup must be valid");
             self.add(pos, type_id, poi_type.ticket_count);
         }
     }

@@ -9,7 +9,7 @@ pub struct PointOfInterest {
 
 impl PointOfInterest {
     #[must_use]
-    pub fn new(pos: BlockPos, poi_type_id: usize, max_tickets: u32) -> Self {
+    pub const fn new(pos: BlockPos, poi_type_id: usize, max_tickets: u32) -> Self {
         Self {
             pos,
             poi_type_id,
@@ -17,7 +17,7 @@ impl PointOfInterest {
         }
     }
 
-    pub fn reserve_ticket(&mut self) -> bool {
+    pub const fn reserve_ticket(&mut self) -> bool {
         if self.free_tickets > 0 {
             self.free_tickets -= 1;
             true
@@ -26,7 +26,7 @@ impl PointOfInterest {
         }
     }
 
-    pub fn release_ticket(&mut self, max_tickets: u32) -> bool {
+    pub const fn release_ticket(&mut self, max_tickets: u32) -> bool {
         if self.free_tickets < max_tickets {
             self.free_tickets += 1;
             true
@@ -36,12 +36,12 @@ impl PointOfInterest {
     }
 
     #[must_use]
-    pub fn has_space(&self) -> bool {
+    pub const fn has_space(&self) -> bool {
         self.free_tickets > 0
     }
 
     #[must_use]
-    pub fn is_occupied(&self, max_tickets: u32) -> bool {
+    pub const fn is_occupied(&self, max_tickets: u32) -> bool {
         self.free_tickets == 0 && max_tickets > 0
     }
 }
