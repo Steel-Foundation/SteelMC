@@ -1,27 +1,19 @@
-use std::fs;
-
-use quote::quote;
-use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, fs};
 
 use crate::items::to_block_const;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct StrippableEntry {
-    from: String,
-    to: String,
-}
+use quote::quote;
 
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/strippables.json");
 
     let strippables_json =
         fs::read_to_string("build/strippables.json").expect("Failed to read strippables.json");
-    let strippables_entries: Vec<StrippableEntry> =
+    let strippables_entries: BTreeMap<String, String> =
         serde_json::from_str(&strippables_json).expect("Failed to parse strippables.json");
 
     let strippables: Vec<proc_macro2::TokenStream> = strippables_entries
         .iter()
-        .map(|entry| (to_block_const(&entry.from), to_block_const(&entry.to)))
+        .map(|(normal, stripped)| (to_block_const(normal), to_block_const(stripped)))
         .map(|(from, to)| quote! { b if ptr::eq(b, vanilla_blocks::#from) => Some(vanilla_blocks::#to) , })
         .collect();
 

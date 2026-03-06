@@ -1,94 +1,25 @@
-[
-  {
-    "from": "oak_wood",
-    "to": "stripped_oak_wood"
-  },
-  {
-    "from": "oak_log",
-    "to": "stripped_oak_log"
-  },
-  {
-    "from": "dark_oak_wood",
-    "to": "stripped_dark_oak_wood"
-  },
-  {
-    "from": "dark_oak_log",
-    "to": "stripped_dark_oak_log"
-  },
-  {
-    "from": "pale_oak_wood",
-    "to": "stripped_pale_oak_wood"
-  },
-  {
-    "from": "pale_oak_log",
-    "to": "stripped_pale_oak_log"
-  },
-  {
-    "from": "acacia_wood",
-    "to": "stripped_acacia_wood"
-  },
-  {
-    "from": "acacia_log",
-    "to": "stripped_acacia_log"
-  },
-  {
-    "from": "cherry_wood",
-    "to": "stripped_cherry_wood"
-  },
-  {
-    "from": "cherry_log",
-    "to": "stripped_cherry_log"
-  },
-  {
-    "from": "birch_wood",
-    "to": "stripped_birch_wood"
-  },
-  {
-    "from": "birch_log",
-    "to": "stripped_birch_log"
-  },
-  {
-    "from": "jungle_wood",
-    "to": "stripped_jungle_wood"
-  },
-  {
-    "from": "jungle_log",
-    "to": "stripped_jungle_log"
-  },
-  {
-    "from": "spruce_wood",
-    "to": "stripped_spruce_wood"
-  },
-  {
-    "from": "spruce_log",
-    "to": "stripped_spruce_log"
-  },
-  {
-    "from": "warped_stem",
-    "to": "stripped_warped_stem"
-  },
-  {
-    "from": "warped_hyphae",
-    "to": "stripped_warped_hyphae"
-  },
-  {
-    "from": "crimson_stem",
-    "to": "stripped_crimson_stem"
-  },
-  {
-    "from": "crimson_hyphae",
-    "to": "stripped_crimson_hyphae"
-  },
-  {
-    "from": "mangrove_wood",
-    "to": "stripped_mangrove_wood"
-  },
-  {
-    "from": "mangrove_log",
-    "to": "stripped_mangrove_log"
-  },
-  {
-    "from": "bamboo_block",
-    "to": "stripped_bamboo_block"
-  }
-]
+{
+  "oak_wood": "stripped_oak_wood",
+  "oak_log": "stripped_oak_log",
+  "dark_oak_wood": "stripped_dark_oak_wood",
+  "dark_oak_log": "stripped_dark_oak_log",
+  "pale_oak_wood": "stripped_pale_oak_wood",
+  "pale_oak_log": "stripped_pale_oak_log",
+  "acacia_wood": "stripped_acacia_wood",
+  "acacia_log": "stripped_acacia_log",
+  "cherry_wood": "stripped_cherry_wood",
+  "cherry_log": "stripped_cherry_log",
+  "birch_wood": "stripped_birch_wood",
+  "birch_log": "stripped_birch_log",
+  "jungle_wood": "stripped_jungle_wood",
+  "jungle_log": "stripped_jungle_log",
+  "spruce_wood": "stripped_spruce_wood",
+  "spruce_log": "stripped_spruce_log",
+  "warped_stem": "stripped_warped_stem",
+  "warped_hyphae": "stripped_warped_hyphae",
+  "crimson_stem": "stripped_crimson_stem",
+  "crimson_hyphae": "stripped_crimson_hyphae",
+  "mangrove_wood": "stripped_mangrove_wood",
+  "mangrove_log": "stripped_mangrove_log",
+  "bamboo_block": "stripped_bamboo_block"
+}
