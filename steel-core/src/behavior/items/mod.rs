@@ -3,6 +3,7 @@
 //! The actual behavior registration is auto-generated from classes.json.
 //! See `src/behavior/generated/items.rs` for the generated registration code.
 
+mod axe;
 mod block_item;
 mod bucket;
 mod default;
@@ -11,6 +12,7 @@ mod shovel;
 mod sign_item;
 mod standing_and_wall_block_item;
 
+pub use axe::AxeBehavior;
 pub use block_item::BlockItemBehavior;
 pub use bucket::FilledBucketBehavior;
 pub use default::DefaultItemBehavior;
