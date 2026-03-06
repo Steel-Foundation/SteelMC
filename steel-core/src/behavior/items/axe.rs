@@ -47,14 +47,6 @@ impl ItemBehavior for AxeBehavior {
                 UpdateFlags::UPDATE_ALL,
             );
 
-            context.world.play_block_sound(
-                ITEM_AXE_STRIP,
-                context.hit_result.block_pos,
-                1.0,
-                1.0,
-                None,
-            );
-
             context
                 .player
                 .get_item_by_slot(match context.hand {
