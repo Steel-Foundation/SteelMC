@@ -40,6 +40,8 @@ pub mod block_behaviours;
 #[path = "generated/items.rs"]
 pub mod item_behaviours;
 
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/strippables.rs"]
 pub mod strippables;
 
