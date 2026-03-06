@@ -32,7 +32,6 @@ pub fn main() {
     fs::write(format!("{OUT_DIR}/items.rs"), items::build(&classes.items))
         .expect("Failed to write items.rs");
 
-    
     fs::write(format!("{OUT_DIR}/strippables.rs"), strippables::build())
         .expect("Failed to write strippables.rs");
 
