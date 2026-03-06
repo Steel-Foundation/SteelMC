@@ -40,6 +40,11 @@ pub mod block_behaviours;
 #[path = "generated/items.rs"]
 pub mod item_behaviours;
 
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/waxables.rs"]
+pub mod waxables;
+
 pub use block::{BlockBehaviorRegistry, BlockBehaviour, DefaultBlockBehaviour};
 use block_behaviours::register_block_behaviors;
 pub use context::{BlockHitResult, BlockPlaceContext, InteractionResult, UseOnContext};

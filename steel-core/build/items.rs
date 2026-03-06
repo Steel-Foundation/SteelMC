@@ -25,7 +25,7 @@ fn to_item_field(name: &str) -> Ident {
 }
 
 /// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)
-fn to_block_const(name: &str) -> Ident {
+pub fn to_block_const(name: &str) -> Ident {
     Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
@@ -132,6 +132,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut ender_eye_items: Vec<Ident> = Vec::new();
     let mut shovel_items: Vec<Ident> = Vec::new();
     let mut filled_bucket_items: Vec<(Ident, Ident)> = Vec::new();
+    let mut honeycomb_items: Vec<Ident> = Vec::new();
 
     for item in items {
         let item_field = to_item_field(&item.name);
@@ -187,6 +188,7 @@ pub fn build(items: &[ItemClass]) -> String {
                 }
                 filled_bucket_items.push((item_field, to_block_const(fluid)));
             }
+            "HoneycombItem" => honeycomb_items.push(item_field),
             _ => {}
         }
     }
@@ -205,13 +207,16 @@ pub fn build(items: &[ItemClass]) -> String {
     let shovel_registrations = generate_simple_registrations(shovel_items.iter(), &shovel_type);
     let filled_bucket_registrations =
         generate_filled_bucket_item_registrations(filled_bucket_items.iter());
+    let honeycomb_type = Ident::new("HoneycombBehavior", Span::call_site());
+    let honeycomb_registrations =
+        generate_simple_registrations(honeycomb_items.iter(), &honeycomb_type);
 
     let output = quote! {
         //! Generated item behavior assignments.
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior};
+        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, HoneycombBehavior};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations
@@ -221,6 +226,7 @@ pub fn build(items: &[ItemClass]) -> String {
             #ender_eye_registrations
             #shovel_registrations
             #filled_bucket_registrations
+            #honeycomb_registrations
         }
     };
 
