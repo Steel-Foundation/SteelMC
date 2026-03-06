@@ -36,7 +36,7 @@ pub fn build() -> String {
         #[must_use]
         #[inline]
         pub fn get_strippable_variant(block: BlockRef) -> Option<BlockRef> {
-            return match block {
+            match block {
                 #(#strippables)*
                 _ => None
             }
