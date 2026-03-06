@@ -293,6 +293,23 @@ impl Player {
         self.entity_state.lock().crouching
     }
 
+    /// Computes the start (eye position) and end positions for a raytrace.
+    pub fn get_ray_endpoints(&self) -> (Vector3<f64>, Vector3<f64>) {
+        let pos = self.position();
+        let start_pos = Vector3::new(pos.x, self.get_eye_y(), pos.z);
+        let (yaw, pitch) = self.rotation();
+        let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
+        let block_interaction_range = 4.5;
+        let direction = Vector3::new(
+            -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
+            -pitch_rad.sin() * block_interaction_range,
+            pitch_rad.cos() * yaw_rad.cos() * block_interaction_range,
+        );
+
+        let end_pos = start_pos.add(&direction);
+        (start_pos, end_pos)
+    }
+
     /// Creates a new player.
     pub fn new(
         gameprofile: GameProfile,

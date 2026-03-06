@@ -13,8 +13,8 @@ use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
-use crate::world::World;
 use crate::fluid::collision::can_pass_horizontally_internal;
+use crate::world::World;
 /// Context for fluid spread calculations with local caching.
 ///
 /// This is created fresh for each `get_spread()` call and caches:

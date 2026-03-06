@@ -39,10 +39,14 @@ pub fn use_item_on(
     }
 
     // Check if block interaction should be suppressed (sneaking + holding items in either hand)
-    let mut inv = player.inventory.lock();
+    let (have_something, mut item_stack) = {
+        let inv = player.inventory.lock();
+        let have_something = !inv.get_item_in_hand(InteractionHand::MainHand).is_empty()
+            || !inv.get_item_in_hand(InteractionHand::OffHand).is_empty();
+        let item_stack = inv.get_item_in_hand(hand).clone();
+        (have_something, item_stack)
+    };
 
-    let have_something = !inv.get_item_in_hand(InteractionHand::MainHand).is_empty()
-        || !inv.get_item_in_hand(InteractionHand::OffHand).is_empty();
     let suppress_block_use = player.is_secondary_use_active() && have_something;
 
     // Get behavior registries
@@ -57,10 +61,9 @@ pub fn use_item_on(
             return InteractionResult::Pass;
         };
         let behavior = block_behaviors.get_behavior(block);
-        let item_stack = inv.get_item_in_hand(hand);
 
         let block_result =
-            behavior.use_item_on(item_stack, state, world, *pos, player, hand, hit_result);
+            behavior.use_item_on(&item_stack, state, world, *pos, player, hand, hit_result);
 
         if block_result.consumes_action() {
             return block_result;
@@ -70,23 +73,15 @@ pub fn use_item_on(
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
-            // Release the inventory lock before calling use_without_item
-            // since block behaviors may need to open menus
-            drop(inv);
-
             let empty_result = behavior.use_without_item(state, world, *pos, player, hit_result);
 
             if empty_result.consumes_action() {
                 return empty_result;
             }
-
-            // Re-acquire lock for item use below
-            inv = player.inventory.lock();
         }
     }
 
     // Try item use (block placement, etc.)
-    let item_stack = inv.get_item_in_hand_mut(hand);
     if !item_stack.is_empty() {
         // TODO: Check item cooldowns
         // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
@@ -98,7 +93,7 @@ pub fn use_item_on(
             hand,
             hit_result: hit_result.clone(),
             world,
-            item_stack,
+            item_stack: &mut item_stack,
         };
 
         // Get item behavior and call use_on
@@ -109,6 +104,8 @@ pub fn use_item_on(
         if player.has_infinite_materials() && context.item_stack.count < original_count {
             context.item_stack.count = original_count;
         }
+
+        player.inventory.lock().set_item_in_hand(hand, item_stack);
 
         return result;
     }
@@ -125,8 +122,10 @@ pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> Intera
         return InteractionResult::Pass;
     }
 
-    let mut inv = player.inventory.lock();
-    let item_stack = inv.get_item_in_hand_mut(hand);
+    let mut item_stack = {
+        let inv = player.inventory.lock();
+        inv.get_item_in_hand(hand).clone()
+    };
 
     if !item_stack.is_empty() {
         let original_count = item_stack.count;
@@ -135,7 +134,7 @@ pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> Intera
             player,
             hand,
             world,
-            item_stack,
+            item_stack: &mut item_stack,
         };
 
         // Get behavior registries
@@ -153,6 +152,8 @@ pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> Intera
         if player.has_infinite_materials() && context.item_stack.count < original_count {
             context.item_stack.count = original_count;
         }
+
+        player.inventory.lock().set_item_in_hand(hand, item_stack);
 
         return result;
     }

@@ -18,7 +18,7 @@ pub mod shapes;
 pub use collision::{CollisionWorld, WorldCollisionProvider};
 pub use entity_move::{MoveResult, MoverType, move_entity};
 pub use physics_state::EntityPhysicsState;
-pub use shapes::{collide, join_is_not_empty, translate_shape, merged_face_occludes};
+pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_shape};
 
 /// Collision epsilon used for AABB deflation (vanilla constant).
 pub const COLLISION_EPSILON: f64 = 1.0e-5;

@@ -3,7 +3,7 @@
 //! Based on vanilla's `LavaFluid.java`.
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
-use steel_registry::blocks::BlockRef;
+use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::GameRuleValue;
@@ -15,15 +15,13 @@ use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
-use steel_registry::REGISTRY;
 
-use crate::world::World;
-use crate::fluid::{
-    FluidRef, FluidState,
-    get_fluid_state, get_fluid_state_from_block, get_height,
-    is_lava, is_water, lava_id,
-};
 use crate::fluid::{FlowingFluid, FluidBehavior};
+use crate::fluid::{
+    FluidRef, FluidState, get_fluid_state, get_height, is_lava,
+    is_water, lava_id,
+};
+use crate::world::World;
 
 /// Lava fluid implementation.
 ///
@@ -40,7 +38,6 @@ impl LavaFluid {
 }
 
 impl FluidBehavior for LavaFluid {
-
     fn fluid_type(&self) -> FluidRef {
         lava_id()
     }
@@ -142,12 +139,12 @@ impl FluidBehavior for LavaFluid {
         }
     }
 
-    fn tick(&self, world: &World, pos: BlockPos, current_tick: u64) {
-        self.base_tick(world, pos, current_tick);
+    fn tick(&self, world: &World, pos: BlockPos) {
+        self.base_tick(world, pos);
     }
 
-    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState, current_tick: u64) {
-        self.base_spread(world, pos, fluid_state, current_tick);
+    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+        self.base_spread(world, pos, fluid_state);
     }
 }
 
@@ -161,7 +158,6 @@ impl FlowingFluid for LavaFluid {
         direction: Direction,
     ) {
         if direction == Direction::Down {
-            log::debug!("Lava spread to ");
             let below_fluid = get_fluid_state(world, &pos);
             if is_water(below_fluid.fluid_id) {
                 // If the block we are spreading into is water, we form stone.
@@ -173,7 +169,6 @@ impl FlowingFluid for LavaFluid {
             }
         }
 
-        self.base_spread_to(world, pos, fluid_state, direction);
+        self.base_spread_to(world, pos, fluid_state);
     }
 }
-

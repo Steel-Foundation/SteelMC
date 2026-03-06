@@ -38,7 +38,6 @@ use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 
-
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 

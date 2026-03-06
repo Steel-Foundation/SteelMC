@@ -169,6 +169,24 @@ impl Direction {
         Direction::Up,
     ];
 
+    /// The 4 horizontal directions.
+    pub const HORIZONTAL: [Direction; 4] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
+    /// The 6 directions.
+    pub const ALL: [Direction; 6] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+        Direction::Down,
+        Direction::Up,
+    ];
+
     /// Returns all directions ordered by how closely they match the player's look direction.
     ///
     /// This matches vanilla's `Direction.orderedByNearest(Entity)`.

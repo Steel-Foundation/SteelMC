@@ -20,11 +20,11 @@ impl FluidBehavior for EmptyFluid {
         &vanilla_fluids::EMPTY
     }
 
-    fn tick(&self, _world: &World, _pos: BlockPos, _current_tick: u64) {
+    fn tick(&self, _world: &World, _pos: BlockPos) {
         // Vanilla: nothing
     }
 
-    fn spread(&self, _world: &World, _pos: BlockPos, _fluid_state: FluidState, _current_tick: u64) {
+    fn spread(&self, _world: &World, _pos: BlockPos, _fluid_state: FluidState) {
         // Vanilla: nothing
     }
 

@@ -61,7 +61,7 @@ use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
-use crate::fluid::{FlowingFluid, FluidBehavior, LavaFluid, WaterFluid};
+use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
 pub struct BlockBehaviorLock(OnceLock<BlockBehaviorRegistry>);
@@ -153,18 +153,12 @@ pub fn init_behaviors() {
     let water_behavior: Box<dyn FluidBehavior> = Box::new(WaterFluid);
     // Both WATER and FLOWING_WATER share the same behavior
     fluid_behaviors.set_behavior(&vanilla_fluids::WATER, water_behavior);
-    fluid_behaviors.set_behavior(
-        &vanilla_fluids::FLOWING_WATER,
-        Box::new(WaterFluid),
-    );
+    fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_WATER, Box::new(WaterFluid));
 
     // Lava: LavaFluid implements FluidBehavior directly
     let lava_behavior: Box<dyn FluidBehavior> = Box::new(LavaFluid);
     fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, lava_behavior);
-    fluid_behaviors.set_behavior(
-        &vanilla_fluids::FLOWING_LAVA,
-        Box::new(LavaFluid),
-    );
+    fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_LAVA, Box::new(LavaFluid));
 
     assert!(
         FLUID_BEHAVIORS.0.set(fluid_behaviors).is_ok(),

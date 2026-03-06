@@ -3,22 +3,16 @@
 //! Based on vanilla's `WaterFluid.java`.
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
-use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::sound_events;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
-use crate::world::World;
-use crate::fluid::{
-    FluidRef, FluidState,
-    get_fluid_state,
-    is_lava, is_water, water_id,
-};
 use crate::fluid::{FlowingFluid, FluidBehavior};
+use crate::fluid::{FluidRef, FluidState, is_water, water_id};
+use crate::world::World;
 
 /// Water fluid implementation.
 ///
@@ -72,11 +66,10 @@ impl FluidBehavior for WaterFluid {
 
     /// Plays block destruction particles when water replaces a non-air block.
     fn before_destroying_block(&self, world: &World, pos: BlockPos, state: BlockStateId) {
-        // TODO: PARITY: Drop block resources (needs Arc<World> for item spawning).
-        // Vanilla: Block.dropResources(blockState, levelAccessor, blockPos, blockEntity)
+        // TODO: Drop block resources (needs Arc<World> for item spawning).
+        // waiting on cactus PR
         world.destroy_block_effect(pos, u32::from(state.0), None);
     }
-
 
     /// Flowing water: 1/64 chance for ambient sound.
     /// Source water: 1/10 chance for underwater particles.
@@ -96,17 +89,14 @@ impl FluidBehavior for WaterFluid {
         }
     }
 
-    // === Update Loop hooks ===
-
-    fn tick(&self, world: &World, pos: BlockPos, current_tick: u64) {
-        self.base_tick(world, pos, current_tick);
+    fn tick(&self, world: &World, pos: BlockPos) {
+        self.base_tick(world, pos);
     }
 
-    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState, current_tick: u64) {
-        self.base_spread(world, pos, fluid_state, current_tick);
+    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+        self.base_spread(world, pos, fluid_state);
     }
 }
 
 // Marker impl to provide base FlowingFluid logic
 impl FlowingFluid for WaterFluid {}
-

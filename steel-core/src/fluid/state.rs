@@ -5,10 +5,10 @@
 
 use std::ptr;
 use steel_registry::REGISTRY;
-use steel_registry::vanilla_blocks;
-use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::fluid::{FluidRef, FluidState, fluid_tags};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::world::World;
@@ -52,31 +52,40 @@ pub fn get_fluid_state_from_block(state: BlockStateId) -> FluidState {
 /// IF an existing block state is provided and it can be waterlogged, it will retain the block state and set WATERLOGGED to true.
 /// Otherwise, it returns the raw fluid block (water/lava)
 #[must_use]
-pub fn fluid_state_to_block_with_existing(fluid_state: FluidState, existing_state: BlockStateId) -> BlockStateId {
+pub fn fluid_state_to_block_with_existing(
+    fluid_state: FluidState,
+    existing_state: BlockStateId,
+) -> BlockStateId {
     let fluid_id = fluid_state.fluid_id;
     if fluid_id.is_empty {
         // If empty, and the existing block can be waterlogged, un-waterlog it.
         // If it cannot be waterlogged, it becomes air.
-        if existing_state.try_get_value(&BlockStateProperties::WATERLOGGED).is_some() {
+        if existing_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+        {
             return existing_state.set_value(&BlockStateProperties::WATERLOGGED, false);
         }
         return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
-    } 
-    
+    }
+
     // If it's water, check if the block can be waterlogged.
     // Vanilla's FlowingFluid.spreadTo() calls LiquidBlockContainer.placeLiquid()
     // for any fluid level (source or flowing), so we waterlog regardless of amount.
     if is_water(fluid_id) {
-        if existing_state.try_get_value(&BlockStateProperties::WATERLOGGED).is_some() {
+        if existing_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+        {
             return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
         }
-        
+
         // If not waterloggable, fall back to pure water block
         let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER);
         let level = fluid_state.to_block_level();
         return base.set_value(&BlockStateProperties::LEVEL, level);
     }
-    
+
     if is_lava(fluid_id) {
         let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
         let level = fluid_state.to_block_level();

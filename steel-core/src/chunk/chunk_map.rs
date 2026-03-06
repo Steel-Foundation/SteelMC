@@ -481,7 +481,7 @@ impl ChunkMap {
         }
 
         // Execute scheduled ticks collected during chunk ticking
-        Self::execute_scheduled_ticks(world, tick_count, ready_block_ticks, ready_fluid_ticks);
+        Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
 
         timings
     }
@@ -489,7 +489,6 @@ impl ChunkMap {
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
     fn execute_scheduled_ticks(
         world: &World,
-        tick_count: u64,
         mut ready_block_ticks: Vec<BlockTick>,
         mut ready_fluid_ticks: Vec<FluidTick>,
     ) {
@@ -533,7 +532,7 @@ impl ChunkMap {
 
                 fluid_behaviors
                     .get_behavior(tick.tick_type)
-                    .tick(world, tick.pos, tick_count);
+                    .tick(world, tick.pos);
             }
         }
     }

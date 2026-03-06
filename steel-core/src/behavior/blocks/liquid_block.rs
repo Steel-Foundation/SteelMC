@@ -133,11 +133,12 @@ impl BlockBehaviour for LiquidBlock {
         // that lava placed or spread next to water converts to cobblestone/obsidian
         // without any visible intermediate lava state.
         if self.should_spread_liquid(world, pos, state) {
-            let delay = crate::behavior::FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+            let delay = crate::behavior::FLUID_BEHAVIORS
+                .get_behavior(self.fluid)
+                .tick_delay(world);
             world.schedule_fluid_tick_default(pos, self.fluid, delay);
         }
     }
-
 
     /// Called when a neighboring block changes.
     ///
@@ -153,7 +154,9 @@ impl BlockBehaviour for LiquidBlock {
     ) {
         // This is safe because we're not inside set_block locks
         if self.should_spread_liquid(world, pos, state) {
-            let delay = crate::behavior::FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+            let delay = crate::behavior::FLUID_BEHAVIORS
+                .get_behavior(self.fluid)
+                .tick_delay(world);
             world.schedule_fluid_tick_default(pos, self.fluid, delay);
         }
     }
@@ -172,12 +175,10 @@ impl BlockBehaviour for LiquidBlock {
         let neighbor_fluid = crate::fluid::get_fluid_state_from_block(neighbor_state);
 
         if fluid_state.is_source() || neighbor_fluid.is_source() {
-            let delay = crate::behavior::FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
-            world.schedule_fluid_tick_default(
-                pos.clone(),
-                self.fluid,
-                delay,
-            );
+            let delay = crate::behavior::FLUID_BEHAVIORS
+                .get_behavior(self.fluid)
+                .tick_delay(world);
+            world.schedule_fluid_tick_default(pos.clone(), self.fluid, delay);
         }
 
         state
@@ -190,8 +191,12 @@ impl BlockBehaviour for LiquidBlock {
         state: BlockStateId,
         _player: Option<&crate::player::Player>,
     ) -> Option<crate::behavior::block::PickupResult> {
-        if state.try_get_value(&steel_registry::blocks::properties::BlockStateProperties::LEVEL) == Some(0) {
-            let air = steel_registry::REGISTRY.blocks.get_default_state_id(steel_registry::vanilla_blocks::AIR);
+        if state.try_get_value(&steel_registry::blocks::properties::BlockStateProperties::LEVEL)
+            == Some(0)
+        {
+            let air = steel_registry::REGISTRY
+                .blocks
+                .get_default_state_id(steel_registry::vanilla_blocks::AIR);
             world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
             // Give the right bucket based on the liquid type

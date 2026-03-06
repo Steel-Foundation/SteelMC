@@ -3,9 +3,9 @@
 //! Implements vanilla's `Shapes` class methods for AABB-list based collision.
 //! Uses the existing `VoxelShape` type (slice of AABBs) from steel-registry.
 
+use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABB, AABBd, VoxelShape, is_shape_full_block};
 use steel_utils::math::{Axis, Vector3};
-use steel_registry::blocks::properties::Direction;
 
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
 ///
@@ -387,15 +387,15 @@ pub fn merged_face_occludes(shape1: VoxelShape, shape2: VoxelShape, direction: D
 
 fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool; 256]) -> usize {
     let mut added_coverage = 0;
-    
+
     for aabb in shape {
         let touches_face = match face {
-            Direction::Down  => aabb.min_y <= 1.0e-5,
-            Direction::Up    => aabb.max_y >= 1.0 - 1.0e-5,
+            Direction::Down => aabb.min_y <= 1.0e-5,
+            Direction::Up => aabb.max_y >= 1.0 - 1.0e-5,
             Direction::North => aabb.min_z <= 1.0e-5,
             Direction::South => aabb.max_z >= 1.0 - 1.0e-5,
-            Direction::West  => aabb.min_x <= 1.0e-5,
-            Direction::East  => aabb.max_x >= 1.0 - 1.0e-5,
+            Direction::West => aabb.min_x <= 1.0e-5,
+            Direction::East => aabb.max_x >= 1.0 - 1.0e-5,
         };
 
         if !touches_face {
@@ -403,15 +403,15 @@ fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool;
         }
 
         let (min_u, max_u, min_v, max_v) = match face {
-            Direction::Down | Direction::Up    => (aabb.min_x, aabb.max_x, aabb.min_z, aabb.max_z),
+            Direction::Down | Direction::Up => (aabb.min_x, aabb.max_x, aabb.min_z, aabb.max_z),
             Direction::North | Direction::South => (aabb.min_x, aabb.max_x, aabb.min_y, aabb.max_y),
-            Direction::West | Direction::East  => (aabb.min_z, aabb.max_z, aabb.min_y, aabb.max_y),
+            Direction::West | Direction::East => (aabb.min_z, aabb.max_z, aabb.min_y, aabb.max_y),
         };
 
         let u_start = ((min_u * 16.0).round() as i32).clamp(0, 16) as usize;
-        let u_end   = ((max_u * 16.0).round() as i32).clamp(0, 16) as usize;
+        let u_end = ((max_u * 16.0).round() as i32).clamp(0, 16) as usize;
         let v_start = ((min_v * 16.0).round() as i32).clamp(0, 16) as usize;
-        let v_end   = ((max_v * 16.0).round() as i32).clamp(0, 16) as usize;
+        let v_end = ((max_v * 16.0).round() as i32).clamp(0, 16) as usize;
 
         for u in u_start..u_end {
             for v in v_start..v_end {
@@ -423,7 +423,6 @@ fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool;
             }
         }
     }
-    
+
     added_coverage
 }
-
