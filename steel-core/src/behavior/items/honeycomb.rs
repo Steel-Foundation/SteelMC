@@ -1,4 +1,4 @@
-use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt};
 use steel_utils::types::UpdateFlags;
 
 use crate::{
@@ -40,7 +40,9 @@ impl ItemBehavior for HoneycombBehavior {
         context.item_stack.shrink(1);
         context.world.set_block(
             context.hit_result.block_pos,
-            waxed_block.default_state(), // FIXME: copy properties instead of default state
+            REGISTRY
+                .blocks
+                .copy_matching_properties(old_block_state, waxed_block), // this needs testing
             UpdateFlags::UPDATE_ALL,
         );
 
