@@ -7,6 +7,8 @@ use serde::Deserialize;
 mod blocks;
 mod items;
 mod strippables;
+mod waxables;
+mod weathering;
 
 const OUT_DIR: &str = "src/behavior/generated";
 
@@ -31,6 +33,10 @@ pub fn main() {
     .expect("Failed to write blocks.rs");
     fs::write(format!("{OUT_DIR}/items.rs"), items::build(&classes.items))
         .expect("Failed to write items.rs");
+    fs::write(format!("{OUT_DIR}/waxables.rs"), waxables::build())
+        .expect("Failed to write waxables.rs");
+    fs::write(format!("{OUT_DIR}/weathering.rs"), weathering::build())
+        .expect("Failed to write weathering.rs");
 
     fs::write(format!("{OUT_DIR}/strippables.rs"), strippables::build())
         .expect("Failed to write strippables.rs");

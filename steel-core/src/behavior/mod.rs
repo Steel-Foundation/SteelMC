@@ -45,6 +45,16 @@ pub mod item_behaviours;
 #[path = "generated/strippables.rs"]
 pub mod strippables;
 
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/waxables.rs"]
+pub mod waxables;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/weathering.rs"]
+pub mod weathering;
+
 pub use block::{BlockBehaviorRegistry, BlockBehaviour, DefaultBlockBehaviour};
 use block_behaviours::register_block_behaviors;
 pub use context::{BlockHitResult, BlockPlaceContext, InteractionResult, UseOnContext};
