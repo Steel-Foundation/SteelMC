@@ -20,7 +20,7 @@ pub fn build() -> String {
 
     let oxidizables_reverse: Vec<proc_macro2::TokenStream> = oxidizables_raw
         .iter()
-        .map(|(current, next)| (to_block_const(next), to_block_const(current)))
+        .map(|(current, next)| (to_block_const(current), to_block_const(next)))
         .map(|(from, to)| quote! { b if ptr::eq(b, vanilla_blocks::#to) => Some(vanilla_blocks::#from) , })
         .collect();
 

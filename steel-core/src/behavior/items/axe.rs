@@ -1,10 +1,11 @@
 use steel_registry::{
+    REGISTRY,
     blocks::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, EnumProperty},
     },
     data_components::vanilla_components::BLOCKS_ATTACKS,
-    sound_events::ITEM_AXE_STRIP,
+    sound_events::{ITEM_AXE_SCRAPE, ITEM_AXE_STRIP, ITEM_AXE_WAX_OFF},
 };
 use steel_utils::{
     math::Axis,
@@ -14,6 +15,7 @@ use steel_utils::{
 use crate::{
     behavior::{
         InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
+        waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
     },
     entity::LivingEntity,
     inventory::equipment::EquipmentSlot,
@@ -35,39 +37,54 @@ impl ItemBehavior for AxeBehavior {
         }
 
         let old_block_state = context.world.get_block_state(&context.hit_result.block_pos);
+        let old_block = old_block_state.get_block();
 
-        if let Some(new_block) = get_strippable_variant(old_block_state.get_block()) {
-            let old_axis = old_block_state.get_value(&AXIS_PROPERTY);
-            let new_block_state = new_block
-                .default_state()
-                .set_value(&AXIS_PROPERTY, old_axis);
-            context.world.set_block(
-                context.hit_result.block_pos,
-                new_block_state,
-                UpdateFlags::UPDATE_ALL,
-            );
+        let (new_block_state, sound_event) =
+            if let Some(new_block) = get_strippable_variant(old_block) {
+                let old_axis = old_block_state.get_value(&AXIS_PROPERTY);
+                let new_block_state = new_block
+                    .default_state()
+                    .set_value(&AXIS_PROPERTY, old_axis);
 
-            context.world.play_block_sound(
-                ITEM_AXE_STRIP,
-                context.hit_result.block_pos,
-                1.0,
-                1.0,
-                Some(context.player.id),
-            );
+                (new_block_state, ITEM_AXE_STRIP)
+            } else if let Some(unwaxed_block) = get_normal_from_waxed_variant(old_block) {
+                let new_block_state = REGISTRY
+                    .blocks
+                    .copy_matching_properties(old_block_state, unwaxed_block);
 
-            context
-                .player
-                .get_item_by_slot(match context.hand {
-                    InteractionHand::MainHand => EquipmentSlot::MainHand,
-                    InteractionHand::OffHand => EquipmentSlot::OffHand,
-                })
-                .hurt_and_break(1, context.player.has_infinite_materials());
+                (new_block_state, ITEM_AXE_WAX_OFF)
+            } else if let Some(scraped_block) = previous_copper_stage(old_block) {
+                let new_block_state = REGISTRY
+                    .blocks
+                    .copy_matching_properties(old_block_state, scraped_block);
 
-            return InteractionResult::Success;
-        }
+                (new_block_state, ITEM_AXE_SCRAPE)
+            } else {
+                return InteractionResult::Pass;
+            };
 
-        // TODO: scraping and removing wax
+        context.world.set_block(
+            context.hit_result.block_pos,
+            new_block_state,
+            UpdateFlags::UPDATE_ALL,
+        );
 
-        InteractionResult::Pass
+        context.world.play_block_sound(
+            sound_event,
+            context.hit_result.block_pos,
+            1.0,
+            1.0,
+            Some(context.player.id),
+        );
+
+        context
+            .player
+            .get_item_by_slot(match context.hand {
+                InteractionHand::MainHand => EquipmentSlot::MainHand,
+                InteractionHand::OffHand => EquipmentSlot::OffHand,
+            })
+            .hurt_and_break(1, context.player.has_infinite_materials());
+
+        InteractionResult::Success
     }
 }
