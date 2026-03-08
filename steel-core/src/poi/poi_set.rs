@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+//! POI set for a single chunk section.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -22,6 +22,7 @@ impl Default for PointOfInterestSet {
 }
 
 impl PointOfInterestSet {
+    /// Creates an empty POI set.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -31,12 +32,14 @@ impl PointOfInterestSet {
         }
     }
 
+    /// Packs section-local coordinates into a single `u16` key.
     #[inline]
     #[must_use]
     pub const fn pack_local_pos(x: u8, y: u8, z: u8) -> u16 {
         (y as u16) << 8 | (z as u16) << 4 | (x as u16)
     }
 
+    /// Unpacks a `u16` key back into `(x, y, z)` local coordinates.
     #[inline]
     #[must_use]
     pub const fn unpack_local_pos(packed: u16) -> (u8, u8, u8) {
@@ -63,6 +66,7 @@ impl PointOfInterestSet {
         self.pois_by_pos.get(&packed_pos)
     }
 
+    /// Removes and returns the POI at the given packed position, if present.
     pub fn remove(&mut self, packed_pos: u16) -> Option<PointOfInterest> {
         let poi = self.pois_by_pos.remove(&packed_pos)?;
         if let Some(positions) = self.pois_by_type.get_mut(&poi.poi_type_id) {
@@ -75,15 +79,18 @@ impl PointOfInterestSet {
         Some(poi)
     }
 
+    /// Returns a reference to the POI at the given packed position.
     #[must_use]
     pub fn get(&self, packed_pos: u16) -> Option<&PointOfInterest> {
         self.pois_by_pos.get(&packed_pos)
     }
 
+    /// Returns a mutable reference to the POI at the given packed position.
     pub fn get_mut(&mut self, packed_pos: u16) -> Option<&mut PointOfInterest> {
         self.pois_by_pos.get_mut(&packed_pos)
     }
 
+    /// Returns all POIs of the given type matching the occupation status.
     #[must_use]
     pub fn get_by_type(
         &self,
@@ -102,6 +109,7 @@ impl PointOfInterestSet {
             .collect()
     }
 
+    /// Returns all POIs matching the type predicate and occupation status.
     pub fn get_matching(
         &self,
         type_predicate: &impl Fn(usize) -> bool,
@@ -117,25 +125,30 @@ impl PointOfInterestSet {
             .collect()
     }
 
+    /// Returns `true` if any POIs have been added or removed since last cleared.
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
         self.dirty
     }
 
+    /// Clears the dirty flag.
     pub const fn clear_dirty(&mut self) {
         self.dirty = false;
     }
 
+    /// Returns `true` if this set contains no POIs.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.pois_by_pos.is_empty()
     }
 
+    /// Returns the number of POIs in this set.
     #[must_use]
     pub fn len(&self) -> usize {
         self.pois_by_pos.len()
     }
 
+    /// Iterates over all POIs in this set as `(packed_pos, poi)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (u16, &PointOfInterest)> {
         self.pois_by_pos.iter().map(|(&pos, poi)| (pos, poi))
     }

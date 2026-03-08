@@ -332,6 +332,10 @@ impl ChunkMap {
             chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
             chunk_holder.update_highest_allowed_status(u8::MAX);
 
+            // Clean up POI data for this chunk column
+            let world = self.world_gen_context.world();
+            world.poi_storage.lock().remove_chunk(*pos);
+
             // Move to unloading_chunks for deferred unload
             if let Some((_, holder)) = self.chunks.remove_sync(pos) {
                 let _ = self.unloading_chunks.insert_sync(*pos, holder);

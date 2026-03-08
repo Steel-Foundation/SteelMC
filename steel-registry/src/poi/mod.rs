@@ -8,6 +8,10 @@ use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
 
+/// A type of point of interest (e.g., bed, workstation, bell, nether portal).
+///
+/// Each type maps to specific block states and defines how many entities
+/// can claim it via tickets (e.g., a bed has 1 ticket for 1 villager).
 #[derive(Debug, Clone)]
 pub struct PointOfInterestType {
     pub key: Identifier,
@@ -16,8 +20,10 @@ pub struct PointOfInterestType {
     pub search_distance: u32,
 }
 
+/// Static reference to a POI type definition.
 pub type PoiTypeRef = &'static PointOfInterestType;
 
+/// Registry of all POI types, with reverse lookup from block state to type.
 pub struct PoiTypeRegistry {
     types_by_id: Vec<PoiTypeRef>,
     types_by_key: FxHashMap<Identifier, usize>,

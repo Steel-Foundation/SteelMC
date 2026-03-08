@@ -195,18 +195,7 @@ impl LevelChunk {
         let structure_starts = proto_chunk.structure_starts.into_inner();
         let structure_references = proto_chunk.structure_references.into_inner();
 
-        if let Some(world) = level.upgrade() {
-            let mut poi_storage = world.poi_storage.lock();
-            for (i, section) in proto_chunk.sections.sections.iter().enumerate() {
-                let section_y = min_y / 16 + i as i32;
-                let section_pos =
-                    SectionPos::new(proto_chunk.pos.0.x, section_y, proto_chunk.pos.0.y);
-                let guard = section.read();
-                if !guard.is_empty() {
-                    poi_storage.scan_and_populate(&guard, section_pos);
-                }
-            }
-        }
+        Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
         Self {
             sections: proto_chunk.sections,
@@ -260,17 +249,7 @@ impl LevelChunk {
             section.write().recalculate_counts();
         }
 
-        if let Some(world) = level.upgrade() {
-            let mut poi_storage = world.poi_storage.lock();
-            for (i, section) in sections.sections.iter().enumerate() {
-                let section_y = min_y / 16 + i as i32;
-                let section_pos = SectionPos::new(pos.0.x, section_y, pos.0.y);
-                let guard = section.read();
-                if !guard.is_empty() {
-                    poi_storage.scan_and_populate(&guard, section_pos);
-                }
-            }
-        }
+        Self::populate_poi(&level, &sections, pos, min_y);
 
         Self {
             sections,
@@ -304,6 +283,22 @@ impl LevelChunk {
     #[must_use]
     pub fn level_weak(&self) -> Weak<World> {
         self.level.clone()
+    }
+
+    /// Scans chunk sections for POI block states and populates world POI storage.
+    fn populate_poi(level: &Weak<World>, sections: &Sections, pos: ChunkPos, min_y: i32) {
+        let Some(world) = level.upgrade() else {
+            return;
+        };
+        let mut poi_storage = world.poi_storage.lock();
+        for (i, section) in sections.sections.iter().enumerate() {
+            let section_y = min_y / 16 + i as i32;
+            let section_pos = SectionPos::new(pos.0.x, section_y, pos.0.y);
+            let guard = section.read();
+            if !guard.is_empty() {
+                poi_storage.scan_and_populate(&guard, section_pos);
+            }
+        }
     }
 
     /// Returns the minimum Y coordinate of the world.
@@ -540,15 +535,12 @@ impl LevelChunk {
             return None;
         }
 
-        // Update POI storage when block states change
         if let Some(level) = self.get_level() {
+            // Update POI storage when block states change
             level
                 .poi_storage
                 .lock()
                 .on_block_state_change(pos, old_state, state);
-        }
-
-        if let Some(level) = self.get_level() {
             let block_changed = !ptr::eq(old_block, new_block);
             let moved_by_piston = flags.contains(UpdateFlags::UPDATE_MOVE_BY_PISTON);
             let side_effects = !flags.contains(UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS);
