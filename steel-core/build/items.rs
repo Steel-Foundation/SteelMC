@@ -124,6 +124,7 @@ fn generate_simple_registrations<'a>(
     quote! { #(#registrations)* }
 }
 
+#[expect(clippy::too_many_lines)]
 pub fn build(items: &[ItemClass]) -> String {
     let mut block_items: Vec<(Ident, Ident)> = Vec::new();
     let mut sign_items: Vec<(Ident, Ident, Ident)> = Vec::new();
