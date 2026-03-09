@@ -41,6 +41,7 @@ use steel_registry::{
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
+#[derive(Debug)]
 pub enum RaytraceAction {
     Pass,
     CheckShape,
@@ -1398,7 +1399,7 @@ impl World {
         hit_check: F,
     ) -> (Option<BlockPos>, Option<Direction>)
     where
-        F: Fn(&BlockPos, &Self) -> crate::world::RaytraceAction,
+        F: Fn(&BlockPos, &Self) -> RaytraceAction,
     {
         if start_pos == end_pos {
             return (None, None);
@@ -1415,14 +1416,14 @@ impl World {
         );
 
         match hit_check(&block, self) {
-            crate::world::RaytraceAction::ImmediateHit => return (Some(block), None),
-            crate::world::RaytraceAction::CheckShape => {
+            RaytraceAction::ImmediateHit => return (Some(block), None),
+            RaytraceAction::CheckShape => {
                 let (hit, face) = self.ray_outline_check(&block, start_pos, end_pos);
                 if hit {
                     return (Some(block), face);
                 }
             }
-            crate::world::RaytraceAction::Pass => {}
+            RaytraceAction::Pass => {}
         }
 
         let difference = to.sub(&from);
@@ -1500,16 +1501,16 @@ impl World {
             };
 
             match hit_check(&block, self) {
-                crate::world::RaytraceAction::ImmediateHit => {
+                RaytraceAction::ImmediateHit => {
                     return (Some(block), Some(block_direction));
                 }
-                crate::world::RaytraceAction::CheckShape => {
+                RaytraceAction::CheckShape => {
                     let (hit, face) = self.ray_outline_check(&block, start_pos, end_pos);
                     if hit {
                         return (Some(block), face);
                     }
                 }
-                crate::world::RaytraceAction::Pass => {}
+                RaytraceAction::Pass => {}
             }
         }
 

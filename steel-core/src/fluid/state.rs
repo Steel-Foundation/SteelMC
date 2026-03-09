@@ -162,8 +162,6 @@ pub fn lava_id() -> FluidRef {
 }
 
 /// Returns the fluid's own height as a fraction of a full block.
-///
-/// Vanilla parity: `FlowingFluid.getOwnHeight(FluidState)`.
 /// `amount / 9.0` — source blocks have `amount = 8`, giving `0.888..`.
 /// Flowing blocks range from `amount = 1` (thin) to `7` (tall).
 #[must_use]
@@ -172,16 +170,8 @@ pub fn get_own_height(fluid_state: FluidState) -> f32 {
 }
 
 /// Returns the effective fluid height at a position, accounting for fluid above.
-///
-/// Vanilla parity: `FlowingFluid.getHeight(FluidState, BlockGetter, BlockPos)`.
-///
 /// If the same fluid type occupies the block directly above (`hasSameAbove`),
 /// the height is `1.0` (full block). Otherwise it is `get_own_height(fluid_state)`.
-///
-/// This matters for:
-/// - `LavaFluid.canBeReplacedWith` (threshold `>= 0.444`)
-/// - `LavaFluid.getSpreadDelay` (uphill detection via height comparison)
-/// - Entity head-in-fluid detection (future)
 #[must_use]
 pub fn get_height(world: &crate::world::World, pos: &BlockPos, fluid_state: FluidState) -> f32 {
     let above = pos.offset(0, 1, 0);

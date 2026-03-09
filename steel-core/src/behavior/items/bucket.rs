@@ -20,7 +20,7 @@ use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
-use steel_utils::Direction;
+use steel_registry::fluid::FluidState;
 use crate::behavior::context::InteractionResult;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
 use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
@@ -106,24 +106,23 @@ impl ItemBehavior for FilledBucketBehavior {
             // If the dimension is THE_NETHER and we are placing WATER, we should not place the block.
             // Instead, we should play FIRE_EXTINGUISH sound, spawn LARGE_SMOKE particles, and empty the bucket.
 
-
-            // TODO : THIS ISNT WORKING, WE NEED THAT WHEN WE SNEAK, WE PLACE THE FLUID ON THE NEIGHBOR
-            // 1. Try Waterlogging (only if Water bucket)
-            // Skipped if player is sneaking (parity with vanilla)
+            // Vanilla parity (bl4): when sneaking, only air allows placement at this position.
+            // Non-air blocks redirect to the neighbor — handled by the secondary call at the
+            // call site.  The secondary call reaches here with a neighbor pos, which is
+            // typically air, so sneaking does not block that attempt.
             let is_sneaking = context.player.is_shifting();
-            // Determine if strict water bucket check - fluid_block is reliable for FilledBucket
+            if is_sneaking && !state.get_block().config.is_air {
+                return None;
+            }
+
+            // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
             let is_water_bucket = ptr::eq(self.fluid_block, vanilla_blocks::WATER);
 
-            if is_water_bucket
-                && !is_sneaking
-                && let Some(false) = state.try_get_value(&BlockStateProperties::WATERLOGGED)
-            {
-                let new_state = state.set_value(&BlockStateProperties::WATERLOGGED, true);
-                if context
-                    .world
-                    .set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
-                {
-                    // Play bucket empty sound
+            if is_water_bucket {
+                let source_water = FluidState::source(&vanilla_fluids::WATER);
+                let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+                if behavior.can_place_liquid(state, source_water) {
+                    behavior.place_liquid(context.world, pos, state, source_water);
                     context.world.play_block_sound(
                         sound_events::ITEM_BUCKET_EMPTY,
                         pos,
@@ -131,15 +130,6 @@ impl ItemBehavior for FilledBucketBehavior {
                         1.0,
                         None,
                     );
-                    // Schedule tick for fluid spread
-                    let delay = FLUID_BEHAVIORS
-                        .get_behavior(&vanilla_fluids::WATER)
-                        .tick_delay(context.world);
-                    context
-                        .world
-                        .schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-
-                    // Consume bucket
                     consume_bucket(context, self.empty_bucket);
                     return Some(InteractionResult::Success);
                 }
@@ -156,16 +146,7 @@ impl ItemBehavior for FilledBucketBehavior {
                 };
 
                 if is_same_fluid && fluid_state.is_source() {
-                    if !context.player.has_infinite_materials() {
-                        let empty_bucket =
-                            steel_registry::item_stack::ItemStack::new(self.empty_bucket);
-                        if context.item_stack.count() > 1 {
-                            context.item_stack.shrink(1);
-                            context.player.add_item_or_drop(empty_bucket);
-                        } else {
-                            context.item_stack.set_item(&self.empty_bucket.key);
-                        }
-                    }
+                    consume_bucket(context, self.empty_bucket);
                     return Some(InteractionResult::Success);
                 }
 
@@ -260,7 +241,7 @@ impl ItemBehavior for EmptyBucketBehavior {
         let (start, end) = context.player.get_ray_endpoints();
 
         // Raytrace: stop on source fluids
-        let (hit_block, hit_dir) = context.world.raytrace(start, end, |pos, world| {
+        let (hit_block, _) = context.world.raytrace(start, end, |pos, world| {
             let state = world.get_block_state(pos);
             let block = state.get_block();
 
@@ -272,6 +253,10 @@ impl ItemBehavior for EmptyBucketBehavior {
             if fluid_state.is_source() {
                 return RaytraceAction::ImmediateHit;
             }
+            // Vanilla parity: ClipContext.Fluid.SOURCE_ONLY — flowing fluid is transparent.
+            if !fluid_state.is_empty() {
+                return RaytraceAction::Pass;
+            }
 
             RaytraceAction::CheckShape
         });
@@ -280,11 +265,11 @@ impl ItemBehavior for EmptyBucketBehavior {
             return InteractionResult::Fail;
         };
 
-        let fluid_state = context.world.get_block_state(&hit_pos);
-        let block_behavior = BLOCK_BEHAVIORS.get_behavior(fluid_state.get_block());
+        let hit_state = context.world.get_block_state(&hit_pos);
+        let block_behavior = BLOCK_BEHAVIORS.get_behavior(hit_state.get_block());
 
         if let Some(result) =
-            block_behavior.pickup_block(context.world, hit_pos, fluid_state, Some(context.player))
+            block_behavior.pickup_block(context.world, hit_pos, hit_state, Some(context.player))
         {
             // Apply sound
             if let Some(sound) = result.sound {
@@ -296,32 +281,12 @@ impl ItemBehavior for EmptyBucketBehavior {
             // Give filled bucket
             consume_bucket(context, result.filled_bucket);
 
-            let fluid_ref = get_fluid_state_from_block(fluid_state).fluid_id;
-
-            // To be safe, if fluid_ref is empty, fallback to Water for tick scheduling
-            let valid_fluid_ref = if fluid_ref.is_empty {
-                &vanilla_fluids::WATER
-            } else {
-                fluid_ref
-            };
-
-            let tick_delay = FLUID_BEHAVIORS
-                .get_behavior(valid_fluid_ref)
-                .tick_delay(context.world);
-
-            for direction in Direction::ALL {
-                let neighbor = direction.relative(&hit_pos);
-                context
-                    .world
-                    .schedule_fluid_tick_default(neighbor, valid_fluid_ref, tick_delay);
-            }
-
             return InteractionResult::Success;
         }
 
         // Fallback for waterloggable blocks until they properly implement pickup_block
-        if fluid_state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
-            let new_state = fluid_state.set_value(&BlockStateProperties::WATERLOGGED, false);
+        if hit_state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
+            let new_state = hit_state.set_value(&BlockStateProperties::WATERLOGGED, false);
             context
                 .world
                 .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);

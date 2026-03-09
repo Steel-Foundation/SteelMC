@@ -10,7 +10,7 @@ use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_registry::blocks::properties::BlockStateProperties;
-use crate::behavior::FLUID_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::fluid::collision::can_pass_horizontally;
 use crate::fluid::spread_context::SpreadContext;
 use crate::fluid::state::{get_fluid_state, get_fluid_state_from_block};
@@ -74,10 +74,14 @@ pub fn get_new_liquid(
             if can_convert {
                 let below_pos = pos.below();
                 let below_state = world.get_block_state(&below_pos);
-                let below_block = below_state.get_block();
                 let below_fluid = get_fluid_state_from_block(below_state);
-                if (!below_block.config.replaceable && !below_block.config.is_air)
-                    || below_fluid.is_source()
+                // Vanilla uses isSolid() (full collision shape) not a broader
+                // non-replaceable/non-air check, so partial blocks (slabs, stairs)
+                // do not trigger source conversion.
+                // The source-below guard also requires the same fluid type to prevent
+                // e.g. a lava source beneath flowing water from creating a water source.
+                if below_state.is_solid()
+                    || (ptr::eq(below_fluid.fluid_id, fluid_id) && below_fluid.is_source())
                 {
                     return FluidState::source(fluid_id);
                 }
@@ -160,6 +164,14 @@ fn get_slope_distance(
             continue;
         }
 
+        // Vanilla's canPassThrough also checks the wall between the current
+        // exploration position and the neighbor (canPassThroughWall), not just
+        // the target block's passability. Missing this causes fluids to
+        // "see through" walls during slope finding.
+        if !can_pass_through_wall(ctx.world(), pos, neighbor, direction) {
+            continue;
+        }
+
         // Is this position a hole?
         if ctx.is_hole(neighbor, fluid_id) {
             return u16::from(depth); // Found a hole at this depth
@@ -200,6 +212,10 @@ pub fn get_spread(
 ) -> Vec<(Direction, FluidState)> {
     let max_depth = slope_find_distance;
     let mut candidates: Vec<(Direction, FluidState, u16)> = Vec::new();
+    // Lazily initialised on first use, matching vanilla's SpreadContext init.
+    // Shared across all directions so cached block states and hole checks are
+    // reused, matching vanilla's single-context-per-getSpread() behaviour.
+    let mut ctx: Option<SpreadContext<'_>> = None;
 
     for direction in [
         Direction::North,
@@ -223,14 +239,15 @@ pub fn get_spread(
         }
 
         // Vanilla parity: canHoldSpecificFluid.
-        // A waterloggable block (LiquidBlockContainer) can ONLY hold SOURCE water.
-        // It cannot hold flowing water.
+        // If the target is a LiquidBlockContainer (has WATERLOGGED), delegate to
+        // can_place_liquid which encodes per-block acceptance rules.
         let neighbor_state = world.get_block_state(&neighbor);
-        if let Some(waterlogged) = neighbor_state
+        if neighbor_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
         {
-            if waterlogged || !new_fluid.is_source() || !crate::fluid::is_water(new_fluid.fluid_id)
-            {
+            let behavior = BLOCK_BEHAVIORS.get_behavior(neighbor_state.get_block());
+            if !behavior.can_place_liquid(neighbor_state, new_fluid) {
                 continue;
             }
         }
@@ -239,11 +256,8 @@ pub fn get_spread(
         let distance = if is_hole(world, &neighbor, fluid_id) {
             0
         } else if max_depth > 0 {
-            // Vanilla creates SpreadContext once per getSpread() call (reused across
-            // directions for cross-direction caching). We create one per direction here,
-            // which is slightly less efficient but keeps the origin correct.
-            let mut ctx = SpreadContext::new(world, pos);
-            get_slope_distance(&mut ctx, neighbor, 1, Some(direction), fluid_id, max_depth)
+            let ctx = ctx.get_or_insert_with(|| SpreadContext::new(world, pos));
+            get_slope_distance(ctx, neighbor, 1, Some(direction), fluid_id, max_depth)
         } else {
             1000
         };

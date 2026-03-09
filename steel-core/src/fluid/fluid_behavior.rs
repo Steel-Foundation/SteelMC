@@ -1,3 +1,5 @@
+//! Fluid behavior trait and related types.
+//! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
 use crate::entity::Entity;
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;

@@ -8,10 +8,11 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_utils::{BlockPos, types::UpdateFlags};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::fluid::{
     FluidBehavior, FluidState, can_hold_any_fluid, can_pass_through_wall,
-    fluid_state_to_block_with_existing, get_fluid_state, get_new_liquid, get_spread, is_hole,
-    is_water,
+    fluid_state_to_block, fluid_state_to_block_with_existing, get_fluid_state, get_new_liquid,
+    get_spread, is_hole,
 };
 use crate::world::World;
 
@@ -40,12 +41,19 @@ pub trait FlowingFluid: FluidBehavior {
                     fluid_state_to_block_with_existing(FluidState::EMPTY, existing_state);
                 world.set_block(pos, air_or_unwaterlogged, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             } else if new_fluid != current_fluid {
+                // Capture old state before overwriting — vanilla computes getSpreadDelay
+                // with (old, new) before calling setBlock, so we must do the same.
+                let old_fluid = current_fluid;
                 current_fluid = new_fluid;
                 let existing_state = world.get_block_state(&pos);
                 let block_state = fluid_state_to_block_with_existing(new_fluid, existing_state);
                 world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-                world.schedule_fluid_tick_default(pos, self.fluid_type(), self.tick_delay(world));
+                world.schedule_fluid_tick_default(
+                    pos,
+                    self.fluid_type(),
+                    self.get_spread_delay(world, pos, old_fluid, new_fluid),
+                );
             }
         }
 
@@ -85,22 +93,31 @@ pub trait FlowingFluid: FluidBehavior {
         fluid_state: FluidState,
     ) {
         let target_state = world.get_block_state(&pos);
-        let is_waterloggable = target_state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some();
-        let block_state = fluid_state_to_block_with_existing(fluid_state, target_state);
 
+        // Vanilla parity: LiquidBlockContainer.placeLiquid() path.
+        // If the block can hold the fluid (e.g. waterloggable blocks), delegate to
+        // place_liquid which encodes per-block placement rules (sets WATERLOGGED, LIT, etc.)
+        // and schedules the fluid tick.
+        if target_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+        {
+            let behavior = BLOCK_BEHAVIORS.get_behavior(target_state.get_block());
+            behavior.place_liquid(world, pos, target_state, fluid_state);
+            return;
+        }
+
+        // Non-LiquidBlockContainer path: destroy the block and place the raw fluid.
         let target_block = target_state.get_block();
-        if !target_block.config.is_air && !is_waterloggable {
+        if !target_block.config.is_air {
             self.before_destroying_block(world, pos, target_state);
         }
 
+        let block_state = fluid_state_to_block(fluid_state);
         if world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
-            world.schedule_fluid_tick_default(
-                pos,
-                self.fluid_type(),
-                self.get_spread_delay(world, pos, get_fluid_state(world, &pos), fluid_state),
-            );
+            // Vanilla's spreadTo does not call getSpreadDelay — the delay for newly placed
+            // fluid blocks uses the plain tick delay, not the uphill multiplier.
+            world.schedule_fluid_tick_default(pos, self.fluid_type(), self.tick_delay(world));
         }
     }
 
@@ -146,13 +163,11 @@ pub trait FlowingFluid: FluidBehavior {
     }
 
     /// Spreads the fluid down from the given position.
+    ///
+    /// Callers must have already verified `can_spread_down` before calling this.
     fn spread_down(&self, world: &World, pos: BlockPos) -> bool
     {
         let below = pos.below();
-
-        if !self.can_spread_down(world, &pos) {
-            return false;
-        }
 
         let new_fluid = get_new_liquid(world, below, self.fluid_type(), self.drop_off(world));
         if new_fluid.is_empty() {
@@ -160,13 +175,12 @@ pub trait FlowingFluid: FluidBehavior {
         }
 
         let below_state = world.get_block_state(&below);
-        let is_waterloggable = below_state
+        if below_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some();
-
-        if is_waterloggable {
-            let is_source_water = new_fluid.is_source() && is_water(new_fluid.fluid_id);
-            if !is_source_water {
+            .is_some()
+        {
+            let behavior = BLOCK_BEHAVIORS.get_behavior(below_state.get_block());
+            if !behavior.can_place_liquid(below_state, new_fluid) {
                 return false;
             }
         }

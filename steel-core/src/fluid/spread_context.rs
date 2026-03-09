@@ -30,7 +30,7 @@ use crate::world::World;
 /// # Performance
 /// Reduces world lookups from ~20-30 to ~6 per spread calculation by caching
 /// repeated accesses to the same positions during slope finding.
-pub struct SpreadContext<'a> {
+pub(super) struct SpreadContext<'a> {
     /// Cache for block states by encoded relative position
     state_cache: FxHashMap<i16, BlockStateId>,
     /// Cache for hole check results by encoded relative position
@@ -47,7 +47,7 @@ impl<'a> SpreadContext<'a> {
     /// `origin` must be the block that triggered the spread (the block passed to
     /// `get_spread()`), matching vanilla's `new FlowingFluid.SpreadContext(level, blockPos)`.
     #[must_use]
-    pub fn new(world: &'a World, origin: BlockPos) -> Self {
+    pub(super) fn new(world: &'a World, origin: BlockPos) -> Self {
         Self {
             state_cache: FxHashMap::default(),
             hole_cache: FxHashMap::default(),

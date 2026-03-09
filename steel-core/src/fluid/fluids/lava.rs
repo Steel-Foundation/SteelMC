@@ -22,6 +22,7 @@ use crate::fluid::{
     is_water, lava_id,
 };
 use crate::world::World;
+use std::ptr;
 
 /// Lava fluid implementation.
 ///
@@ -126,14 +127,14 @@ impl FluidBehavior for LavaFluid {
 
         if above_block.config.is_air {
             if rand::random::<u32>() % 100 == 0 {
-                let volume: f32 = rand::random::<f32>() * 0.2 + 0.9;
-                let pitch: f32 = rand::random::<f32>() * 0.2 + 0.9;
+                let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
+                let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
                 world.play_block_sound(sound_events::BLOCK_LAVA_POP, pos, volume, pitch, None);
             }
 
             if rand::random::<u32>() % 200 == 0 {
-                let volume: f32 = rand::random::<f32>() * 0.2 + 0.9;
-                let pitch: f32 = rand::random::<f32>() * 0.2 + 0.9;
+                let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
+                let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
                 world.play_block_sound(sound_events::BLOCK_LAVA_AMBIENT, pos, volume, pitch, None);
             }
         }
@@ -160,10 +161,19 @@ impl FlowingFluid for LavaFluid {
         if direction == Direction::Down {
             let below_fluid = get_fluid_state(world, &pos);
             if is_water(below_fluid.fluid_id) {
-                // If the block we are spreading into is water, we form stone.
-                let state = REGISTRY.blocks.get_default_state_id(vanilla_blocks::STONE);
-                if world.set_block(pos, state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
-                    world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
+                // Vanilla: fizz always plays when lava meets water going down,
+                // regardless of whether stone is formed.
+                world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
+
+                // Vanilla: stone only forms when the target is a pure water LiquidBlock,
+                // not a waterlogged block (stairs, slabs, etc.).
+                let below_block = world.get_block_state(&pos).get_block();
+                if ptr::eq(below_block, vanilla_blocks::WATER) {
+                    world.set_block(
+                        pos,
+                        REGISTRY.blocks.get_default_state_id(vanilla_blocks::STONE),
+                        UpdateFlags::UPDATE_ALL_IMMEDIATE,
+                    );
                 }
                 return;
             }

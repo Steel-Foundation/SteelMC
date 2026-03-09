@@ -57,7 +57,6 @@ use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::fluid::FluidState;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
@@ -124,23 +123,6 @@ pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
 pub fn init_behaviors() {
     let mut block_behaviors = BlockBehaviorRegistry::new();
     register_block_behaviors(&mut block_behaviors);
-
-    // Register liquid block behaviors for proper de-propagation
-    // When a neighbor changes, these blocks schedule a tick for themselves
-    block_behaviors.set_behavior(
-        vanilla_blocks::WATER,
-        Box::new(blocks::LiquidBlock::new(
-            vanilla_blocks::WATER,
-            &vanilla_fluids::WATER,
-        )),
-    );
-    block_behaviors.set_behavior(
-        vanilla_blocks::LAVA,
-        Box::new(blocks::LiquidBlock::new(
-            vanilla_blocks::LAVA,
-            &vanilla_fluids::LAVA,
-        )),
-    );
 
     assert!(
         BLOCK_BEHAVIORS.0.set(block_behaviors).is_ok(),

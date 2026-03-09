@@ -4,7 +4,7 @@
 //! Based on vanilla Minecraft's `FlowingFluid` system.
 //!
 //! ### TODOs
-//! - TODO: Full `LiquidBlockContainer` API (so blocks like stairs/slabs can dynamically `canPlaceLiquid` / `placeLiquid`).
+//! - TODO: Per-block `LiquidBlockContainer` overrides (SlabBlock double, BarrierBlock, CampfireBlock) — architecture in `BlockBehaviour` trait is done.
 //! - TODO: Particle Events (underwater bubbles, splash — needs `CLevelParticles` packet).
 //! - TODO: Entity Interactions (pushing, drowning, extinguishing, lava damage).
 //! - TODO: Block item drops when water destroys blocks, will be done as soon as the cactus PR is merged
@@ -17,7 +17,7 @@ pub mod conversion;
 pub mod flowing_fluid;
 pub mod fluid_behavior;
 pub mod fluids;
-pub mod spread_context;
+mod spread_context;
 pub mod state;
 
 // Re-export fluid types from steel_registry

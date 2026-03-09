@@ -4,10 +4,11 @@ use std::sync::Weak;
 
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
-use steel_utils::types::InteractionHand;
+use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
@@ -303,6 +304,52 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
         FluidState::EMPTY
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.
+    ///
+    /// Returns `true` if the given fluid state may be placed into this block at the
+    /// given state.  Called by the fluid-spread logic; there is no player context
+    /// here (fluid spreading has no associated player).
+    ///
+    /// Default (`SimpleWaterloggedBlock`): accepts source water only when the block
+    /// has a `WATERLOGGED` property that is currently `false`.  Override for blocks
+    /// that need different restrictions (e.g. double-slabs, barriers).
+    #[allow(unused_variables)]
+    fn can_place_liquid(&self, state: BlockStateId, fluid_state: FluidState) -> bool {
+        match state.try_get_value(&BlockStateProperties::WATERLOGGED) {
+            Some(false) => fluid_state.is_source() && crate::fluid::is_water(fluid_state.fluid_id),
+            _ => false,
+        }
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.placeLiquid()`.
+    ///
+    /// Attempts to place `fluid_state` into this block.  Returns `true` on success,
+    /// `false` if placement was rejected.
+    ///
+    /// Default (`SimpleWaterloggedBlock`): sets `WATERLOGGED = true` and schedules
+    /// a fluid tick.  Delegates the guard to [`can_place_liquid`].
+    ///
+    /// [`can_place_liquid`]: BlockBehaviour::can_place_liquid
+    #[allow(unused_variables)]
+    fn place_liquid(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        if !self.can_place_liquid(state, fluid_state) {
+            return false;
+        }
+        let new_state = state.set_value(&BlockStateProperties::WATERLOGGED, true);
+        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+        let delay = super::fluid::FLUID_BEHAVIORS
+            .get_behavior(fluid_state.fluid_id)
+            .tick_delay(world);
+        world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        true
     }
 }
 
