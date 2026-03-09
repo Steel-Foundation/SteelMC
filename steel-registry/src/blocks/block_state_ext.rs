@@ -101,9 +101,16 @@ impl BlockStateExt for BlockStateId {
             return false;
         }
 
-        // Check if the collision shape is a full block
+        // Vanilla's calculateSolid: check collision shape bounding box.
+        // A block is solid if its average dimension size >= 35/48 (~0.7292)
+        // or its Y size >= 1.0. This catches partial blocks like cactus,
+        // fences, and slabs that aren't full cubes.
         let shape = self.get_collision_shape();
-        blocks::shapes::is_shape_full_block(shape)
+        if shape.is_empty() {
+            return false;
+        }
+        let bounds = blocks::shapes::bounding_box(shape);
+        bounds.get_size() >= 0.729_166_7 || bounds.height() >= 1.0
     }
 
     fn is_replaceable(&self) -> bool {

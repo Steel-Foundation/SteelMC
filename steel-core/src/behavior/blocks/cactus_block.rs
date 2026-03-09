@@ -131,7 +131,7 @@ impl BlockBehaviour for CactusBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let above_pos = pos.offset(0, 1, 0);
+        let above_pos = pos.above();
 
         if !world.get_block_state(&above_pos).is_air() {
             return;
