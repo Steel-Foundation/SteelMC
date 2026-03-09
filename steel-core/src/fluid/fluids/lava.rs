@@ -19,8 +19,6 @@ use steel_utils::types::UpdateFlags;
 use crate::fluid::{FlowingFluid, FluidBehavior};
 use crate::fluid::{FluidRef, FluidState, get_fluid_state, get_height, is_lava, is_water, lava_id};
 use crate::world::World;
-use std::ptr;
-
 /// Lava fluid implementation.
 ///
 /// Implements [`FluidBehavior`] with lava-specific parameters and
@@ -165,7 +163,7 @@ impl FlowingFluid for LavaFluid {
                 // Vanilla: stone only forms when the target is a pure water LiquidBlock,
                 // not a waterlogged block (stairs, slabs, etc.).
                 let below_block = world.get_block_state(&pos).get_block();
-                if ptr::eq(below_block, vanilla_blocks::WATER) {
+                if below_block == vanilla_blocks::WATER {
                     world.set_block(
                         pos,
                         REGISTRY.blocks.get_default_state_id(vanilla_blocks::STONE),

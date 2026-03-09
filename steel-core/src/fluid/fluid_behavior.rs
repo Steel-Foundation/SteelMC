@@ -1,7 +1,5 @@
 //! Fluid behavior trait and related types.
 //! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
-use std::ptr;
-
 use crate::entity::Entity;
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
@@ -21,7 +19,7 @@ pub trait FluidBehavior: Send + Sync {
     ///
     /// **Override required** for any fluid that has both a source and a flowing variant
     fn is_same(&self, other: FluidRef) -> bool {
-        ptr::eq(self.fluid_type(), other)
+        self.fluid_type() == other
     }
 
     /// Gets the number of ticks between fluid updates.

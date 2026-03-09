@@ -3,8 +3,6 @@
 //! Based on vanilla's LiquidBlock.java.
 //!
 // TODO: Add support for cached fluid states when FluidState caching is implemented
-use std::ptr;
-
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -58,7 +56,7 @@ impl LiquidBlock {
         // Check if there's soul soil below (for basalt generation)
         let below_pos = pos.offset(0, -1, 0);
         let below_state = world.get_block_state(&below_pos);
-        let has_soul_soil_below = ptr::eq(below_state.get_block(), vanilla_blocks::SOUL_SOIL);
+        let has_soul_soil_below = below_state.get_block() == vanilla_blocks::SOUL_SOIL;
 
         // Get fluid state to check if this is a source
         let fluid_state = get_fluid_state(world, &pos);
@@ -94,7 +92,7 @@ impl LiquidBlock {
             // Check for basalt generation: soul soil below + blue ice adjacent
             if has_soul_soil_below {
                 let neighbor_state = world.get_block_state(&neighbor_pos);
-                if ptr::eq(neighbor_state.get_block(), vanilla_blocks::BLUE_ICE) {
+                if neighbor_state.get_block() == vanilla_blocks::BLUE_ICE {
                     let new_state = REGISTRY.blocks.get_default_state_id(vanilla_blocks::BASALT);
                     world.set_block(pos, new_state, UpdateFlags::UPDATE_IMMEDIATE);
                     return false; // Don't schedule fluid tick - block was converted

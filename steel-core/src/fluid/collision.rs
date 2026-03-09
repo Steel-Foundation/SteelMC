@@ -5,7 +5,6 @@
 use crate::fluid::state::get_fluid_state_from_block;
 use crate::physics::shapes::merged_face_occludes;
 use crate::world::World;
-use std::ptr;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -74,13 +73,13 @@ pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
 
 /// Returns true if a block is in the vanilla fluid exclusion list.
 fn is_fluid_excluded_block(block: BlockRef) -> bool {
-    ptr::eq(block, vanilla_blocks::LADDER)
-        || ptr::eq(block, vanilla_blocks::SUGAR_CANE)
-        || ptr::eq(block, vanilla_blocks::BUBBLE_COLUMN)
-        || ptr::eq(block, vanilla_blocks::NETHER_PORTAL)
-        || ptr::eq(block, vanilla_blocks::END_PORTAL)
-        || ptr::eq(block, vanilla_blocks::END_GATEWAY)
-        || ptr::eq(block, vanilla_blocks::STRUCTURE_VOID)
+    block == vanilla_blocks::LADDER
+        || block == vanilla_blocks::SUGAR_CANE
+        || block == vanilla_blocks::BUBBLE_COLUMN
+        || block == vanilla_blocks::NETHER_PORTAL
+        || block == vanilla_blocks::END_PORTAL
+        || block == vanilla_blocks::END_GATEWAY
+        || block == vanilla_blocks::STRUCTURE_VOID
         || REGISTRY.blocks.is_in_tag(block, &SIGNS_TAG)
         || REGISTRY.blocks.is_in_tag(block, &DOORS_TAG)
 }
@@ -116,7 +115,7 @@ pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: Flui
 
     if is_shape_full_block(shape) {
         let fluid_state = get_fluid_state_from_block(state);
-        return ptr::eq(fluid_state.fluid_id, target_fluid_id) && !fluid_state.is_source();
+        return fluid_state.fluid_id == target_fluid_id && !fluid_state.is_source();
     }
 
     if shape.is_empty() {
@@ -133,7 +132,7 @@ pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: Flui
 
     // Block already contains the same flowing fluid at a lower level.
     let fluid_state = get_fluid_state_from_block(state);
-    if ptr::eq(fluid_state.fluid_id, target_fluid_id) && !fluid_state.is_source() {
+    if fluid_state.fluid_id == target_fluid_id && !fluid_state.is_source() {
         return true;
     }
 

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 use std::{
-    io, ptr,
+    io,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -460,8 +460,7 @@ impl World {
 
         // Waterlogging support: If setting to AIR, check if current block is waterlogged
         // If so, replace with WATER source instead of AIR
-        #[allow(clippy::cmp_null)]
-        let block_state = if ptr::eq(block_state.get_block(), vanilla_blocks::AIR) {
+        let block_state = if block_state.get_block() == vanilla_blocks::AIR {
             let current_state = self.get_block_state(&pos);
             if let Some(true) = current_state.try_get_value(&BlockStateProperties::WATERLOGGED) {
                 // Restore water source

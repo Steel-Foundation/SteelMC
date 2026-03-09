@@ -4,7 +4,7 @@ use rayon::{
 };
 use rustc_hash::FxBuildHasher;
 use std::{
-    io, mem, ptr,
+    io, mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicUsize, Ordering},
@@ -527,7 +527,7 @@ impl ChunkMap {
                 let fluid_state = get_fluid_state_from_block(state);
 
                 // Only execute if the fluid at this location still matches the scheduled tick
-                if !ptr::eq(fluid_state.fluid_id, tick.tick_type) {
+                if fluid_state.fluid_id != tick.tick_type {
                     continue;
                 }
 

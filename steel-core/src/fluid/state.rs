@@ -3,7 +3,6 @@
 //! Responsible for deriving `FluidState` from `BlockState`
 //! and converting `FluidState` back into `BlockStateId`.
 
-use std::ptr;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -28,12 +27,12 @@ pub fn get_fluid_state(world: &World, pos: &BlockPos) -> FluidState {
 pub fn get_fluid_state_from_block(state: BlockStateId) -> FluidState {
     let block = state.get_block();
 
-    if ptr::eq(block, vanilla_blocks::WATER) {
+    if block == vanilla_blocks::WATER {
         let level: u8 = state
             .try_get_value(&BlockStateProperties::LEVEL)
             .unwrap_or(0);
         FluidState::from_block_level(water_id(), level)
-    } else if ptr::eq(block, vanilla_blocks::LAVA) {
+    } else if block == vanilla_blocks::LAVA {
         let level: u8 = state
             .try_get_value(&BlockStateProperties::LEVEL)
             .unwrap_or(0);
@@ -178,7 +177,7 @@ pub fn get_own_height(fluid_state: FluidState) -> f32 {
 pub fn get_height(world: &World, pos: &BlockPos, fluid_state: FluidState) -> f32 {
     let above = pos.offset(0, 1, 0);
     let above_fluid = get_fluid_state(world, &above);
-    if ptr::eq(above_fluid.fluid_id, fluid_state.fluid_id) {
+    if above_fluid.fluid_id == fluid_state.fluid_id {
         1.0
     } else {
         get_own_height(fluid_state)

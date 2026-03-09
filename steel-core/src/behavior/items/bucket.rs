@@ -6,8 +6,6 @@
 // TODO: Add support for bucket stacks (count > 1) without deadlocks
 // TODO: Spawn particles
 
-use std::ptr;
-
 use crate::behavior::context::InteractionResult;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
 use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
@@ -73,7 +71,7 @@ impl ItemBehavior for FilledBucketBehavior {
             let state = world.get_block_state(pos);
             let block = state.get_block();
             // Pass through air and all fluids
-            if ptr::eq(block, vanilla_blocks::AIR) {
+            if block == vanilla_blocks::AIR {
                 return RaytraceAction::Pass;
             }
             // Check fluid state for pass-through
@@ -119,7 +117,7 @@ impl ItemBehavior for FilledBucketBehavior {
             }
 
             // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
-            let is_water_bucket = ptr::eq(self.fluid_block, vanilla_blocks::WATER);
+            let is_water_bucket = self.fluid_block == vanilla_blocks::WATER;
 
             if is_water_bucket {
                 let source_water = FluidState::source(&vanilla_fluids::WATER);
@@ -191,7 +189,7 @@ impl ItemBehavior for FilledBucketBehavior {
         // Determine Primary Target
         // If clicked block is waterloggable and we have water, try clicked_pos first.
         // Otherwise default to relative pos.
-        let is_water_bucket = ptr::eq(self.fluid_block, vanilla_blocks::WATER);
+        let is_water_bucket = self.fluid_block == vanilla_blocks::WATER;
         let clicked_is_waterloggable = clicked_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
             .is_some();
@@ -248,7 +246,7 @@ impl ItemBehavior for EmptyBucketBehavior {
             let state = world.get_block_state(pos);
             let block = state.get_block();
 
-            if ptr::eq(block, vanilla_blocks::AIR) {
+            if block == vanilla_blocks::AIR {
                 return RaytraceAction::Pass;
             }
 
