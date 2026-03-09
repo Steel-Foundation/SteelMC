@@ -13,6 +13,7 @@ use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
+use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_items;
 
@@ -86,6 +87,7 @@ impl LiquidBlock {
                 // UPDATE_ALL_IMMEDIATE so neighbor blocks (e.g. the water that triggered
                 // this) also receive shape and neighbor-changed updates.
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+                world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
                 return false; // Don't schedule fluid tick - block was converted
             }
 
@@ -95,6 +97,7 @@ impl LiquidBlock {
                 if neighbor_state.get_block() == vanilla_blocks::BLUE_ICE {
                     let new_state = REGISTRY.blocks.get_default_state_id(vanilla_blocks::BASALT);
                     world.set_block(pos, new_state, UpdateFlags::UPDATE_IMMEDIATE);
+                    world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
                     return false; // Don't schedule fluid tick - block was converted
                 }
             }
@@ -192,7 +195,6 @@ impl BlockBehaviour for LiquidBlock {
         };
 
         Some(PickupResult {
-            resulting_block_state: air,
             filled_bucket: bucket,
             sound: Some(sound),
         })

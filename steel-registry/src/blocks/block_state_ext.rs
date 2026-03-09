@@ -134,16 +134,3 @@ impl FluidReplaceableExt for BlockStateId {
         block.config.replaceable
     }
 }
-
-pub trait FluidStateExt {
-    fn contains_fluid(&self) -> bool;
-}
-
-impl FluidStateExt for BlockStateId {
-    fn contains_fluid(&self) -> bool {
-        let block = self.get_block();
-
-        // Vanilla-like: water + lava are fluids
-        block == vanilla_blocks::WATER || block == vanilla_blocks::LAVA
-    }
-}

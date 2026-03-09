@@ -20,7 +20,6 @@ use crate::player::Player;
 use crate::world::World;
 
 pub struct PickupResult {
-    pub resulting_block_state: BlockStateId,
     pub filled_bucket: ItemRef,
     pub sound: Option<i32>,
 }

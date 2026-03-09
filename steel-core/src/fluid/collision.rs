@@ -15,15 +15,6 @@ use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_block_tags::{DOORS_TAG, SIGNS_TAG};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
-/// Checks if a block can be replaced by fluid.
-#[must_use]
-pub fn can_be_replaced_by_fluid(world: &World, pos: &BlockPos) -> bool {
-    let state = world.get_block_state(pos);
-    let block = state.get_block();
-
-    // Air and replaceable blocks can be replaced
-    block.config.replaceable || block.config.is_air
-}
 
 /// Checks if fluid can pass through a wall between two positions.
 #[must_use]

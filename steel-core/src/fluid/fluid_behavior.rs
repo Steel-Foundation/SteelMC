@@ -4,7 +4,6 @@ use crate::entity::Entity;
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
-use steel_registry::items::ItemRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Trait for fluid behavior implementations.
@@ -46,22 +45,6 @@ pub trait FluidBehavior: Send + Sync {
         other_fluid: FluidRef,
         direction: Direction,
     ) -> bool;
-
-    /// Returns the particle type ID for ceiling-drip particles.
-    // TODO: wire up when CLevelParticles / client-side tick system is implemented.
-    fn drip_particle(&self) -> Option<i32> {
-        None
-    }
-
-    /// Gets the sound event ID for when this fluid is picked up with a bucket.
-    fn pickup_sound(&self) -> Option<i32> {
-        None
-    }
-
-    /// Gets the item that is dropped when this fluid is picked up with a bucket.
-    fn bucket_item(&self) -> Option<ItemRef> {
-        None
-    }
 
     /// Called before a block is destroyed by this fluid.
     fn before_destroying_block(&self, _world: &World, _pos: BlockPos, _replaced: BlockStateId) {

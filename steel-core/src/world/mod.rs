@@ -392,12 +392,6 @@ impl World {
         self.level_data.read().data().seed
     }
 
-    /// Gets the current game time (tick count).
-    #[must_use]
-    pub fn game_time(&self) -> u64 {
-        self.level_data.read().data().game_time as u64
-    }
-
     /// Gets the obfuscated seed for sending to clients.
     ///
     /// This uses SHA-256 hashing to prevent clients from easily extracting
@@ -1407,23 +1401,6 @@ impl World {
         } else {
             hit_dir.map(|d| (tmin, d))
         }
-    }
-
-    /// Checks if a ray intersects with an axis-aligned bounding box (AABB).
-    ///
-    /// # Arguments
-    /// * `start` - The starting point of the ray
-    /// * `end` - The ending point of the ray
-    /// * `min` - The minimum coordinates of the AABB
-    /// * `max` - The maximum coordinates of the AABB
-    #[must_use]
-    pub fn intersects_aabb_with_direction(
-        start: Vector3<f64>,
-        end: Vector3<f64>,
-        min: Vector3<f64>,
-        max: Vector3<f64>,
-    ) -> Option<Direction> {
-        Self::intersects_aabb_with_t(start, end, min, max).map(|(_, dir)| dir)
     }
 
     /// Performs a raytrace in the world.
