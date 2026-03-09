@@ -1,6 +1,6 @@
 //! Block behavior trait and registry.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -14,6 +14,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
+use crate::entity::Entity;
 use crate::fluid::is_water;
 use crate::player::Player;
 use crate::world::World;
@@ -207,7 +208,7 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `world` - The world the block is in
     /// * `pos` - The position of the block
     #[allow(unused_variables)]
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
     }
 
@@ -222,7 +223,27 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `world` - The world the block is in
     /// * `pos` - The position of the block
     #[allow(unused_variables)]
-    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        // Default: no-op
+    }
+
+    /// Called when an entity is inside this block's collision area.
+    ///
+    /// Used by cactus (damage), fire (ignite), sweet berry bush (slow + damage), etc.
+    ///
+    /// # Arguments
+    /// * `state` - The current block state
+    /// * `world` - The world
+    /// * `pos` - The position of the block
+    /// * `entity` - The entity inside the block
+    #[allow(unused_variables)]
+    fn entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &World,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
         // Default: no-op
     }
 

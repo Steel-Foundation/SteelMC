@@ -1,5 +1,3 @@
-use std::ptr;
-
 use steel_registry::{
     REGISTRY,
     blocks::{
@@ -60,7 +58,7 @@ impl ItemBehavior for ShovelBehaviour {
             return InteractionResult::Pass;
         }
 
-        if FLATTENABLES.iter().any(|it| ptr::eq(*it, block)) {
+        if FLATTENABLES.contains(&block) {
             context
                 .item_stack
                 .hurt_and_break(1, context.player.has_infinite_materials());

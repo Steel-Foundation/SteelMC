@@ -25,12 +25,6 @@ impl std::fmt::Debug for Item {
     }
 }
 
-impl PartialEq for Item {
-    fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
-    }
-}
-
 impl Item {
     #[must_use]
     pub fn from_block(block: BlockRef) -> Self {
@@ -79,6 +73,15 @@ impl Item {
 }
 
 pub type ItemRef = &'static Item;
+
+impl PartialEq for ItemRef {
+    #[allow(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(*self, *other)
+    }
+}
+
+impl Eq for ItemRef {}
 
 pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
