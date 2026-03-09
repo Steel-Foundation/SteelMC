@@ -3,7 +3,6 @@
 //! Cactus grows up to 3 blocks tall via random ticks. It requires sand below
 //! and breaks if any solid block or lava is adjacent horizontally.
 
-use std::ptr;
 use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
@@ -75,8 +74,8 @@ impl CactusBlock {
             // TODO: FluidRegistry::is_in_tag(fluid.fluid_id, &vanilla_fluid_tags::LAVA)
             let fluid = neighbor.get_fluid_state();
             if !fluid.is_empty()
-                && (ptr::eq(fluid.fluid_id, &raw const vanilla_fluids::LAVA)
-                    || ptr::eq(fluid.fluid_id, &raw const vanilla_fluids::FLOWING_LAVA))
+                && (fluid.fluid_id == &vanilla_fluids::LAVA
+                    || fluid.fluid_id == &vanilla_fluids::FLOWING_LAVA)
             {
                 return false;
             }
@@ -87,7 +86,7 @@ impl CactusBlock {
         let below = world.get_block_state(&below_pos);
         let below_block = below.get_block();
 
-        let valid_below = ptr::eq(below_block, vanilla_blocks::CACTUS)
+        let valid_below = below_block == vanilla_blocks::CACTUS
             || steel_registry::REGISTRY.blocks.is_in_tag(
                 below_block,
                 &steel_utils::Identifier::vanilla_static("sand"),
@@ -130,7 +129,7 @@ impl BlockBehaviour for CactusBlock {
         _moved_by_piston: bool,
     ) {
         // Don't check if replacing the same block type (e.g., state change)
-        if ptr::eq(state.get_block(), old_state.get_block()) {
+        if state.get_block() == old_state.get_block() {
             return;
         }
 
@@ -160,12 +159,11 @@ impl BlockBehaviour for CactusBlock {
         let age = state.get_value(&BlockStateProperties::AGE_15);
 
         // Vanilla: while (serverLevel.getBlockState(blockPos.below(i)).is(this))
-        while ptr::eq(
-            world
-                .get_block_state(&pos.offset(0, -(i as i32), 0))
-                .get_block(),
-            vanilla_blocks::CACTUS,
-        ) {
+        while world
+            .get_block_state(&pos.offset(0, -(i as i32), 0))
+            .get_block()
+            == vanilla_blocks::CACTUS
+        {
             // Vanilla: if (++i == 3 && j == 15) return;
             i += 1;
             if i == MAX_CACTUS_HEIGHT && age == 15 {

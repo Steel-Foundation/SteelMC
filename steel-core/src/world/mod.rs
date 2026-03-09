@@ -2,7 +2,7 @@
 
 use std::path::Path;
 use std::{
-    io, ptr,
+    io,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -1350,7 +1350,7 @@ impl World {
         // Destruction particles (skip fire blocks, matching vanilla)
         let block = state.get_block();
         let is_fire =
-            ptr::eq(block, vanilla_blocks::FIRE) || ptr::eq(block, vanilla_blocks::SOUL_FIRE);
+            block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
         if !is_fire {
             self.destroy_block_effect(pos, u32::from(state.0), None);
         }
