@@ -8,13 +8,16 @@ use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_fluids;
+use steel_registry::{REGISTRY, vanilla_damage_types};
+use steel_registry::{vanilla_block_tags, vanilla_blocks};
+use steel_registry::{vanilla_fluid_tags, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::Entity;
+use crate::entity::damage::DamageSource;
 use crate::world::World;
 
 /// Maximum cactus stack height (vanilla: 3 blocks).
@@ -35,7 +38,7 @@ const FLOWER_CHANCE_TALL: f64 = 0.25;
 /// - Must be placed on sand, red sand, or another cactus
 /// - Cannot have solid blocks adjacent horizontally
 /// - Grows up to 3 blocks tall via random ticks
-/// - Damages entities that touch it (TODO)
+/// - Damages entities that touch it (1 HP per tick)
 pub struct CactusBlock {
     block: BlockRef,
 }
@@ -70,11 +73,10 @@ impl CactusBlock {
 
             // Lava check
             // when FluidRegistry has a lava tag then we can use it
-            // TODO: FluidRegistry::is_in_tag(fluid.fluid_id, &vanilla_fluid_tags::LAVA)
             let fluid = neighbor.get_fluid_state();
-            if !fluid.is_empty()
-                && (fluid.fluid_id == &vanilla_fluids::LAVA
-                    || fluid.fluid_id == &vanilla_fluids::FLOWING_LAVA)
+            if REGISTRY
+                .fluids
+                .is_in_tag(fluid.fluid_id, &vanilla_fluid_tags::LAVA_TAG)
             {
                 return false;
             }
@@ -86,10 +88,10 @@ impl CactusBlock {
         let below_block = below.get_block();
 
         let valid_below = below_block == vanilla_blocks::CACTUS
-            || steel_registry::REGISTRY.blocks.is_in_tag(
-                below_block,
-                &steel_utils::Identifier::vanilla_static("sand"),
-            );
+            || steel_registry::REGISTRY
+                .blocks
+                //TODO: In 26.1 this tag is changed
+                .is_in_tag(below_block, &vanilla_block_tags::SAND_TAG);
 
         if !valid_below {
             return false;
@@ -205,11 +207,18 @@ impl BlockBehaviour for CactusBlock {
         state
     }
 
-    // TODO: Implement when entity-block collision is supported
-    // fn entity_inside(&self, _state: BlockStateId, world: &World, pos: BlockPos, entity: &Entity) {
-    //     // Vanilla: entity.hurt(level.damageSources().cactus(), 1.0F);
-    //     // Deal 1 damage (half heart) to entities inside the cactus
-    // }
+    fn entity_inside(
+        &self,
+        _state: BlockStateId,
+        _world: &World,
+        _pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
+        entity.hurt(
+            &DamageSource::environment(vanilla_damage_types::CACTUS),
+            1.0,
+        );
+    }
 
     // TODO: Implement when pathfinding is supported
     // fn is_pathfindable(&self, _state: BlockStateId, _path_type: PathComputationType) -> bool {

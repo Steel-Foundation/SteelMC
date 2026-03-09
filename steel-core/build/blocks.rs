@@ -60,6 +60,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut redstone_torch_blocks = Vec::new();
     let mut redstone_wall_torch_blocks = Vec::new();
     let mut cactus_blocks = Vec::new();
+    let mut cactus_flower_blocks: Vec<Ident> = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
@@ -106,6 +107,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
             "CactusBlock" => cactus_blocks.push(const_ident),
+            "CactusFlowerBlock" => cactus_flower_blocks.push(const_ident),
             _ => {}
         }
     }
@@ -127,6 +129,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
     let cactus_type = Ident::new("CactusBlock", Span::call_site());
+    let cactus_flower_type = Ident::new("CactusFlowerBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let button_registrations = {
@@ -185,6 +188,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let redstone_wall_torch_registrations =
         generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
     let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
+    let cactus_flower_registrations =
+        generate_registrations(cactus_flower_blocks.iter(), &cactus_flower_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
@@ -195,7 +200,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock,
             FarmlandBlock, FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
             CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
-            RedstoneTorchBlock, RedstoneWallTorchBlock, CactusBlock,
+            RedstoneTorchBlock, RedstoneWallTorchBlock, CactusBlock, CactusFlowerBlock,
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
@@ -218,6 +223,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #redstone_torch_registrations
             #redstone_wall_torch_registrations
             #cactus_registrations
+            #cactus_flower_registrations
         }
     };
 

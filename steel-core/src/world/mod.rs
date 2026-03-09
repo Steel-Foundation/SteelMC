@@ -1349,8 +1349,7 @@ impl World {
 
         // Destruction particles (skip fire blocks, matching vanilla)
         let block = state.get_block();
-        let is_fire =
-            block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
+        let is_fire = block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
         if !is_fire {
             self.destroy_block_effect(pos, u32::from(state.0), None);
         }
