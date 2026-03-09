@@ -11,9 +11,11 @@
 //! - [`ParameterPoint`] - Full biome parameter specification
 //! - [`ParameterList`] - Collection of biomes with their parameter points
 
-mod types;
+mod parameter_list;
+pub(crate) mod types;
 
-pub use types::{Parameter, ParameterList, ParameterPoint, TargetPoint};
+pub use parameter_list::ParameterList;
+pub use types::{Parameter, ParameterPoint, TargetPoint};
 
 /// Quantization factor used to convert floats to longs.
 /// This is the exact value from vanilla Climate.java.

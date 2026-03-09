@@ -57,6 +57,7 @@ use crate::{
 
 mod player_area_map;
 mod player_map;
+pub mod structure;
 pub mod tick_scheduler;
 mod weather;
 mod world_entities;
