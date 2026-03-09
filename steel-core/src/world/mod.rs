@@ -26,19 +26,20 @@ use steel_protocol::{
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
+use steel_registry::loot_table::LootContext;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_game_rules::RANDOM_TICK_SPEED;
+use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 
-use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
@@ -547,7 +548,12 @@ impl World {
     /// Notifies a block that one of its neighbors changed.
     ///
     /// This is the Rust equivalent of vanilla's `Level.neighborChanged()`.
-    fn neighbor_changed(&self, pos: BlockPos, source_block: BlockRef, moved_by_piston: bool) {
+    pub(crate) fn neighbor_changed(
+        &self,
+        pos: BlockPos,
+        source_block: BlockRef,
+        moved_by_piston: bool,
+    ) {
         if !self.is_in_valid_bounds(&pos) {
             return;
         }
@@ -605,7 +611,7 @@ impl World {
     ///
     /// Returns timing information for the world tick.
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
-    pub fn tick_b(&self, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+    pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
         if runs_normally {
             self.tick_weather();
             self.tick_time();
@@ -1322,6 +1328,64 @@ impl World {
         );
     }
 
+    /// Destroys a block at the given position, optionally dropping its loot.
+    ///
+    /// Sends destruction particles (skipping fire blocks), optionally drops
+    /// resources via loot table, then replaces with air.
+    pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
+        let state = self.get_block_state(&pos);
+        if state.is_air() {
+            return false;
+        }
+
+        let block = state.get_block();
+        let is_fire = block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
+        if !is_fire {
+            self.destroy_block_effect(pos, u32::from(state.0), None);
+        }
+
+        if drop_items {
+            self.drop_resources(state, pos);
+        }
+
+        // TODO: Vanilla uses fluidState.createLegacyBlock() instead of AIR,
+        // so breaking a waterlogged block leaves water behind.
+        self.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        // TODO: Fire GameEvent.BLOCK_DESTROY
+        true
+    }
+
+    /// Drops the loot for a block using its loot table.
+    ///
+    /// This is the no-tool/no-entity overload. Player block breaking uses
+    /// `block_breaking::drop_block_loot` which includes tool context for
+    /// fortune/silk touch.
+    // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
+    pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
+        let block = state.get_block();
+        let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
+
+        let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
+            return;
+        };
+
+        let mut rng = rand::rng();
+        let mut ctx = LootContext::new(&mut rng)
+            .with_block_state(state)
+            .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
+
+        let drops = loot_table.get_random_items(&mut ctx);
+        for item in drops {
+            if !item.is_empty() {
+                self.pop_resource(&pos, item);
+            }
+        }
+    }
+
     /// Broadcasts a block event to nearby players within 64 blocks.
     ///
     /// Block events are used for special block behaviors like pistons, note blocks,
@@ -1512,7 +1576,11 @@ impl World {
         pos: Vector3<f64>,
         item: ItemStack,
     ) -> Option<Arc<ItemEntity>> {
-        self.spawn_item_with_velocity(pos, item, Vector3::new(0.0, 0.0, 0.0))
+        // Default ItemEntity velocity: random horizontal scatter + upward pop
+        let vx = rand::random::<f64>() * 0.2 - 0.1;
+        let vy = 0.2;
+        let vz = rand::random::<f64>() * 0.2 - 0.1;
+        self.spawn_item_with_velocity(pos, item, Vector3::new(vx, vy, vz))
     }
 
     /// Spawns an item entity at the given position with initial velocity.
@@ -1557,6 +1625,11 @@ impl World {
         use steel_registry::vanilla_entities;
 
         if item.is_empty() {
+            return None;
+        }
+
+        // Respect doTileDrops gamerule
+        if !self.get_game_rule(BLOCK_DROPS).as_bool().unwrap_or(true) {
             return None;
         }
 

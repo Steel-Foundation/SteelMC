@@ -82,14 +82,14 @@ use text_components::{
 };
 use uuid::Uuid;
 
-use crate::entity::{DEATH_DURATION, LivingEntityBase};
+use crate::config::STEEL_CONFIG;
+use crate::entity::{
+    DEATH_DURATION, Entity, EntityLevelCallback, LivingEntityBase, NullEntityCallback,
+    RemovalReason,
+};
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
 use crate::{command::commands::gamemode::get_gamemode_translation, inventory::SyncPlayerInv};
-use crate::{
-    config::STEEL_CONFIG,
-    entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason},
-};
 use crate::{config::WorldGeneratorTypes, entity::damage::DamageSource};
 use steel_registry::vanilla_damage_types;
 
@@ -434,6 +434,7 @@ impl Player {
         } else {
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &self.world);
+            self.check_inside_blocks();
             self.check_below_world();
 
             // TODO: Implement remaining player ticking logic here
@@ -2392,6 +2393,37 @@ impl Player {
         }
     }
 
+    /// Checks all blocks overlapping the player's AABB and calls `entity_inside`
+    /// on each block's behavior (e.g. cactus damage, fire ignition).
+    fn check_inside_blocks(&self) {
+        use crate::behavior::BLOCK_BEHAVIORS;
+        use steel_registry::blocks::block_state_ext::BlockStateExt;
+
+        let aabb = self.bounding_box().deflate(1.0E-5);
+
+        let min_x = aabb.min_x.floor() as i32;
+        let min_y = aabb.min_y.floor() as i32;
+        let min_z = aabb.min_z.floor() as i32;
+        let max_x = aabb.max_x.floor() as i32;
+        let max_y = aabb.max_y.floor() as i32;
+        let max_z = aabb.max_z.floor() as i32;
+
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    let pos = BlockPos::new(x, y, z);
+                    let state = self.world.get_block_state(&pos);
+                    if state.is_air() {
+                        continue;
+                    }
+                    let block = state.get_block();
+                    let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+                    behavior.entity_inside(state, &self.world, pos, self as &dyn Entity);
+                }
+            }
+        }
+    }
+
     fn check_below_world(&self) {
         let pos = *self.position.lock();
         if pos.y < f64::from(self.world.get_min_y() - 64) {
@@ -2873,6 +2905,12 @@ impl Entity for Player {
             // Standing and all other poses use default player eye height
             _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
         }
+    }
+
+    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        // Delegates to Player's inherent hurt method which handles
+        // invulnerability, armor, death, and network packets.
+        Player::hurt(self, source, amount)
     }
 }
 

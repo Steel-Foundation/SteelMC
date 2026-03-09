@@ -5,6 +5,8 @@
 //!
 //! Vanilla equivalent: `ButtonBlock` + `FaceAttachedHorizontalDirectionalBlock`.
 
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -156,7 +158,7 @@ impl BlockBehaviour for ButtonBlock {
         InteractionResult::Success
     }
 
-    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let powered: bool = state.get_value(&BlockStateProperties::POWERED);
         if !powered {
             return;

@@ -17,7 +17,7 @@ use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
 use crate::world::World;
-use crate::{inventory::equipment::EquipmentSlot, player::Player};
+use crate::{entity::damage::DamageSource, inventory::equipment::EquipmentSlot, player::Player};
 
 use entities::ItemEntity;
 
@@ -370,6 +370,16 @@ pub trait Entity: Send + Sync {
         if let Some(base) = self.base() {
             base.mark_ticked(server_tick);
         }
+    }
+
+    /// Applies damage to this entity.
+    ///
+    /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
+    /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
+    /// and discard). Default returns `false` (entity ignores damage).
+    #[allow(unused_variables)]
+    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        false
     }
 }
 

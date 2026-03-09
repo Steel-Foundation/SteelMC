@@ -24,7 +24,7 @@ impl Ingredient {
     pub fn test(&self, stack: &ItemStack) -> bool {
         match self {
             Self::Empty => stack.is_empty(),
-            Self::Item(item) => !stack.is_empty() && std::ptr::eq(*item, stack.item),
+            Self::Item(item) => !stack.is_empty() && *item == stack.item,
             Self::Tag(tag) => {
                 if stack.is_empty() {
                     return false;
@@ -35,7 +35,7 @@ impl Ingredient {
                 if stack.is_empty() {
                     return false;
                 }
-                items.iter().any(|&item| std::ptr::eq(item, stack.item))
+                items.contains(&stack.item)
             }
         }
     }
@@ -66,10 +66,10 @@ impl Ingredient {
     pub fn eq_ingredient(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Empty, Self::Empty) => true,
-            (Self::Item(a), Self::Item(b)) => std::ptr::eq(*a, *b),
+            (Self::Item(a), Self::Item(b)) => a == b,
             (Self::Tag(a), Self::Tag(b)) => a == b,
             (Self::Choice(a), Self::Choice(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| std::ptr::eq(*x, *y))
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x == y)
             }
             _ => false,
         }

@@ -20,7 +20,6 @@ use crate::world::{World, WorldConfig, WorldTickTimings};
 use crate::worldgen::BiomeSourceKind;
 use small_map::FxSmallMap;
 use std::{
-    ptr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -577,7 +576,7 @@ impl Server {
                 }
             }
             WorldGeneratorTypes::Flat => {
-                if ptr::eq(dimension, THE_NETHER) {
+                if dimension == THE_NETHER {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
@@ -589,7 +588,7 @@ impl Server {
                             .blocks
                             .get_default_state_id(vanilla_blocks::NETHERRACK),
                     ))
-                } else if ptr::eq(dimension, THE_END) {
+                } else if dimension == THE_END {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
