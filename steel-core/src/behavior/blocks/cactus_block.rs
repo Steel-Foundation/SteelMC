@@ -64,8 +64,7 @@ impl CactusBlock {
         ] {
             let neighbor_pos = dir.relative(&pos);
             let neighbor = world.get_block_state(&neighbor_pos);
-            // Solid check using block config (blocks with collision are solid)
-            if neighbor.get_block().config.has_collision {
+            if neighbor.is_solid() {
                 return false;
             }
 
@@ -115,25 +114,6 @@ impl BlockBehaviour for CactusBlock {
         } else {
             None // Cannot place here
         }
-    }
-
-    /// Called when this cactus block is placed.
-    ///
-    /// Vanilla schedules a tick to check survival on the next game tick.
-    fn on_place(
-        &self,
-        state: BlockStateId,
-        world: &World,
-        pos: BlockPos,
-        old_state: BlockStateId,
-        _moved_by_piston: bool,
-    ) {
-        // Don't check if replacing the same block type (e.g., state change)
-        if state.get_block() == old_state.get_block() {
-            return;
-        }
-
-        world.schedule_block_tick_default(pos, self.block, 1);
     }
 
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
