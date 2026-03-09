@@ -43,6 +43,10 @@ impl TorchBlock {
 }
 
 impl BlockBehaviour for TorchBlock {
+    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        Self::can_survive(world, pos)
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -95,6 +99,11 @@ impl WallTorchBlock {
 }
 
 impl BlockBehaviour for WallTorchBlock {
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        Self::can_survive(world, pos, facing)
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,

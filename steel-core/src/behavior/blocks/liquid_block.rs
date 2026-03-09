@@ -20,9 +20,7 @@ use steel_registry::vanilla_items;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::behavior::block::{BlockBehaviour, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
-use crate::fluid::{
-    get_fluid_state, get_fluid_state_from_block, is_lava, is_water, is_water_state,
-};
+use crate::fluid::{get_fluid_state, is_lava, is_water, is_water_state};
 use crate::player::Player;
 use crate::world::World;
 
@@ -84,9 +82,7 @@ impl LiquidBlock {
                 };
 
                 let new_state = REGISTRY.blocks.get_default_state_id(new_block);
-                // UPDATE_ALL_IMMEDIATE so neighbor blocks (e.g. the water that triggered
-                // this) also receive shape and neighbor-changed updates.
-                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
                 world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
                 return false; // Don't schedule fluid tick - block was converted
             }
@@ -96,7 +92,7 @@ impl LiquidBlock {
                 let neighbor_state = world.get_block_state(&neighbor_pos);
                 if neighbor_state.get_block() == vanilla_blocks::BLUE_ICE {
                     let new_state = REGISTRY.blocks.get_default_state_id(vanilla_blocks::BASALT);
-                    world.set_block(pos, new_state, UpdateFlags::UPDATE_IMMEDIATE);
+                    world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
                     world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
                     return false; // Don't schedule fluid tick - block was converted
                 }
@@ -148,6 +144,11 @@ impl BlockBehaviour for LiquidBlock {
     }
 
     /// Called when a neighbor's shape changes.
+    ///
+    /// Vanilla parity: `LiquidBlock.updateShape` schedules a tick whenever
+    /// either side contains the same fluid type. For a `LiquidBlock` the
+    /// current position always contains `self.fluid`, so the condition is
+    /// effectively unconditional.
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -155,15 +156,10 @@ impl BlockBehaviour for LiquidBlock {
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
-        neighbor_state: BlockStateId,
+        _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let fluid_state = self.get_fluid_state(state);
-        let neighbor_fluid = get_fluid_state_from_block(neighbor_state);
-
-        if fluid_state.is_source() || neighbor_fluid.is_source() {
-            let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
-            world.schedule_fluid_tick_default(pos, self.fluid, delay);
-        }
+        let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+        world.schedule_fluid_tick_default(pos, self.fluid, delay);
 
         state
     }

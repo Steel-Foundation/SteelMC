@@ -94,6 +94,10 @@ impl ButtonBlock {
 }
 
 impl BlockBehaviour for ButtonBlock {
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        Self::can_survive(world, pos, state)
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         for direction in context.get_nearest_looking_directions() {
             let state = if direction.get_axis() == Axis::Y {

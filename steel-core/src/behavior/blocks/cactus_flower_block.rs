@@ -48,6 +48,10 @@ impl CactusFlowerBlock {
 }
 
 impl BlockBehaviour for CactusFlowerBlock {
+    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        Self::can_survive(world, pos)
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if Self::can_survive(context.world, context.relative_pos) {
             Some(self.block.default_state())

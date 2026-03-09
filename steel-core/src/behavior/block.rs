@@ -63,6 +63,19 @@ pub trait BlockBehaviour: Send + Sync {
         state
     }
 
+    /// Returns whether this block can survive at the given position.
+    ///
+    /// Vanilla parity: `BlockBehaviour.canSurvive(BlockState, LevelReader, BlockPos)`.
+    ///
+    /// Used during placement validation, shape updates (to break unsupported
+    /// blocks), and when removing water from waterlogged blocks. The default
+    /// returns `true`; override for blocks that require physical support
+    /// (torches, buttons, candles, cactus, etc.).
+    #[allow(unused_variables)]
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        true
+    }
+
     /// Returns the block state to use when placing this block.
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId>;
 

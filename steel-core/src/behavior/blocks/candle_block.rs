@@ -48,6 +48,10 @@ impl CandleBlock {
 }
 
 impl BlockBehaviour for CandleBlock {
+    fn can_survive(&self, _state: steel_utils::BlockStateId, world: &World, pos: BlockPos) -> bool {
+        Self::can_survive(world, pos)
+    }
+
     fn get_state_for_placement(
         &self,
         context: &BlockPlaceContext<'_>,

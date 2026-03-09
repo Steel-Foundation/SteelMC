@@ -8,6 +8,7 @@
 use crate::behavior::context::InteractionResult;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
 use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
+use crate::inventory::lock::ContainerId;
 use crate::world::RaytraceAction;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -24,9 +25,23 @@ use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
 /// Consumes one bucket from the player's hand, replacing it with `result_item`.
-/// No-op if the player has infinite materials.
+///
+/// Vanilla parity: `ItemUtils.createFilledResult` with `limitCreativeStackSize = true`.
+/// In creative mode the held stack is untouched, but the result item is added to the
+/// inventory if the player doesn't already have one.
 fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
     if context.player.has_infinite_materials() {
+        // Creative: give the result item only if the player doesn't already have one.
+        let inv_id = ContainerId::from_arc(&context.player.inventory);
+        let already_has = context.inv_guard.get(inv_id).is_some_and(|inv| {
+            (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
+        });
+        if !already_has {
+            let result_stack = ItemStack::new(result_item);
+            context
+                .player
+                .add_item_or_drop_with_guard(context.inv_guard, result_stack);
+        }
         return;
     }
 
@@ -149,6 +164,12 @@ impl ItemBehavior for FilledBucketBehavior {
                 if is_same_fluid && fluid_state.is_source() {
                     consume_bucket(context, self.empty_bucket);
                     return Some(InteractionResult::Success);
+                }
+
+                // Vanilla parity: destroy non-liquid replaceable blocks first so they
+                // drop their items (e.g. tall grass, flowers, snow layers).
+                if !state.get_block().config.liquid && !state.get_block().config.is_air {
+                    context.player.world.destroy_block(pos, true);
                 }
 
                 // Place fluid block
@@ -291,6 +312,11 @@ impl ItemBehavior for EmptyBucketBehavior {
             context
                 .world
                 .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+
+            // Vanilla parity: destroy blocks that can't survive without water.
+            if !block_behavior.can_survive(new_state, context.world, hit_pos) {
+                context.player.world.destroy_block(hit_pos, true);
+            }
 
             context
                 .world
