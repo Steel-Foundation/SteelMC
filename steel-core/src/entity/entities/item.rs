@@ -651,10 +651,8 @@ impl ItemEntity {
         }
     }
 
-    /// Checks blocks overlapping this item entity and calls `entity_inside`.
-    ///
-    /// Vanilla: `Entity.checkInsideBlocks()` — iterates blocks in the entity's
-    /// deflated bounding box and calls `BlockState.entityInside()`.
+    /// Checks blocks overlapping this item entity and calls `entity_inside`
+    /// on each block's behavior (e.g. cactus destroys items).
     fn check_inside_blocks(&self) {
         use crate::behavior::BLOCK_BEHAVIORS;
         use steel_registry::blocks::block_state_ext::BlockStateExt;

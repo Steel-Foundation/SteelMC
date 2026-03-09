@@ -1330,59 +1330,41 @@ impl World {
 
     /// Destroys a block at the given position, optionally dropping its loot.
     ///
-    /// - Gets the current block state (returns false if air)
-    /// - Sends destruction particles (level event 2001), skipping fire blocks
-    /// - Optionally drops resources via loot table
-    /// - Sets the block to air
-    ///
-    /// # Arguments
-    /// * `pos` - The position of the block to destroy
-    /// * `drop_items` - Whether to drop the block's loot
-    ///
+    /// Sends destruction particles (skipping fire blocks), optionally drops
+    /// resources via loot table, then replaces with air.
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
         let state = self.get_block_state(&pos);
-
-        // Already air — nothing to destroy
         if state.is_air() {
             return false;
         }
 
-        // Destruction particles (skip fire blocks, matching vanilla)
         let block = state.get_block();
         let is_fire = block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
         if !is_fire {
             self.destroy_block_effect(pos, u32::from(state.0), None);
         }
 
-        // Drop resources
         if drop_items {
             self.drop_resources(state, pos);
         }
 
-        // Replace with air
-        // TODO: Vanilla uses fluidState.createLegacyBlock() instead of AIR here,
-        // so breaking a waterlogged block leaves water behind. Needs fluid system integration.
+        // TODO: Vanilla uses fluidState.createLegacyBlock() instead of AIR,
+        // so breaking a waterlogged block leaves water behind.
         self.set_block(
             pos,
             vanilla_blocks::AIR.default_state(),
             UpdateFlags::UPDATE_ALL,
         );
-        // TODO: Vanilla fires GameEvent.BLOCK_DESTROY here (game event system not implemented)
+        // TODO: Fire GameEvent.BLOCK_DESTROY
         true
     }
 
     /// Drops the loot for a block using its loot table.
     ///
-    /// Looks up the block's loot table and spawns each drop via `pop_resource`.
-    ///
-    /// # TODO
-    /// - Vanilla has overloads that also accept `BlockEntity`, `Entity`, and `ItemStack` (tool)
-    ///   for fortune/silk touch. Those are handled separately by `block_breaking::drop_block_loot`.
-    /// - `spawnAfterBreak` is not called (spawns XP orbs for ore blocks — needs XP system).
-    ///
-    /// # Arguments
-    /// * `state` - The block state to drop loot for
-    /// * `pos` - The position where drops should spawn
+    /// This is the no-tool/no-entity overload. Player block breaking uses
+    /// `block_breaking::drop_block_loot` which includes tool context for
+    /// fortune/silk touch.
+    // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
@@ -1594,7 +1576,7 @@ impl World {
         pos: Vector3<f64>,
         item: ItemStack,
     ) -> Option<Arc<ItemEntity>> {
-        // Vanilla default ItemEntity velocity (ItemEntity.java:61)
+        // Default ItemEntity velocity: random horizontal scatter + upward pop
         let vx = rand::random::<f64>() * 0.2 - 0.1;
         let vy = 0.2;
         let vz = rand::random::<f64>() * 0.2 - 0.1;
@@ -1646,7 +1628,7 @@ impl World {
             return None;
         }
 
-        // Vanilla checks doTileDrops (BLOCK_DROPS) gamerule before spawning items
+        // Respect doTileDrops gamerule
         if !self.get_game_rule(BLOCK_DROPS).as_bool().unwrap_or(true) {
             return None;
         }

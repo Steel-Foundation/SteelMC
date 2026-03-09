@@ -2394,10 +2394,7 @@ impl Player {
     }
 
     /// Checks all blocks overlapping the player's AABB and calls `entity_inside`
-    /// on each one's behavior.
-    ///
-    /// Vanilla: `Entity.checkInsideBlocks()` — iterates blocks in the entity's
-    /// deflated bounding box and calls `BlockState.entityInside()` for each.
+    /// on each block's behavior (e.g. cactus damage, fire ignition).
     fn check_inside_blocks(&self) {
         use crate::behavior::BLOCK_BEHAVIORS;
         use steel_registry::blocks::block_state_ext::BlockStateExt;

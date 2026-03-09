@@ -71,8 +71,6 @@ impl CactusBlock {
                 return false;
             }
 
-            // Lava check
-            // when FluidRegistry has a lava tag then we can use it
             let fluid = neighbor.get_fluid_state();
             if REGISTRY
                 .fluids
@@ -114,7 +112,7 @@ impl BlockBehaviour for CactusBlock {
         if Self::can_survive(context.world, pos) {
             Some(self.block.default_state())
         } else {
-            None // Cannot place here
+            None
         }
     }
 
@@ -131,33 +129,28 @@ impl BlockBehaviour for CactusBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let above_pos = pos.offset(0, 1, 0);
 
-        // Vanilla line 56: if (serverLevel.isEmptyBlock(blockPos2))
         if !world.get_block_state(&above_pos).is_air() {
             return;
         }
 
-        // Vanilla lines 57-64: Count cactus blocks below and check max height
-        let mut i = 1u32;
+        // Count cactus blocks below
+        let mut height = 1u32;
         let age = state.get_value(&BlockStateProperties::AGE_15);
 
-        // Vanilla: while (serverLevel.getBlockState(blockPos.below(i)).is(this))
         while world
-            .get_block_state(&pos.offset(0, -(i as i32), 0))
+            .get_block_state(&pos.offset(0, -(height as i32), 0))
             .get_block()
             == vanilla_blocks::CACTUS
         {
-            // Vanilla: if (++i == 3 && j == 15) return;
-            i += 1;
-            if i == MAX_CACTUS_HEIGHT && age == 15 {
+            height += 1;
+            if height == MAX_CACTUS_HEIGHT && age == 15 {
                 return;
             }
         }
 
-        // Vanilla lines 66-70: Cactus Flower logic (1.21+)
-        // At age 8, there's a chance to spawn a cactus flower above
+        // At age 8, chance to grow a cactus flower above
         if age == CACTUS_FLOWER_AGE && Self::can_survive(world, above_pos) {
-            // Probability: 25% if height >= MAX_CACTUS_HEIGHT blocks, 10% otherwise
-            let chance = if i >= MAX_CACTUS_HEIGHT {
+            let chance = if height >= MAX_CACTUS_HEIGHT {
                 FLOWER_CHANCE_TALL
             } else {
                 FLOWER_CHANCE_SMALL
@@ -169,22 +162,17 @@ impl BlockBehaviour for CactusBlock {
                     UpdateFlags::UPDATE_ALL,
                 );
             }
-        }
-        // Vanilla lines 71-76: Age 15 and height < MAX_CACTUS_HEIGHT → grow new cactus block
-        // The new block's on_place method will check can_survive and destroy if needed
-        else if age == 15 && i < MAX_CACTUS_HEIGHT {
+        } else if age == 15 && height < MAX_CACTUS_HEIGHT {
             world.set_block(
                 above_pos,
                 vanilla_blocks::CACTUS.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            // Reset age of current block to 0
             let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
             world.neighbor_changed(above_pos, vanilla_blocks::CACTUS, false);
         }
 
-        // Vanilla lines 78-80: Increment age if < 15
         if age < 15 {
             let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
