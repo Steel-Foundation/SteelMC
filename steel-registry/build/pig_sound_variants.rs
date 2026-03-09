@@ -10,6 +10,7 @@ use steel_utils::Identifier;
 pub struct PigAge {
     ambient_sound: Identifier,
     death_sound: Identifier,
+    eat_sound: Identifier,
     hurt_sound: Identifier,
     step_sound: Identifier,
 }
@@ -72,11 +73,13 @@ pub(crate) fn build() -> TokenStream {
             generate_identifier(&pig_sound_variant.adult_sounds.ambient_sound);
         let adult_death_sound = generate_identifier(&pig_sound_variant.adult_sounds.death_sound);
         let adult_hurt_sound = generate_identifier(&pig_sound_variant.adult_sounds.hurt_sound);
-        let adult_step_sound = generate_identifier(&pig_sound_variant.adult_sounds.step_sound);
+        let adult_eat_sound = generate_identifier(&pig_sound_variant.adult_sounds.step_sound);
+        let adult_step_sound = generate_identifier(&pig_sound_variant.adult_sounds.eat_sound);
         let baby_ambient_sound = generate_identifier(&pig_sound_variant.baby_sounds.ambient_sound);
         let baby_death_sound = generate_identifier(&pig_sound_variant.baby_sounds.death_sound);
         let baby_hurt_sound = generate_identifier(&pig_sound_variant.baby_sounds.hurt_sound);
         let baby_step_sound = generate_identifier(&pig_sound_variant.baby_sounds.step_sound);
+        let baby_eat_sound = generate_identifier(&pig_sound_variant.baby_sounds.eat_sound);
 
         stream.extend(quote! {
             pub static #pig_sound_variant_ident: &PigSoundVariant = &PigSoundVariant {
@@ -86,12 +89,14 @@ pub(crate) fn build() -> TokenStream {
                     death_sound: #adult_death_sound,
                     hurt_sound: #adult_hurt_sound,
                     step_sound: #adult_step_sound,
+                    eat_sound: #adult_eat_sound
                 },
                 baby_sounds: PigAge {
                     ambient_sound: #baby_ambient_sound,
                     death_sound: #baby_death_sound,
                     hurt_sound: #baby_hurt_sound,
                     step_sound: #baby_step_sound,
+                    eat_sound: #baby_eat_sound,
                 }
             };
         });

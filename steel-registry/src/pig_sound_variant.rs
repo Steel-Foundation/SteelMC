@@ -16,6 +16,7 @@ pub struct PigAge {
     pub ambient_sound: Identifier,
     pub death_sound: Identifier,
     pub hurt_sound: Identifier,
+    pub eat_sound: Identifier,
     pub step_sound: Identifier,
 }
 impl PigAge {
@@ -29,6 +30,8 @@ impl PigAge {
         component.insert("hurt_sound", s.as_str());
         let s = self.step_sound.to_string();
         component.insert("step_sound", s.as_str());
+        let s = self.eat_sound.to_string();
+        component.insert("eat_sound", s.as_str());
         NbtTag::Compound(component)
     }
 }

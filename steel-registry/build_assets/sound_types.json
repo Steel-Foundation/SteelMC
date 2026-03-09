@@ -11,11 +11,11 @@
   "WOOD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1839,
-    "step_sound": 1843,
-    "place_sound": 1842,
-    "hit_sound": 1841,
-    "fall_sound": 1840
+    "break_sound": 1843,
+    "step_sound": 1847,
+    "place_sound": 1846,
+    "hit_sound": 1845,
+    "fall_sound": 1844
   },
   "GRAVEL": {
     "volume": 1.0,
@@ -40,18 +40,18 @@
     "pitch": 1.0,
     "break_sound": 169,
     "step_sound": 173,
-    "place_sound": 1710,
+    "place_sound": 1714,
     "hit_sound": 171,
     "fall_sound": 170
   },
   "STONE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1588,
-    "step_sound": 1596,
-    "place_sound": 1593,
-    "hit_sound": 1592,
-    "fall_sound": 1591
+    "break_sound": 1592,
+    "step_sound": 1600,
+    "place_sound": 1597,
+    "hit_sound": 1596,
+    "fall_sound": 1595
   },
   "METAL": {
     "volume": 1.0,
@@ -74,38 +74,38 @@
   "WOOL": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1844,
-    "step_sound": 1848,
-    "place_sound": 1847,
-    "hit_sound": 1846,
-    "fall_sound": 1845
+    "break_sound": 1848,
+    "step_sound": 1852,
+    "place_sound": 1851,
+    "hit_sound": 1850,
+    "fall_sound": 1849
   },
   "SAND": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1388,
-    "step_sound": 1392,
-    "place_sound": 1391,
-    "hit_sound": 1390,
-    "fall_sound": 1389
+    "break_sound": 1392,
+    "step_sound": 1396,
+    "place_sound": 1395,
+    "hit_sound": 1394,
+    "fall_sound": 1393
   },
   "SNOW": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1560,
-    "step_sound": 1569,
-    "place_sound": 1568,
-    "hit_sound": 1567,
-    "fall_sound": 1561
+    "break_sound": 1564,
+    "step_sound": 1573,
+    "place_sound": 1572,
+    "hit_sound": 1571,
+    "fall_sound": 1565
   },
   "POWDER_SNOW": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1329,
-    "step_sound": 1333,
-    "place_sound": 1332,
-    "hit_sound": 1331,
-    "fall_sound": 1330
+    "break_sound": 1333,
+    "step_sound": 1337,
+    "place_sound": 1336,
+    "hit_sound": 1335,
+    "fall_sound": 1334
   },
   "LADDER": {
     "volume": 1.0,
@@ -128,11 +128,11 @@
   "SLIME_BLOCK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1490,
-    "step_sound": 1494,
-    "place_sound": 1493,
-    "hit_sound": 1492,
-    "fall_sound": 1491
+    "break_sound": 1494,
+    "step_sound": 1498,
+    "place_sound": 1497,
+    "hit_sound": 1496,
+    "fall_sound": 1495
   },
   "HONEY_BLOCK": {
     "volume": 1.0,
@@ -146,11 +146,11 @@
   "WET_GRASS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1747,
-    "step_sound": 1751,
-    "place_sound": 1750,
-    "hit_sound": 1749,
-    "fall_sound": 1748
+    "break_sound": 1751,
+    "step_sound": 1755,
+    "place_sound": 1754,
+    "hit_sound": 1753,
+    "fall_sound": 1752
   },
   "CORAL_BLOCK": {
     "volume": 1.0,
@@ -182,18 +182,18 @@
   "SCAFFOLDING": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1394,
-    "step_sound": 1398,
-    "place_sound": 1397,
-    "hit_sound": 1396,
-    "fall_sound": 1395
+    "break_sound": 1398,
+    "step_sound": 1402,
+    "place_sound": 1401,
+    "hit_sound": 1400,
+    "fall_sound": 1399
   },
   "SWEET_BERRY_BUSH": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1601,
+    "break_sound": 1605,
     "step_sound": 757,
-    "place_sound": 1602,
+    "place_sound": 1606,
     "hit_sound": 755,
     "fall_sound": 754
   },
@@ -209,29 +209,29 @@
   "HARD_CROP": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1839,
-    "step_sound": 1843,
+    "break_sound": 1843,
+    "step_sound": 1847,
     "place_sound": 481,
-    "hit_sound": 1841,
-    "fall_sound": 1840
+    "hit_sound": 1845,
+    "fall_sound": 1844
   },
   "VINE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1705,
-    "step_sound": 1709,
-    "place_sound": 1708,
-    "hit_sound": 1707,
-    "fall_sound": 1706
+    "break_sound": 1709,
+    "step_sound": 1713,
+    "place_sound": 1712,
+    "hit_sound": 1711,
+    "fall_sound": 1710
   },
   "NETHER_WART": {
     "volume": 1.0,
     "pitch": 1.0,
     "break_sound": 1094,
-    "step_sound": 1596,
+    "step_sound": 1600,
     "place_sound": 1095,
-    "hit_sound": 1592,
-    "fall_sound": 1591
+    "hit_sound": 1596,
+    "fall_sound": 1595
   },
   "LANTERN": {
     "volume": 1.0,
@@ -281,11 +281,11 @@
   "SHROOMLIGHT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1449,
-    "step_sound": 1450,
-    "place_sound": 1451,
-    "hit_sound": 1452,
-    "fall_sound": 1453
+    "break_sound": 1453,
+    "step_sound": 1454,
+    "place_sound": 1455,
+    "hit_sound": 1456,
+    "fall_sound": 1457
   },
   "WEEPING_VINES": {
     "volume": 1.0,
@@ -308,20 +308,20 @@
   "SOUL_SAND": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1502,
-    "step_sound": 1503,
-    "place_sound": 1504,
-    "hit_sound": 1505,
-    "fall_sound": 1506
+    "break_sound": 1506,
+    "step_sound": 1507,
+    "place_sound": 1508,
+    "hit_sound": 1509,
+    "fall_sound": 1510
   },
   "SOUL_SOIL": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1507,
-    "step_sound": 1508,
-    "place_sound": 1509,
-    "hit_sound": 1510,
-    "fall_sound": 1511
+    "break_sound": 1511,
+    "step_sound": 1512,
+    "place_sound": 1513,
+    "hit_sound": 1514,
+    "fall_sound": 1515
   },
   "BASALT": {
     "volume": 1.0,
@@ -371,11 +371,11 @@
   "NETHER_ORE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1360,
-    "step_sound": 1364,
-    "place_sound": 1363,
-    "hit_sound": 1362,
-    "fall_sound": 1361
+    "break_sound": 1364,
+    "step_sound": 1368,
+    "place_sound": 1367,
+    "hit_sound": 1366,
+    "fall_sound": 1365
   },
   "BONE_BLOCK": {
     "volume": 1.0,
@@ -425,11 +425,11 @@
   "NETHER_GOLD_ORE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1355,
-    "step_sound": 1359,
-    "place_sound": 1358,
-    "hit_sound": 1357,
-    "fall_sound": 1356
+    "break_sound": 1359,
+    "step_sound": 1363,
+    "place_sound": 1362,
+    "hit_sound": 1361,
+    "fall_sound": 1360
   },
   "GILDED_BLACKSTONE": {
     "volume": 1.0,
@@ -470,9 +470,9 @@
   "SMALL_AMETHYST_BUD": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1495,
+    "break_sound": 1499,
     "step_sound": 40,
-    "place_sound": 1496,
+    "place_sound": 1500,
     "hit_sound": 38,
     "fall_sound": 37
   },
@@ -497,29 +497,29 @@
   "TUFF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1627,
-    "step_sound": 1628,
-    "place_sound": 1629,
-    "hit_sound": 1630,
-    "fall_sound": 1631
+    "break_sound": 1631,
+    "step_sound": 1632,
+    "place_sound": 1633,
+    "hit_sound": 1634,
+    "fall_sound": 1635
   },
   "TUFF_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1632,
-    "step_sound": 1636,
-    "place_sound": 1635,
-    "hit_sound": 1634,
-    "fall_sound": 1633
+    "break_sound": 1636,
+    "step_sound": 1640,
+    "place_sound": 1639,
+    "hit_sound": 1638,
+    "fall_sound": 1637
   },
   "POLISHED_TUFF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1637,
-    "step_sound": 1641,
-    "place_sound": 1640,
-    "hit_sound": 1639,
-    "fall_sound": 1638
+    "break_sound": 1641,
+    "step_sound": 1645,
+    "place_sound": 1644,
+    "hit_sound": 1643,
+    "fall_sound": 1642
   },
   "CALCITE": {
     "volume": 1.0,
@@ -596,11 +596,11 @@
   "SPORE_BLOSSOM": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1524,
-    "step_sound": 1528,
-    "place_sound": 1527,
-    "hit_sound": 1526,
-    "fall_sound": 1525
+    "break_sound": 1528,
+    "step_sound": 1532,
+    "place_sound": 1531,
+    "hit_sound": 1530,
+    "fall_sound": 1529
   },
   "CACTUS_FLOWER": {
     "volume": 1.0,
@@ -677,20 +677,20 @@
   "SMALL_DRIPLEAF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1497,
-    "step_sound": 1501,
-    "place_sound": 1500,
-    "hit_sound": 1499,
-    "fall_sound": 1498
+    "break_sound": 1501,
+    "step_sound": 1505,
+    "place_sound": 1504,
+    "hit_sound": 1503,
+    "fall_sound": 1502
   },
   "ROOTED_DIRT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1379,
-    "step_sound": 1383,
-    "place_sound": 1382,
-    "hit_sound": 1381,
-    "fall_sound": 1380
+    "break_sound": 1383,
+    "step_sound": 1387,
+    "place_sound": 1386,
+    "hit_sound": 1385,
+    "fall_sound": 1384
   },
   "HANGING_ROOTS": {
     "volume": 1.0,
@@ -713,53 +713,53 @@
   "SCULK_SENSOR": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1414,
-    "step_sound": 1418,
-    "place_sound": 1417,
-    "hit_sound": 1416,
-    "fall_sound": 1415
+    "break_sound": 1418,
+    "step_sound": 1422,
+    "place_sound": 1421,
+    "hit_sound": 1420,
+    "fall_sound": 1419
   },
   "SCULK_CATALYST": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1407,
-    "step_sound": 1411,
-    "place_sound": 1410,
-    "hit_sound": 1409,
-    "fall_sound": 1408
+    "break_sound": 1411,
+    "step_sound": 1415,
+    "place_sound": 1414,
+    "hit_sound": 1413,
+    "fall_sound": 1412
   },
   "SCULK": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1401,
-    "step_sound": 1405,
-    "place_sound": 1404,
-    "hit_sound": 1403,
-    "fall_sound": 1402
+    "break_sound": 1405,
+    "step_sound": 1409,
+    "place_sound": 1408,
+    "hit_sound": 1407,
+    "fall_sound": 1406
   },
   "SCULK_VEIN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1425,
-    "step_sound": 1429,
-    "place_sound": 1428,
-    "hit_sound": 1427,
-    "fall_sound": 1426
+    "break_sound": 1429,
+    "step_sound": 1433,
+    "place_sound": 1432,
+    "hit_sound": 1431,
+    "fall_sound": 1430
   },
   "SCULK_SHRIEKER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1419,
-    "step_sound": 1424,
-    "place_sound": 1422,
-    "hit_sound": 1421,
-    "fall_sound": 1420
+    "break_sound": 1423,
+    "step_sound": 1428,
+    "place_sound": 1426,
+    "hit_sound": 1425,
+    "fall_sound": 1424
   },
   "GLOW_LICHEN": {
     "volume": 1.0,
     "pitch": 1.0,
     "break_sound": 753,
-    "step_sound": 1709,
+    "step_sound": 1713,
     "place_sound": 756,
     "hit_sound": 755,
     "fall_sound": 754
@@ -794,11 +794,11 @@
   "POLISHED_DEEPSLATE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1321,
-    "step_sound": 1325,
-    "place_sound": 1324,
-    "hit_sound": 1323,
-    "fall_sound": 1322
+    "break_sound": 1325,
+    "step_sound": 1329,
+    "place_sound": 1328,
+    "hit_sound": 1327,
+    "fall_sound": 1326
   },
   "FROGLIGHT": {
     "volume": 1.0,
@@ -956,11 +956,11 @@
   "SHELF": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1437,
-    "step_sound": 1445,
-    "place_sound": 1442,
-    "hit_sound": 1440,
-    "fall_sound": 1439
+    "break_sound": 1441,
+    "step_sound": 1449,
+    "place_sound": 1446,
+    "hit_sound": 1444,
+    "fall_sound": 1443
   },
   "SUSPICIOUS_SAND": {
     "volume": 1.0,
@@ -1010,29 +1010,29 @@
   "SPONGE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1576,
-    "step_sound": 1580,
-    "place_sound": 1579,
-    "hit_sound": 1578,
-    "fall_sound": 1577
+    "break_sound": 1580,
+    "step_sound": 1584,
+    "place_sound": 1583,
+    "hit_sound": 1582,
+    "fall_sound": 1581
   },
   "WET_SPONGE": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1752,
-    "step_sound": 1757,
-    "place_sound": 1756,
-    "hit_sound": 1755,
-    "fall_sound": 1754
+    "break_sound": 1756,
+    "step_sound": 1761,
+    "place_sound": 1760,
+    "hit_sound": 1759,
+    "fall_sound": 1758
   },
   "VAULT": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1665,
-    "step_sound": 1676,
-    "place_sound": 1675,
-    "hit_sound": 1671,
-    "fall_sound": 1670
+    "break_sound": 1669,
+    "step_sound": 1680,
+    "place_sound": 1679,
+    "hit_sound": 1675,
+    "fall_sound": 1674
   },
   "CREAKING_HEART": {
     "volume": 1.0,
@@ -1064,29 +1064,29 @@
   "SPAWNER": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1513,
-    "step_sound": 1517,
-    "place_sound": 1516,
-    "hit_sound": 1515,
-    "fall_sound": 1514
+    "break_sound": 1517,
+    "step_sound": 1521,
+    "place_sound": 1520,
+    "hit_sound": 1519,
+    "fall_sound": 1518
   },
   "RESIN": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1366,
-    "step_sound": 1369,
-    "place_sound": 1368,
+    "break_sound": 1370,
+    "step_sound": 1373,
+    "place_sound": 1372,
     "hit_sound": 1111,
-    "fall_sound": 1367
+    "fall_sound": 1371
   },
   "RESIN_BRICKS": {
     "volume": 1.0,
     "pitch": 1.0,
-    "break_sound": 1370,
-    "step_sound": 1374,
-    "place_sound": 1373,
-    "hit_sound": 1372,
-    "fall_sound": 1371
+    "break_sound": 1374,
+    "step_sound": 1378,
+    "place_sound": 1377,
+    "hit_sound": 1376,
+    "fall_sound": 1375
   },
   "IRON": {
     "volume": 1.0,

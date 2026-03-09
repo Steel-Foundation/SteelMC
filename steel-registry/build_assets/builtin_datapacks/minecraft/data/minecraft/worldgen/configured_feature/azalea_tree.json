@@ -2,13 +2,10 @@
   "type": "minecraft:tree",
   "config": {
     "below_trunk_provider": {
-      "fallback": {
-        "type": "minecraft:simple_state_provider",
-        "state": {
-          "Name": "minecraft:rooted_dirt"
-        }
-      },
-      "rules": []
+      "type": "minecraft:simple_state_provider",
+      "state": {
+        "Name": "minecraft:rooted_dirt"
+      }
     },
     "decorators": [],
     "foliage_placer": {
