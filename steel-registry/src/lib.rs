@@ -1,10 +1,4 @@
-#![feature(
-    const_trait_impl,
-    const_slice_make_iter,
-    const_cmp,
-    derive_const,
-    core_intrinsics
-)]
+#![feature(const_trait_impl, const_cmp, derive_const)]
 #![allow(internal_features)]
 
 use crate::{

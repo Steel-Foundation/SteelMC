@@ -3,9 +3,12 @@ use std::sync::atomic::Ordering;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
 use wincode::{SchemaRead, SchemaWrite};
 
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
+use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
 
 /// The status of a chunk.
@@ -279,6 +282,42 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => Some(chunk),
             Self::Proto(_) => None,
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a read guard to the structure starts map.
+    pub fn structure_starts(&self) -> RwLockReadGuard<'_, StructureStartMap> {
+        match self {
+            Self::Full(chunk) => chunk.structure_starts.read(),
+            Self::Proto(proto) => proto.structure_starts.read(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a write guard to the structure starts map.
+    pub fn structure_starts_mut(&self) -> RwLockWriteGuard<'_, StructureStartMap> {
+        match self {
+            Self::Full(chunk) => chunk.structure_starts.write(),
+            Self::Proto(proto) => proto.structure_starts.write(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a read guard to the structure references map.
+    pub fn structure_references(&self) -> RwLockReadGuard<'_, StructureReferenceMap> {
+        match self {
+            Self::Full(chunk) => chunk.structure_references.read(),
+            Self::Proto(proto) => proto.structure_references.read(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns a write guard to the structure references map.
+    pub fn structure_references_mut(&self) -> RwLockWriteGuard<'_, StructureReferenceMap> {
+        match self {
+            Self::Full(chunk) => chunk.structure_references.write(),
+            Self::Proto(proto) => proto.structure_references.write(),
             Self::Unloaded => unreachable!(),
         }
     }

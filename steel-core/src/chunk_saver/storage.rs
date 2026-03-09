@@ -1,5 +1,6 @@
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
 use crate::chunk::level_chunk::LevelChunk;
 use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
@@ -15,14 +16,42 @@ use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
 use steel_registry::{REGISTRY, Registry, vanilla_biomes};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier};
+
+use crate::world::structure::{
+    StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
+};
+
+/// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
+/// -1 = none, 0 = south, 1 = west, 2 = north, 3 = east.
+const fn direction_to_2d(dir: Option<Direction>) -> i8 {
+    match dir {
+        Some(Direction::South) => 0,
+        Some(Direction::West) => 1,
+        Some(Direction::North) => 2,
+        Some(Direction::East) => 3,
+        None | Some(Direction::Down | Direction::Up) => -1,
+    }
+}
+
+/// Converts a vanilla 2D data value to `Option<Direction>`.
+const fn direction_from_2d(value: i8) -> Option<Direction> {
+    match value {
+        0 => Some(Direction::South),
+        1 => Some(Direction::West),
+        2 => Some(Direction::North),
+        3 => Some(Direction::East),
+        _ => None,
+    }
+}
 
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     BIOMES_PER_SECTION, BLOCKS_PER_SECTION, PersistentBiomeData, PersistentBlockEntity,
-    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentSection, PersistentTick,
-    PreparedChunkSave,
+    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentHeightmap,
+    PersistentSection, PersistentStructurePiece, PersistentStructureReference,
+    PersistentStructureStart, PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -215,12 +244,26 @@ impl ChunkStorage {
             })
             .unwrap_or_default();
 
+        // Serialize heightmaps
+        let heightmaps = chunk
+            .as_full()
+            .map(|c| Self::heightmaps_to_persistent(&c.heightmaps.read()))
+            .unwrap_or_default();
+
+        // Serialize structure data (works for both proto and full chunks)
+        let structure_starts = Self::structure_starts_to_persistent(&chunk.structure_starts());
+        let structure_references =
+            Self::structure_references_to_persistent(&chunk.structure_references());
+
         let persistent = Self::to_persistent(
             chunk.sections(),
             &block_entities,
             &entities,
             block_ticks,
             fluid_ticks,
+            heightmaps,
+            structure_starts,
+            structure_references,
             pos,
         );
 
@@ -228,12 +271,16 @@ impl ChunkStorage {
     }
 
     /// Converts chunk data to persistent format.
+    #[allow(clippy::too_many_arguments)]
     fn to_persistent(
         sections: &Sections,
         block_entities: &[SharedBlockEntity],
         entities: &[SharedEntity],
         block_ticks: Vec<PersistentTick>,
         fluid_ticks: Vec<PersistentTick>,
+        heightmaps: Vec<PersistentHeightmap>,
+        structure_starts: Vec<PersistentStructureStart>,
+        structure_references: Vec<PersistentStructureReference>,
         chunk_pos: ChunkPos,
     ) -> PersistentChunk {
         let mut builder = ChunkBuilder::new(&REGISTRY);
@@ -314,6 +361,9 @@ impl ChunkStorage {
             entities: persistent_entities,
             block_ticks,
             fluid_ticks,
+            heightmaps,
+            structure_starts,
+            structure_references,
         }
     }
 
@@ -437,11 +487,20 @@ impl ChunkStorage {
             .map(|section| Self::persistent_to_section(section, persistent))
             .collect();
 
+        // Reconstruct structure data
+        let structure_starts = Self::persistent_to_structure_starts(&persistent.structure_starts);
+        let structure_references =
+            Self::persistent_to_structure_references(&persistent.structure_references);
+
         match status {
             ChunkStatus::Full => {
                 // Reconstruct scheduled ticks from persistent data
                 let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
                 let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
+
+                // Reconstruct heightmaps from persistent data
+                let heightmaps =
+                    Self::persistent_to_heightmaps(&persistent.heightmaps, min_y, height);
 
                 let chunk = LevelChunk::from_disk(
                     Sections::from_owned(sections.into_boxed_slice()),
@@ -451,6 +510,9 @@ impl ChunkStorage {
                     level.clone(),
                     block_ticks,
                     fluid_ticks,
+                    heightmaps,
+                    structure_starts,
+                    structure_references,
                 );
 
                 // Load block entities
@@ -481,6 +543,8 @@ impl ChunkStorage {
                 status,
                 min_y,
                 height,
+                structure_starts,
+                structure_references,
             )),
         }
     }
@@ -704,6 +768,132 @@ impl ChunkStorage {
             })
             .collect();
         FluidTickList::from_ticks(ticks)
+    }
+
+    /// Converts chunk heightmaps to persistent format for saving.
+    fn heightmaps_to_persistent(heightmaps: &ChunkHeightmaps) -> Vec<PersistentHeightmap> {
+        HeightmapType::final_types()
+            .iter()
+            .enumerate()
+            .map(|(i, &hm_type)| {
+                let hm = heightmaps.get(hm_type);
+                PersistentHeightmap {
+                    heightmap_type: i as u8,
+                    data: hm.raw_data().to_vec(),
+                }
+            })
+            .collect()
+    }
+
+    /// Reconstructs chunk heightmaps from persistent data.
+    fn persistent_to_heightmaps(
+        persistent: &[PersistentHeightmap],
+        min_y: i32,
+        height: i32,
+    ) -> ChunkHeightmaps {
+        let final_types = HeightmapType::final_types();
+        let mut heightmaps = ChunkHeightmaps::new(min_y, height);
+
+        for ph in persistent {
+            let Some(&hm_type) = final_types.get(ph.heightmap_type as usize) else {
+                continue;
+            };
+            if ph.data.len() != 256 {
+                tracing::warn!(
+                    "Heightmap data length mismatch: expected 256, got {}. Skipping.",
+                    ph.data.len()
+                );
+                continue;
+            }
+            let mut data = Box::new([0u16; 256]);
+            data.copy_from_slice(&ph.data);
+            *heightmaps.get_mut(hm_type) = Heightmap::from_raw_data(hm_type, min_y, height, data);
+        }
+
+        heightmaps
+    }
+
+    /// Converts structure starts to persistent format for saving.
+    fn structure_starts_to_persistent(starts: &StructureStartMap) -> Vec<PersistentStructureStart> {
+        starts
+            .values()
+            .map(|start| PersistentStructureStart {
+                structure: start.structure.clone(),
+                chunk_x: start.chunk_pos.0.x,
+                chunk_z: start.chunk_pos.0.y,
+                references: start.references,
+                pieces: start
+                    .pieces
+                    .iter()
+                    .map(|piece| PersistentStructurePiece {
+                        piece_type: piece.piece_type.clone(),
+                        bounding_box: piece.bounding_box,
+                        gen_depth: piece.gen_depth,
+                        orientation: direction_to_2d(piece.orientation),
+                        nbt_data: piece.nbt_data.clone(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    /// Converts structure references to persistent format for saving.
+    fn structure_references_to_persistent(
+        refs: &StructureReferenceMap,
+    ) -> Vec<PersistentStructureReference> {
+        refs.iter()
+            .map(|(structure, positions)| PersistentStructureReference {
+                structure: structure.clone(),
+                references: positions.iter().map(ChunkPos::as_i64).collect(),
+            })
+            .collect()
+    }
+
+    /// Reconstructs structure starts from persistent data.
+    fn persistent_to_structure_starts(
+        persistent: &[PersistentStructureStart],
+    ) -> StructureStartMap {
+        persistent
+            .iter()
+            .map(|ps| {
+                let pieces = ps
+                    .pieces
+                    .iter()
+                    .map(|pp| StructurePiece {
+                        piece_type: pp.piece_type.clone(),
+                        bounding_box: pp.bounding_box,
+                        gen_depth: pp.gen_depth,
+                        orientation: direction_from_2d(pp.orientation),
+                        nbt_data: pp.nbt_data.clone(),
+                    })
+                    .collect();
+
+                let start = StructureStart {
+                    structure: ps.structure.clone(),
+                    chunk_pos: ChunkPos::new(ps.chunk_x, ps.chunk_z),
+                    references: ps.references,
+                    pieces,
+                };
+                (ps.structure.clone(), start)
+            })
+            .collect()
+    }
+
+    /// Reconstructs structure references from persistent data.
+    fn persistent_to_structure_references(
+        persistent: &[PersistentStructureReference],
+    ) -> StructureReferenceMap {
+        persistent
+            .iter()
+            .map(|pr| {
+                let positions = pr
+                    .references
+                    .iter()
+                    .map(|&l| ChunkPos::from_i64(l))
+                    .collect();
+                (pr.structure.clone(), positions)
+            })
+            .collect()
     }
 
     /// Converts a persistent section to runtime format.
