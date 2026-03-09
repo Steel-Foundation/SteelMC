@@ -27,7 +27,7 @@ pub static FLUID_BEHAVIORS: FluidBehaviorLock = FluidBehaviorLock(OnceLock::new(
 /// Registry for fluid behaviors.
 ///
 /// Created after the main registry is frozen. All fluids are initialized with
-/// default behavior (EmptyFluid), then custom behaviors are registered.
+/// default behavior ([`EmptyFluid`]), then custom behaviors are registered.
 pub struct FluidBehaviorRegistry {
     behaviors: Vec<Box<dyn FluidBehavior>>,
 }
@@ -48,15 +48,27 @@ impl FluidBehaviorRegistry {
     }
 
     /// Sets a custom behavior for a fluid.
+    ///
+    /// # Panics
+    /// Panics if `fluid` is not registered in the global registry.
     pub fn set_behavior(&mut self, fluid: FluidRef, behavior: Box<dyn FluidBehavior>) {
-        let id = *REGISTRY.fluids.get_id(fluid).unwrap();
+        let id = *REGISTRY
+            .fluids
+            .get_id(fluid)
+            .expect("fluid not found in registry");
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for a fluid.
+    ///
+    /// # Panics
+    /// Panics if `fluid` is not registered in the global registry.
     #[must_use]
     pub fn get_behavior(&self, fluid: FluidRef) -> &dyn FluidBehavior {
-        let id = *REGISTRY.fluids.get_id(fluid).unwrap();
+        let id = *REGISTRY
+            .fluids
+            .get_id(fluid)
+            .expect("fluid not found in registry");
         self.behaviors[id].as_ref()
     }
 }

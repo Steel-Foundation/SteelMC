@@ -2,23 +2,17 @@
 //!
 //! Equivalent to FlowingFluid#getNewLiquid and related helpers.
 
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
-use steel_registry::fluid::{FluidRef, FluidState};
-use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
-use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
-use steel_utils::BlockPos;
-use steel_registry::blocks::properties::BlockStateProperties;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::fluid::collision::can_pass_horizontally;
 use crate::fluid::spread_context::SpreadContext;
 use crate::fluid::state::{get_fluid_state, get_fluid_state_from_block};
-use crate::fluid::{
- can_hold_any_fluid, can_pass_through_wall, is_lava, is_water,
-};
+use crate::fluid::{can_hold_any_fluid, can_pass_through_wall};
 use crate::world::World;
-use std::ptr;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::Direction;
+use steel_registry::fluid::{FluidRef, FluidState};
+use steel_utils::BlockPos;
 
 /// Calculates the new fluid state at a position based on neighbors.
 #[must_use]
@@ -28,6 +22,7 @@ pub fn get_new_liquid(
     fluid_id: FluidRef,
     drop_off: u8,
 ) -> FluidState {
+    let behavior = FLUID_BEHAVIORS.get_behavior(fluid_id);
     let mut max_incoming_amount = 0u8;
     let mut source_count = 0u8;
 
@@ -40,7 +35,7 @@ pub fn get_new_liquid(
         let neighbor_pos = direction.relative(&pos);
         let neighbor_fluid = get_fluid_state(world, &neighbor_pos);
 
-        if !ptr::eq(neighbor_fluid.fluid_id, fluid_id) {
+        if !behavior.is_same(neighbor_fluid.fluid_id) {
             continue;
         }
 
@@ -52,47 +47,28 @@ pub fn get_new_liquid(
             source_count += 1;
             max_incoming_amount = max_incoming_amount.max(8u8.saturating_sub(drop_off));
         } else {
-            max_incoming_amount = max_incoming_amount.max(neighbor_fluid.amount.saturating_sub(drop_off));
+            max_incoming_amount =
+                max_incoming_amount.max(neighbor_fluid.amount.saturating_sub(drop_off));
         }
     }
 
-    // Source conversion
-    let conversion_rule = if is_water(fluid_id) {
-        Some((world.get_game_rule(WATER_SOURCE_CONVERSION), true))
-    } else if is_lava(fluid_id) {
-        Some((world.get_game_rule(LAVA_SOURCE_CONVERSION), false))
-    } else {
-        None
-    };
-
-    if let Some((rule, default)) = conversion_rule {
-        if source_count >= 2 {
-            let can_convert = match rule {
-                GameRuleValue::Bool(val) => val,
-                GameRuleValue::Int(_) => default,
-            };
-            if can_convert {
-                let below_pos = pos.below();
-                let below_state = world.get_block_state(&below_pos);
-                let below_fluid = get_fluid_state_from_block(below_state);
-                // Vanilla uses isSolid() (full collision shape) not a broader
-                // non-replaceable/non-air check, so partial blocks (slabs, stairs)
-                // do not trigger source conversion.
-                // The source-below guard also requires the same fluid type to prevent
-                // e.g. a lava source beneath flowing water from creating a water source.
-                if below_state.is_solid()
-                    || (ptr::eq(below_fluid.fluid_id, fluid_id) && below_fluid.is_source())
-                {
-                    return FluidState::source(fluid_id);
-                }
-            }
+    // Source conversion — delegate to the fluid's own canConvertToSource, which
+    // encapsulates the game rule check (WATER/LAVA_SOURCE_CONVERSION).
+    if source_count >= 2 && behavior.can_convert_to_source(world) {
+        let below_pos = pos.below();
+        let below_state = world.get_block_state(&below_pos);
+        let below_fluid = get_fluid_state_from_block(below_state);
+        if below_state.is_solid()
+            || (behavior.is_same(below_fluid.fluid_id) && below_fluid.is_source())
+        {
+            return FluidState::source(fluid_id);
         }
     }
 
     // Check above for falling fluid
     let above_pos = pos.above();
     let above_fluid = get_fluid_state(world, &above_pos);
-    if ptr::eq(above_fluid.fluid_id, fluid_id)
+    if behavior.is_same(above_fluid.fluid_id)
         && can_pass_through_wall(world, pos, above_pos, Direction::Up)
     {
         return FluidState::flowing(fluid_id, 8, true);
@@ -120,10 +96,20 @@ pub fn is_hole(world: &World, pos: &BlockPos, fluid_id: FluidRef) -> bool {
 
     let below_state = world.get_block_state(&below);
 
-    // Check if below is same fluid
     let below_fluid = get_fluid_state_from_block(below_state);
-    if ptr::eq(below_fluid.fluid_id, fluid_id) && !below_fluid.is_source() {
+    if !below_fluid.is_empty()
+        && FLUID_BEHAVIORS
+            .get_behavior(fluid_id)
+            .is_same(below_fluid.fluid_id)
+    {
         return true;
+    }
+
+    if below_state
+        .try_get_value(&BlockStateProperties::WATERLOGGED)
+        .is_some()
+    {
+        return false;
     }
 
     can_hold_any_fluid(world, &below)
@@ -164,15 +150,10 @@ fn get_slope_distance(
             continue;
         }
 
-        // Vanilla's canPassThrough also checks the wall between the current
-        // exploration position and the neighbor (canPassThroughWall), not just
-        // the target block's passability. Missing this causes fluids to
-        // "see through" walls during slope finding.
         if !can_pass_through_wall(ctx.world(), pos, neighbor, direction) {
             continue;
         }
 
-        // Is this position a hole?
         if ctx.is_hole(neighbor, fluid_id) {
             return u16::from(depth); // Found a hole at this depth
         }
@@ -210,7 +191,6 @@ pub fn get_spread(
     drop_off: u8,
     slope_find_distance: u8,
 ) -> Vec<(Direction, FluidState)> {
-    let max_depth = slope_find_distance;
     let mut candidates: Vec<(Direction, FluidState, u16)> = Vec::new();
     // Lazily initialised on first use, matching vanilla's SpreadContext init.
     // Shared across all directions so cached block states and hole checks are
@@ -225,8 +205,10 @@ pub fn get_spread(
     ] {
         let neighbor = direction.relative(&pos);
 
-        // Can we flow there? (vanilla: canMaybePassThrough)
         if !can_pass_horizontally(world, &neighbor, fluid_id) {
+            continue;
+        }
+        if !can_pass_through_wall(world, pos, neighbor, direction) {
             continue;
         }
 
@@ -238,7 +220,6 @@ pub fn get_spread(
             continue;
         }
 
-        // Vanilla parity: canHoldSpecificFluid.
         // If the target is a LiquidBlockContainer (has WATERLOGGED), delegate to
         // can_place_liquid which encodes per-block acceptance rules.
         let neighbor_state = world.get_block_state(&neighbor);
@@ -255,9 +236,16 @@ pub fn get_spread(
         // Calculate slope distance.
         let distance = if is_hole(world, &neighbor, fluid_id) {
             0
-        } else if max_depth > 0 {
+        } else if slope_find_distance > 0 {
             let ctx = ctx.get_or_insert_with(|| SpreadContext::new(world, pos));
-            get_slope_distance(ctx, neighbor, 1, Some(direction), fluid_id, max_depth)
+            get_slope_distance(
+                ctx,
+                neighbor,
+                1,
+                Some(direction),
+                fluid_id,
+                slope_find_distance,
+            )
         } else {
             1000
         };

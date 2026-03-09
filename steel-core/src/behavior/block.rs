@@ -8,17 +8,19 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
+use crate::fluid::is_water;
 use crate::player::Player;
 use crate::world::World;
 
 pub struct PickupResult {
     pub resulting_block_state: BlockStateId,
-    pub filled_bucket: steel_registry::items::ItemRef,
+    pub filled_bucket: ItemRef,
     pub sound: Option<i32>,
 }
 
@@ -318,7 +320,7 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn can_place_liquid(&self, state: BlockStateId, fluid_state: FluidState) -> bool {
         match state.try_get_value(&BlockStateProperties::WATERLOGGED) {
-            Some(false) => fluid_state.is_source() && crate::fluid::is_water(fluid_state.fluid_id),
+            Some(false) => fluid_state.is_source() && is_water(fluid_state.fluid_id),
             _ => false,
         }
     }

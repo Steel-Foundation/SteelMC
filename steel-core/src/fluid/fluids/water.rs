@@ -76,14 +76,14 @@ impl FluidBehavior for WaterFluid {
     fn animate_tick(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
         if !fluid_state.is_source() && !fluid_state.falling {
             // 1/64 chance for flowing water ambient sound
-            if rand::random::<u32>() % 64 == 0 {
+            if rand::random::<u32>().is_multiple_of(64) {
                 let volume: f32 = rand::random::<f32>() * 0.25 + 0.75;
                 let pitch: f32 = rand::random::<f32>() + 0.5;
                 world.play_block_sound(sound_events::BLOCK_WATER_AMBIENT, pos, volume, pitch, None);
             }
         } else {
             // 1/10 chance for underwater particles
-            if rand::random::<u32>() % 10 == 0 {
+            if rand::random::<u32>().is_multiple_of(10) {
                 // TODO: Spawn UNDERWATER particles (needs CLevelParticles packet)
             }
         }

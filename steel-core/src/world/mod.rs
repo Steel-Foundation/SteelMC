@@ -41,10 +41,16 @@ use steel_registry::{
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
+/// Controls how a block position is treated during a raytrace traversal.
+///
+/// Returned by the predicate closure passed to [`World::raytrace`].
 #[derive(Debug)]
 pub enum RaytraceAction {
+    /// Skip this block and continue traversal (transparent block).
     Pass,
+    /// Test the block's voxel shape for a precise ray intersection.
     CheckShape,
+    /// Immediately treat this block as a hit without shape testing.
     ImmediateHit,
 }
 
@@ -54,11 +60,12 @@ use tokio::{runtime::Runtime, time::Instant};
 
 use crate::{
     ChunkMap,
-    behavior::BLOCK_BEHAVIORS,
+    behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS},
     block_entity::SharedBlockEntity,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
+    fluid::get_fluid_state_from_block,
     level_data::LevelDataManager,
     player::{LastSeen, Player, connection::NetworkConnection},
 };
@@ -570,6 +577,18 @@ impl World {
             );
             // Use set_block_with_limit to prevent infinite recursion
             self.set_block_with_limit(pos, new_state, flags, update_limit);
+        }
+
+        // Vanilla parity: `SimpleWaterloggedBlock.updateShape` / `Level.neighborShapeChanged` —
+        // always reschedule the fluid tick when a block with fluid has a neighbor shape change,
+        // regardless of whether the block state itself changed. This ensures waterlogged blocks
+        // (fences, slabs, stairs…) propagate their fluid when adjacent blocks are removed.
+        let fluid_state = get_fluid_state_from_block(new_state);
+        if !fluid_state.is_empty() {
+            let delay = FLUID_BEHAVIORS
+                .get_behavior(fluid_state.fluid_id)
+                .tick_delay(self);
+            self.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
         }
     }
 
@@ -1287,6 +1306,10 @@ impl World {
             return (false, None);
         }
 
+        // Vanilla parity: pick the *closest* AABB hit across all boxes in the shape,
+        // matching VoxelShape.clip() which finds the minimum entry t-parameter.
+        let mut closest: Option<(f64, Direction)> = None;
+
         for shape in bounding_boxes {
             let block_vec = Vector3::new(
                 f64::from(block_pos.x()),
@@ -1306,31 +1329,33 @@ impl World {
             )
             .add(&block_vec);
 
-            let direction = Self::intersects_aabb_with_direction(from, to, world_min, world_max);
-            if direction.is_some() {
-                return (true, direction);
+            if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
+                && closest.is_none_or(|(best_t, _)| hit.0 < best_t)
+            {
+                closest = Some(hit);
             }
         }
 
-        (false, None)
+        match closest {
+            Some((_, dir)) => (true, Some(dir)),
+            None => (false, None),
+        }
     }
 
-    /// Checks if a ray intersects with an axis-aligned bounding box (AABB).
+    /// Ray-AABB intersection returning the entry t-parameter and the hit face.
     ///
-    /// # Arguments
-    /// * `start` - The starting point of the ray
-    /// * `end` - The ending point of the ray
-    /// * `min` - The minimum coordinates of the AABB
-    /// * `max` - The maximum coordinates of the AABB
-    #[must_use]
-    pub fn intersects_aabb_with_direction(
+    /// Returns `Some((tmin, direction))` where `tmin` is the ray parameter at entry
+    /// and `direction` is the face normal pointing away from the hit surface.
+    /// Returns `None` if the AABB is missed or entirely behind the ray origin.
+    ///
+    /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
+    /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behaviour.
+    fn intersects_aabb_with_t(
         start: Vector3<f64>,
         end: Vector3<f64>,
         min: Vector3<f64>,
         max: Vector3<f64>,
-    ) -> Option<Direction> {
-        use steel_registry::blocks::properties::Direction;
-
+    ) -> Option<(f64, Direction)> {
         let dir = end - start;
 
         let mut tmin = f64::NEG_INFINITY;
@@ -1386,7 +1411,28 @@ impl World {
             Direction::South
         );
 
-        if tmax < 0.0 { None } else { hit_dir }
+        if tmax < 0.0 {
+            None
+        } else {
+            hit_dir.map(|d| (tmin, d))
+        }
+    }
+
+    /// Checks if a ray intersects with an axis-aligned bounding box (AABB).
+    ///
+    /// # Arguments
+    /// * `start` - The starting point of the ray
+    /// * `end` - The ending point of the ray
+    /// * `min` - The minimum coordinates of the AABB
+    /// * `max` - The maximum coordinates of the AABB
+    #[must_use]
+    pub fn intersects_aabb_with_direction(
+        start: Vector3<f64>,
+        end: Vector3<f64>,
+        min: Vector3<f64>,
+        max: Vector3<f64>,
+    ) -> Option<Direction> {
+        Self::intersects_aabb_with_t(start, end, min, max).map(|(_, dir)| dir)
     }
 
     /// Performs a raytrace in the world.
@@ -1470,33 +1516,33 @@ impl World {
         );
 
         while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
-            let block_direction = match (next.x, next.y, next.z) {
-                (x, y, z) if x < y && x < z => {
-                    block.0.x += step.x;
-                    next.x += delta.x;
-                    if step.x > 0 {
-                        Direction::West
-                    } else {
-                        Direction::East
-                    }
+            // Vanilla parity: traverseBlocks tie-breaking — Z wins on any tie.
+            // X wins only when strictly less than both Y and Z.
+            // Y wins only when strictly less than both X and Z.
+            // Everything else (including all ties) goes to Z.
+            let block_direction = if next.x < next.y && next.x < next.z {
+                block.0.x += step.x;
+                next.x += delta.x;
+                if step.x > 0 {
+                    Direction::West
+                } else {
+                    Direction::East
                 }
-                (_, y, z) if y < z => {
-                    block.0.y += step.y;
-                    next.y += delta.y;
-                    if step.y > 0 {
-                        Direction::Down
-                    } else {
-                        Direction::Up
-                    }
+            } else if next.y < next.x && next.y < next.z {
+                block.0.y += step.y;
+                next.y += delta.y;
+                if step.y > 0 {
+                    Direction::Down
+                } else {
+                    Direction::Up
                 }
-                _ => {
-                    block.0.z += step.z;
-                    next.z += delta.z;
-                    if step.z > 0 {
-                        Direction::North
-                    } else {
-                        Direction::South
-                    }
+            } else {
+                block.0.z += step.z;
+                next.z += delta.z;
+                if step.z > 0 {
+                    Direction::North
+                } else {
+                    Direction::South
                 }
             };
 

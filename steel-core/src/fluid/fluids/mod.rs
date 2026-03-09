@@ -1,3 +1,4 @@
+//! Concrete fluid implementations: [`EmptyFluid`], [`WaterFluid`], and [`LavaFluid`].
 pub mod empty;
 pub mod lava;
 pub mod water;

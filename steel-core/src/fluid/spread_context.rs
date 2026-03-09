@@ -7,29 +7,18 @@
 //! the recursive slope-finding algorithm.
 
 use rustc_hash::FxHashMap;
-use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
 use crate::fluid::collision::can_pass_horizontally_internal;
+use crate::fluid::is_hole;
 use crate::world::World;
 /// Context for fluid spread calculations with local caching.
 ///
 /// This is created fresh for each `get_spread()` call and caches:
 /// - `BlockState` lookups by relative position
 /// - Hole check results by relative position
-///
-/// # Parity note
-/// Cache keys are encoded as **relative offsets** from the spread origin,
-/// mirroring vanilla's `SpreadContext.getCacheKey()` which subtracts the origin
-/// before encoding. The previous implementation used raw world coordinates cast
-/// to `i8`, which caused cache collisions at |X| or |Z| > 127.
-///
-/// # Performance
-/// Reduces world lookups from ~20-30 to ~6 per spread calculation by caching
-/// repeated accesses to the same positions during slope finding.
 pub(super) struct SpreadContext<'a> {
     /// Cache for block states by encoded relative position
     state_cache: FxHashMap<i16, BlockStateId>,
@@ -57,12 +46,6 @@ impl<'a> SpreadContext<'a> {
     }
 
     /// Encodes a world position into a short cache key relative to the spread origin.
-    ///
-    /// Mirrors vanilla's `SpreadContext.getCacheKey(BlockPos)`:
-    /// `(dx + 128 & 0xFF) << 8 | (dz + 128 & 0xFF)` where `dx`/`dz` are
-    /// signed offsets from the origin, fitting within `i8` range.
-    /// The previous implementation cast raw world coordinates to `i8`, which
-    /// wrapped incorrectly at positions beyond ±127 absolute.
     fn encode_key(&self, pos: BlockPos) -> i16 {
         // Positions in the slope-finding algorithm stay within slopeFindDistance (<=4)
         // of the origin, so the difference always fits in i8.
@@ -81,12 +64,6 @@ impl<'a> SpreadContext<'a> {
             .or_insert_with(|| self.world.get_block_state(&pos))
     }
 
-    /// Gets the cached block reference at the given position.
-    #[must_use]
-    pub fn get_block(&mut self, pos: BlockPos) -> BlockRef {
-        self.get_block_state(pos).get_block()
-    }
-
     /// Checks if the position is a hole (can fluid flow down into it?), with caching.
     #[must_use]
     pub fn is_hole(&mut self, pos: BlockPos, fluid_id: FluidRef) -> bool {
@@ -94,7 +71,7 @@ impl<'a> SpreadContext<'a> {
         *self
             .hole_cache
             .entry(key)
-            .or_insert_with(|| crate::fluid::is_hole(self.world, &pos, fluid_id))
+            .or_insert_with(|| is_hole(self.world, &pos, fluid_id))
     }
 
     /// Checks if fluid can pass horizontally to the given position.
@@ -108,7 +85,7 @@ impl<'a> SpreadContext<'a> {
 
     /// Returns a reference to the world.
     #[must_use]
-    pub fn world(&self) -> &'a World {
+    pub(super) const fn world(&self) -> &'a World {
         self.world
     }
 }

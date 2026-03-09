@@ -8,28 +8,28 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_utils::{BlockPos, types::UpdateFlags};
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::fluid::{
-    FluidBehavior, FluidState, can_hold_any_fluid, can_pass_through_wall,
-    fluid_state_to_block, fluid_state_to_block_with_existing, get_fluid_state, get_new_liquid,
-    get_spread, is_hole,
+    FluidBehavior, FluidState, can_hold_any_fluid, can_pass_through_wall, fluid_state_to_block,
+    fluid_state_to_block_with_existing, get_fluid_state, get_fluid_state_from_block,
+    get_new_liquid, get_spread, is_hole,
 };
 use crate::world::World;
 
 /// Trait providing the base algorithm for flowing fluids (Water, Lava).
 /// In vanilla Minecraft, this is the `FlowingFluid` abstract class.
 pub trait FlowingFluid: FluidBehavior {
-
     /// The base tick logic
-    fn base_tick(&self, world: &World, pos: BlockPos)
-    {
+    fn base_tick(&self, world: &World, pos: BlockPos) {
         let mut current_fluid = get_fluid_state(world, &pos);
 
         if current_fluid.is_empty() || !self.is_same(current_fluid.fluid_id) {
             return;
         }
 
-        self.animate_tick(world, pos, current_fluid);
+        // TODO: animate_tick (ambient sounds, particles) belongs in a client-side
+        // ambient tick dispatcher (equivalent to Level.animateTick), not here.
+        // It should fire at render rate for nearby blocks, not per scheduled fluid tick.
 
         if !current_fluid.is_source() {
             let new_fluid = get_new_liquid(world, pos, self.fluid_type(), self.drop_off(world));
@@ -41,8 +41,6 @@ pub trait FlowingFluid: FluidBehavior {
                     fluid_state_to_block_with_existing(FluidState::EMPTY, existing_state);
                 world.set_block(pos, air_or_unwaterlogged, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             } else if new_fluid != current_fluid {
-                // Capture old state before overwriting — vanilla computes getSpreadDelay
-                // with (old, new) before calling setBlock, so we must do the same.
                 let old_fluid = current_fluid;
                 current_fluid = new_fluid;
                 let existing_state = world.get_block_state(&pos);
@@ -61,8 +59,7 @@ pub trait FlowingFluid: FluidBehavior {
     }
 
     /// The base spread logic
-    fn base_spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState)
-    {
+    fn base_spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
         if fluid_state.is_empty() {
             return;
         }
@@ -86,25 +83,17 @@ pub trait FlowingFluid: FluidBehavior {
     }
 
     /// The base logic for placing a fluid into a specific adjacent block.
-    fn base_spread_to(
-        &self,
-        world: &World,
-        pos: BlockPos,
-        fluid_state: FluidState,
-    ) {
+    fn base_spread_to(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
         let target_state = world.get_block_state(&pos);
 
-        // Vanilla parity: LiquidBlockContainer.placeLiquid() path.
-        // If the block can hold the fluid (e.g. waterloggable blocks), delegate to
-        // place_liquid which encodes per-block placement rules (sets WATERLOGGED, LIT, etc.)
-        // and schedules the fluid tick.
         if target_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
             .is_some()
         {
             let behavior = BLOCK_BEHAVIORS.get_behavior(target_state.get_block());
-            behavior.place_liquid(world, pos, target_state, fluid_state);
-            return;
+            if behavior.place_liquid(world, pos, target_state, fluid_state) {
+                return;
+            }
         }
 
         // Non-LiquidBlockContainer path: destroy the block and place the raw fluid.
@@ -115,15 +104,18 @@ pub trait FlowingFluid: FluidBehavior {
 
         let block_state = fluid_state_to_block(fluid_state);
         if world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL_IMMEDIATE) {
-            // Vanilla's spreadTo does not call getSpreadDelay — the delay for newly placed
-            // fluid blocks uses the plain tick delay, not the uphill multiplier.
             world.schedule_fluid_tick_default(pos, self.fluid_type(), self.tick_delay(world));
         }
     }
 
     /// Performs the actual placement of fluid and schedules the tick.
-    fn spread_to(&self, world: &World, pos: BlockPos, fluid_state: FluidState, _direction: Direction)
-    {
+    fn spread_to(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        fluid_state: FluidState,
+        _direction: Direction,
+    ) {
         self.base_spread_to(world, pos, fluid_state);
     }
 
@@ -149,9 +141,8 @@ pub trait FlowingFluid: FluidBehavior {
         }
 
         let below_fluid = get_fluid_state(world, &below);
-        if self.is_same(below_fluid.fluid_id) {
-            //This prevents the fluid from spreading down again and returning early,
-            // which would block horizontal spread!
+
+        if self.is_same(below_fluid.fluid_id) && below_fluid.is_source() {
             return false;
         }
 
@@ -165,8 +156,7 @@ pub trait FlowingFluid: FluidBehavior {
     /// Spreads the fluid down from the given position.
     ///
     /// Callers must have already verified `can_spread_down` before calling this.
-    fn spread_down(&self, world: &World, pos: BlockPos) -> bool
-    {
+    fn spread_down(&self, world: &World, pos: BlockPos) -> bool {
         let below = pos.below();
 
         let new_fluid = get_new_liquid(world, below, self.fluid_type(), self.drop_off(world));
@@ -175,6 +165,19 @@ pub trait FlowingFluid: FluidBehavior {
         }
 
         let below_state = world.get_block_state(&below);
+
+        let existing_below = get_fluid_state_from_block(below_state);
+        let existing_behavior = FLUID_BEHAVIORS.get_behavior(existing_below.fluid_id);
+        if !existing_behavior.can_be_replaced_with(
+            existing_below,
+            world,
+            below,
+            new_fluid.fluid_id,
+            Direction::Down,
+        ) {
+            return false;
+        }
+
         if below_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
             .is_some()
@@ -190,8 +193,7 @@ pub trait FlowingFluid: FluidBehavior {
     }
 
     /// Spreads the fluid to the given position.
-    fn spread_to_sides(&self, world: &World, pos: BlockPos)
-    {
+    fn spread_to_sides(&self, world: &World, pos: BlockPos) {
         let spreads = get_spread(
             world,
             pos,
@@ -202,11 +204,6 @@ pub trait FlowingFluid: FluidBehavior {
 
         for (direction, new_fluid) in spreads {
             let neighbor: BlockPos = direction.relative(&pos);
-
-            if !can_hold_any_fluid(world, &neighbor) {
-                continue;
-            }
-
             self.spread_to(world, neighbor, new_fluid, direction);
         }
     }

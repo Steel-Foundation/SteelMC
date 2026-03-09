@@ -21,7 +21,7 @@ use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
@@ -34,6 +34,7 @@ use crate::chunk::{
     world_gen_context::WorldGenContext,
 };
 use crate::chunk_saver::ChunkStorage;
+use crate::fluid::get_fluid_state_from_block;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
@@ -520,13 +521,13 @@ impl ChunkMap {
                     .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
             });
 
-            let fluid_behaviors = &*crate::behavior::FLUID_BEHAVIORS;
+            let fluid_behaviors = &*FLUID_BEHAVIORS;
             for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
                 let state = world.get_block_state(&tick.pos);
-                let fluid_state = crate::fluid::get_fluid_state_from_block(state);
+                let fluid_state = get_fluid_state_from_block(state);
 
                 // Only execute if the fluid at this location still matches the scheduled tick
-                if !std::ptr::eq(fluid_state.fluid_id, tick.tick_type) {
+                if !ptr::eq(fluid_state.fluid_id, tick.tick_type) {
                     continue;
                 }
 

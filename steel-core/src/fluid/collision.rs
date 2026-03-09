@@ -2,20 +2,20 @@
 //!
 //! Equivalent to various collision checks in FlowingFluid.java.
 
+use crate::fluid::state::get_fluid_state_from_block;
+use crate::physics::shapes::merged_face_occludes;
+use crate::world::World;
+use std::ptr;
+use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::shapes::is_shape_full_block;
 use steel_registry::fluid::FluidRef;
+use steel_registry::vanilla_block_tags::{DOORS_TAG, SIGNS_TAG};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
-use steel_registry::blocks::properties::BlockStateProperties;
-use crate::physics::shapes::merged_face_occludes;
-use crate::fluid::state::get_fluid_state_from_block;
-use crate::world::World;
-use steel_registry::blocks::shapes::is_shape_full_block;
-use std::ptr;
-use steel_registry::vanilla_block_tags::{SIGNS_TAG, DOORS_TAG};
-use steel_registry::REGISTRY;
 /// Checks if a block can be replaced by fluid.
 #[must_use]
 pub fn can_be_replaced_by_fluid(world: &World, pos: &BlockPos) -> bool {
@@ -34,7 +34,6 @@ pub fn can_pass_through_wall(
     to: BlockPos,
     direction: Direction,
 ) -> bool {
-
     if !world.is_in_valid_bounds(&to) {
         return false;
     }
@@ -75,17 +74,15 @@ pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
 
 /// Returns true if a block is in the vanilla fluid exclusion list.
 fn is_fluid_excluded_block(block: BlockRef) -> bool {
-
-    std::ptr::eq(block, vanilla_blocks::LADDER)
-        || std::ptr::eq(block, vanilla_blocks::SUGAR_CANE)
-        || std::ptr::eq(block, vanilla_blocks::BUBBLE_COLUMN)
-        || std::ptr::eq(block, vanilla_blocks::NETHER_PORTAL)
-        || std::ptr::eq(block, vanilla_blocks::END_PORTAL)
-        || std::ptr::eq(block, vanilla_blocks::END_GATEWAY)
-        || std::ptr::eq(block, vanilla_blocks::STRUCTURE_VOID)
+    ptr::eq(block, vanilla_blocks::LADDER)
+        || ptr::eq(block, vanilla_blocks::SUGAR_CANE)
+        || ptr::eq(block, vanilla_blocks::BUBBLE_COLUMN)
+        || ptr::eq(block, vanilla_blocks::NETHER_PORTAL)
+        || ptr::eq(block, vanilla_blocks::END_PORTAL)
+        || ptr::eq(block, vanilla_blocks::END_GATEWAY)
+        || ptr::eq(block, vanilla_blocks::STRUCTURE_VOID)
         || REGISTRY.blocks.is_in_tag(block, &SIGNS_TAG)
         || REGISTRY.blocks.is_in_tag(block, &DOORS_TAG)
-
 }
 
 /// Checks if fluid can pass through to a position horizontally.
@@ -108,7 +105,6 @@ pub fn can_pass_horizontally(world: &World, pos: &BlockPos, target_fluid_id: Flu
 /// cached `BlockStateId` to avoid redundant world lookups).
 #[must_use]
 pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: FluidRef) -> bool {
-
     let block = state.get_block();
 
     // 1. Air and replaceable blocks are always passable.

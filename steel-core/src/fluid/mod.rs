@@ -4,14 +4,14 @@
 //! Based on vanilla Minecraft's `FlowingFluid` system.
 //!
 //! ### TODOs
-//! - TODO: Per-block `LiquidBlockContainer` overrides (SlabBlock double, BarrierBlock, CampfireBlock) — architecture in `BlockBehaviour` trait is done.
-//! - TODO: Particle Events (underwater bubbles, splash — needs `CLevelParticles` packet).
+//! - TODO: Ambient tick dispatcher — `animate_tick` (sounds, particles) needs a client-side `Level.animateTick` equivalent firing at render rate for nearby blocks.
+//! - TODO: Particle Events (underwater bubbles, lava pops, drip particles — needs `CLevelParticles` packet).
 //! - TODO: Entity Interactions (pushing, drowning, extinguishing, lava damage).
 //! - TODO: Block item drops when water destroys blocks, will be done as soon as the cactus PR is merged
 //! - TODO: Lava random tick fire spread.
 //!
-//! ### Issues ⚠️
-//! - Bucket stacks cause deadlocks, waiting on 4lve to push the fix on use_item and use_item_on
+//! ### Issues
+//! - Bucket stacks cause deadlocks, waiting on 4lve to push the fix on `use_item` and `use_item_on`
 pub mod collision;
 pub mod conversion;
 pub mod flowing_fluid;

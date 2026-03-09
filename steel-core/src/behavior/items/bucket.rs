@@ -8,10 +8,15 @@
 
 use std::ptr;
 
+use crate::behavior::context::InteractionResult;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
+use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
+use crate::world::RaytraceAction;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::block_state_ext::FluidReplaceableExt;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::sound_events;
@@ -20,11 +25,6 @@ use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
-use steel_registry::fluid::FluidState;
-use crate::behavior::context::InteractionResult;
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
-use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
-use crate::world::RaytraceAction;
 
 /// Consumes one bucket from the player's hand, replacing it with `result_item`.
 /// No-op if the player has infinite materials.
@@ -63,6 +63,9 @@ impl FilledBucketBehavior {
 }
 
 impl ItemBehavior for FilledBucketBehavior {
+    // The closure + primary/secondary placement logic reads long but splitting it
+    // would obscure the vanilla flow. Readability justifies the extra lines.
+    #[allow(clippy::too_many_lines)]
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         // Raytrace to find target block
         let (start, end) = context.player.get_ray_endpoints();

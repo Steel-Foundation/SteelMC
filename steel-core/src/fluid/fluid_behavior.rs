@@ -1,5 +1,7 @@
 //! Fluid behavior trait and related types.
 //! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
+use std::ptr;
+
 use crate::entity::Entity;
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
@@ -10,15 +12,16 @@ use steel_utils::{BlockPos, BlockStateId};
 /// Trait for fluid behavior implementations.
 /// Conceptual equivalent of Minecraft's `Fluid` class.
 pub trait FluidBehavior: Send + Sync {
-
     /// Gets the fluid type for this behaviour.
     fn fluid_type(&self) -> FluidRef;
 
     /// Checks if this fluid is the same type as another fluid ref.
-    /// This is used to determine if fluids can flow into each other, etc.
-    /// By default, it compares the fluid refs by pointer equality, which works for registry fluids.
+    ///
+    /// Used to determine if fluids can flow into each other.
+    ///
+    /// **Override required** for any fluid that has both a source and a flowing variant
     fn is_same(&self, other: FluidRef) -> bool {
-        std::ptr::eq(self.fluid_type(), other)
+        ptr::eq(self.fluid_type(), other)
     }
 
     /// Gets the number of ticks between fluid updates.
@@ -45,6 +48,12 @@ pub trait FluidBehavior: Send + Sync {
         other_fluid: FluidRef,
         direction: Direction,
     ) -> bool;
+
+    /// Returns the particle type ID for ceiling-drip particles.
+    // TODO: wire up when CLevelParticles / client-side tick system is implemented.
+    fn drip_particle(&self) -> Option<i32> {
+        None
+    }
 
     /// Gets the sound event ID for when this fluid is picked up with a bucket.
     fn pickup_sound(&self) -> Option<i32> {
@@ -90,24 +99,23 @@ pub trait FluidBehavior: Send + Sync {
         &self,
         world: &World,
         _pos: BlockPos,
-        old_state: steel_registry::fluid::FluidState,
-        new_state: steel_registry::fluid::FluidState,
+        old_state: FluidState,
+        new_state: FluidState,
     ) -> i32 {
         self.tick_delay(world)
     }
 
-    /// Returns the flow velocity vector at a position (used for entity physics).
+    /// Returns the x component of the flow velocity at a position (used for entity physics).
     ///
-    /// Determines how strongly and in which direction entities/items are pushed.
-    ///
-    /// Default returns a zero vector (no push).
-    /// Returns the x component of the flow velocity vector.
+    /// Determines how strongly entities/items are pushed horizontally.
+    // TODO: implement flow velocity for entity interactions (pushing, drowning).
     #[allow(unused_variables)]
     fn get_flow_x(&self, _world: &World, _pos: BlockPos) -> f64 {
         0.0
     }
 
-    /// Returns the z component of the flow velocity vector.
+    /// Returns the z component of the flow velocity at a position (used for entity physics).
+    // TODO: implement flow velocity for entity interactions (pushing, drowning).
     #[allow(unused_variables)]
     fn get_flow_z(&self, _world: &World, _pos: BlockPos) -> f64 {
         0.0

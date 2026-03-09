@@ -18,10 +18,12 @@ use steel_utils::types::UpdateFlags;
 use steel_registry::sound_events;
 use steel_registry::vanilla_items;
 
+use crate::behavior::FLUID_BEHAVIORS;
 use crate::behavior::block::{BlockBehaviour, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
-use crate::behavior::FLUID_BEHAVIORS;
-use crate::fluid::{get_fluid_state, get_fluid_state_from_block, is_water_state};
+use crate::fluid::{
+    get_fluid_state, get_fluid_state_from_block, is_lava, is_water, is_water_state,
+};
 use crate::player::Player;
 use crate::world::World;
 
@@ -50,7 +52,7 @@ impl LiquidBlock {
     /// Returns `false` if the liquid was converted to a block (obsidian/cobblestone/basalt).
     fn should_spread_liquid(&self, world: &World, pos: BlockPos) -> bool {
         // Only lava has special interactions with water and blue ice
-        if !ptr::eq(self.block, vanilla_blocks::LAVA) {
+        if !is_lava(self.fluid) {
             return true;
         }
         // Check if there's soul soil below (for basalt generation)
@@ -159,7 +161,7 @@ impl BlockBehaviour for LiquidBlock {
 
         if fluid_state.is_source() || neighbor_fluid.is_source() {
             let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
-            world.schedule_fluid_tick_default(pos.clone(), self.fluid, delay);
+            world.schedule_fluid_tick_default(pos, self.fluid, delay);
         }
 
         state
@@ -179,13 +181,13 @@ impl BlockBehaviour for LiquidBlock {
         let air = REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
         world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-        let bucket = if ptr::eq(self.block, vanilla_blocks::WATER) {
+        let bucket = if is_water(self.fluid) {
             &vanilla_items::ITEMS.water_bucket
         } else {
             &vanilla_items::ITEMS.lava_bucket
         };
 
-        let sound = if ptr::eq(self.block, vanilla_blocks::WATER) {
+        let sound = if is_water(self.fluid) {
             sound_events::ITEM_BUCKET_FILL
         } else {
             sound_events::ITEM_BUCKET_FILL_LAVA
