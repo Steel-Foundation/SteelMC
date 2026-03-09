@@ -8,9 +8,9 @@ use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::vanilla_fluid_tags;
 use steel_registry::{REGISTRY, vanilla_damage_types};
 use steel_registry::{vanilla_block_tags, vanilla_blocks};
-use steel_registry::{vanilla_fluid_tags, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
