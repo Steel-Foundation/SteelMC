@@ -9,9 +9,6 @@
 //! - TODO: Entity Interactions (pushing, drowning, extinguishing, lava damage).
 //! - TODO: Block item drops when water destroys blocks, will be done as soon as the cactus PR is merged
 //! - TODO: Lava random tick fire spread.
-//!
-//! ### Issues
-//! - Bucket stacks cause deadlocks, waiting on 4lve to push the fix on `use_item` and `use_item_on`
 pub mod collision;
 pub mod conversion;
 pub mod flowing_fluid;

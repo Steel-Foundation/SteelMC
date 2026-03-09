@@ -100,7 +100,7 @@ impl FluidBehavior for LavaFluid {
             && !old_state.falling
             && !new_state.falling
             && get_height(world, &pos, new_state) > get_height(world, &pos, old_state)
-            && !rand::random::<u32>().is_multiple_of(4)
+            && rand::random_range(0u32..4) != 0
         {
             base * 4
         } else {
@@ -121,13 +121,13 @@ impl FluidBehavior for LavaFluid {
         let above_block = world.get_block_state(&above_pos).get_block();
 
         if above_block.config.is_air {
-            if rand::random::<u32>().is_multiple_of(100) {
+            if rand::random_range(0u32..100) == 0 {
                 let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
                 let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
                 world.play_block_sound(sound_events::BLOCK_LAVA_POP, pos, volume, pitch, None);
             }
 
-            if rand::random::<u32>().is_multiple_of(200) {
+            if rand::random_range(0u32..200) == 0 {
                 let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
                 let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
                 world.play_block_sound(sound_events::BLOCK_LAVA_AMBIENT, pos, volume, pitch, None);

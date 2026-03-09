@@ -9,6 +9,7 @@ use steel_utils::types::{GameType, InteractionHand};
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockHitResult, ITEM_BEHAVIORS, InteractionResult, UseOnContext,
 };
+use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::player::Player;
 use crate::world::World;
 
@@ -122,38 +123,48 @@ pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> Intera
         return InteractionResult::Pass;
     }
 
+    let inv_ref = ContainerRef::PlayerInventory(player.inventory.clone());
+    let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
+
     let mut item_stack = {
-        let inv = player.inventory.lock();
+        let inv_id = inv_ref.container_id();
+        let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
+            return InteractionResult::Pass;
+        };
         inv.get_item_in_hand(hand).clone()
     };
 
     if !item_stack.is_empty() {
         let original_count = item_stack.count;
 
-        let mut context = crate::behavior::UseItemContext {
-            player,
-            hand,
-            world,
-            item_stack: &mut item_stack,
+        let result = {
+            let mut context = crate::behavior::UseItemContext {
+                player,
+                hand,
+                world,
+                item_stack: &mut item_stack,
+                inv_guard: &mut guard,
+            };
+
+            // Get behavior registries
+            let item_behaviors = &*ITEM_BEHAVIORS;
+            let item_behavior = item_behaviors.get_behavior(context.item_stack.item);
+
+            let result = item_behavior.use_item(&mut context);
+
+            // Restore count for creative mode (infinite materials)
+            if player.has_infinite_materials() && context.item_stack.count < original_count {
+                context.item_stack.count = original_count;
+            }
+
+            result
         };
 
-        // Get behavior registries
-        let item_behaviors = &*ITEM_BEHAVIORS;
-        let item_behavior = item_behaviors.get_behavior(context.item_stack.item);
-
-        log::info!(
-            "Calling use_item on behavior for item: {}",
-            context.item_stack.item.key
-        );
-        let result = item_behavior.use_item(&mut context);
-        log::info!("use_item result: {result:?}");
-
-        // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() && context.item_stack.count < original_count {
-            context.item_stack.count = original_count;
+        // Write back modified hand item through the guard (context dropped, borrows released)
+        let inv_id = inv_ref.container_id();
+        if let Some(inv) = guard.get_player_inventory_mut(inv_id) {
+            inv.set_item_in_hand(hand, item_stack);
         }
-
-        player.inventory.lock().set_item_in_hand(hand, item_stack);
 
         return result;
     }

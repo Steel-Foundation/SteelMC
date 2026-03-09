@@ -25,7 +25,7 @@ use steel_protocol::{
 
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -66,7 +66,7 @@ use crate::{
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
-    fluid::get_fluid_state_from_block,
+    fluid::{fluid_state_to_block, get_fluid_state_from_block},
     level_data::LevelDataManager,
     player::{LastSeen, Player, connection::NetworkConnection},
 };
@@ -457,21 +457,6 @@ impl World {
         if !self.is_in_valid_bounds(&pos) {
             return false;
         }
-
-        // Waterlogging support: If setting to AIR, check if current block is waterlogged
-        // If so, replace with WATER source instead of AIR
-        let block_state = if block_state.get_block() == vanilla_blocks::AIR {
-            let current_state = self.get_block_state(&pos);
-            if let Some(true) = current_state.try_get_value(&BlockStateProperties::WATERLOGGED) {
-                // Restore water source
-                // Level 0 is source
-                REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER)
-            } else {
-                block_state
-            }
-        } else {
-            block_state
-        };
 
         let chunk_pos = Self::chunk_pos_for_block(&pos);
         let Some(old_state) = self
@@ -1673,13 +1658,10 @@ impl World {
             self.drop_resources(state, pos);
         }
 
-        // TODO: Vanilla uses fluidState.createLegacyBlock() instead of AIR,
-        // so breaking a waterlogged block leaves water behind.
-        self.set_block(
-            pos,
-            vanilla_blocks::AIR.default_state(),
-            UpdateFlags::UPDATE_ALL,
-        );
+        // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
+        // block leaves water behind instead of air.
+        let replacement = fluid_state_to_block(get_fluid_state_from_block(state));
+        self.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
         // TODO: Fire GameEvent.BLOCK_DESTROY
         true
     }

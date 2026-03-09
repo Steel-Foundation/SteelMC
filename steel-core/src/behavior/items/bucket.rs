@@ -3,7 +3,6 @@
 //! Handles water buckets, lava buckets, and empty buckets.
 //! Based on vanilla Minecraft's `BucketItem`.
 //!
-// TODO: Add support for bucket stacks (count > 1) without deadlocks
 // TODO: Spawn particles
 
 use crate::behavior::context::InteractionResult;
@@ -34,7 +33,9 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
     let result_stack = ItemStack::new(result_item);
     if context.item_stack.count() > 1 {
         context.item_stack.shrink(1);
-        context.player.add_item_or_drop(result_stack);
+        context
+            .player
+            .add_item_or_drop_with_guard(context.inv_guard, result_stack);
     } else {
         context.item_stack.set_item(&result_item.key);
     }
@@ -43,7 +44,6 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
 /// Behavior for filled bucket items (water bucket, lava bucket)
 ///
 /// Places fluid and gives back empty bucket.
-/// NOTE: Stack support (count > 1) is not yet implemented to avoid deadlocks.
 pub struct FilledBucketBehavior {
     fluid_block: BlockRef,
     empty_bucket: ItemRef,

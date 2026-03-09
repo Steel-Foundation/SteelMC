@@ -7,6 +7,7 @@ use steel_utils::math::Vector3;
 use steel_utils::types::InteractionHand;
 
 use crate::fluid::is_water;
+use crate::inventory::lock::ContainerLockGuard;
 use crate::player::Player;
 use crate::world::World;
 pub use steel_registry::items::item::BlockHitResult;
@@ -98,9 +99,7 @@ impl BlockPlaceContext<'_> {
 
         directions
     }
-}
 
-impl BlockPlaceContext<'_> {
     /// Returns true if the block at the relative position is a water source
     #[must_use]
     pub fn is_water_source(&self) -> bool {
@@ -134,4 +133,8 @@ pub struct UseItemContext<'a> {
     pub world: &'a World,
     /// The item stack being used (mutable for consumption).
     pub item_stack: &'a mut ItemStack,
+    /// Lock guard holding the player's inventory. Behaviors that need to add
+    /// items (e.g. bucket swap) must use this instead of `player.add_item_or_drop`
+    /// to avoid deadlocking on the inventory mutex.
+    pub inv_guard: &'a mut ContainerLockGuard,
 }
