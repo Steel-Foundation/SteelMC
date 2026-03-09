@@ -74,12 +74,20 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    /// # Panics
+    /// Panics if the chunk is not at `ChunkStatus::StructureReferences` or higher.
     pub fn generate_biomes(
-        _context: Arc<WorldGenContext>,
+        context: Arc<WorldGenContext>,
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
+        holder: Arc<ChunkHolder>,
     ) -> Result<(), anyhow::Error> {
+        let chunk = holder
+            .try_chunk(ChunkStatus::StructureReferences)
+            .expect("Chunk not found at status StructureReferences");
+
+        context.generator.create_biomes(&chunk);
+
         Ok(())
     }
 
@@ -97,6 +105,7 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    // TODO: Wire up to context.generator.build_surface() once surface generation is implemented
     pub fn generate_surface(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -106,6 +115,7 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    // TODO: Wire up to context.generator.apply_carvers() once carver generation is implemented
     pub fn generate_carvers(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -115,6 +125,7 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
+    // TODO: Wire up to context.generator.apply_biome_decorations() once feature generation is implemented
     pub fn generate_features(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -157,7 +168,6 @@ impl ChunkStatusTasks {
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
     ) -> Result<(), anyhow::Error> {
-        //panic!("Full task");
         //log::info!("Chunk {:?} upgraded to full", holder.get_pos());
         holder.upgrade_to_full(context.weak_world());
         Ok(())

@@ -1,7 +1,5 @@
 //! Bucket item behavior implementations.
 
-use std::ptr;
-
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::items::ItemRef;
@@ -62,7 +60,7 @@ impl ItemBehavior for FilledBucketBehavior {
         }
 
         // Don't place if it's already the same fluid
-        if ptr::eq(existing_block, self.fluid_block) {
+        if existing_block == self.fluid_block {
             return InteractionResult::Pass;
         }
 

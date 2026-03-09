@@ -41,6 +41,10 @@ mod wolf_sound_variants;
 mod wolf_variants;
 mod zombie_nautilus_variants;
 
+mod density_functions;
+mod multi_noise;
+mod noise_parameters;
+
 const FMT: bool = cfg!(feature = "fmt");
 
 const BLOCKS: &str = "blocks";
@@ -83,6 +87,9 @@ const GAME_RULES: &str = "game_rules";
 const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
+const MULTI_NOISE: &str = "multi_noise";
+const NOISE_PARAMETERS: &str = "noise_parameters";
+const DENSITY_FUNCTIONS: &str = "density_functions";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -137,6 +144,9 @@ pub fn main() {
         (level_events::build(), LEVEL_EVENTS),
         (sound_events::build(), SOUND_EVENTS),
         (sound_types::build(), SOUND_TYPES),
+        (multi_noise::build(), MULTI_NOISE),
+        (noise_parameters::build(), NOISE_PARAMETERS),
+        (density_functions::build(), DENSITY_FUNCTIONS),
     ];
 
     // Track which files we're generating this run
@@ -168,7 +178,15 @@ pub fn main() {
 
     if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
         for entry in entries.flatten() {
-            let _ = Command::new("rustfmt").arg(entry.path()).output();
+            let path = entry.path();
+            // Skip density_functions — the generated file is too large for rustfmt
+            if path
+                .file_name()
+                .is_some_and(|n| n == "vanilla_density_functions.rs")
+            {
+                continue;
+            }
+            let _ = Command::new("rustfmt").arg(path).output();
         }
     }
 }

@@ -3,8 +3,6 @@
 //! This module defines the data format for saving and loading player state.
 //! The format is designed to be vanilla-compatible where possible.
 
-use std::sync::atomic::Ordering;
-
 use simdnbt::{
     ToNbtTag,
     borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView},
@@ -123,7 +121,11 @@ impl PersistentPlayerData {
     pub fn from_player(player: &Player) -> Self {
         let pos = *player.position.lock();
         let (yaw, pitch) = player.rotation.load();
-        let delta = *player.delta_movement.lock();
+        let delta = player.movement.lock().delta_movement;
+        let (on_ground, fall_flying) = {
+            let es = player.entity_state.lock();
+            (es.on_ground, es.fall_flying)
+        };
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
         let entity_data = player.entity_data.lock();
@@ -145,8 +147,8 @@ impl PersistentPlayerData {
             pos: [pos.x, pos.y, pos.z],
             motion: [delta.x, delta.y, delta.z],
             rotation: [yaw, pitch],
-            on_ground: player.on_ground.load(Ordering::Relaxed),
-            fall_flying: player.fall_flying.load(Ordering::Relaxed),
+            on_ground,
+            fall_flying,
             health: *entity_data.health.get(),
             game_mode: player.game_mode.load() as i32,
             prev_game_mode: player.prev_game_mode.load() as i32,
@@ -398,14 +400,15 @@ impl PersistentPlayerData {
         player.rotation.store((self.rotation[0], self.rotation[1]));
 
         // Motion/velocity
-        *player.delta_movement.lock() =
+        player.movement.lock().delta_movement =
             Vector3::new(self.motion[0], self.motion[1], self.motion[2]);
 
         // Ground state
-        player.on_ground.store(self.on_ground, Ordering::Relaxed);
-        player
-            .fall_flying
-            .store(self.fall_flying, Ordering::Relaxed);
+        {
+            let mut es = player.entity_state.lock();
+            es.on_ground = self.on_ground;
+            es.fall_flying = self.fall_flying;
+        }
 
         // Health
         player.entity_data.lock().health.set(self.health);

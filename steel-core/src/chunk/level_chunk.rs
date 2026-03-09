@@ -1,7 +1,6 @@
 //! This module contains the `LevelChunk` struct, which is a chunk that is ready to be sent to the client.
 use std::{
     io::Cursor,
-    ptr,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
@@ -29,6 +28,7 @@ use crate::chunk::{
 };
 use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
+use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
 
 /// A chunk that is ready to be sent to the client.
@@ -59,6 +59,10 @@ pub struct LevelChunk {
     pub block_ticks: SyncMutex<BlockTickList>,
     /// Scheduled fluid ticks pending in this chunk.
     pub fluid_ticks: SyncMutex<FluidTickList>,
+    /// Structure starts originating in this chunk (carried from proto).
+    pub structure_starts: SyncRwLock<StructureStartMap>,
+    /// References to structures from nearby origin chunks (carried from proto).
+    pub structure_references: SyncRwLock<StructureReferenceMap>,
 }
 
 impl LevelChunk {
@@ -177,24 +181,17 @@ impl LevelChunk {
         height: i32,
         level: Weak<World>,
     ) -> Self {
-        // Transfer final heightmaps from proto chunk if available
-        let proto_heightmaps = proto_chunk.heightmaps.read();
-        let mut chunk_heightmaps = ChunkHeightmaps::new(min_y, height);
-
-        // Copy final heightmap data if available in proto chunk
-        for &hm_type in HeightmapType::final_types() {
-            if let Some(proto_hm) = proto_heightmaps.get(&hm_type) {
-                chunk_heightmaps
-                    .get_mut(hm_type)
-                    .set_raw_data(&proto_hm.get_raw_data());
-            }
-        }
-        drop(proto_heightmaps);
+        // Move final heightmaps directly from proto chunk
+        let mut proto_heightmaps = proto_chunk.heightmaps.into_inner();
+        let chunk_heightmaps = ChunkHeightmaps::from_proto(&mut proto_heightmaps, min_y, height);
 
         // Recalculate section counts for random tick optimization
         for section in &proto_chunk.sections.sections {
             section.write().recalculate_counts();
         }
+
+        let structure_starts = proto_chunk.structure_starts.into_inner();
+        let structure_references = proto_chunk.structure_references.into_inner();
 
         Self {
             sections: proto_chunk.sections,
@@ -208,6 +205,8 @@ impl LevelChunk {
             entities: EntityStorage::new(),
             block_ticks: SyncMutex::new(BlockTickList::new()),
             fluid_ticks: SyncMutex::new(FluidTickList::new()),
+            structure_starts: SyncRwLock::new(structure_starts),
+            structure_references: SyncRwLock::new(structure_references),
         }
     }
 
@@ -223,10 +222,12 @@ impl LevelChunk {
     /// * `level` - Weak reference to the world (mirrors Java's `LevelChunk.level`)
     /// * `block_ticks` - Scheduled block ticks loaded from disk
     /// * `fluid_ticks` - Scheduled fluid ticks loaded from disk
+    /// * `heightmaps` - Heightmaps loaded from disk
     ///
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_disk(
         sections: Sections,
         pos: ChunkPos,
@@ -235,6 +236,9 @@ impl LevelChunk {
         level: Weak<World>,
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
+        heightmaps: ChunkHeightmaps,
+        structure_starts: StructureStartMap,
+        structure_references: StructureReferenceMap,
     ) -> Self {
         // Recalculate section counts for random tick optimization
         for section in &sections.sections {
@@ -245,7 +249,7 @@ impl LevelChunk {
             sections,
             pos,
             dirty: AtomicBool::new(false),
-            heightmaps: SyncRwLock::new(ChunkHeightmaps::new(min_y, height)),
+            heightmaps: SyncRwLock::new(heightmaps),
             min_y,
             height,
             level,
@@ -253,6 +257,8 @@ impl LevelChunk {
             entities: EntityStorage::new(),
             block_ticks: SyncMutex::new(block_ticks),
             fluid_ticks: SyncMutex::new(fluid_ticks),
+            structure_starts: SyncRwLock::new(structure_starts),
+            structure_references: SyncRwLock::new(structure_references),
         }
     }
 
@@ -503,12 +509,12 @@ impl LevelChunk {
             .states
             .get(local_x, local_y, local_z)
             .get_block();
-        if !ptr::eq(current_block, new_block) {
+        if current_block != new_block {
             return None;
         }
 
         if let Some(level) = self.get_level() {
-            let block_changed = !ptr::eq(old_block, new_block);
+            let block_changed = old_block != new_block;
             let moved_by_piston = flags.contains(UpdateFlags::UPDATE_MOVE_BY_PISTON);
             let side_effects = !flags.contains(UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS);
 

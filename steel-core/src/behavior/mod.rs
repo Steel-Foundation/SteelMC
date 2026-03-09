@@ -50,7 +50,6 @@ use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::fluid::FluidState;
-use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::BlockStateId;
 
 /// Wrapper for the global block behavior registry that implements `Deref`.
@@ -122,22 +121,6 @@ pub fn init_behaviors() {
 
     let mut item_behaviors = ItemBehaviorRegistry::new();
     register_item_behaviors(&mut item_behaviors);
-
-    // Register bucket behaviors (not auto-generated since they're not block items)
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.water_bucket,
-        Box::new(FilledBucketBehavior::new(
-            vanilla_blocks::WATER,
-            &vanilla_items::ITEMS.bucket,
-        )),
-    );
-    item_behaviors.set_behavior(
-        &vanilla_items::ITEMS.lava_bucket,
-        Box::new(FilledBucketBehavior::new(
-            vanilla_blocks::LAVA,
-            &vanilla_items::ITEMS.bucket,
-        )),
-    );
 
     assert!(
         ITEM_BEHAVIORS.0.set(item_behaviors).is_ok(),

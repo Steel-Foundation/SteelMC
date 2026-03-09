@@ -58,6 +58,7 @@ use crate::{
 
 mod player_area_map;
 mod player_map;
+pub mod structure;
 pub mod tick_scheduler;
 mod weather;
 mod world_entities;
@@ -977,8 +978,9 @@ impl World {
             // IMPORTANT: Index previous messages BEFORE updating the cache
             // This matches vanilla's order: pack() then push()
             let previous_messages = {
-                let recipient_cache = recipient.signature_cache.lock();
-                recipient_cache.index_previous_messages(&sender_last_seen)
+                let chat = recipient.chat.lock();
+                chat.signature_cache
+                    .index_previous_messages(&sender_last_seen)
             };
 
             log::debug!(
@@ -993,23 +995,22 @@ impl World {
 
             // AFTER sending, update the recipient's cache using vanilla's push algorithm
             // This adds all lastSeen signatures + current signature to the cache
-            if let Some(signature) = message_signature {
-                recipient
-                    .signature_cache
-                    .lock()
-                    .push(&sender_last_seen, Some(&signature));
+            {
+                let mut chat = recipient.chat.lock();
+                if let Some(signature) = message_signature {
+                    chat.signature_cache
+                        .push(&sender_last_seen, Some(&signature));
 
-                log::debug!("  Added signature to recipient's cache and pending list");
+                    log::debug!("  Added signature to recipient's cache and pending list");
 
-                // Add to pending messages for acknowledgment tracking
-                recipient
-                    .message_validator
-                    .lock()
-                    .add_pending(Some(Box::new(signature) as Box<[u8]>));
-            } else {
-                // Even unsigned messages update the pending tracker
-                recipient.message_validator.lock().add_pending(None);
-                log::debug!("  Added unsigned message to pending list");
+                    // Add to pending messages for acknowledgment tracking
+                    chat.message_validator
+                        .add_pending(Some(Box::new(signature) as Box<[u8]>));
+                } else {
+                    // Even unsigned messages update the pending tracker
+                    chat.message_validator.add_pending(None);
+                    log::debug!("  Added unsigned message to pending list");
+                }
             }
 
             true

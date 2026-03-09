@@ -1,5 +1,3 @@
-use std::ptr;
-
 use steel_registry::{
     REGISTRY,
     blocks::{
@@ -56,13 +54,12 @@ impl BlockBehaviour for CandleBlock {
     ) -> Option<steel_utils::BlockStateId> {
         if Self::can_survive(context.world, context.relative_pos) {
             let default_state = self.block.default_state();
-            if ptr::eq(
-                context
-                    .world
-                    .get_block_state(&context.relative_pos)
-                    .get_block(),
-                vanilla_blocks::WATER,
-            ) {
+            if context
+                .world
+                .get_block_state(&context.relative_pos)
+                .get_block()
+                == vanilla_blocks::WATER
+            {
                 // FIXME: is_water_source()
                 return Some(default_state.set_value(&WATERLOGGED, true));
             }

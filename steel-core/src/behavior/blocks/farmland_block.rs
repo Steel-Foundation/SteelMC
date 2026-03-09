@@ -1,6 +1,5 @@
 //! Farmland block implementation.
 
-use std::ptr;
 use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
@@ -46,7 +45,7 @@ impl FarmlandBlock {
                     let state = world.get_block_state(&check_pos);
 
                     // Check if block is water
-                    if ptr::eq(state.get_block(), vanilla_blocks::WATER) {
+                    if state.get_block() == vanilla_blocks::WATER {
                         return true;
                     }
 
@@ -71,16 +70,16 @@ impl FarmlandBlock {
 
         // Check for crops that maintain farmland
         // In vanilla this uses the MAINTAINS_FARMLAND tag
-        ptr::eq(block, vanilla_blocks::WHEAT)
-            || ptr::eq(block, vanilla_blocks::CARROTS)
-            || ptr::eq(block, vanilla_blocks::POTATOES)
-            || ptr::eq(block, vanilla_blocks::BEETROOTS)
-            || ptr::eq(block, vanilla_blocks::MELON_STEM)
-            || ptr::eq(block, vanilla_blocks::PUMPKIN_STEM)
-            || ptr::eq(block, vanilla_blocks::ATTACHED_MELON_STEM)
-            || ptr::eq(block, vanilla_blocks::ATTACHED_PUMPKIN_STEM)
-            || ptr::eq(block, vanilla_blocks::TORCHFLOWER_CROP)
-            || ptr::eq(block, vanilla_blocks::PITCHER_CROP)
+        block == vanilla_blocks::WHEAT
+            || block == vanilla_blocks::CARROTS
+            || block == vanilla_blocks::POTATOES
+            || block == vanilla_blocks::BEETROOTS
+            || block == vanilla_blocks::MELON_STEM
+            || block == vanilla_blocks::PUMPKIN_STEM
+            || block == vanilla_blocks::ATTACHED_MELON_STEM
+            || block == vanilla_blocks::ATTACHED_PUMPKIN_STEM
+            || block == vanilla_blocks::TORCHFLOWER_CROP
+            || block == vanilla_blocks::PITCHER_CROP
     }
 
     /// Turns the farmland into dirt.

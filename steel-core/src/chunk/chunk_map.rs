@@ -4,7 +4,7 @@ use rayon::{
 };
 use rustc_hash::FxBuildHasher;
 use std::{
-    io, mem, ptr,
+    io, mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicUsize, Ordering},
@@ -113,7 +113,14 @@ impl ChunkMap {
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
             world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
-            generation_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
+            generation_pool: Arc::new({
+                let mut builder = ThreadPoolBuilder::new();
+                // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
+                if cfg!(debug_assertions) {
+                    builder = builder.stack_size(8 * 1024 * 1024);
+                }
+                builder.build().unwrap()
+            }),
             //tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
             chunk_runtime,
             storage,
@@ -497,7 +504,7 @@ impl ChunkMap {
             let block_behaviors = &*BLOCK_BEHAVIORS;
             for tick in ready_block_ticks.iter().take(MAX_TICKS) {
                 let state = world.get_block_state(&tick.pos);
-                if !ptr::eq(state.get_block(), tick.tick_type) {
+                if state.get_block() != tick.tick_type {
                     continue;
                 }
                 block_behaviors
@@ -514,7 +521,7 @@ impl ChunkMap {
             });
 
             // TODO: Execute fluid ticks when FluidBehaviour trait exists
-            let _ = ready_fluid_ticks.len().min(MAX_TICKS);
+            let _ = ready_fluid_ticks.len();
         }
     }
 

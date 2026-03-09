@@ -588,6 +588,142 @@ impl WriteTo for SectionPos {
     }
 }
 
+/// An integer axis-aligned bounding box for structure pieces.
+///
+/// Corresponds to vanilla's `BoundingBox` (not the float `AABB`/`AABBd`
+/// for block shapes or entity collision). Coordinates are absolute world block positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SchemaWrite, SchemaRead)]
+pub struct BoundingBox {
+    /// Minimum X coordinate (inclusive).
+    pub min_x: i32,
+    /// Minimum Y coordinate (inclusive).
+    pub min_y: i32,
+    /// Minimum Z coordinate (inclusive).
+    pub min_z: i32,
+    /// Maximum X coordinate (inclusive).
+    pub max_x: i32,
+    /// Maximum Y coordinate (inclusive).
+    pub max_y: i32,
+    /// Maximum Z coordinate (inclusive).
+    pub max_z: i32,
+}
+
+impl BoundingBox {
+    /// Creates a new bounding box, normalizing so min <= max on each axis.
+    #[must_use]
+    pub const fn new(x1: i32, y1: i32, z1: i32, x2: i32, y2: i32, z2: i32) -> Self {
+        Self {
+            min_x: x1.min(x2),
+            min_y: y1.min(y2),
+            min_z: z1.min(z2),
+            max_x: x1.max(x2),
+            max_y: y1.max(y2),
+            max_z: z1.max(z2),
+        }
+    }
+
+    /// Creates a bounding box from two corner block positions.
+    #[must_use]
+    pub const fn from_corners(a: BlockPos, b: BlockPos) -> Self {
+        Self::new(a.0.x, a.0.y, a.0.z, b.0.x, b.0.y, b.0.z)
+    }
+
+    /// Returns whether this bounding box intersects another.
+    #[must_use]
+    pub const fn intersects(&self, other: &Self) -> bool {
+        self.max_x >= other.min_x
+            && self.min_x <= other.max_x
+            && self.max_z >= other.min_z
+            && self.min_z <= other.max_z
+            && self.max_y >= other.min_y
+            && self.min_y <= other.max_y
+    }
+
+    /// Returns whether this bounding box intersects the given XZ range.
+    #[must_use]
+    pub const fn intersects_xz(&self, min_x: i32, min_z: i32, max_x: i32, max_z: i32) -> bool {
+        self.max_x >= min_x && self.min_x <= max_x && self.max_z >= min_z && self.min_z <= max_z
+    }
+
+    /// Returns whether the given block position is inside this bounding box.
+    #[must_use]
+    pub const fn is_inside(&self, pos: BlockPos) -> bool {
+        pos.0.x >= self.min_x
+            && pos.0.x <= self.max_x
+            && pos.0.z >= self.min_z
+            && pos.0.z <= self.max_z
+            && pos.0.y >= self.min_y
+            && pos.0.y <= self.max_y
+    }
+
+    /// Returns the center of this bounding box.
+    #[must_use]
+    pub const fn get_center(&self) -> BlockPos {
+        BlockPos(Vector3::new(
+            self.min_x + (self.max_x - self.min_x + 1) / 2,
+            self.min_y + (self.max_y - self.min_y + 1) / 2,
+            self.min_z + (self.max_z - self.min_z + 1) / 2,
+        ))
+    }
+
+    /// Returns the span (size) along the X axis.
+    #[must_use]
+    pub const fn get_x_span(&self) -> i32 {
+        self.max_x - self.min_x + 1
+    }
+
+    /// Returns the span (size) along the Y axis.
+    #[must_use]
+    pub const fn get_y_span(&self) -> i32 {
+        self.max_y - self.min_y + 1
+    }
+
+    /// Returns the span (size) along the Z axis.
+    #[must_use]
+    pub const fn get_z_span(&self) -> i32 {
+        self.max_z - self.min_z + 1
+    }
+
+    /// Returns the smallest bounding box that contains both `a` and `b`.
+    #[must_use]
+    pub const fn encapsulating(a: &Self, b: &Self) -> Self {
+        Self {
+            min_x: a.min_x.min(b.min_x),
+            min_y: a.min_y.min(b.min_y),
+            min_z: a.min_z.min(b.min_z),
+            max_x: a.max_x.max(b.max_x),
+            max_y: a.max_y.max(b.max_y),
+            max_z: a.max_z.max(b.max_z),
+        }
+    }
+
+    /// Returns a new bounding box moved by the given offset.
+    #[must_use]
+    pub const fn moved(&self, dx: i32, dy: i32, dz: i32) -> Self {
+        Self {
+            min_x: self.min_x + dx,
+            min_y: self.min_y + dy,
+            min_z: self.min_z + dz,
+            max_x: self.max_x + dx,
+            max_y: self.max_y + dy,
+            max_z: self.max_z + dz,
+        }
+    }
+
+    /// Returns a new bounding box inflated by the given amounts on each axis.
+    #[must_use]
+    pub const fn inflated_by(&self, x: i32, y: i32, z: i32) -> Self {
+        Self {
+            min_x: self.min_x - x,
+            min_y: self.min_y - y,
+            min_z: self.min_z - z,
+            max_x: self.max_x + x,
+            max_y: self.max_y + y,
+            max_z: self.max_z + z,
+        }
+    }
+}
+
 /// The game type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]

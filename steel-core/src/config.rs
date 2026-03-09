@@ -107,11 +107,13 @@ impl ServerLinks {
 /// The different types of world generators that can be used.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WordGeneratorTypes {
+pub enum WorldGeneratorTypes {
     /// produces a flat gras world
     Flat,
     /// creates an empty world which can be used for test
     Empty,
+    /// generates vanilla terrain with noise-based biomes
+    Vanilla,
 }
 
 /// Configuration for world storage.
@@ -158,7 +160,7 @@ pub struct ServerConfig {
     /// Whether to enforce secure chat.
     pub enforce_secure_chat: bool,
     /// Defines which generator should be used for the world.
-    pub world_generator: WordGeneratorTypes,
+    pub world_generator: WorldGeneratorTypes,
     /// Defines which storage format and storage option should be used for the world
     pub world_storage_config: WorldStorageConfig,
     /// The compression settings for the server.
