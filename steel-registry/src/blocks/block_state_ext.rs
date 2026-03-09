@@ -103,8 +103,7 @@ impl BlockStateExt for BlockStateId {
 
         // Vanilla's calculateSolid: check collision shape bounding box.
         // A block is solid if its average dimension size >= 35/48 (~0.7292)
-        // or its Y size >= 1.0. This catches partial blocks like cactus,
-        // fences, and slabs that aren't full cubes.
+        // or its Y size >= 1.0. This catches partial blocks like cactus
         let shape = self.get_collision_shape();
         if shape.is_empty() {
             return false;
