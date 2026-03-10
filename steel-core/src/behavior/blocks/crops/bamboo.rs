@@ -1,4 +1,4 @@
-use std::{ops::Not, ptr};
+use std::{ops::Not, sync::Arc};
 
 use steel_registry::{
     REGISTRY,
@@ -20,7 +20,6 @@ use crate::{
 /// TODO:
 /// - [ ] bonemeal
 /// - [ ] brightness
-/// - [ ] destroy_block
 /// - [ ] dont replace fluids
 pub struct BambooStalkBlock;
 
@@ -45,10 +44,7 @@ impl BambooStalkBlock {
     fn stalk_segments_below(world: &World, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
-            && ptr::eq(
-                world.get_block_state(&pos.below_n(height + 1)).get_block(),
-                vanilla_blocks::BAMBOO,
-            )
+            && world.get_block_state(&pos.below_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
         {
             height += 1;
         }
@@ -65,10 +61,10 @@ impl BambooStalkBlock {
         } else {
             let leaves_below = state_below.get_value(&BAMBOO_LEAVES_PROPERTY);
 
-            if !ptr::eq(block_below, vanilla_blocks::BAMBOO) || leaves_below == BambooLeaves::None {
+            if block_below != vanilla_blocks::BAMBOO || leaves_below == BambooLeaves::None {
                 BambooLeaves::Small
             } else {
-                if ptr::eq(state_two_below.get_block(), vanilla_blocks::BAMBOO) {
+                if state_two_below.get_block() == vanilla_blocks::BAMBOO {
                     world.set_block(
                         pos.below(),
                         state_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
@@ -86,7 +82,7 @@ impl BambooStalkBlock {
 
         let new_age = u8::from(
             state.get_value(&AGE_PROPERTY) == 1
-                || ptr::eq(state_two_below.get_block(), vanilla_blocks::BAMBOO),
+                || state_two_below.get_block() == vanilla_blocks::BAMBOO,
         );
 
         let new_stage = u8::from(height == 15 || (height >= 11 && rand::random::<f32>() >= 0.25));
@@ -117,20 +113,20 @@ impl BlockBehaviour for BambooStalkBlock {
             return None;
         }
 
-        if ptr::eq(block_below, vanilla_blocks::BAMBOO_SAPLING) {
+        if block_below == vanilla_blocks::BAMBOO_SAPLING {
             Some(
                 vanilla_blocks::BAMBOO
                     .default_state()
                     .set_value(&AGE_PROPERTY, 0),
             )
-        } else if ptr::eq(block_below, vanilla_blocks::BAMBOO) {
+        } else if block_below == vanilla_blocks::BAMBOO {
             Some(vanilla_blocks::BAMBOO.default_state().set_value(
                 &AGE_PROPERTY,
                 state_below.get_value(&BlockStateProperties::AGE_1),
             ))
         } else {
             let state_above = context.world.get_block_state(&context.clicked_pos.above());
-            if ptr::eq(state_above.get_block(), vanilla_blocks::BAMBOO) {
+            if state_above.get_block() == vanilla_blocks::BAMBOO {
                 Some(
                     vanilla_blocks::BAMBOO
                         .default_state()
@@ -142,14 +138,9 @@ impl BlockBehaviour for BambooStalkBlock {
         }
     }
 
-    fn tick(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !Self::can_survive(world, pos) {
-            // TODO: destroy_block
-            world.set_block(
-                pos,
-                vanilla_blocks::AIR.default_state(),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.destroy_block(pos, true);
         }
     }
 
@@ -157,7 +148,7 @@ impl BlockBehaviour for BambooStalkBlock {
         state.get_value(&BlockStateProperties::STAGE) == 0
     }
 
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if state.get_value(&BlockStateProperties::STAGE) != 0 {
             return;
         }
@@ -187,7 +178,7 @@ impl BlockBehaviour for BambooStalkBlock {
         let age = state.get_value(&AGE_PROPERTY);
 
         if direction == Direction::Up
-            && ptr::eq(neighbor_state.get_block(), vanilla_blocks::BAMBOO)
+            && neighbor_state.get_block() == vanilla_blocks::BAMBOO
             && neighbor_state.get_value(&AGE_PROPERTY) > age
         {
             return state.set_value(&AGE_PROPERTY, age.not() & 1); // 0 => 1; 1 => 0

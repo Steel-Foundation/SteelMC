@@ -79,6 +79,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut redstone_wall_torch_blocks = Vec::new();
     let mut bamboo_stalk_blocks = Vec::new();
     let mut bamboo_sapling_blocks = Vec::new();
+    let mut cactus_blocks = Vec::new();
+    let mut cactus_flower_blocks: Vec<Ident> = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
@@ -133,6 +135,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
             "BambooStalkBlock" => bamboo_stalk_blocks.push(const_ident),
             "BambooSaplingBlock" => bamboo_sapling_blocks.push(const_ident),
+            "CactusBlock" => cactus_blocks.push(const_ident),
+            "CactusFlowerBlock" => cactus_flower_blocks.push(const_ident),
             _ => {}
         }
     }
@@ -155,6 +159,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
     let bamboo_stalk_type = Ident::new("BambooStalkBlock", Span::call_site());
     let bamboo_sapling_type = Ident::new("BambooSaplingBlock", Span::call_site());
+    let cactus_type = Ident::new("CactusBlock", Span::call_site());
+    let cactus_flower_type = Ident::new("CactusFlowerBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let button_registrations = {
@@ -216,6 +222,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
         generate_registrations(bamboo_stalk_blocks.iter(), &bamboo_stalk_type);
     let bamboo_sapling_registrations =
         generate_registrations(bamboo_sapling_blocks.iter(), &bamboo_sapling_type);
+    let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
+    let cactus_flower_registrations =
+        generate_registrations(cactus_flower_blocks.iter(), &cactus_flower_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
@@ -227,7 +236,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, EndPortalFrameBlock,
             FarmlandBlock, FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
             CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
-            RedstoneTorchBlock, RedstoneWallTorchBlock, crops::{ BambooStalkBlock, BambooSaplingBlock, CropBlock }
+            RedstoneTorchBlock, RedstoneWallTorchBlock, CactusBlock, CactusFlowerBlock, crops::{ BambooStalkBlock, BambooSaplingBlock, CropBlock }
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
@@ -251,10 +260,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #redstone_wall_torch_registrations
             #bamboo_stalk_registrations
             #bamboo_sapling_registrations
-            registry.set_behavior(
-                vanilla_blocks::BEETROOTS,
-                Box::new(CropBlock::with_age(vanilla_blocks::BEETROOTS, BlockStateProperties::AGE_3, 3)),
-            );
+            #cactus_registrations
+            #cactus_flower_registrations
         }
     };
 

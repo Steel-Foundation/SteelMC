@@ -19,6 +19,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::math::Vector3;
 use uuid::Uuid;
 
+use crate::entity::damage::DamageSource;
+
 use crate::entity::{Entity, EntityBase, RemovalReason};
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -648,6 +650,44 @@ impl ItemEntity {
             }))
         }
     }
+
+    /// Checks blocks overlapping this item entity and calls `entity_inside`
+    /// on each block's behavior (e.g. cactus destroys items).
+    fn check_inside_blocks(&self) {
+        use crate::behavior::BLOCK_BEHAVIORS;
+        use steel_registry::blocks::block_state_ext::BlockStateExt;
+
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        let aabb = self.bounding_box().deflate(1.0E-5);
+
+        let min_x = aabb.min_x.floor() as i32;
+        let min_y = aabb.min_y.floor() as i32;
+        let min_z = aabb.min_z.floor() as i32;
+        let max_x = aabb.max_x.floor() as i32;
+        let max_y = aabb.max_y.floor() as i32;
+        let max_z = aabb.max_z.floor() as i32;
+
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    let pos = steel_utils::BlockPos::new(x, y, z);
+                    let state = world.get_block_state(&pos);
+                    if state.is_air() {
+                        continue;
+                    }
+                    let block = state.get_block();
+                    let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+                    behavior.entity_inside(state, &world, pos, self);
+                    if self.is_removed() {
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Position sync packet variants.
@@ -764,6 +804,12 @@ impl Entity for ItemEntity {
                     self.set_velocity(velocity);
                 }
             }
+        }
+
+        // Check blocks the item overlaps (cactus destroys items, etc.)
+        self.check_inside_blocks();
+        if self.is_removed() {
+            return;
         }
 
         // Item merging (vanilla: ItemEntity.tick lines 152-156)
@@ -886,6 +932,17 @@ impl Entity for ItemEntity {
 
     fn set_on_ground(&self, on_ground: bool) {
         self.on_ground.store(on_ground, Ordering::Relaxed);
+    }
+
+    fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {
+        // TODO: Check isInvulnerableToBase and canBeHurtBy (damage resistance component)
+        let new_health = self.health.load(Ordering::Relaxed) - amount as i32;
+        self.health.store(new_health, Ordering::Relaxed);
+        if new_health <= 0 {
+            // TODO: Call item.onDestroyed() when implemented
+            self.set_removed(RemovalReason::Killed);
+        }
+        true
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

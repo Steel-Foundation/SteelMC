@@ -1,4 +1,4 @@
-use std::ptr;
+use std::sync::Arc;
 
 use steel_registry::{
     blocks::{
@@ -61,8 +61,7 @@ impl BlockBehaviour for BambooSaplingBlock {
             return vanilla_blocks::AIR.default_state();
         }
 
-        if direction == Direction::Up && ptr::eq(neighbor_state.get_block(), vanilla_blocks::BAMBOO)
-        {
+        if direction == Direction::Up && neighbor_state.get_block() == vanilla_blocks::BAMBOO {
             return vanilla_blocks::BAMBOO.default_state();
         }
 
@@ -73,7 +72,7 @@ impl BlockBehaviour for BambooSaplingBlock {
         true
     }
 
-    fn random_tick(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if rand::random_range(0..3) == 0 && world.get_block_state(&pos.above()).is_air() {
             // TODO: brightness
             Self::grow(world, pos);

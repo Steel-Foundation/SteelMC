@@ -20,7 +20,6 @@ use crate::world::{World, WorldConfig, WorldTickTimings};
 use crate::worldgen::BiomeSourceKind;
 use small_map::FxSmallMap;
 use std::{
-    ptr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -564,10 +563,10 @@ impl Server {
         match STEEL_CONFIG.world_generator {
             WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
             WorldGeneratorTypes::Vanilla => {
-                if ptr::eq(dimension, OVERWORLD) {
+                if dimension == OVERWORLD {
                     let source = BiomeSourceKind::overworld(seed as u64);
                     ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
-                } else if ptr::eq(dimension, THE_NETHER) {
+                } else if dimension == THE_NETHER {
                     let source = BiomeSourceKind::nether(seed as u64);
                     ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
                 } else {
@@ -577,7 +576,7 @@ impl Server {
                 }
             }
             WorldGeneratorTypes::Flat => {
-                if ptr::eq(dimension, THE_NETHER) {
+                if dimension == THE_NETHER {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
@@ -589,7 +588,7 @@ impl Server {
                             .blocks
                             .get_default_state_id(vanilla_blocks::NETHERRACK),
                     ))
-                } else if ptr::eq(dimension, THE_END) {
+                } else if dimension == THE_END {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
