@@ -1,7 +1,6 @@
 //! This module contains the `LevelChunk` struct, which is a chunk that is ready to be sent to the client.
 use std::{
     io::Cursor,
-    ptr,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
@@ -531,7 +530,7 @@ impl LevelChunk {
             .states
             .get(local_x, local_y, local_z)
             .get_block();
-        if !ptr::eq(current_block, new_block) {
+        if current_block != new_block {
             return None;
         }
 
@@ -541,7 +540,7 @@ impl LevelChunk {
                 .poi_storage
                 .lock()
                 .on_block_state_change(pos, old_state, state);
-            let block_changed = !ptr::eq(old_block, new_block);
+            let block_changed = old_block != new_block;
             let moved_by_piston = flags.contains(UpdateFlags::UPDATE_MOVE_BY_PISTON);
             let side_effects = !flags.contains(UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS);
 

@@ -11,6 +11,7 @@ pub mod chunk_saver;
 pub mod command;
 pub mod config;
 pub mod entity;
+pub mod fluid;
 pub mod inventory;
 pub mod level_data;
 pub mod physics;

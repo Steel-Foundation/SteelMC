@@ -3,7 +3,8 @@
 //! Implements vanilla's `Shapes` class methods for AABB-list based collision.
 //! Uses the existing `VoxelShape` type (slice of AABBs) from steel-registry.
 
-use steel_registry::blocks::shapes::{AABB, AABBd};
+use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::shapes::{AABB, AABBd, VoxelShape, is_shape_full_block};
 use steel_utils::math::{Axis, Vector3};
 
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
@@ -189,6 +190,100 @@ pub fn translate_shape(shape: &AABB, block_pos: Vector3<i32>) -> AABBd {
         max_y: by + f64::from(shape.max_y),
         max_z: bz + f64::from(shape.max_z),
     }
+}
+
+/// Checks if two voxel shapes fully occlude the face between them.
+/// Returns true if fluid/objects cannot pass through the face.
+///
+/// Direct equivalent of vanilla's `Shapes.mergedFaceOccludes(shape1, shape2, direction)`.
+///
+/// The algorithm:
+/// 1. Fast path: if **either** shape is a full cube → `true` (face fully sealed).
+/// 2. For each shape, keep only the face slice that actually touches the shared
+///    face boundary (shapes that don't reach the boundary contribute nothing).
+/// 3. Project both slices onto a 16×16 rasterisation grid and check if their
+///    union covers all 256 pixels.
+///
+/// Note: vanilla uses exact discrete-voxel arithmetic; the 16×16 rasterisation
+/// used here is equivalent for all vanilla block shapes (aligned to 1/16) but
+/// may have floating-point rounding for non-standard shapes from future mods.
+#[must_use]
+pub fn merged_face_occludes(shape1: VoxelShape, shape2: VoxelShape, direction: Direction) -> bool {
+    // Fast path — vanilla: if EITHER shape is a full block the face is sealed.
+    // (SteelMC previously required BOTH to be full — that was wrong.)
+    let is_s1_full = is_shape_full_block(shape1);
+    let is_s2_full = is_shape_full_block(shape2);
+
+    if is_s1_full || is_s2_full {
+        return true;
+    }
+
+    if shape1.is_empty() && shape2.is_empty() {
+        return false;
+    }
+
+    // Vanilla assigns shape3 / shape4 based on axis direction, then zeroes out
+    // any shape that does not actually touch the shared face boundary.
+    // We replicate this by passing the expected face to project_shape_onto_grid:
+    // shape1 contributes via the face it presents *toward* `direction` (its max face).
+    // shape2 contributes via the face it presents *against* `direction` (its min face).
+    // project_shape_onto_grid already checks `touches_face` per AABB, which is
+    // equivalent to vanilla's per-shape boundary check for single-AABB shapes.
+
+    let mut grid = [false; 256];
+    let mut coverage_count = 0;
+
+    // Project shape1 on the face it presents in `direction`
+    coverage_count += project_shape_onto_grid(shape1, direction, &mut grid);
+    if coverage_count == 256 {
+        return true;
+    }
+
+    // Project shape2 on the face it presents against `direction`
+    coverage_count += project_shape_onto_grid(shape2, direction.opposite(), &mut grid);
+    coverage_count == 256
+}
+
+fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool; 256]) -> usize {
+    let mut added_coverage = 0;
+
+    for aabb in shape {
+        let touches_face = match face {
+            Direction::Down => aabb.min_y <= 1.0e-5,
+            Direction::Up => aabb.max_y >= 1.0 - 1.0e-5,
+            Direction::North => aabb.min_z <= 1.0e-5,
+            Direction::South => aabb.max_z >= 1.0 - 1.0e-5,
+            Direction::West => aabb.min_x <= 1.0e-5,
+            Direction::East => aabb.max_x >= 1.0 - 1.0e-5,
+        };
+
+        if !touches_face {
+            continue;
+        }
+
+        let (min_u, max_u, min_v, max_v) = match face {
+            Direction::Down | Direction::Up => (aabb.min_x, aabb.max_x, aabb.min_z, aabb.max_z),
+            Direction::North | Direction::South => (aabb.min_x, aabb.max_x, aabb.min_y, aabb.max_y),
+            Direction::West | Direction::East => (aabb.min_z, aabb.max_z, aabb.min_y, aabb.max_y),
+        };
+
+        let u_start = ((min_u * 16.0).round() as i32).clamp(0, 16) as usize;
+        let u_end = ((max_u * 16.0).round() as i32).clamp(0, 16) as usize;
+        let v_start = ((min_v * 16.0).round() as i32).clamp(0, 16) as usize;
+        let v_end = ((max_v * 16.0).round() as i32).clamp(0, 16) as usize;
+
+        for u in u_start..u_end {
+            for v in v_start..v_end {
+                let idx = u * 16 + v;
+                if !grid[idx] {
+                    grid[idx] = true;
+                    added_coverage += 1;
+                }
+            }
+        }
+    }
+
+    added_coverage
 }
 
 #[cfg(test)]

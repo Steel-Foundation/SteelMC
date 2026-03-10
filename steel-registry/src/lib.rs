@@ -127,6 +127,7 @@ pub mod vanilla_wolf_variants;
 #[path = "generated/vanilla_wolf_sound_variants.rs"]
 pub mod vanilla_wolf_sound_variants;
 
+#[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_pig_variants.rs"]
 pub mod vanilla_pig_variants;
@@ -161,6 +162,7 @@ pub mod vanilla_painting_variants;
 #[path = "generated/vanilla_dimension_types.rs"]
 pub mod vanilla_dimension_types;
 
+#[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_types.rs"]
 pub mod vanilla_damage_types;
@@ -287,7 +289,6 @@ pub mod noise_parameters;
 #[rustfmt::skip]
 #[path = "generated/vanilla_density_functions.rs"]
 pub mod density_functions;
-
 
 pub struct RegistryLock(OnceLock<Registry>);
 

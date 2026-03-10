@@ -96,9 +96,13 @@ impl FluidState {
     }
 
     /// Returns true if this is a source block (full fluid, not falling).
+    ///
+    /// Checks both the registry `fluid_id.is_source` flag (primary discriminator,
+    /// equivalent to vanilla checking if the type is a `SourceFluid`) and the
+    /// data invariant `amount == 8 && !falling`, guarding against malformed chunk data.
     #[must_use]
     pub const fn is_source(&self) -> bool {
-        self.amount == 8 && !self.falling
+        self.fluid_id.is_source && self.amount == 8 && !self.falling
     }
 
     /// Returns the fluid's own height (0.0 to ~0.89).
@@ -125,8 +129,10 @@ impl FluidState {
             // Flowing fluid: level 1 = amount 7, level 7 = amount 1
             Self::flowing(fluid, 8 - level, false)
         } else {
-            // Falling fluid (level 8-15)
-            Self::flowing(fluid, 8, true)
+            // Falling fluid (level 8-15): vanilla encodes as 8 + (8 - amount)
+            // so amount = 16 - level. In practice only level=8 (amount=8) is used.
+            let amount = 16u8.saturating_sub(level).max(1);
+            Self::flowing(fluid, amount, true)
         }
     }
 
@@ -309,5 +315,44 @@ impl FluidRegistry {
 impl RegistryExt for FluidRegistry {
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+}
+
+// --- Fluid type checking helpers ---
+
+use crate::{REGISTRY, vanilla_fluid_tags};
+
+/// Returns true if the given `FluidRef` is water (including flowing water).
+#[must_use]
+pub fn is_water_fluid(fluid: FluidRef) -> bool {
+    !fluid.is_empty
+        && REGISTRY
+            .fluids
+            .is_in_tag(fluid, &vanilla_fluid_tags::WATER_TAG)
+}
+
+/// Returns true if the given `FluidRef` is lava (including flowing lava).
+#[must_use]
+pub fn is_lava_fluid(fluid: FluidRef) -> bool {
+    !fluid.is_empty
+        && REGISTRY
+            .fluids
+            .is_in_tag(fluid, &vanilla_fluid_tags::LAVA_TAG)
+}
+
+/// Extension trait for `FluidState` type-checking methods.
+pub trait FluidStateExt {
+    /// Returns true if this fluid state contains water.
+    fn is_water(&self) -> bool;
+    /// Returns true if this fluid state contains lava.
+    fn is_lava(&self) -> bool;
+}
+
+impl FluidStateExt for FluidState {
+    fn is_water(&self) -> bool {
+        is_water_fluid(self.fluid_id)
+    }
+    fn is_lava(&self) -> bool {
+        is_lava_fluid(self.fluid_id)
     }
 }

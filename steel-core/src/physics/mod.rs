@@ -9,16 +9,16 @@
 //! The implementation closely follows vanilla's `Entity.move()` method to ensure
 //! 1:1 movement validation for anti-cheat purposes.
 
-mod collision;
-mod entity_move;
-mod physics_state;
-mod shapes;
+pub mod collision;
+pub mod entity_move;
+pub mod physics_state;
+pub mod shapes;
 
 // Public API
 pub use collision::{CollisionWorld, WorldCollisionProvider};
 pub use entity_move::{MoveResult, MoverType, move_entity};
 pub use physics_state::EntityPhysicsState;
-pub use shapes::{collide, join_is_not_empty, translate_shape};
+pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_shape};
 
 /// Collision epsilon used for AABB deflation (vanilla constant).
 pub const COLLISION_EPSILON: f64 = 1.0e-5;
