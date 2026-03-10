@@ -1,6 +1,5 @@
 //! Crop block implementation (wheat, carrots, potatoes, beetroot).
 
-use std::ops::Add;
 use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
@@ -8,12 +7,13 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
-use steel_registry::{vanilla_blocks, vanilla_items};
+use steel_registry::vanilla_blocks;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::InteractionResult;
 use crate::behavior::block::BlockBehaviour;
+use crate::behavior::blocks::crops::bonemealable::{Bonemealable, CropBonemealExt};
 use crate::behavior::context::BlockPlaceContext;
 use crate::player::Player;
 use crate::world::World;
@@ -28,7 +28,7 @@ pub struct CropBlock {
     max_age: u8,
 }
 
-pub trait Crop {
+pub trait CropLike {
     fn block(&self) -> BlockRef;
     fn age_property(&self) -> &IntProperty;
     fn max_age(&self) -> u8;
@@ -158,7 +158,7 @@ impl CropBlock {
     }
 }
 
-impl Crop for CropBlock {
+impl CropLike for CropBlock {
     fn block(&self) -> BlockRef {
         self.block
     }
@@ -169,6 +169,20 @@ impl Crop for CropBlock {
 
     fn max_age(&self) -> u8 {
         self.max_age
+    }
+}
+
+impl Bonemealable for CropBlock {
+    fn get_age_increase(&self, _world: &World) -> u8 {
+        rand::random_range(2..=5)
+    }
+
+    fn apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+        self.default_apply_bonemeal(state, world, pos);
+    }
+
+    fn is_bonemealable(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+        !self.is_max_age(state)
     }
 }
 
@@ -197,21 +211,6 @@ impl BlockBehaviour for CropBlock {
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
     ) -> InteractionResult {
-        // FIXME: make this into a trait because other crops have different behaviors
-        if self.is_max_age(state) || item_stack.item() != &vanilla_items::ITEMS.bone_meal {
-            return InteractionResult::Pass;
-        }
-
-        let age_increase = rand::random_range(2..=5);
-        let new_age = world
-            .get_block_state(&pos)
-            .get_value(&self.age_property)
-            .add(age_increase)
-            .min(self.max_age);
-        let new_state = self.get_state_for_age(new_age);
-
-        world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
-
-        InteractionResult::Success
+        self.default_use_item_on(item_stack, state, world, pos)
     }
 }

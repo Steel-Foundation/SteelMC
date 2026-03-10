@@ -19,14 +19,14 @@ use crate::{
     world::World,
 };
 
-/// Behavior for the Beetroots Block
-pub struct BeetrootBlock {
+/// Behavior for the Torchflower Block
+pub struct TorchflowerBlock {
     block: BlockRef,
     age_property: IntProperty,
     max_age: u8,
 }
 
-impl BeetrootBlock {
+impl TorchflowerBlock {
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
     pub const fn with_age(block: BlockRef, age_property: IntProperty, max_age: u8) -> Self {
@@ -38,7 +38,7 @@ impl BeetrootBlock {
     }
 }
 
-impl CropLike for BeetrootBlock {
+impl CropLike for TorchflowerBlock {
     fn block(&self) -> BlockRef {
         self.block
     }
@@ -52,9 +52,9 @@ impl CropLike for BeetrootBlock {
     }
 }
 
-impl Bonemealable for BeetrootBlock {
+impl Bonemealable for TorchflowerBlock {
     fn get_age_increase(&self, _world: &World) -> u8 {
-        rand::random_range(2..=5) / 3
+        1
     }
 
     fn is_bonemealable(
@@ -71,7 +71,7 @@ impl Bonemealable for BeetrootBlock {
     }
 }
 
-impl BlockBehaviour for BeetrootBlock {
+impl BlockBehaviour for TorchflowerBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.get_state_for_age(0))
     }

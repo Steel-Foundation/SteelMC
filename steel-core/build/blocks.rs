@@ -80,6 +80,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut rotated_pillar_blocks = Vec::new();
     let mut standing_sign_blocks = Vec::new();
     let mut torch_blocks = Vec::new();
+    let mut torchflower_blocks = Vec::new();
     let mut wall_hanging_sign_blocks = Vec::new();
     let mut wall_sign_blocks = Vec::new();
     let mut wall_torch_blocks = Vec::new();
@@ -143,7 +144,16 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
             "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
             "StandingSignBlock" => standing_sign_blocks.push(const_ident),
+
             "TorchBlock" => torch_blocks.push(const_ident),
+            "TorchflowerCropBlock" => {
+                torchflower_blocks.push((
+                    const_ident,
+                    block
+                        .max_age
+                        .expect("Torchflower Blocks should have a max_age attribute!"),
+                ));
+            }
             "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
             "WallSignBlock" => wall_sign_blocks.push(const_ident),
             "WallTorchBlock" => wall_torch_blocks.push(const_ident),
@@ -169,6 +179,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
     let standing_sign_type = Ident::new("StandingSignBlock", Span::call_site());
     let torch_type = Ident::new("TorchBlock", Span::call_site());
+    let torchflower_type = Ident::new("TorchflowerBlock", Span::call_site());
     let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
     let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
     let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
@@ -233,6 +244,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let standing_sign_registrations =
         generate_registrations(standing_sign_blocks.iter(), &standing_sign_type);
     let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
+    let torchflower_registrations =
+        generate_crop_registrations(torchflower_blocks.iter(), &torchflower_type);
     let wall_hanging_sign_registrations =
         generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
     let wall_sign_registrations = generate_registrations(wall_sign_blocks.iter(), &wall_sign_type);
@@ -246,7 +259,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CropBlock},
+            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CropBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
             CactusBlock,
@@ -290,6 +303,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #redstone_wall_torch_registrations
             #standing_sign_registrations
             #torch_registrations
+            #torchflower_registrations
             #wall_hanging_sign_registrations
             #wall_sign_registrations
             #wall_torch_registrations
