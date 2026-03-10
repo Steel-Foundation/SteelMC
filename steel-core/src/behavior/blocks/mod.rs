@@ -7,7 +7,6 @@ mod barrel_block;
 mod button_block;
 mod candle_block;
 mod crafting_table_block;
-mod crop_block;
 mod end_portal_frame_block;
 mod farmland_block;
 mod fence_block;
@@ -17,11 +16,12 @@ mod rotated_pillar_block;
 mod sign_block;
 mod torch_block;
 
+pub mod crops;
+
 pub use barrel_block::BarrelBlock;
 pub use button_block::ButtonBlock;
 pub use candle_block::CandleBlock;
 pub use crafting_table_block::CraftingTableBlock;
-pub use crop_block::CropBlock;
 pub use end_portal_frame_block::EndPortalFrameBlock;
 pub use farmland_block::FarmlandBlock;
 pub use fence_block::FenceBlock;

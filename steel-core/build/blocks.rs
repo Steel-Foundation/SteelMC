@@ -2,7 +2,7 @@
 
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -17,6 +17,7 @@ pub struct BlockClass {
     pub button_click_on: Option<String>,
     /// Sound event constant for button click off (e.g., `BLOCK_STONE_BUTTON_CLICK_OFF`).
     pub button_click_off: Option<String>,
+    pub max_age: Option<i32>,
 }
 
 fn to_const_ident(name: &str) -> Ident {
@@ -32,6 +33,23 @@ fn generate_registrations<'a>(
             registry.set_behavior(
                 vanilla_blocks::#ident,
                 Box::new(#behavior_type::new(vanilla_blocks::#ident)),
+            );
+        }
+    });
+    quote! { #(#registrations)* }
+}
+
+fn generate_crop_registrations<'a>(
+    blocks: impl Iterator<Item = &'a (Ident, i32)>,
+    behavior_type: &Ident,
+) -> TokenStream {
+    let registrations = blocks.map(|(ident, max_age)| {
+        let max_age_ident = format_ident!("AGE_{max_age}");
+        let max_age = *max_age as u8;
+        quote! {
+            registry.set_behavior(
+                vanilla_blocks::#ident,
+                Box::new(#behavior_type::with_age(vanilla_blocks::#ident, BlockStateProperties::#max_age_ident, #max_age)),
             );
         }
     });
@@ -59,6 +77,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut wall_torch_blocks = Vec::new();
     let mut redstone_torch_blocks = Vec::new();
     let mut redstone_wall_torch_blocks = Vec::new();
+    let mut bamboo_stalk_blocks = Vec::new();
+    let mut bamboo_sapling_blocks = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
@@ -86,7 +106,14 @@ pub fn build(blocks: &[BlockClass]) -> String {
             }
             "CandleBlock" => candle_blocks.push(const_ident),
             "CraftingTableBlock" => crafting_table_blocks.push(const_ident),
-            "CropBlock" => crop_blocks.push(const_ident),
+            "CropBlock" | "CarrotBlock" | "PotatoBlock" => {
+                crop_blocks.push((
+                    const_ident,
+                    block
+                        .max_age
+                        .expect("Crop Blocks should have a max_age attribute!"),
+                ));
+            }
             "EndPortalFrameBlock" => end_portal_frame_blocks.push(const_ident),
             "FarmBlock" => farm_blocks.push(const_ident),
             "FenceBlock" => fence_blocks.push(const_ident),
@@ -104,6 +131,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "WallTorchBlock" => wall_torch_blocks.push(const_ident),
             "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
+            "BambooStalkBlock" => bamboo_stalk_blocks.push(const_ident),
+            "BambooSaplingBlock" => bamboo_sapling_blocks.push(const_ident),
             _ => {}
         }
     }
@@ -124,6 +153,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
     let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
+    let bamboo_stalk_type = Ident::new("BambooStalkBlock", Span::call_site());
+    let bamboo_sapling_type = Ident::new("BambooSaplingBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let button_registrations = {
@@ -148,7 +179,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let candle_registrations = generate_registrations(candle_blocks.iter(), &candle_type);
     let crafting_table_registrations =
         generate_registrations(crafting_table_blocks.iter(), &crafting_table_type);
-    let crop_registrations = generate_registrations(crop_blocks.iter(), &crop_type);
+    let crop_registrations = generate_crop_registrations(crop_blocks.iter(), &crop_type);
     let end_portal_frame_registrations =
         generate_registrations(end_portal_frame_blocks.iter(), &end_portal_frame_type);
     let farm_registrations = generate_registrations(farm_blocks.iter(), &farmland_type);
@@ -181,17 +212,22 @@ pub fn build(blocks: &[BlockClass]) -> String {
         generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
     let redstone_wall_torch_registrations =
         generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
+    let bamboo_stalk_registrations =
+        generate_registrations(bamboo_stalk_blocks.iter(), &bamboo_stalk_type);
+    let bamboo_sapling_registrations =
+        generate_registrations(bamboo_sapling_blocks.iter(), &bamboo_sapling_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
 
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
+        use steel_registry::blocks::properties::BlockStateProperties;
         use crate::behavior::BlockBehaviorRegistry;
         use crate::behavior::blocks::{
-            BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock,
+            BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, EndPortalFrameBlock,
             FarmlandBlock, FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
             CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
-            RedstoneTorchBlock, RedstoneWallTorchBlock,
+            RedstoneTorchBlock, RedstoneWallTorchBlock, crops::{ BambooStalkBlock, BambooSaplingBlock, CropBlock }
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
@@ -213,6 +249,12 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #wall_torch_registrations
             #redstone_torch_registrations
             #redstone_wall_torch_registrations
+            #bamboo_stalk_registrations
+            #bamboo_sapling_registrations
+            registry.set_behavior(
+                vanilla_blocks::BEETROOTS,
+                Box::new(CropBlock::with_age(vanilla_blocks::BEETROOTS, BlockStateProperties::AGE_3, 3)),
+            );
         }
     };
 

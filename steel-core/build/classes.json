@@ -828,7 +828,8 @@
     },
     {
       "name": "wheat",
-      "class": "CropBlock"
+      "class": "CropBlock",
+      "max_age": 7
     },
     {
       "name": "farmland",
@@ -1763,11 +1764,13 @@
     },
     {
       "name": "carrots",
-      "class": "CarrotBlock"
+      "class": "CarrotBlock",
+      "max_age": 7
     },
     {
       "name": "potatoes",
-      "class": "PotatoBlock"
+      "class": "PotatoBlock",
+      "max_age": 7
     },
     {
       "name": "oak_button",
@@ -2677,7 +2680,8 @@
     },
     {
       "name": "torchflower_crop",
-      "class": "TorchflowerCropBlock"
+      "class": "TorchflowerCropBlock",
+      "max_age": 7
     },
     {
       "name": "pitcher_crop",
@@ -2689,7 +2693,8 @@
     },
     {
       "name": "beetroots",
-      "class": "BeetrootBlock"
+      "class": "BeetrootBlock",
+      "max_age": 7
     },
     {
       "name": "dirt_path",

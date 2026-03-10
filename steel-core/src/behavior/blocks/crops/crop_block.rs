@@ -1,15 +1,21 @@
 //! Crop block implementation (wheat, carrots, potatoes, beetroot).
 
+use std::ops::Add;
 use std::ptr;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::vanilla_blocks;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::items::item::BlockHitResult;
+use steel_registry::{vanilla_blocks, vanilla_items};
+use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::InteractionResult;
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
+use crate::player::Player;
 use crate::world::World;
 
 /// Behavior for crop blocks (wheat, carrots, potatoes, beetroot).
@@ -163,5 +169,33 @@ impl BlockBehaviour for CropBlock {
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
             }
         }
+    }
+
+    fn use_item_on(
+        &self,
+        item_stack: &ItemStack,
+        state: BlockStateId,
+        world: &World,
+        pos: BlockPos,
+        _player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+    ) -> InteractionResult {
+        // FIXME: make this into a trait because other crops have different behaviors
+        if self.is_max_age(state) || *item_stack.item() != vanilla_items::ITEMS.bone_meal {
+            return InteractionResult::Pass;
+        }
+
+        let age_increase = rand::random_range(2..=5);
+        let new_age = world
+            .get_block_state(&pos)
+            .get_value(&self.age_property)
+            .add(age_increase)
+            .min(self.max_age);
+        let new_state = self.get_state_for_age(new_age);
+
+        world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+
+        InteractionResult::Success
     }
 }
