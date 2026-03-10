@@ -7,12 +7,20 @@ use steel_registry::{
         properties::{BambooLeaves, BlockStateProperties},
     },
     item_stack::ItemStack,
+    items::item::BlockHitResult,
     vanilla_blocks, vanilla_items,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, Direction,
+    types::{InteractionHand, UpdateFlags},
+};
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext, blocks::crops::BambooStalkBlock},
+    behavior::{
+        BlockBehaviour, BlockPlaceContext, InteractionResult,
+        blocks::crops::{BambooStalkBlock, bonemealable::Bonemealable},
+    },
+    player::Player,
     world::World,
 };
 
@@ -40,6 +48,20 @@ impl BambooSaplingBlock {
                 .set_value(&BlockStateProperties::BAMBOO_LEAVES, BambooLeaves::Small),
             UpdateFlags::UPDATE_ALL,
         );
+    }
+}
+
+impl Bonemealable for BambooSaplingBlock {
+    fn get_age_increase(&self, _world: &World) -> u8 {
+        1
+    }
+
+    fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        world.get_block_state(&pos.above()).is_air()
+    }
+
+    fn apply_bonemeal(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+        Self::grow(world, pos);
     }
 }
 
@@ -86,5 +108,23 @@ impl BlockBehaviour for BambooSaplingBlock {
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::ITEMS.bamboo))
+    }
+
+    fn use_item_on(
+        &self,
+        item_stack: &ItemStack,
+        state: BlockStateId,
+        world: &World,
+        pos: BlockPos,
+        _player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+    ) -> InteractionResult {
+        if item_stack.item != &vanilla_items::ITEMS.bone_meal {
+            return InteractionResult::Pass;
+        }
+
+        self.apply_bonemeal(state, world, pos);
+        InteractionResult::Success
     }
 }

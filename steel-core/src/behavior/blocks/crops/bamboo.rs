@@ -7,12 +7,21 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BambooLeaves, BlockStateProperties, EnumProperty, IntProperty},
     },
-    vanilla_block_tags, vanilla_blocks,
+    item_stack::ItemStack,
+    items::item::BlockHitResult,
+    vanilla_block_tags, vanilla_blocks, vanilla_items,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, Direction,
+    types::{InteractionHand, UpdateFlags},
+};
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext},
+    behavior::{
+        BlockBehaviour, BlockPlaceContext, InteractionResult,
+        blocks::crops::bonemealable::Bonemealable,
+    },
+    player::Player,
     world::World,
 };
 
@@ -45,6 +54,17 @@ impl BambooStalkBlock {
         let mut height = 0;
         while height < 16
             && world.get_block_state(&pos.below_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
+        {
+            height += 1;
+        }
+
+        height
+    }
+
+    fn stalk_segments_above(world: &World, pos: BlockPos) -> i32 {
+        let mut height = 0;
+        while height < 16
+            && world.get_block_state(&pos.above_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
         {
             height += 1;
         }
@@ -85,7 +105,7 @@ impl BambooStalkBlock {
                 || state_two_below.get_block() == vanilla_blocks::BAMBOO,
         );
 
-        let new_stage = u8::from(height == 15 || (height >= 11 && rand::random::<f32>() >= 0.25));
+        let new_stage = u8::from(height == 15 || (height >= 11 && rand::random::<f32>() < 0.25));
 
         world.set_block(
             pos.above(),
@@ -99,11 +119,47 @@ impl BambooStalkBlock {
     }
 }
 
+impl Bonemealable for BambooStalkBlock {
+    fn get_age_increase(&self, _world: &World) -> u8 {
+        1 + rand::random_range(0..2)
+    }
+
+    fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        let above = Self::stalk_segments_above(world, pos);
+        let below = Self::stalk_segments_below(world, pos);
+        (above + below + 1 < 16)
+            && world
+                .get_block_state(&pos.above_n(above))
+                .get_value(&BlockStateProperties::STAGE)
+                != 1
+    }
+
+    fn apply_bonemeal(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+        let above = Self::stalk_segments_above(world, pos);
+        let below = Self::stalk_segments_below(world, pos);
+        let total_height = above + below + 1;
+
+        for i in 0..i32::from(self.get_age_increase(world)) {
+            let pos_above = pos.above_n(above + i);
+            let state_above = world.get_block_state(&pos_above);
+            let state_two_above = world.get_block_state(&pos_above.above());
+            if total_height + i >= 16
+                || state_above.get_value(&BlockStateProperties::STAGE) == 1
+                || !state_two_above.is_air()
+            {
+                return;
+            }
+
+            Self::grow(world, pos_above, state_above, total_height + i);
+        }
+    }
+}
+
 impl BlockBehaviour for BambooStalkBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // FIXME: dont replace fluid
 
-        let state_below = context.world.get_block_state(&context.clicked_pos.below());
+        let state_below = context.world.get_block_state(&context.clicked_pos);
         let block_below = state_below.get_block();
 
         if !REGISTRY
@@ -184,5 +240,25 @@ impl BlockBehaviour for BambooStalkBlock {
             return state.set_value(&AGE_PROPERTY, age.not() & 1); // 0 => 1; 1 => 0
         }
         state
+    }
+
+    fn use_item_on(
+        &self,
+        item_stack: &ItemStack,
+        state: BlockStateId,
+        world: &World,
+        pos: BlockPos,
+        _player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+    ) -> InteractionResult {
+        if !self.is_bonemealable(state, world, pos)
+            || item_stack.item() != &vanilla_items::ITEMS.bone_meal
+        {
+            return InteractionResult::Pass;
+        }
+
+        self.apply_bonemeal(state, world, pos);
+        InteractionResult::Success
     }
 }
