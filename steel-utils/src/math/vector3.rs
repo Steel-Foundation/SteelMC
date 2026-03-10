@@ -337,6 +337,18 @@ impl<T: ReadFrom> ReadFrom for Vector3<T> {
     }
 }
 
+impl<T: Math + Copy> Sub for Vector3<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+
 /// A trait for types that can be used in a `Vector3`.
 #[allow(missing_docs)]
 pub trait Math:

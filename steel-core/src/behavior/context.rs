@@ -6,11 +6,11 @@ use steel_utils::BlockPos;
 use steel_utils::math::Vector3;
 use steel_utils::types::InteractionHand;
 
-// Re-export BlockHitResult from steel-registry since it's also used by steel-protocol
-pub use steel_registry::items::item::BlockHitResult;
-
+use crate::fluid::FluidStateExt;
+use crate::inventory::lock::ContainerLockGuard;
 use crate::player::Player;
 use crate::world::World;
+pub use steel_registry::items::item::BlockHitResult;
 
 /// Result of an interaction (item use, block use, etc.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +99,14 @@ impl BlockPlaceContext<'_> {
 
         directions
     }
+
+    /// Returns true if the block at the relative position is a water source
+    #[must_use]
+    pub fn is_water_source(&self) -> bool {
+        use crate::fluid::get_fluid_state;
+        let fluid_state = get_fluid_state(self.world, &self.relative_pos);
+        fluid_state.is_source() && fluid_state.is_water()
+    }
 }
 
 /// Context for using an item on a block.
@@ -113,4 +121,22 @@ pub struct UseOnContext<'a> {
     pub world: &'a World,
     /// The item stack being used (mutable for consumption).
     pub item_stack: &'a mut ItemStack,
+    /// Lock guard holding the player's inventory.
+    pub inv_guard: &'a mut ContainerLockGuard,
+}
+
+/// Context for using an item (general usage).
+pub struct UseItemContext<'a> {
+    /// The player using the item.
+    pub player: &'a Player,
+    /// Which hand the item is in.
+    pub hand: InteractionHand,
+    /// The world where the interaction is happening.
+    pub world: &'a World,
+    /// The item stack being used (mutable for consumption).
+    pub item_stack: &'a mut ItemStack,
+    /// Lock guard holding the player's inventory. Behaviors that need to add
+    /// items (e.g. bucket swap) must use this instead of `player.add_item_or_drop`
+    /// to avoid deadlocking on the inventory mutex.
+    pub inv_guard: &'a mut ContainerLockGuard,
 }

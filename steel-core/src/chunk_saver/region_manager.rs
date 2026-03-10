@@ -108,13 +108,17 @@ impl RegionManager {
         }
 
         let version = u16::from_le_bytes([header_bytes[4], header_bytes[5]]);
-        if version > FORMAT_VERSION {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Region file version {version} is newer than supported version {FORMAT_VERSION}"
-                ),
-            ));
+        if version != FORMAT_VERSION {
+            // Version mismatch — backup the old file and create a fresh region.
+            drop(file);
+            let backup_path = path.with_extension(format!("srg.v{version}.bak"));
+            tracing::warn!(
+                "Region file {} has version {version} (expected {FORMAT_VERSION}), backing up to {} and recreating",
+                path.display(),
+                backup_path.display()
+            );
+            fs::rename(&path, &backup_path).await?;
+            return self.create_region(pos).await;
         }
 
         // Read chunk table

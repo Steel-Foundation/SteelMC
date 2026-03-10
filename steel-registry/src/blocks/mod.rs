@@ -119,6 +119,15 @@ impl Block {
 
 pub type BlockRef = &'static Block;
 
+impl PartialEq for BlockRef {
+    #[allow(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(*self, *other)
+    }
+}
+
+impl Eq for BlockRef {}
+
 // The central registry for all blocks.
 pub struct BlockRegistry {
     blocks_by_id: Vec<BlockRef>,

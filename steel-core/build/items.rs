@@ -132,6 +132,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut ender_eye_items: Vec<Ident> = Vec::new();
     let mut shovel_items: Vec<Ident> = Vec::new();
     let mut filled_bucket_items: Vec<(Ident, Ident)> = Vec::new();
+    let mut empty_bucket_items: Vec<Ident> = Vec::new();
 
     for item in items {
         let item_field = to_item_field(&item.name);
@@ -183,9 +184,10 @@ pub fn build(items: &[ItemClass]) -> String {
             "BucketItem" => {
                 let fluid = item.fluid.as_ref().expect("BucketItem missing `fluid`");
                 if fluid == "empty" {
-                    continue;
+                    empty_bucket_items.push(item_field);
+                } else {
+                    filled_bucket_items.push((item_field, to_block_const(fluid)));
                 }
-                filled_bucket_items.push((item_field, to_block_const(fluid)));
             }
             _ => {}
         }
@@ -205,13 +207,16 @@ pub fn build(items: &[ItemClass]) -> String {
     let shovel_registrations = generate_simple_registrations(shovel_items.iter(), &shovel_type);
     let filled_bucket_registrations =
         generate_filled_bucket_item_registrations(filled_bucket_items.iter());
+    let empty_bucket_type = Ident::new("EmptyBucketBehavior", Span::call_site());
+    let empty_bucket_registrations =
+        generate_simple_registrations(empty_bucket_items.iter(), &empty_bucket_type);
 
     let output = quote! {
         //! Generated item behavior assignments.
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior};
+        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, EmptyBucketBehavior};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations
@@ -221,6 +226,7 @@ pub fn build(items: &[ItemClass]) -> String {
             #ender_eye_registrations
             #shovel_registrations
             #filled_bucket_registrations
+            #empty_bucket_registrations
         }
     };
 
