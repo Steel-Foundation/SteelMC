@@ -155,6 +155,7 @@ impl PointOfInterestStorage {
     }
 
     /// Reserves a ticket at the given position. Returns `true` if successful.
+    #[must_use]
     pub fn reserve_ticket(&mut self, pos: BlockPos) -> bool {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
         let Some(set) = self
@@ -232,27 +233,26 @@ impl PointOfInterestStorage {
 
         let mut results = Vec::new();
 
-        for (&chunk_pos, column) in &self.columns {
-            if chunk_pos.0.x < min_section.x()
-                || chunk_pos.0.x > max_section.x()
-                || chunk_pos.0.y < min_section.z()
-                || chunk_pos.0.y > max_section.z()
-            {
-                continue;
-            }
-
-            for (&section_y, set) in column {
-                if section_y < min_section.y() || section_y > max_section.y() {
+        for cx in min_section.x()..=max_section.x() {
+            for cz in min_section.z()..=max_section.z() {
+                let chunk_pos = ChunkPos::new(cx, cz);
+                let Some(column) = self.columns.get(&chunk_pos) else {
                     continue;
-                }
+                };
 
-                for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
-                    let dx = (poi.pos.0.x - center.0.x).abs();
-                    let dy = (poi.pos.0.y - center.0.y).abs();
-                    let dz = (poi.pos.0.z - center.0.z).abs();
+                for section_y in min_section.y()..=max_section.y() {
+                    let Some(set) = column.get(&section_y) else {
+                        continue;
+                    };
 
-                    if dx <= radius && dy <= radius && dz <= radius {
-                        results.push((poi.pos, poi.poi_type_id));
+                    for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
+                        let dx = (poi.pos.0.x - center.0.x).abs();
+                        let dy = (poi.pos.0.y - center.0.y).abs();
+                        let dz = (poi.pos.0.z - center.0.z).abs();
+
+                        if dx <= radius && dy <= radius && dz <= radius {
+                            results.push((poi.pos, poi.poi_type_id));
+                        }
                     }
                 }
             }
@@ -314,8 +314,60 @@ impl PointOfInterestStorage {
         radius: i32,
         status: OccupationStatus,
     ) -> usize {
-        self.get_in_circle(type_predicate, pos, radius, status)
-            .len()
+        let radius_sq = i64::from(radius) * i64::from(radius);
+        self.count_in_square(type_predicate, pos, radius, status, &|candidate| {
+            distance_sq(candidate, pos) <= radius_sq
+        })
+    }
+
+    /// Counts matching POIs within a cubic region, filtered by an additional predicate.
+    fn count_in_square(
+        &self,
+        type_predicate: &impl Fn(usize) -> bool,
+        center: BlockPos,
+        radius: i32,
+        status: OccupationStatus,
+        filter: &impl Fn(BlockPos) -> bool,
+    ) -> usize {
+        let min_section = SectionPos::from_block_pos(BlockPos::new(
+            center.0.x - radius,
+            center.0.y - radius,
+            center.0.z - radius,
+        ));
+        let max_section = SectionPos::from_block_pos(BlockPos::new(
+            center.0.x + radius,
+            center.0.y + radius,
+            center.0.z + radius,
+        ));
+
+        let mut count = 0;
+
+        for cx in min_section.x()..=max_section.x() {
+            for cz in min_section.z()..=max_section.z() {
+                let chunk_pos = ChunkPos::new(cx, cz);
+                let Some(column) = self.columns.get(&chunk_pos) else {
+                    continue;
+                };
+
+                for section_y in min_section.y()..=max_section.y() {
+                    let Some(set) = column.get(&section_y) else {
+                        continue;
+                    };
+
+                    for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
+                        let dx = (poi.pos.0.x - center.0.x).abs();
+                        let dy = (poi.pos.0.y - center.0.y).abs();
+                        let dz = (poi.pos.0.z - center.0.z).abs();
+
+                        if dx <= radius && dy <= radius && dz <= radius && filter(poi.pos) {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        count
     }
 
     /// Scans a chunk section for POI block states and populates the storage.
