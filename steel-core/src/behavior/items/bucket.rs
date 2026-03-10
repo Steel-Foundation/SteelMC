@@ -110,7 +110,7 @@ impl ItemBehavior for FilledBucketBehavior {
         }
 
         let clicked_state = context.world.get_block_state(&clicked_pos);
-        let is_sneaking = context.player.is_shifting();
+        let is_sneaking = context.player.is_crouching();
 
         // Define fluid placement logic as a closure to reuse for primary/secondary targets.
         // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:

@@ -289,7 +289,7 @@ pub struct Player {
 
 impl Player {
     /// Returns true if the player is shifting (sneaking).
-    pub fn is_shifting(&self) -> bool {
+    pub fn is_crouching(&self) -> bool {
         self.entity_state.lock().crouching
     }
 
