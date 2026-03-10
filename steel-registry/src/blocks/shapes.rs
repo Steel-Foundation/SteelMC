@@ -434,6 +434,10 @@ pub fn bounding_box(shape: VoxelShape) -> AABB {
 /// Checks if a shape is a full block (covers the entire 0-1 cube).
 ///
 /// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolid()`.
+///
+/// TODO: Handle multi-AABB shapes whose union covers the full block (e.g. stacked slabs).
+/// Vanilla uses exact boolean voxel arithmetic (`Shapes.joinIsNotEmpty`). No vanilla blocks
+/// currently have multi-AABB full-block shapes, so single-AABB fast path suffices for now.
 #[must_use]
 pub fn is_shape_full_block(shape: VoxelShape) -> bool {
     // A full block shape must have exactly one AABB that covers 0-1 on all axes

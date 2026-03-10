@@ -131,8 +131,10 @@ impl FluidState {
             // Flowing fluid: level 1 = amount 7, level 7 = amount 1
             Self::flowing(fluid, 8 - level, false)
         } else {
-            // Falling fluid (level 8-15)
-            Self::flowing(fluid, 8, true)
+            // Falling fluid (level 8-15): vanilla encodes as 8 + (8 - amount)
+            // so amount = 16 - level. In practice only level=8 (amount=8) is used.
+            let amount = 16u8.saturating_sub(level).max(1);
+            Self::flowing(fluid, amount, true)
         }
     }
 

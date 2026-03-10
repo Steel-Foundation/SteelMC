@@ -68,8 +68,14 @@ pub trait FluidBehavior: Send + Sync {
         0.0
     }
 
+    /// Returns whether this fluid should receive random ticks.
+    /// Vanilla: only lava returns true (for fire spread).
+    fn is_randomly_ticking(&self) -> bool {
+        false
+    }
+
     /// Called on random tick for this fluid's block.
-    /// will be used for fire spread in lava
+    /// Used for lava fire spread.
     #[allow(unused_variables)]
     fn random_tick(&self, world: &World, pos: BlockPos) {}
 

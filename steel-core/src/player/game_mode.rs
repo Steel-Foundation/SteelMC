@@ -123,6 +123,9 @@ pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> Intera
         return InteractionResult::Pass;
     }
 
+    // TODO: Check item cooldowns
+    // if player.getCooldowns().isOnCooldown(item_stack) { return InteractionResult::Pass }
+
     let inv_ref = ContainerRef::PlayerInventory(player.inventory.clone());
     let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
 

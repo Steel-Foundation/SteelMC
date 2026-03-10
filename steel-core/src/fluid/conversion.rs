@@ -2,14 +2,13 @@
 //!
 //! Equivalent to FlowingFluid#getNewLiquid and related helpers.
 
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
-use crate::fluid::collision::can_pass_horizontally;
+use crate::behavior::FLUID_BEHAVIORS;
+use crate::fluid::can_pass_through_wall;
+use crate::fluid::collision::{can_hold_fluid, can_hold_specific_fluid, can_pass_horizontally};
 use crate::fluid::spread_context::SpreadContext;
 use crate::fluid::state::{get_fluid_state, get_fluid_state_from_block};
-use crate::fluid::{can_hold_any_fluid, can_pass_through_wall};
 use crate::world::World;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_utils::BlockPos;
@@ -81,7 +80,10 @@ pub fn get_new_liquid(
     }
 }
 
-/// Returns true if the position is a hole (fluid can flow downward).
+/// Returns true if the position below is a hole (fluid can flow downward).
+///
+/// Vanilla equivalent: `FlowingFluid.isWaterHole()`.
+/// Checks wall passability, then either same-fluid presence or `canHoldFluid`.
 #[must_use]
 pub fn is_hole(world: &World, pos: &BlockPos, fluid_id: FluidRef) -> bool {
     let below = pos.below();
@@ -95,8 +97,9 @@ pub fn is_hole(world: &World, pos: &BlockPos, fluid_id: FluidRef) -> bool {
     }
 
     let below_state = world.get_block_state(&below);
-
     let below_fluid = get_fluid_state_from_block(below_state);
+
+    // Vanilla: bottomState.getFluidState().getType().isSame(this) ? true : canHoldFluid(...)
     if !below_fluid.is_empty()
         && FLUID_BEHAVIORS
             .get_behavior(fluid_id)
@@ -105,19 +108,13 @@ pub fn is_hole(world: &World, pos: &BlockPos, fluid_id: FluidRef) -> bool {
         return true;
     }
 
-    if below_state
-        .try_get_value(&BlockStateProperties::WATERLOGGED)
-        .is_some()
-    {
-        return false;
-    }
-
-    can_hold_any_fluid(world, &below)
+    can_hold_fluid(below_state, fluid_id)
 }
 
-/// Computes slope distance using DFS/BFS search.
+/// Computes slope distance using DFS search.
 ///
-/// Equivalent to vanilla's slope finding algorithm.
+/// Vanilla equivalent: `FlowingFluid.getSlopeDistance()`.
+/// Uses `canPassThrough` = `canMaybePassThrough` + `canHoldSpecificFluid`.
 #[must_use]
 fn get_slope_distance(
     ctx: &mut SpreadContext,
@@ -145,12 +142,18 @@ fn get_slope_distance(
 
         let neighbor = direction.relative(&pos);
 
-        // Can we pass through to this neighbor?
+        // Vanilla: canPassThrough = canMaybePassThrough + canHoldSpecificFluid
         if !ctx.can_pass_horizontally(neighbor, fluid_id) {
             continue;
         }
 
         if !can_pass_through_wall(ctx.world(), pos, neighbor, direction) {
+            continue;
+        }
+
+        // canHoldSpecificFluid check (part of vanilla's canPassThrough)
+        let neighbor_state = ctx.get_block_state(neighbor);
+        if !can_hold_specific_fluid(neighbor_state, fluid_id) {
             continue;
         }
 
@@ -183,6 +186,8 @@ fn get_slope_distance(
 /// the directions with the shortest slope distance. For each candidate direction,
 /// the target's existing `FluidState.canBeReplacedWith()` is checked before
 /// adding it to the result.
+///
+/// Vanilla equivalent: `FlowingFluid.getSpread()`.
 #[must_use]
 pub fn get_spread(
     world: &World,
@@ -204,7 +209,9 @@ pub fn get_spread(
         Direction::West,
     ] {
         let neighbor = direction.relative(&pos);
+        let neighbor_state = world.get_block_state(&neighbor);
 
+        // Vanilla: canMaybePassThrough (source check + canHoldAnyFluid + wall check)
         if !can_pass_horizontally(world, &neighbor, fluid_id) {
             continue;
         }
@@ -215,22 +222,15 @@ pub fn get_spread(
         // Calculate what fluid should exist at the neighbor position.
         let new_fluid = get_new_liquid(world, neighbor, fluid_id, drop_off);
 
-        // Skip if no valid fluid would be placed.
-        if new_fluid.is_empty() {
+        // Vanilla: canHoldSpecificFluid check (after canMaybePassThrough, before getNewLiquid
+        // in vanilla, but ordering doesn't matter since none have side effects)
+        if !can_hold_specific_fluid(neighbor_state, new_fluid.fluid_id) {
             continue;
         }
 
-        // If the target is a LiquidBlockContainer (has WATERLOGGED), delegate to
-        // can_place_liquid which encodes per-block acceptance rules.
-        let neighbor_state = world.get_block_state(&neighbor);
-        if neighbor_state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
-        {
-            let behavior = BLOCK_BEHAVIORS.get_behavior(neighbor_state.get_block());
-            if !behavior.can_place_liquid(neighbor_state, new_fluid) {
-                continue;
-            }
+        // Skip if no valid fluid would be placed.
+        if new_fluid.is_empty() {
+            continue;
         }
 
         // Calculate slope distance.
@@ -250,6 +250,7 @@ pub fn get_spread(
             1000
         };
 
+        // Vanilla inline: if (distance < lowest) result.clear(); if (distance <= lowest) ...
         candidates.push((direction, new_fluid, distance));
     }
 

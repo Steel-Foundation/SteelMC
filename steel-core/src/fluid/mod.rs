@@ -27,7 +27,10 @@ pub use fluid_behavior::FluidBehavior;
 pub use fluids::{EmptyFluid, LavaFluid, WaterFluid};
 
 // Re-export utility functions from their respective modules
-pub use collision::{can_hold_any_fluid, can_hold_any_fluid_state, can_pass_through_wall};
+pub use collision::{
+    can_hold_any_fluid, can_hold_any_fluid_state, can_hold_fluid, can_hold_specific_fluid,
+    can_pass_through_wall,
+};
 pub use conversion::{get_new_liquid, get_spread, is_hole};
 pub use state::{
     fluid_state_to_block, fluid_state_to_block_with_existing, get_fluid_state,

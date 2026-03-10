@@ -2,6 +2,7 @@
 //!
 //! Equivalent to various collision checks in FlowingFluid.java.
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::fluid::state::get_fluid_state_from_block;
 use crate::physics::shapes::merged_face_occludes;
 use crate::world::World;
@@ -15,6 +16,8 @@ use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_block_tags::{DOORS_TAG, SIGNS_TAG};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
+
+// TODO: Add occlusion cache for performance (vanilla uses 200-entry ThreadLocal LRU)
 
 /// Checks if fluid can pass through a wall between two positions.
 #[must_use]
@@ -35,6 +38,8 @@ pub fn can_pass_through_wall(
 }
 
 /// Checks if a block at the given world position can hold any fluid.
+///
+/// Vanilla equivalent: `FlowingFluid.canHoldAnyFluid(BlockState)`.
 #[must_use]
 pub fn can_hold_any_fluid(world: &World, pos: &BlockPos) -> bool {
     let state = world.get_block_state(pos);
@@ -42,11 +47,16 @@ pub fn can_hold_any_fluid(world: &World, pos: &BlockPos) -> bool {
 }
 
 /// Checks if a block state can hold any fluid, without world access.
+///
+/// Vanilla equivalent: `FlowingFluid.canHoldAnyFluid(BlockState)`.
+/// Uses `blocksMotion()` check instead of `has_collision` — vanilla's
+/// `blocksMotion()` = `block != Cobweb && block != BambooSapling && isSolid()`.
 #[must_use]
 pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
     let block = state.get_block();
 
-    // waterloggable blocks always accept fluid.
+    // Vanilla: block instanceof LiquidBlockContainer → true
+    // Our equivalent: waterloggable blocks always accept fluid.
     if state
         .try_get_value(&BlockStateProperties::WATERLOGGED)
         .is_some()
@@ -54,12 +64,19 @@ pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
         return true;
     }
 
-    if block.config.has_collision {
+    // Vanilla: state.blocksMotion() ? false : !(exclusion list)
+    if blocks_motion(block, state) {
         return false;
     }
 
-    // non-solid blocks that still reject fluid.
+    // Non-solid blocks that still reject fluid.
     !is_fluid_excluded_block(block)
+}
+
+/// Vanilla's `BlockState.blocksMotion()`:
+/// `block != Cobweb && block != BambooSapling && isSolid()`
+fn blocks_motion(block: BlockRef, state: BlockStateId) -> bool {
+    block != vanilla_blocks::COBWEB && block != vanilla_blocks::BAMBOO_SAPLING && state.is_solid()
 }
 
 /// Returns true if a block is in the vanilla fluid exclusion list.
@@ -73,6 +90,31 @@ fn is_fluid_excluded_block(block: BlockRef) -> bool {
         || block == vanilla_blocks::STRUCTURE_VOID
         || REGISTRY.blocks.is_in_tag(block, &SIGNS_TAG)
         || REGISTRY.blocks.is_in_tag(block, &DOORS_TAG)
+}
+
+/// Vanilla equivalent: `FlowingFluid.canHoldSpecificFluid(BlockGetter, BlockPos, BlockState, Fluid)`.
+///
+/// For `LiquidBlockContainer` blocks (blocks with WATERLOGGED), delegates to
+/// `canPlaceLiquid(null, ...)`. For other blocks, always returns true.
+#[must_use]
+pub fn can_hold_specific_fluid(state: BlockStateId, fluid: FluidRef) -> bool {
+    if state
+        .try_get_value(&BlockStateProperties::WATERLOGGED)
+        .is_some()
+    {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        behavior.can_place_liquid(state, fluid)
+    } else {
+        true
+    }
+}
+
+/// Vanilla equivalent: `FlowingFluid.canHoldFluid(BlockGetter, BlockPos, BlockState, Fluid)`.
+///
+/// Combined check: `canHoldAnyFluid(state) && canHoldSpecificFluid(state, fluid)`.
+#[must_use]
+pub fn can_hold_fluid(state: BlockStateId, fluid: FluidRef) -> bool {
+    can_hold_any_fluid_state(state) && can_hold_specific_fluid(state, fluid)
 }
 
 /// Checks if fluid can pass through to a position horizontally.

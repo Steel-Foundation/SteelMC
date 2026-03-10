@@ -135,8 +135,7 @@ impl FluidReplaceableExt for BlockStateId {
             return true;
         }
 
-        // Vanilla's `BlockState.canBeReplaced(Fluid)` checks the material's
-        // PushReaction (DESTROY) which maps to `replaceable` in our config.
-        block.config.replaceable
+        // Vanilla: `state.canBeReplaced() || !state.isSolid()`
+        block.config.replaceable || !self.is_solid()
     }
 }

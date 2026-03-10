@@ -58,6 +58,11 @@ impl FluidBehavior for LavaFluid {
         100.0
     }
 
+    /// Lava is randomly ticking for fire spread.
+    fn is_randomly_ticking(&self) -> bool {
+        true
+    }
+
     fn can_convert_to_source(&self, world: &World) -> bool {
         match world.get_game_rule(LAVA_SOURCE_CONVERSION) {
             GameRuleValue::Bool(val) => val,

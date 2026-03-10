@@ -97,9 +97,9 @@ impl ItemBehavior for FilledBucketBehavior {
             RaytraceAction::CheckShape
         });
 
-        // If no block was hit, return fail
+        // Vanilla returns PASS when raytrace misses (allows other handlers to try)
         let (Some(clicked_pos), Some(direction)) = (ray_block, ray_dir) else {
-            return InteractionResult::Fail;
+            return InteractionResult::Pass;
         };
 
         // If the block is out of bounds, return fail
@@ -108,9 +108,12 @@ impl ItemBehavior for FilledBucketBehavior {
         }
 
         let clicked_state = context.world.get_block_state(&clicked_pos);
+        let is_sneaking = context.player.is_shifting();
 
-        // Define fluid placement logic as a closure to reuse for primary/secondary targets
-        let mut try_place_fluid = |pos: BlockPos| -> Option<InteractionResult> {
+        // Define fluid placement logic as a closure to reuse for primary/secondary targets.
+        // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:
+        // recursive emptyContents passes hitResult=null for fallback, bypassing sneak check).
+        let mut try_place_fluid = |pos: BlockPos, check_sneak: bool| -> Option<InteractionResult> {
             if !context.world.is_in_valid_bounds(&pos) {
                 return None;
             }
@@ -118,16 +121,14 @@ impl ItemBehavior for FilledBucketBehavior {
             let state = context.world.get_block_state(&pos);
             let fluid_state = get_fluid_state_from_block(state);
 
-            // TODO: Nether water evaporation
-            // If the dimension is THE_NETHER and we are placing WATER, we should not place the block.
-            // Instead, we should play FIRE_EXTINGUISH sound, spawn LARGE_SMOKE particles, and empty the bucket.
+            // TODO: Nether water evaporation (vanilla uses EnvironmentAttributes.WATER_EVAPORATES)
+            // If the dimension evaporates water and we are placing WATER, play FIRE_EXTINGUISH
+            // sound, spawn LARGE_SMOKE particles, and consume the bucket without placing.
 
             // Vanilla parity (bl4): when sneaking, only air allows placement at this position.
-            // Non-air blocks redirect to the neighbor — handled by the secondary call at the
-            // call site.  The secondary call reaches here with a neighbor pos, which is
-            // typically air, so sneaking does not block that attempt.
-            let is_sneaking = context.player.is_shifting();
-            if is_sneaking && !state.get_block().config.is_air {
+            // Non-air blocks redirect to the neighbor — handled by the secondary call.
+            // The secondary call bypasses this check (hitResult == null in vanilla).
+            if check_sneak && is_sneaking && !state.get_block().config.is_air {
                 return None;
             }
 
@@ -137,7 +138,7 @@ impl ItemBehavior for FilledBucketBehavior {
             if is_water_bucket {
                 let source_water = FluidState::source(&vanilla_fluids::WATER);
                 let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-                if behavior.can_place_liquid(state, source_water) {
+                if behavior.can_place_liquid(state, source_water.fluid_id) {
                     behavior.place_liquid(context.world, pos, state, source_water);
                     context.world.play_block_sound(
                         sound_events::ITEM_BUCKET_EMPTY,
@@ -154,7 +155,6 @@ impl ItemBehavior for FilledBucketBehavior {
             // 2. Try Standard Placement (Replaceable block)
             if state.can_be_replaced_by_fluid(self.fluid_block) {
                 // If same fluid already exists and is source, just consume bucket (parity)
-                // Use FluidState check
                 let is_same_fluid = if is_water_bucket {
                     is_water_state(fluid_state)
                 } else {
@@ -221,16 +221,15 @@ impl ItemBehavior for FilledBucketBehavior {
             direction.relative(&clicked_pos)
         };
 
-        // Attempt Primary
-        if let Some(result) = try_place_fluid(primary_pos) {
+        // Attempt Primary (with sneak check)
+        if let Some(result) = try_place_fluid(primary_pos, true) {
             return result;
         }
 
-        // Attempt Secondary (Fallback)
-        // If we started at clicked_pos and failed (e.g. full), try relative.
+        // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null)
         if primary_pos == clicked_pos {
             let secondary_pos = direction.relative(&clicked_pos);
-            if let Some(result) = try_place_fluid(secondary_pos) {
+            if let Some(result) = try_place_fluid(secondary_pos, false) {
                 return result;
             }
         }
@@ -283,8 +282,9 @@ impl ItemBehavior for EmptyBucketBehavior {
             RaytraceAction::CheckShape
         });
 
+        // Vanilla returns PASS when raytrace misses (allows other handlers to try)
         let Some(hit_pos) = hit_block else {
-            return InteractionResult::Fail;
+            return InteractionResult::Pass;
         };
 
         let hit_state = context.world.get_block_state(&hit_pos);
@@ -311,7 +311,7 @@ impl ItemBehavior for EmptyBucketBehavior {
             let new_state = hit_state.set_value(&BlockStateProperties::WATERLOGGED, false);
             context
                 .world
-                .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+                .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL);
 
             // Vanilla parity: destroy blocks that can't survive without water.
             if !block_behavior.can_survive(new_state, context.world, hit_pos) {

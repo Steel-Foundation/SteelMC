@@ -299,7 +299,13 @@ impl Player {
         let start_pos = Vector3::new(pos.x, self.get_eye_y(), pos.z);
         let (yaw, pitch) = self.rotation();
         let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
-        let block_interaction_range = 4.5;
+        // Vanilla: Attributes.BLOCK_INTERACTION_RANGE defaults to 4.5,
+        // creative mode adds +0.5 via CREATIVE_BLOCK_INTERACTION_RANGE_MODIFIER.
+        let block_interaction_range = if self.has_infinite_materials() {
+            5.0
+        } else {
+            4.5
+        };
         let direction = Vector3::new(
             -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
             -pitch_rad.sin() * block_interaction_range,

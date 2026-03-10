@@ -3,6 +3,8 @@
 //! Based on vanilla's LiquidBlock.java.
 //!
 // TODO: Add support for cached fluid states when FluidState caching is implemented
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -20,7 +22,9 @@ use steel_registry::vanilla_items;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::behavior::block::{BlockBehaviour, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
-use crate::fluid::{get_fluid_state, is_lava, is_water, is_water_state};
+use crate::fluid::{
+    get_fluid_state, get_fluid_state_from_block, is_lava, is_water, is_water_state,
+};
 use crate::player::Player;
 use crate::world::World;
 
@@ -145,10 +149,8 @@ impl BlockBehaviour for LiquidBlock {
 
     /// Called when a neighbor's shape changes.
     ///
-    /// Vanilla parity: `LiquidBlock.updateShape` schedules a tick whenever
-    /// either side contains the same fluid type. For a `LiquidBlock` the
-    /// current position always contains `self.fluid`, so the condition is
-    /// effectively unconditional.
+    /// Vanilla parity: `LiquidBlock.updateShape` schedules a tick only when
+    /// either the current block or the neighbor contains a source fluid.
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -156,12 +158,32 @@ impl BlockBehaviour for LiquidBlock {
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
-        _neighbor_state: BlockStateId,
+        neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
-        world.schedule_fluid_tick_default(pos, self.fluid, delay);
+        let fluid_state =
+            FluidState::from_block_level(self.fluid, state.get_value(&BlockStateProperties::LEVEL));
+        let neighbor_fluid = get_fluid_state_from_block(neighbor_state);
+
+        if fluid_state.is_source() || neighbor_fluid.is_source() {
+            let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+            world.schedule_fluid_tick_default(pos, self.fluid, delay);
+        }
 
         state
+    }
+
+    /// Vanilla parity: `LiquidBlock.isRandomlyTicking` delegates to the fluid.
+    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
+        FLUID_BEHAVIORS
+            .get_behavior(self.fluid)
+            .is_randomly_ticking()
+    }
+
+    /// Vanilla parity: `LiquidBlock.randomTick` delegates to the fluid.
+    fn random_tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        FLUID_BEHAVIORS
+            .get_behavior(self.fluid)
+            .random_tick(world, pos);
     }
 
     fn pickup_block(
