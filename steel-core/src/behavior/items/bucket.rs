@@ -6,8 +6,8 @@
 // TODO: Spawn particles
 
 use crate::behavior::context::InteractionResult;
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
-use crate::fluid::{get_fluid_state_from_block, is_lava_state, is_water_state};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
+use crate::fluid::{is_lava_state, is_water_state};
 use crate::inventory::lock::ContainerId;
 use crate::world::RaytraceAction;
 use steel_registry::blocks::BlockRef;
@@ -90,7 +90,7 @@ impl ItemBehavior for FilledBucketBehavior {
                 return RaytraceAction::Pass;
             }
             // Check fluid state for pass-through
-            let fluid_state = get_fluid_state_from_block(state);
+            let fluid_state = state.get_fluid_state();
             if !fluid_state.is_empty() {
                 return RaytraceAction::Pass;
             }
@@ -119,7 +119,7 @@ impl ItemBehavior for FilledBucketBehavior {
             }
 
             let state = context.world.get_block_state(&pos);
-            let fluid_state = get_fluid_state_from_block(state);
+            let fluid_state = state.get_fluid_state();
 
             // TODO: Nether water evaporation (vanilla uses EnvironmentAttributes.WATER_EVAPORATES)
             // If the dimension evaporates water and we are placing WATER, play FIRE_EXTINGUISH
@@ -226,12 +226,12 @@ impl ItemBehavior for FilledBucketBehavior {
             return result;
         }
 
-        // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null)
-        if primary_pos == clicked_pos {
-            let secondary_pos = direction.relative(&clicked_pos);
-            if let Some(result) = try_place_fluid(secondary_pos, false) {
-                return result;
-            }
+        // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null).
+        // Vanilla's emptyContents always recurses with hitResult=null at the offset position
+        // when the primary attempt fails, regardless of bucket type.
+        let secondary_pos = direction.relative(&clicked_pos);
+        if let Some(result) = try_place_fluid(secondary_pos, false) {
+            return result;
         }
 
         InteractionResult::Fail
@@ -270,7 +270,7 @@ impl ItemBehavior for EmptyBucketBehavior {
                 return RaytraceAction::Pass;
             }
 
-            let fluid_state = get_fluid_state_from_block(state);
+            let fluid_state = state.get_fluid_state();
             if fluid_state.is_source() {
                 return RaytraceAction::ImmediateHit;
             }

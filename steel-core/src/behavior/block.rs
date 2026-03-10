@@ -16,6 +16,7 @@ use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionRes
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
 use crate::fluid::is_water;
+use steel_registry::vanilla_fluids;
 use crate::player::Player;
 use crate::world::World;
 
@@ -328,17 +329,17 @@ pub trait BlockBehaviour: Send + Sync {
 
     /// Returns the fluid state for this block state.
     ///
-    /// The default implementation returns `FluidState::EMPTY`.
+    /// Default (`SimpleWaterloggedBlock`): returns water source when `WATERLOGGED = true`,
+    /// otherwise `FluidState::EMPTY`.
     ///
-    /// Override this for:
-    /// - Liquid blocks (water, lava) to return the appropriate fluid based on LEVEL
-    /// - Waterlogged blocks to return water when the WATERLOGGED property is true
-    ///
-    /// # Arguments
-    /// * `state` - The current block state
+    /// Override for liquid blocks (water/lava) to return the appropriate fluid based on LEVEL.
     #[allow(unused_variables)]
     fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
-        FluidState::EMPTY
+        if let Some(true) = state.try_get_value(&BlockStateProperties::WATERLOGGED) {
+            FluidState::source(&vanilla_fluids::WATER)
+        } else {
+            FluidState::EMPTY
+        }
     }
 
     /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.

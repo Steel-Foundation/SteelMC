@@ -2,8 +2,8 @@
 //!
 //! Equivalent to various collision checks in FlowingFluid.java.
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::fluid::state::get_fluid_state_from_block;
 use crate::physics::shapes::merged_face_occludes;
 use crate::world::World;
 use steel_registry::REGISTRY;
@@ -11,7 +11,6 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::is_shape_full_block;
 use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_block_tags::{DOORS_TAG, SIGNS_TAG};
 use steel_registry::vanilla_blocks;
@@ -132,42 +131,19 @@ pub fn can_pass_horizontally(world: &World, pos: &BlockPos, target_fluid_id: Flu
 
 /// Core passability logic for horizontal fluid spread.
 ///
+/// Vanilla equivalent: `!isSourceBlockOfThisType(testFluidState) && canHoldAnyFluid(testState)`.
+///
 /// Single source of truth used by both the world-querying
 /// [`can_pass_horizontally`] and [`SpreadContext`] (which supplies a
 /// cached `BlockStateId` to avoid redundant world lookups).
 #[must_use]
 pub fn can_pass_horizontally_internal(state: BlockStateId, target_fluid_id: FluidRef) -> bool {
-    let block = state.get_block();
-
-    // 1. Air and replaceable blocks are always passable.
-    if block.config.is_air || block.config.replaceable {
-        return true;
+    // Vanilla: !isSourceBlockOfThisType — reject same-type source blocks
+    let fluid_state = state.get_fluid_state();
+    if fluid_state.fluid_id == target_fluid_id && fluid_state.is_source() {
+        return false;
     }
 
-    let shape = state.get_collision_shape();
-
-    if is_shape_full_block(shape) {
-        let fluid_state = get_fluid_state_from_block(state);
-        return fluid_state.fluid_id == target_fluid_id && !fluid_state.is_source();
-    }
-
-    if shape.is_empty() {
-        return true;
-    }
-
-    // Waterloggable blocks are always valid spread targets.
-    if state
-        .try_get_value(&BlockStateProperties::WATERLOGGED)
-        .is_some()
-    {
-        return true;
-    }
-
-    // Block already contains the same flowing fluid at a lower level.
-    let fluid_state = get_fluid_state_from_block(state);
-    if fluid_state.fluid_id == target_fluid_id && !fluid_state.is_source() {
-        return true;
-    }
-
-    false
+    // Vanilla: canHoldAnyFluid
+    can_hold_any_fluid_state(state)
 }

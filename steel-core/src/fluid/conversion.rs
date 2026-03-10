@@ -6,10 +6,10 @@ use crate::behavior::FLUID_BEHAVIORS;
 use crate::fluid::can_pass_through_wall;
 use crate::fluid::collision::{can_hold_fluid, can_hold_specific_fluid, can_pass_horizontally};
 use crate::fluid::spread_context::SpreadContext;
-use crate::fluid::state::{get_fluid_state, get_fluid_state_from_block};
+use crate::behavior::BlockStateBehaviorExt;
 use crate::world::World;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_utils::BlockPos;
 
@@ -32,7 +32,7 @@ pub fn get_new_liquid(
         Direction::West,
     ] {
         let neighbor_pos = direction.relative(&pos);
-        let neighbor_fluid = get_fluid_state(world, &neighbor_pos);
+        let neighbor_fluid = world.get_block_state(&neighbor_pos).get_fluid_state();
 
         if !behavior.is_same(neighbor_fluid.fluid_id) {
             continue;
@@ -56,7 +56,7 @@ pub fn get_new_liquid(
     if source_count >= 2 && behavior.can_convert_to_source(world) {
         let below_pos = pos.below();
         let below_state = world.get_block_state(&below_pos);
-        let below_fluid = get_fluid_state_from_block(below_state);
+        let below_fluid = below_state.get_fluid_state();
         if below_state.is_solid()
             || (behavior.is_same(below_fluid.fluid_id) && below_fluid.is_source())
         {
@@ -66,7 +66,7 @@ pub fn get_new_liquid(
 
     // Check above for falling fluid
     let above_pos = pos.above();
-    let above_fluid = get_fluid_state(world, &above_pos);
+    let above_fluid = world.get_block_state(&above_pos).get_fluid_state();
     if behavior.is_same(above_fluid.fluid_id)
         && can_pass_through_wall(world, pos, above_pos, Direction::Up)
     {
@@ -97,7 +97,7 @@ pub fn is_hole(world: &World, pos: &BlockPos, fluid_id: FluidRef) -> bool {
     }
 
     let below_state = world.get_block_state(&below);
-    let below_fluid = get_fluid_state_from_block(below_state);
+    let below_fluid = below_state.get_fluid_state();
 
     // Vanilla: bottomState.getFluidState().getType().isSame(this) ? true : canHoldFluid(...)
     if !below_fluid.is_empty()
@@ -154,6 +154,16 @@ fn get_slope_distance(
         // canHoldSpecificFluid check (part of vanilla's canPassThrough)
         let neighbor_state = ctx.get_block_state(neighbor);
         if !can_hold_specific_fluid(neighbor_state, fluid_id) {
+            continue;
+        }
+
+        // Vanilla parity: getSlopeDistance passes getFlowing() to canPassThrough,
+        // and SimpleWaterloggedBlock.canPlaceLiquid only accepts source water
+        // (fluid == Fluids.WATER). The DFS never traverses waterloggable blocks.
+        if neighbor_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+        {
             continue;
         }
 
@@ -228,6 +238,17 @@ pub fn get_spread(
             continue;
         }
 
+        // Vanilla parity: canHoldSpecificFluid passes newFluid.getType() to canPlaceLiquid.
+        // Waterloggable blocks only accept source water (fluid == Fluids.WATER), so flowing
+        // water is rejected. Only allow waterloggable targets when the computed fluid is source.
+        if neighbor_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+            && !new_fluid.is_source()
+        {
+            continue;
+        }
+
         // Skip if no valid fluid would be placed.
         if new_fluid.is_empty() {
             continue;
@@ -270,7 +291,7 @@ pub fn get_spread(
                 return false;
             }
             let neighbor = dir.relative(&pos);
-            let existing = get_fluid_state_from_block(world.get_block_state(&neighbor));
+            let existing = world.get_block_state(&neighbor).get_fluid_state();
 
             let existing_behavior = FLUID_BEHAVIORS.get_behavior(existing.fluid_id);
             existing_behavior.can_be_replaced_with(

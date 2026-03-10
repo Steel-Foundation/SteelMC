@@ -11,11 +11,10 @@ use steel_registry::vanilla_blocks;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS};
 use crate::fluid::{
     FluidBehavior, FluidState, can_hold_any_fluid, can_hold_specific_fluid, can_pass_through_wall,
-    fluid_state_to_block, fluid_state_to_block_with_existing, get_fluid_state,
-    get_fluid_state_from_block, get_new_liquid, get_spread, is_hole,
+    fluid_state_to_block, fluid_state_to_block_with_existing, get_new_liquid, get_spread, is_hole,
 };
 use crate::world::World;
 
@@ -24,7 +23,7 @@ use crate::world::World;
 pub trait FlowingFluid: FluidBehavior {
     /// The base tick logic
     fn base_tick(&self, world: &World, pos: BlockPos) {
-        let mut current_fluid = get_fluid_state(world, &pos);
+        let mut current_fluid = world.get_block_state(&pos).get_fluid_state();
 
         if current_fluid.is_empty() || !self.is_same(current_fluid.fluid_id) {
             return;
@@ -70,7 +69,7 @@ pub trait FlowingFluid: FluidBehavior {
 
         let below = pos.below();
         let below_state = world.get_block_state(&below);
-        let below_fluid = get_fluid_state_from_block(below_state);
+        let below_fluid = below_state.get_fluid_state();
 
         // Vanilla: canMaybePassThrough (source check + canHoldAnyFluid + wall check)
         //          + canBeReplacedWith + canHoldSpecificFluid
@@ -155,7 +154,7 @@ pub trait FlowingFluid: FluidBehavior {
         let mut count = 0u8;
         for dir in Direction::HORIZONTAL {
             let neighbor = dir.relative(pos);
-            let f = get_fluid_state(world, &neighbor);
+            let f = world.get_block_state(&neighbor).get_fluid_state();
             if self.is_same(f.fluid_id) && f.is_source() {
                 count += 1;
             }

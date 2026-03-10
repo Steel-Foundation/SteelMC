@@ -29,6 +29,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Don't use async unless you need disk or network I/O.
  - If you haven't fully implemented a feature, make sure to add a // TODO: comment
  - Keep comments concise
+ - After fixing something don't leave a comment
 
  **Testing**
   - Add tests for advanced systems, code using unsafe (Always use // SAFETY comments) or code that needs to match vanilla determinism (ItemComponent hashing or worldgen)

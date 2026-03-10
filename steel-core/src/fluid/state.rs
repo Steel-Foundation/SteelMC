@@ -6,7 +6,7 @@
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::fluid::{FluidRef, FluidState, fluid_tags};
+use steel_registry::fluid::{FluidRef, FluidState, is_lava_fluid, is_water_fluid};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -73,7 +73,7 @@ pub fn fluid_state_to_block_with_existing(
     // If it's water, check if the block can be waterlogged.
     // Vanilla's FlowingFluid.spreadTo() calls LiquidBlockContainer.placeLiquid()
     // for any fluid level (source or flowing), so we waterlog regardless of amount.
-    if is_water(fluid_id) {
+    if is_water_fluid(fluid_id) {
         if existing_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
             .is_some()
@@ -87,7 +87,7 @@ pub fn fluid_state_to_block_with_existing(
         return base.set_value(&BlockStateProperties::LEVEL, level);
     }
 
-    if is_lava(fluid_id) {
+    if is_lava_fluid(fluid_id) {
         let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
         let level = fluid_state.to_block_level();
         return base.set_value(&BlockStateProperties::LEVEL, level);
@@ -105,12 +105,12 @@ pub fn fluid_state_to_block(fluid_state: FluidState) -> BlockStateId {
     let fluid_id = fluid_state.fluid_id;
     if fluid_id.is_empty {
         REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR)
-    } else if is_water(fluid_id) {
+    } else if is_water_fluid(fluid_id) {
         let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER);
         // Use FluidState's to_block_level method for proper conversion
         let level = fluid_state.to_block_level();
         base.set_value(&BlockStateProperties::LEVEL, level)
-    } else if is_lava(fluid_id) {
+    } else if is_lava_fluid(fluid_id) {
         let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
         let level = fluid_state.to_block_level();
         base.set_value(&BlockStateProperties::LEVEL, level)
@@ -123,31 +123,25 @@ pub fn fluid_state_to_block(fluid_state: FluidState) -> BlockStateId {
 /// Returns true if the given `FluidRef` is water (including flowing water).
 #[must_use]
 pub fn is_water(fluid_id: FluidRef) -> bool {
-    if fluid_id.is_empty {
-        return false;
-    }
-    REGISTRY.fluids.is_in_tag(fluid_id, &fluid_tags::water())
+    is_water_fluid(fluid_id)
 }
 
 /// Returns true if the given `FluidRef` is lava (including flowing lava).
 #[must_use]
 pub fn is_lava(fluid_id: FluidRef) -> bool {
-    if fluid_id.is_empty {
-        return false;
-    }
-    REGISTRY.fluids.is_in_tag(fluid_id, &fluid_tags::lava())
+    is_lava_fluid(fluid_id)
 }
 
-/// Checks if a fluid state contains water (including flowing water and waterlogged blocks).
+/// Checks if a fluid state contains water.
 #[must_use]
 pub fn is_water_state(fluid_state: FluidState) -> bool {
-    is_water(fluid_state.fluid_id)
+    is_water_fluid(fluid_state.fluid_id)
 }
 
-/// Checks if a fluid state contains lava (including flowing lava).
+/// Checks if a fluid state contains lava.
 #[must_use]
 pub fn is_lava_state(fluid_state: FluidState) -> bool {
-    is_lava(fluid_state.fluid_id)
+    is_lava_fluid(fluid_state.fluid_id)
 }
 
 /// Gets the water source fluid ref from the registry.

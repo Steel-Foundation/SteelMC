@@ -66,8 +66,7 @@ impl FluidBehavior for WaterFluid {
 
     /// Plays block destruction particles when water replaces a non-air block.
     fn before_destroying_block(&self, world: &World, pos: BlockPos, state: BlockStateId) {
-        // TODO: Drop block resources (needs Arc<World> for item spawning).
-        // waiting on cactus PR
+        // TODO: Drop block resources — cactus infrastructure is merged, implement item drops here.
         world.destroy_block_effect(pos, u32::from(state.0), None);
     }
 

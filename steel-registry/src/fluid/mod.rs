@@ -5,8 +5,6 @@ use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use steel_utils::registry::registry_vanilla_or_custom_tag;
 
-pub mod fluid_tags;
-
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug, Clone)]
 pub struct Fluid {
@@ -317,5 +315,38 @@ impl FluidRegistry {
 impl RegistryExt for FluidRegistry {
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+}
+
+// --- Fluid type checking helpers ---
+
+use crate::{REGISTRY, vanilla_fluid_tags};
+
+/// Returns true if the given `FluidRef` is water (including flowing water).
+#[must_use]
+pub fn is_water_fluid(fluid: FluidRef) -> bool {
+    !fluid.is_empty && REGISTRY.fluids.is_in_tag(fluid, &vanilla_fluid_tags::WATER_TAG)
+}
+
+/// Returns true if the given `FluidRef` is lava (including flowing lava).
+#[must_use]
+pub fn is_lava_fluid(fluid: FluidRef) -> bool {
+    !fluid.is_empty && REGISTRY.fluids.is_in_tag(fluid, &vanilla_fluid_tags::LAVA_TAG)
+}
+
+/// Extension trait for `FluidState` type-checking methods.
+pub trait FluidStateExt {
+    /// Returns true if this fluid state contains water.
+    fn is_water(&self) -> bool;
+    /// Returns true if this fluid state contains lava.
+    fn is_lava(&self) -> bool;
+}
+
+impl FluidStateExt for FluidState {
+    fn is_water(&self) -> bool {
+        is_water_fluid(self.fluid_id)
+    }
+    fn is_lava(&self) -> bool {
+        is_lava_fluid(self.fluid_id)
     }
 }

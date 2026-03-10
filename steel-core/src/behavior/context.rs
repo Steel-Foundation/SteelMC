@@ -121,6 +121,8 @@ pub struct UseOnContext<'a> {
     pub world: &'a World,
     /// The item stack being used (mutable for consumption).
     pub item_stack: &'a mut ItemStack,
+    /// Lock guard holding the player's inventory.
+    pub inv_guard: &'a mut ContainerLockGuard,
 }
 
 /// Context for using an item (general usage).

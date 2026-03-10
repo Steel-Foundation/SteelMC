@@ -40,12 +40,10 @@ pub fn use_item_on(
     }
 
     // Check if block interaction should be suppressed (sneaking + holding items in either hand)
-    let (have_something, mut item_stack) = {
+    let have_something = {
         let inv = player.inventory.lock();
-        let have_something = !inv.get_item_in_hand(InteractionHand::MainHand).is_empty()
-            || !inv.get_item_in_hand(InteractionHand::OffHand).is_empty();
-        let item_stack = inv.get_item_in_hand(hand).clone();
-        (have_something, item_stack)
+        !inv.get_item_in_hand(InteractionHand::MainHand).is_empty()
+            || !inv.get_item_in_hand(InteractionHand::OffHand).is_empty()
     };
 
     let suppress_block_use = player.is_secondary_use_active() && have_something;
@@ -54,23 +52,24 @@ pub fn use_item_on(
     let block_behaviors = &*BLOCK_BEHAVIORS;
     let item_behaviors = &*ITEM_BEHAVIORS;
 
-    // Try block interaction first (if not suppressed)
+    // Try block interaction first (if not suppressed).
+    // No inventory lock held — block behaviors may need inventory access (e.g. opening chests).
     if !suppress_block_use {
-        // Get block behavior and call use_item_on
         let Some(block) = REGISTRY.blocks.by_state_id(state) else {
-            // Block state not found in registry, skip block interaction
             return InteractionResult::Pass;
         };
         let behavior = block_behaviors.get_behavior(block);
 
+        // Brief lock for an immutable snapshot used during block interaction check
+        let item_snapshot = player.inventory.lock().get_item_in_hand(hand).clone();
+
         let block_result =
-            behavior.use_item_on(&item_stack, state, world, *pos, player, hand, hit_result);
+            behavior.use_item_on(&item_snapshot, state, world, *pos, player, hand, hit_result);
 
         if block_result.consumes_action() {
             return block_result;
         }
 
-        // Try empty hand interaction for main hand if block requested it
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
@@ -82,31 +81,49 @@ pub fn use_item_on(
         }
     }
 
-    // Try item use (block placement, etc.)
+    // Item use (block placement, etc.) — acquire inventory lock via ContainerLockGuard
+    let inv_ref = ContainerRef::PlayerInventory(player.inventory.clone());
+    let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
+
+    let inv_id = inv_ref.container_id();
+    let mut item_stack = {
+        let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
+            return InteractionResult::Pass;
+        };
+        inv.get_item_in_hand(hand).clone()
+    };
+
     if !item_stack.is_empty() {
         // TODO: Check item cooldowns
         // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
 
         let original_count = item_stack.count;
 
-        let mut context = UseOnContext {
-            player,
-            hand,
-            hit_result: hit_result.clone(),
-            world,
-            item_stack: &mut item_stack,
+        let result = {
+            let mut context = UseOnContext {
+                player,
+                hand,
+                hit_result: hit_result.clone(),
+                world,
+                item_stack: &mut item_stack,
+                inv_guard: &mut guard,
+            };
+
+            let item_behavior = item_behaviors.get_behavior(context.item_stack.item);
+            let result = item_behavior.use_on(&mut context);
+
+            // Restore count for creative mode (infinite materials)
+            if player.has_infinite_materials() && context.item_stack.count < original_count {
+                context.item_stack.count = original_count;
+            }
+
+            result
         };
 
-        // Get item behavior and call use_on
-        let item_behavior = item_behaviors.get_behavior(context.item_stack.item);
-        let result = item_behavior.use_on(&mut context);
-
-        // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() && context.item_stack.count < original_count {
-            context.item_stack.count = original_count;
+        // Write back through the guard (context dropped, borrows released)
+        if let Some(inv) = guard.get_player_inventory_mut(inv_id) {
+            inv.set_item_in_hand(hand, item_stack);
         }
-
-        player.inventory.lock().set_item_in_hand(hand, item_stack);
 
         return result;
     }

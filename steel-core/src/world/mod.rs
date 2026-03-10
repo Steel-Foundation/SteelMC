@@ -66,7 +66,8 @@ use crate::{
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
-    fluid::{fluid_state_to_block, get_fluid_state_from_block},
+    behavior::BlockStateBehaviorExt,
+    fluid::fluid_state_to_block,
     level_data::LevelDataManager,
     player::{LastSeen, Player, connection::NetworkConnection},
 };
@@ -563,7 +564,7 @@ impl World {
         // always reschedule the fluid tick when a block with fluid has a neighbor shape change,
         // regardless of whether the block state itself changed. This ensures waterlogged blocks
         // (fences, slabs, stairs…) propagate their fluid when adjacent blocks are removed.
-        let fluid_state = get_fluid_state_from_block(new_state);
+        let fluid_state = new_state.get_fluid_state();
         if !fluid_state.is_empty() {
             let delay = FLUID_BEHAVIORS
                 .get_behavior(fluid_state.fluid_id)
@@ -1637,7 +1638,7 @@ impl World {
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
-        let replacement = fluid_state_to_block(get_fluid_state_from_block(state));
+        let replacement = fluid_state_to_block(state.get_fluid_state());
         self.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
         // TODO: Fire GameEvent.BLOCK_DESTROY
         true

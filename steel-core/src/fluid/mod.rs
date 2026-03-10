@@ -7,7 +7,7 @@
 //! - TODO: Ambient tick dispatcher — `animate_tick` (sounds, particles) needs a client-side `Level.animateTick` equivalent firing at render rate for nearby blocks.
 //! - TODO: Particle Events (underwater bubbles, lava pops, drip particles — needs `CLevelParticles` packet).
 //! - TODO: Entity Interactions (pushing, drowning, extinguishing, lava damage).
-//! - TODO: Block item drops when water destroys blocks, will be done as soon as the cactus PR is merged
+//! - TODO: Block item drops when water destroys blocks (cactus infrastructure merged, needs implementation).
 //! - TODO: Lava random tick fire spread.
 pub mod collision;
 pub mod conversion;
@@ -18,8 +18,9 @@ mod spread_context;
 pub mod state;
 
 // Re-export fluid types from steel_registry
-pub use steel_registry::fluid::fluid_tags;
-pub use steel_registry::fluid::{Fluid, FluidRef, FluidState};
+pub use steel_registry::fluid::{
+    Fluid, FluidRef, FluidState, FluidStateExt, is_lava_fluid, is_water_fluid,
+};
 
 // Re-export specific structs/functions
 pub use flowing_fluid::FlowingFluid;

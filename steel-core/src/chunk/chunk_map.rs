@@ -34,7 +34,7 @@ use crate::chunk::{
     world_gen_context::WorldGenContext,
 };
 use crate::chunk_saver::ChunkStorage;
-use crate::fluid::get_fluid_state_from_block;
+use crate::behavior::BlockStateBehaviorExt;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
@@ -524,7 +524,7 @@ impl ChunkMap {
             let fluid_behaviors = &*FLUID_BEHAVIORS;
             for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
                 let state = world.get_block_state(&tick.pos);
-                let fluid_state = get_fluid_state_from_block(state);
+                let fluid_state = state.get_fluid_state();
 
                 // Only execute if the fluid at this location still matches the scheduled tick
                 if fluid_state.fluid_id != tick.tick_type {

@@ -19,12 +19,11 @@ use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_items;
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::behavior::block::{BlockBehaviour, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
-use crate::fluid::{
-    get_fluid_state, get_fluid_state_from_block, is_lava, is_water, is_water_state,
-};
+use crate::fluid::{is_lava, is_water, is_water_state};
 use crate::player::Player;
 use crate::world::World;
 
@@ -62,18 +61,11 @@ impl LiquidBlock {
         let has_soul_soil_below = below_state.get_block() == vanilla_blocks::SOUL_SOIL;
 
         // Get fluid state to check if this is a source
-        let fluid_state = get_fluid_state(world, &pos);
+        let fluid_state = world.get_block_state(&pos).get_fluid_state();
 
-        // Check adjacent directions (Up, North, South, East, West) for water or blue ice
-        for direction in [
-            Direction::Up,
-            Direction::North,
-            Direction::South,
-            Direction::East,
-            Direction::West,
-        ] {
+        for direction in Direction::FLOW_NEIGHBOR_CHECK {
             let neighbor_pos = direction.relative(&pos);
-            let neighbor_fluid = get_fluid_state(world, &neighbor_pos);
+            let neighbor_fluid = world.get_block_state(&neighbor_pos).get_fluid_state();
 
             // Check for water (including flowing_water and waterlogged blocks)
             // Using fluid tag check to support modded fluids registered in the water tag
@@ -162,7 +154,7 @@ impl BlockBehaviour for LiquidBlock {
     ) -> BlockStateId {
         let fluid_state =
             FluidState::from_block_level(self.fluid, state.get_value(&BlockStateProperties::LEVEL));
-        let neighbor_fluid = get_fluid_state_from_block(neighbor_state);
+        let neighbor_fluid = neighbor_state.get_fluid_state();
 
         if fluid_state.is_source() || neighbor_fluid.is_source() {
             let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
