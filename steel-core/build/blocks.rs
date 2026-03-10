@@ -59,33 +59,45 @@ fn generate_crop_registrations<'a>(
 // Tjos is okay cause it's a long function. and because it is needed for like all of those blocks there.
 #[allow(clippy::too_many_lines)]
 pub fn build(blocks: &[BlockClass]) -> String {
+    // WARNING: PLEASE KEEP ALPHABETICALLY ORDERED <3
+    let mut bamboo_sapling_blocks = Vec::new();
+    let mut bamboo_stalk_blocks = Vec::new();
     let mut barrel_blocks = Vec::new();
+    let mut beetroots_blocks = Vec::new();
     let mut button_blocks: Vec<(Ident, i32, Ident, Ident)> = Vec::new();
+    let mut cactus_blocks = Vec::new();
+    let mut cactus_flower_blocks: Vec<Ident> = Vec::new();
     let mut candle_blocks = Vec::new();
+    let mut ceiling_hanging_sign_blocks = Vec::new();
     let mut crafting_table_blocks = Vec::new();
     let mut crop_blocks = Vec::new();
     let mut end_portal_frame_blocks = Vec::new();
     let mut farm_blocks = Vec::new();
     let mut fence_blocks = Vec::new();
     let mut liquid_blocks = Vec::new();
-    let mut rotated_pillar_blocks = Vec::new();
-    let mut standing_sign_blocks = Vec::new();
-    let mut wall_sign_blocks = Vec::new();
-    let mut ceiling_hanging_sign_blocks = Vec::new();
-    let mut wall_hanging_sign_blocks = Vec::new();
-    let mut torch_blocks = Vec::new();
-    let mut wall_torch_blocks = Vec::new();
     let mut redstone_torch_blocks = Vec::new();
     let mut redstone_wall_torch_blocks = Vec::new();
-    let mut bamboo_stalk_blocks = Vec::new();
-    let mut bamboo_sapling_blocks = Vec::new();
-    let mut cactus_blocks = Vec::new();
-    let mut cactus_flower_blocks: Vec<Ident> = Vec::new();
+    let mut rotated_pillar_blocks = Vec::new();
+    let mut standing_sign_blocks = Vec::new();
+    let mut torch_blocks = Vec::new();
+    let mut wall_hanging_sign_blocks = Vec::new();
+    let mut wall_sign_blocks = Vec::new();
+    let mut wall_torch_blocks = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
         match block.class.as_str() {
+            "BambooSaplingBlock" => bamboo_sapling_blocks.push(const_ident),
+            "BambooStalkBlock" => bamboo_stalk_blocks.push(const_ident),
             "BarrelBlock" => barrel_blocks.push(const_ident),
+            "BeetrootBlock" => {
+                beetroots_blocks.push((
+                    const_ident,
+                    block
+                        .max_age
+                        .expect("Beetroots Blocks should have a max_age attribute!"),
+                ));
+            }
             "ButtonBlock" => {
                 let ticks = block
                     .ticks_to_stay_pressed
@@ -106,7 +118,10 @@ pub fn build(blocks: &[BlockClass]) -> String {
                 );
                 button_blocks.push((const_ident, ticks, click_on, click_off));
             }
+            "CactusBlock" => cactus_blocks.push(const_ident),
+            "CactusFlowerBlock" => cactus_flower_blocks.push(const_ident),
             "CandleBlock" => candle_blocks.push(const_ident),
+            "CeilingHangingSignBlock" => ceiling_hanging_sign_blocks.push(const_ident),
             "CraftingTableBlock" => crafting_table_blocks.push(const_ident),
             "CropBlock" | "CarrotBlock" | "PotatoBlock" => {
                 crop_blocks.push((
@@ -124,45 +139,47 @@ pub fn build(blocks: &[BlockClass]) -> String {
                     to_const_ident(block.fluid.as_ref().expect("LiquidBlock must have a fluid"));
                 liquid_blocks.push((const_ident, fluid_ident));
             }
-            "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
-            "StandingSignBlock" => standing_sign_blocks.push(const_ident),
-            "WallSignBlock" => wall_sign_blocks.push(const_ident),
-            "CeilingHangingSignBlock" => ceiling_hanging_sign_blocks.push(const_ident),
-            "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
-            "TorchBlock" => torch_blocks.push(const_ident),
-            "WallTorchBlock" => wall_torch_blocks.push(const_ident),
             "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
-            "BambooStalkBlock" => bamboo_stalk_blocks.push(const_ident),
-            "BambooSaplingBlock" => bamboo_sapling_blocks.push(const_ident),
-            "CactusBlock" => cactus_blocks.push(const_ident),
-            "CactusFlowerBlock" => cactus_flower_blocks.push(const_ident),
+            "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
+            "StandingSignBlock" => standing_sign_blocks.push(const_ident),
+            "TorchBlock" => torch_blocks.push(const_ident),
+            "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
+            "WallSignBlock" => wall_sign_blocks.push(const_ident),
+            "WallTorchBlock" => wall_torch_blocks.push(const_ident),
             _ => {}
         }
     }
 
+    let bamboo_sapling_type = Ident::new("BambooSaplingBlock", Span::call_site());
+    let bamboo_stalk_type = Ident::new("BambooStalkBlock", Span::call_site());
     let barrel_type = Ident::new("BarrelBlock", Span::call_site());
+    let beetroots_type = Ident::new("BeetrootBlock", Span::call_site());
+    let cactus_flower_type = Ident::new("CactusFlowerBlock", Span::call_site());
+    let cactus_type = Ident::new("CactusBlock", Span::call_site());
     let candle_type = Ident::new("CandleBlock", Span::call_site());
+    let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
     let crafting_table_type = Ident::new("CraftingTableBlock", Span::call_site());
     let crop_type = Ident::new("CropBlock", Span::call_site());
     let end_portal_frame_type = Ident::new("EndPortalFrameBlock", Span::call_site());
     let farmland_type = Ident::new("FarmlandBlock", Span::call_site());
     let fence_type = Ident::new("FenceBlock", Span::call_site());
     let pillar_type = Ident::new("RotatedPillarBlock", Span::call_site());
-    let standing_sign_type = Ident::new("StandingSignBlock", Span::call_site());
-    let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
-    let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
-    let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
-    let torch_type = Ident::new("TorchBlock", Span::call_site());
-    let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
     let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
-    let bamboo_stalk_type = Ident::new("BambooStalkBlock", Span::call_site());
-    let bamboo_sapling_type = Ident::new("BambooSaplingBlock", Span::call_site());
-    let cactus_type = Ident::new("CactusBlock", Span::call_site());
-    let cactus_flower_type = Ident::new("CactusFlowerBlock", Span::call_site());
+    let standing_sign_type = Ident::new("StandingSignBlock", Span::call_site());
+    let torch_type = Ident::new("TorchBlock", Span::call_site());
+    let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
+    let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
+    let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
 
+    let bamboo_sapling_registrations =
+        generate_registrations(bamboo_sapling_blocks.iter(), &bamboo_sapling_type);
+    let bamboo_stalk_registrations =
+        generate_registrations(bamboo_stalk_blocks.iter(), &bamboo_stalk_type);
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
+    let beetroots_registrations =
+        generate_crop_registrations(beetroots_blocks.iter(), &beetroots_type);
     let button_registrations = {
         let registrations =
             button_blocks
@@ -182,7 +199,14 @@ pub fn build(blocks: &[BlockClass]) -> String {
                 });
         quote! { #(#registrations)* }
     };
+    let cactus_flower_registrations =
+        generate_registrations(cactus_flower_blocks.iter(), &cactus_flower_type);
+    let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
     let candle_registrations = generate_registrations(candle_blocks.iter(), &candle_type);
+    let ceiling_hanging_sign_registrations = generate_registrations(
+        ceiling_hanging_sign_blocks.iter(),
+        &ceiling_hanging_sign_type,
+    );
     let crafting_table_registrations =
         generate_registrations(crafting_table_blocks.iter(), &crafting_table_type);
     let crop_registrations = generate_crop_registrations(crop_blocks.iter(), &crop_type);
@@ -202,47 +226,59 @@ pub fn build(blocks: &[BlockClass]) -> String {
         quote! { #(#registrations)* }
     };
     let pillar_registrations = generate_registrations(rotated_pillar_blocks.iter(), &pillar_type);
-    let standing_sign_registrations =
-        generate_registrations(standing_sign_blocks.iter(), &standing_sign_type);
-    let wall_sign_registrations = generate_registrations(wall_sign_blocks.iter(), &wall_sign_type);
-    let ceiling_hanging_sign_registrations = generate_registrations(
-        ceiling_hanging_sign_blocks.iter(),
-        &ceiling_hanging_sign_type,
-    );
-    let wall_hanging_sign_registrations =
-        generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
-    let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
-    let wall_torch_registrations =
-        generate_registrations(wall_torch_blocks.iter(), &wall_torch_type);
     let redstone_torch_registrations =
         generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
     let redstone_wall_torch_registrations =
         generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
-    let bamboo_stalk_registrations =
-        generate_registrations(bamboo_stalk_blocks.iter(), &bamboo_stalk_type);
-    let bamboo_sapling_registrations =
-        generate_registrations(bamboo_sapling_blocks.iter(), &bamboo_sapling_type);
-    let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
-    let cactus_flower_registrations =
-        generate_registrations(cactus_flower_blocks.iter(), &cactus_flower_type);
+    let standing_sign_registrations =
+        generate_registrations(standing_sign_blocks.iter(), &standing_sign_type);
+    let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
+    let wall_hanging_sign_registrations =
+        generate_registrations(wall_hanging_sign_blocks.iter(), &wall_hanging_sign_type);
+    let wall_sign_registrations = generate_registrations(wall_sign_blocks.iter(), &wall_sign_type);
+    let wall_torch_registrations =
+        generate_registrations(wall_torch_blocks.iter(), &wall_torch_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
 
-        use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
         use steel_registry::blocks::properties::BlockStateProperties;
-        use crate::behavior::BlockBehaviorRegistry;
+        use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
+
         use crate::behavior::blocks::{
-            BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, EndPortalFrameBlock,
-            FarmlandBlock, FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
-            CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
-            RedstoneTorchBlock, RedstoneWallTorchBlock, CactusBlock, CactusFlowerBlock, crops::{ BambooStalkBlock, BambooSaplingBlock, CropBlock }
+            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CropBlock},
+            BarrelBlock,
+            ButtonBlock,
+            CactusBlock,
+            CactusFlowerBlock,
+            CandleBlock,
+            CeilingHangingSignBlock,
+            CraftingTableBlock,
+            EndPortalFrameBlock,
+            FarmlandBlock,
+            FenceBlock,
+            LiquidBlock,
+            RedstoneTorchBlock,
+            RedstoneWallTorchBlock,
+            RotatedPillarBlock,
+            StandingSignBlock,
+            TorchBlock,
+            WallHangingSignBlock,
+            WallSignBlock,
+            WallTorchBlock,
         };
+        use crate::behavior::BlockBehaviorRegistry;
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
+            #bamboo_sapling_registrations
+            #bamboo_stalk_registrations
             #barrel_registrations
+            #beetroots_registrations
             #button_registrations
+            #cactus_registrations
+            #cactus_flower_registrations
             #candle_registrations
+            #ceiling_hanging_sign_registrations
             #crafting_table_registrations
             #crop_registrations
             #end_portal_frame_registrations
@@ -250,18 +286,13 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #fence_registrations
             #liquid_registrations
             #pillar_registrations
-            #standing_sign_registrations
-            #wall_sign_registrations
-            #ceiling_hanging_sign_registrations
-            #wall_hanging_sign_registrations
-            #torch_registrations
-            #wall_torch_registrations
             #redstone_torch_registrations
             #redstone_wall_torch_registrations
-            #bamboo_stalk_registrations
-            #bamboo_sapling_registrations
-            #cactus_registrations
-            #cactus_flower_registrations
+            #standing_sign_registrations
+            #torch_registrations
+            #wall_hanging_sign_registrations
+            #wall_sign_registrations
+            #wall_torch_registrations
         }
     };
 

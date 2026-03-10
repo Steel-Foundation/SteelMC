@@ -2681,7 +2681,7 @@
     {
       "name": "torchflower_crop",
       "class": "TorchflowerCropBlock",
-      "max_age": 7
+      "max_age": 2
     },
     {
       "name": "pitcher_crop",
@@ -2694,7 +2694,7 @@
     {
       "name": "beetroots",
       "class": "BeetrootBlock",
-      "max_age": 7
+      "max_age": 3
     },
     {
       "name": "dirt_path",

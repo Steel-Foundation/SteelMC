@@ -18,7 +18,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::player::Player;
 use crate::world::World;
 
-/// Behavior for crop blocks (wheat, carrots, potatoes, beetroot).
+/// Behavior for crop blocks (wheat, carrots, potatoes).
 ///
 /// Crops grow through random ticks when placed on farmland with sufficient light.
 /// Growth speed is affected by nearby farmland moisture and crop arrangement.
@@ -28,47 +28,23 @@ pub struct CropBlock {
     max_age: u8,
 }
 
-impl CropBlock {
-    /// Creates a new crop block behavior with the default age property (0-7).
-    #[must_use]
-    pub const fn new(block: BlockRef) -> Self {
-        Self {
-            block,
-            age_property: BlockStateProperties::AGE_7,
-            max_age: 7,
-        }
-    }
+pub trait Crop {
+    fn block(&self) -> BlockRef;
+    fn age_property(&self) -> &IntProperty;
+    fn max_age(&self) -> u8;
 
-    /// Creates a new crop block behavior with a custom age property.
-    #[must_use]
-    pub const fn with_age(block: BlockRef, age_property: IntProperty, max_age: u8) -> Self {
-        Self {
-            block,
-            age_property,
-            max_age,
-        }
-    }
-
-    /// Gets the age of the crop from its block state.
     fn get_age(&self, state: BlockStateId) -> u8 {
-        state.get_value(&self.age_property)
+        state.get_value(self.age_property())
     }
 
-    /// Returns the block state for the given age.
     fn get_state_for_age(&self, age: u8) -> BlockStateId {
-        self.block
+        self.block()
             .default_state()
-            .set_value(&self.age_property, age)
+            .set_value(self.age_property(), age)
     }
 
-    /// Returns true if the crop is fully grown.
     fn is_max_age(&self, state: BlockStateId) -> bool {
-        self.get_age(state) >= self.max_age
-    }
-
-    /// Helper to check if a block matches this crop type using pointer equality.
-    fn is_same_block(&self, other: BlockRef) -> bool {
-        self.block == other
+        state.get_value(self.age_property()) >= self.max_age()
     }
 
     /// Calculates the growth speed based on surrounding farmland.
@@ -112,10 +88,10 @@ impl CropBlock {
         let west = world.get_block_state(&pos.west());
         let east = world.get_block_state(&pos.east());
 
-        let horizontal_row =
-            self.is_same_block(west.get_block()) || self.is_same_block(east.get_block());
-        let vertical_row =
-            self.is_same_block(north.get_block()) || self.is_same_block(south.get_block());
+        let block = self.block();
+
+        let horizontal_row = block == west.get_block() || block == east.get_block();
+        let vertical_row = block == north.get_block() || block == south.get_block();
 
         if horizontal_row && vertical_row {
             // Crops in both directions - penalty
@@ -127,10 +103,10 @@ impl CropBlock {
             let sw = world.get_block_state(&pos.south().west());
             let se = world.get_block_state(&pos.south().east());
 
-            let has_diagonal = self.is_same_block(nw.get_block())
-                || self.is_same_block(ne.get_block())
-                || self.is_same_block(sw.get_block())
-                || self.is_same_block(se.get_block());
+            let has_diagonal = block == nw.get_block()
+                || block == ne.get_block()
+                || block == sw.get_block()
+                || block == se.get_block();
 
             if has_diagonal {
                 speed /= 2.0;
@@ -138,6 +114,61 @@ impl CropBlock {
         }
 
         speed
+    }
+
+    fn on_random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        // TODO: Check light level >= 9 when light engine is implemented
+        // For now, assume sufficient light
+
+        let age = self.get_age(state);
+        if age < self.max_age() {
+            let growth_speed = self.get_growth_speed(world, pos);
+
+            // Random chance to grow based on growth speed
+            // Vanilla formula: random.nextInt((int)(25.0F / growthSpeed) + 1) == 0
+            let growth_chance = (25.0 / growth_speed) as u32 + 1;
+
+            if rand::random::<u32>().is_multiple_of(growth_chance) {
+                let new_state = self.get_state_for_age(age + 1);
+                world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+            }
+        }
+    }
+}
+
+impl CropBlock {
+    /// Creates a new crop block behavior with the default age property (0-7).
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self {
+            block,
+            age_property: BlockStateProperties::AGE_7,
+            max_age: 7,
+        }
+    }
+
+    /// Creates a new crop block behavior with a custom age property.
+    #[must_use]
+    pub const fn with_age(block: BlockRef, age_property: IntProperty, max_age: u8) -> Self {
+        Self {
+            block,
+            age_property,
+            max_age,
+        }
+    }
+}
+
+impl Crop for CropBlock {
+    fn block(&self) -> BlockRef {
+        self.block
+    }
+
+    fn age_property(&self) -> &IntProperty {
+        &self.age_property
+    }
+
+    fn max_age(&self) -> u8 {
+        self.max_age
     }
 }
 
@@ -153,22 +184,7 @@ impl BlockBehaviour for CropBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        // TODO: Check light level >= 9 when light engine is implemented
-        // For now, assume sufficient light
-
-        let age = self.get_age(state);
-        if age < self.max_age {
-            let growth_speed = self.get_growth_speed(world, pos);
-
-            // Random chance to grow based on growth speed
-            // Vanilla formula: random.nextInt((int)(25.0F / growthSpeed) + 1) == 0
-            let growth_chance = (25.0 / growth_speed) as u32 + 1;
-
-            if rand::random::<u32>().is_multiple_of(growth_chance) {
-                let new_state = self.get_state_for_age(age + 1);
-                world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
-            }
-        }
+        self.on_random_tick(state, world, pos);
     }
 
     fn use_item_on(
