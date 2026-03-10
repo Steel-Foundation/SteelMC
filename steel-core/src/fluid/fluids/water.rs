@@ -3,6 +3,8 @@
 //! Based on vanilla's `WaterFluid.java`.
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
+use std::sync::Arc;
+
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::sound_events;
@@ -64,9 +66,9 @@ impl FluidBehavior for WaterFluid {
         direction == Direction::Down && !is_water_fluid(other_fluid)
     }
 
-    /// Plays block destruction particles when water replaces a non-air block.
-    fn before_destroying_block(&self, world: &World, pos: BlockPos, state: BlockStateId) {
-        // TODO: Drop block resources — cactus infrastructure is merged, implement item drops here.
+    /// Drops block resources and plays destruction particles when water replaces a non-air block.
+    fn before_destroying_block(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+        world.drop_resources(state, pos);
         world.destroy_block_effect(pos, u32::from(state.0), None);
     }
 
@@ -88,11 +90,11 @@ impl FluidBehavior for WaterFluid {
         }
     }
 
-    fn tick(&self, world: &World, pos: BlockPos) {
+    fn tick(&self, world: &Arc<World>, pos: BlockPos) {
         self.base_tick(world, pos);
     }
 
-    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+    fn spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         self.base_spread(world, pos, fluid_state);
     }
 }

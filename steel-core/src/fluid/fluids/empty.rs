@@ -3,6 +3,8 @@
 //! Represents the absence of fluid in a block space.
 //!
 
+use std::sync::Arc;
+
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_fluids;
@@ -20,11 +22,11 @@ impl FluidBehavior for EmptyFluid {
         &vanilla_fluids::EMPTY
     }
 
-    fn tick(&self, _world: &World, _pos: BlockPos) {
+    fn tick(&self, _world: &Arc<World>, _pos: BlockPos) {
         // Vanilla: nothing
     }
 
-    fn spread(&self, _world: &World, _pos: BlockPos, _fluid_state: FluidState) {
+    fn spread(&self, _world: &Arc<World>, _pos: BlockPos, _fluid_state: FluidState) {
         // Vanilla: nothing
     }
 

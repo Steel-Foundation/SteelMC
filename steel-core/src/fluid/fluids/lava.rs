@@ -3,6 +3,8 @@
 //! Based on vanilla's `LavaFluid.java`.
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -31,6 +33,7 @@ pub struct LavaFluid;
 
 impl LavaFluid {
     /// Returns true if this world uses fast lava (nether-like).
+    // TODO: Vanilla uses EnvironmentAttributes.FAST_LAVA on the dimension type, not a hardcoded check
     fn is_fast_lava(world: &World) -> bool {
         world.dimension.key == vanilla_dimension_types::THE_NETHER.key
     }
@@ -118,7 +121,7 @@ impl FluidBehavior for LavaFluid {
 
     /// Vanilla parity: `LavaFluid.beforeDestroyingBlock()` → fizz sound.
     /// Lava does NOT drop block items (unlike water).
-    fn before_destroying_block(&self, world: &World, pos: BlockPos, _state: BlockStateId) {
+    fn before_destroying_block(&self, world: &Arc<World>, pos: BlockPos, _state: BlockStateId) {
         world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
     }
 
@@ -143,11 +146,11 @@ impl FluidBehavior for LavaFluid {
         }
     }
 
-    fn tick(&self, world: &World, pos: BlockPos) {
+    fn tick(&self, world: &Arc<World>, pos: BlockPos) {
         self.base_tick(world, pos);
     }
 
-    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+    fn spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         self.base_spread(world, pos, fluid_state);
     }
 }
@@ -156,7 +159,7 @@ impl FluidBehavior for LavaFluid {
 impl FlowingFluid for LavaFluid {
     fn spread_to(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         fluid_state: FluidState,
         direction: Direction,

@@ -1,5 +1,7 @@
 //! Fluid behavior trait and related types.
 //! Fluids like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
+use std::sync::Arc;
+
 use crate::entity::Entity;
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
@@ -31,9 +33,9 @@ pub trait FluidBehavior: Send + Sync {
     fn slope_find_distance(&self, world: &World) -> u8;
 
     /// Called every tick for fluid blocks.
-    fn tick(&self, world: &World, pos: BlockPos);
+    fn tick(&self, world: &Arc<World>, pos: BlockPos);
     /// Called to calculate fluid spreading each tick.
-    fn spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState);
+    fn spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState);
 
     /// Checks if this fluid can be replaced by another fluid.
     /// This is used to determine if a fluid can flow into a block occupied by another fluid.
@@ -47,7 +49,12 @@ pub trait FluidBehavior: Send + Sync {
     ) -> bool;
 
     /// Called before a block is destroyed by this fluid.
-    fn before_destroying_block(&self, _world: &World, _pos: BlockPos, _replaced: BlockStateId) {
+    fn before_destroying_block(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _replaced: BlockStateId,
+    ) {
         // default: do nothing
     }
 

@@ -4,6 +4,8 @@
 //! algorithms derived from vanilla's `FlowingFluid.java`. Individual fluids
 //! like `WaterFluid` and `LavaFluid` implement this trait to inherit behavior.
 
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -22,7 +24,7 @@ use crate::world::World;
 /// In vanilla Minecraft, this is the `FlowingFluid` abstract class.
 pub trait FlowingFluid: FluidBehavior {
     /// The base tick logic
-    fn base_tick(&self, world: &World, pos: BlockPos) {
+    fn base_tick(&self, world: &Arc<World>, pos: BlockPos) {
         let mut current_fluid = world.get_block_state(&pos).get_fluid_state();
 
         if current_fluid.is_empty() || !self.is_same(current_fluid.fluid_id) {
@@ -62,7 +64,7 @@ pub trait FlowingFluid: FluidBehavior {
     /// The base spread logic.
     ///
     /// Vanilla equivalent: `FlowingFluid.spread()`.
-    fn base_spread(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+    fn base_spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         if fluid_state.is_empty() {
             return;
         }
@@ -113,7 +115,7 @@ pub trait FlowingFluid: FluidBehavior {
     /// Vanilla equivalent: `FlowingFluid.spreadTo()`.
     /// Note: vanilla's spreadTo does NOT schedule ticks — that's handled by
     /// LiquidBlockContainer.placeLiquid or the new block's onPlace callback.
-    fn base_spread_to(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+    fn base_spread_to(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         let target_state = world.get_block_state(&pos);
 
         if target_state
@@ -141,7 +143,7 @@ pub trait FlowingFluid: FluidBehavior {
     /// Performs the actual placement of fluid and schedules the tick.
     fn spread_to(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         fluid_state: FluidState,
         _direction: Direction,
@@ -167,7 +169,7 @@ pub trait FlowingFluid: FluidBehavior {
     /// Vanilla equivalent: `FlowingFluid.spreadToSides()`.
     /// Computes outgoing amount, overrides to 7 for falling fluids, and skips
     /// if the outgoing amount is zero.
-    fn spread_to_sides(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+    fn spread_to_sides(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         // Vanilla: neighbor = amount - dropOff; if (falling) neighbor = 7; if (neighbor <= 0) skip
         let mut neighbor = fluid_state.amount.saturating_sub(self.drop_off(world));
         if fluid_state.falling {
