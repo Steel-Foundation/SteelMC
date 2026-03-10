@@ -21,6 +21,7 @@ use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
@@ -34,7 +35,6 @@ use crate::chunk::{
     world_gen_context::WorldGenContext,
 };
 use crate::chunk_saver::ChunkStorage;
-use crate::behavior::BlockStateBehaviorExt;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};

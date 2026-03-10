@@ -15,10 +15,10 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
-use crate::fluid::is_water;
-use steel_registry::vanilla_fluids;
+use crate::fluid::is_water_fluid;
 use crate::player::Player;
 use crate::world::World;
+use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
     pub filled_bucket: ItemRef,
@@ -357,7 +357,7 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
         match state.try_get_value(&BlockStateProperties::WATERLOGGED) {
-            Some(false) => is_water(fluid),
+            Some(false) => is_water_fluid(fluid),
             _ => false,
         }
     }

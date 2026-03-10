@@ -122,7 +122,8 @@ impl BlockBehaviour for WallTorchBlock {
         for direction in context.get_nearest_looking_directions() {
             if direction.is_horizontal() {
                 let facing = direction.opposite();
-                let state = self.block
+                let state = self
+                    .block
                     .default_state()
                     .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing);
                 if self.can_survive(state, context.world, context.relative_pos) {

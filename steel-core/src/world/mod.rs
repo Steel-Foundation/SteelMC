@@ -61,12 +61,12 @@ use tokio::{runtime::Runtime, time::Instant};
 
 use crate::{
     ChunkMap,
+    behavior::BlockStateBehaviorExt,
     behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS},
     block_entity::SharedBlockEntity,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
-    behavior::BlockStateBehaviorExt,
     fluid::fluid_state_to_block,
     level_data::LevelDataManager,
     player::{LastSeen, Player, connection::NetworkConnection},

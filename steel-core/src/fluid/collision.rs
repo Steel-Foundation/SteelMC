@@ -2,8 +2,8 @@
 //!
 //! Equivalent to various collision checks in FlowingFluid.java.
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::BlockStateBehaviorExt;
 use crate::physics::shapes::merged_face_occludes;
 use crate::world::World;
 use steel_registry::REGISTRY;

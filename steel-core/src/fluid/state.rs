@@ -120,30 +120,6 @@ pub fn fluid_state_to_block(fluid_state: FluidState) -> BlockStateId {
     }
 }
 
-/// Returns true if the given `FluidRef` is water (including flowing water).
-#[must_use]
-pub fn is_water(fluid_id: FluidRef) -> bool {
-    is_water_fluid(fluid_id)
-}
-
-/// Returns true if the given `FluidRef` is lava (including flowing lava).
-#[must_use]
-pub fn is_lava(fluid_id: FluidRef) -> bool {
-    is_lava_fluid(fluid_id)
-}
-
-/// Checks if a fluid state contains water.
-#[must_use]
-pub fn is_water_state(fluid_state: FluidState) -> bool {
-    is_water_fluid(fluid_state.fluid_id)
-}
-
-/// Checks if a fluid state contains lava.
-#[must_use]
-pub fn is_lava_state(fluid_state: FluidState) -> bool {
-    is_lava_fluid(fluid_state.fluid_id)
-}
-
 /// Gets the water source fluid ref from the registry.
 #[must_use]
 pub fn water_id() -> FluidRef {

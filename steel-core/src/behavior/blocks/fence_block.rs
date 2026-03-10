@@ -162,5 +162,4 @@ impl BlockBehaviour for FenceBlock {
             Direction::Up | Direction::Down => state,
         }
     }
-
 }

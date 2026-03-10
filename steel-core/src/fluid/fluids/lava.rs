@@ -17,7 +17,10 @@ use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
 use crate::fluid::{FlowingFluid, FluidBehavior};
-use crate::fluid::{FluidRef, FluidState, get_fluid_state, get_height, is_lava, is_water, lava_id};
+use crate::fluid::{
+    FluidRef, FluidState, FluidStateExt, get_fluid_state, get_height, is_lava_fluid,
+    is_water_fluid, lava_id,
+};
 use crate::world::World;
 /// Lava fluid implementation.
 ///
@@ -39,7 +42,7 @@ impl FluidBehavior for LavaFluid {
     }
 
     fn is_same(&self, fluid: FluidRef) -> bool {
-        is_lava(fluid)
+        is_lava_fluid(fluid)
     }
 
     fn tick_delay(&self, world: &World) -> i32 {
@@ -83,7 +86,7 @@ impl FluidBehavior for LavaFluid {
         other_fluid: FluidRef,
         _direction: Direction,
     ) -> bool {
-        get_height(world, &pos, fluid_state) >= 0.444_444_45 && is_water(other_fluid)
+        get_height(world, &pos, fluid_state) >= 0.444_444_45 && is_water_fluid(other_fluid)
     }
 
     /// Vanilla parity: `LavaFluid.getSpreadDelay`.
@@ -160,7 +163,7 @@ impl FlowingFluid for LavaFluid {
     ) {
         if direction == Direction::Down {
             let below_fluid = get_fluid_state(world, &pos);
-            if is_water(below_fluid.fluid_id) {
+            if below_fluid.is_water() {
                 // Vanilla: fizz always plays when lava meets water going down,
                 // regardless of whether stone is formed.
                 world.level_event(level_events::LAVA_FIZZ, pos, 0, None);

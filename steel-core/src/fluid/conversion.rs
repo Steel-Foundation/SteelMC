@@ -2,11 +2,11 @@
 //!
 //! Equivalent to FlowingFluid#getNewLiquid and related helpers.
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::fluid::can_pass_through_wall;
 use crate::fluid::collision::{can_hold_fluid, can_hold_specific_fluid, can_pass_horizontally};
 use crate::fluid::spread_context::SpreadContext;
-use crate::behavior::BlockStateBehaviorExt;
 use crate::world::World;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};

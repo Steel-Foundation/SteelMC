@@ -325,13 +325,19 @@ use crate::{REGISTRY, vanilla_fluid_tags};
 /// Returns true if the given `FluidRef` is water (including flowing water).
 #[must_use]
 pub fn is_water_fluid(fluid: FluidRef) -> bool {
-    !fluid.is_empty && REGISTRY.fluids.is_in_tag(fluid, &vanilla_fluid_tags::WATER_TAG)
+    !fluid.is_empty
+        && REGISTRY
+            .fluids
+            .is_in_tag(fluid, &vanilla_fluid_tags::WATER_TAG)
 }
 
 /// Returns true if the given `FluidRef` is lava (including flowing lava).
 #[must_use]
 pub fn is_lava_fluid(fluid: FluidRef) -> bool {
-    !fluid.is_empty && REGISTRY.fluids.is_in_tag(fluid, &vanilla_fluid_tags::LAVA_TAG)
+    !fluid.is_empty
+        && REGISTRY
+            .fluids
+            .is_in_tag(fluid, &vanilla_fluid_tags::LAVA_TAG)
 }
 
 /// Extension trait for `FluidState` type-checking methods.

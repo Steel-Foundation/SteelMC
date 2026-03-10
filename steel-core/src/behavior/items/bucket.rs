@@ -6,8 +6,10 @@
 // TODO: Spawn particles
 
 use crate::behavior::context::InteractionResult;
-use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext};
-use crate::fluid::{is_lava_state, is_water_state};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
+};
+use crate::fluid::FluidStateExt;
 use crate::inventory::lock::ContainerId;
 use crate::world::RaytraceAction;
 use steel_registry::blocks::BlockRef;
@@ -156,9 +158,9 @@ impl ItemBehavior for FilledBucketBehavior {
             if state.can_be_replaced_by_fluid(self.fluid_block) {
                 // If same fluid already exists and is source, just consume bucket (parity)
                 let is_same_fluid = if is_water_bucket {
-                    is_water_state(fluid_state)
+                    fluid_state.is_water()
                 } else {
-                    is_lava_state(fluid_state)
+                    fluid_state.is_lava()
                 };
 
                 if is_same_fluid && fluid_state.is_source() {

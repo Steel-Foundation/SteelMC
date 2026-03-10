@@ -11,7 +11,7 @@ use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
 use crate::fluid::{FlowingFluid, FluidBehavior};
-use crate::fluid::{FluidRef, FluidState, is_water, water_id};
+use crate::fluid::{FluidRef, FluidState, is_water_fluid, water_id};
 use crate::world::World;
 
 /// Water fluid implementation.
@@ -26,7 +26,7 @@ impl FluidBehavior for WaterFluid {
     }
 
     fn is_same(&self, fluid: FluidRef) -> bool {
-        is_water(fluid)
+        is_water_fluid(fluid)
     }
 
     fn tick_delay(&self, _world: &World) -> i32 {
@@ -61,7 +61,7 @@ impl FluidBehavior for WaterFluid {
         other_fluid: FluidRef,
         direction: Direction,
     ) -> bool {
-        direction == Direction::Down && !is_water(other_fluid)
+        direction == Direction::Down && !is_water_fluid(other_fluid)
     }
 
     /// Plays block destruction particles when water replaces a non-air block.

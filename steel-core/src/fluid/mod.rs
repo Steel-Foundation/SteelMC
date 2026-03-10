@@ -35,6 +35,5 @@ pub use collision::{
 pub use conversion::{get_new_liquid, get_spread, is_hole};
 pub use state::{
     fluid_state_to_block, fluid_state_to_block_with_existing, get_fluid_state,
-    get_fluid_state_from_block, get_height, get_own_height, is_lava, is_lava_state, is_water,
-    is_water_state, lava_id, water_id,
+    get_fluid_state_from_block, get_height, get_own_height, lava_id, water_id,
 };
