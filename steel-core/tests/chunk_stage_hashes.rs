@@ -7,9 +7,11 @@
 //! Enable stages one at a time as they are implemented.
 
 use std::fmt::Write;
-use std::io::Read as IoRead;
+use std::fs;
+use std::io::{BufReader, Cursor, Read as IoRead};
 
-use rustc_hash::FxHashMap;
+use flate2::read::GzDecoder;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::Deserialize;
 use steel_core::chunk::section::Sections;
 
@@ -87,38 +89,40 @@ struct ChunkBlockData {
 /// Loads binary reference block data for a given stage.
 ///
 /// Binary format (gzip compressed, all integers big-endian):
-///   chunk_count: i32
+///   `chunk_count`: i32
 ///   For each chunk:
-///     chunk_x: i32
-///     chunk_z: i32
-///     section_count: i32
+///     `chunk_x`: i32
+///     `chunk_z`: i32
+///     `section_count`: i32
 ///     For each section:
-///       has_data: u8
-///       if has_data == 1: state_ids: [i32; 4096]
+///       `has_data`: u8
+///       if `has_data` == 1: `state_ids`: [i32; 4096]
 fn load_reference_blocks(stage: &str) -> Option<FxHashMap<(i32, i32), ChunkBlockData>> {
     let short_name = stage.strip_prefix("minecraft:").unwrap_or(stage);
     let path = format!(
         "{}/test_assets/chunk_stage_{short_name}_blocks.bin.gz",
         env!("CARGO_MANIFEST_DIR"),
     );
-    let compressed = std::fs::read(&path).ok()?;
+    let compressed = fs::read(&path).ok()?;
 
-    let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(compressed));
+    let decoder = GzDecoder::new(Cursor::new(compressed));
     let mut buf = Vec::new();
-    std::io::BufReader::new(decoder)
-        .read_to_end(&mut buf)
-        .ok()?;
+    BufReader::new(decoder).read_to_end(&mut buf).ok()?;
 
     let mut pos = 0;
 
     let read_i32 = |pos: &mut usize| -> i32 {
-        let val = i32::from_be_bytes(buf[*pos..*pos + 4].try_into().unwrap());
+        let val = i32::from_be_bytes(
+            buf[*pos..*pos + 4]
+                .try_into()
+                .expect("slice should be 4 bytes"),
+        );
         *pos += 4;
         val
     };
 
     let chunk_count = read_i32(&mut pos) as usize;
-    let mut map = FxHashMap::with_capacity_and_hasher(chunk_count, Default::default());
+    let mut map = FxHashMap::with_capacity_and_hasher(chunk_count, FxBuildHasher);
 
     for _ in 0..chunk_count {
         let cx = read_i32(&mut pos);
@@ -146,7 +150,7 @@ fn load_reference_blocks(stage: &str) -> Option<FxHashMap<(i32, i32), ChunkBlock
     Some(map)
 }
 
-/// Format a state ID as "id (block_name[props])" for human-readable output.
+/// Format a state ID as "id (`block_name`[props])" for human-readable output.
 fn describe_state(state_id: i32) -> String {
     use steel_registry::REGISTRY;
     use steel_utils::types::BlockStateId;
@@ -264,7 +268,7 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
     }
 
     let mut section_indices: Vec<_> = by_section.keys().copied().collect();
-    section_indices.sort();
+    section_indices.sort_unstable();
 
     let mut shown = 0;
     for si in section_indices {
@@ -277,7 +281,7 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
             section_diffs.len()
         );
 
-        for d in section_diffs.iter() {
+        for d in section_diffs {
             if shown >= MAX_DIFFS_PER_CHUNK {
                 let remaining = diffs.len() - shown;
                 let _ = writeln!(msg, "      ... and {remaining} more");
