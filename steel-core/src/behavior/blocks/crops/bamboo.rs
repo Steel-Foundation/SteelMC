@@ -27,7 +27,6 @@ use crate::{
 
 /// Behavior for the Bamboo Stalk Block
 /// TODO:
-/// - [ ] bonemeal
 /// - [ ] brightness
 /// - [ ] dont replace fluids
 pub struct BambooStalkBlock;

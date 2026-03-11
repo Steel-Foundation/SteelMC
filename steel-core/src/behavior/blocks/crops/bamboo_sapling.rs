@@ -26,7 +26,6 @@ use crate::{
 
 /// Behavior for the Bamboo Sapling Block
 /// /// TODO:
-/// - [ ] bonemeal
 /// - [ ] brightness
 pub struct BambooSaplingBlock {
     block: BlockRef,
