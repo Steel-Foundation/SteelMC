@@ -13,6 +13,8 @@ use steel_utils::{
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
+use crate::behavior::BlockStateBehaviorExt;
+use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::world::World;
 
@@ -275,9 +277,10 @@ impl BlockBreakingManager {
         // TODO: Check for GameMasterBlock (command blocks, etc.)
         // TODO: Check blockActionRestricted
 
-        // Remove the block
-        let air_state = REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR);
-        let changed = world.set_block(pos, air_state, UpdateFlags::UPDATE_ALL);
+        // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
+        // block leaves water behind instead of air.
+        let replacement = fluid_state_to_block(state.get_fluid_state());
+        let changed = world.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
 
         if changed {
             // Play block destruction particles and sound (skip for fire blocks like vanilla)

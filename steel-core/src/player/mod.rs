@@ -288,6 +288,34 @@ pub struct Player {
 }
 
 impl Player {
+    /// Returns true if the player is shifting (sneaking).
+    pub fn is_crouching(&self) -> bool {
+        self.entity_state.lock().crouching
+    }
+
+    /// Computes the start (eye position) and end positions for a raytrace.
+    pub fn get_ray_endpoints(&self) -> (Vector3<f64>, Vector3<f64>) {
+        let pos = self.position();
+        let start_pos = Vector3::new(pos.x, self.get_eye_y(), pos.z);
+        let (yaw, pitch) = self.rotation();
+        let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
+        // Vanilla: Attributes.BLOCK_INTERACTION_RANGE defaults to 4.5,
+        // creative mode adds +0.5 via CREATIVE_BLOCK_INTERACTION_RANGE_MODIFIER.
+        let block_interaction_range = if self.has_infinite_materials() {
+            5.0
+        } else {
+            4.5
+        };
+        let direction = Vector3::new(
+            -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
+            -pitch_rad.sin() * block_interaction_range,
+            pitch_rad.cos() * yaw_rad.cos() * block_interaction_range,
+        );
+
+        let end_pos = start_pos.add(&direction);
+        (start_pos, end_pos)
+    }
+
     /// Creates a new player.
     pub fn new(
         gameprofile: GameProfile,
@@ -1792,6 +1820,8 @@ impl Player {
     }
 
     /// Sends block update packets for a position and its neighbor.
+    /// Optionally also sends an update for an additional placement position
+    /// (useful for items like buckets that place blocks at different positions).
     fn send_block_updates(&self, pos: &BlockPos, direction: Direction) {
         let state = self.world.get_block_state(pos);
         self.send_packet(CBlockUpdate {
@@ -1972,7 +2002,24 @@ impl Player {
             packet.y_rot,
             packet.x_rot
         );
-        // TODO: Implement use item handler
+
+        // Ack block changes up to this sequence number.
+        // Vanilla: handleUseItem calls ackBlockChangesUpTo(packet.getSequence()) first.
+        // Without this, client-side prediction stays active and overrides server block updates
+        // (e.g. water regeneration after picking it up with a bucket is invisible to the actor).
+        self.ack_block_changes_up_to(packet.sequence);
+
+        // Call use_item
+        let result = game_mode::use_item(self, &self.world, packet.hand);
+
+        // Handle result
+        if let InteractionResult::Success = result {
+            // Trigger arm swing animation
+            self.swing(packet.hand, true);
+        }
+
+        // Broadcast inventory changes as item might have changed
+        self.broadcast_inventory_changes();
     }
 
     /// Handles the pick block action (middle click on a block).

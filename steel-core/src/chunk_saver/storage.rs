@@ -49,7 +49,7 @@ use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     BIOMES_PER_SECTION, BLOCKS_PER_SECTION, PersistentBiomeData, PersistentBlockEntity,
-    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentHeightmap,
+    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentHeightmap, PersistentPoi,
     PersistentSection, PersistentStructurePiece, PersistentStructureReference,
     PersistentStructureStart, PersistentTick, PreparedChunkSave,
 };
@@ -215,6 +215,7 @@ impl ChunkStorage {
     /// Prepares chunk data for saving. Call this while holding the chunk lock,
     /// then pass the result to `save_chunk_data` after releasing the lock.
     #[must_use]
+    #[allow(clippy::similar_names)] // `pois` vs `pos` are distinct
     pub fn prepare_chunk_save(chunk: &ChunkAccess) -> Option<PreparedChunkSave> {
         if !chunk.is_dirty() {
             return None;
@@ -255,6 +256,12 @@ impl ChunkStorage {
         let structure_references =
             Self::structure_references_to_persistent(&chunk.structure_references());
 
+        // Collect POI occupancy data from world storage
+        let pois = chunk
+            .as_full()
+            .map(|c| Self::pois_to_persistent(c, pos))
+            .unwrap_or_default();
+
         let persistent = Self::to_persistent(
             chunk.sections(),
             &block_entities,
@@ -264,6 +271,7 @@ impl ChunkStorage {
             heightmaps,
             structure_starts,
             structure_references,
+            pois,
             pos,
         );
 
@@ -271,7 +279,7 @@ impl ChunkStorage {
     }
 
     /// Converts chunk data to persistent format.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::similar_names)]
     fn to_persistent(
         sections: &Sections,
         block_entities: &[SharedBlockEntity],
@@ -281,6 +289,7 @@ impl ChunkStorage {
         heightmaps: Vec<PersistentHeightmap>,
         structure_starts: Vec<PersistentStructureStart>,
         structure_references: Vec<PersistentStructureReference>,
+        pois: Vec<PersistentPoi>,
         chunk_pos: ChunkPos,
     ) -> PersistentChunk {
         let mut builder = ChunkBuilder::new(&REGISTRY);
@@ -364,6 +373,7 @@ impl ChunkStorage {
             heightmaps,
             structure_starts,
             structure_references,
+            pois,
         }
     }
 
@@ -530,6 +540,25 @@ impl ChunkStorage {
                     {
                         chunk.add_and_register_entity(entity);
                     }
+                }
+
+                // Restore POI ticket state (populate_poi ran in from_disk, now apply saved occupancy)
+                if !persistent.pois.is_empty()
+                    && let Some(world) = level.upgrade()
+                {
+                    let tickets: Vec<_> = persistent
+                        .pois
+                        .iter()
+                        .map(|p| {
+                            let block_pos = BlockPos::new(
+                                pos.0.x * 16 + i32::from(p.x),
+                                i32::from(p.y),
+                                pos.0.y * 16 + i32::from(p.z),
+                            );
+                            (block_pos, p.free_tickets)
+                        })
+                        .collect();
+                    world.poi_storage.lock().restore_tickets(pos, &tickets);
                 }
 
                 // Clear dirty flag since we just loaded (add_and_register marks dirty)
@@ -892,6 +921,25 @@ impl ChunkStorage {
                     .map(|&l| ChunkPos::from_i64(l))
                     .collect();
                 (pr.structure.clone(), positions)
+            })
+            .collect()
+    }
+
+    /// Collects POI occupancy data from the world's POI storage for this chunk.
+    fn pois_to_persistent(chunk: &LevelChunk, chunk_pos: ChunkPos) -> Vec<PersistentPoi> {
+        let Some(world) = chunk.get_level() else {
+            return Vec::new();
+        };
+        world
+            .poi_storage
+            .lock()
+            .collect_for_chunk(chunk_pos)
+            .into_iter()
+            .map(|(pos, free_tickets)| PersistentPoi {
+                x: (pos.0.x - chunk_pos.0.x * 16) as u8,
+                y: pos.0.y as i16,
+                z: (pos.0.z - chunk_pos.0.y * 16) as u8,
+                free_tickets,
             })
             .collect()
     }

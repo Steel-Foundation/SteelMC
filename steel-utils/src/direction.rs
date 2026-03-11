@@ -169,6 +169,34 @@ impl Direction {
         Direction::Up,
     ];
 
+    /// Vanilla: `LiquidBlock.POSSIBLE_FLOW_DIRECTIONS` mapped through `getOpposite()`.
+    /// Used by `LiquidBlock.shouldSpreadLiquid()` to check neighbors for lava-water interactions.
+    pub const FLOW_NEIGHBOR_CHECK: [Direction; 5] = [
+        Direction::Up,
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
+    /// The 4 horizontal directions.
+    pub const HORIZONTAL: [Direction; 4] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
+    /// The 6 directions.
+    pub const ALL: [Direction; 6] = [
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+        Direction::Down,
+        Direction::Up,
+    ];
+
     /// Returns all directions ordered by how closely they match the player's look direction.
     ///
     /// This matches vanilla's `Direction.orderedByNearest(Entity)`.

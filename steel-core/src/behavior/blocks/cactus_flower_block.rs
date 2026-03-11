@@ -31,12 +31,14 @@ impl CactusFlowerBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+}
 
+impl BlockBehaviour for CactusFlowerBlock {
     /// Checks if the block below can support a cactus flower.
     ///
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts CACTUS, FARMLAND,
     /// or any block with a sturdy center face on top.
-    fn can_survive(world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below = world.get_block_state(&below_pos);
         let below_block = below.get_block();
@@ -45,12 +47,11 @@ impl CactusFlowerBlock {
             || below_block == vanilla_blocks::FARMLAND
             || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
-}
 
-impl BlockBehaviour for CactusFlowerBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if Self::can_survive(context.world, context.relative_pos) {
-            Some(self.block.default_state())
+        let default_state = self.block.default_state();
+        if self.can_survive(default_state, context.world, context.relative_pos) {
+            Some(default_state)
         } else {
             None
         }
@@ -65,7 +66,7 @@ impl BlockBehaviour for CactusFlowerBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if !Self::can_survive(world, pos) {
+        if !self.can_survive(state, world, pos) {
             return vanilla_blocks::AIR.default_state();
         }
         state

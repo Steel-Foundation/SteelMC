@@ -38,22 +38,22 @@ impl CandleBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+}
 
-    /// Checks if the Candle block can survive at the given position
-    pub fn can_survive(world: &World, pos: BlockPos) -> bool {
+impl BlockBehaviour for CandleBlock {
+    /// Checks if the candle block can survive at the given position.
+    fn can_survive(&self, _state: steel_utils::BlockStateId, world: &World, pos: BlockPos) -> bool {
         world
             .get_block_state(&pos.below())
             .is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
-}
 
-impl BlockBehaviour for CandleBlock {
     fn get_state_for_placement(
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
-        if Self::can_survive(context.world, context.relative_pos) {
-            let default_state = self.block.default_state();
+        let default_state = self.block.default_state();
+        if self.can_survive(default_state, context.world, context.relative_pos) {
             if context
                 .world
                 .get_block_state(&context.relative_pos)
@@ -77,7 +77,7 @@ impl BlockBehaviour for CandleBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: steel_utils::BlockStateId,
     ) -> steel_utils::BlockStateId {
-        if !Self::can_survive(world, pos) {
+        if !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
         }
         state

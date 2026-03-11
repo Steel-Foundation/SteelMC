@@ -4,17 +4,26 @@ use std::sync::{Arc, Weak};
 
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::properties::Direction;
-use steel_registry::fluid::FluidState;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_utils::types::InteractionHand;
+use steel_registry::items::ItemRef;
+use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
+use crate::fluid::is_water_fluid;
 use crate::player::Player;
 use crate::world::World;
+use steel_registry::vanilla_fluids;
+
+pub struct PickupResult {
+    pub filled_bucket: ItemRef,
+    pub sound: Option<i32>,
+}
 
 /// Trait defining the behavior of a block.
 ///
@@ -24,6 +33,23 @@ use crate::world::World;
 /// - Player interactions
 /// - State changes
 pub trait BlockBehaviour: Send + Sync {
+    /// Called when a player uses an empty bucket on this block.
+    ///
+    /// Should:
+    /// - Remove or modify the block
+    /// - Return the filled bucket item to give
+    ///
+    /// Return None if pickup failed.
+    #[allow(unused_variables)]
+    fn pickup_block(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        player: Option<&Player>,
+    ) -> Option<PickupResult> {
+        None
+    }
     /// Called when a neighboring block changes shape.
     /// Returns the new state for this block after considering the neighbor change.
     fn update_shape(
@@ -36,6 +62,19 @@ pub trait BlockBehaviour: Send + Sync {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         state
+    }
+
+    /// Returns whether this block can survive at the given position.
+    ///
+    /// Vanilla parity: `BlockBehaviour.canSurvive(BlockState, LevelReader, BlockPos)`.
+    ///
+    /// Used during placement validation, shape updates (to break unsupported
+    /// blocks), and when removing water from waterlogged blocks. The default
+    /// returns `true`; override for blocks that require physical support
+    /// (torches, buttons, candles, cactus, etc.).
+    #[allow(unused_variables)]
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        true
     }
 
     /// Returns the block state to use when placing this block.
@@ -290,17 +329,66 @@ pub trait BlockBehaviour: Send + Sync {
 
     /// Returns the fluid state for this block state.
     ///
-    /// The default implementation returns `FluidState::EMPTY`.
+    /// Default (`SimpleWaterloggedBlock`): returns water source when `WATERLOGGED = true`,
+    /// otherwise `FluidState::EMPTY`.
     ///
-    /// Override this for:
-    /// - Liquid blocks (water, lava) to return the appropriate fluid based on LEVEL
-    /// - Waterlogged blocks to return water when the WATERLOGGED property is true
-    ///
-    /// # Arguments
-    /// * `state` - The current block state
+    /// Override for liquid blocks (water/lava) to return the appropriate fluid based on LEVEL.
     #[allow(unused_variables)]
     fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
-        FluidState::EMPTY
+        if let Some(true) = state.try_get_value(&BlockStateProperties::WATERLOGGED) {
+            FluidState::source(&vanilla_fluids::WATER)
+        } else {
+            FluidState::EMPTY
+        }
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.
+    ///
+    /// Returns `true` if the given fluid type may be placed into this block at the
+    /// given state.  Called by the fluid-spread logic; there is no player context
+    /// here (fluid spreading has no associated player).
+    ///
+    /// Default (`SimpleWaterloggedBlock`): accepts water when the block has a
+    /// `WATERLOGGED` property that is currently `false`.  Override for blocks
+    /// that need different restrictions (e.g. double-slabs, barriers).
+    ///
+    /// Vanilla signature: `canPlaceLiquid(@Nullable LivingEntity, BlockGetter, BlockPos, BlockState, Fluid)`
+    /// — the Fluid parameter is a type, not a state.
+    #[allow(unused_variables)]
+    fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
+        match state.try_get_value(&BlockStateProperties::WATERLOGGED) {
+            Some(false) => is_water_fluid(fluid),
+            _ => false,
+        }
+    }
+
+    /// Vanilla parity: `LiquidBlockContainer.placeLiquid()`.
+    ///
+    /// Attempts to place `fluid_state` into this block.  Returns `true` on success,
+    /// `false` if placement was rejected.
+    ///
+    /// Default (`SimpleWaterloggedBlock`): sets `WATERLOGGED = true` and schedules
+    /// a fluid tick.  Delegates the guard to [`can_place_liquid`].
+    ///
+    /// [`can_place_liquid`]: BlockBehaviour::can_place_liquid
+    #[allow(unused_variables)]
+    fn place_liquid(
+        &self,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        if !self.can_place_liquid(state, fluid_state.fluid_id) {
+            return false;
+        }
+        let new_state = state.set_value(&BlockStateProperties::WATERLOGGED, true);
+        world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+        let delay = super::fluid::FLUID_BEHAVIORS
+            .get_behavior(fluid_state.fluid_id)
+            .tick_delay(world);
+        world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        true
     }
 }
 

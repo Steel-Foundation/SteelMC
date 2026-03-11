@@ -49,7 +49,9 @@ impl CactusBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+}
 
+impl BlockBehaviour for CactusBlock {
     /// Checks if cactus can survive at the given position.
     ///
     /// Survival requirements:
@@ -57,7 +59,7 @@ impl CactusBlock {
     /// 2. No lava on horizontal neighbors
     /// 3. Block below must be `CACTUS`, `SAND`, or `RED_SAND`
     /// 4. Block above must not be liquid
-    fn can_survive(world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         // Check horizontal neighbors - no solid blocks or lava
         for dir in [
             Direction::North,
@@ -104,20 +106,18 @@ impl CactusBlock {
 
         true
     }
-}
 
-impl BlockBehaviour for CactusBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let pos = context.relative_pos;
-        if Self::can_survive(context.world, pos) {
-            Some(self.block.default_state())
+        let default_state = self.block.default_state();
+        if self.can_survive(default_state, context.world, context.relative_pos) {
+            Some(default_state)
         } else {
             None
         }
     }
 
-    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if !Self::can_survive(world, pos) {
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if !self.can_survive(state, world, pos) {
             world.destroy_block(pos, true);
         }
     }
@@ -127,7 +127,7 @@ impl BlockBehaviour for CactusBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let above_pos = pos.offset(0, 1, 0);
+        let above_pos = pos.above();
 
         if !world.get_block_state(&above_pos).is_air() {
             return;
@@ -149,7 +149,9 @@ impl BlockBehaviour for CactusBlock {
         }
 
         // At age 8, chance to grow a cactus flower above
-        if age == CACTUS_FLOWER_AGE && Self::can_survive(world, above_pos) {
+        if age == CACTUS_FLOWER_AGE
+            && self.can_survive(self.block.default_state(), world, above_pos)
+        {
             let chance = if height >= MAX_CACTUS_HEIGHT {
                 FLOWER_CHANCE_TALL
             } else {
@@ -189,7 +191,7 @@ impl BlockBehaviour for CactusBlock {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         // Vanilla: only schedule a tick if the cactus can't survive
-        if !Self::can_survive(world, pos) {
+        if !self.can_survive(state, world, pos) {
             world.schedule_block_tick_default(pos, self.block, 1);
         }
         state

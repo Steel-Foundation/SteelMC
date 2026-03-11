@@ -21,7 +21,8 @@ use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::BlockStateBehaviorExt;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
@@ -332,6 +333,10 @@ impl ChunkMap {
             chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
             chunk_holder.update_highest_allowed_status(u8::MAX);
 
+            // Clean up POI data for this chunk column
+            let world = self.world_gen_context.world();
+            world.poi_storage.lock().remove_chunk(*pos);
+
             // Move to unloading_chunks for deferred unload
             if let Some((_, holder)) = self.chunks.remove_sync(pos) {
                 let _ = self.unloading_chunks.insert_sync(*pos, holder);
@@ -520,8 +525,20 @@ impl ChunkMap {
                     .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
             });
 
-            // TODO: Execute fluid ticks when FluidBehaviour trait exists
-            let _ = ready_fluid_ticks.len();
+            let fluid_behaviors = &*FLUID_BEHAVIORS;
+            for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
+                let state = world.get_block_state(&tick.pos);
+                let fluid_state = state.get_fluid_state();
+
+                // Only execute if the fluid at this location still matches the scheduled tick
+                if fluid_state.fluid_id != tick.tick_type {
+                    continue;
+                }
+
+                fluid_behaviors
+                    .get_behavior(tick.tick_type)
+                    .tick(world, tick.pos);
+            }
         }
     }
 
