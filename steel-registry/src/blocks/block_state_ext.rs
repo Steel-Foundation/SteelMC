@@ -1,13 +1,13 @@
-use steel_utils::BlockStateId;
-
+use crate::vanilla_blocks;
 use crate::{
     REGISTRY,
     blocks::{
         self, BlockRef,
-        properties::{Direction, Property},
+        properties::{BlockStateProperties, Direction, Property},
         shapes::SupportType,
     },
 };
+use steel_utils::BlockStateId;
 
 pub trait BlockStateExt {
     fn get_block(&self) -> BlockRef;
@@ -101,12 +101,41 @@ impl BlockStateExt for BlockStateId {
             return false;
         }
 
-        // Check if the collision shape is a full block
+        // Vanilla's calculateSolid: check collision shape bounding box.
+        // A block is solid if its average dimension size >= 35/48 (~0.7292)
+        // or its Y size >= 1.0. This catches partial blocks like cactus
         let shape = self.get_collision_shape();
-        blocks::shapes::is_shape_full_block(shape)
+        if shape.is_empty() {
+            return false;
+        }
+        let bounds = blocks::shapes::bounding_box(shape);
+        bounds.get_size() >= 0.729_166_7 || bounds.height() >= 1.0
     }
 
     fn is_replaceable(&self) -> bool {
         self.get_block().config.replaceable
+    }
+}
+
+pub trait FluidReplaceableExt {
+    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool;
+}
+
+impl FluidReplaceableExt for BlockStateId {
+    fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool {
+        let block = self.get_block();
+
+        if block == vanilla_blocks::AIR {
+            return true;
+        }
+
+        if fluid == vanilla_blocks::WATER
+            && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)
+        {
+            return true;
+        }
+
+        // Vanilla: `state.canBeReplaced() || !state.isSolid()`
+        block.config.replaceable || !self.is_solid()
     }
 }

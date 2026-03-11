@@ -32,17 +32,17 @@ impl TorchBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+}
 
+impl BlockBehaviour for TorchBlock {
     /// Checks if a torch can survive at the given position.
     /// Requires the block below to provide center support on its top face.
-    pub fn can_survive(world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below_state = world.get_block_state(&below_pos);
         below_state.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
-}
 
-impl BlockBehaviour for TorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -53,19 +53,20 @@ impl BlockBehaviour for TorchBlock {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         // Standing torches break when the block below is removed
-        if direction == Direction::Down && !Self::can_survive(world, pos) {
+        if direction == Direction::Down && !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
         }
         state
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let default_state = self.block.default_state();
         // Check if we can place on the block below
-        if !Self::can_survive(context.world, context.relative_pos) {
+        if !self.can_survive(default_state, context.world, context.relative_pos) {
             return None;
         }
 
-        Some(self.block.default_state())
+        Some(default_state)
     }
 }
 
@@ -83,18 +84,19 @@ impl WallTorchBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+}
 
-    /// Checks if a wall torch can survive at the given position with the given facing.
+impl BlockBehaviour for WallTorchBlock {
+    /// Checks if a wall torch can survive at the given position.
     /// Requires the block behind (opposite of facing) to provide a sturdy face.
-    pub fn can_survive(world: &World, pos: BlockPos, facing: Direction) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let attach_direction = facing.opposite();
         let attach_pos = attach_direction.relative(&pos);
         let attach_state = world.get_block_state(&attach_pos);
         attach_state.is_face_sturdy(facing)
     }
-}
 
-impl BlockBehaviour for WallTorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -108,7 +110,7 @@ impl BlockBehaviour for WallTorchBlock {
         let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let attach_direction = facing.opposite();
 
-        if direction == attach_direction && !Self::can_survive(world, pos, facing) {
+        if direction == attach_direction && !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
         }
         state
@@ -120,12 +122,12 @@ impl BlockBehaviour for WallTorchBlock {
         for direction in context.get_nearest_looking_directions() {
             if direction.is_horizontal() {
                 let facing = direction.opposite();
-                if Self::can_survive(context.world, context.relative_pos, facing) {
-                    return Some(
-                        self.block
-                            .default_state()
-                            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing),
-                    );
+                let state = self
+                    .block
+                    .default_state()
+                    .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing);
+                if self.can_survive(state, context.world, context.relative_pos) {
+                    return Some(state);
                 }
             }
         }

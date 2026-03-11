@@ -1,0 +1,4463 @@
+{
+  "poi_types": [
+    {
+      "id": 0,
+      "name": "armorer",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "blast_furnace",
+          "state_id": 20563,
+          "properties": {
+            "facing": "south",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20564,
+          "properties": {
+            "facing": "west",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20562,
+          "properties": {
+            "facing": "south",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20565,
+          "properties": {
+            "facing": "west",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20566,
+          "properties": {
+            "facing": "east",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20567,
+          "properties": {
+            "facing": "east",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20561,
+          "properties": {
+            "facing": "north",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "blast_furnace",
+          "state_id": 20560,
+          "properties": {
+            "facing": "north",
+            "lit": "true"
+          }
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "butcher",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "smoker",
+          "state_id": 20554,
+          "properties": {
+            "facing": "south",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20559,
+          "properties": {
+            "facing": "east",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20553,
+          "properties": {
+            "facing": "north",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20557,
+          "properties": {
+            "facing": "west",
+            "lit": "false"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20552,
+          "properties": {
+            "facing": "north",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20558,
+          "properties": {
+            "facing": "east",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20556,
+          "properties": {
+            "facing": "west",
+            "lit": "true"
+          }
+        },
+        {
+          "block": "smoker",
+          "state_id": 20555,
+          "properties": {
+            "facing": "south",
+            "lit": "false"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "cartographer",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "cartography_table",
+          "state_id": 20568
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "cleric",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "brewing_stand",
+          "state_id": 9257,
+          "properties": {
+            "has_bottle_0": "false",
+            "has_bottle_1": "false",
+            "has_bottle_2": "true"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9252,
+          "properties": {
+            "has_bottle_0": "true",
+            "has_bottle_1": "true",
+            "has_bottle_2": "false"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9255,
+          "properties": {
+            "has_bottle_0": "false",
+            "has_bottle_1": "true",
+            "has_bottle_2": "true"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9253,
+          "properties": {
+            "has_bottle_0": "true",
+            "has_bottle_1": "false",
+            "has_bottle_2": "true"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9251,
+          "properties": {
+            "has_bottle_0": "true",
+            "has_bottle_1": "true",
+            "has_bottle_2": "true"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9256,
+          "properties": {
+            "has_bottle_0": "false",
+            "has_bottle_1": "true",
+            "has_bottle_2": "false"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9254,
+          "properties": {
+            "has_bottle_0": "true",
+            "has_bottle_1": "false",
+            "has_bottle_2": "false"
+          }
+        },
+        {
+          "block": "brewing_stand",
+          "state_id": 9258,
+          "properties": {
+            "has_bottle_0": "false",
+            "has_bottle_1": "false",
+            "has_bottle_2": "false"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "farmer",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "composter",
+          "state_id": 21548,
+          "properties": {
+            "level": "7"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21541,
+          "properties": {
+            "level": "0"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21543,
+          "properties": {
+            "level": "2"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21545,
+          "properties": {
+            "level": "4"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21542,
+          "properties": {
+            "level": "1"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21549,
+          "properties": {
+            "level": "8"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21547,
+          "properties": {
+            "level": "6"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21544,
+          "properties": {
+            "level": "3"
+          }
+        },
+        {
+          "block": "composter",
+          "state_id": 21546,
+          "properties": {
+            "level": "5"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "fisherman",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "barrel",
+          "state_id": 20547,
+          "properties": {
+            "facing": "west",
+            "open": "false"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20551,
+          "properties": {
+            "facing": "down",
+            "open": "false"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20540,
+          "properties": {
+            "facing": "north",
+            "open": "true"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20543,
+          "properties": {
+            "facing": "east",
+            "open": "false"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20550,
+          "properties": {
+            "facing": "down",
+            "open": "true"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20544,
+          "properties": {
+            "facing": "south",
+            "open": "true"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20541,
+          "properties": {
+            "facing": "north",
+            "open": "false"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20549,
+          "properties": {
+            "facing": "up",
+            "open": "false"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20546,
+          "properties": {
+            "facing": "west",
+            "open": "true"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20542,
+          "properties": {
+            "facing": "east",
+            "open": "true"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20548,
+          "properties": {
+            "facing": "up",
+            "open": "true"
+          }
+        },
+        {
+          "block": "barrel",
+          "state_id": 20545,
+          "properties": {
+            "facing": "south",
+            "open": "false"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "fletcher",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "fletching_table",
+          "state_id": 20569
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "leatherworker",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "cauldron",
+          "state_id": 9259
+        },
+        {
+          "block": "water_cauldron",
+          "state_id": 9260,
+          "properties": {
+            "level": "1"
+          }
+        },
+        {
+          "block": "water_cauldron",
+          "state_id": 9261,
+          "properties": {
+            "level": "2"
+          }
+        },
+        {
+          "block": "powder_snow_cauldron",
+          "state_id": 9264,
+          "properties": {
+            "level": "1"
+          }
+        },
+        {
+          "block": "powder_snow_cauldron",
+          "state_id": 9266,
+          "properties": {
+            "level": "3"
+          }
+        },
+        {
+          "block": "water_cauldron",
+          "state_id": 9262,
+          "properties": {
+            "level": "3"
+          }
+        },
+        {
+          "block": "powder_snow_cauldron",
+          "state_id": 9265,
+          "properties": {
+            "level": "2"
+          }
+        },
+        {
+          "block": "lava_cauldron",
+          "state_id": 9263
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "librarian",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "lectern",
+          "state_id": 20583,
+          "properties": {
+            "facing": "north",
+            "has_book": "true",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20589,
+          "properties": {
+            "facing": "south",
+            "has_book": "false",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20584,
+          "properties": {
+            "facing": "north",
+            "has_book": "false",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20594,
+          "properties": {
+            "facing": "east",
+            "has_book": "true",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20588,
+          "properties": {
+            "facing": "south",
+            "has_book": "false",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20592,
+          "properties": {
+            "facing": "west",
+            "has_book": "false",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20597,
+          "properties": {
+            "facing": "east",
+            "has_book": "false",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20595,
+          "properties": {
+            "facing": "east",
+            "has_book": "true",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20582,
+          "properties": {
+            "facing": "north",
+            "has_book": "true",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20586,
+          "properties": {
+            "facing": "south",
+            "has_book": "true",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20587,
+          "properties": {
+            "facing": "south",
+            "has_book": "true",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20593,
+          "properties": {
+            "facing": "west",
+            "has_book": "false",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20585,
+          "properties": {
+            "facing": "north",
+            "has_book": "false",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20596,
+          "properties": {
+            "facing": "east",
+            "has_book": "false",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20591,
+          "properties": {
+            "facing": "west",
+            "has_book": "true",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "lectern",
+          "state_id": 20590,
+          "properties": {
+            "facing": "west",
+            "has_book": "true",
+            "powered": "true"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "mason",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "stonecutter",
+          "state_id": 20602,
+          "properties": {
+            "facing": "east"
+          }
+        },
+        {
+          "block": "stonecutter",
+          "state_id": 20599,
+          "properties": {
+            "facing": "north"
+          }
+        },
+        {
+          "block": "stonecutter",
+          "state_id": 20601,
+          "properties": {
+            "facing": "west"
+          }
+        },
+        {
+          "block": "stonecutter",
+          "state_id": 20600,
+          "properties": {
+            "facing": "south"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "shepherd",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "loom",
+          "state_id": 20539,
+          "properties": {
+            "facing": "east"
+          }
+        },
+        {
+          "block": "loom",
+          "state_id": 20538,
+          "properties": {
+            "facing": "west"
+          }
+        },
+        {
+          "block": "loom",
+          "state_id": 20537,
+          "properties": {
+            "facing": "south"
+          }
+        },
+        {
+          "block": "loom",
+          "state_id": 20536,
+          "properties": {
+            "facing": "north"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "toolsmith",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "smithing_table",
+          "state_id": 20598
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "weaponsmith",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "grindstone",
+          "state_id": 20579,
+          "properties": {
+            "face": "ceiling",
+            "facing": "south"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20581,
+          "properties": {
+            "face": "ceiling",
+            "facing": "east"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20578,
+          "properties": {
+            "face": "ceiling",
+            "facing": "north"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20573,
+          "properties": {
+            "face": "floor",
+            "facing": "east"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20572,
+          "properties": {
+            "face": "floor",
+            "facing": "west"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20570,
+          "properties": {
+            "face": "floor",
+            "facing": "north"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20580,
+          "properties": {
+            "face": "ceiling",
+            "facing": "west"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20577,
+          "properties": {
+            "face": "wall",
+            "facing": "east"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20574,
+          "properties": {
+            "face": "wall",
+            "facing": "north"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20575,
+          "properties": {
+            "face": "wall",
+            "facing": "south"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20576,
+          "properties": {
+            "face": "wall",
+            "facing": "west"
+          }
+        },
+        {
+          "block": "grindstone",
+          "state_id": 20571,
+          "properties": {
+            "face": "floor",
+            "facing": "south"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "home",
+      "ticket_count": 1,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "light_gray_bed",
+          "state_id": 1873,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1755,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1787,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1831,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1895,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1859,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1843,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1891,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1959,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1887,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1869,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1949,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1749,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1829,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1909,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1931,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1965,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1765,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1797,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1773,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1893,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1785,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1981,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1817,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1795,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1841,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1825,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1961,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1943,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1847,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1809,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1953,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1747,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1845,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1777,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1745,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1973,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1985,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1901,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1937,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1857,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1977,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1969,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1763,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1735,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1789,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1863,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1771,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1851,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1865,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1905,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1907,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1975,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1871,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1877,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1933,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1821,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1823,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1733,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1781,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1903,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1915,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1921,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1731,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1875,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1919,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1963,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1753,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1805,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1849,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1983,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1769,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1979,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1923,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1837,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1791,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1799,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1839,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1941,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1783,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1939,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1967,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1883,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1741,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1779,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1853,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "black_bed",
+          "state_id": 1971,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1911,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1935,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1879,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1861,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1945,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1927,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1811,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1807,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1929,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1913,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1897,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1881,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1885,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1751,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "gray_bed",
+          "state_id": 1855,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1813,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "purple_bed",
+          "state_id": 1899,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1743,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1955,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1759,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1737,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1775,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "white_bed",
+          "state_id": 1739,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1833,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1803,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1757,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "magenta_bed",
+          "state_id": 1767,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "brown_bed",
+          "state_id": 1925,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1835,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1815,
+          "properties": {
+            "facing": "south",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1947,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "yellow_bed",
+          "state_id": 1801,
+          "properties": {
+            "facing": "south",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "lime_bed",
+          "state_id": 1819,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "pink_bed",
+          "state_id": 1827,
+          "properties": {
+            "facing": "north",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "green_bed",
+          "state_id": 1951,
+          "properties": {
+            "facing": "east",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_blue_bed",
+          "state_id": 1793,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "orange_bed",
+          "state_id": 1761,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "light_gray_bed",
+          "state_id": 1867,
+          "properties": {
+            "facing": "west",
+            "occupied": "true",
+            "part": "head"
+          }
+        },
+        {
+          "block": "blue_bed",
+          "state_id": 1917,
+          "properties": {
+            "facing": "west",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "red_bed",
+          "state_id": 1957,
+          "properties": {
+            "facing": "north",
+            "occupied": "false",
+            "part": "head"
+          }
+        },
+        {
+          "block": "cyan_bed",
+          "state_id": 1889,
+          "properties": {
+            "facing": "east",
+            "occupied": "false",
+            "part": "head"
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "meeting",
+      "ticket_count": 32,
+      "valid_range": 6,
+      "block_states": [
+        {
+          "block": "bell",
+          "state_id": 20633,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "east",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20627,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "north",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20622,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "south",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20608,
+          "properties": {
+            "attachment": "floor",
+            "facing": "west",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20619,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "north",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20631,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "west",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20613,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "south",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20629,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "south",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20617,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "east",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20612,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "north",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20628,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "north",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20623,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "west",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20620,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "north",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20605,
+          "properties": {
+            "attachment": "floor",
+            "facing": "south",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20610,
+          "properties": {
+            "attachment": "floor",
+            "facing": "east",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20625,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "east",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20634,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "east",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20624,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "west",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20611,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "north",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20615,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "west",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20632,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "west",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20614,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "south",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20616,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "west",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20630,
+          "properties": {
+            "attachment": "double_wall",
+            "facing": "south",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20604,
+          "properties": {
+            "attachment": "floor",
+            "facing": "north",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20607,
+          "properties": {
+            "attachment": "floor",
+            "facing": "west",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20626,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "east",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20606,
+          "properties": {
+            "attachment": "floor",
+            "facing": "south",
+            "powered": "false"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20603,
+          "properties": {
+            "attachment": "floor",
+            "facing": "north",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20621,
+          "properties": {
+            "attachment": "single_wall",
+            "facing": "south",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20609,
+          "properties": {
+            "attachment": "floor",
+            "facing": "east",
+            "powered": "true"
+          }
+        },
+        {
+          "block": "bell",
+          "state_id": 20618,
+          "properties": {
+            "attachment": "ceiling",
+            "facing": "east",
+            "powered": "false"
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "beehive",
+      "ticket_count": 0,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "beehive",
+          "state_id": 21604,
+          "properties": {
+            "facing": "west",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21612,
+          "properties": {
+            "facing": "east",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21613,
+          "properties": {
+            "facing": "east",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21611,
+          "properties": {
+            "facing": "east",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21598,
+          "properties": {
+            "facing": "south",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21602,
+          "properties": {
+            "facing": "west",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21595,
+          "properties": {
+            "facing": "north",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21608,
+          "properties": {
+            "facing": "east",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21590,
+          "properties": {
+            "facing": "north",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21594,
+          "properties": {
+            "facing": "north",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21592,
+          "properties": {
+            "facing": "north",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21596,
+          "properties": {
+            "facing": "south",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21599,
+          "properties": {
+            "facing": "south",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21600,
+          "properties": {
+            "facing": "south",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21605,
+          "properties": {
+            "facing": "west",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21607,
+          "properties": {
+            "facing": "west",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21610,
+          "properties": {
+            "facing": "east",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21601,
+          "properties": {
+            "facing": "south",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21591,
+          "properties": {
+            "facing": "north",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21593,
+          "properties": {
+            "facing": "north",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21609,
+          "properties": {
+            "facing": "east",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21603,
+          "properties": {
+            "facing": "west",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21606,
+          "properties": {
+            "facing": "west",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "beehive",
+          "state_id": 21597,
+          "properties": {
+            "facing": "south",
+            "honey_level": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "name": "bee_nest",
+      "ticket_count": 0,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "bee_nest",
+          "state_id": 21584,
+          "properties": {
+            "facing": "east",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21579,
+          "properties": {
+            "facing": "west",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21569,
+          "properties": {
+            "facing": "north",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21581,
+          "properties": {
+            "facing": "west",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21586,
+          "properties": {
+            "facing": "east",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21578,
+          "properties": {
+            "facing": "west",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21571,
+          "properties": {
+            "facing": "north",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21567,
+          "properties": {
+            "facing": "north",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21577,
+          "properties": {
+            "facing": "south",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21573,
+          "properties": {
+            "facing": "south",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21574,
+          "properties": {
+            "facing": "south",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21566,
+          "properties": {
+            "facing": "north",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21580,
+          "properties": {
+            "facing": "west",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21587,
+          "properties": {
+            "facing": "east",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21575,
+          "properties": {
+            "facing": "south",
+            "honey_level": "3"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21582,
+          "properties": {
+            "facing": "west",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21576,
+          "properties": {
+            "facing": "south",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21583,
+          "properties": {
+            "facing": "west",
+            "honey_level": "5"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21572,
+          "properties": {
+            "facing": "south",
+            "honey_level": "0"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21585,
+          "properties": {
+            "facing": "east",
+            "honey_level": "1"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21570,
+          "properties": {
+            "facing": "north",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21568,
+          "properties": {
+            "facing": "north",
+            "honey_level": "2"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21588,
+          "properties": {
+            "facing": "east",
+            "honey_level": "4"
+          }
+        },
+        {
+          "block": "bee_nest",
+          "state_id": 21589,
+          "properties": {
+            "facing": "east",
+            "honey_level": "5"
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "nether_portal",
+      "ticket_count": 0,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "nether_portal",
+          "state_id": 6817,
+          "properties": {
+            "axis": "z"
+          }
+        },
+        {
+          "block": "nether_portal",
+          "state_id": 6816,
+          "properties": {
+            "axis": "x"
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "name": "lodestone",
+      "ticket_count": 0,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "lodestone",
+          "state_id": 21628
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "name": "test_instance",
+      "ticket_count": 0,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "test_instance_block",
+          "state_id": 21540
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "name": "lightning_rod",
+      "ticket_count": 0,
+      "valid_range": 1,
+      "block_states": [
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27464,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27520,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27360,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27500,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27398,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27354,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27476,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27492,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27346,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27489,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27372,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27426,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27376,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27465,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27404,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27429,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27382,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27349,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27425,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27438,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27456,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27390,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27341,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27491,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27368,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27480,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27434,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27355,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27527,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27418,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27512,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27498,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27403,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27519,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27518,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27515,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27393,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27356,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27389,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27453,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27440,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27419,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27484,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27397,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27358,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27481,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27375,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27475,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27526,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27442,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27345,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27436,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27396,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27420,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27497,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27478,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27414,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27435,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27344,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27347,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27421,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27517,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27502,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27386,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27503,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27448,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27437,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27509,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27454,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27474,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27388,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27384,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27447,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27530,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27417,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27483,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27507,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27413,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27441,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27410,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27458,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27510,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27395,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27457,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27343,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27401,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27485,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27350,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27374,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27365,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27467,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27391,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27364,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27455,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27387,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27468,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27399,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27366,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27471,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27409,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27463,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27416,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27486,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27369,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27415,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27472,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27477,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27487,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27353,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27351,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27371,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27373,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27405,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27462,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27424,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27451,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27525,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27342,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27378,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27348,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27439,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27513,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27504,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27352,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27482,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27529,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27511,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27430,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27499,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27411,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27392,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27433,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27445,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27402,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27493,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27422,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27479,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27394,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27490,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27385,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27444,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27506,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27362,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27516,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27423,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27522,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27443,
+          "properties": {
+            "facing": "east",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27524,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27379,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27496,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27514,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27449,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27470,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27469,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27431,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27408,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27495,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27494,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27446,
+          "properties": {
+            "facing": "south",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27427,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27459,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27428,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27473,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27531,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27460,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27505,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27357,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27532,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27521,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27412,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27367,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "oxidized_lightning_rod",
+          "state_id": 27432,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27400,
+          "properties": {
+            "facing": "south",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27361,
+          "properties": {
+            "facing": "down",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27406,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27381,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27380,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "weathered_lightning_rod",
+          "state_id": 27407,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27363,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27466,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27377,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27450,
+          "properties": {
+            "facing": "west",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_exposed_lightning_rod",
+          "state_id": 27461,
+          "properties": {
+            "facing": "north",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27501,
+          "properties": {
+            "facing": "up",
+            "powered": "true",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27528,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_lightning_rod",
+          "state_id": 27452,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "lightning_rod",
+          "state_id": 27359,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_oxidized_lightning_rod",
+          "state_id": 27523,
+          "properties": {
+            "facing": "west",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27383,
+          "properties": {
+            "facing": "up",
+            "powered": "false",
+            "waterlogged": "true"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27488,
+          "properties": {
+            "facing": "north",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "waxed_weathered_lightning_rod",
+          "state_id": 27508,
+          "properties": {
+            "facing": "down",
+            "powered": "false",
+            "waterlogged": "false"
+          }
+        },
+        {
+          "block": "exposed_lightning_rod",
+          "state_id": 27370,
+          "properties": {
+            "facing": "east",
+            "powered": "true",
+            "waterlogged": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

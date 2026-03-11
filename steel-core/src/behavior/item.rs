@@ -3,8 +3,8 @@
 use steel_registry::REGISTRY;
 use steel_registry::items::ItemRef;
 
-use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::items::DefaultItemBehavior;
+use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 
 /// Trait defining the behavior of an item.
 ///
@@ -14,7 +14,14 @@ use crate::behavior::items::DefaultItemBehavior;
 /// - etc.
 pub trait ItemBehavior: Send + Sync {
     /// Called when this item is used on a block.
-    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult;
+    fn use_on(&self, _context: &mut UseOnContext) -> InteractionResult {
+        InteractionResult::Pass
+    }
+
+    /// Called when this item is used (e.g. right click in air).
+    fn use_item(&self, _context: &mut UseItemContext) -> InteractionResult {
+        InteractionResult::Pass
+    }
 }
 
 /// Registry for item behaviors.
