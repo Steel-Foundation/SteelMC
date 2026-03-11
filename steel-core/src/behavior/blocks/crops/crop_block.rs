@@ -5,17 +5,12 @@ use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::item_stack::ItemStack;
-use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_blocks;
-use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::InteractionResult;
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::blocks::crops::bonemealable::{Bonemealable, CropBonemealExt};
 use crate::behavior::context::BlockPlaceContext;
-use crate::player::Player;
 use crate::world::World;
 
 /// Behavior for crop blocks (wheat, carrots, potatoes).
@@ -182,6 +177,11 @@ impl Bonemealable for CropBlock {
     }
 
     fn is_bonemealable(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+        log::info!(
+            "is_max_age = {}; max_age = {}",
+            self.is_max_age(state),
+            self.max_age,
+        );
         !self.is_max_age(state)
     }
 }
@@ -201,16 +201,7 @@ impl BlockBehaviour for CropBlock {
         self.on_random_tick(state, world, pos);
     }
 
-    fn use_item_on(
-        &self,
-        item_stack: &ItemStack,
-        state: BlockStateId,
-        world: &World,
-        pos: BlockPos,
-        _player: &Player,
-        _hand: InteractionHand,
-        _hit_result: &BlockHitResult,
-    ) -> InteractionResult {
-        self.default_use_item_on(item_stack, state, world, pos)
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
     }
 }

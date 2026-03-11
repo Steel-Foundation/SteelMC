@@ -3,7 +3,7 @@
 mod bamboo;
 mod bamboo_sapling;
 mod beetroots;
-mod bonemealable;
+pub mod bonemealable;
 mod cactus_block;
 mod cactus_flower_block;
 mod crop_block;

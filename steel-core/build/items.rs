@@ -124,6 +124,7 @@ fn generate_simple_registrations<'a>(
     quote! { #(#registrations)* }
 }
 
+#[expect(clippy::too_many_lines)]
 pub fn build(items: &[ItemClass]) -> String {
     let mut block_items: Vec<(Ident, Ident)> = Vec::new();
     let mut sign_items: Vec<(Ident, Ident, Ident)> = Vec::new();
@@ -133,6 +134,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut shovel_items: Vec<Ident> = Vec::new();
     let mut filled_bucket_items: Vec<(Ident, Ident)> = Vec::new();
     let mut empty_bucket_items: Vec<Ident> = Vec::new();
+    let mut bonemeal_items = Vec::new();
 
     for item in items {
         let item_field = to_item_field(&item.name);
@@ -189,6 +191,9 @@ pub fn build(items: &[ItemClass]) -> String {
                     filled_bucket_items.push((item_field, to_block_const(fluid)));
                 }
             }
+            "BoneMealItem" => {
+                bonemeal_items.push(item_field);
+            }
             _ => {}
         }
     }
@@ -210,13 +215,16 @@ pub fn build(items: &[ItemClass]) -> String {
     let empty_bucket_type = Ident::new("EmptyBucketBehavior", Span::call_site());
     let empty_bucket_registrations =
         generate_simple_registrations(empty_bucket_items.iter(), &empty_bucket_type);
+    let bonemeal_behavior = Ident::new("BonemealBehavior", Span::call_site());
+    let bonemeal_registrations =
+        generate_simple_registrations(bonemeal_items.iter(), &bonemeal_behavior);
 
     let output = quote! {
         //! Generated item behavior assignments.
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, EmptyBucketBehavior};
+        use crate::behavior::items::{BlockItemBehavior, BonemealBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, EmptyBucketBehavior};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations
@@ -227,6 +235,7 @@ pub fn build(items: &[ItemClass]) -> String {
             #shovel_registrations
             #filled_bucket_registrations
             #empty_bucket_registrations
+            #bonemeal_registrations
         }
     };
 

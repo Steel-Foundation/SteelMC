@@ -7,21 +7,12 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BambooLeaves, BlockStateProperties, EnumProperty, IntProperty},
     },
-    item_stack::ItemStack,
-    items::item::BlockHitResult,
-    vanilla_block_tags, vanilla_blocks, vanilla_items,
+    vanilla_block_tags, vanilla_blocks,
 };
-use steel_utils::{
-    BlockPos, BlockStateId, Direction,
-    types::{InteractionHand, UpdateFlags},
-};
+use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{
-        BlockBehaviour, BlockPlaceContext, InteractionResult,
-        blocks::crops::bonemealable::Bonemealable,
-    },
-    player::Player,
+    behavior::{BlockBehaviour, BlockPlaceContext, blocks::crops::bonemealable::Bonemealable},
     world::World,
 };
 
@@ -241,23 +232,7 @@ impl BlockBehaviour for BambooStalkBlock {
         state
     }
 
-    fn use_item_on(
-        &self,
-        item_stack: &ItemStack,
-        state: BlockStateId,
-        world: &World,
-        pos: BlockPos,
-        _player: &Player,
-        _hand: InteractionHand,
-        _hit_result: &BlockHitResult,
-    ) -> InteractionResult {
-        if !self.is_bonemealable(state, world, pos)
-            || item_stack.item() != &vanilla_items::ITEMS.bone_meal
-        {
-            return InteractionResult::Pass;
-        }
-
-        self.apply_bonemeal(state, world, pos);
-        InteractionResult::Success
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
     }
 }

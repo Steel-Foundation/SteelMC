@@ -1,21 +1,16 @@
 use std::sync::Arc;
 
-use steel_registry::{
-    blocks::{BlockRef, properties::IntProperty},
-    item_stack::ItemStack,
-    items::item::BlockHitResult,
-};
-use steel_utils::{BlockPos, BlockStateId, types::InteractionHand};
+use steel_registry::blocks::{BlockRef, properties::IntProperty};
+use steel_utils::BlockStateId;
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext, InteractionResult,
+        BlockBehaviour, BlockPlaceContext,
         blocks::crops::{
             bonemealable::{Bonemealable, CropBonemealExt},
             crop_block::CropLike,
         },
     },
-    player::Player,
     world::World,
 };
 
@@ -86,16 +81,7 @@ impl BlockBehaviour for BeetrootBlock {
         }
     }
 
-    fn use_item_on(
-        &self,
-        item_stack: &ItemStack,
-        state: BlockStateId,
-        world: &World,
-        pos: BlockPos,
-        _player: &Player,
-        _hand: InteractionHand,
-        _hit_result: &BlockHitResult,
-    ) -> InteractionResult {
-        self.default_use_item_on(item_stack, state, world, pos)
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
     }
 }

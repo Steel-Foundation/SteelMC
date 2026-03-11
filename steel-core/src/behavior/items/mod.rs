@@ -4,6 +4,7 @@
 //! See `src/behavior/generated/items.rs` for the generated registration code.
 
 mod block_item;
+mod bonemeal;
 mod bucket;
 mod default;
 mod ender_eye;
@@ -12,6 +13,7 @@ mod sign_item;
 mod standing_and_wall_block_item;
 
 pub use block_item::BlockItemBehavior;
+pub use bonemeal::BonemealBehavior;
 pub use bucket::{EmptyBucketBehavior, FilledBucketBehavior};
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeBehavior;
