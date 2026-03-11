@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use steel_registry::REGISTRY;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_utils::BlockStateId;
-use steel_utils::density::{DimensionNoises, NoiseSettings};
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::{Random, RandomSplitter, xoroshiro::Xoroshiro};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult};
@@ -119,12 +119,15 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let height = N::Settings::HEIGHT;
 
         let mut noise_chunk = NoiseChunk::<N>::new(chunk_min_x, chunk_min_z);
-        let mut column_cache = N::ColumnCache::default();
-
         let noises = &*self.noises;
+
+        let mut column_cache = N::ColumnCache::default();
+        column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+
         let default_block_id = self.default_block_id;
         let ore_veinifier = &self.ore_veinifier;
         let mut ore_cache = N::ColumnCache::default();
+        ore_cache.init_grid(chunk_min_x, chunk_min_z, noises);
         let mut aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,

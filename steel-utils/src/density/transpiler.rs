@@ -37,6 +37,9 @@ pub struct TranspilerInput {
     pub router_entries: BTreeMap<String, DensityFunction>,
     /// Prefix for generated struct names (e.g., `"Overworld"` → `OverworldNoises`, `OverworldColumnCache`).
     pub prefix: String,
+    /// Cell width in blocks (XZ direction). Determines the `FlatCache` grid size:
+    /// `grid_side = (16 / cell_width) + 1`, total entries = `grid_side²`.
+    pub cell_width: i32,
 }
 
 /// Compile density function trees into a `TokenStream` of Rust code.
@@ -407,14 +410,27 @@ impl TranspileContext {
         }
     }
 
-    /// Generate the column cache struct and its `ensure` method.
-    fn gen_column_cache(&mut self, _input: &TranspilerInput) -> TokenStream {
+    /// Generate the column cache struct with pre-computed grid support.
+    ///
+    /// Matches vanilla's `NoiseChunk.FlatCache`: when `init_grid()` is called,
+    /// all flat-cached values are pre-computed for the chunk's quart grid.
+    /// `ensure()` then does O(1) grid lookups for in-bounds positions and
+    /// falls back to on-the-fly computation for out-of-bounds positions.
+    #[allow(clippy::too_many_lines)]
+    fn gen_column_cache(&mut self, input: &TranspilerInput) -> TokenStream {
+        // Grid dimensions: (16 / cell_width + 1)² entries, known at compile time.
+        let grid_side = 16 / input.cell_width + 1;
+        let grid_total = (grid_side * grid_side) as usize;
+        let grid_side_lit = Literal::i32_unsuffixed(grid_side);
+        let grid_total_lit = Literal::usize_unsuffixed(grid_total);
+
         let flat_names: Vec<&String> = self
             .topo_order
             .iter()
             .filter(|n| self.flat_cached.contains(*n))
             .collect();
 
+        // Active-value fields (one f64 per flat-cached function)
         let cache_fields: Vec<TokenStream> = flat_names
             .iter()
             .map(|name| {
@@ -423,8 +439,16 @@ impl TranspileContext {
             })
             .collect();
 
-        // Generate the ensure body: compute each flat-cached value in topo order.
-        // We reborrow &*self temporarily for function calls, then write to self.field.
+        // Grid storage fields (fixed-size array per flat-cached function)
+        let grid_fields: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = grid_field_ident(name);
+                quote! { #field: [f64; #grid_total_lit] }
+            })
+            .collect();
+
+        // Compute statements for ensure() fallback path (same as before)
         let ensure_stmts: Vec<TokenStream> = flat_names
             .iter()
             .map(|name| {
@@ -437,6 +461,26 @@ impl TranspileContext {
             })
             .collect();
 
+        // Grid load statements: copy from grid[idx] into active fields
+        let grid_load_stmts: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let active = named_fn_field_ident(name);
+                let grid = grid_field_ident(name);
+                quote! { self.#active = self.#grid[idx]; }
+            })
+            .collect();
+
+        // Grid store statements: copy active field into grid[idx]
+        let grid_store_stmts: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let active = named_fn_field_ident(name);
+                let grid = grid_field_ident(name);
+                quote! { self.#grid[idx] = self.#active; }
+            })
+            .collect();
+
         let default_fields: Vec<TokenStream> = flat_names
             .iter()
             .map(|name| {
@@ -445,14 +489,30 @@ impl TranspileContext {
             })
             .collect();
 
-        // Flat router entries: cached alongside named functions.
-        // Computed after all named functions since they may depend on them.
+        let grid_default_fields: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = grid_field_ident(name);
+                quote! { #field: [0.0; #grid_total_lit] }
+            })
+            .collect();
+
+        // Flat router entries
         let router_fields: Vec<TokenStream> = self
             .flat_routers
             .iter()
             .map(|name| {
                 let field = router_cache_field_ident(name);
                 quote! { pub #field: f64 }
+            })
+            .collect();
+
+        let router_grid_fields: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_grid_field_ident(name);
+                quote! { #field: [f64; #grid_total_lit] }
             })
             .collect();
 
@@ -469,6 +529,26 @@ impl TranspileContext {
             })
             .collect();
 
+        let router_grid_load_stmts: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let active = router_cache_field_ident(name);
+                let grid = router_grid_field_ident(name);
+                quote! { self.#active = self.#grid[idx]; }
+            })
+            .collect();
+
+        let router_grid_store_stmts: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let active = router_cache_field_ident(name);
+                let grid = router_grid_field_ident(name);
+                quote! { self.#grid[idx] = self.#active; }
+            })
+            .collect();
+
         let router_default_fields: Vec<TokenStream> = self
             .flat_routers
             .iter()
@@ -478,19 +558,26 @@ impl TranspileContext {
             })
             .collect();
 
+        let router_grid_default_fields: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_grid_field_ident(name);
+                quote! { #field: [0.0; #grid_total_lit] }
+            })
+            .collect();
+
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         quote! {
             /// Column-level cache for flat-cached (xz-only) density function results.
             ///
-            /// Call [`ensure`](Self::ensure) before reading values. Values are recomputed
-            /// only when the quart-quantized `(x, z)` changes.
-            ///
-            /// Vanilla's `FlatCache` quantizes coordinates to quart positions
-            /// (`(x >> 2) << 2`) before evaluating. The cache stores **raw**
-            /// coordinates in `x`/`z` (for non-flat router functions that read
-            /// `cache.x`/`cache.z`), while flat-cached values are computed at
-            /// the **quantized** position.
+            /// Supports two modes matching vanilla's `NoiseChunk.FlatCache`:
+            /// - **Grid mode** (`init_grid()` called): Pre-computes a 2D grid of all
+            ///   in-chunk quart positions. `ensure()` does O(1) grid lookups for
+            ///   in-bounds positions, falls back to on-the-fly for out-of-bounds.
+            /// - **No-grid mode** (default): Single-entry lazy cache that recomputes
+            ///   when quart-quantized coordinates change. Used by climate samplers.
             pub struct #cache {
                 /// Raw x block coordinate (for non-flat router functions).
                 pub x: i32,
@@ -501,19 +588,23 @@ impl TranspileContext {
                 /// Effective z used to evaluate flat-cached values.
                 qz: i32,
                 valid: bool,
-                /// Chunk quart bounds for FlatCache range check.
-                /// When set, positions outside this range skip quantization
-                /// (matching vanilla's `NoiseChunk.FlatCache.compute()` fallback).
-                first_quart_x: i32,
-                first_quart_z: i32,
-                quart_size_xz: i32,
-                has_chunk_bounds: bool,
+                // ── Grid backing store ──
+                grid_first_quart_x: i32,
+                grid_first_quart_z: i32,
+                has_grid: bool,
+                // Active value fields (read by compute functions)
                 #(#cache_fields,)*
-                #(#router_fields),*
+                #(#router_fields,)*
+                // Grid arrays (SoA layout, fixed-size per dimension)
+                #(#grid_fields,)*
+                #(#router_grid_fields),*
             }
 
             impl #cache {
-                /// Create a new, empty column cache.
+                /// Grid side length (quart positions per axis).
+                const GRID_SIDE: i32 = #grid_side_lit;
+
+                /// Create a new column cache without a pre-computed grid.
                 #[must_use]
                 pub fn new() -> Self {
                     Self {
@@ -522,66 +613,96 @@ impl TranspileContext {
                         qx: i32::MIN,
                         qz: i32::MIN,
                         valid: false,
-                        first_quart_x: 0,
-                        first_quart_z: 0,
-                        quart_size_xz: 0,
-                        has_chunk_bounds: false,
+                        grid_first_quart_x: 0,
+                        grid_first_quart_z: 0,
+                        has_grid: false,
                         #(#default_fields,)*
-                        #(#router_default_fields),*
+                        #(#router_default_fields,)*
+                        #(#grid_default_fields,)*
+                        #(#router_grid_default_fields),*
                     }
                 }
 
-                /// Set the chunk's quart bounds for FlatCache range checking.
+                /// Pre-compute flat-cached values for all quart positions in a chunk.
                 ///
-                /// Vanilla's `NoiseChunk.FlatCache` pre-computes values for quart
-                /// positions within the chunk. For positions outside this range,
-                /// it falls back to raw (non-quantized) evaluation. Call this to
-                /// enable the same behavior.
-                pub fn set_chunk_bounds(&mut self, chunk_block_x: i32, chunk_block_z: i32, cell_count_xz: i32, cell_width: i32) {
-                    self.first_quart_x = chunk_block_x >> 2;
-                    self.first_quart_z = chunk_block_z >> 2;
-                    self.quart_size_xz = (cell_count_xz * cell_width) >> 2;
-                    self.has_chunk_bounds = true;
-                    // Invalidate cache since bounds changed.
+                /// After this call, `ensure()` for in-bounds positions copies from
+                /// the grid (O(1)). Out-of-bounds positions fall back to on-the-fly
+                /// evaluation at raw (non-quantized) coordinates.
+                pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32,
+                                 noises: &#noises) {
+                    self.grid_first_quart_x = chunk_block_x >> 2;
+                    self.grid_first_quart_z = chunk_block_z >> 2;
+                    self.has_grid = true;
                     self.valid = false;
+
+                    // Pre-compute all grid positions in topological order.
+                    // For each position, write to active fields first (so
+                    // dependent compute functions can read them), then copy
+                    // into the grid arrays.
+                    for rel_z in 0..Self::GRID_SIDE {
+                        for rel_x in 0..Self::GRID_SIDE {
+                            let x = (self.grid_first_quart_x + rel_x) << 2;
+                            let z = (self.grid_first_quart_z + rel_z) << 2;
+                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+
+                            #(#ensure_stmts)*
+                            #(#grid_store_stmts)*
+                            #(#router_ensure_stmts)*
+                            #(#router_grid_store_stmts)*
+                        }
+                    }
                 }
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
                 ///
-                /// Flat-cached density functions are evaluated at quart-quantized
-                /// positions (`(x >> 2) << 2`), matching vanilla's `FlatCache`.
-                ///
-                /// When chunk bounds are set via [`set_chunk_bounds`], positions
-                /// outside the chunk's quart range are evaluated at the raw
-                /// (non-quantized) coordinates, matching vanilla's fallback in
-                /// `NoiseChunk.FlatCache.compute()`.
+                /// With a grid: in-bounds positions load from the pre-computed grid,
+                /// out-of-bounds positions compute at raw (non-quantized) coordinates.
+                /// Without a grid: always quantizes and lazy-computes (single-entry cache).
                 pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
-                    // Always update the raw coordinates so non-flat router
-                    // functions see the caller's actual position.
                     self.x = x;
                     self.z = z;
 
-                    // Quantize to quart positions, then check if in-chunk.
                     let quart_x = x >> 2;
                     let quart_z = z >> 2;
-                    let (eval_x, eval_z) = if self.has_chunk_bounds {
-                        let rel_x = quart_x - self.first_quart_x;
-                        let rel_z = quart_z - self.first_quart_z;
-                        if rel_x >= 0 && rel_z >= 0
-                            && rel_x < self.quart_size_xz + 1
-                            && rel_z < self.quart_size_xz + 1
-                        {
-                            // In-chunk: use quantized position.
-                            (quart_x << 2, quart_z << 2)
-                        } else {
-                            // Out-of-chunk: use raw position (no quantization).
-                            (x, z)
-                        }
-                    } else {
-                        // No bounds set: always quantize (main fill loop path).
-                        (quart_x << 2, quart_z << 2)
-                    };
 
+                    if self.has_grid {
+                        let rel_x = quart_x - self.grid_first_quart_x;
+                        let rel_z = quart_z - self.grid_first_quart_z;
+                        if rel_x >= 0 && rel_z >= 0
+                            && rel_x < Self::GRID_SIDE
+                            && rel_z < Self::GRID_SIDE
+                        {
+                            // In-bounds: load from grid
+                            let eval_x = quart_x << 2;
+                            let eval_z = quart_z << 2;
+                            if self.valid && self.qx == eval_x && self.qz == eval_z {
+                                return;
+                            }
+                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+                            #(#grid_load_stmts)*
+                            #(#router_grid_load_stmts)*
+                            self.qx = eval_x;
+                            self.qz = eval_z;
+                            self.valid = true;
+                            return;
+                        }
+                        // Out-of-bounds: raw coords, compute on-the-fly
+                        if self.valid && self.qx == x && self.qz == z {
+                            return;
+                        }
+                        self.qx = x;
+                        self.qz = z;
+                        let x = x;
+                        let z = z;
+                        #(#ensure_stmts)*
+                        #(#router_ensure_stmts)*
+                        self.valid = true;
+                        return;
+                    }
+
+                    // No grid: quantize and lazy-compute
+                    let eval_x = quart_x << 2;
+                    let eval_z = quart_z << 2;
                     if self.valid && self.qx == eval_x && self.qz == eval_z {
                         return;
                     }
@@ -1478,8 +1599,16 @@ fn named_fn_ident(name: &str) -> Ident {
     format_ident!("compute_{}", sanitize_name(name))
 }
 
+fn grid_field_ident(name: &str) -> Ident {
+    format_ident!("grid_df_{}", sanitize_name(name))
+}
+
 fn router_cache_field_ident(name: &str) -> Ident {
     format_ident!("router_{}", sanitize_name(name))
+}
+
+fn router_grid_field_ident(name: &str) -> Ident {
+    format_ident!("grid_router_{}", sanitize_name(name))
 }
 
 fn router_compute_fn_ident(name: &str) -> Ident {

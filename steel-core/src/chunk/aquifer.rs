@@ -247,9 +247,7 @@ impl<N: DimensionNoises> Aquifer<N> {
 
         // Compute skip_sampling_above_y from max preliminary surface level
         let mut cache = N::ColumnCache::default();
-        // Set chunk bounds so the column cache skips quart quantization for
-        // out-of-chunk positions, matching vanilla's FlatCache fallback.
-        cache.set_chunk_bounds(chunk_min_x, chunk_min_z, 16 / N::Settings::CELL_WIDTH, N::Settings::CELL_WIDTH);
+        cache.init_grid(chunk_min_x, chunk_min_z, noises);
         let max_surface = Self::max_preliminary_surface_level(
             noises,
             &mut cache,
@@ -557,6 +555,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_surface_level(
         &mut self,
         x: i32,

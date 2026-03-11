@@ -48,18 +48,14 @@ pub trait ColumnCache: Default + Send + Sync {
     /// If the cache already holds values for this column, this is a no-op.
     fn ensure(&mut self, x: i32, z: i32, noises: &Self::Noises);
 
-    /// Set the chunk's quart bounds for FlatCache range checking.
+    /// Pre-compute flat-cached values for all quart positions in a chunk.
     ///
-    /// Vanilla's `NoiseChunk.FlatCache` pre-computes values for quart positions
-    /// within the chunk. For positions outside this range, it evaluates at raw
-    /// (non-quantized) coordinates. Call this to enable the same behavior.
-    fn set_chunk_bounds(
-        &mut self,
-        chunk_block_x: i32,
-        chunk_block_z: i32,
-        cell_count_xz: i32,
-        cell_width: i32,
-    );
+    /// Matches vanilla's `NoiseChunk.FlatCache`: eagerly fills a 2D grid of
+    /// `(quart_size+1)²` entries (size baked in per dimension at compile time).
+    /// After this call, `ensure()` for in-bounds positions is an O(1) grid
+    /// lookup. Out-of-bounds positions fall back to on-the-fly evaluation at
+    /// raw (non-quantized) coordinates.
+    fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32, noises: &Self::Noises);
 }
 
 /// All noise generators and density functions for a dimension.
