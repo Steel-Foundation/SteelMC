@@ -576,6 +576,17 @@ impl BlockRegistry {
             self.get_outline_shape(state_id),
         )
     }
+
+    pub fn copy_matching_properties(&self, source: BlockStateId, target: BlockRef) -> BlockStateId {
+        let props = self.get_properties(source);
+        let matching: Vec<(&str, &str)> = props
+            .iter()
+            .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
+            .copied()
+            .collect();
+        self.state_id_from_properties(&target.key, &matching)
+            .unwrap_or_else(|| self.get_default_state_id(target))
+    }
 }
 
 /// Macro to generate offset calculation from property values in all positions.

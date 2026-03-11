@@ -41,6 +41,11 @@ pub mod block_behaviours;
 #[path = "generated/items.rs"]
 pub mod item_behaviours;
 
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/weathering.rs"]
+pub mod weathering;
+
 pub use block::{BlockBehaviorRegistry, BlockBehaviour, DefaultBlockBehaviour};
 use block_behaviours::register_block_behaviors;
 pub use context::{

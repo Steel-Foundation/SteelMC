@@ -25,7 +25,7 @@ fn to_item_field(name: &str) -> Ident {
 }
 
 /// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)
-fn to_block_const(name: &str) -> Ident {
+pub fn to_block_const(name: &str) -> Ident {
     Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
