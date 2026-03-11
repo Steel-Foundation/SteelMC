@@ -135,6 +135,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut filled_bucket_items: Vec<(Ident, Ident)> = Vec::new();
     let mut axe_items: Vec<Ident> = Vec::new();
     let mut honeycomb_items: Vec<Ident> = Vec::new();
+    let mut empty_bucket_items: Vec<Ident> = Vec::new();
 
     for item in items {
         let item_field = to_item_field(&item.name);
@@ -186,9 +187,10 @@ pub fn build(items: &[ItemClass]) -> String {
             "BucketItem" => {
                 let fluid = item.fluid.as_ref().expect("BucketItem missing `fluid`");
                 if fluid == "empty" {
-                    continue;
+                    empty_bucket_items.push(item_field);
+                } else {
+                    filled_bucket_items.push((item_field, to_block_const(fluid)));
                 }
-                filled_bucket_items.push((item_field, to_block_const(fluid)));
             }
             "AxeItem" => {
                 axe_items.push(item_field);
@@ -217,13 +219,16 @@ pub fn build(items: &[ItemClass]) -> String {
     let honeycomb_type = Ident::new("HoneycombBehavior", Span::call_site());
     let honeycomb_registrations =
         generate_simple_registrations(honeycomb_items.iter(), &honeycomb_type);
+    let empty_bucket_type = Ident::new("EmptyBucketBehavior", Span::call_site());
+    let empty_bucket_registrations =
+        generate_simple_registrations(empty_bucket_items.iter(), &empty_bucket_type);
 
     let output = quote! {
         //! Generated item behavior assignments.
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, AxeBehavior, HoneycombBehavior};
+        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, AxeBehavior, HoneycombBehavior, EmptyBucketBehavior};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations
@@ -235,6 +240,7 @@ pub fn build(items: &[ItemClass]) -> String {
             #filled_bucket_registrations
             #axe_registrations
             #honeycomb_registrations
+            #empty_bucket_registrations
         }
     };
 

@@ -79,7 +79,7 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        std::ptr::eq(self.item, &ITEMS.air) || self.count <= 0
+        self.item == &ITEMS.air || self.count <= 0
     }
 
     #[must_use]

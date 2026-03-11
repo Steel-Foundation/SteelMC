@@ -26,6 +26,7 @@ use crate::{
     menu_type::MenuTypeRegistry,
     painting_variant::PaintingVariantRegistry,
     pig_variant::PigVariantRegistry,
+    poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
@@ -62,6 +63,7 @@ pub mod loot_table;
 pub mod menu_type;
 pub mod painting_variant;
 pub mod pig_variant;
+pub mod poi;
 pub mod recipe;
 pub mod timeline;
 pub mod trim_material;
@@ -125,6 +127,7 @@ pub mod vanilla_wolf_variants;
 #[path = "generated/vanilla_wolf_sound_variants.rs"]
 pub mod vanilla_wolf_sound_variants;
 
+#[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_pig_variants.rs"]
 pub mod vanilla_pig_variants;
@@ -159,6 +162,7 @@ pub mod vanilla_painting_variants;
 #[path = "generated/vanilla_dimension_types.rs"]
 pub mod vanilla_dimension_types;
 
+#[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_types.rs"]
 pub mod vanilla_damage_types;
@@ -225,6 +229,11 @@ pub mod vanilla_fluids;
 
 #[allow(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_poi_types.rs"]
+pub mod vanilla_poi_types;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_fluid_tags.rs"]
 pub mod vanilla_fluid_tags;
 
@@ -280,7 +289,6 @@ pub mod noise_parameters;
 #[rustfmt::skip]
 #[path = "generated/vanilla_density_functions.rs"]
 pub mod density_functions;
-
 
 pub struct RegistryLock(OnceLock<Registry>);
 
@@ -340,6 +348,7 @@ pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline")
 pub const LOOT_TABLE_REGISTRY: Identifier = Identifier::vanilla_static("loot_table");
 pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("block_entity_type");
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
+pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 
 pub struct Registry {
     pub blocks: BlockRegistry,
@@ -373,6 +382,7 @@ pub struct Registry {
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
     pub fluids: FluidRegistry,
+    pub poi_types: PoiTypeRegistry,
 }
 
 impl Debug for Registry {
@@ -434,6 +444,8 @@ impl Registry {
         vanilla_fluids::register_fluids(&mut registry.fluids);
         vanilla_fluid_tags::register_fluid_tags(&mut registry.fluids);
 
+        vanilla_poi_types::register_poi_types(&mut registry.poi_types);
+
         registry
     }
 
@@ -469,6 +481,7 @@ impl Registry {
         self.block_entity_types.freeze();
         self.game_rules.freeze();
         self.fluids.freeze();
+        self.poi_types.freeze();
     }
 
     #[must_use]
@@ -505,6 +518,7 @@ impl Registry {
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             fluids: FluidRegistry::new(),
+            poi_types: PoiTypeRegistry::new(),
         }
     }
 }

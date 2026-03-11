@@ -82,14 +82,14 @@ use text_components::{
 };
 use uuid::Uuid;
 
-use crate::entity::{DEATH_DURATION, LivingEntityBase};
+use crate::config::STEEL_CONFIG;
+use crate::entity::{
+    DEATH_DURATION, Entity, EntityLevelCallback, LivingEntityBase, NullEntityCallback,
+    RemovalReason,
+};
 use crate::player::player_inventory::PlayerInventory;
 use crate::server::Server;
 use crate::{command::commands::gamemode::get_gamemode_translation, inventory::SyncPlayerInv};
-use crate::{
-    config::STEEL_CONFIG,
-    entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason},
-};
 use crate::{config::WorldGeneratorTypes, entity::damage::DamageSource};
 use steel_registry::vanilla_damage_types;
 
@@ -288,6 +288,34 @@ pub struct Player {
 }
 
 impl Player {
+    /// Returns true if the player is shifting (sneaking).
+    pub fn is_crouching(&self) -> bool {
+        self.entity_state.lock().crouching
+    }
+
+    /// Computes the start (eye position) and end positions for a raytrace.
+    pub fn get_ray_endpoints(&self) -> (Vector3<f64>, Vector3<f64>) {
+        let pos = self.position();
+        let start_pos = Vector3::new(pos.x, self.get_eye_y(), pos.z);
+        let (yaw, pitch) = self.rotation();
+        let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
+        // Vanilla: Attributes.BLOCK_INTERACTION_RANGE defaults to 4.5,
+        // creative mode adds +0.5 via CREATIVE_BLOCK_INTERACTION_RANGE_MODIFIER.
+        let block_interaction_range = if self.has_infinite_materials() {
+            5.0
+        } else {
+            4.5
+        };
+        let direction = Vector3::new(
+            -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
+            -pitch_rad.sin() * block_interaction_range,
+            pitch_rad.cos() * yaw_rad.cos() * block_interaction_range,
+        );
+
+        let end_pos = start_pos.add(&direction);
+        (start_pos, end_pos)
+    }
+
     /// Creates a new player.
     pub fn new(
         gameprofile: GameProfile,
@@ -434,6 +462,7 @@ impl Player {
         } else {
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &self.world);
+            self.check_inside_blocks();
             self.check_below_world();
 
             // TODO: Implement remaining player ticking logic here
@@ -1791,6 +1820,8 @@ impl Player {
     }
 
     /// Sends block update packets for a position and its neighbor.
+    /// Optionally also sends an update for an additional placement position
+    /// (useful for items like buckets that place blocks at different positions).
     fn send_block_updates(&self, pos: &BlockPos, direction: Direction) {
         let state = self.world.get_block_state(pos);
         self.send_packet(CBlockUpdate {
@@ -1971,7 +2002,24 @@ impl Player {
             packet.y_rot,
             packet.x_rot
         );
-        // TODO: Implement use item handler
+
+        // Ack block changes up to this sequence number.
+        // Vanilla: handleUseItem calls ackBlockChangesUpTo(packet.getSequence()) first.
+        // Without this, client-side prediction stays active and overrides server block updates
+        // (e.g. water regeneration after picking it up with a bucket is invisible to the actor).
+        self.ack_block_changes_up_to(packet.sequence);
+
+        // Call use_item
+        let result = game_mode::use_item(self, &self.world, packet.hand);
+
+        // Handle result
+        if let InteractionResult::Success = result {
+            // Trigger arm swing animation
+            self.swing(packet.hand, true);
+        }
+
+        // Broadcast inventory changes as item might have changed
+        self.broadcast_inventory_changes();
     }
 
     /// Handles the pick block action (middle click on a block).
@@ -2389,6 +2437,37 @@ impl Player {
         } else {
             // Inventory not in guard - this shouldn't happen but drop the item to be safe
             self.drop_item(item, false, false);
+        }
+    }
+
+    /// Checks all blocks overlapping the player's AABB and calls `entity_inside`
+    /// on each block's behavior (e.g. cactus damage, fire ignition).
+    fn check_inside_blocks(&self) {
+        use crate::behavior::BLOCK_BEHAVIORS;
+        use steel_registry::blocks::block_state_ext::BlockStateExt;
+
+        let aabb = self.bounding_box().deflate(1.0E-5);
+
+        let min_x = aabb.min_x.floor() as i32;
+        let min_y = aabb.min_y.floor() as i32;
+        let min_z = aabb.min_z.floor() as i32;
+        let max_x = aabb.max_x.floor() as i32;
+        let max_y = aabb.max_y.floor() as i32;
+        let max_z = aabb.max_z.floor() as i32;
+
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    let pos = BlockPos::new(x, y, z);
+                    let state = self.world.get_block_state(&pos);
+                    if state.is_air() {
+                        continue;
+                    }
+                    let block = state.get_block();
+                    let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+                    behavior.entity_inside(state, &self.world, pos, self as &dyn Entity);
+                }
+            }
         }
     }
 
@@ -2873,6 +2952,12 @@ impl Entity for Player {
             // Standing and all other poses use default player eye height
             _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
         }
+    }
+
+    fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+        // Delegates to Player's inherent hurt method which handles
+        // invulnerability, armor, death, and network packets.
+        Player::hurt(self, source, amount)
     }
 }
 

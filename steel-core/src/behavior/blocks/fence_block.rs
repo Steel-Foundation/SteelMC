@@ -9,9 +9,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_block_tags::{FENCE_GATES_TAG, FENCES_TAG};
-use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for fence blocks.
@@ -121,6 +119,18 @@ impl FenceBlock {
 }
 
 impl BlockBehaviour for FenceBlock {
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        log::debug!(
+            "FenceBlock::get_state_for_placement called for {:?} at {:?}",
+            self.block.key,
+            context.relative_pos
+        );
+        Some(
+            self.get_connection_state(context.world, &context.relative_pos)
+                .set_value(&Self::WATERLOGGED, context.is_water_source()),
+        )
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -151,22 +161,5 @@ impl BlockBehaviour for FenceBlock {
             // Vertical directions don't affect fence connections
             Direction::Up | Direction::Down => state,
         }
-    }
-
-    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
-        if state.get_value(&Self::WATERLOGGED) {
-            FluidState::source(&vanilla_fluids::WATER)
-        } else {
-            FluidState::EMPTY
-        }
-    }
-
-    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        log::debug!(
-            "FenceBlock::get_state_for_placement called for {:?} at {:?}",
-            self.block.key,
-            context.relative_pos
-        );
-        Some(self.get_connection_state(context.world, &context.relative_pos))
     }
 }

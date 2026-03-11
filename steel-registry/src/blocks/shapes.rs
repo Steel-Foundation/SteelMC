@@ -63,6 +63,14 @@ impl AABB {
         self.max_z - self.min_z
     }
 
+    /// Returns the average dimension size of this AABB.
+    ///
+    /// Vanilla equivalent: `AABB.getSize()`.
+    #[must_use]
+    pub fn get_size(&self) -> f32 {
+        (self.width() + self.height() + self.depth()) / 3.0
+    }
+
     /// Returns a new AABB deflated (shrunk inward) by the given amount on all sides.
     ///
     /// This is used for collision detection to avoid floating-point edge cases.
@@ -393,9 +401,43 @@ impl BlockShapes {
 
 use super::properties::Direction;
 
+/// Returns the overall bounding box of a voxel shape (union of all AABBs).
+///
+/// The shape must be non-empty; panics otherwise.
+#[must_use]
+pub fn bounding_box(shape: VoxelShape) -> AABB {
+    debug_assert!(!shape.is_empty(), "bounding_box called on empty shape");
+    let mut result = shape[0];
+    for aabb in &shape[1..] {
+        if aabb.min_x < result.min_x {
+            result.min_x = aabb.min_x;
+        }
+        if aabb.min_y < result.min_y {
+            result.min_y = aabb.min_y;
+        }
+        if aabb.min_z < result.min_z {
+            result.min_z = aabb.min_z;
+        }
+        if aabb.max_x > result.max_x {
+            result.max_x = aabb.max_x;
+        }
+        if aabb.max_y > result.max_y {
+            result.max_y = aabb.max_y;
+        }
+        if aabb.max_z > result.max_z {
+            result.max_z = aabb.max_z;
+        }
+    }
+    result
+}
+
 /// Checks if a shape is a full block (covers the entire 0-1 cube).
 ///
 /// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolid()`.
+///
+/// TODO: Handle multi-AABB shapes whose union covers the full block (e.g. stacked slabs).
+/// Vanilla uses exact boolean voxel arithmetic (`Shapes.joinIsNotEmpty`). No vanilla blocks
+/// currently have multi-AABB full-block shapes, so single-AABB fast path suffices for now.
 #[must_use]
 pub fn is_shape_full_block(shape: VoxelShape) -> bool {
     // A full block shape must have exactly one AABB that covers 0-1 on all axes

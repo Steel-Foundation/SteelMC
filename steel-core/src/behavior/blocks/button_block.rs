@@ -5,6 +5,8 @@
 //!
 //! Vanilla equivalent: `ButtonBlock` + `FaceAttachedHorizontalDirectionalBlock`.
 
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -61,14 +63,6 @@ impl ButtonBlock {
         }
     }
 
-    /// Checks if a button with the given state can survive at the given position.
-    fn can_survive(world: &World, pos: BlockPos, state: BlockStateId) -> bool {
-        let support_dir = Self::get_connected_direction(state).opposite();
-        let support_pos = support_dir.relative(&pos);
-        let support_state = world.get_block_state(&support_pos);
-        support_state.is_face_sturdy(support_dir.opposite())
-    }
-
     /// Updates neighbors at both the button position and the support block position.
     ///
     /// Vanilla equivalent: `ButtonBlock.updateNeighbours()`.
@@ -92,6 +86,14 @@ impl ButtonBlock {
 }
 
 impl BlockBehaviour for ButtonBlock {
+    /// Checks if a button with the given state can survive at the given position.
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        let support_dir = Self::get_connected_direction(state).opposite();
+        let support_pos = support_dir.relative(&pos);
+        let support_state = world.get_block_state(&support_pos);
+        support_state.is_face_sturdy(support_dir.opposite())
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         for direction in context.get_nearest_looking_directions() {
             let state = if direction.get_axis() == Axis::Y {
@@ -117,7 +119,7 @@ impl BlockBehaviour for ButtonBlock {
                     )
             };
 
-            if Self::can_survive(context.world, context.relative_pos, state) {
+            if self.can_survive(state, context.world, context.relative_pos) {
                 return Some(state);
             }
         }
@@ -134,7 +136,7 @@ impl BlockBehaviour for ButtonBlock {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         let support_dir = Self::get_connected_direction(state).opposite();
-        if direction == support_dir && !Self::can_survive(world, pos, state) {
+        if direction == support_dir && !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
         }
         state
@@ -156,7 +158,7 @@ impl BlockBehaviour for ButtonBlock {
         InteractionResult::Success
     }
 
-    fn tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let powered: bool = state.get_value(&BlockStateProperties::POWERED);
         if !powered {
             return;

@@ -4,7 +4,7 @@ use rayon::{
 };
 use rustc_hash::FxBuildHasher;
 use std::{
-    io, mem, ptr,
+    io, mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicUsize, Ordering},
@@ -21,7 +21,8 @@ use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::BlockStateBehaviorExt;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
@@ -332,6 +333,10 @@ impl ChunkMap {
             chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
             chunk_holder.update_highest_allowed_status(u8::MAX);
 
+            // Clean up POI data for this chunk column
+            let world = self.world_gen_context.world();
+            world.poi_storage.lock().remove_chunk(*pos);
+
             // Move to unloading_chunks for deferred unload
             if let Some((_, holder)) = self.chunks.remove_sync(pos) {
                 let _ = self.unloading_chunks.insert_sync(*pos, holder);
@@ -353,7 +358,7 @@ impl ChunkMap {
     #[instrument(level = "trace", skip(self, world), name = "chunk_map_tick")]
     pub fn tick_b(
         self: &Arc<Self>,
-        world: &World,
+        world: &Arc<World>,
         tick_count: u64,
         random_tick_speed: u32,
         runs_normally: bool,
@@ -488,7 +493,7 @@ impl ChunkMap {
 
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
     fn execute_scheduled_ticks(
-        world: &World,
+        world: &Arc<World>,
         mut ready_block_ticks: Vec<BlockTick>,
         mut ready_fluid_ticks: Vec<FluidTick>,
     ) {
@@ -504,7 +509,7 @@ impl ChunkMap {
             let block_behaviors = &*BLOCK_BEHAVIORS;
             for tick in ready_block_ticks.iter().take(MAX_TICKS) {
                 let state = world.get_block_state(&tick.pos);
-                if !ptr::eq(state.get_block(), tick.tick_type) {
+                if state.get_block() != tick.tick_type {
                     continue;
                 }
                 block_behaviors
@@ -520,8 +525,20 @@ impl ChunkMap {
                     .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
             });
 
-            // TODO: Execute fluid ticks when FluidBehaviour trait exists
-            let _ = ready_fluid_ticks.len();
+            let fluid_behaviors = &*FLUID_BEHAVIORS;
+            for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
+                let state = world.get_block_state(&tick.pos);
+                let fluid_state = state.get_fluid_state();
+
+                // Only execute if the fluid at this location still matches the scheduled tick
+                if fluid_state.fluid_id != tick.tick_type {
+                    continue;
+                }
+
+                fluid_behaviors
+                    .get_behavior(tick.tick_type)
+                    .tick(world, tick.pos);
+            }
         }
     }
 

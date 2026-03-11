@@ -23,6 +23,21 @@ fn to_const_ident(name: &str) -> Ident {
     Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
+/// Derives the `WeatherState` variant from a block name based on its prefix.
+/// TODO: Extract this?
+fn weather_state_from_name(name: &str) -> Ident {
+    let variant = if name.starts_with("oxidized_") {
+        "Oxidized"
+    } else if name.starts_with("weathered_") {
+        "Weathered"
+    } else if name.starts_with("exposed_") {
+        "Exposed"
+    } else {
+        "Unaffected"
+    };
+    Ident::new(variant, Span::call_site())
+}
+
 fn generate_registrations<'a>(
     blocks: impl Iterator<Item = &'a Ident>,
     behavior_type: &Ident,
@@ -59,7 +74,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut wall_torch_blocks = Vec::new();
     let mut redstone_torch_blocks = Vec::new();
     let mut redstone_wall_torch_blocks = Vec::new();
-    let mut weathering_blocks = Vec::new();
+    let mut weathering_full_blocks: Vec<(Ident, Ident)> = Vec::new();
+    let mut cactus_blocks = Vec::new();
+    let mut cactus_flower_blocks: Vec<Ident> = Vec::new();
 
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
@@ -105,19 +122,12 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "WallTorchBlock" => wall_torch_blocks.push(const_ident),
             "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
-            "WeatheringCopperFullBlock"
-            | "WeatheringCopperBarsBlock"
-            | "WeatheringCopperChainBlock"
-            | "WeatheringCopperStairBlock"
-            | "WeatheringCopperSlabBlock"
-            | "WeatheringCopperDoorBlock"
-            | "WeatheringCopperTrapDoorBlock"
-            | "WeatheringCopperGrateBlock"
-            | "WeatheringCopperBulbBlock"
-            | "WeatheringCopperChestBlock"
-            | "WeatheringCopperGolemStatueBlock" => {
-                weathering_blocks.push(const_ident);
+            "WeatheringCopperFullBlock" => {
+                let weather_state = weather_state_from_name(&block.name);
+                weathering_full_blocks.push((const_ident, weather_state));
             }
+            "CactusBlock" => cactus_blocks.push(const_ident),
+            "CactusFlowerBlock" => cactus_flower_blocks.push(const_ident),
             _ => {}
         }
     }
@@ -138,7 +148,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
     let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
-    let weathering_block_type = Ident::new("WeatheringBlock", Span::call_site());
+    let cactus_type = Ident::new("CactusBlock", Span::call_site());
+    let cactus_flower_type = Ident::new("CactusFlowerBlock", Span::call_site());
 
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let button_registrations = {
@@ -196,8 +207,25 @@ pub fn build(blocks: &[BlockClass]) -> String {
         generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
     let redstone_wall_torch_registrations =
         generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
-    let weathering_block_registrations =
-        generate_registrations(weathering_blocks.iter(), &weathering_block_type);
+    let weathering_full_block_registrations = {
+        let registrations = weathering_full_blocks
+            .iter()
+            .map(|(block_ident, state_ident)| {
+                quote! {
+                    registry.set_behavior(
+                        vanilla_blocks::#block_ident,
+                        Box::new(WeatheringCopperFullBlock::new(
+                            vanilla_blocks::#block_ident,
+                            WeatherState::#state_ident,
+                        )),
+                    );
+                }
+            });
+        quote! { #(#registrations)* }
+    };
+    let cactus_registrations = generate_registrations(cactus_blocks.iter(), &cactus_type);
+    let cactus_flower_registrations =
+        generate_registrations(cactus_flower_blocks.iter(), &cactus_flower_type);
 
     let output = quote! {
         //! Generated block behavior assignments.
@@ -208,7 +236,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             BarrelBlock, ButtonBlock, CandleBlock, CraftingTableBlock, CropBlock, EndPortalFrameBlock,
             FarmlandBlock, FenceBlock, LiquidBlock, RotatedPillarBlock, StandingSignBlock, WallSignBlock,
             CeilingHangingSignBlock, WallHangingSignBlock, TorchBlock, WallTorchBlock,
-            RedstoneTorchBlock, RedstoneWallTorchBlock, WeatheringBlock,
+            RedstoneTorchBlock, RedstoneWallTorchBlock, WeatherState, WeatheringCopperFullBlock, CactusBlock, CactusFlowerBlock,
         };
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
@@ -230,7 +258,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #wall_torch_registrations
             #redstone_torch_registrations
             #redstone_wall_torch_registrations
-            #weathering_block_registrations
+            #weathering_full_block_registrations
+            #cactus_registrations
+            #cactus_flower_registrations
         }
     };
 

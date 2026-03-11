@@ -155,7 +155,7 @@ pub async fn generate_spawn_chunks(
 /// Returns the elapsed generation time (excluding the final display delay).
 #[cfg(feature = "spawn_chunk_display")]
 async fn generate_with_display(
-    world: &World,
+    world: &Arc<World>,
     center_chunk: ChunkPos,
     logger: &Arc<CommandLogger>,
 ) -> Duration {
@@ -223,7 +223,7 @@ async fn generate_with_display(
 }
 
 /// Generates chunks with progress reporting for pregeneration.
-async fn generate_pregen(world: &World, center_chunk: ChunkPos, radius: i32) {
+async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32) {
     let total_chunks = ((radius * 2 + 1) * (radius * 2 + 1)) as usize;
     let mut tick_count: u64 = 1;
     let mut last_report = Instant::now();
@@ -267,7 +267,7 @@ async fn generate_pregen(world: &World, center_chunk: ChunkPos, radius: i32) {
 }
 
 /// Counts how many chunks in the area have reached Full status.
-fn count_full_chunks(world: &World, center_chunk: ChunkPos, radius: i32) -> usize {
+fn count_full_chunks(world: &Arc<World>, center_chunk: ChunkPos, radius: i32) -> usize {
     let mut completed = 0;
     for dz in -radius..=radius {
         for dx in -radius..=radius {
