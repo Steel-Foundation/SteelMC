@@ -200,6 +200,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
                                 // Trilinearly interpolate each channel independently
                                 let mut interpolated = [0.0f64; MAX_INTERP];
+                                let world_y =
+                                    (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
                                 #[allow(clippy::needless_range_loop)]
                                 for ch in 0..interp_count {
                                     let s0 = &self.channels[ch].slice0;
@@ -222,9 +224,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                     let d1 = lerp(factor_x, d01, d11);
                                     interpolated[ch] = lerp(factor_z, d0, d1);
                                 }
-
-                                let world_y =
-                                    (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
 
                                 // Apply outer operations per-block
                                 let density = noises.combine_interpolated(

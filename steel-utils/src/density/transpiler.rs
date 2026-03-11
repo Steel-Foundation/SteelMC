@@ -496,11 +496,18 @@ impl TranspileContext {
                 pub x: i32,
                 /// Raw z block coordinate (for non-flat router functions).
                 pub z: i32,
-                /// Quart-quantized x used to key the flat cache.
+                /// Effective x used to evaluate flat-cached values.
                 qx: i32,
-                /// Quart-quantized z used to key the flat cache.
+                /// Effective z used to evaluate flat-cached values.
                 qz: i32,
                 valid: bool,
+                /// Chunk quart bounds for FlatCache range check.
+                /// When set, positions outside this range skip quantization
+                /// (matching vanilla's `NoiseChunk.FlatCache.compute()` fallback).
+                first_quart_x: i32,
+                first_quart_z: i32,
+                quart_size_xz: i32,
+                has_chunk_bounds: bool,
                 #(#cache_fields,)*
                 #(#router_fields),*
             }
@@ -515,30 +522,73 @@ impl TranspileContext {
                         qx: i32::MIN,
                         qz: i32::MIN,
                         valid: false,
+                        first_quart_x: 0,
+                        first_quart_z: 0,
+                        quart_size_xz: 0,
+                        has_chunk_bounds: false,
                         #(#default_fields,)*
                         #(#router_default_fields),*
                     }
+                }
+
+                /// Set the chunk's quart bounds for FlatCache range checking.
+                ///
+                /// Vanilla's `NoiseChunk.FlatCache` pre-computes values for quart
+                /// positions within the chunk. For positions outside this range,
+                /// it falls back to raw (non-quantized) evaluation. Call this to
+                /// enable the same behavior.
+                pub fn set_chunk_bounds(&mut self, chunk_block_x: i32, chunk_block_z: i32, cell_count_xz: i32, cell_width: i32) {
+                    self.first_quart_x = chunk_block_x >> 2;
+                    self.first_quart_z = chunk_block_z >> 2;
+                    self.quart_size_xz = (cell_count_xz * cell_width) >> 2;
+                    self.has_chunk_bounds = true;
+                    // Invalidate cache since bounds changed.
+                    self.valid = false;
                 }
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
                 ///
                 /// Flat-cached density functions are evaluated at quart-quantized
                 /// positions (`(x >> 2) << 2`), matching vanilla's `FlatCache`.
-                /// The raw `(x, z)` is stored in `self.x`/`self.z` for non-flat
-                /// router functions that reference `cache.x`/`cache.z`.
+                ///
+                /// When chunk bounds are set via [`set_chunk_bounds`], positions
+                /// outside the chunk's quart range are evaluated at the raw
+                /// (non-quantized) coordinates, matching vanilla's fallback in
+                /// `NoiseChunk.FlatCache.compute()`.
                 pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
                     // Always update the raw coordinates so non-flat router
                     // functions see the caller's actual position.
                     self.x = x;
                     self.z = z;
-                    // Quantize to quart positions for flat-cached values.
-                    let x = (x >> 2) << 2;
-                    let z = (z >> 2) << 2;
-                    if self.valid && self.qx == x && self.qz == z {
+
+                    // Quantize to quart positions, then check if in-chunk.
+                    let quart_x = x >> 2;
+                    let quart_z = z >> 2;
+                    let (eval_x, eval_z) = if self.has_chunk_bounds {
+                        let rel_x = quart_x - self.first_quart_x;
+                        let rel_z = quart_z - self.first_quart_z;
+                        if rel_x >= 0 && rel_z >= 0
+                            && rel_x < self.quart_size_xz + 1
+                            && rel_z < self.quart_size_xz + 1
+                        {
+                            // In-chunk: use quantized position.
+                            (quart_x << 2, quart_z << 2)
+                        } else {
+                            // Out-of-chunk: use raw position (no quantization).
+                            (x, z)
+                        }
+                    } else {
+                        // No bounds set: always quantize (main fill loop path).
+                        (quart_x << 2, quart_z << 2)
+                    };
+
+                    if self.valid && self.qx == eval_x && self.qz == eval_z {
                         return;
                     }
-                    self.qx = x;
-                    self.qz = z;
+                    self.qx = eval_x;
+                    self.qz = eval_z;
+                    let x = eval_x;
+                    let z = eval_z;
                     #(#ensure_stmts)*
                     #(#router_ensure_stmts)*
                     self.valid = true;

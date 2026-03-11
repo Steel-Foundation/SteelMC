@@ -47,6 +47,19 @@ pub trait ColumnCache: Default + Send + Sync {
     ///
     /// If the cache already holds values for this column, this is a no-op.
     fn ensure(&mut self, x: i32, z: i32, noises: &Self::Noises);
+
+    /// Set the chunk's quart bounds for FlatCache range checking.
+    ///
+    /// Vanilla's `NoiseChunk.FlatCache` pre-computes values for quart positions
+    /// within the chunk. For positions outside this range, it evaluates at raw
+    /// (non-quantized) coordinates. Call this to enable the same behavior.
+    fn set_chunk_bounds(
+        &mut self,
+        chunk_block_x: i32,
+        chunk_block_z: i32,
+        cell_count_xz: i32,
+        cell_width: i32,
+    );
 }
 
 /// All noise generators and density functions for a dimension.

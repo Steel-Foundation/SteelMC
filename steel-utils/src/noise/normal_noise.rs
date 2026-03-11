@@ -226,4 +226,5 @@ mod tests {
         // Verify the constant matches vanilla
         assert!((INPUT_FACTOR - 1.0181268882175227).abs() < 1e-15);
     }
+
 }

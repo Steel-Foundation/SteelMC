@@ -741,6 +741,11 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             fn ensure(&mut self, x: i32, z: i32, noises: &Self::Noises) {
                 #cache_struct::ensure(self, x, z, noises)
             }
+
+            #[inline]
+            fn set_chunk_bounds(&mut self, chunk_block_x: i32, chunk_block_z: i32, cell_count_xz: i32, cell_width: i32) {
+                #cache_struct::set_chunk_bounds(self, chunk_block_x, chunk_block_z, cell_count_xz, cell_width)
+            }
         }
 
         impl steel_utils::density::DimensionNoises for #noises_struct {

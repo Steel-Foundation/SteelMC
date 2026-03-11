@@ -564,10 +564,10 @@ impl Server {
             WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
             WorldGeneratorTypes::Vanilla => {
                 let seed_u64 = seed as u64;
-                if ptr::eq(dimension, OVERWORLD) {
+                if dimension == OVERWORLD {
                     let source = BiomeSourceKind::overworld(seed_u64);
                     ChunkGeneratorType::Overworld(VanillaGenerator::new(source, seed_u64))
-                } else if ptr::eq(dimension, THE_NETHER) {
+                } else if dimension == THE_NETHER {
                     let source = BiomeSourceKind::nether(seed_u64);
                     ChunkGeneratorType::Nether(VanillaGenerator::new(source, seed_u64))
                 } else {
