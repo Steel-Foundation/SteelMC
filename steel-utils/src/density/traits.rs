@@ -39,7 +39,7 @@ pub trait NoiseSettings: Send + Sync {
 /// Column cache for a dimension's flat-cached density function results.
 ///
 /// Stores Y-independent values that only need to be computed once per (x, z) column.
-pub trait ColumnCache: Default + Send + Sync {
+pub trait ColumnCache: Clone + Default + Send + Sync {
     /// The associated noises type for this cache.
     type Noises: DimensionNoises<ColumnCache = Self>;
 

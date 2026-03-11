@@ -126,8 +126,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
         let default_block_id = self.default_block_id;
         let ore_veinifier = &self.ore_veinifier;
-        let mut ore_cache = N::ColumnCache::default();
-        ore_cache.init_grid(chunk_min_x, chunk_min_z, noises);
         let mut aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,
@@ -135,6 +133,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             height,
             &self.splitter,
             noises,
+            column_cache.clone(),
         );
 
         let structure_starts = chunk.structure_starts();
@@ -149,7 +148,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             noises,
             &mut column_cache,
             beard_opt,
-            |local_x, world_y, local_z, density, interpolated| {
+            |local_x, world_y, local_z, density, interpolated, cache| {
                 let relative_y = (world_y - min_y) as usize;
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
@@ -161,7 +160,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             .and_then(|ov| {
                                 ov.compute_interpolated(
                                     noises,
-                                    &mut ore_cache,
+                                    cache,
                                     interpolated,
                                     world_x,
                                     world_y,

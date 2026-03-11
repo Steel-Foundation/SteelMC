@@ -578,6 +578,7 @@ impl TranspileContext {
             ///   in-bounds positions, falls back to on-the-fly for out-of-bounds.
             /// - **No-grid mode** (default): Single-entry lazy cache that recomputes
             ///   when quart-quantized coordinates change. Used by climate samplers.
+            #[derive(Clone)]
             pub struct #cache {
                 /// Raw x block coordinate (for non-flat router functions).
                 pub x: i32,

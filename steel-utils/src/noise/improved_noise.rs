@@ -196,35 +196,34 @@ impl ImprovedNoise {
         let xy10 = self.p(x1 as i32 + y);
         let xy11 = self.p(x1 as i32 + y + 1);
 
-        // Get hashes for all 8 corners
-        let p000 = self.p(xy00 as i32 + z);
-        let p100 = self.p(xy10 as i32 + z);
-        let p010 = self.p(xy01 as i32 + z);
-        let p110 = self.p(xy11 as i32 + z);
-        let p001 = self.p(xy00 as i32 + z + 1);
-        let p101 = self.p(xy10 as i32 + z + 1);
-        let p011 = self.p(xy01 as i32 + z + 1);
-        let p111 = self.p(xy11 as i32 + z + 1);
+        // Get hashes and gradient vectors for all 8 corners
+        let h000 = self.p(xy00 as i32 + z);
+        let h100 = self.p(xy10 as i32 + z);
+        let h010 = self.p(xy01 as i32 + z);
+        let h110 = self.p(xy11 as i32 + z);
+        let h001 = self.p(xy00 as i32 + z + 1);
+        let h101 = self.p(xy10 as i32 + z + 1);
+        let h011 = self.p(xy01 as i32 + z + 1);
+        let h111 = self.p(xy11 as i32 + z + 1);
 
-        // Get gradient vectors for all 8 corners
-        let g000 = &GRADIENT[p000 & 15];
-        let g100 = &GRADIENT[p100 & 15];
-        let g010 = &GRADIENT[p010 & 15];
-        let g110 = &GRADIENT[p110 & 15];
-        let g001 = &GRADIENT[p001 & 15];
-        let g101 = &GRADIENT[p101 & 15];
-        let g011 = &GRADIENT[p011 & 15];
-        let g111 = &GRADIENT[p111 & 15];
+        let g000 = &GRADIENT[h000 & 15];
+        let g100 = &GRADIENT[h100 & 15];
+        let g010 = &GRADIENT[h010 & 15];
+        let g110 = &GRADIENT[h110 & 15];
+        let g001 = &GRADIENT[h001 & 15];
+        let g101 = &GRADIENT[h101 & 15];
+        let g011 = &GRADIENT[h011 & 15];
+        let g111 = &GRADIENT[h111 & 15];
 
         // Gradient dot products at each corner
-        let d000 = grad_dot_arr(g000, xr, yr, zr);
-        let d100 = grad_dot_arr(g100, xr - 1.0, yr, zr);
-        let d010 = grad_dot_arr(g010, xr, yr - 1.0, zr);
-        let d110 = grad_dot_arr(g110, xr - 1.0, yr - 1.0, zr);
-        let d001 = grad_dot_arr(g001, xr, yr, zr - 1.0);
-        let d101 = grad_dot_arr(g101, xr - 1.0, yr, zr - 1.0);
-        let d011 = grad_dot_arr(g011, xr, yr - 1.0, zr - 1.0);
-        let d111 = grad_dot_arr(g111, xr - 1.0, yr - 1.0, zr - 1.0);
+        let d000 = grad_dot(h000, xr, yr, zr);
+        let d100 = grad_dot(h100, xr - 1.0, yr, zr);
+        let d010 = grad_dot(h010, xr, yr - 1.0, zr);
+        let d110 = grad_dot(h110, xr - 1.0, yr - 1.0, zr);
+        let d001 = grad_dot(h001, xr, yr, zr - 1.0);
+        let d101 = grad_dot(h101, xr - 1.0, yr, zr - 1.0);
+        let d011 = grad_dot(h011, xr, yr - 1.0, zr - 1.0);
+        let d111 = grad_dot(h111, xr - 1.0, yr - 1.0, zr - 1.0);
 
         let x_alpha = smoothstep(xr);
         let y_alpha = smoothstep(yr);
@@ -232,43 +231,19 @@ impl ImprovedNoise {
 
         // Interpolate gradient components for direct derivative contribution
         let d1x = lerp3(
-            x_alpha,
-            y_alpha,
-            z_alpha,
-            f64::from(g000[0]),
-            f64::from(g100[0]),
-            f64::from(g010[0]),
-            f64::from(g110[0]),
-            f64::from(g001[0]),
-            f64::from(g101[0]),
-            f64::from(g011[0]),
-            f64::from(g111[0]),
+            x_alpha, y_alpha, z_alpha,
+            g000[0], g100[0], g010[0], g110[0],
+            g001[0], g101[0], g011[0], g111[0],
         );
         let d1y = lerp3(
-            x_alpha,
-            y_alpha,
-            z_alpha,
-            f64::from(g000[1]),
-            f64::from(g100[1]),
-            f64::from(g010[1]),
-            f64::from(g110[1]),
-            f64::from(g001[1]),
-            f64::from(g101[1]),
-            f64::from(g011[1]),
-            f64::from(g111[1]),
+            x_alpha, y_alpha, z_alpha,
+            g000[1], g100[1], g010[1], g110[1],
+            g001[1], g101[1], g011[1], g111[1],
         );
         let d1z = lerp3(
-            x_alpha,
-            y_alpha,
-            z_alpha,
-            f64::from(g000[2]),
-            f64::from(g100[2]),
-            f64::from(g010[2]),
-            f64::from(g110[2]),
-            f64::from(g001[2]),
-            f64::from(g101[2]),
-            f64::from(g011[2]),
-            f64::from(g111[2]),
+            x_alpha, y_alpha, z_alpha,
+            g000[2], g100[2], g010[2], g110[2],
+            g001[2], g101[2], g011[2], g111[2],
         );
 
         // Smoothstep correction terms via differences
@@ -316,13 +291,7 @@ impl ImprovedNoise {
 #[inline]
 fn grad_dot(hash: usize, x: f64, y: f64, z: f64) -> f64 {
     let g = &GRADIENT[hash & 15];
-    f64::from(g[0]) * x + f64::from(g[1]) * y + f64::from(g[2]) * z
-}
-
-/// Dot product given a pre-looked-up gradient array reference.
-#[inline]
-fn grad_dot_arr(g: &[i32; 3], x: f64, y: f64, z: f64) -> f64 {
-    f64::from(g[0]) * x + f64::from(g[1]) * y + f64::from(g[2]) * z
+    g[0] * x + g[1] * y + g[2] * z
 }
 
 #[cfg(test)]

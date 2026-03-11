@@ -212,6 +212,8 @@ impl<N: DimensionNoises> Aquifer<N> {
     /// `chunk_min_x/z` are the block coordinates of the chunk's NW corner.
     /// `min_block_y` and `y_block_size` define the vertical range.
     /// `splitter` is the seed's positional splitter.
+    /// `cache` should be a pre-initialized column cache for this chunk
+    /// (avoids a redundant `init_grid` call).
     #[must_use]
     pub fn new(
         chunk_min_x: i32,
@@ -220,6 +222,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         y_block_size: i32,
         splitter: &RandomSplitter,
         noises: &N,
+        mut cache: N::ColumnCache,
     ) -> Self {
         let sea_level = N::Settings::SEA_LEVEL;
 
@@ -246,8 +249,6 @@ impl<N: DimensionNoises> Aquifer<N> {
         let status_cache = vec![None; total];
 
         // Compute skip_sampling_above_y from max preliminary surface level
-        let mut cache = N::ColumnCache::default();
-        cache.init_grid(chunk_min_x, chunk_min_z, noises);
         let max_surface = Self::max_preliminary_surface_level(
             noises,
             &mut cache,
