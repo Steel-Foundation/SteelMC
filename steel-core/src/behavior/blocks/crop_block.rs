@@ -1,6 +1,6 @@
 //! Crop block implementation (wheat, carrots, potatoes, beetroot).
 
-use std::ptr;
+use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -62,7 +62,7 @@ impl CropBlock {
 
     /// Helper to check if a block matches this crop type using pointer equality.
     fn is_same_block(&self, other: BlockRef) -> bool {
-        ptr::eq(self.block, other)
+        self.block == other
     }
 
     /// Calculates the growth speed based on surrounding farmland.
@@ -82,7 +82,7 @@ impl CropBlock {
                 let block_state = world.get_block_state(&check_pos);
                 let mut block_speed = 0.0f32;
 
-                if ptr::eq(block_state.get_block(), vanilla_blocks::FARMLAND) {
+                if block_state.get_block() == vanilla_blocks::FARMLAND {
                     block_speed = 1.0;
                     // Check moisture level
                     let moisture = block_state.get_value(&BlockStateProperties::MOISTURE);
@@ -146,7 +146,7 @@ impl BlockBehaviour for CropBlock {
         !self.is_max_age(state)
     }
 
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // TODO: Check light level >= 9 when light engine is implemented
         // For now, assume sufficient light
 

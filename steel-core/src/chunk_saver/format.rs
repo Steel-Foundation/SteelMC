@@ -41,7 +41,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v4: Added scheduled tick persistence (`PersistentTick`).
 /// v5: Added heightmap persistence (`PersistentHeightmap`).
 /// v6: Added structure start and structure reference persistence.
-pub const FORMAT_VERSION: u16 = 6;
+/// v7: Added POI persistence (`PersistentPoi`).
+pub const FORMAT_VERSION: u16 = 7;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -314,6 +315,8 @@ pub struct PersistentChunk {
     pub structure_starts: Vec<PersistentStructureStart>,
     /// References to structures from nearby origin chunks.
     pub structure_references: Vec<PersistentStructureReference>,
+    /// POI occupancy data (ticket state for beds, workstations, etc.).
+    pub pois: Vec<PersistentPoi>,
 }
 
 /// A 16×16×16 section of a chunk.
@@ -467,6 +470,22 @@ pub struct PersistentStructureReference {
     pub structure: Identifier,
     /// Packed chunk positions of origin chunks.
     pub references: Vec<i64>,
+}
+
+/// A point of interest's occupancy state stored with a chunk.
+///
+/// Only the position and remaining free tickets are persisted — the POI type
+/// is derived from the block state on load via `scan_and_populate`.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentPoi {
+    /// Relative X position within chunk (0-15).
+    pub x: u8,
+    /// Absolute Y position (world height).
+    pub y: i16,
+    /// Relative Z position within chunk (0-15).
+    pub z: u8,
+    /// Number of tickets still available for claiming.
+    pub free_tickets: u32,
 }
 
 /// Position of a region in region coordinates.
