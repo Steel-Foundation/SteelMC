@@ -259,11 +259,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CropBlock, TorchflowerBlock},
+            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
-            CactusBlock,
-            CactusFlowerBlock,
             CandleBlock,
             CeilingHangingSignBlock,
             CraftingTableBlock,

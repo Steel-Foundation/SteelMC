@@ -5,8 +5,6 @@
 
 mod barrel_block;
 mod button_block;
-mod cactus_block;
-mod cactus_flower_block;
 mod candle_block;
 mod crafting_table_block;
 mod end_portal_frame_block;
@@ -22,8 +20,6 @@ pub mod crops;
 
 pub use barrel_block::BarrelBlock;
 pub use button_block::ButtonBlock;
-pub use cactus_block::CactusBlock;
-pub use cactus_flower_block::CactusFlowerBlock;
 pub use candle_block::CandleBlock;
 pub use crafting_table_block::CraftingTableBlock;
 pub use end_portal_frame_block::EndPortalFrameBlock;
