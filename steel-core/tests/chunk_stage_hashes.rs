@@ -300,6 +300,7 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
 }
 
 #[test]
+#[ignore = "This test takes too long to run for normal testing"]
 fn chunk_stage_hashes() {
     use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::chunk_generator::ChunkGenerator;
