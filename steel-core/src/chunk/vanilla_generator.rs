@@ -133,6 +133,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             height,
             &self.splitter,
             noises,
+            // Aquifer samples at arbitrary (x,z) outside the chunk, so it needs its own cache
             column_cache.clone(),
         );
 

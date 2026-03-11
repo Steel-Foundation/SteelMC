@@ -231,19 +231,16 @@ impl ImprovedNoise {
 
         // Interpolate gradient components for direct derivative contribution
         let d1x = lerp3(
-            x_alpha, y_alpha, z_alpha,
-            g000[0], g100[0], g010[0], g110[0],
-            g001[0], g101[0], g011[0], g111[0],
+            x_alpha, y_alpha, z_alpha, g000[0], g100[0], g010[0], g110[0], g001[0], g101[0],
+            g011[0], g111[0],
         );
         let d1y = lerp3(
-            x_alpha, y_alpha, z_alpha,
-            g000[1], g100[1], g010[1], g110[1],
-            g001[1], g101[1], g011[1], g111[1],
+            x_alpha, y_alpha, z_alpha, g000[1], g100[1], g010[1], g110[1], g001[1], g101[1],
+            g011[1], g111[1],
         );
         let d1z = lerp3(
-            x_alpha, y_alpha, z_alpha,
-            g000[2], g100[2], g010[2], g110[2],
-            g001[2], g101[2], g011[2], g111[2],
+            x_alpha, y_alpha, z_alpha, g000[2], g100[2], g010[2], g110[2], g001[2], g101[2],
+            g011[2], g111[2],
         );
 
         // Smoothstep correction terms via differences

@@ -238,7 +238,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                     interpolated[ch] = lerp(factor_z, d0, d1);
                                 }
 
-                                // Apply outer operations per-block
+                                // Apply outer operations per-block.
+                                // x/z are 0 because vanilla's outer operations (squeeze, add, mul,
+                                // quarter_negative, blend_alpha, blend_offset) are x/z-independent;
+                                // only Y matters for YClampedGradient.
                                 let density = noises.combine_interpolated(
                                     cache,
                                     &interpolated[..interp_count],

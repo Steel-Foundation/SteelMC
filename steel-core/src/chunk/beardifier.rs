@@ -7,6 +7,7 @@
 
 use std::sync::LazyLock;
 
+use steel_utils::math::map_clamped;
 use steel_utils::{BoundingBox, Identifier};
 
 use crate::world::structure::StructureStartMap;
@@ -105,15 +106,6 @@ fn fast_inv_sqrt(x: f64) -> f64 {
     x
 }
 
-/// Vanilla's `Mth.clampedMap(value, oldMin, oldMax, newMin, newMax)`.
-#[inline]
-fn clamped_map(value: f64, old_min: f64, old_max: f64, new_min: f64, new_max: f64) -> f64 {
-    let t = (value - old_min) / (old_max - old_min);
-    let t = t.clamp(0.0, 1.0);
-    // lerp
-    new_min + t * (new_max - new_min)
-}
-
 #[inline]
 fn is_in_kernel_range(index: i32) -> bool {
     (0..KERNEL_SIZE as i32).contains(&index)
@@ -145,7 +137,7 @@ fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f64 {
 /// Simple linear falloff: 1.0 at distance 0, 0.0 at distance 6.
 fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> f64 {
     let distance = (dx * dx + dy * dy + dz * dz).sqrt();
-    clamped_map(distance, 0.0, 6.0, 1.0, 0.0)
+    map_clamped(distance, 0.0, 6.0, 1.0, 0.0)
 }
 
 /// Computes terrain density contributions from nearby structure pieces and junctions.

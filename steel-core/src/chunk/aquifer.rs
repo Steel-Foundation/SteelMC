@@ -7,8 +7,6 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
-use std::marker::PhantomData;
-
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -112,7 +110,6 @@ pub struct Aquifer<N: DimensionNoises> {
     /// Block state IDs.
     water_id: BlockStateId,
     lava_id: BlockStateId,
-    _phantom: PhantomData<N>,
 }
 
 // Grid coordinate conversions
@@ -275,7 +272,6 @@ impl<N: DimensionNoises> Aquifer<N> {
             sea_level,
             water_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER),
             lava_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA),
-            _phantom: PhantomData,
         }
     }
 
