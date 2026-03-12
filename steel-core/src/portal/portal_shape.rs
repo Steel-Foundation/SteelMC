@@ -41,6 +41,7 @@ pub struct PortalFrameConfig {
 }
 
 /// Returns the standard nether portal frame configuration.
+#[must_use]
 pub fn nether_portal_config() -> PortalFrameConfig {
     PortalFrameConfig {
         min_width: 2,
