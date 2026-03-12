@@ -222,9 +222,9 @@ impl<N: DimensionNoises> Aquifer<N> {
         noises: &N,
         mut cache: N::ColumnCache,
     ) -> Self {
-        let sea_level = N::Settings::SEA_LEVEL;
-
         const AQUIFER_HASH: NameHash = NameHash::new("minecraft:aquifer");
+
+        let sea_level = N::Settings::SEA_LEVEL;
         let mut aquifer_rng = splitter.with_hash_of(&AQUIFER_HASH);
         let splitter = aquifer_rng.next_positional();
 

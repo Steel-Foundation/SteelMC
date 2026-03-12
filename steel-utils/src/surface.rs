@@ -1,6 +1,7 @@
 //! Surface rule context types used by both generated code and runtime.
 
 use crate::BlockStateId;
+use crate::random::name_hash::NameHash;
 
 /// Context data passed to transpiled surface rule functions.
 ///
@@ -54,7 +55,7 @@ pub trait SurfaceNoiseProvider {
     /// within the gradient between `true_at_and_below` and `false_at_and_above`.
     fn vertical_gradient(
         &self,
-        random_name: &crate::random::name_hash::NameHash,
+        random_name: &NameHash,
         block_x: i32,
         block_y: i32,
         block_z: i32,

@@ -76,12 +76,12 @@ impl SurfaceSystem {
         default_block: BlockStateId,
         sea_level: i32,
     ) -> Self {
+        // Clay band generation: vanilla does noiseRandom.fromHashOf("minecraft:clay_bands")
+        const CLAY_BANDS_HASH: NameHash = NameHash::new("minecraft:clay_bands");
+
         // Vanilla passes the base PositionalRandomFactory (RandomState.this.random)
         // directly to SurfaceSystem as noiseRandom — no extra fromHashOf wrapping.
         let noise_random = splitter.clone();
-
-        // Clay band generation: vanilla does noiseRandom.fromHashOf("minecraft:clay_bands")
-        const CLAY_BANDS_HASH: NameHash = NameHash::new("minecraft:clay_bands");
         let mut band_random = noise_random.with_hash_of(&CLAY_BANDS_HASH);
         let clay_bands = Self::generate_bands(&mut band_random);
 
