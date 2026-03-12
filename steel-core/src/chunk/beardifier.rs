@@ -7,13 +7,16 @@
 
 use std::sync::LazyLock;
 
-use steel_utils::BoundingBox;
+use steel_utils::math::map_clamped;
+use steel_utils::{BoundingBox, Identifier};
 
 use crate::world::structure::StructureStartMap;
 
 /// How a structure modifies the surrounding terrain.
 ///
 /// Corresponds to vanilla's `TerrainAdjustment` enum.
+// TODO: This should be data-driven from the structure registry, not hardcoded.
+// In vanilla, `TerrainAdjustment` is a codec field on `Structure.StructureSettings`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerrainAdjustment {
     /// No terrain adaptation.
@@ -30,33 +33,19 @@ pub enum TerrainAdjustment {
 
 impl TerrainAdjustment {
     /// Look up the terrain adjustment for a vanilla structure identifier.
+    // TODO: Replace with registry lookup once structures are data-driven.
     #[must_use]
-    pub fn for_structure(id: &str) -> Self {
-        match id {
-            // Beard thin structures
-            "minecraft:village"
-            | "minecraft:pillager_outpost"
-            | "minecraft:desert_pyramid"
-            | "minecraft:jungle_temple"
-            | "minecraft:swamp_hut"
-            | "minecraft:igloo"
-            | "minecraft:shipwreck"
-            | "minecraft:shipwreck_beached"
-            | "minecraft:ocean_ruin_cold"
-            | "minecraft:ocean_ruin_warm" => Self::BeardThin,
-
-            // Beard box
-            "minecraft:bastion_remnant" => Self::BeardBox,
-
-            // Bury
-            "minecraft:ancient_city" | "minecraft:trail_ruins" | "minecraft:ocean_monument" => {
-                Self::Bury
-            }
-
-            // Encapsulate
-            "minecraft:trial_chambers" => Self::Encapsulate,
-
-            // Everything else (mineshaft, stronghold, fortress, end_city, etc.)
+    pub fn for_structure(id: &Identifier) -> Self {
+        if id.namespace != Identifier::VANILLA_NAMESPACE {
+            return Self::None;
+        }
+        match id.path.as_ref() {
+            "village" | "pillager_outpost" | "desert_pyramid" | "jungle_temple" | "swamp_hut"
+            | "igloo" | "shipwreck" | "shipwreck_beached" | "ocean_ruin_cold"
+            | "ocean_ruin_warm" => Self::BeardThin,
+            "bastion_remnant" => Self::BeardBox,
+            "ancient_city" | "trail_ruins" | "ocean_monument" => Self::Bury,
+            "trial_chambers" => Self::Encapsulate,
             _ => Self::None,
         }
     }
@@ -117,15 +106,6 @@ fn fast_inv_sqrt(x: f64) -> f64 {
     x
 }
 
-/// Vanilla's `Mth.clampedMap(value, oldMin, oldMax, newMin, newMax)`.
-#[inline]
-fn clamped_map(value: f64, old_min: f64, old_max: f64, new_min: f64, new_max: f64) -> f64 {
-    let t = (value - old_min) / (old_max - old_min);
-    let t = t.clamp(0.0, 1.0);
-    // lerp
-    new_min + t * (new_max - new_min)
-}
-
 #[inline]
 fn is_in_kernel_range(index: i32) -> bool {
     (0..KERNEL_SIZE as i32).contains(&index)
@@ -157,7 +137,7 @@ fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f64 {
 /// Simple linear falloff: 1.0 at distance 0, 0.0 at distance 6.
 fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> f64 {
     let distance = (dx * dx + dy * dy + dz * dz).sqrt();
-    clamped_map(distance, 0.0, 6.0, 1.0, 0.0)
+    map_clamped(distance, 0.0, 6.0, 1.0, 0.0)
 }
 
 /// Computes terrain density contributions from nearby structure pieces and junctions.
@@ -167,6 +147,9 @@ fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> f64 {
 pub struct Beardifier {
     rigids: Vec<Rigid>,
     junctions: Vec<JigsawJunction>,
+    /// Union of all piece/junction bounding boxes inflated by 24.
+    /// Points outside this box get 0.0 without iterating pieces.
+    affected_box: Option<BoundingBox>,
 }
 
 impl Beardifier {
@@ -181,9 +164,10 @@ impl Beardifier {
     ) -> Self {
         let mut rigids = Vec::new();
         let junctions = Vec::new();
+        let mut encompassing: Option<BoundingBox> = None;
 
         for (structure_id, start) in structure_starts {
-            let terrain_adj = TerrainAdjustment::for_structure(&structure_id.to_string());
+            let terrain_adj = TerrainAdjustment::for_structure(structure_id);
             if terrain_adj == TerrainAdjustment::None {
                 continue;
             }
@@ -205,6 +189,11 @@ impl Beardifier {
                 // TODO: Parse ground_level_delta from jigsaw piece NBT when available.
                 let ground_level_delta = 0;
 
+                encompassing = Some(match encompassing {
+                    Some(enc) => BoundingBox::encapsulating(&enc, bb),
+                    None => *bb,
+                });
+
                 rigids.push(Rigid {
                     bounding_box: *bb,
                     terrain_adjustment: terrain_adj,
@@ -216,7 +205,14 @@ impl Beardifier {
             }
         }
 
-        Self { rigids, junctions }
+        let affected_box = encompassing
+            .map(|bb| bb.inflated_by(KERNEL_SIZE as i32, KERNEL_SIZE as i32, KERNEL_SIZE as i32));
+
+        Self {
+            rigids,
+            junctions,
+            affected_box,
+        }
     }
 
     /// Returns true if there are no pieces or junctions affecting terrain.
@@ -230,6 +226,13 @@ impl Beardifier {
     /// Returns 0.0 if no structures are nearby.
     #[must_use]
     pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
+        let Some(affected) = &self.affected_box else {
+            return 0.0;
+        };
+        if !affected.contains_xyz(block_x, block_y, block_z) {
+            return 0.0;
+        }
+
         let mut value = 0.0;
 
         for rigid in &self.rigids {

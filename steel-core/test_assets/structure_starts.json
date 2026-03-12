@@ -1,0 +1,29 @@
+{
+  "seed": 13579,
+  "scan_range": 100,
+  "max_generate": 2000,
+  "overworld": {
+    "candidate_chunks": 10931,
+    "generated_chunks": 2000,
+    "chunks_with_starts": 0,
+    "total_starts": 0,
+    "total_pieces": 0,
+    "chunks": []
+  },
+  "the_nether": {
+    "candidate_chunks": 10929,
+    "generated_chunks": 2000,
+    "chunks_with_starts": 0,
+    "total_starts": 0,
+    "total_pieces": 0,
+    "chunks": []
+  },
+  "the_end": {
+    "candidate_chunks": 10929,
+    "generated_chunks": 2000,
+    "chunks_with_starts": 0,
+    "total_starts": 0,
+    "total_pieces": 0,
+    "chunks": []
+  }
+}

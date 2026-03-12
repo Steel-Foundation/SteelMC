@@ -6,7 +6,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_registry::vanilla_biomes;
 use steel_utils::BlockStateId;
-use steel_utils::density::{DimensionNoises, NoiseSettings};
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
 use steel_utils::random::{Random, RandomSplitter, xoroshiro::Xoroshiro};
 use steel_utils::surface::SurfaceRuleContext;
@@ -155,12 +155,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let height = N::Settings::HEIGHT;
 
         let mut noise_chunk = NoiseChunk::<N>::new(chunk_min_x, chunk_min_z);
-        let mut column_cache = N::ColumnCache::default();
-
         let noises = &*self.noises;
+
+        let mut column_cache = N::ColumnCache::default();
+        column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+
         let default_block_id = self.default_block_id;
         let ore_veinifier = &self.ore_veinifier;
-        let mut ore_cache = N::ColumnCache::default();
         let mut aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,
@@ -168,6 +169,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             height,
             &self.splitter,
             noises,
+            // Aquifer samples at arbitrary (x,z) outside the chunk, so it needs its own cache
+            column_cache.clone(),
         );
 
         let structure_starts = chunk.structure_starts();
@@ -182,7 +185,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             noises,
             &mut column_cache,
             beard_opt,
-            |local_x, world_y, local_z, density, interpolated| {
+            |local_x, world_y, local_z, density, interpolated, cache| {
                 let relative_y = (world_y - min_y) as usize;
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
@@ -194,7 +197,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             .and_then(|ov| {
                                 ov.compute_interpolated(
                                     noises,
-                                    &mut ore_cache,
+                                    cache,
                                     interpolated,
                                     world_x,
                                     world_y,

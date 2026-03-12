@@ -7,8 +7,6 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
-use std::marker::PhantomData;
-
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -112,7 +110,6 @@ pub struct Aquifer<N: DimensionNoises> {
     /// Block state IDs.
     water_id: BlockStateId,
     lava_id: BlockStateId,
-    _phantom: PhantomData<N>,
 }
 
 // Grid coordinate conversions
@@ -212,6 +209,8 @@ impl<N: DimensionNoises> Aquifer<N> {
     /// `chunk_min_x/z` are the block coordinates of the chunk's NW corner.
     /// `min_block_y` and `y_block_size` define the vertical range.
     /// `splitter` is the seed's positional splitter.
+    /// `cache` should be a pre-initialized column cache for this chunk
+    /// (avoids a redundant `init_grid` call).
     #[must_use]
     pub fn new(
         chunk_min_x: i32,
@@ -220,6 +219,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         y_block_size: i32,
         splitter: &RandomSplitter,
         noises: &N,
+        mut cache: N::ColumnCache,
     ) -> Self {
         let sea_level = N::Settings::SEA_LEVEL;
 
@@ -246,7 +246,6 @@ impl<N: DimensionNoises> Aquifer<N> {
         let status_cache = vec![None; total];
 
         // Compute skip_sampling_above_y from max preliminary surface level
-        let mut cache = N::ColumnCache::default();
         let max_surface = Self::max_preliminary_surface_level(
             noises,
             &mut cache,
@@ -273,7 +272,6 @@ impl<N: DimensionNoises> Aquifer<N> {
             sea_level,
             water_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER),
             lava_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA),
-            _phantom: PhantomData,
         }
     }
 
@@ -529,7 +527,6 @@ impl<N: DimensionNoises> Aquifer<N> {
             let top_pokes_above = top_of_cell > adjusted;
             if top_pokes_above || is_center {
                 let gf_at_surface = global_fluid(adjusted, self.sea_level);
-                // Check if global fluid exists at the adjusted surface level
                 let has_fluid = adjusted < gf_at_surface.fluid_level;
                 if has_fluid {
                     if is_center {

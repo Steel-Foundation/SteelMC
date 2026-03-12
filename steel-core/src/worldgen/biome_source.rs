@@ -91,11 +91,11 @@ impl BiomeSourceKind {
 /// per-quart sampling path (1536 calls per overworld chunk).
 pub enum ChunkBiomeSampler<'a> {
     /// Overworld sampler (climate → R-tree lookup).
-    Overworld(OverworldChunkBiomeSampler<'a>),
+    Overworld(Box<OverworldChunkBiomeSampler<'a>>),
     /// Nether sampler (climate → R-tree lookup).
-    Nether(NetherChunkBiomeSampler<'a>),
+    Nether(Box<NetherChunkBiomeSampler<'a>>),
     /// End sampler (spatial distance thresholds).
-    End(EndChunkBiomeSampler<'a>),
+    End(Box<EndChunkBiomeSampler<'a>>),
 }
 
 impl ChunkBiomeSampler<'_> {
@@ -136,10 +136,10 @@ impl OverworldBiomeSource {
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::Overworld(OverworldChunkBiomeSampler {
+        ChunkBiomeSampler::Overworld(Box::new(OverworldChunkBiomeSampler {
             source: self,
             column_cache: OverworldColumnCache::new(),
-        })
+        }))
     }
 }
 
@@ -190,10 +190,10 @@ impl NetherBiomeSource {
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::Nether(NetherChunkBiomeSampler {
+        ChunkBiomeSampler::Nether(Box::new(NetherChunkBiomeSampler {
             source: self,
             column_cache: NetherColumnCache::new(),
-        })
+        }))
     }
 }
 
@@ -254,8 +254,8 @@ impl EndBiomeSource {
         }
     }
 
-    const fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::End(EndChunkBiomeSampler { source: self })
+    fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
+        ChunkBiomeSampler::End(Box::new(EndChunkBiomeSampler { source: self }))
     }
 }
 

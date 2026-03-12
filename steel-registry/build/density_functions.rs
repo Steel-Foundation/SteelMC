@@ -630,10 +630,12 @@ fn transpile_dimension(
     let settings = read_noise_settings(dimension);
     let router_entries = router_to_entries(&settings.noise_router);
 
+    let cell_width = settings.noise.size_horizontal * 4;
     let input = TranspilerInput {
         registry: registry.clone(),
         router_entries,
         prefix: prefix.to_string(),
+        cell_width,
     };
 
     transpile(&input)
@@ -765,6 +767,11 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             #[inline]
             fn ensure(&mut self, x: i32, z: i32, noises: &Self::Noises) {
                 #cache_struct::ensure(self, x, z, noises)
+            }
+
+            #[inline]
+            fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32, noises: &Self::Noises) {
+                #cache_struct::init_grid(self, chunk_block_x, chunk_block_z, noises)
             }
         }
 
