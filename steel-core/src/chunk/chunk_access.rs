@@ -268,20 +268,13 @@ impl ChunkAccess {
     pub fn prime_worldgen_heightmaps(&self) {
         match self {
             Self::Proto(proto) => {
-                let min_y = proto.min_y();
-                let height = proto.height();
-                let sections = &proto.sections;
-                let get_block = |lx: usize, y: i32, lz: usize| {
-                    let rel_y = (y - min_y) as usize;
-                    let section_idx = rel_y / 16;
-                    let local_y = rel_y % 16;
-                    sections.sections[section_idx]
-                        .read()
-                        .states
-                        .get(lx, local_y, lz)
-                };
                 let mut heightmaps = proto.heightmaps.write();
-                heightmaps.prime(HeightmapType::worldgen_types(), min_y, height, get_block);
+                heightmaps.prime_from_sections(
+                    HeightmapType::worldgen_types(),
+                    proto.min_y(),
+                    proto.height(),
+                    &proto.sections.sections,
+                );
             }
             Self::Full(_) => panic!("prime_worldgen_heightmaps not available on full chunks"),
             Self::Unloaded => unreachable!(),

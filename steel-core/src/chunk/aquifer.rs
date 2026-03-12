@@ -11,6 +11,7 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::{clamp, map, map_clamped};
+use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 
 // Grid spacing
@@ -223,7 +224,8 @@ impl<N: DimensionNoises> Aquifer<N> {
     ) -> Self {
         let sea_level = N::Settings::SEA_LEVEL;
 
-        let mut aquifer_rng = splitter.with_hash_of("minecraft:aquifer");
+        const AQUIFER_HASH: NameHash = NameHash::new("minecraft:aquifer");
+        let mut aquifer_rng = splitter.with_hash_of(&AQUIFER_HASH);
         let splitter = aquifer_rng.next_positional();
 
         let chunk_max_x = chunk_min_x + 15;

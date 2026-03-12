@@ -14,6 +14,7 @@ use steel_registry::density_functions::nether::{self, NetherColumnCache, NetherN
 use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::noise::{BlendedNoise, NormalNoise};
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSource};
 
 /// Climate sampler for the nether using compiled density functions.
@@ -47,7 +48,8 @@ impl NetherClimateSampler {
         // With params (0, [0.0]) — effectively zero, making nether shifts negligible.
         let mut rng = LegacyRandom::from_seed(seed);
         let splitter = rng.next_positional();
-        let mut offset_rng = splitter.with_hash_of("minecraft:offset");
+        const OFFSET_HASH: NameHash = NameHash::new("minecraft:offset");
+        let mut offset_rng = splitter.with_hash_of(&OFFSET_HASH);
         let n_offset = NormalNoise::create_from_random(&mut offset_rng, 0, &[0.0]);
 
         // BlendedNoise: nether uses legacy random with seed + 0 (useLegacyRandomSource=true)

@@ -54,7 +54,7 @@ pub trait SurfaceNoiseProvider {
     /// within the gradient between `true_at_and_below` and `false_at_and_above`.
     fn vertical_gradient(
         &self,
-        random_name: &str,
+        random_name: &crate::random::name_hash::NameHash,
         block_x: i32,
         block_y: i32,
         block_z: i32,

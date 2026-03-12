@@ -1,6 +1,6 @@
 use crate::random::{
     PositionalRandom, Random, RandomSource, RandomSplitter, gaussian::MarsagliaPolarGaussian,
-    get_seed,
+    get_seed, name_hash::NameHash,
 };
 
 /// Legacy Minecraft random number generator based on a Linear Congruential Generator (LCG).
@@ -121,12 +121,10 @@ impl PositionalRandom for LegacyRandomSplitter {
         RandomSource::Legacy(LegacyRandom::from_seed((seed as u64) ^ (self.seed as u64)))
     }
 
-    fn with_hash_of(&self, name: &str) -> RandomSource {
-        let mut hash = 0_i32;
-        for b in name.encode_utf16() {
-            hash = hash.wrapping_mul(31).wrapping_add(i32::from(b));
-        }
-        RandomSource::Legacy(LegacyRandom::from_seed((hash as u64) ^ (self.seed as u64)))
+    fn with_hash_of(&self, hash: &NameHash) -> RandomSource {
+        RandomSource::Legacy(LegacyRandom::from_seed(
+            (hash.java_hash as u64) ^ (self.seed as u64),
+        ))
     }
 
     fn with_seed(&self, seed: u64) -> RandomSource {
@@ -136,7 +134,7 @@ impl PositionalRandom for LegacyRandomSplitter {
 
 #[cfg(test)]
 mod test {
-    use crate::random::{PositionalRandom, Random, RandomSplitter};
+    use crate::random::{PositionalRandom, Random, RandomSplitter, name_hash::NameHash};
 
     use super::LegacyRandom;
 
@@ -351,7 +349,7 @@ mod test {
             };
             assert_eq!(splitter.seed, -4_962_768_465_676_381_896_i64);
 
-            let mut rand = splitter.with_hash_of("minecraft:offset");
+            let mut rand = splitter.with_hash_of(&NameHash::new("minecraft:offset"));
             assert_eq!(rand.next_i32(), 103_436_829);
         }
 
@@ -360,7 +358,7 @@ mod test {
         {
             let splitter = new_rand.next_positional();
 
-            let mut rand1 = splitter.with_hash_of("TEST STRING");
+            let mut rand1 = splitter.with_hash_of(&NameHash::new("TEST STRING"));
             assert_eq!(rand1.next_i32(), -1_170_413_697);
 
             let mut rand2 = splitter.with_seed(10);

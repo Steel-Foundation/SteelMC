@@ -114,6 +114,8 @@ pub enum VerticalAnchorJson {
 pub struct SurfaceRuleTranspiler {
     /// Collected noise IDs referenced by NoiseThreshold conditions.
     pub noise_ids: Vec<String>,
+    /// Unique biome names for generating cached `OnceLock<u16>` statics.
+    pub biome_names: Vec<String>,
     /// Min Y for this dimension.
     min_y: i32,
     /// Height for this dimension.
@@ -124,6 +126,7 @@ impl SurfaceRuleTranspiler {
     pub fn new(min_y: i32, height: i32) -> Self {
         Self {
             noise_ids: Vec::new(),
+            biome_names: Vec::new(),
             min_y,
             height,
         }
@@ -215,9 +218,16 @@ impl SurfaceRuleTranspiler {
                             .as_str()
                             .strip_prefix("minecraft:")
                             .unwrap_or(b.as_str());
-                        let ident =
-                            Ident::new(&biome_name.to_uppercase(), Span::call_site());
-                        quote! { ctx.biome_id == *crate::REGISTRY.biomes.get_id(&*crate::vanilla_biomes::#ident) as u16 }
+                        let upper = biome_name.to_uppercase();
+                        if !self.biome_names.contains(&upper) {
+                            self.biome_names.push(upper.clone());
+                        }
+                        let static_name = Ident::new(
+                            &format!("BIOME_ID_{upper}"),
+                            Span::call_site(),
+                        );
+                        let biome_ident = Ident::new(&upper, Span::call_site());
+                        quote! { ctx.biome_id == *#static_name.get_or_init(|| *crate::REGISTRY.biomes.get_id(&*crate::vanilla_biomes::#biome_ident) as u16) }
                     })
                     .collect();
                 if checks.len() == 1 {
@@ -254,7 +264,10 @@ impl SurfaceRuleTranspiler {
                 let false_y = self.resolve_anchor(false_at_and_above);
                 let name_lit = random_name.as_str();
                 quote! {
-                    ctx.system.vertical_gradient(#name_lit, ctx.block_x, ctx.block_y, ctx.block_z, #true_y, #false_y)
+                    {
+                        const NAME_HASH: steel_utils::random::name_hash::NameHash = steel_utils::random::name_hash::NameHash::new(#name_lit);
+                        ctx.system.vertical_gradient(&NAME_HASH, ctx.block_x, ctx.block_y, ctx.block_z, #true_y, #false_y)
+                    }
                 }
             }
             SurfaceConditionJson::YAbove {
@@ -335,12 +348,24 @@ pub fn generate_surface_rule_function(
     let body = transpiler.transpile_rule(rule);
     let noise_ids = transpiler.noise_ids.clone();
 
+    let biome_statics: Vec<_> = transpiler
+        .biome_names
+        .iter()
+        .map(|name| {
+            let static_name = Ident::new(&format!("BIOME_ID_{name}"), Span::call_site());
+            quote! {
+                static #static_name: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+            }
+        })
+        .collect();
+
     let func = quote! {
         /// Apply this dimension's surface rule at the current context position.
         #[allow(clippy::collapsible_if, clippy::needless_return, clippy::erasing_op, unused_comparisons)]
         fn apply_surface_rule_impl(
             ctx: &steel_utils::surface::SurfaceRuleContext<'_>,
         ) -> Option<steel_utils::BlockStateId> {
+            #(#biome_statics)*
             #body
             None
         }

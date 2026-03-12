@@ -12,6 +12,7 @@ use steel_utils::BlockStateId;
 use steel_utils::density::NoiseParameters;
 use steel_utils::noise::{NormalNoise, PerlinSimplexNoise};
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
 use steel_utils::surface::SurfaceNoiseProvider;
 
@@ -80,7 +81,8 @@ impl SurfaceSystem {
         let noise_random = splitter.clone();
 
         // Clay band generation: vanilla does noiseRandom.fromHashOf("minecraft:clay_bands")
-        let mut band_random = noise_random.with_hash_of("minecraft:clay_bands");
+        const CLAY_BANDS_HASH: NameHash = NameHash::new("minecraft:clay_bands");
+        let mut band_random = noise_random.with_hash_of(&CLAY_BANDS_HASH);
         let clay_bands = Self::generate_bands(&mut band_random);
 
         // Create condition noises referenced by NoiseThreshold rules
@@ -412,7 +414,7 @@ impl SurfaceNoiseProvider for SurfaceSystem {
 
     fn vertical_gradient(
         &self,
-        random_name: &str,
+        random_name: &NameHash,
         block_x: i32,
         block_y: i32,
         block_z: i32,

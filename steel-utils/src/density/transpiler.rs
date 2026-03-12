@@ -373,7 +373,9 @@ impl TranspileContext {
             quote! {
                 blended_noise: {
                     use steel_utils::random::PositionalRandom;
-                    let mut terrain_random = splitter.with_hash_of("minecraft:terrain");
+                    use steel_utils::random::name_hash::NameHash;
+                    const TERRAIN_HASH: NameHash = NameHash::new("minecraft:terrain");
+                    let mut terrain_random = splitter.with_hash_of(&TERRAIN_HASH);
                     steel_utils::noise::BlendedNoise::new(
                         &mut terrain_random,
                         #xz_scale, #y_scale, #xz_factor, #y_factor, #smear,

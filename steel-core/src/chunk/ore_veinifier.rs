@@ -8,6 +8,7 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises};
 use steel_utils::math::map_clamped;
+use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 
 /// Veininess magnitude must exceed this (after edge roundoff) to place any vein block.
@@ -51,7 +52,8 @@ impl OreVeinifier {
     /// (i.e. from `Xoroshiro::from_seed(seed).next_positional()`).
     #[must_use]
     pub fn new(splitter: &RandomSplitter) -> Self {
-        let mut ore_rng = splitter.with_hash_of("minecraft:ore");
+        const ORE_HASH: NameHash = NameHash::new("minecraft:ore");
+        let mut ore_rng = splitter.with_hash_of(&ORE_HASH);
         let ore_splitter = ore_rng.next_positional();
 
         let copper = VeinType {

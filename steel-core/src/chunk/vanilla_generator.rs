@@ -18,7 +18,6 @@ use crate::chunk::chunk_generator::ChunkGenerator;
 use crate::chunk::heightmap::HeightmapType;
 use crate::chunk::noise_chunk::NoiseChunk;
 use crate::chunk::ore_veinifier::OreVeinifier;
-use crate::chunk::section::Sections;
 use crate::chunk::surface_system::SurfaceSystem;
 use crate::worldgen::BiomeSourceKind;
 
@@ -254,6 +253,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
         let eroded_badlands_id = *REGISTRY.biomes.get_id(&vanilla_biomes::ERODED_BADLANDS) as u16;
 
+        // Pre-extract all biome palette values to avoid per-read section locking.
+        let biome_data = chunk.sections().read_all_biomes();
+        let section_count = chunk.sections().sections.len();
+
         for local_x in 0..16usize {
             for local_z in 0..16usize {
                 let block_x = chunk_min_x + local_x as i32;
@@ -262,18 +265,21 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 // Start scanning from one above the highest non-air block
                 let mut start_height = worldgen_surface.get_first_available(local_x, local_z);
 
-                // Eroded badlands extension: add terracotta pillars above surface
-                let surface_biome_id = get_fuzzed_biome(
-                    chunk.sections(),
+                // Column-local Voronoi cache for fuzzed biome lookups
+                let mut biome_col = FuzzedBiomeColumn::new(
+                    &biome_data,
+                    section_count,
                     self.biome_zoom_seed,
                     block_x,
-                    start_height,
                     block_z,
                     min_y,
                     chunk_quart_x,
                     chunk_quart_z,
                     neighbor_biomes,
                 );
+
+                // Eroded badlands extension: add terracotta pillars above surface
+                let surface_biome_id = biome_col.get(start_height);
                 if surface_biome_id == eroded_badlands_id {
                     start_height = self.surface_system.eroded_badlands_extension(
                         chunk,
@@ -285,6 +291,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         min_y,
                     );
                 }
+
+                // Snapshot the column once — avoids per-block section locking in the Y scan.
+                // Taken after eroded_badlands_extension which may write blocks above the surface.
+                let column = chunk.sections().read_column(local_x, local_z);
 
                 // Surface depth for this column
                 let surface_depth = self.surface_system.get_surface_depth(block_x, block_z);
@@ -326,12 +336,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let mut stone_depth_above: i32 = 0;
                 let mut water_height: i32 = i32::MIN;
                 let mut next_ceiling_stone_y: i32 = i32::MAX;
+                let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
 
                 for y in (min_y..=start_height).rev() {
                     let relative_y = (y - min_y) as usize;
-                    let state = chunk
-                        .get_relative_block(local_x, relative_y, local_z)
-                        .unwrap_or(BlockStateId(0));
+                    let state = column[relative_y];
 
                     if state.is_air() {
                         stone_depth_above = 0;
@@ -355,9 +364,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 break;
                             }
                             let la_rel = (la_y - min_y) as usize;
-                            let la_state = chunk
-                                .get_relative_block(local_x, la_rel, local_z)
-                                .unwrap_or(BlockStateId(0));
+                            let la_state = column[la_rel];
                             // isStone = !isAir && !isLiquid
                             if la_state.is_air() || la_state.get_block().config.liquid {
                                 next_ceiling_stone_y = la_y + 1;
@@ -372,17 +379,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     // Only apply surface rules to the default block
                     if state == default_block_id {
                         // Get biome via fuzzed BiomeManager lookup
-                        let biome_id = get_fuzzed_biome(
-                            chunk.sections(),
-                            self.biome_zoom_seed,
-                            block_x,
-                            y,
-                            block_z,
-                            min_y,
-                            chunk_quart_x,
-                            chunk_quart_z,
-                            neighbor_biomes,
-                        );
+                        let biome_id = biome_col.get(y);
 
                         let cold_enough_to_snow = self
                             .surface_system
@@ -407,9 +404,17 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         let rule_result = N::try_apply_surface_rule(&ctx);
 
                         if let Some(new_block) = rule_result {
-                            chunk.set_relative_block(local_x, relative_y, local_z, new_block);
+                            pending_writes.push((relative_y, new_block));
                         }
                     }
+                }
+
+                // Flush batched writes — holds each section's write guard once
+                if !pending_writes.is_empty() {
+                    chunk
+                        .sections()
+                        .write_column_blocks(local_x, local_z, &pending_writes);
+                    chunk.mark_dirty();
                 }
             }
         }
@@ -440,110 +445,184 @@ fn get_fiddle(rval: i64) -> f64 {
     (uniform - 0.5) * 0.9
 }
 
-/// Vanilla's `BiomeManager.getFiddledDistance()`.
-fn get_fiddled_distance(seed: i64, x: i32, y: i32, z: i32, dx: f64, dy: f64, dz: f64) -> f64 {
-    let mut rval = lcg_next(seed, i64::from(x));
-    rval = lcg_next(rval, i64::from(y));
-    rval = lcg_next(rval, i64::from(z));
-    rval = lcg_next(rval, i64::from(x));
-    rval = lcg_next(rval, i64::from(y));
-    rval = lcg_next(rval, i64::from(z));
-    let fx = get_fiddle(rval);
-    rval = lcg_next(rval, seed);
-    let fy = get_fiddle(rval);
-    rval = lcg_next(rval, seed);
-    let fz = get_fiddle(rval);
-    (dz + fz) * (dz + fz) + (dy + fy) * (dy + fy) + (dx + fx) * (dx + fx)
-}
-
-/// Fuzzed biome lookup matching vanilla's `BiomeManager.getBiome()`.
+/// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).
 ///
-/// Applies Voronoi-like fuzzing to biome boundaries so they're irregular
-/// rather than perfectly grid-aligned at 4-block intervals. When the fuzzed
-/// position falls outside the current chunk, reads from neighbor chunk
-/// palettes via `neighbor_biomes`.
-#[allow(clippy::similar_names, clippy::too_many_arguments)]
-fn get_fuzzed_biome(
-    sections: &Sections,
+/// Within a column, `parent_x`, `parent_z`, `fract_x`, `fract_z` are constant.
+/// The 8 Voronoi candidate fiddle values (computed via 8 serial LCG calls each)
+/// only change when `parent_y` changes (every 4 blocks). This cache precomputes
+/// the fiddle values and X/Z distance components per `parent_y` group, reducing
+/// per-block work to 8 additions + 8 multiplies + 8 comparisons.
+struct FuzzedBiomeColumn<'a> {
+    biome_data: &'a [u16],
+    section_count: usize,
     biome_zoom_seed: i64,
-    block_x: i32,
-    block_y: i32,
-    block_z: i32,
+    parent_x: i32,
+    parent_z: i32,
+    fract_x: f64,
+    fract_z: f64,
     min_y: i32,
     chunk_quart_x: i32,
     chunk_quart_z: i32,
-    neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16,
-) -> u16 {
-    let abs_x = block_x - 2;
-    let abs_y = block_y - 2;
-    let abs_z = block_z - 2;
-    let parent_x = abs_x >> 2;
-    let parent_y = abs_y >> 2;
-    let parent_z = abs_z >> 2;
-    let fract_x = f64::from(abs_x & 3) / 4.0;
-    let fract_y = f64::from(abs_y & 3) / 4.0;
-    let fract_z = f64::from(abs_z & 3) / 4.0;
+    neighbor_biomes: &'a dyn Fn(i32, i32, i32) -> u16,
+    cached_parent_y: i32,
+    /// Per-candidate cached values: (`fy`, `xz_partial_distance`).
+    candidates: [(f64, f64); 8],
+    /// Precomputed `lcg_next(seed, parent_x)` and `lcg_next(seed, parent_x + 1)`.
+    rval_after_cx: [i64; 2],
+}
 
-    let mut min_i = 0usize;
-    let mut min_dist = f64::INFINITY;
-
-    for i in 0..8usize {
-        let x_even = (i & 4) == 0;
-        let y_even = (i & 2) == 0;
-        let z_even = (i & 1) == 0;
-        let cx = if x_even { parent_x } else { parent_x + 1 };
-        let cy = if y_even { parent_y } else { parent_y + 1 };
-        let cz = if z_even { parent_z } else { parent_z + 1 };
-        let dx = if x_even { fract_x } else { fract_x - 1.0 };
-        let dy = if y_even { fract_y } else { fract_y - 1.0 };
-        let dz = if z_even { fract_z } else { fract_z - 1.0 };
-        let dist = get_fiddled_distance(biome_zoom_seed, cx, cy, cz, dx, dy, dz);
-
-        if min_dist > dist {
-            min_i = i;
-            min_dist = dist;
+impl<'a> FuzzedBiomeColumn<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        biome_data: &'a [u16],
+        section_count: usize,
+        biome_zoom_seed: i64,
+        block_x: i32,
+        block_z: i32,
+        min_y: i32,
+        chunk_quart_x: i32,
+        chunk_quart_z: i32,
+        neighbor_biomes: &'a dyn Fn(i32, i32, i32) -> u16,
+    ) -> Self {
+        let abs_x = block_x - 2;
+        let abs_z = block_z - 2;
+        let parent_x = abs_x >> 2;
+        let parent_z = abs_z >> 2;
+        Self {
+            biome_data,
+            section_count,
+            biome_zoom_seed,
+            parent_x,
+            parent_z,
+            fract_x: f64::from(abs_x & 3) / 4.0,
+            fract_z: f64::from(abs_z & 3) / 4.0,
+            min_y,
+            chunk_quart_x,
+            chunk_quart_z,
+            neighbor_biomes,
+            cached_parent_y: i32::MIN,
+            candidates: [(0.0, 0.0); 8],
+            rval_after_cx: [
+                lcg_next(biome_zoom_seed, i64::from(parent_x)),
+                lcg_next(biome_zoom_seed, i64::from(parent_x + 1)),
+            ],
         }
     }
 
-    let biome_qx = if (min_i & 4) == 0 {
-        parent_x
-    } else {
-        parent_x + 1
-    };
-    let biome_qy = if (min_i & 2) == 0 {
-        parent_y
-    } else {
-        parent_y + 1
-    };
-    let biome_qz = if (min_i & 1) == 0 {
-        parent_z
-    } else {
-        parent_z + 1
-    };
+    /// Compute candidates for a given `cy`, writing to either the low (bit1=0)
+    /// or high (bit1=1) slots. Shares the `lcg_next(seed, cx)` precomputation
+    /// and the `lcg_next(_, cy)` step within each cx group.
+    #[inline]
+    fn compute_cy_group(&mut self, cy: i32, high: bool) {
+        let base_idx = if high { 2 } else { 0 };
+        for cx_idx in 0..2usize {
+            let cx = self.parent_x + cx_idx as i32;
+            let dx = if cx_idx == 0 {
+                self.fract_x
+            } else {
+                self.fract_x - 1.0
+            };
+            let rval_cy = lcg_next(self.rval_after_cx[cx_idx], i64::from(cy));
+            for cz_off in 0..2usize {
+                let cz = self.parent_z + cz_off as i32;
+                let dz = if cz_off == 0 {
+                    self.fract_z
+                } else {
+                    self.fract_z - 1.0
+                };
 
-    // Check if the fuzzed position is within the current chunk's quart range
-    let in_chunk = biome_qx >= chunk_quart_x
-        && biome_qx < chunk_quart_x + 4
-        && biome_qz >= chunk_quart_z
-        && biome_qz < chunk_quart_z + 4;
+                let mut rval = lcg_next(rval_cy, i64::from(cz));
+                rval = lcg_next(rval, i64::from(cx));
+                rval = lcg_next(rval, i64::from(cy));
+                rval = lcg_next(rval, i64::from(cz));
+                let fx = get_fiddle(rval);
+                rval = lcg_next(rval, self.biome_zoom_seed);
+                let fy = get_fiddle(rval);
+                rval = lcg_next(rval, self.biome_zoom_seed);
+                let fz = get_fiddle(rval);
 
-    if in_chunk {
-        // Read from chunk palette
-        let min_qy = min_y >> 2;
-        let total_quarts_y = sections.sections.len() * 4;
-        let local_qx = (biome_qx - chunk_quart_x) as usize;
-        let local_qz = (biome_qz - chunk_quart_z) as usize;
-        let qy_in_chunk = (biome_qy - min_qy).clamp(0, total_quarts_y as i32 - 1) as usize;
-        let section_idx = qy_in_chunk / 4;
-        let local_qy = qy_in_chunk % 4;
+                let xz_partial = (dx + fx) * (dx + fx) + (dz + fz) * (dz + fz);
+                self.candidates[cx_idx * 4 + base_idx + cz_off] = (fy, xz_partial);
+            }
+        }
+    }
 
-        sections.sections[section_idx]
-            .read()
-            .biomes
-            .get(local_qx, local_qy, local_qz)
-    } else {
-        // Out of chunk bounds — read from neighbor chunk palettes,
-        // matching vanilla's WorldGenRegion.getNoiseBiome().
-        neighbor_biomes(biome_qx, biome_qy, biome_qz)
+    /// Recompute the 8 candidate fiddle values and X/Z distance for a new `parent_y`.
+    ///
+    /// When scanning downward (`parent_y` decreases by 1), the old low-cy candidates
+    /// (`cy=old_parent_y`) match the new high-cy slots (`cy=new_parent_y+1`), so only
+    /// the 4 new low-cy candidates need fresh LCG computation.
+    fn recompute_candidates(&mut self, parent_y: i32) {
+        if self.cached_parent_y != i32::MIN && parent_y == self.cached_parent_y - 1 {
+            // Reuse: old low-cy group → new high-cy group
+            self.candidates[2] = self.candidates[0];
+            self.candidates[3] = self.candidates[1];
+            self.candidates[6] = self.candidates[4];
+            self.candidates[7] = self.candidates[5];
+            self.compute_cy_group(parent_y, false);
+        } else {
+            self.compute_cy_group(parent_y, false);
+            self.compute_cy_group(parent_y + 1, true);
+        }
+        self.cached_parent_y = parent_y;
+    }
+
+    /// Fuzzed biome lookup for a given `block_y`.
+    #[allow(clippy::similar_names)]
+    #[inline]
+    fn get(&mut self, block_y: i32) -> u16 {
+        let abs_y = block_y - 2;
+        let parent_y = abs_y >> 2;
+        let fract_y = f64::from(abs_y & 3) / 4.0;
+
+        if parent_y != self.cached_parent_y {
+            self.recompute_candidates(parent_y);
+        }
+
+        let mut min_i = 0usize;
+        let mut min_dist = f64::INFINITY;
+        for i in 0..8usize {
+            let (fy, xz_partial) = self.candidates[i];
+            let dy = if (i & 2) == 0 { fract_y } else { fract_y - 1.0 };
+            let dist = xz_partial + (dy + fy) * (dy + fy);
+            if min_dist > dist {
+                min_i = i;
+                min_dist = dist;
+            }
+        }
+
+        let biome_qx = if (min_i & 4) == 0 {
+            self.parent_x
+        } else {
+            self.parent_x + 1
+        };
+        let biome_qy = if (min_i & 2) == 0 {
+            parent_y
+        } else {
+            parent_y + 1
+        };
+        let biome_qz = if (min_i & 1) == 0 {
+            self.parent_z
+        } else {
+            self.parent_z + 1
+        };
+
+        let in_chunk = biome_qx >= self.chunk_quart_x
+            && biome_qx < self.chunk_quart_x + 4
+            && biome_qz >= self.chunk_quart_z
+            && biome_qz < self.chunk_quart_z + 4;
+
+        if in_chunk {
+            let min_qy = self.min_y >> 2;
+            let total_quarts_y = self.section_count * 4;
+            let local_qx = (biome_qx - self.chunk_quart_x) as usize;
+            let local_qz = (biome_qz - self.chunk_quart_z) as usize;
+            let qy_in_chunk = (biome_qy - min_qy).clamp(0, total_quarts_y as i32 - 1) as usize;
+            let section_idx = qy_in_chunk / 4;
+            let local_qy = qy_in_chunk % 4;
+            self.biome_data[section_idx * 64 + local_qy * 16 + local_qz * 4 + local_qx]
+        } else {
+            (self.neighbor_biomes)(biome_qx, biome_qy, biome_qz)
+        }
     }
 }
