@@ -399,8 +399,9 @@ fn chunk_stage_hashes_inner() {
         };
 
         let mut mismatches = Vec::new();
+        let total = stage_chunks.len();
 
-        for (chunk_x, chunk_z, expected_hash) in &stage_chunks {
+        for (i, (chunk_x, chunk_z, expected_hash)) in stage_chunks.iter().enumerate() {
             let sections: Box<[ChunkSection]> = (0..section_count)
                 .map(|_| ChunkSection::new_empty())
                 .collect::<Vec<_>>()
@@ -439,6 +440,15 @@ fn chunk_stage_hashes_inner() {
 
             let actual_hash = compute_block_hash(chunk.sections());
 
+            if (i + 1) % 10 == 0 || i + 1 == total {
+                let matched = i + 1 - mismatches.len();
+                eprintln!(
+                    "[{stage}] {}/{total} chunks — {matched} matched, {} mismatched",
+                    i + 1,
+                    mismatches.len(),
+                );
+            }
+
             if actual_hash != *expected_hash {
                 let block_diffs = reference_blocks
                     .as_ref()
@@ -459,7 +469,6 @@ fn chunk_stage_hashes_inner() {
             continue;
         }
 
-        let total = stage_chunks.len();
         let failed = mismatches.len();
         let mut msg = format!("{stage}: {failed}/{total} chunks do not match vanilla");
         if !has_reference {
