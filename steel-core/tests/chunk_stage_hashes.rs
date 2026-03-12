@@ -440,12 +440,12 @@ fn chunk_stage_hashes_inner() {
 
             let actual_hash = compute_block_hash(chunk.sections());
 
-            if (i + 1) % 10 == 0 || i + 1 == total {
-                let matched = i + 1 - mismatches.len();
+            let ok = actual_hash == *expected_hash;
+            if (i + 1) % 10 == 0 || i + 1 == total || !ok {
+                let status = if ok { "OK" } else { "MISMATCH" };
                 eprintln!(
-                    "[{stage}] {}/{total} chunks — {matched} matched, {} mismatched",
+                    "[{stage}] ({chunk_x:3},{chunk_z:3}) {status} expected={expected_hash} actual={actual_hash}  [{}/{total}]",
                     i + 1,
-                    mismatches.len(),
                 );
             }
 
