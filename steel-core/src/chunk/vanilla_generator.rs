@@ -258,6 +258,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let section_count = chunk.sections().sections.len();
 
         let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
+        let mut column_buf: Vec<BlockStateId> = Vec::new();
 
         for local_x in 0..16usize {
             for local_z in 0..16usize {
@@ -296,7 +297,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // Snapshot the column once — avoids per-block section locking in the Y scan.
                 // Taken after eroded_badlands_extension which may write blocks above the surface.
-                let column = chunk.sections().read_column(local_x, local_z);
+                chunk
+                    .sections()
+                    .read_column_into(local_x, local_z, &mut column_buf);
 
                 // Surface depth for this column
                 let surface_depth = self.surface_system.get_surface_depth(block_x, block_z);
@@ -318,7 +321,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 );
                 let min_surface_level = interp.floor() as i32 + surface_depth - 8;
 
-                // Steep condition: check if any neighboring column differs by >= 4
+                // Steep condition: vanilla only checks south >= north + 4 and
+                // west >= east + 4 (asymmetric, not absolute difference).
                 let steep = {
                     let z_north = local_z.saturating_sub(1);
                     let z_south = (local_z + 1).min(15);
@@ -342,7 +346,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 for y in (min_y..=start_height).rev() {
                     let relative_y = (y - min_y) as usize;
-                    let state = column[relative_y];
+                    let state = column_buf[relative_y];
 
                     if state.is_air() {
                         stone_depth_above = 0;
@@ -366,7 +370,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 break;
                             }
                             let la_rel = (la_y - min_y) as usize;
-                            let la_state = column[la_rel];
+                            let la_state = column_buf[la_rel];
                             // isStone = !isAir && !isLiquid
                             if la_state.is_air() || la_state.get_block().config.liquid {
                                 next_ceiling_stone_y = la_y + 1;

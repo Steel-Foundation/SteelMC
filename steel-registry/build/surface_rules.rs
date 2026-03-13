@@ -28,11 +28,14 @@ pub enum SurfaceRuleJson {
 }
 
 /// Block state reference in a surface rule.
+///
+/// Currently only uses the block name (all vanilla surface rule blocks use
+/// default state). If modded surface rules need non-default block states,
+/// add a `Properties` field and wire it through the transpiler.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ResultStateJson {
     #[serde(rename = "Name")]
     pub name: String,
-    // Properties are ignored — all surface rule blocks use default state.
 }
 
 /// Surface rule condition.

@@ -91,25 +91,25 @@ impl Sections {
         })
     }
 
-    /// Reads an entire column at `(x, z)` across all sections into a contiguous slice.
+    /// Reads an entire column at `(x, z)` across all sections into a caller-owned buffer.
     ///
     /// Holds each section's read lock once for 16 Y reads instead of acquiring
     /// a lock per block. Indexed by `relative_y` (0 = chunk min-y).
-    #[must_use]
-    pub fn read_column(&self, x: usize, z: usize) -> Box<[BlockStateId]> {
+    /// The buffer is resized if needed and reused across calls to avoid allocation.
+    pub fn read_column_into(&self, x: usize, z: usize, buf: &mut Vec<BlockStateId>) {
         debug_assert!(x < BlockPalette::SIZE);
         debug_assert!(z < BlockPalette::SIZE);
 
         let total = self.sections.len() * 16;
-        let mut column = vec![BlockStateId(0); total];
+        buf.clear();
+        buf.resize(total, BlockStateId(0));
         for (i, holder) in self.sections.iter().enumerate() {
             let guard = holder.read();
             let base = i * 16;
             for ly in 0..16 {
-                column[base + ly] = guard.states.get(x, ly, z);
+                buf[base + ly] = guard.states.get(x, ly, z);
             }
         }
-        column.into_boxed_slice()
     }
 
     /// Reads all biome palette values into a flat array.
