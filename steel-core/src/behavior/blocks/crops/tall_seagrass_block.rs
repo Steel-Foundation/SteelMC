@@ -110,4 +110,8 @@ impl Vegetation for TallSeagrassBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
         state.is_face_sturdy(Direction::Up) && state.get_block() != vanilla_blocks::MAGMA_BLOCK
     }
+
+    fn can_survive_dispatch(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+        self.double_plant_can_survive(state, world, pos)
+    }
 }

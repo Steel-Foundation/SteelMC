@@ -34,13 +34,15 @@ pub trait Vegetation {
         world: &World,
         pos: BlockPos,
     ) -> BlockStateId {
-        let state_below = world.get_block_state(&pos.below());
-        if self.vegetation_can_survive(state_below, world, pos.below()) {
+        if self.can_survive_dispatch(state, world, pos) {
             state
         } else {
             vanilla_blocks::AIR.default_state()
         }
     }
+
+    /// Implemented by the leaf node on which `can_survive` to call
+    fn can_survive_dispatch(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool;
 }
 
 pub trait DoublePlant: Vegetation {
