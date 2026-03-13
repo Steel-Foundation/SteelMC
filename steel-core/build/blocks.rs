@@ -92,6 +92,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut fence_blocks = Vec::new();
     let mut flower_blocks = Vec::new();
     let mut liquid_blocks = Vec::new();
+    let mut nether_wart_blocks = Vec::new();
     let mut redstone_torch_blocks = Vec::new();
     let mut redstone_wall_torch_blocks = Vec::new();
     let mut rotated_pillar_blocks = Vec::new();
@@ -162,6 +163,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
                     to_const_ident(block.fluid.as_ref().expect("LiquidBlock must have a fluid"));
                 liquid_blocks.push((const_ident, fluid_ident));
             }
+            "NetherWartBlock" => nether_wart_blocks.push(const_ident),
             "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
             "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
@@ -203,6 +205,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let farmland_type = Ident::new("FarmlandBlock", Span::call_site());
     let fence_type = Ident::new("FenceBlock", Span::call_site());
     let flower_type = Ident::new("FlowerBlock", Span::call_site());
+    let nether_wart_type = Ident::new("NetherWartBlock", Span::call_site());
     let pillar_type = Ident::new("RotatedPillarBlock", Span::call_site());
     let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
@@ -269,6 +272,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
         });
         quote! { #(#registrations)* }
     };
+    let nether_wart_registrations =
+        generate_registrations(nether_wart_blocks.iter(), &nether_wart_type);
     let pillar_registrations = generate_registrations(rotated_pillar_blocks.iter(), &pillar_type);
     let redstone_torch_registrations =
         generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
@@ -311,7 +316,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, FlowerBlock, SeagrassBlock, TallSeagrassBlock, TorchflowerBlock},
+            crops::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, FlowerBlock, NetherWartBlock, SeagrassBlock, TallSeagrassBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
             CandleBlock,
@@ -352,6 +357,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #fence_registrations
             #flower_registrations
             #liquid_registrations
+            #nether_wart_registrations
             #pillar_registrations
             #redstone_torch_registrations
             #redstone_wall_torch_registrations
