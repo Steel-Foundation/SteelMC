@@ -1,15 +1,16 @@
 #![allow(missing_docs, clippy::similar_names)]
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::sync::Once;
 use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::chunk_generator::ChunkGenerator;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::chunk::world_gen_context::OverworldGenerator;
+use steel_core::chunk::world_gen_context::{EndGenerator, NetherGenerator, OverworldGenerator};
 use steel_core::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
-use steel_registry::{REGISTRY, Registry};
+use steel_registry::dimension_type::DimensionType;
+use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::ChunkPos;
 
 static INIT: Once = Once::new();
@@ -22,26 +23,14 @@ fn ensure_registry() {
     });
 }
 
-fn make_proto_chunk(chunk_x: i32, chunk_z: i32) -> ChunkAccess {
-    let section_count = 24; // overworld: 384 / 16
+fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAccess {
+    let section_count = (dim.height / 16) as usize;
     let sections: Box<[ChunkSection]> = (0..section_count)
         .map(|_| ChunkSection::new_empty())
         .collect();
     let sections = Sections::from_owned(sections);
     let pos = ChunkPos::new(chunk_x, chunk_z);
-    ChunkAccess::Proto(ProtoChunk::new(sections, pos, -64, 384))
-}
-
-/// Pre-populate a chunk through biomes + noise so it's ready for surface.
-fn prepare_chunk_for_surface(
-    generator: &OverworldGenerator,
-    chunk_x: i32,
-    chunk_z: i32,
-) -> ChunkAccess {
-    let chunk = make_proto_chunk(chunk_x, chunk_z);
-    generator.create_biomes(&chunk);
-    generator.fill_from_noise(&chunk);
-    chunk
+    ChunkAccess::Proto(ProtoChunk::new(sections, pos, dim.min_y, dim.height))
 }
 
 /// Build a `neighbor_biomes` closure that reads from the chunk's own sections.
@@ -95,133 +84,99 @@ fn sample_chunk_biomes(
 
 // ── Biome benchmarks ────────────────────────────────────────────────────────
 
-fn bench_overworld_biome_single_chunk(c: &mut Criterion) {
+fn bench_overworld_biome(c: &mut Criterion) {
+    let dim = vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-
-    c.bench_function("overworld_biome_single_chunk", |b| {
+    c.bench_function("overworld_biome", |b| {
         b.iter(|| {
             let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), -4, 24);
+            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), dim.min_y >> 4, dim.height / 16);
         });
     });
 }
 
-fn bench_overworld_biome_grid(c: &mut Criterion) {
-    let source = BiomeSourceKind::overworld(0);
-
-    let mut group = c.benchmark_group("overworld_biome_grid");
-    for radius in [3, 5] {
-        let side = radius * 2 + 1;
-        let chunk_count = side * side;
-        group.throughput(criterion::Throughput::Elements(chunk_count as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{side}x{side}")),
-            &radius,
-            |b, &r| {
-                b.iter(|| {
-                    for cx in -r..=r {
-                        for cz in -r..=r {
-                            let mut sampler = source.chunk_sampler();
-                            sample_chunk_biomes(&mut sampler, cx, cz, -4, 24);
-                        }
-                    }
-                });
-            },
-        );
-    }
-    group.finish();
-}
-
-fn bench_nether_biome_single_chunk(c: &mut Criterion) {
+fn bench_nether_biome(c: &mut Criterion) {
+    let dim = vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
-
-    c.bench_function("nether_biome_single_chunk", |b| {
+    c.bench_function("nether_biome", |b| {
         b.iter(|| {
             let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), 0, 16);
+            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), dim.min_y >> 4, dim.height / 16);
         });
     });
 }
 
-fn bench_end_biome_single_chunk(c: &mut Criterion) {
+fn bench_end_biome(c: &mut Criterion) {
+    let dim = vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
-
-    c.bench_function("end_biome_single_chunk", |b| {
+    c.bench_function("end_biome", |b| {
         b.iter(|| {
             let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), 0, 16);
-        });
-    });
-}
-
-fn bench_end_biome_outer_islands(c: &mut Criterion) {
-    let source = BiomeSourceKind::end(0);
-
-    c.bench_function("end_biome_outer_islands", |b| {
-        b.iter(|| {
-            let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(100), black_box(100), 0, 16);
-        });
-    });
-}
-
-fn bench_overworld_source_creation(c: &mut Criterion) {
-    c.bench_function("overworld_source_creation", |b| {
-        b.iter(|| {
-            black_box(BiomeSourceKind::overworld(black_box(0)));
+            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), dim.min_y >> 4, dim.height / 16);
         });
     });
 }
 
 // ── Noise benchmarks ────────────────────────────────────────────────────────
 
-fn bench_fill_from_noise_single(c: &mut Criterion) {
+fn bench_overworld_noise(c: &mut Criterion) {
     ensure_registry();
+    let dim = vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(source, 0);
 
     c.bench_function("overworld_fill_from_noise", |b| {
         b.iter(|| {
-            let chunk = make_proto_chunk(black_box(0), black_box(0));
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
             generator.fill_from_noise(&chunk);
         });
     });
 }
 
-fn bench_fill_from_noise_grid(c: &mut Criterion) {
+fn bench_nether_noise(c: &mut Criterion) {
     ensure_registry();
-    let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let dim = vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
 
-    let mut group = c.benchmark_group("overworld_fill_from_noise_grid");
-    for radius in [1, 2] {
-        let side = radius * 2 + 1;
-        let chunk_count = side * side;
-        group.throughput(criterion::Throughput::Elements(chunk_count as u64));
-        group.bench_function(format!("{side}x{side}"), |b| {
-            b.iter(|| {
-                for cx in -radius..=radius {
-                    for cz in -radius..=radius {
-                        let chunk = make_proto_chunk(black_box(cx), black_box(cz));
-                        generator.fill_from_noise(&chunk);
-                    }
-                }
-            });
+    c.bench_function("nether_fill_from_noise", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.fill_from_noise(&chunk);
         });
-    }
-    group.finish();
+    });
+}
+
+fn bench_end_noise(c: &mut Criterion) {
+    ensure_registry();
+    let dim = vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
+
+    c.bench_function("end_fill_from_noise", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.fill_from_noise(&chunk);
+        });
+    });
 }
 
 // ── Surface benchmarks ──────────────────────────────────────────────────────
 
-fn bench_build_surface_single(c: &mut Criterion) {
+fn bench_overworld_surface(c: &mut Criterion) {
     ensure_registry();
+    let dim = vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(source, 0);
 
     c.bench_function("overworld_build_surface", |b| {
         b.iter_batched(
-            || prepare_chunk_for_surface(&generator, 0, 0),
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                chunk
+            },
             |chunk| {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
                 generator.build_surface(black_box(&chunk), &neighbor_biomes);
@@ -231,56 +186,65 @@ fn bench_build_surface_single(c: &mut Criterion) {
     });
 }
 
-fn bench_build_surface_grid(c: &mut Criterion) {
+fn bench_nether_surface(c: &mut Criterion) {
     ensure_registry();
-    let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let dim = vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
 
-    let mut group = c.benchmark_group("overworld_build_surface_grid");
-    for radius in [1, 2] {
-        let side = radius * 2 + 1;
-        let chunk_count = side * side;
-        group.throughput(criterion::Throughput::Elements(chunk_count as u64));
+    c.bench_function("nether_build_surface", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                chunk
+            },
+            |chunk| {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(black_box(&chunk), &neighbor_biomes);
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
 
-        let coords: Vec<_> = (-radius..=radius)
-            .flat_map(|cx| (-radius..=radius).map(move |cz| (cx, cz)))
-            .collect();
+fn bench_end_surface(c: &mut Criterion) {
+    ensure_registry();
+    let dim = vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
 
-        group.bench_function(format!("{side}x{side}"), |b| {
-            b.iter_batched(
-                || {
-                    coords
-                        .iter()
-                        .map(|&(cx, cz)| prepare_chunk_for_surface(&generator, cx, cz))
-                        .collect::<Vec<_>>()
-                },
-                |chunks| {
-                    for chunk in &chunks {
-                        let neighbor_biomes = self_neighbor_biomes(chunk);
-                        generator.build_surface(black_box(chunk), &neighbor_biomes);
-                    }
-                },
-                criterion::BatchSize::LargeInput,
-            );
-        });
-    }
-    group.finish();
+    c.bench_function("end_build_surface", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                chunk
+            },
+            |chunk| {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(black_box(&chunk), &neighbor_biomes);
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
 }
 
 criterion_group!(
     benches,
     // Biome
-    bench_overworld_biome_single_chunk,
-    bench_overworld_biome_grid,
-    bench_nether_biome_single_chunk,
-    bench_end_biome_single_chunk,
-    bench_end_biome_outer_islands,
-    bench_overworld_source_creation,
+    bench_overworld_biome,
+    bench_nether_biome,
+    bench_end_biome,
     // Noise
-    bench_fill_from_noise_single,
-    bench_fill_from_noise_grid,
+    bench_overworld_noise,
+    bench_nether_noise,
+    bench_end_noise,
     // Surface
-    bench_build_surface_single,
-    bench_build_surface_grid,
+    bench_overworld_surface,
+    bench_nether_surface,
+    bench_end_surface,
 );
 criterion_main!(benches);

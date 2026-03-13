@@ -153,6 +153,22 @@ impl Sections {
         }
     }
 
+    /// Writes a batch of blocks at arbitrary positions, holding each section's
+    /// write guard across consecutive entries in the same section. Blocks should
+    /// be roughly grouped by section index for best performance.
+    pub fn write_block_batch(&self, blocks: &[(usize, usize, usize, BlockStateId)]) {
+        let mut i = 0;
+        while i < blocks.len() {
+            let section_idx = blocks[i].1 / BlockPalette::SIZE;
+            let mut guard = self.sections[section_idx].write();
+            while i < blocks.len() && blocks[i].1 / BlockPalette::SIZE == section_idx {
+                let (x, rel_y, z, value) = blocks[i];
+                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                i += 1;
+            }
+        }
+    }
+
     /// Sets a block at a relative position in the chunk.
     pub fn set_relative_block(
         &self,

@@ -186,11 +186,28 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             Some(&beardifier)
         };
 
+        // Collect writes per (x,z) column and flush in batch to avoid per-block
+        // write lock acquisition on sections.
+        let mut pending_writes: Vec<(usize, usize, usize, BlockStateId)> = Vec::new();
+        let mut prev_x: usize = usize::MAX;
+        let mut prev_z: usize = usize::MAX;
+        let sections = chunk.sections();
+
         noise_chunk.fill(
             noises,
             &mut column_cache,
             beard_opt,
             |local_x, world_y, local_z, density, interpolated, cache| {
+                // Flush when we move to a new column
+                if local_x != prev_x || local_z != prev_z {
+                    if !pending_writes.is_empty() {
+                        sections.write_block_batch(&pending_writes);
+                        pending_writes.clear();
+                    }
+                    prev_x = local_x;
+                    prev_z = local_z;
+                }
+
                 let relative_y = (world_y - min_y) as usize;
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
@@ -210,15 +227,20 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 )
                             })
                             .unwrap_or(default_block_id);
-                        chunk.set_relative_block(local_x, relative_y, local_z, block);
+                        pending_writes.push((local_x, relative_y, local_z, block));
                     }
                     AquiferResult::Fluid(id) => {
-                        chunk.set_relative_block(local_x, relative_y, local_z, id);
+                        pending_writes.push((local_x, relative_y, local_z, id));
                     }
                     AquiferResult::Air => {}
                 }
             },
         );
+
+        // Flush remaining writes
+        if !pending_writes.is_empty() {
+            sections.write_block_batch(&pending_writes);
+        }
     }
 
     #[allow(clippy::too_many_lines)]
