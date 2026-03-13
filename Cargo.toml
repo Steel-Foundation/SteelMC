@@ -179,3 +179,7 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }
 #cargo = { level = "warn", priority = 2 }
 unwrap_used = { level = "warn", priority = -3 }
+
+[profile.samply]
+inherits = "release"
+debug = true

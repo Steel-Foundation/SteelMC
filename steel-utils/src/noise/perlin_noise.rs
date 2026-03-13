@@ -234,6 +234,19 @@ impl PerlinNoise {
         self.max_value
     }
 
+    /// Calculate the maximum "broken" value for `BlendedNoise`.
+    ///
+    /// Used by `BlendedNoise` to determine the theoretical max output.
+    /// Java reference: `PerlinNoise.maxBrokenValue(double)`
+    #[must_use]
+    pub fn max_broken_value(&self, y_scale: f64) -> f64 {
+        Self::edge_value(
+            &self.amplitudes,
+            self.lowest_freq_value_factor,
+            y_scale + 2.0,
+        )
+    }
+
     /// Get the noise generator for a specific octave (by index from highest frequency).
     ///
     /// Index 0 is the highest frequency octave.
@@ -249,9 +262,11 @@ impl PerlinNoise {
 ///
 /// This wraps the coordinate to the range `[-ROUND_OFF/2, ROUND_OFF/2]` to
 /// maintain numerical precision for coordinates far from the origin.
+///
+/// Public because `BlendedNoise` calls this directly on per-octave coordinates.
 #[inline]
 #[must_use]
-fn wrap(x: f64) -> f64 {
+pub fn wrap(x: f64) -> f64 {
     x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
 }
 

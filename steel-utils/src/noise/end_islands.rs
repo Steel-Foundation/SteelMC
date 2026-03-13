@@ -9,9 +9,10 @@
 //!
 //! Result range: `[-0.84375, 0.5625]`.
 
-use steel_utils::noise::SimplexNoise;
-use steel_utils::random::Random;
-use steel_utils::random::legacy_random::LegacyRandom;
+use crate::random::Random;
+use crate::random::legacy_random::LegacyRandom;
+
+use super::SimplexNoise;
 
 /// Threshold for simplex noise below which an island is spawned.
 ///
@@ -44,10 +45,9 @@ impl EndIslands {
         Self { island_noise }
     }
 
-    /// Sample the erosion value at block coordinates.
+    /// Sample the density value at block coordinates.
     ///
-    /// Used by `EndBiomeSource` to determine biome thresholds. Converts block
-    /// coordinates to section coordinates internally (divides by 8).
+    /// Converts block coordinates to section coordinates internally (divides by 8).
     #[must_use]
     pub fn sample(&self, block_x: i32, _block_y: i32, block_z: i32) -> f64 {
         // Widen to f64 BEFORE subtracting 8.0, matching Java's `float - 8.0` (double literal)

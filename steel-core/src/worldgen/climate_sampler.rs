@@ -32,7 +32,7 @@ impl OverworldClimateSampler {
         let mut rng = Xoroshiro::from_seed(seed);
         let splitter = rng.next_positional();
         let noise_params = get_noise_parameters();
-        let noises = OverworldNoises::create(&splitter, &noise_params);
+        let noises = OverworldNoises::create(seed, &splitter, &noise_params);
 
         Self {
             noises: Box::new(noises),

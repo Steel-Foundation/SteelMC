@@ -563,16 +563,16 @@ impl Server {
         match STEEL_CONFIG.world_generator {
             WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
             WorldGeneratorTypes::Vanilla => {
+                let seed_u64 = seed as u64;
                 if dimension == OVERWORLD {
-                    let source = BiomeSourceKind::overworld(seed as u64);
-                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
+                    let source = BiomeSourceKind::overworld(seed_u64);
+                    ChunkGeneratorType::Overworld(VanillaGenerator::new(source, seed_u64))
                 } else if dimension == THE_NETHER {
-                    let source = BiomeSourceKind::nether(seed as u64);
-                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
+                    let source = BiomeSourceKind::nether(seed_u64);
+                    ChunkGeneratorType::Nether(VanillaGenerator::new(source, seed_u64))
                 } else {
-                    // TODO: Handle custom dimensions for modding support
-                    let source = BiomeSourceKind::end(seed as u64);
-                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source))
+                    let source = BiomeSourceKind::end(seed_u64);
+                    ChunkGeneratorType::End(VanillaGenerator::new(source, seed_u64))
                 }
             }
             WorldGeneratorTypes::Flat => {

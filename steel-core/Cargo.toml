@@ -79,5 +79,9 @@ criterion.workspace = true
 name = "biome_generation"
 harness = false
 
+[[bench]]
+name = "chunk_noise"
+harness = false
+
 [lints]
 workspace = true

@@ -14,8 +14,8 @@ use steel_registry::density_functions::nether::NetherColumnCache;
 use steel_registry::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
 use steel_registry::vanilla_biomes;
 
-use super::end_islands::EndIslands;
 use super::{NetherClimateSampler, OverworldClimateSampler};
+use steel_utils::noise::EndIslands;
 
 /// Dimension-specific biome source.
 ///
@@ -77,11 +77,11 @@ impl BiomeSourceKind {
 /// per-quart sampling path (1536 calls per overworld chunk).
 pub enum ChunkBiomeSampler<'a> {
     /// Overworld sampler (climate → R-tree lookup).
-    Overworld(OverworldChunkBiomeSampler<'a>),
+    Overworld(Box<OverworldChunkBiomeSampler<'a>>),
     /// Nether sampler (climate → R-tree lookup).
-    Nether(NetherChunkBiomeSampler<'a>),
+    Nether(Box<NetherChunkBiomeSampler<'a>>),
     /// End sampler (spatial distance thresholds).
-    End(EndChunkBiomeSampler<'a>),
+    End(Box<EndChunkBiomeSampler<'a>>),
 }
 
 impl ChunkBiomeSampler<'_> {
@@ -122,11 +122,11 @@ impl OverworldBiomeSource {
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::Overworld(OverworldChunkBiomeSampler {
+        ChunkBiomeSampler::Overworld(Box::new(OverworldChunkBiomeSampler {
             source: self,
             column_cache: OverworldColumnCache::new(),
             biome_cache: None,
-        })
+        }))
     }
 }
 
@@ -168,11 +168,11 @@ impl NetherBiomeSource {
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::Nether(NetherChunkBiomeSampler {
+        ChunkBiomeSampler::Nether(Box::new(NetherChunkBiomeSampler {
             source: self,
             column_cache: NetherColumnCache::new(),
             biome_cache: None,
-        })
+        }))
     }
 }
 
@@ -224,8 +224,8 @@ impl EndBiomeSource {
         }
     }
 
-    const fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::End(EndChunkBiomeSampler { source: self })
+    fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
+        ChunkBiomeSampler::End(Box::new(EndChunkBiomeSampler { source: self }))
     }
 }
 

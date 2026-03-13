@@ -179,9 +179,13 @@ pub enum DensityFunctionData {
         y_factor: f64,
         smear_scale_multiplier: f64,
     },
-    /// find_top_surface is only used in preliminary_surface_level which is unused
     #[serde(rename = "minecraft:find_top_surface")]
-    FindTopSurface {},
+    FindTopSurface {
+        density: Box<DensityFunctionJson>,
+        upper_bound: Box<DensityFunctionJson>,
+        lower_bound: i32,
+        cell_height: i32,
+    },
 }
 /// Parsed spline from datapack JSON.
 ///
@@ -226,9 +230,31 @@ pub struct NoiseRouterJson {
     vein_gap: DensityFunctionJson,
 }
 
-/// Wrapper for deserializing noise settings files that contain a `noise_router` field.
+/// Noise configuration from a noise_settings datapack file.
+#[derive(Deserialize)]
+struct NoiseConfigJson {
+    min_y: i32,
+    height: i32,
+    size_horizontal: i32,
+    size_vertical: i32,
+}
+
+/// Block state reference from a noise_settings datapack file.
+#[derive(Deserialize)]
+struct BlockStateJson {
+    #[serde(rename = "Name")]
+    name: String,
+}
+
+/// Full noise settings from a datapack file.
 #[derive(Deserialize)]
 struct NoiseSettingsJson {
+    sea_level: i32,
+    ore_veins_enabled: bool,
+    aquifers_enabled: bool,
+    default_block: BlockStateJson,
+    default_fluid: BlockStateJson,
+    noise: NoiseConfigJson,
     noise_router: NoiseRouterJson,
 }
 
@@ -287,14 +313,12 @@ fn read_density_function_registry() -> BTreeMap<String, DensityFunctionJson> {
 }
 
 /// Read noise settings for a dimension from the datapack.
-fn read_noise_router(dimension: &str) -> NoiseRouterJson {
+fn read_noise_settings(dimension: &str) -> NoiseSettingsJson {
     let path = format!("{DATAPACK_BASE}/noise_settings/{dimension}.json");
     println!("cargo:rerun-if-changed={path}");
     let content =
         fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
-    let settings: NoiseSettingsJson =
-        serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"));
-    settings.noise_router
+    serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
 }
 
 // ── JSON → DensityFunction conversion ───────────────────────────────────────
@@ -483,10 +507,17 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             noise: None,
         }),
 
-        DensityFunctionData::FindTopSurface {} => {
-            // find_top_surface is unused; treat as constant 0
-            DensityFunction::Constant(Constant { value: 0.0 })
-        }
+        DensityFunctionData::FindTopSurface {
+            density,
+            upper_bound,
+            lower_bound,
+            cell_height,
+        } => DensityFunction::FindTopSurface(steel_utils::density::FindTopSurface {
+            density: Arc::new(json_to_df(density)),
+            upper_bound: Arc::new(json_to_df(upper_bound)),
+            lower_bound: *lower_bound,
+            cell_height: *cell_height,
+        }),
     }
 }
 
@@ -594,23 +625,257 @@ fn transpile_dimension(
     prefix: &str,
     registry: &BTreeMap<String, DensityFunction>,
 ) -> TokenStream {
-    let router_json = read_noise_router(dimension);
-    let router_entries = router_to_entries(&router_json);
+    let settings = read_noise_settings(dimension);
+    let router_entries = router_to_entries(&settings.noise_router);
 
+    let cell_width = settings.noise.size_horizontal * 4;
     let input = TranspilerInput {
         registry: registry.clone(),
         router_entries,
         prefix: prefix.to_string(),
+        cell_width,
     };
 
     transpile(&input)
 }
 
+/// Generate noise settings constants and trait impls for a dimension.
+fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
+    let settings = read_noise_settings(dimension);
+
+    let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
+    let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
+    let cache_struct = Ident::new(&format!("{prefix}ColumnCache"), Span::call_site());
+
+    let min_y = settings.noise.min_y;
+    let height = settings.noise.height;
+    let size_horizontal = settings.noise.size_horizontal;
+    let size_vertical = settings.noise.size_vertical;
+    let sea_level = settings.sea_level;
+    let aquifers_enabled = settings.aquifers_enabled;
+    let ore_veins_enabled = settings.ore_veins_enabled;
+
+    // Cell dimensions: size_horizontal * 4 for XZ, size_vertical * 4 for Y
+    let cell_width = size_horizontal * 4;
+    let cell_height = size_vertical * 4;
+
+    // Extract block name without minecraft: prefix for lookup
+    let default_block = settings
+        .default_block
+        .name
+        .strip_prefix("minecraft:")
+        .unwrap_or(&settings.default_block.name);
+    let default_fluid = settings
+        .default_fluid
+        .name
+        .strip_prefix("minecraft:")
+        .unwrap_or(&settings.default_fluid.name);
+
+    let default_block_upper = default_block.to_uppercase();
+    let default_fluid_upper = default_fluid.to_uppercase();
+
+    let default_block_ident = Ident::new(&default_block_upper, Span::call_site());
+    let default_fluid_ident = Ident::new(&default_fluid_upper, Span::call_site());
+
+    quote! {
+        /// Noise settings for this dimension, parsed from the datapack.
+        pub struct #settings_struct;
+
+        impl #settings_struct {
+            /// Minimum Y coordinate for this dimension.
+            pub const MIN_Y: i32 = #min_y;
+            /// Total height of the world in blocks.
+            pub const HEIGHT: i32 = #height;
+            /// Sea level Y coordinate.
+            pub const SEA_LEVEL: i32 = #sea_level;
+            /// Cell width in blocks (XZ).
+            pub const CELL_WIDTH: i32 = #cell_width;
+            /// Cell height in blocks (Y).
+            pub const CELL_HEIGHT: i32 = #cell_height;
+            /// Whether aquifers are enabled.
+            pub const AQUIFERS_ENABLED: bool = #aquifers_enabled;
+            /// Whether ore veins are enabled.
+            pub const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+
+            /// Get the default block state ID for this dimension.
+            #[inline]
+            pub fn default_block_id() -> steel_utils::BlockStateId {
+                crate::REGISTRY.blocks.get_default_state_id(crate::vanilla_blocks::#default_block_ident)
+            }
+
+            /// Get the default fluid state ID for this dimension.
+            #[inline]
+            pub fn default_fluid_id() -> steel_utils::BlockStateId {
+                crate::REGISTRY.blocks.get_default_state_id(crate::vanilla_blocks::#default_fluid_ident)
+            }
+        }
+
+        impl steel_utils::density::NoiseSettings for #settings_struct {
+            const MIN_Y: i32 = #min_y;
+            const HEIGHT: i32 = #height;
+            const SEA_LEVEL: i32 = #sea_level;
+            const CELL_WIDTH: i32 = #cell_width;
+            const CELL_HEIGHT: i32 = #cell_height;
+            const AQUIFERS_ENABLED: bool = #aquifers_enabled;
+            const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+
+            #[inline]
+            fn default_block_id() -> steel_utils::BlockStateId {
+                #settings_struct::default_block_id()
+            }
+
+            #[inline]
+            fn default_fluid_id() -> steel_utils::BlockStateId {
+                #settings_struct::default_fluid_id()
+            }
+        }
+
+        impl Default for #cache_struct {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl steel_utils::density::ColumnCache for #cache_struct {
+            type Noises = #noises_struct;
+
+            #[inline]
+            fn ensure(&mut self, x: i32, z: i32, noises: &Self::Noises) {
+                #cache_struct::ensure(self, x, z, noises)
+            }
+
+            #[inline]
+            fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32, noises: &Self::Noises) {
+                #cache_struct::init_grid(self, chunk_block_x, chunk_block_z, noises)
+            }
+        }
+
+        impl steel_utils::density::DimensionNoises for #noises_struct {
+            type ColumnCache = #cache_struct;
+            type Settings = #settings_struct;
+
+            fn create(
+                seed: u64,
+                splitter: &steel_utils::random::RandomSplitter,
+                params: &rustc_hash::FxHashMap<String, steel_utils::density::NoiseParameters>,
+            ) -> Self {
+                #noises_struct::create(seed, splitter, params)
+            }
+
+            #[inline]
+            fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_final_density(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_depth(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_barrier(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_fluid_level_floodedness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_fluid_level_floodedness(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_fluid_level_spread(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_fluid_level_spread(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_lava(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_vein_toggle(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_vein_ridged(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_vein_gap(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_erosion(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_continentalness(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_temperature(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_vegetation(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_ridges(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                router_preliminary_surface_level(self, cache, x, y, z)
+            }
+
+            #[inline]
+            fn interpolated_count() -> usize {
+                INTERPOLATED_COUNT
+            }
+
+            fn vein_interp_enabled() -> bool {
+                VEIN_INTERP_ENABLED
+            }
+
+            #[inline]
+            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, out: &mut [f64]) {
+                fill_cell_corner_densities(self, cache, x, y, z, out)
+            }
+
+            #[inline]
+            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+                combine_interpolated(self, cache, interpolated, x, y, z)
+            }
+
+            #[inline]
+            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+                combine_vein_toggle(self, cache, interpolated, x, y, z)
+            }
+
+            #[inline]
+            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+                combine_vein_ridged(self, cache, interpolated, x, y, z)
+            }
+        }
+    }
+}
+
+use proc_macro2::{Ident, Span};
+
 /// Generate the complete density functions module using the transpiler.
 ///
-/// Transpiles density functions for all dimensions (overworld and nether).
+/// Transpiles density functions for all dimensions (overworld, nether, end).
 /// Overworld types are at the top level for backward compatibility.
-/// Nether types are in a `nether` submodule.
+/// Other dimensions are in submodules.
 pub(crate) fn build() -> TokenStream {
     let registry_json = read_density_function_registry();
 
@@ -621,14 +886,26 @@ pub(crate) fn build() -> TokenStream {
         .collect();
 
     let overworld = transpile_dimension("overworld", "Overworld", &registry);
+    let overworld_settings = generate_noise_settings("overworld", "Overworld");
     let nether = transpile_dimension("nether", "Nether", &registry);
+    let nether_settings = generate_noise_settings("nether", "Nether");
+    let end = transpile_dimension("end", "End", &registry);
+    let end_settings = generate_noise_settings("end", "End");
 
     quote! {
         #overworld
+        #overworld_settings
 
         /// Nether density functions.
         pub mod nether {
             #nether
+            #nether_settings
+        }
+
+        /// End density functions.
+        pub mod end {
+            #end
+            #end_settings
         }
     }
 }

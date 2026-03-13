@@ -648,12 +648,18 @@ impl BoundingBox {
     /// Returns whether the given block position is inside this bounding box.
     #[must_use]
     pub const fn is_inside(&self, pos: BlockPos) -> bool {
-        pos.0.x >= self.min_x
-            && pos.0.x <= self.max_x
-            && pos.0.z >= self.min_z
-            && pos.0.z <= self.max_z
-            && pos.0.y >= self.min_y
-            && pos.0.y <= self.max_y
+        self.contains_xyz(pos.0.x, pos.0.y, pos.0.z)
+    }
+
+    /// Returns whether the given coordinates are inside this bounding box.
+    #[must_use]
+    pub const fn contains_xyz(&self, x: i32, y: i32, z: i32) -> bool {
+        x >= self.min_x
+            && x <= self.max_x
+            && z >= self.min_z
+            && z <= self.max_z
+            && y >= self.min_y
+            && y <= self.max_y
     }
 
     /// Returns the center of this bounding box.

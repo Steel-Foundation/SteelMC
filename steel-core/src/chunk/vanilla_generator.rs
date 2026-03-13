@@ -1,7 +1,17 @@
-use steel_registry::{REGISTRY, vanilla_blocks};
+use std::marker::PhantomData;
 
+use steel_registry::REGISTRY;
+use steel_registry::noise_parameters::get_noise_parameters;
+use steel_utils::BlockStateId;
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
+use steel_utils::random::{Random, RandomSplitter, xoroshiro::Xoroshiro};
+
+use crate::chunk::aquifer::{Aquifer, AquiferResult};
+use crate::chunk::beardifier::Beardifier;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
+use crate::chunk::noise_chunk::NoiseChunk;
+use crate::chunk::ore_veinifier::OreVeinifier;
 use crate::worldgen::BiomeSourceKind;
 
 /// A chunk generator for vanilla (normal) world generation.
@@ -9,20 +19,51 @@ use crate::worldgen::BiomeSourceKind;
 /// Matches vanilla's `NoiseBasedChunkGenerator`. The biome source is pluggable
 /// per-dimension — overworld, nether, and end each provide a different
 /// [`BiomeSourceKind`] variant.
-pub struct VanillaGenerator {
+///
+/// Generic over `N: DimensionNoises` to support different dimensions with
+/// their own transpiled density functions and noise settings.
+pub struct VanillaGenerator<N: DimensionNoises> {
     /// Biome source for this dimension. Determines biomes at each quart position.
     biome_source: BiomeSourceKind,
+    /// Noise generators for this dimension's density functions.
+    /// Boxed because noise structs can be large.
+    noises: Box<N>,
+    /// Seed positional splitter for per-chunk construction of aquifers.
+    splitter: RandomSplitter,
+    /// Ore vein generator for replacing stone with ore blocks.
+    ore_veinifier: Option<OreVeinifier>,
+    /// Block state ID for the default block, cached at construction time.
+    default_block_id: BlockStateId,
+    _phantom: PhantomData<N>,
 }
 
-impl VanillaGenerator {
-    /// Creates a new `VanillaGenerator` with the given biome source.
+impl<N: DimensionNoises> VanillaGenerator<N> {
+    /// Creates a new `VanillaGenerator` with the given biome source and seed.
     #[must_use]
-    pub const fn new(biome_source: BiomeSourceKind) -> Self {
-        Self { biome_source }
+    pub fn new(biome_source: BiomeSourceKind, seed: u64) -> Self {
+        let mut rng = Xoroshiro::from_seed(seed);
+        let splitter = rng.next_positional();
+        let noise_params = get_noise_parameters();
+        let noises = N::create(seed, &splitter, &noise_params);
+
+        let ore_veinifier = if N::Settings::ORE_VEINS_ENABLED {
+            Some(OreVeinifier::new(&splitter))
+        } else {
+            None
+        };
+
+        Self {
+            biome_source,
+            noises: Box::new(noises),
+            splitter,
+            ore_veinifier,
+            default_block_id: N::Settings::default_block_id(),
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl ChunkGenerator for VanillaGenerator {
+impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
     fn create_structures(&self, _chunk: &ChunkAccess) {}
 
     fn create_biomes(&self, chunk: &ChunkAccess) {
@@ -70,19 +111,73 @@ impl ChunkGenerator for VanillaGenerator {
     }
 
     fn fill_from_noise(&self, chunk: &ChunkAccess) {
-        // TODO: Implement actual noise-based terrain generation (NoiseChunk + trilinear interpolation)
-        for x in 0..16 {
-            for z in 0..16 {
-                chunk.set_relative_block(
-                    x,
-                    0,
-                    z,
-                    REGISTRY
-                        .blocks
-                        .get_default_state_id(vanilla_blocks::GRASS_BLOCK),
-                );
-            }
-        }
+        let pos = chunk.pos();
+        let chunk_min_x = pos.0.x * 16;
+        let chunk_min_z = pos.0.y * 16;
+
+        let min_y = N::Settings::MIN_Y;
+        let height = N::Settings::HEIGHT;
+
+        let mut noise_chunk = NoiseChunk::<N>::new(chunk_min_x, chunk_min_z);
+        let noises = &*self.noises;
+
+        let mut column_cache = N::ColumnCache::default();
+        column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+
+        let default_block_id = self.default_block_id;
+        let ore_veinifier = &self.ore_veinifier;
+        let mut aquifer = Aquifer::<N>::new(
+            chunk_min_x,
+            chunk_min_z,
+            min_y,
+            height,
+            &self.splitter,
+            noises,
+            // Aquifer samples at arbitrary (x,z) outside the chunk, so it needs its own cache
+            column_cache.clone(),
+        );
+
+        let structure_starts = chunk.structure_starts();
+        let beardifier = Beardifier::for_structures_in_chunk(&structure_starts, pos.0.x, pos.0.y);
+        let beard_opt = if beardifier.is_empty() {
+            None
+        } else {
+            Some(&beardifier)
+        };
+
+        noise_chunk.fill(
+            noises,
+            &mut column_cache,
+            beard_opt,
+            |local_x, world_y, local_z, density, interpolated, cache| {
+                let relative_y = (world_y - min_y) as usize;
+                let world_x = chunk_min_x + local_x as i32;
+                let world_z = chunk_min_z + local_z as i32;
+
+                match aquifer.compute_substance(noises, world_x, world_y, world_z, density) {
+                    AquiferResult::Solid => {
+                        let block = ore_veinifier
+                            .as_ref()
+                            .and_then(|ov| {
+                                ov.compute_interpolated(
+                                    noises,
+                                    cache,
+                                    interpolated,
+                                    world_x,
+                                    world_y,
+                                    world_z,
+                                )
+                            })
+                            .unwrap_or(default_block_id);
+                        chunk.set_relative_block(local_x, relative_y, local_z, block);
+                    }
+                    AquiferResult::Fluid(id) => {
+                        chunk.set_relative_block(local_x, relative_y, local_z, id);
+                    }
+                    AquiferResult::Air => {}
+                }
+            },
+        );
     }
 
     fn build_surface(&self, _chunk: &ChunkAccess) {}
