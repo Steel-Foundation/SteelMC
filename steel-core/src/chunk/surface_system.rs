@@ -43,11 +43,8 @@ pub struct SurfaceSystem {
     badlands_pillar_noise: NormalNoise,
     badlands_pillar_roof_noise: NormalNoise,
     badlands_surface_noise: NormalNoise,
-    #[allow(dead_code)] // TODO: implement frozen ocean iceberg extension
     iceberg_pillar_noise: NormalNoise,
-    #[allow(dead_code)]
     iceberg_pillar_roof_noise: NormalNoise,
-    #[allow(dead_code)]
     iceberg_surface_noise: NormalNoise,
 
     // ── Temperature noises (static in vanilla Biome class) ──
@@ -173,22 +170,14 @@ impl SurfaceSystem {
             .get_value(f64::from(x), 0.0, f64::from(z))
     }
 
-    /// Check if a position is cold enough to snow.
+    /// Compute the effective temperature at a position.
     ///
-    /// Matches vanilla's `Biome.coldEnoughToSnow()` → `!warmEnoughToRain()` →
-    /// `getTemperature() >= 0.15`. Temperature is height-adjusted above `seaLevel + 17`
-    /// and may be modified by the FROZEN temperature modifier.
+    /// Matches vanilla's `Biome.getTemperature()` with temperature modifier
+    /// and height-based adjustment above `seaLevel + 17`.
     ///
     /// # Panics
     /// Panics if `biome_id` does not correspond to a registered biome.
-    #[must_use]
-    pub fn cold_enough_to_snow(
-        &self,
-        biome_id: u16,
-        block_x: i32,
-        block_y: i32,
-        block_z: i32,
-    ) -> bool {
+    fn get_temperature(&self, biome_id: u16, block_x: i32, block_y: i32, block_z: i32) -> f32 {
         let biome = REGISTRY
             .biomes
             .by_id(biome_id as usize)
@@ -224,7 +213,7 @@ impl SurfaceSystem {
 
         // Height-based temperature adjustment above seaLevel + 17
         let snow_level = self.sea_level + 17;
-        let adjusted_temp = if block_y > snow_level {
+        if block_y > snow_level {
             let v = self
                 .temperature_noise
                 .get_value(f64::from(block_x) / 8.0, f64::from(block_z) / 8.0)
@@ -233,10 +222,35 @@ impl SurfaceSystem {
             modified_temp - (v + block_y as f32 - snow_level as f32) * 0.05 / 40.0
         } else {
             modified_temp
-        };
+        }
+    }
 
-        // coldEnoughToSnow = !warmEnoughToRain = !(temp >= 0.15) = temp < 0.15
-        adjusted_temp < 0.15
+    /// Check if a position is cold enough to snow.
+    ///
+    /// Matches vanilla's `Biome.coldEnoughToSnow()` → `!warmEnoughToRain()` →
+    /// `getTemperature() >= 0.15`.
+    #[must_use]
+    pub fn cold_enough_to_snow(
+        &self,
+        biome_id: u16,
+        block_x: i32,
+        block_y: i32,
+        block_z: i32,
+    ) -> bool {
+        self.get_temperature(biome_id, block_x, block_y, block_z) < 0.15
+    }
+
+    /// Check if an iceberg at this position should melt slightly.
+    ///
+    /// Matches vanilla's `Biome.shouldMeltFrozenOceanIcebergSlightly()`.
+    /// Temperature is evaluated at sea level.
+    fn should_melt_frozen_ocean_iceberg_slightly(
+        &self,
+        biome_id: u16,
+        block_x: i32,
+        block_z: i32,
+    ) -> bool {
+        self.get_temperature(biome_id, block_x, self.sea_level, block_z) > 0.1
     }
 
     // ── Clay band generation ────────────────────────────────────────────────
@@ -391,6 +405,98 @@ impl SurfaceSystem {
 
         // Return updated start height (one above the extension top)
         start_y + 1
+    }
+
+    /// Frozen ocean iceberg extension — adds packed ice and snow blocks.
+    ///
+    /// Matches vanilla's `SurfaceSystem.frozenOceanExtension()`.
+    /// Called after surface rules for frozen ocean / deep frozen ocean biomes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn frozen_ocean_extension(
+        &self,
+        chunk: &super::chunk_access::ChunkAccess,
+        biome_id: u16,
+        local_x: usize,
+        local_z: usize,
+        block_x: i32,
+        block_z: i32,
+        height: i32,
+        min_surface_level: i32,
+        min_y: i32,
+    ) {
+        let iceberg = f64::min(
+            (self
+                .iceberg_surface_noise
+                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
+                * 8.25)
+                .abs(),
+            self.iceberg_pillar_noise.get_value(
+                f64::from(block_x) * 1.28,
+                0.0,
+                f64::from(block_z) * 1.28,
+            ) * 15.0,
+        );
+
+        if iceberg <= 1.8 {
+            return;
+        }
+
+        let iceberg_roof = (self.iceberg_pillar_roof_noise.get_value(
+            f64::from(block_x) * 1.17,
+            0.0,
+            f64::from(block_z) * 1.17,
+        ) * 1.5)
+            .abs();
+
+        let mut top = f64::min(iceberg * iceberg * 1.2, (iceberg_roof * 40.0).ceil() + 14.0);
+
+        if self.should_melt_frozen_ocean_iceberg_slightly(biome_id, block_x, block_z) {
+            top -= 2.0;
+        }
+
+        let extension_bottom;
+        if top > 2.0 {
+            extension_bottom = f64::from(self.sea_level) - top - 7.0;
+            top += f64::from(self.sea_level);
+        } else {
+            top = 0.0;
+            extension_bottom = 0.0;
+        }
+
+        let extension_top = top;
+        let mut random = self.noise_random.at(block_x, 0, block_z);
+        let max_snow_depth = 2 + random.next_i32_bounded(4);
+        let min_snow_height = self.sea_level + 18 + random.next_i32_bounded(10);
+        let mut snow_depth = 0;
+
+        let snow_block = vanilla_blocks::SNOW_BLOCK.default_state();
+        let packed_ice = vanilla_blocks::PACKED_ICE.default_state();
+
+        let start_y = i32::max(height, top as i32 + 1);
+        for y in (min_surface_level..=start_y).rev() {
+            let rel_y = (y - min_y) as usize;
+            let state = chunk
+                .get_relative_block(local_x, rel_y, local_z)
+                .unwrap_or(BlockStateId(0));
+
+            let is_air = state.is_air();
+            let is_water = state.get_block() == vanilla_blocks::WATER;
+
+            if (is_air && y < extension_top as i32 && random.next_f64() > 0.01)
+                || (is_water
+                    && y > extension_bottom as i32
+                    && y < self.sea_level
+                    && extension_bottom != 0.0
+                    && random.next_f64() > 0.15)
+            {
+                if snow_depth <= max_snow_depth && y > min_snow_height {
+                    chunk.set_relative_block(local_x, rel_y, local_z, snow_block);
+                    snow_depth += 1;
+                } else {
+                    chunk.set_relative_block(local_x, rel_y, local_z, packed_ice);
+                }
+            }
+        }
     }
 }
 

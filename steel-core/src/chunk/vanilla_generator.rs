@@ -280,6 +280,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             .expect("WorldSurfaceWg heightmap not initialized");
 
         let eroded_badlands_id = *REGISTRY.biomes.get_id(&vanilla_biomes::ERODED_BADLANDS) as u16;
+        let frozen_ocean_id = *REGISTRY.biomes.get_id(&vanilla_biomes::FROZEN_OCEAN) as u16;
+        let deep_frozen_ocean_id =
+            *REGISTRY.biomes.get_id(&vanilla_biomes::DEEP_FROZEN_OCEAN) as u16;
 
         // Pre-extract all biome palette values to avoid per-read section locking.
         let biome_data = chunk.sections().read_all_biomes();
@@ -449,6 +452,21 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         .sections()
                         .write_column_blocks(local_x, local_z, &pending_writes);
                     chunk.mark_dirty();
+                }
+
+                // Frozen ocean iceberg extension: add packed ice and snow
+                if surface_biome_id == frozen_ocean_id || surface_biome_id == deep_frozen_ocean_id {
+                    self.surface_system.frozen_ocean_extension(
+                        chunk,
+                        surface_biome_id,
+                        local_x,
+                        local_z,
+                        block_x,
+                        block_z,
+                        start_height,
+                        min_surface_level,
+                        min_y,
+                    );
                 }
             }
         }

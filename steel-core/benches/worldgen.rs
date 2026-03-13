@@ -90,7 +90,13 @@ fn bench_overworld_biome(c: &mut Criterion) {
     c.bench_function("overworld_biome", |b| {
         b.iter(|| {
             let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), dim.min_y >> 4, dim.height / 16);
+            sample_chunk_biomes(
+                &mut sampler,
+                black_box(0),
+                black_box(0),
+                dim.min_y >> 4,
+                dim.height / 16,
+            );
         });
     });
 }
@@ -101,7 +107,13 @@ fn bench_nether_biome(c: &mut Criterion) {
     c.bench_function("nether_biome", |b| {
         b.iter(|| {
             let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), dim.min_y >> 4, dim.height / 16);
+            sample_chunk_biomes(
+                &mut sampler,
+                black_box(0),
+                black_box(0),
+                dim.min_y >> 4,
+                dim.height / 16,
+            );
         });
     });
 }
@@ -112,7 +124,13 @@ fn bench_end_biome(c: &mut Criterion) {
     c.bench_function("end_biome", |b| {
         b.iter(|| {
             let mut sampler = source.chunk_sampler();
-            sample_chunk_biomes(&mut sampler, black_box(0), black_box(0), dim.min_y >> 4, dim.height / 16);
+            sample_chunk_biomes(
+                &mut sampler,
+                black_box(0),
+                black_box(0),
+                dim.min_y >> 4,
+                dim.height / 16,
+            );
         });
     });
 }
