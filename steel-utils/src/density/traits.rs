@@ -29,6 +29,8 @@ pub trait NoiseSettings: Send + Sync {
     const AQUIFERS_ENABLED: bool;
     /// Whether ore veins are enabled for this dimension.
     const ORE_VEINS_ENABLED: bool;
+    /// Whether this dimension uses Java's LCG random (true) or Xoroshiro (false).
+    const LEGACY_RANDOM_SOURCE: bool;
 
     /// Get the default block state ID for this dimension.
     fn default_block_id() -> BlockStateId;

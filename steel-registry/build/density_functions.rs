@@ -252,6 +252,8 @@ struct NoiseSettingsJson {
     sea_level: i32,
     ore_veins_enabled: bool,
     aquifers_enabled: bool,
+    #[serde(default)]
+    legacy_random_source: bool,
     default_block: BlockStateJson,
     default_fluid: BlockStateJson,
     noise: NoiseConfigJson,
@@ -636,6 +638,7 @@ fn transpile_dimension(
         router_entries,
         prefix: prefix.to_string(),
         cell_width,
+        legacy_random_source: settings.legacy_random_source,
     };
 
     transpile(&input)
@@ -679,6 +682,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
     let sea_level = settings.sea_level;
     let aquifers_enabled = settings.aquifers_enabled;
     let ore_veins_enabled = settings.ore_veins_enabled;
+    let legacy_random_source = settings.legacy_random_source;
 
     // Cell dimensions: size_horizontal * 4 for XZ, size_vertical * 4 for Y
     let cell_width = size_horizontal * 4;
@@ -721,6 +725,8 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             pub const AQUIFERS_ENABLED: bool = #aquifers_enabled;
             /// Whether ore veins are enabled.
             pub const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+            /// Whether this dimension uses Java's LCG random (true) or Xoroshiro (false).
+            pub const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
 
             /// Get the default block state ID for this dimension.
             #[inline]
@@ -743,6 +749,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             const CELL_HEIGHT: i32 = #cell_height;
             const AQUIFERS_ENABLED: bool = #aquifers_enabled;
             const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
+            const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
 
             #[inline]
             fn default_block_id() -> steel_utils::BlockStateId {

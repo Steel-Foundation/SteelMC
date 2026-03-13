@@ -8,7 +8,9 @@ use steel_registry::vanilla_biomes;
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
-use steel_utils::random::{Random, RandomSplitter, xoroshiro::Xoroshiro};
+use steel_utils::random::{
+    Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
+};
 use steel_utils::surface::SurfaceRuleContext;
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
@@ -55,8 +57,12 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
     /// Panics if SHA-256 hash output is shorter than 8 bytes (cannot happen).
     #[must_use]
     pub fn new(biome_source: BiomeSourceKind, seed: u64) -> Self {
-        let mut rng = Xoroshiro::from_seed(seed);
-        let splitter = rng.next_positional();
+        // Nether uses Java's LCG; overworld/end use Xoroshiro.
+        let splitter = if N::Settings::LEGACY_RANDOM_SOURCE {
+            LegacyRandom::from_seed(seed).next_positional()
+        } else {
+            Xoroshiro::from_seed(seed).next_positional()
+        };
         let noise_params = get_noise_parameters();
         let noises = N::create(seed, &splitter, &noise_params);
 
