@@ -49,7 +49,7 @@ pub enum SurfaceConditionJson {
     #[serde(rename = "minecraft:above_preliminary_surface")]
     AbovePreliminarySurface {},
     #[serde(rename = "minecraft:biome")]
-    BiomeIs { biome_is: Vec<BiomeRef> },
+    BiomeIs { biome_is: Vec<BiomeIdJson> },
     #[serde(rename = "minecraft:noise_threshold")]
     NoiseThreshold {
         noise: String,
@@ -86,16 +86,12 @@ pub enum SurfaceConditionJson {
 
 /// Biome reference — plain string biome ID.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum BiomeRef {
-    Single(String),
-}
+#[serde(transparent)]
+pub struct BiomeIdJson(String);
 
-impl BiomeRef {
+impl BiomeIdJson {
     pub fn as_str(&self) -> &str {
-        match self {
-            Self::Single(s) => s,
-        }
+        &self.0
     }
 }
 
@@ -242,15 +238,19 @@ impl SurfaceRuleTranspiler {
                 max_threshold,
             } => {
                 let noise_key = noise.clone();
-                if !self.noise_ids.contains(&noise_key) {
-                    self.noise_ids.push(noise_key);
-                }
-                let noise_lit = noise.as_str();
+                let noise_index =
+                    if let Some(idx) = self.noise_ids.iter().position(|k| k == &noise_key) {
+                        idx
+                    } else {
+                        let idx = self.noise_ids.len();
+                        self.noise_ids.push(noise_key);
+                        idx
+                    };
                 let min_f = *min_threshold;
                 let max_f = *max_threshold;
                 quote! {
                     {
-                        let v = ctx.system.get_noise(#noise_lit, ctx.block_x, ctx.block_z);
+                        let v = ctx.system.get_noise(#noise_index, ctx.block_x, ctx.block_z);
                         v >= #min_f && v <= #max_f
                     }
                 }

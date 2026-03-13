@@ -34,7 +34,8 @@ pub struct SurfaceSystem {
     /// Positional random factory for surface depth jitter and frozen ocean.
     noise_random: RandomSplitter,
     /// Condition noises used by `NoiseThreshold` surface rules.
-    condition_noises: FxHashMap<String, NormalNoise>,
+    /// Indexed in the same order as `DimensionNoises::surface_noise_ids()`.
+    condition_noises: Vec<NormalNoise>,
     /// Global splitter for creating vertical gradient factories.
     splitter: RandomSplitter,
 
@@ -85,11 +86,12 @@ impl SurfaceSystem {
         let mut band_random = noise_random.with_hash_of(&CLAY_BANDS_HASH);
         let clay_bands = Self::generate_bands(&mut band_random);
 
-        // Create condition noises referenced by NoiseThreshold rules
-        let mut condition_noises = FxHashMap::default();
-        for &id in condition_noise_ids {
-            condition_noises.insert(id.to_owned(), create_noise(splitter, id, noise_params));
-        }
+        // Create condition noises referenced by NoiseThreshold rules.
+        // Order matches the indices emitted by the transpiler.
+        let condition_noises: Vec<NormalNoise> = condition_noise_ids
+            .iter()
+            .map(|&id| create_noise(splitter, id, noise_params))
+            .collect();
 
         Self {
             surface_noise: create_noise(splitter, "minecraft:surface", noise_params),
@@ -330,13 +332,13 @@ impl SurfaceSystem {
             (self
                 .badlands_surface_noise
                 .get_value(f64::from(block_x), 0.0, f64::from(block_z))
-                * f64::from(8.25_f32))
-            .abs(),
+                * 8.25)
+                .abs(),
             self.badlands_pillar_noise.get_value(
                 f64::from(block_x) * 0.2,
                 0.0,
                 f64::from(block_z) * 0.2,
-            ) * f64::from(15.0_f32),
+            ) * 15.0,
         );
 
         if pillar_buffer <= 0.0 {
@@ -344,13 +346,13 @@ impl SurfaceSystem {
         }
 
         let pillar_floor = (self.badlands_pillar_roof_noise.get_value(
-            f64::from(block_x) * f64::from(0.75_f32),
+            f64::from(block_x) * 0.75,
             0.0,
-            f64::from(block_z) * f64::from(0.75_f32),
-        ) * f64::from(1.5_f32))
-        .abs();
+            f64::from(block_z) * 0.75,
+        ) * 1.5)
+            .abs();
 
-        let extension_top = f64::from(64.0_f32)
+        let extension_top = 64.0
             + f64::min(
                 pillar_buffer * pillar_buffer * 2.5,
                 (pillar_floor * 50.0).ceil() + 24.0,
@@ -393,10 +395,8 @@ impl SurfaceSystem {
 }
 
 impl SurfaceNoiseProvider for SurfaceSystem {
-    fn get_noise(&self, noise_id: &str, x: i32, z: i32) -> f64 {
-        self.condition_noises
-            .get(noise_id)
-            .map_or(0.0, |n| n.get_value(f64::from(x), 0.0, f64::from(z)))
+    fn get_noise(&self, noise_index: usize, x: i32, z: i32) -> f64 {
+        self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z))
     }
 
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId {

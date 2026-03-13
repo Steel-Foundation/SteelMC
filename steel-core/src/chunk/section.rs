@@ -166,10 +166,6 @@ impl Sections {
 
         let idx = relative_y / BlockPalette::SIZE;
         let relative_y = relative_y % BlockPalette::SIZE;
-        //println!(
-        //    "setting block at {}, {}, {} to {}",
-        //    relative_x, relative_y, relative_z, value.0
-        //);
         self.sections[idx]
             .write()
             .states

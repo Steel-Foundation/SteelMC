@@ -43,8 +43,8 @@ pub struct SurfaceRuleContext<'a> {
 /// methods through the `SurfaceRuleContext.system` field.
 pub trait SurfaceNoiseProvider {
     /// Sample a surface condition noise at (x, z). The noise is identified by
-    /// its registry key (e.g. `"minecraft:surface_swamp"`).
-    fn get_noise(&self, noise_id: &str, x: i32, z: i32) -> f64;
+    /// its index in the dimension's `surface_noise_ids()` list.
+    fn get_noise(&self, noise_index: usize, x: i32, z: i32) -> f64;
 
     /// Get the badlands clay band block at position (x, y, z).
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId;

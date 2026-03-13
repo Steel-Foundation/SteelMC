@@ -257,6 +257,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let biome_data = chunk.sections().read_all_biomes();
         let section_count = chunk.sections().sections.len();
 
+        let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
+
         for local_x in 0..16usize {
             for local_z in 0..16usize {
                 let block_x = chunk_min_x + local_x as i32;
@@ -336,7 +338,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let mut stone_depth_above: i32 = 0;
                 let mut water_height: i32 = i32::MIN;
                 let mut next_ceiling_stone_y: i32 = i32::MAX;
-                let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
+                pending_writes.clear();
 
                 for y in (min_y..=start_height).rev() {
                     let relative_y = (y - min_y) as usize;
