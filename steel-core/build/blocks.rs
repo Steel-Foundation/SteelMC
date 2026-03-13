@@ -93,7 +93,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut redstone_torch_blocks = Vec::new();
     let mut redstone_wall_torch_blocks = Vec::new();
     let mut rotated_pillar_blocks = Vec::new();
+    let mut seagrass_blocks = Vec::new();
     let mut standing_sign_blocks = Vec::new();
+    let mut tall_seagrass_blocks = Vec::new();
     let mut torch_blocks = Vec::new();
     let mut torchflower_blocks = Vec::new();
     let mut wall_hanging_sign_blocks = Vec::new();
@@ -159,8 +161,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
             "RedstoneTorchBlock" => redstone_torch_blocks.push(const_ident),
             "RedstoneWallTorchBlock" => redstone_wall_torch_blocks.push(const_ident),
             "RotatedPillarBlock" => rotated_pillar_blocks.push(const_ident),
+            "SeagrassBlock" => seagrass_blocks.push(const_ident),
             "StandingSignBlock" => standing_sign_blocks.push(const_ident),
-
+            "TallSeagrassBlock" => tall_seagrass_blocks.push(const_ident),
             "TorchBlock" => torch_blocks.push(const_ident),
             "TorchflowerCropBlock" => {
                 torchflower_blocks.push((
@@ -197,7 +200,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let pillar_type = Ident::new("RotatedPillarBlock", Span::call_site());
     let redstone_torch_type = Ident::new("RedstoneTorchBlock", Span::call_site());
     let redstone_wall_torch_type = Ident::new("RedstoneWallTorchBlock", Span::call_site());
+    let seagrass_type = Ident::new("SeagrassBlock", Span::call_site());
     let standing_sign_type = Ident::new("StandingSignBlock", Span::call_site());
+    let tall_seagrass_type = Ident::new("TallSeagrassBlock", Span::call_site());
     let torch_type = Ident::new("TorchBlock", Span::call_site());
     let torchflower_type = Ident::new("TorchflowerBlock", Span::call_site());
     let wall_hanging_sign_type = Ident::new("WallHangingSignBlock", Span::call_site());
@@ -261,8 +266,11 @@ pub fn build(blocks: &[BlockClass]) -> String {
         generate_registrations(redstone_torch_blocks.iter(), &redstone_torch_type);
     let redstone_wall_torch_registrations =
         generate_registrations(redstone_wall_torch_blocks.iter(), &redstone_wall_torch_type);
+    let seagrass_registrations = generate_registrations(seagrass_blocks.iter(), &seagrass_type);
     let standing_sign_registrations =
         generate_registrations(standing_sign_blocks.iter(), &standing_sign_type);
+    let tall_seagrass_registrations =
+        generate_registrations(tall_seagrass_blocks.iter(), &tall_seagrass_type);
     let torch_registrations = generate_registrations(torch_blocks.iter(), &torch_type);
     let torchflower_registrations =
         generate_crop_registrations(torchflower_blocks.iter(), &torchflower_type);
@@ -295,7 +303,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, TorchflowerBlock},
+            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, SeagrassBlock, TallSeagrassBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
             CandleBlock,
@@ -337,7 +345,9 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #pillar_registrations
             #redstone_torch_registrations
             #redstone_wall_torch_registrations
+            #seagrass_registrations
             #standing_sign_registrations
+            #tall_seagrass_registrations
             #torch_registrations
             #torchflower_registrations
             #wall_hanging_sign_registrations
