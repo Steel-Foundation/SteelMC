@@ -97,10 +97,6 @@ impl BlockBehaviour for SeagrassBlock {
 }
 
 impl Bonemealable for SeagrassBlock {
-    fn get_age_increase(&self, _world: &World) -> u8 {
-        0
-    }
-
     fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         world.get_block_state(&pos.above()).get_block() == vanilla_blocks::WATER
     }

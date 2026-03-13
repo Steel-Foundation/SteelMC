@@ -7,14 +7,23 @@ use crate::{behavior::blocks::crops::crop_block::CropLike, world::World};
 
 /// Blocks that react to bonemeal.
 pub trait Bonemealable {
+    #[expect(unused_variables)]
     /// Returns the age increase from bonemeal.
-    fn get_age_increase(&self, world: &World) -> u8;
+    fn get_age_increase(&self, world: &World) -> u8 {
+        0
+    }
 
     /// Returns whether bonemeal can be applied.
     fn is_bonemealable(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool;
 
     /// Applies the bonemeal effect.
     fn apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos);
+
+    /// Returns with a random chance whether the bonemeal should by applied or not
+    /// use `rand::random_bool(probability_of_success)`
+    fn random_success(&self) -> bool {
+        true
+    }
 
     /// Returns how this block uses bonemeal.
     fn bonemeal_action_type(&self) -> BonemealAction {

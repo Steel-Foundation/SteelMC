@@ -1,5 +1,6 @@
 //! This module contains all of the block implementations for crops and other similar blocks
 
+mod azalea_block;
 mod bamboo;
 mod bamboo_sapling;
 mod beetroots;
@@ -13,6 +14,7 @@ mod tall_seagrass_block;
 mod torchflower;
 mod vegetation_block;
 
+pub use azalea_block::AzaleaBlock;
 pub use bamboo::BambooStalkBlock;
 pub use bamboo_sapling::BambooSaplingBlock;
 pub use beetroots::BeetrootBlock;

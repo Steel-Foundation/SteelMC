@@ -75,6 +75,7 @@ fn generate_crop_registrations<'a>(
 #[allow(clippy::too_many_lines)]
 pub fn build(blocks: &[BlockClass]) -> String {
     // WARNING: PLEASE KEEP ALPHABETICALLY ORDERED <3
+    let mut azalea_blocks = Vec::new();
     let mut bamboo_sapling_blocks = Vec::new();
     let mut bamboo_stalk_blocks = Vec::new();
     let mut barrel_blocks = Vec::new();
@@ -107,6 +108,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     for block in blocks {
         let const_ident = to_const_ident(&block.name);
         match block.class.as_str() {
+            "AzaleaBlock" => azalea_blocks.push(const_ident),
             "BambooSaplingBlock" => bamboo_sapling_blocks.push(const_ident),
             "BambooStalkBlock" => bamboo_stalk_blocks.push(const_ident),
             "BarrelBlock" => barrel_blocks.push(const_ident),
@@ -186,6 +188,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         }
     }
 
+    let azalea_type = Ident::new("AzaleaBlock", Span::call_site());
     let bamboo_sapling_type = Ident::new("BambooSaplingBlock", Span::call_site());
     let bamboo_stalk_type = Ident::new("BambooStalkBlock", Span::call_site());
     let barrel_type = Ident::new("BarrelBlock", Span::call_site());
@@ -212,6 +215,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let wall_sign_type = Ident::new("WallSignBlock", Span::call_site());
     let wall_torch_type = Ident::new("WallTorchBlock", Span::call_site());
 
+    let azalea_registrations = generate_registrations(azalea_blocks.iter(), &azalea_type);
     let bamboo_sapling_registrations =
         generate_registrations(bamboo_sapling_blocks.iter(), &bamboo_sapling_type);
     let bamboo_stalk_registrations =
@@ -307,7 +311,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, FlowerBlock, SeagrassBlock, TallSeagrassBlock, TorchflowerBlock},
+            crops::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, FlowerBlock, SeagrassBlock, TallSeagrassBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
             CandleBlock,
@@ -331,6 +335,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use crate::behavior::BlockBehaviorRegistry;
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
+            #azalea_registrations
             #bamboo_sapling_registrations
             #bamboo_stalk_registrations
             #barrel_registrations

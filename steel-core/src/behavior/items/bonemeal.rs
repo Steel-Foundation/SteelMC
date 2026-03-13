@@ -23,7 +23,7 @@ impl BonemealBehavior {
             return false;
         };
         if let Some(bonemealable) = behavior.as_bonemealable() {
-            if !bonemealable.is_bonemealable(state, world, pos) {
+            if !bonemealable.random_success() || !bonemealable.is_bonemealable(state, world, pos) {
                 return false;
             }
 
