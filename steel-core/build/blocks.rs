@@ -87,6 +87,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let mut ceiling_hanging_sign_blocks = Vec::new();
     let mut crafting_table_blocks = Vec::new();
     let mut crop_blocks = Vec::new();
+    let mut double_plant_blocks = Vec::new();
     let mut end_portal_frame_blocks = Vec::new();
     let mut farm_blocks = Vec::new();
     let mut fence_blocks = Vec::new();
@@ -156,6 +157,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
                         .expect("Crop Blocks should have a max_age attribute!"),
                 ));
             }
+            "DoublePlantBlock" => double_plant_blocks.push(const_ident),
             "EndPortalFrameBlock" => end_portal_frame_blocks.push(const_ident),
             "FarmBlock" => farm_blocks.push(const_ident),
             "FenceBlock" => fence_blocks.push(const_ident),
@@ -205,6 +207,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let ceiling_hanging_sign_type = Ident::new("CeilingHangingSignBlock", Span::call_site());
     let crafting_table_type = Ident::new("CraftingTableBlock", Span::call_site());
     let crop_type = Ident::new("CropBlock", Span::call_site());
+    let double_plant_type = Ident::new("DoublePlantBlock", Span::call_site());
     let end_portal_frame_type = Ident::new("EndPortalFrameBlock", Span::call_site());
     let farmland_type = Ident::new("FarmlandBlock", Span::call_site());
     let fence_type = Ident::new("FenceBlock", Span::call_site());
@@ -262,6 +265,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let crafting_table_registrations =
         generate_registrations(crafting_table_blocks.iter(), &crafting_table_type);
     let crop_registrations = generate_crop_registrations(crop_blocks.iter(), &crop_type);
+    let double_plant_registrations =
+        generate_registrations(double_plant_blocks.iter(), &double_plant_type);
     let end_portal_frame_registrations =
         generate_registrations(end_portal_frame_blocks.iter(), &end_portal_frame_type);
     let farm_registrations = generate_registrations(farm_blocks.iter(), &farmland_type);
@@ -327,7 +332,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, FlowerBlock, NetherSproutsBlock, NetherWartBlock, SeagrassBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerBlock},
+            crops::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock, NetherWartBlock, SeagrassBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
             CandleBlock,
@@ -363,6 +368,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
             #ceiling_hanging_sign_registrations
             #crafting_table_registrations
             #crop_registrations
+            #double_plant_registrations
             #end_portal_frame_registrations
             #farm_registrations
             #fence_registrations
