@@ -13,7 +13,10 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
-        blocks::crops::{Vegetation, vegetation_block::DoublePlant},
+        blocks::crops::{
+            Vegetation,
+            vegetation_block::{double_plant_can_survive, double_plant_update_shape},
+        },
     },
     world::World,
 };
@@ -47,7 +50,19 @@ impl BlockBehaviour for TallSeagrassBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        self.double_plant_can_survive(state, world, pos)
+        let half = state.get_value(&BlockStateProperties::HALF);
+
+        if half == Half::Top {
+            let state_below = world.get_block_state(&pos.below());
+            state_below.get_block() == self.block
+                && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
+        } else {
+            let fluid_state = world.get_block_state(&pos).get_fluid_state();
+
+            double_plant_can_survive(self, state, world, pos)
+                && fluid_state.is_water()
+                && fluid_state.amount == 8
+        }
     }
 
     fn update_shape(
@@ -59,7 +74,7 @@ impl BlockBehaviour for TallSeagrassBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.double_plant_update_shape(state, world, pos, direction, neighbor_state)
+        double_plant_update_shape(self, state, world, pos, direction, neighbor_state)
     }
 
     fn get_clone_item_stack(
@@ -90,28 +105,8 @@ impl BlockBehaviour for TallSeagrassBlock {
     }
 }
 
-impl DoublePlant for TallSeagrassBlock {
-    fn double_plant_can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        let state_below = world.get_block_state(&pos.below());
-        let half = state.get_value(&BlockStateProperties::HALF);
-        if half == Half::Top {
-            state_below.get_block() == self.block
-                && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
-        } else {
-            let fluid_state = world.get_block_state(&pos).get_fluid_state();
-            self.vegetation_can_survive(state, world, pos)
-                && fluid_state.is_water()
-                && fluid_state.amount == 8
-        }
-    }
-}
-
 impl Vegetation for TallSeagrassBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
         state.is_face_sturdy(Direction::Up) && state.get_block() != vanilla_blocks::MAGMA_BLOCK
-    }
-
-    fn can_survive_dispatch(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        self.double_plant_can_survive(state, world, pos)
     }
 }

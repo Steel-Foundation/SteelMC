@@ -12,7 +12,9 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
-        blocks::crops::{Vegetation, bonemealable::Bonemealable},
+        blocks::crops::{
+            Vegetation, bonemealable::Bonemealable, vegetation_block::vegetation_update_shape,
+        },
     },
     world::World,
 };
@@ -55,7 +57,7 @@ impl BlockBehaviour for SeagrassBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let new_state = self.vegetation_update_shape(state, world, pos);
+        let new_state = vegetation_update_shape(self, state, world, pos);
         if !new_state.is_air() {
             world.schedule_fluid_tick_default(
                 pos,
@@ -118,9 +120,5 @@ impl Bonemealable for SeagrassBlock {
 impl Vegetation for SeagrassBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
         state.is_face_sturdy(Direction::Up) && state.get_block() != vanilla_blocks::MAGMA_BLOCK
-    }
-
-    fn can_survive_dispatch(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        self.vegetation_can_survive(state, world, pos)
     }
 }

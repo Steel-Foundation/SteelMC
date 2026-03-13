@@ -8,7 +8,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, math::Axis};
 
-use crate::world::World;
+use crate::{behavior::BlockBehaviour, world::World};
 
 /// Common behavior for vegetation blocks
 pub trait Vegetation {
@@ -19,68 +19,79 @@ pub trait Vegetation {
             .is_in_tag(state.get_block(), &vanilla_block_tags::DIRT_TAG)
             || state.get_block() == vanilla_blocks::FARMLAND
     }
-
-    #[expect(unused_variables)]
-    /// Returns whether the vegetation block can survive at the given position
-    fn vegetation_can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        let state_below = world.get_block_state(&pos.below());
-        self.may_place_on(state_below, world, pos.below())
-    }
-
-    /// Updates the shape of the block
-    fn vegetation_update_shape(
-        &self,
-        state: BlockStateId,
-        world: &World,
-        pos: BlockPos,
-    ) -> BlockStateId {
-        if self.can_survive_dispatch(state, world, pos) {
-            state
-        } else {
-            vanilla_blocks::AIR.default_state()
-        }
-    }
-
-    /// Implemented by the leaf node on which `can_survive` to call
-    fn can_survive_dispatch(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool;
 }
 
-pub trait DoublePlant: Vegetation {
-    fn double_plant_can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        if state.get_value(&BlockStateProperties::HALF) == Half::Top {
-            let state_below = world.get_block_state(&pos.below());
-            state_below.get_block() == state.get_block()
-                && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
-        } else {
-            self.vegetation_can_survive(state, world, pos)
-        }
+/// Shared survival logic for basic vegetation.
+pub fn vegetation_can_survive<H: Vegetation>(
+    hooks: &H,
+    _state: BlockStateId,
+    world: &World,
+    pos: BlockPos,
+) -> bool {
+    let state_below = world.get_block_state(&pos.below());
+    hooks.may_place_on(state_below, world, pos.below())
+}
+
+/// Shared update-shape logic for vegetation.
+///
+/// Important: this calls the final `BlockBehaviour::can_survive`,
+/// not `vegetation_can_survive`, so leaf blocks can override survival.
+pub fn vegetation_update_shape<B: BlockBehaviour>(
+    block: &B,
+    state: BlockStateId,
+    world: &World,
+    pos: BlockPos,
+) -> BlockStateId {
+    if block.can_survive(state, world, pos) {
+        state
+    } else {
+        vanilla_blocks::AIR.default_state()
     }
+}
 
-    fn double_plant_update_shape(
-        &self,
-        state: BlockStateId,
-        world: &World,
-        pos: BlockPos,
-        direction: Direction,
-        neighbor_state: BlockStateId,
-    ) -> BlockStateId {
-        let half = state.get_value(&BlockStateProperties::HALF);
+/// Shared survival logic for double plants.
+pub fn double_plant_can_survive<H: Vegetation>(
+    hooks: &H,
+    state: BlockStateId,
+    world: &World,
+    pos: BlockPos,
+) -> bool {
+    if state.get_value(&BlockStateProperties::HALF) == Half::Top {
+        let state_below = world.get_block_state(&pos.below());
+        state_below.get_block() == state.get_block()
+            && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
+    } else {
+        vegetation_can_survive(hooks, state, world, pos)
+    }
+}
 
-        if direction.axis() != Axis::Y
-            || ((half == Half::Bottom) != (direction == Direction::Up))
-            || (neighbor_state.get_block() == state.get_block()
-                && neighbor_state.get_value(&BlockStateProperties::HALF) != half)
+/// Shared update-shape logic for double plants.
+///
+/// This mirrors the Java superclass logic, but explicitly.
+pub fn double_plant_update_shape<B: BlockBehaviour>(
+    block: &B,
+    state: BlockStateId,
+    world: &World,
+    pos: BlockPos,
+    direction: Direction,
+    neighbor_state: BlockStateId,
+) -> BlockStateId {
+    let half = state.get_value(&BlockStateProperties::HALF);
+
+    if direction.axis() != Axis::Y
+        || ((half == Half::Bottom) != (direction == Direction::Up))
+        || (neighbor_state.get_block() == state.get_block()
+            && neighbor_state.get_value(&BlockStateProperties::HALF) != half)
+    {
+        if half == Half::Bottom
+            && direction == Direction::Down
+            && !block.can_survive(state, world, pos)
         {
-            if half == Half::Bottom
-                && direction == Direction::Down
-                && !self.double_plant_can_survive(state, world, pos)
-            {
-                return vanilla_blocks::AIR.default_state();
-            }
-
-            self.vegetation_update_shape(state, world, pos)
-        } else {
-            vanilla_blocks::AIR.default_state()
+            return vanilla_blocks::AIR.default_state();
         }
+
+        vegetation_update_shape(block, state, world, pos)
+    } else {
+        vanilla_blocks::AIR.default_state()
     }
 }

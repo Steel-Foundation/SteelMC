@@ -2,7 +2,13 @@ use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext, blocks::crops::Vegetation},
+    behavior::{
+        BlockBehaviour, BlockPlaceContext,
+        blocks::crops::{
+            Vegetation,
+            vegetation_block::{vegetation_can_survive, vegetation_update_shape},
+        },
+    },
     world::World,
 };
 
@@ -36,7 +42,7 @@ impl BlockBehaviour for FlowerBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        self.vegetation_can_survive(state, world, pos)
+        vegetation_can_survive(self, state, world, pos)
     }
 
     fn update_shape(
@@ -48,12 +54,8 @@ impl BlockBehaviour for FlowerBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.vegetation_update_shape(state, world, pos)
+        vegetation_update_shape(self, state, world, pos)
     }
 }
 
-impl Vegetation for FlowerBlock {
-    fn can_survive_dispatch(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        self.vegetation_can_survive(state, world, pos)
-    }
-}
+impl Vegetation for FlowerBlock {}
