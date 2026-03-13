@@ -5,7 +5,8 @@ use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::vanilla_blocks;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{REGISTRY, vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehaviour;
@@ -177,11 +178,6 @@ impl Bonemealable for CropBlock {
     }
 
     fn is_bonemealable(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        log::info!(
-            "is_max_age = {}; max_age = {}",
-            self.is_max_age(state),
-            self.max_age,
-        );
         !self.is_max_age(state)
     }
 }
@@ -203,5 +199,18 @@ impl BlockBehaviour for CropBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn get_clone_item_stack(
+        &self,
+        block: BlockRef,
+        _state: BlockStateId,
+        _include_data: bool,
+    ) -> Option<ItemStack> {
+        if block == vanilla_blocks::WHEAT {
+            Some(ItemStack::new(&vanilla_items::ITEMS.wheat_seeds))
+        } else {
+            REGISTRY.items.by_key(&block.key).map(ItemStack::new)
+        }
     }
 }
