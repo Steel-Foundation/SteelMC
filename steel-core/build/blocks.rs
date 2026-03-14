@@ -337,7 +337,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids};
 
         use crate::behavior::blocks::{
-            crops::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock, NetherWartBlock, SeagrassBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerBlock},
+            vegetation::{ AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock, CactusFlowerBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock, NetherWartBlock, SeagrassBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerBlock},
             BarrelBlock,
             ButtonBlock,
             CandleBlock,
