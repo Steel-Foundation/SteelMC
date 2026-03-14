@@ -3,64 +3,112 @@
 //! Used for biome temperature calculations. Not to be confused with
 //! `PerlinNoise` which uses improved (gradient) noise octaves.
 
+use std::collections::BTreeSet;
+
 use crate::noise::SimplexNoise;
-use crate::random::RandomSource;
+use crate::random::legacy_random::LegacyRandom;
+use crate::random::{Random, RandomSource};
 
 /// Multi-octave simplex noise generator.
 ///
 /// Matches vanilla's `net.minecraft.world.level.levelgen.synth.PerlinSimplexNoise`.
 /// Created from a set of octave levels; each octave uses a separate `SimplexNoise`.
+///
+/// Array layout matches vanilla: index 0 = highest frequency octave (largest
+/// octave number), increasing index = decreasing frequency.
 pub struct PerlinSimplexNoise {
     noise_levels: Vec<Option<SimplexNoise>>,
-    lowest_freq_input_factor: f64,
-    lowest_freq_value_factor: f64,
+    highest_freq_input_factor: f64,
+    highest_freq_value_factor: f64,
 }
 
 impl PerlinSimplexNoise {
     /// Create from a random source and a list of octave levels.
     ///
-    /// Matches vanilla's constructor: octave levels are sorted, and a
-    /// `SimplexNoise` is created for each present level. Missing levels
-    /// in the range are `None` (the random source is still consumed).
+    /// Matches vanilla's constructor exactly: the zero octave is created first,
+    /// then negative octaves (lower frequency) consume the same random, and
+    /// positive octaves (higher frequency) use a derived random from the zero
+    /// octave's self-evaluation.
     #[must_use]
     pub fn new(random: &mut RandomSource, octaves: &[i32]) -> Self {
-        let mut sorted = octaves.to_vec();
-        sorted.sort_unstable();
-        let first_octave = sorted[0];
-        let last_octave = sorted[sorted.len() - 1];
-        let range = (last_octave - first_octave) as usize;
-        let length = range + 1;
+        let octave_set: BTreeSet<i32> = octaves.iter().copied().collect();
+        assert!(!octave_set.is_empty(), "Need some octaves");
 
-        let mut noise_levels: Vec<Option<SimplexNoise>> = vec![None; length];
+        let first_octave = *octave_set.first().unwrap();
+        let last_octave = *octave_set.last().unwrap();
+        let high_freq_octaves = last_octave;
+        let total = (last_octave - first_octave + 1) as usize;
 
-        for &octave in octaves {
-            let index = (octave - first_octave) as usize;
-            noise_levels[index] = Some(SimplexNoise::new(random));
+        // Zero octave is always created first (consuming random state),
+        // matching vanilla's construction order
+        let zero_octave = SimplexNoise::new(random);
+        let zero_index = high_freq_octaves; // as i32, can be negative
+
+        let mut noise_levels: Vec<Option<SimplexNoise>> = vec![None; total];
+
+        // Compute seed for positive octaves before moving zero_octave
+        let hf_seed = if high_freq_octaves > 0 {
+            Some(
+                (zero_octave.get_value_3d(zero_octave.xo, zero_octave.yo, zero_octave.zo)
+                    * 9.223372036854776e18) as i64,
+            )
+        } else {
+            None
+        };
+
+        // Place zero octave if octave 0 is in the set and index is valid
+        if zero_index >= 0 && (zero_index as usize) < total && octave_set.contains(&0) {
+            noise_levels[zero_index as usize] = Some(zero_octave);
+        }
+
+        // Lower-frequency octaves (negative octave numbers, array indices > zero_index)
+        let start = (zero_index + 1).max(0) as usize;
+        for i in start..total {
+            let octave_level = zero_index - i as i32;
+            if octave_set.contains(&octave_level) {
+                noise_levels[i] = Some(SimplexNoise::new(random));
+            } else {
+                random.consume_count(262);
+            }
+        }
+
+        // Higher-frequency octaves (positive octave numbers, indices < zero_index)
+        // Uses a separate random derived from the zero octave
+        if let Some(seed) = hf_seed {
+            let mut hf_random = RandomSource::Legacy(LegacyRandom::from_seed(seed as u64));
+
+            for ix in (0..zero_index as usize).rev() {
+                let octave_level = zero_index - ix as i32;
+                if octave_set.contains(&octave_level) {
+                    noise_levels[ix] = Some(SimplexNoise::new(&mut hf_random));
+                } else {
+                    hf_random.consume_count(262);
+                }
+            }
         }
 
         Self {
             noise_levels,
-            lowest_freq_input_factor: 2.0f64.powi(-last_octave),
-            lowest_freq_value_factor: 2.0f64.powi(range as i32)
-                / (2.0f64.powi(length as i32) - 1.0),
+            highest_freq_input_factor: 2.0f64.powi(last_octave),
+            highest_freq_value_factor: 1.0 / (2.0f64.powi(total as i32) - 1.0),
         }
     }
 
     /// Sample the 2D noise at the given coordinates.
     ///
-    /// Matches vanilla's `getValue(x, z, false)` path (no Y offset).
+    /// Matches vanilla's `getValue(x, z, false)` path (no offset applied).
     #[must_use]
     pub fn get_value(&self, x: f64, z: f64) -> f64 {
         let mut sum = 0.0;
-        let mut frequency = self.lowest_freq_input_factor;
-        let mut amplitude = self.lowest_freq_value_factor;
+        let mut factor = self.highest_freq_input_factor;
+        let mut amplitude = self.highest_freq_value_factor;
 
         for noise in &self.noise_levels {
             if let Some(n) = noise {
-                sum += amplitude * n.get_value_2d(x * frequency, z * frequency);
+                sum += n.get_value_2d(x * factor, z * factor) * amplitude;
             }
-            frequency *= 2.0;
-            amplitude /= 2.0;
+            factor /= 2.0;
+            amplitude *= 2.0;
         }
 
         sum
