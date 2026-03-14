@@ -392,7 +392,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         continue;
                     }
 
-                    // Solid block — scan for stone_depth_below (lookahead)
+                    // Solid block — scan for stone_depth_below (lookahead).
+                    // Range starts at `min_y - 1` as a sentinel: the first iteration
+                    // hits `la_y < min_y`, treating the world floor as a cavity boundary.
                     if next_ceiling_stone_y >= y {
                         next_ceiling_stone_y = i32::MIN;
                         for la_y in (min_y - 1..y).rev() {
