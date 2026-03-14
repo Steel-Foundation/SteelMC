@@ -1,14 +1,19 @@
 use std::sync::Arc;
 
-use steel_registry::blocks::{BlockRef, properties::IntProperty};
+use steel_registry::{
+    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::IntProperty},
+    vanilla_blocks,
+};
 use steel_utils::BlockStateId;
 
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext,
         blocks::vegetation::{
+            Vegetation,
             bonemealable::{Bonemealable, CropBonemealExt},
             crop_block::CropLike,
+            vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
     world::World,
@@ -67,8 +72,32 @@ impl Bonemealable for BeetrootBlock {
 }
 
 impl BlockBehaviour for BeetrootBlock {
-    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.get_state_for_age(0))
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        if self.may_place_on(
+            context.world.get_block_state(&context.relative_pos.below()),
+            context.world,
+            context.relative_pos.below(),
+        ) {
+            Some(self.block.default_state())
+        } else {
+            None
+        }
+    }
+
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: steel_utils::BlockPos) -> bool {
+        vegetation_can_survive(self, state, world, pos)
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &World,
+        pos: steel_utils::BlockPos,
+        _direction: steel_utils::Direction,
+        _neighbor_pos: steel_utils::BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        vegetation_update_shape(self, state, world, pos)
     }
 
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
@@ -83,5 +112,16 @@ impl BlockBehaviour for BeetrootBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+}
+
+impl Vegetation for BeetrootBlock {
+    fn may_place_on(
+        &self,
+        state: BlockStateId,
+        _world: &World,
+        _pos: steel_utils::BlockPos,
+    ) -> bool {
+        state.get_block() == vanilla_blocks::FARMLAND
     }
 }
