@@ -326,7 +326,7 @@ fn chunk_stage_hashes() {
     }
 }
 
-/// Dimension order for deterministic test output (HashMap iteration is unordered).
+/// Dimension order for deterministic test output (`HashMap` iteration is unordered).
 const DIMENSION_ORDER: &[&str] = &[
     "minecraft:overworld",
     "minecraft:the_nether",
@@ -456,7 +456,7 @@ fn chunk_stage_hashes_inner() {
 
             for (i, &(chunk_x, chunk_z, expected_hash)) in stage_entries.iter().enumerate() {
                 // Ensure chunk exists with biomes + noise applied
-                if !chunks.contains_key(&(chunk_x, chunk_z)) {
+                chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
                     let sections: Box<[ChunkSection]> = (0..section_count)
                         .map(|_| ChunkSection::new_empty())
                         .collect::<Vec<_>>()
@@ -470,8 +470,8 @@ fn chunk_stage_hashes_inner() {
                     let chunk = ChunkAccess::Proto(proto);
                     generator.create_biomes(&chunk);
                     generator.fill_from_noise(&chunk);
-                    chunks.insert((chunk_x, chunk_z), chunk);
-                }
+                    chunk
+                });
 
                 let chunk = &chunks[&(chunk_x, chunk_z)];
 

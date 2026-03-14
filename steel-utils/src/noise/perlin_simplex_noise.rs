@@ -29,13 +29,18 @@ impl PerlinSimplexNoise {
     /// then negative octaves (lower frequency) consume the same random, and
     /// positive octaves (higher frequency) use a derived random from the zero
     /// octave's self-evaluation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `octaves` is empty.
     #[must_use]
     pub fn new(random: &mut RandomSource, octaves: &[i32]) -> Self {
         let octave_set: BTreeSet<i32> = octaves.iter().copied().collect();
         assert!(!octave_set.is_empty(), "Need some octaves");
 
-        let first_octave = *octave_set.first().unwrap();
-        let last_octave = *octave_set.last().unwrap();
+        // SAFETY: assert above guarantees non-empty
+        let first_octave = *octave_set.first().expect("non-empty octave set");
+        let last_octave = *octave_set.last().expect("non-empty octave set");
         let high_freq_octaves = last_octave;
         let total = (last_octave - first_octave + 1) as usize;
 
@@ -50,7 +55,7 @@ impl PerlinSimplexNoise {
         let hf_seed = if high_freq_octaves > 0 {
             Some(
                 (zero_octave.get_value_3d(zero_octave.xo, zero_octave.yo, zero_octave.zo)
-                    * 9.223372036854776e18) as i64,
+                    * 9.223_372_036_854_776e18) as i64,
             )
         } else {
             None
@@ -63,10 +68,10 @@ impl PerlinSimplexNoise {
 
         // Lower-frequency octaves (negative octave numbers, array indices > zero_index)
         let start = (zero_index + 1).max(0) as usize;
-        for i in start..total {
+        for (i, level) in noise_levels.iter_mut().enumerate().skip(start) {
             let octave_level = zero_index - i as i32;
             if octave_set.contains(&octave_level) {
-                noise_levels[i] = Some(SimplexNoise::new(random));
+                *level = Some(SimplexNoise::new(random));
             } else {
                 random.consume_count(262);
             }
