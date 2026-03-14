@@ -15,6 +15,7 @@ use steel_utils::surface::SurfaceRuleContext;
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
 use crate::world::structure::StructureStart;
+use crate::world::structure::mineshaft::{self, MineshaftType};
 use crate::world::structure::placement::{
     PlacementKind, StructureSelectionEntry, StructureSet, generate_ring_positions,
     load_vanilla_structure_sets,
@@ -197,9 +198,32 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // this location or the biome doesn't match.
         let mut can_generate = |entry: &StructureSelectionEntry| -> bool {
             let (biome_x, biome_y, biome_z) = match entry.structure_type.as_str() {
-                // Mineshaft: biome check at (middleX, 50+offset, minZ)
-                // We approximate yOffset as 0; the Z uses chunk min, not center
-                "minecraft:mineshaft" => (center_block_x, 50, chunk_min_z),
+                // Mineshaft: generate pieces to compute bounding box, then
+                // moveBelowSeaLevel to get the correct biome check Y
+                "minecraft:mineshaft" => {
+                    let mtype = if &*entry.structure.path == "mineshaft_mesa" {
+                        MineshaftType::Mesa
+                    } else {
+                        MineshaftType::Normal
+                    };
+                    // Clone the chunk's random state: vanilla seeds with
+                    // setLargeFeatureSeed(seed, chunkX, chunkZ)
+                    let mut ms_rng = LegacyRandom::from_seed(0);
+                    ms_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                    let mut get_height = |x: i32, z: i32| -> i32 {
+                        self.get_base_height(x, z, &mut height_cache)
+                    };
+                    let (bx, by, bz) = mineshaft::find_generation_point(
+                        &mut ms_rng,
+                        chunk_x,
+                        chunk_z,
+                        mtype,
+                        sea_level,
+                        N::Settings::MIN_Y,
+                        &mut get_height,
+                    );
+                    (bx, by, bz)
+                }
 
                 // SinglePieceStructure (desert_pyramid, jungle_temple):
                 // Reject if lowest corner height < sea level
@@ -220,8 +244,44 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 }
 
                 // OceanMonument: check all biomes in 29-block radius are deep ocean
-                // TODO: Full getBiomesWithin(29) check for REQUIRED_OCEAN_MONUMENT_SURROUNDING
-                "minecraft:ocean_monument" => (center_block_x, surface_y, center_block_z),
+                // OceanMonument: reject if any biome in 29-block radius is not
+                // in #minecraft:required_ocean_monument_surrounding (all ocean + river)
+                "minecraft:ocean_monument" => {
+                    use steel_utils::Identifier;
+                    const OCEAN_MONUMENT_SURROUNDING: &[&str] = &[
+                        "deep_frozen_ocean", "deep_cold_ocean", "deep_ocean",
+                        "deep_lukewarm_ocean", "frozen_ocean", "cold_ocean",
+                        "ocean", "lukewarm_ocean", "warm_ocean",
+                        "river", "frozen_river",
+                    ];
+
+                    let check_x = chunk_min_x + 9;
+                    let check_z = chunk_min_z + 9;
+                    let check_y = sea_level;
+                    let radius = 29;
+
+                    let q_x0 = (check_x - radius) >> 2;
+                    let q_x1 = (check_x + radius) >> 2;
+                    let q_z0 = (check_z - radius) >> 2;
+                    let q_z1 = (check_z + radius) >> 2;
+                    let q_y0 = (check_y - radius) >> 2;
+                    let q_y1 = (check_y + radius) >> 2;
+
+                    for qz in q_z0..=q_z1 {
+                        for qx in q_x0..=q_x1 {
+                            for qy in q_y0..=q_y1 {
+                                let biome = sampler.sample(qx, qy, qz);
+                                let is_surrounding = OCEAN_MONUMENT_SURROUNDING
+                                    .iter()
+                                    .any(|&b| biome.key == Identifier::vanilla_static(b));
+                                if !is_surrounding {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    (center_block_x, surface_y, center_block_z)
+                }
 
                 // Structures with fixed biome_check_y: use it with center position
                 _ => {

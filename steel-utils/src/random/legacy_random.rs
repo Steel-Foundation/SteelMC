@@ -28,6 +28,12 @@ impl LegacyRandom {
         }
     }
 
+    /// Returns the internal seed (for debugging/checkpointing).
+    #[must_use]
+    pub const fn get_seed(&self) -> i64 {
+        self.seed
+    }
+
     /// Re-seeds this generator, matching Java's `Random.setSeed`.
     pub fn set_seed(&mut self, seed: i64) {
         self.seed = (seed ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF;

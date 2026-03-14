@@ -6,6 +6,7 @@
 //!
 //! The structure key is `Identifier` until a structure registry is added.
 
+pub mod mineshaft;
 pub mod placement;
 
 use rustc_hash::FxHashMap;
