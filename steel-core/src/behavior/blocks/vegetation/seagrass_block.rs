@@ -12,7 +12,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
-        blocks::crops::{
+        blocks::vegetation::{
             Vegetation, bonemealable::Bonemealable, vegetation_block::vegetation_update_shape,
         },
     },

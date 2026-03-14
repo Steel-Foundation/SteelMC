@@ -3,7 +3,7 @@
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::{behavior::blocks::crops::crop_block::CropLike, world::World};
+use crate::{behavior::blocks::vegetation::crop_block::CropLike, world::World};
 
 /// Blocks that react to bonemeal.
 pub trait Bonemealable {

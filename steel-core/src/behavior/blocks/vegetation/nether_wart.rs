@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext,
-        blocks::crops::{
+        blocks::vegetation::{
             Vegetation,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },

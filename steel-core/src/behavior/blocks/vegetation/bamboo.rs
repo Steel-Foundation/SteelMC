@@ -12,7 +12,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext, blocks::crops::bonemealable::Bonemealable},
+    behavior::{BlockBehaviour, BlockPlaceContext, blocks::vegetation::bonemealable::Bonemealable},
     world::World,
 };
 

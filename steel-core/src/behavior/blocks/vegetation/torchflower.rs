@@ -6,7 +6,7 @@ use steel_utils::BlockStateId;
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext,
-        blocks::crops::{
+        blocks::vegetation::{
             bonemealable::{Bonemealable, CropBonemealExt},
             crop_block::CropLike,
         },

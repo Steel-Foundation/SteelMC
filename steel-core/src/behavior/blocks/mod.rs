@@ -17,7 +17,7 @@ mod sign_block;
 mod torch_block;
 mod weathering_block;
 
-pub mod crops;
+pub mod vegetation;
 
 pub use barrel_block::BarrelBlock;
 pub use button_block::ButtonBlock;

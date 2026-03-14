@@ -9,7 +9,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext,
-        blocks::crops::{
+        blocks::vegetation::{
             Vegetation,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },

@@ -10,7 +10,7 @@ use steel_registry::{REGISTRY, vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehaviour;
-use crate::behavior::blocks::crops::bonemealable::{Bonemealable, CropBonemealExt};
+use crate::behavior::blocks::vegetation::bonemealable::{Bonemealable, CropBonemealExt};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 

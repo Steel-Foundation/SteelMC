@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext,
-        blocks::crops::{BambooStalkBlock, bonemealable::Bonemealable},
+        blocks::vegetation::{BambooStalkBlock, bonemealable::Bonemealable},
     },
     world::World,
 };

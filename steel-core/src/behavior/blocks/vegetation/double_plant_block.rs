@@ -8,7 +8,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehaviour, BlockPlaceContext,
-        blocks::crops::{
+        blocks::vegetation::{
             Vegetation,
             vegetation_block::{double_plant_can_survive, double_plant_update_shape},
         },
