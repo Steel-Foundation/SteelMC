@@ -12,7 +12,10 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext, blocks::vegetation::bonemealable::Bonemealable},
+    behavior::{
+        BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
+        blocks::vegetation::bonemealable::Bonemealable,
+    },
     world::World,
 };
 
@@ -147,9 +150,16 @@ impl Bonemealable for BambooStalkBlock {
 
 impl BlockBehaviour for BambooStalkBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // FIXME: dont replace fluid
+        if !context
+            .world
+            .get_block_state(&context.relative_pos)
+            .get_fluid_state()
+            .is_empty()
+        {
+            return None;
+        }
 
-        let state_below = context.world.get_block_state(&context.clicked_pos);
+        let state_below = context.world.get_block_state(&context.relative_pos.below());
         let block_below = state_below.get_block();
 
         if !REGISTRY
