@@ -13,6 +13,10 @@ use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehaviour;
+use crate::behavior::blocks::vegetation::Vegetation;
+use crate::behavior::blocks::vegetation::vegetation_block::{
+    vegetation_can_survive, vegetation_update_shape,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -39,13 +43,7 @@ impl BlockBehaviour for CactusFlowerBlock {
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts CACTUS, FARMLAND,
     /// or any block with a sturdy center face on top.
     fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        let below_pos = pos.below();
-        let below = world.get_block_state(&below_pos);
-        let below_block = below.get_block();
-
-        below_block == vanilla_blocks::CACTUS
-            || below_block == vanilla_blocks::FARMLAND
-            || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
+        vegetation_can_survive(self, world.get_block_state(&pos.below()), world, pos)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -66,9 +64,14 @@ impl BlockBehaviour for CactusFlowerBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if !self.can_survive(state, world, pos) {
-            return vanilla_blocks::AIR.default_state();
-        }
-        state
+        vegetation_update_shape(self, state, world, pos)
+    }
+}
+
+impl Vegetation for CactusFlowerBlock {
+    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+        state.get_block() == vanilla_blocks::CACTUS
+            || state.get_block() == vanilla_blocks::FARMLAND
+            || state.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 }
