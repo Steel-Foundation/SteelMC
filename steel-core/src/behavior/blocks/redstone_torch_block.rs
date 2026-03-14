@@ -3,6 +3,7 @@
 //! These mirror the placement/survival rules of regular torches but add a `LIT`
 //! property and are intended to be expanded with redstone logic later.
 
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -19,6 +20,7 @@ use crate::world::World;
 ///
 /// TODO: Redstone functionality (signal output, neighbor notifications,
 /// scheduled ticks, burnout, particle effects).
+#[block_behavior]
 pub struct RedstoneTorchBlock {
     block: BlockRef,
 }
@@ -70,6 +72,7 @@ impl BlockBehaviour for RedstoneTorchBlock {
 ///
 /// TODO: Redstone functionality (signal output by facing, neighbor notifications,
 /// scheduled ticks, burnout, particle effects).
+#[block_behavior]
 pub struct RedstoneWallTorchBlock {
     block: BlockRef,
 }

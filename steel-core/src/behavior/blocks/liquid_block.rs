@@ -5,6 +5,7 @@
 // TODO: Add support for cached fluid states when FluidState caching is implemented
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -33,8 +34,10 @@ use crate::world::World;
 /// - LEVEL 0 = source block (full fluid)
 /// - LEVEL 1-7 = flowing fluid with decreasing height
 /// - LEVEL 8-15 = falling fluid
+#[block_behavior]
 pub struct LiquidBlock {
     block: BlockRef,
+    #[json_arg(vanilla_fluids, ref)]
     fluid: FluidRef,
 }
 

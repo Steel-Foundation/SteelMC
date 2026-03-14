@@ -4,6 +4,7 @@
 
 use std::sync::Weak;
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -24,6 +25,7 @@ use crate::world::World;
 ///
 /// Barrels are container block entities with 27 slots (3x9 grid).
 /// They use the same menu as chests but cannot form double containers.
+#[block_behavior]
 pub struct BarrelBlock {
     block: BlockRef,
 }

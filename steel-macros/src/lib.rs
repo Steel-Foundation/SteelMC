@@ -2,6 +2,8 @@
 //!
 //! Macros for the Steel Minecraft server.
 
+mod build_block_items;
+
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -129,6 +131,18 @@ impl Parse for Strategy {
             inner,
         })
     }
+}
+
+/// Marks a struct as a block behavior for auto-registration.
+///
+/// The build script scans source files for this attribute and generates
+/// `register_block_behaviors()` from `classes.json`.
+///
+/// Use `#[json_arg(...)]` on fields to describe extra constructor arguments.
+/// These attributes are stripped before compilation.
+#[proc_macro_attribute]
+pub fn block_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
+    build_block_items::block_behavior(attr.into(), item.into()).into()
 }
 
 /// Derives the `ReadFrom` trait for a struct.

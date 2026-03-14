@@ -1,3 +1,4 @@
+use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY,
     blocks::{
@@ -28,6 +29,7 @@ const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
 const MAX_CANDLES: u8 = 4;
 
 /// Behaviour for all Candle type blocks
+#[block_behavior]
 pub struct CandleBlock {
     block: BlockRef,
 }

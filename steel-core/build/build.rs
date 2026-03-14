@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+#![allow(clippy::disallowed_types)] // Build scripts don't have access to FxHashMap
 
 use std::fs;
 
@@ -35,4 +36,5 @@ pub fn main() {
         .expect("Failed to write weathering.rs");
 
     println!("cargo:rerun-if-changed=build/classes.json");
+    println!("cargo:rerun-if-changed=src/behavior/blocks");
 }

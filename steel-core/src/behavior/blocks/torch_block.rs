@@ -6,6 +6,7 @@
 //!
 //! Both break when their supporting block is removed.
 
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -22,6 +23,7 @@ use crate::world::World;
 ///
 /// Standing torches are placed on top of blocks and require center support
 /// from the block below to survive.
+#[block_behavior]
 pub struct TorchBlock {
     block: BlockRef,
 }
@@ -74,6 +76,7 @@ impl BlockBehaviour for TorchBlock {
 ///
 /// Wall torches are placed on the side of blocks and require a sturdy face
 /// from the block they're attached to.
+#[block_behavior]
 pub struct WallTorchBlock {
     block: BlockRef,
 }

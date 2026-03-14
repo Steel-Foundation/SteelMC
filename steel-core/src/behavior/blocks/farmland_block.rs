@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -21,6 +22,7 @@ const MAX_MOISTURE: u8 = 7;
 /// - Moisture increases to max (7) when near water
 /// - Moisture decreases by 1 each random tick when not near water
 /// - Farmland turns back to dirt when moisture reaches 0 and no crop is planted
+#[block_behavior(class = "FarmBlock")]
 pub struct FarmlandBlock {
     block: BlockRef,
 }
