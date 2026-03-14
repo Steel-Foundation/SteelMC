@@ -215,22 +215,16 @@ fn generate_and_add(
         return;
     }
 
-    // createRandomShaftPiece
+    // createRandomShaftPiece — vanilla uses if/else if/else (no fallthrough!)
     let roll = rng.next_i32_bounded(100);
 
     if roll >= 80 {
-        if try_add_crossing(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1) {
-            return;
-        }
+        try_add_crossing(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
+    } else if roll >= 70 {
+        try_add_stairs(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
+    } else {
+        try_add_corridor(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
     }
-
-    if roll >= 70 {
-        if try_add_stairs(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1) {
-            return;
-        }
-    }
-
-    try_add_corridor(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
 }
 
 fn try_add_corridor(
@@ -496,54 +490,6 @@ fn move_bb(bb: BoundingBox, dx: i32, dy: i32, dz: i32) -> BoundingBox {
     )
 }
 
-/// Simulates the random consumption of the room wall loop without DFS.
-fn simulate_room_wall_random(rng: &mut LegacyRandom, bb: BoundingBox) {
-    let x_span = bb.max_x - bb.min_x + 1;
-    let z_span = bb.max_z - bb.min_z + 1;
-    let mut height_space = (bb.max_y - bb.min_y + 1) - 3 - 1;
-    if height_space <= 0 {
-        height_space = 1;
-    }
-
-    // North wall
-    let mut pos = 0;
-    while pos < x_span {
-        pos += rng.next_i32_bounded(x_span);
-        if pos + 3 > x_span { break; }
-        rng.next_i32_bounded(height_space); // y offset
-        // Would call generate_and_add here — consumes nextInt(100) + piece creation randoms
-        // But we SKIP it to isolate the wall loop
-        pos += 4;
-    }
-
-    // South wall
-    pos = 0;
-    while pos < x_span {
-        pos += rng.next_i32_bounded(x_span);
-        if pos + 3 > x_span { break; }
-        rng.next_i32_bounded(height_space);
-        pos += 4;
-    }
-
-    // West wall
-    pos = 0;
-    while pos < z_span {
-        pos += rng.next_i32_bounded(z_span);
-        if pos + 3 > z_span { break; }
-        rng.next_i32_bounded(height_space);
-        pos += 4;
-    }
-
-    // East wall
-    pos = 0;
-    while pos < z_span {
-        pos += rng.next_i32_bounded(z_span);
-        if pos + 3 > z_span { break; }
-        rng.next_i32_bounded(height_space);
-        pos += 4;
-    }
-}
-
 fn union_bb(a: BoundingBox, b: BoundingBox) -> BoundingBox {
     BoundingBox::new(
         a.min_x.min(b.min_x),
@@ -559,165 +505,45 @@ fn union_bb(a: BoundingBox, b: BoundingBox) -> BoundingBox {
 mod tests {
     use super::*;
 
+    /// Verifies mineshaft piece generation matches vanilla for seed 13579, chunk (0,0).
+    /// Vanilla values from the extractor mixin trace.
     #[test]
-    fn trace_mineshaft_chunk_0_0() {
-        // Seed 13579, chunk (0,0) — trace key values for vanilla comparison
+    fn mineshaft_matches_vanilla_seed_13579_chunk_0_0() {
         let seed: i64 = 13579;
-        let chunk_x = 0;
-        let chunk_z = 0;
 
         let mut rng = LegacyRandom::from_seed(0);
-        rng.set_large_feature_seed(seed, chunk_x, chunk_z);
+        rng.set_large_feature_seed(seed, 0, 0);
+        rng.next_f64(); // consumed by findGenerationPoint
 
-        // Trace: first few random values after seeding
-        let mut trace_rng = LegacyRandom::from_seed(0);
-        trace_rng.set_large_feature_seed(seed, chunk_x, chunk_z);
-        let r0 = trace_rng.next_f64(); // nextDouble consumed in findGenerationPoint
-        let r1 = trace_rng.next_i32_bounded(6); // room width random
-        let r2 = trace_rng.next_i32_bounded(6); // room height random
-        let r3 = trace_rng.next_i32_bounded(6); // room depth random
-        eprintln!("Seed {seed}, chunk ({chunk_x},{chunk_z}):");
-        eprintln!("  nextDouble = {r0}");
-        eprintln!("  room rands: width_r={r1}, height_r={r2}, depth_r={r3}");
+        let room_bb = create_room_bb(&mut rng, 2, 2);
+        assert_eq!(room_bb, BoundingBox::new(2, 50, 2, 13, 56, 9));
 
-        let room_x = chunk_x * 16 + 2;
-        let room_z = chunk_z * 16 + 2;
-        let room_bb = BoundingBox::new(
-            room_x, 50, room_z,
-            room_x + 7 + r1, 54 + r2, room_z + 7 + r3,
-        );
-        eprintln!("  room_bb: ({},{},{}) -> ({},{},{})",
-            room_bb.min_x, room_bb.min_y, room_bb.min_z,
-            room_bb.max_x, room_bb.max_y, room_bb.max_z);
-
-        // Now run the full generation
-        let (bx, by, bz) = find_generation_point(
-            &mut rng, chunk_x, chunk_z,
-            MineshaftType::Normal, 63, -64,
-            &mut |_, _| 70, // dummy surface height
-        );
-        eprintln!("  biome_check_pos: ({bx}, {by}, {bz})");
-        eprintln!("  piece_count after generation with fresh rng:");
-
-        // Run again to count pieces
-        let mut rng2 = LegacyRandom::from_seed(0);
-        rng2.set_large_feature_seed(seed, chunk_x, chunk_z);
-        rng2.next_f64();
-        let room_bb2 = create_room_bb(&mut rng2, room_x, room_z);
         let mut pieces = Pieces {
-            bbs: vec![room_bb2],
-            infos: vec![PieceInfo { bb: room_bb2, kind: PieceType::Room, depth: 0, dir: None }],
-            start_bb: room_bb2, 
+            bbs: vec![room_bb],
+            infos: vec![PieceInfo { bb: room_bb, kind: PieceType::Room, depth: 0, dir: None }],
+            start_bb: room_bb,
         };
-        room_add_children(&mut pieces, &mut rng2, room_bb2);
+        room_add_children(&mut pieces, &mut rng, room_bb);
+
+        // Vanilla produces exactly 92 pieces
+        assert_eq!(pieces.bbs.len(), 92);
+
+        // Vanilla's overall bounding box
         let mut overall = pieces.bbs[0];
         for bb in &pieces.bbs[1..] {
             overall = union_bb(overall, *bb);
         }
-        let random_check = rng2.next_i32();
-        eprintln!("  random_check_after_pieces: {random_check}");
+        assert_eq!(overall, BoundingBox::new(-45, 42, -74, 60, 59, 41));
 
-        // Check random state at intermediate points
-        // After room wall loop (no DFS)
-        let mut rng3 = LegacyRandom::from_seed(0);
-        rng3.set_large_feature_seed(seed, chunk_x, chunk_z);
-        rng3.next_f64();
-        let room_bb3 = create_room_bb(&mut rng3, room_x, room_z);
-        simulate_room_wall_random(&mut rng3, room_bb3);
-        eprintln!("  random_check_after_room_walls: {}", rng3.next_i32());
-
-        // Check how many children each wall generates (with DFS)
-        // by counting pieces added during each wall
-        let mut rng4 = LegacyRandom::from_seed(0);
-        rng4.set_large_feature_seed(seed, chunk_x, chunk_z);
-        rng4.next_f64();
-        let room_bb4 = create_room_bb(&mut rng4, room_x, room_z);
-        let mut p4 = Pieces {
-            bbs: vec![room_bb4],
-            infos: vec![PieceInfo { bb: room_bb4, kind: PieceType::Room, depth: 0, dir: None }],
-            start_bb: room_bb4, 
-        };
-        let x_span = room_bb4.max_x - room_bb4.min_x + 1;
-        let z_span = room_bb4.max_z - room_bb4.min_z + 1;
-        let mut hs = (room_bb4.max_y - room_bb4.min_y + 1) - 3 - 1;
-        if hs <= 0 { hs = 1; }
-
-        // North wall with DFS — checkpoint after EACH child
-        let before = p4.bbs.len();
-        let mut pos = 0;
-        let mut north_child_idx = 0;
-        while pos < x_span {
-            pos += rng4.next_i32_bounded(x_span);
-            if pos + 3 > x_span { break; }
-            let fy = room_bb4.min_y + rng4.next_i32_bounded(hs) + 1;
-            let before_child = p4.bbs.len();
-            generate_and_add(&mut p4, &mut rng4, room_bb4.min_x + pos, fy, room_bb4.min_z - 1, Dir::North, 0);
-            let child_pieces = p4.bbs.len() - before_child;
-            north_child_idx += 1;
-            pos += 4;
+        // moveBelowSeaLevel produces y_offset = -70 → biome check at Y = -20
+        let max_y = 63 - 10; // sea_level - 10
+        let y_span = overall.max_y - overall.min_y + 1;
+        let mut y1_pos = y_span + (-64) + 1;
+        if y1_pos < max_y {
+            y1_pos += rng.next_i32_bounded(max_y - y1_pos);
         }
-        eprintln!("  north_wall_total: {} pieces", p4.bbs.len() - before);
-
-        // South wall with DFS
-        let before = p4.bbs.len();
-        pos = 0;
-        while pos < x_span {
-            pos += rng4.next_i32_bounded(x_span);
-            if pos + 3 > x_span { break; }
-            let fy = room_bb4.min_y + rng4.next_i32_bounded(hs) + 1;
-            generate_and_add(&mut p4, &mut rng4, room_bb4.min_x + pos, fy, room_bb4.max_z + 1, Dir::South, 0);
-            pos += 4;
-        }
-        eprintln!("  south_wall: {} pieces, random_check={}", p4.bbs.len() - before, rng4.next_i32());
-
-        // West wall with DFS
-        let before = p4.bbs.len();
-        pos = 0;
-        while pos < z_span {
-            pos += rng4.next_i32_bounded(z_span);
-            if pos + 3 > z_span { break; }
-            let fy = room_bb4.min_y + rng4.next_i32_bounded(hs) + 1;
-            generate_and_add(&mut p4, &mut rng4, room_bb4.min_x - 1, fy, room_bb4.min_z + pos, Dir::West, 0);
-            pos += 4;
-        }
-        eprintln!("  west_wall: {} pieces, random_check={}", p4.bbs.len() - before, rng4.next_i32());
-
-        // East wall with DFS
-        let before = p4.bbs.len();
-        pos = 0;
-        while pos < z_span {
-            pos += rng4.next_i32_bounded(z_span);
-            if pos + 3 > z_span { break; }
-            let fy = room_bb4.min_y + rng4.next_i32_bounded(hs) + 1;
-            generate_and_add(&mut p4, &mut rng4, room_bb4.max_x + 1, fy, room_bb4.min_z + pos, Dir::East, 0);
-            pos += 4;
-        }
-        eprintln!("  east_wall: {} pieces, random_check={}", p4.bbs.len() - before, rng4.next_i32());
-        eprintln!("  piece_count: {}", pieces.bbs.len());
-        eprintln!("  overall_bb: ({},{},{}) -> ({},{},{})",
-            overall.min_x, overall.min_y, overall.min_z,
-            overall.max_x, overall.max_y, overall.max_z);
-
-        // Dump first 20 pieces for comparison with vanilla
-        let dir_name = |d: Option<Dir>| match d {
-            None => "-",
-            Some(Dir::North) => "N",
-            Some(Dir::South) => "S",
-            Some(Dir::West) => "W",
-            Some(Dir::East) => "E",
-        };
-        let type_name = |t: PieceType| match t {
-            PieceType::Room => "room",
-            PieceType::Corridor => "corridor",
-            PieceType::Crossing => "crossing",
-            PieceType::Stairs => "stairs",
-        };
-        eprintln!("  First 20 pieces:");
-        for (i, info) in pieces.infos.iter().take(20).enumerate() {
-            eprintln!("    [{}] {} d={} dir={} bb=({},{},{})→({},{},{})",
-                i, type_name(info.kind), info.depth, dir_name(info.dir),
-                info.bb.min_x, info.bb.min_y, info.bb.min_z,
-                info.bb.max_x, info.bb.max_y, info.bb.max_z);
-        }
+        let y_offset = y1_pos - overall.max_y;
+        assert_eq!(y_offset, -70);
+        assert_eq!(50 + y_offset, -20); // biome check Y
     }
 }
