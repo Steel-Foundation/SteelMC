@@ -8,6 +8,7 @@
 
 pub mod mineshaft;
 pub mod placement;
+pub mod ruined_portal;
 
 use rustc_hash::FxHashMap;
 

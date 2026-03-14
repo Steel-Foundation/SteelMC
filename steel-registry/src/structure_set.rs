@@ -61,8 +61,8 @@ pub enum PlacementData {
         spread: i32,
         /// Total positions.
         count: i32,
-        /// Preferred biomes tag or list.
-        preferred_biomes: String,
+        /// Biomes that ring positions prefer to snap to.
+        preferred_biomes: Vec<Identifier>,
         /// Unique seed modifier.
         salt: i32,
         /// Generation probability. Default: 1.0.

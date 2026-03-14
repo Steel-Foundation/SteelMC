@@ -103,10 +103,6 @@ impl BiomeSourceKind {
         let mut result: Option<(i32, i32)> = None;
         let mut found = 0;
 
-        // startRadius = noiseRadius (findClosest=false → only checks the outer shell)
-        // But vanilla iterates from startRadius..=noiseRadius with the FULL grid,
-        // so for findClosest=false it's just one iteration at currentRadius=noiseRadius
-        // sampling ALL positions from -noiseRadius to noiseRadius.
         for z in -noise_radius..=noise_radius {
             for x in -noise_radius..=noise_radius {
                 let noise_x = noise_center_x + x;

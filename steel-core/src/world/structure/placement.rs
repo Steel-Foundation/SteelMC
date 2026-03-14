@@ -176,7 +176,7 @@ where
             circle += 1;
             position_in_circle = 0;
             spread += 2 * spread / (circle + 1);
-            spread = spread.min(count - i - 1);
+            spread = spread.min(count - i);
             angle += rng.next_f64() * TAU;
         }
     }
@@ -459,7 +459,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             distance,
             spread,
             count,
-            preferred_biomes: _,
+            preferred_biomes,
             salt,
             frequency,
             frequency_reduction_method,
@@ -472,8 +472,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
                 distance,
                 spread,
                 count,
-                // TODO: Resolve biome tag to actual biome list
-                preferred_biomes: vec![],
+                preferred_biomes,
             },
         },
     };

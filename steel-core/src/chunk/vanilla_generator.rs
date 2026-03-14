@@ -16,6 +16,7 @@ use steel_utils::surface::SurfaceRuleContext;
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
 use crate::world::structure::StructureStart;
 use crate::world::structure::mineshaft::{self, MineshaftType};
+use crate::world::structure::ruined_portal;
 use crate::world::structure::placement::{
     PlacementKind, StructureSelectionEntry, StructureSet, generate_ring_positions,
     load_vanilla_structure_sets,
@@ -153,6 +154,54 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
     }
 }
 
+/// Evaluates density using trilinear interpolation from cell corners,
+/// matching vanilla's NoiseChunk behavior.
+fn interpolated_density<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    x: i32,
+    y: i32,
+    z: i32,
+    cell_w: i32,
+    cell_h: i32,
+) -> f64 {
+    let cx = x.div_euclid(cell_w);
+    let cy = y.div_euclid(cell_h);
+    let cz = z.div_euclid(cell_w);
+    let fx = f64::from(x.rem_euclid(cell_w)) / f64::from(cell_w);
+    let fy = f64::from(y.rem_euclid(cell_h)) / f64::from(cell_h);
+    let fz = f64::from(z.rem_euclid(cell_w)) / f64::from(cell_w);
+
+    let x0 = cx * cell_w;
+    let x1 = x0 + cell_w;
+    let y0 = cy * cell_h;
+    let y1 = y0 + cell_h;
+    let z0 = cz * cell_w;
+    let z1 = z0 + cell_w;
+
+    let mut eval = |ex: i32, ey: i32, ez: i32| -> f64 {
+        cache.ensure(ex, ez, noises);
+        noises.router_final_density(cache, ex, ey, ez)
+    };
+    let d000 = eval(x0, y0, z0);
+    let d100 = eval(x1, y0, z0);
+    let d010 = eval(x0, y1, z0);
+    let d110 = eval(x1, y1, z0);
+    let d001 = eval(x0, y0, z1);
+    let d101 = eval(x1, y0, z1);
+    let d011 = eval(x0, y1, z1);
+    let d111 = eval(x1, y1, z1);
+
+    use steel_utils::math::noise_math::lerp;
+    let d00 = lerp(fx, d000, d100);
+    let d10 = lerp(fx, d010, d110);
+    let d01 = lerp(fx, d001, d101);
+    let d11 = lerp(fx, d011, d111);
+    let d0 = lerp(fz, d00, d01);
+    let d1 = lerp(fz, d10, d11);
+    lerp(fy, d0, d1)
+}
+
 impl<N: DimensionNoises> VanillaGenerator<N> {
     /// Returns the first Y from the top where terrain is solid.
     ///
@@ -190,8 +239,29 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let center_block_z = chunk_min_z + 8;
 
         let mut height_cache = N::ColumnCache::default();
-        let surface_y = self.get_base_height(center_block_x, center_block_z, &mut height_cache);
         let sea_level = N::Settings::SEA_LEVEL;
+
+        let cell_w = N::Settings::CELL_WIDTH;
+        let cell_h = N::Settings::CELL_HEIGHT;
+
+        // Interpolated base height scan matching vanilla's getBaseHeight / iterateNoiseColumn.
+        // WORLD_SURFACE_WG: first non-air (density > 0 or water below sea level)
+        // OCEAN_FLOOR_WG: first solid only (density > 0, ignoring water)
+        let interp_base_height = |cache: &mut N::ColumnCache, noises: &N, x: i32, z: i32, ocean_floor: bool| -> i32 {
+            let estimate = preliminary_surface_level::<N>(noises, cache, x, z);
+            let start_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
+            let min_y = N::Settings::MIN_Y;
+            for y in (min_y..=start_y).rev() {
+                let density = interpolated_density::<N>(cache, noises, x, y, z, cell_w, cell_h);
+                if density > 0.0 || (!ocean_floor && y < sea_level) {
+                    return y + 1;
+                }
+            }
+            min_y
+        };
+
+        // onTopOfChunkCenter uses getFirstOccupiedHeight = getBaseHeight - 1
+        let surface_y = interp_base_height(&mut height_cache, &self.noises, center_block_x, center_block_z, false) - 1;
 
         // Checks if findGenerationPoint would succeed and if the biome at the
         // generation point matches. Returns false if the structure type rejects
@@ -226,16 +296,19 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 }
 
                 // SinglePieceStructure (desert_pyramid, jungle_temple):
-                // Reject if lowest corner height < sea level
+                // Reject if lowest corner height < sea level.
+                // Vanilla uses getLowestY which calls getBaseHeight (interpolated).
                 "minecraft:desert_pyramid" | "minecraft:jungle_temple" => {
                     let (width, depth) = match entry.structure_type.as_str() {
                         "minecraft:desert_pyramid" => (21, 21),
                         _ => (12, 15),
                     };
-                    let h0 = self.get_base_height(chunk_min_x, chunk_min_z, &mut height_cache);
-                    let h1 = self.get_base_height(chunk_min_x, chunk_min_z + depth, &mut height_cache);
-                    let h2 = self.get_base_height(chunk_min_x + width, chunk_min_z, &mut height_cache);
-                    let h3 = self.get_base_height(chunk_min_x + width, chunk_min_z + depth, &mut height_cache);
+                    // Vanilla uses getFirstOccupiedHeight(WORLD_SURFACE_WG) = getBaseHeight - 1.
+                    // interp_base_height returns getBaseHeight (posY + 1), so subtract 1.
+                    let h0 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x, chunk_min_z, false) - 1;
+                    let h1 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x, chunk_min_z + depth, false) - 1;
+                    let h2 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x + width, chunk_min_z, false) - 1;
+                    let h3 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x + width, chunk_min_z + depth, false) - 1;
                     let lowest = h0.min(h1).min(h2).min(h3);
                     if lowest < sea_level {
                         return false;
@@ -283,10 +356,83 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     (center_block_x, surface_y, center_block_z)
                 }
 
-                // Structures with fixed biome_check_y: use it with center position
-                _ => {
+                // RuinedPortal: run vanilla's findGenerationPoint RNG to get
+                // the correct biome check Y (surface vs underground).
+                "minecraft:ruined_portal" => {
+                    use crate::world::structure::ruined_portal::{TerrainQuery, TerrainResult};
+                    let mut rp_rng = LegacyRandom::from_seed(0);
+                    rp_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                    let mut terrain = |q: TerrainQuery| -> TerrainResult {
+                        match q {
+                            TerrainQuery::SurfaceHeight(x, z) => {
+                                TerrainResult::Height(interp_base_height(&mut height_cache, &self.noises, x, z, false))
+                            }
+                            TerrainQuery::IsOpaque(x, y, z) => {
+                                let density = interpolated_density::<N>(&mut height_cache, &self.noises, x, y, z, cell_w, cell_h);
+                                TerrainResult::Opaque(density > 0.0 || y < sea_level)
+                            }
+                        }
+                    };
+                    ruined_portal::find_biome_check_pos(
+                        &mut rp_rng,
+                        chunk_x,
+                        chunk_z,
+                        &entry.structure.path,
+                        N::Settings::MIN_Y,
+                        &mut terrain,
+                    )
+                }
+
+                // onTopOfChunkCenter with WORLD_SURFACE_WG heightmap
+                "minecraft:shipwreck" | "minecraft:swamp_hut" | "minecraft:igloo" => {
+                    (center_block_x, surface_y, center_block_z)
+                }
+
+                // onTopOfChunkCenter with OCEAN_FLOOR_WG heightmap
+                "minecraft:ocean_ruin" | "minecraft:buried_treasure" => {
+                    let ocean_floor_y = interp_base_height(&mut height_cache, &self.noises, center_block_x, center_block_z, true);
+                    (center_block_x, ocean_floor_y, center_block_z)
+                }
+
+                // Woodland mansion / End city: offset position at chunkPos.getBlockX(7),
+                // getBlockZ(7) with getLowestY in 5x5 box. Reject if Y < 60.
+                // Uses getFirstOccupiedHeight(WORLD_SURFACE_WG) = getBaseHeight - 1.
+                "minecraft:woodland_mansion" | "minecraft:end_city" => {
+                    let bx = chunk_min_x + 7;
+                    let bz = chunk_min_z + 7;
+                    let h0 = interp_base_height(&mut height_cache, &self.noises, bx, bz, false) - 1;
+                    let h1 = interp_base_height(&mut height_cache, &self.noises, bx, bz + 5, false) - 1;
+                    let h2 = interp_base_height(&mut height_cache, &self.noises, bx + 5, bz, false) - 1;
+                    let h3 = interp_base_height(&mut height_cache, &self.noises, bx + 5, bz + 5, false) - 1;
+                    let lowest = h0.min(h1).min(h2).min(h3);
+                    if lowest < 60 {
+                        return false;
+                    }
+                    (bx, lowest, bz)
+                }
+
+                // Nether fortress: fixed Y=64 at chunk origin
+                "minecraft:fortress" => {
+                    (chunk_min_x, 64, chunk_min_z)
+                }
+
+                // Nether fossil: complex Y with RNG, nether only
+                "minecraft:nether_fossil" => {
+                    // TODO: Implement full nether fossil height logic
+                    (center_block_x, surface_y, center_block_z)
+                }
+
+                // Jigsaw structures (villages, trail_ruins, trial_chambers, etc.):
+                // biome check at center, Y from biome_check_y or surface.
+                // Jigsaw assembly may reject later — not modeled here.
+                "minecraft:jigsaw" => {
                     let y = entry.biome_check_y.unwrap_or(surface_y);
                     (center_block_x, y, center_block_z)
+                }
+
+                other => {
+                    tracing::warn!("Unknown structure type {other:?} for {}, using center position", entry.structure);
+                    (center_block_x, surface_y, center_block_z)
                 }
             };
 

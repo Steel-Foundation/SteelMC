@@ -409,14 +409,26 @@ pub(crate) fn build() -> TokenStream {
                 let spread = set.placement.spread.unwrap();
                 let count = set.placement.count.unwrap();
                 let salt = set.placement.salt;
-                let preferred = set.placement.preferred_biomes.as_deref().unwrap_or("");
+
+                // Resolve preferred biomes from tag reference (e.g., "#minecraft:stronghold_biased_to")
+                let preferred_biomes: Vec<String> = if let Some(ref tag_ref) = set.placement.preferred_biomes {
+                    if let Some(tag_name) = tag_ref.strip_prefix('#') {
+                        biome_tags.get(tag_name).cloned().unwrap_or_default()
+                    } else {
+                        // Direct biome identifier
+                        vec![tag_ref.clone()]
+                    }
+                } else {
+                    vec![]
+                };
+                let biome_tokens: Vec<TokenStream> = preferred_biomes.iter().map(|b| generate_identifier(b)).collect();
 
                 quote! {
                     PlacementData::ConcentricRings {
                         distance: #distance,
                         spread: #spread,
                         count: #count,
-                        preferred_biomes: #preferred.to_string(),
+                        preferred_biomes: vec![#(#biome_tokens),*],
                         salt: #salt,
                         frequency: #freq,
                         frequency_reduction_method: #freq_method,
