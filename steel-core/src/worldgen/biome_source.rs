@@ -21,6 +21,8 @@ use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::density_functions::nether::NetherColumnCache;
 use steel_registry::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
 use steel_registry::vanilla_biomes;
+use steel_utils::random::Random as _;
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use super::{NetherClimateSampler, OverworldClimateSampler};
 use steel_utils::noise::EndIslands;
@@ -72,6 +74,58 @@ impl BiomeSourceKind {
             Self::Nether(source) => source.chunk_sampler(),
             Self::End(source) => source.chunk_sampler(),
         }
+    }
+
+    /// Searches for a biome matching `allowed` within `search_radius` blocks
+    /// of the given block position, sampling at y=0.
+    ///
+    /// Matches vanilla's `BiomeSource.findBiomeHorizontal` with
+    /// `findClosest=false`, `skipSteps=1`. Uses reservoir sampling to pick
+    /// uniformly among all matching positions.
+    ///
+    /// Returns `Some((block_x, block_z))` if found, `None` otherwise.
+    #[must_use]
+    pub fn find_biome_horizontal(
+        &self,
+        origin_x: i32,
+        origin_z: i32,
+        search_radius: i32,
+        allowed: &dyn Fn(BiomeRef) -> bool,
+        rng: &mut LegacyRandom,
+    ) -> Option<(i32, i32)> {
+        let mut sampler = self.chunk_sampler();
+
+        let noise_center_x = origin_x >> 2; // QuartPos.fromBlock
+        let noise_center_z = origin_z >> 2;
+        let noise_radius = search_radius >> 2;
+        let noise_y = 0; // originY=0 >> 2 = 0
+
+        let mut result: Option<(i32, i32)> = None;
+        let mut found = 0;
+
+        // startRadius = noiseRadius (findClosest=false → only checks the outer shell)
+        // But vanilla iterates from startRadius..=noiseRadius with the FULL grid,
+        // so for findClosest=false it's just one iteration at currentRadius=noiseRadius
+        // sampling ALL positions from -noiseRadius to noiseRadius.
+        for z in -noise_radius..=noise_radius {
+            for x in -noise_radius..=noise_radius {
+                let noise_x = noise_center_x + x;
+                let noise_z = noise_center_z + z;
+                let biome = sampler.sample(noise_x, noise_y, noise_z);
+
+                if allowed(biome) {
+                    // Reservoir sampling: replace with probability 1/(found+1)
+                    if result.is_none() || rng.next_i32_bounded(found + 1) == 0 {
+                        let block_x = noise_x << 2; // QuartPos.toBlock
+                        let block_z = noise_z << 2;
+                        result = Some((block_x, block_z));
+                    }
+                    found += 1;
+                }
+            }
+        }
+
+        result
     }
 }
 

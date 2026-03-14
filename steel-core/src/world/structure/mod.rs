@@ -4,9 +4,9 @@
 //! - `structureStarts`: structures originating in this chunk
 //! - `structuresReferences`: references to structures from nearby chunks
 //!
-//! Structure generation is not yet implemented. These types support
-//! persistence, the proto-chunk → level-chunk data flow, and future generation.
 //! The structure key is `Identifier` until a structure registry is added.
+
+pub mod placement;
 
 use rustc_hash::FxHashMap;
 

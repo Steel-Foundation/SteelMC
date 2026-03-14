@@ -48,11 +48,16 @@ impl ChunkStatusTasks {
     /// # Panics
     /// Panics if the chunk is not at `ChunkStatus::Empty` or higher.
     pub fn generate_structure_starts(
-        _context: Arc<WorldGenContext>,
+        context: Arc<WorldGenContext>,
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
+        holder: Arc<ChunkHolder>,
     ) -> Result<(), anyhow::Error> {
+        let chunk = holder
+            .try_chunk(ChunkStatus::Empty)
+            .expect("Chunk not found at status Empty");
+
+        context.generator.create_structures(&chunk);
         Ok(())
     }
 

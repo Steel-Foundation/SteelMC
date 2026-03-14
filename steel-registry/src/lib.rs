@@ -65,6 +65,7 @@ pub mod painting_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
+pub mod structure_set;
 pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
@@ -266,6 +267,11 @@ pub mod sound_events;
 #[rustfmt::skip]
 #[path = "generated/vanilla_sound_types.rs"]
 pub mod sound_types;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_sets.rs"]
+pub mod vanilla_structure_sets;
 
 #[allow(warnings)]
 #[rustfmt::skip]

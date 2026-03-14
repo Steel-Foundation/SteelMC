@@ -5,7 +5,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_registry::vanilla_biomes;
-use steel_utils::BlockStateId;
+use steel_utils::{BlockStateId, Identifier};
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
 use steel_utils::random::{
@@ -14,6 +14,11 @@ use steel_utils::random::{
 use steel_utils::surface::SurfaceRuleContext;
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
+use crate::world::structure::StructureStart;
+use crate::world::structure::placement::{
+    PlacementKind, StructureSelectionEntry, StructureSet, generate_ring_positions,
+    load_vanilla_structure_sets,
+};
 use crate::chunk::beardifier::Beardifier;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
@@ -47,6 +52,12 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     default_block_id: BlockStateId,
     /// Obfuscated seed for `BiomeManager` biome zoom fuzzing.
     biome_zoom_seed: i64,
+    /// World seed as i64 (matching Java's long), used for structure placement.
+    seed: i64,
+    /// Loaded structure sets for placement checks.
+    structure_sets: Vec<(Identifier, StructureSet)>,
+    /// Pre-computed ring positions for `ConcentricRings` placements, keyed by set identifier.
+    ring_positions: Vec<(Identifier, Vec<steel_utils::ChunkPos>)>,
     _phantom: PhantomData<N>,
 }
 
@@ -90,6 +101,41 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
         };
 
+        let structure_sets = load_vanilla_structure_sets();
+
+        // Pre-compute ring positions for ConcentricRings placements (e.g., strongholds).
+        // Positions are snapped to preferred biomes via findBiomeHorizontal (search radius 112).
+        let mut ring_positions = Vec::new();
+        for (key, set) in &structure_sets {
+            if let PlacementKind::ConcentricRings {
+                distance,
+                spread,
+                count,
+                preferred_biomes,
+            } = &set.placement.kind
+            {
+                let biomes = preferred_biomes;
+                let mut snap =
+                    |block_x: i32, block_z: i32, rng: &mut LegacyRandom| -> Option<(i32, i32)> {
+                        biome_source.find_biome_horizontal(
+                            block_x,
+                            block_z,
+                            112,
+                            &|biome| biomes.contains(&biome.key),
+                            rng,
+                        )
+                    };
+                let positions = generate_ring_positions(
+                    seed as i64,
+                    *distance,
+                    *spread,
+                    *count,
+                    Some(&mut snap),
+                );
+                ring_positions.push((key.clone(), positions));
+            }
+        }
+
         Self {
             biome_source,
             noises: Box::new(noises),
@@ -98,13 +144,197 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             surface_system,
             default_block_id,
             biome_zoom_seed,
+            seed: seed as i64,
+            structure_sets,
+            ring_positions,
             _phantom: PhantomData,
         }
     }
 }
 
+impl<N: DimensionNoises> VanillaGenerator<N> {
+    /// Returns the first Y from the top where terrain is solid.
+    ///
+    /// Approximates vanilla's `getBaseHeight` / `getFirstOccupiedHeight` by
+    /// scanning downward from the preliminary surface estimate using direct
+    /// density evaluation. Starts 16 blocks above the estimate and scans
+    /// down to `min_y`.
+    fn get_base_height(&self, x: i32, z: i32, cache: &mut N::ColumnCache) -> i32 {
+        let estimate = preliminary_surface_level::<N>(&self.noises, cache, x, z);
+        let start_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
+        let min_y = N::Settings::MIN_Y;
+
+        for y in (min_y..=start_y).rev() {
+            cache.ensure(x, z, &self.noises);
+            let density = self.noises.router_final_density(cache, x, y, z);
+            if density > 0.0 {
+                return y + 1;
+            }
+        }
+
+        min_y
+    }
+}
+
 impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
-    fn create_structures(&self, _chunk: &ChunkAccess) {}
+    fn create_structures(&self, chunk: &ChunkAccess) {
+        let pos = chunk.pos();
+        let chunk_x = pos.0.x;
+        let chunk_z = pos.0.y;
+
+        let mut sampler = self.biome_source.chunk_sampler();
+        let chunk_min_x = chunk_x * 16;
+        let chunk_min_z = chunk_z * 16;
+        let center_block_x = chunk_min_x + 8;
+        let center_block_z = chunk_min_z + 8;
+
+        let mut height_cache = N::ColumnCache::default();
+        let surface_y = self.get_base_height(center_block_x, center_block_z, &mut height_cache);
+        let sea_level = N::Settings::SEA_LEVEL;
+
+        // Checks if findGenerationPoint would succeed and if the biome at the
+        // generation point matches. Returns false if the structure type rejects
+        // this location or the biome doesn't match.
+        let mut can_generate = |entry: &StructureSelectionEntry| -> bool {
+            let (biome_x, biome_y, biome_z) = match entry.structure_type.as_str() {
+                // Mineshaft: biome check at (middleX, 50+offset, minZ)
+                // We approximate yOffset as 0; the Z uses chunk min, not center
+                "minecraft:mineshaft" => (center_block_x, 50, chunk_min_z),
+
+                // SinglePieceStructure (desert_pyramid, jungle_temple):
+                // Reject if lowest corner height < sea level
+                "minecraft:desert_pyramid" | "minecraft:jungle_temple" => {
+                    let (width, depth) = match entry.structure_type.as_str() {
+                        "minecraft:desert_pyramid" => (21, 21),
+                        _ => (12, 15),
+                    };
+                    let h0 = self.get_base_height(chunk_min_x, chunk_min_z, &mut height_cache);
+                    let h1 = self.get_base_height(chunk_min_x, chunk_min_z + depth, &mut height_cache);
+                    let h2 = self.get_base_height(chunk_min_x + width, chunk_min_z, &mut height_cache);
+                    let h3 = self.get_base_height(chunk_min_x + width, chunk_min_z + depth, &mut height_cache);
+                    let lowest = h0.min(h1).min(h2).min(h3);
+                    if lowest < sea_level {
+                        return false;
+                    }
+                    (center_block_x, surface_y, center_block_z)
+                }
+
+                // OceanMonument: check all biomes in 29-block radius are deep ocean
+                // TODO: Full getBiomesWithin(29) check for REQUIRED_OCEAN_MONUMENT_SURROUNDING
+                "minecraft:ocean_monument" => (center_block_x, surface_y, center_block_z),
+
+                // Structures with fixed biome_check_y: use it with center position
+                _ => {
+                    let y = entry.biome_check_y.unwrap_or(surface_y);
+                    (center_block_x, y, center_block_z)
+                }
+            };
+
+            let biome = sampler.sample(biome_x >> 2, biome_y >> 2, biome_z >> 2);
+            entry.allowed_biomes.contains(&biome.key)
+        };
+
+        for (set_key, set) in &self.structure_sets {
+            // Skip if no structure in this set can generate at this chunk
+            if !set.structures.iter().any(|e| can_generate(e)) {
+                continue;
+            }
+
+            // Skip if any structure in this set already has a valid start
+            {
+                let starts = chunk.structure_starts();
+                let already_has = set
+                    .structures
+                    .iter()
+                    .any(|entry| starts.get(&entry.structure).is_some_and(|s| !s.pieces.is_empty()));
+                if already_has {
+                    continue;
+                }
+            }
+
+            // Look up pre-computed ring positions for this set (if ConcentricRings)
+            let rings = self
+                .ring_positions
+                .iter()
+                .find(|(k, _)| k == set_key)
+                .map(|(_, pos)| pos.as_slice());
+
+            if !set
+                .placement
+                .is_structure_chunk(self.seed, chunk_x, chunk_z, rings)
+            {
+                continue;
+            }
+
+            // Exclusion zone: skip if another set has a structure chunk nearby
+            if set.placement.is_excluded(
+                self.seed,
+                chunk_x,
+                chunk_z,
+                &self.structure_sets,
+                &self.ring_positions,
+            ) {
+                continue;
+            }
+
+            // Pick which structure from the weighted list, with biome + type validation.
+            // Vanilla: weighted random pick → findGenerationPoint → check biome → retry.
+            let selected = if set.structures.len() == 1 {
+                let entry = &set.structures[0];
+                if can_generate(entry) {
+                    Some(entry)
+                } else {
+                    None
+                }
+            } else {
+                let mut rng = LegacyRandom::from_seed(0);
+                rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                let mut remaining: Vec<&StructureSelectionEntry> =
+                    set.structures.iter().collect();
+                let mut total_weight: i32 = remaining.iter().map(|e| e.weight).sum();
+                let mut result = None;
+
+                while !remaining.is_empty() {
+                    let mut choice = rng.next_i32_bounded(total_weight);
+                    let mut selected_idx = 0;
+                    for (i, entry) in remaining.iter().enumerate() {
+                        choice -= entry.weight;
+                        if choice < 0 {
+                            selected_idx = i;
+                            break;
+                        }
+                    }
+
+                    let candidate = remaining[selected_idx];
+                    if can_generate(candidate) {
+                        result = Some(candidate);
+                        break;
+                    }
+
+                    total_weight -= candidate.weight;
+                    remaining.remove(selected_idx);
+                }
+
+                result
+            };
+
+            let Some(selected) = selected else {
+                continue;
+            };
+
+            // Insert a placeholder start — pieces will be filled by actual generation later
+            let start = StructureStart {
+                structure: selected.structure.clone(),
+                chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
+                references: 0,
+                pieces: vec![],
+            };
+            chunk
+                .structure_starts_mut()
+                .insert(selected.structure.clone(), start);
+        }
+    }
 
     fn create_biomes(&self, chunk: &ChunkAccess) {
         let pos = chunk.pos();
