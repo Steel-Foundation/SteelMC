@@ -6,11 +6,16 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{REGISTRY, vanilla_blocks, vanilla_items};
+use steel_registry::{REGISTRY, vanilla_blocks};
+use steel_utils::Identifier;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehaviour;
+use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::{Bonemealable, CropBonemealExt};
+use crate::behavior::blocks::vegetation::vegetation_block::{
+    vegetation_can_survive, vegetation_update_shape,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -22,6 +27,7 @@ pub struct CropBlock {
     block: BlockRef,
     age_property: IntProperty,
     max_age: u8,
+    clone_item: Identifier,
 }
 
 pub trait CropLike {
@@ -133,23 +139,19 @@ pub trait CropLike {
 }
 
 impl CropBlock {
-    /// Creates a new crop block behavior with the default age property (0-7).
-    #[must_use]
-    pub const fn new(block: BlockRef) -> Self {
-        Self {
-            block,
-            age_property: BlockStateProperties::AGE_7,
-            max_age: 7,
-        }
-    }
-
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
-    pub const fn with_age(block: BlockRef, age_property: IntProperty, max_age: u8) -> Self {
+    pub const fn with_age(
+        block: BlockRef,
+        age_property: IntProperty,
+        max_age: u8,
+        clone_item: &'static str,
+    ) -> Self {
         Self {
             block,
             age_property,
             max_age,
+            clone_item: Identifier::vanilla_static(clone_item),
         }
     }
 }
@@ -183,9 +185,32 @@ impl Bonemealable for CropBlock {
 }
 
 impl BlockBehaviour for CropBlock {
-    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // Crops are placed at age 0
-        Some(self.get_state_for_age(0))
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        if self.may_place_on(
+            context.world.get_block_state(&context.relative_pos.below()),
+            context.world,
+            context.relative_pos.below(),
+        ) {
+            Some(self.block.default_state())
+        } else {
+            None
+        }
+    }
+
+    fn can_survive(&self, state: BlockStateId, world: &World, pos: steel_utils::BlockPos) -> bool {
+        vegetation_can_survive(self, state, world, pos)
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &World,
+        pos: steel_utils::BlockPos,
+        _direction: steel_utils::Direction,
+        _neighbor_pos: steel_utils::BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        vegetation_update_shape(self, state, world, pos)
     }
 
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
@@ -203,14 +228,10 @@ impl BlockBehaviour for CropBlock {
 
     fn get_clone_item_stack(
         &self,
-        block: BlockRef,
+        _block: BlockRef,
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        if block == vanilla_blocks::WHEAT {
-            Some(ItemStack::new(&vanilla_items::ITEMS.wheat_seeds))
-        } else {
-            REGISTRY.items.by_key(&block.key).map(ItemStack::new)
-        }
+        REGISTRY.items.by_key(&self.clone_item).map(ItemStack::new)
     }
 }

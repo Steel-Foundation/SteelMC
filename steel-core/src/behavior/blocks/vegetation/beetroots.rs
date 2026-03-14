@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::IntProperty},
-    vanilla_blocks,
+    REGISTRY,
+    blocks::{BlockRef, properties::IntProperty},
+    item_stack::ItemStack,
 };
-use steel_utils::BlockStateId;
+use steel_utils::{BlockStateId, Identifier};
 
 use crate::{
     behavior::{
@@ -24,16 +25,23 @@ pub struct BeetrootBlock {
     block: BlockRef,
     age_property: IntProperty,
     max_age: u8,
+    clone_item: Identifier,
 }
 
 impl BeetrootBlock {
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
-    pub const fn with_age(block: BlockRef, age_property: IntProperty, max_age: u8) -> Self {
+    pub const fn with_age(
+        block: BlockRef,
+        age_property: IntProperty,
+        max_age: u8,
+        clone_item: &'static str,
+    ) -> Self {
         Self {
             block,
             age_property,
             max_age,
+            clone_item: Identifier::vanilla_static(clone_item),
         }
     }
 }
@@ -110,18 +118,16 @@ impl BlockBehaviour for BeetrootBlock {
         }
     }
 
+    fn get_clone_item_stack(
+        &self,
+        _block: BlockRef,
+        _state: BlockStateId,
+        _include_data: bool,
+    ) -> Option<ItemStack> {
+        REGISTRY.items.by_key(&self.clone_item).map(ItemStack::new)
+    }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
-    }
-}
-
-impl Vegetation for BeetrootBlock {
-    fn may_place_on(
-        &self,
-        state: BlockStateId,
-        _world: &World,
-        _pos: steel_utils::BlockPos,
-    ) -> bool {
-        state.get_block() == vanilla_blocks::FARMLAND
     }
 }

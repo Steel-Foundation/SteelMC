@@ -18,6 +18,7 @@ pub struct BlockClass {
     /// Sound event constant for button click off (e.g., `BLOCK_STONE_BUTTON_CLICK_OFF`).
     pub button_click_off: Option<String>,
     pub max_age: Option<i32>,
+    pub clone_item_stack: Option<String>,
 }
 
 fn to_const_ident(name: &str) -> Ident {
@@ -55,16 +56,16 @@ fn generate_registrations<'a>(
 }
 
 fn generate_crop_registrations<'a>(
-    blocks: impl Iterator<Item = &'a (Ident, i32)>,
+    blocks: impl Iterator<Item = &'a (Ident, i32, &'a String)>,
     behavior_type: &Ident,
 ) -> TokenStream {
-    let registrations = blocks.map(|(ident, max_age)| {
+    let registrations = blocks.map(|(ident, max_age, clone_item)| {
         let max_age_ident = format_ident!("AGE_{max_age}");
         let max_age = *max_age as u8;
         quote! {
             registry.set_behavior(
                 vanilla_blocks::#ident,
-                Box::new(#behavior_type::with_age(vanilla_blocks::#ident, BlockStateProperties::#max_age_ident, #max_age)),
+                Box::new(#behavior_type::with_age(vanilla_blocks::#ident, BlockStateProperties::#max_age_ident, #max_age, #clone_item)),
             );
         }
     });
@@ -123,6 +124,10 @@ pub fn build(blocks: &[BlockClass]) -> String {
                     block
                         .max_age
                         .expect("Beetroots Blocks should have a max_age attribute!"),
+                    block
+                        .clone_item_stack
+                        .as_ref()
+                        .expect("Beetroots Blocks should have a clone item stack!"),
                 ));
             }
             "ButtonBlock" => {
@@ -156,6 +161,10 @@ pub fn build(blocks: &[BlockClass]) -> String {
                     block
                         .max_age
                         .expect("Crop Blocks should have a max_age attribute!"),
+                    block
+                        .clone_item_stack
+                        .as_ref()
+                        .expect("Crop Blocks should have a clone item stack!"),
                 ));
             }
             "DoublePlantBlock" => double_plant_blocks.push(const_ident),
@@ -185,6 +194,10 @@ pub fn build(blocks: &[BlockClass]) -> String {
                     block
                         .max_age
                         .expect("Torchflower Blocks should have a max_age attribute!"),
+                    block
+                        .clone_item_stack
+                        .as_ref()
+                        .expect("Torchflower Blocks should have a clone item stack!"),
                 ));
             }
             "WallHangingSignBlock" => wall_hanging_sign_blocks.push(const_ident),
@@ -238,6 +251,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let barrel_registrations = generate_registrations(barrel_blocks.iter(), &barrel_type);
     let beetroots_registrations =
         generate_crop_registrations(beetroots_blocks.iter(), &beetroots_type);
+
     let button_registrations = {
         let registrations =
             button_blocks
