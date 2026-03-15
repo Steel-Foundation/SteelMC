@@ -186,6 +186,25 @@ struct TransformedJigsaw {
     placement_priority: i32,
 }
 
+/// Vanilla's `StructureTemplatePool.getMaxSize` — max Y span across all templates.
+fn pool_max_y_size(
+    pool: &TemplatePoolData,
+    templates: &FxHashMap<Identifier, TemplateData>,
+) -> i32 {
+    pool.elements
+        .iter()
+        .filter_map(|(element, _)| {
+            let loc = match element {
+                PoolElement::Single { location, .. }
+                | PoolElement::LegacySingle { location, .. } => location,
+                _ => return None,
+            };
+            templates.get(loc).map(|t| t.size[1])
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 /// Checks if two jigsaws can connect.
 ///
 /// Vanilla's `JigsawBlock.canAttach`: opposite facing, name match, joint compatibility.
@@ -274,6 +293,11 @@ fn get_random_template<'a>(
 
 /// Checks if a bounding box fits within the constraint and doesn't collide
 /// with any placed pieces.
+///
+/// Vanilla uses VoxelShape collision with AABB.of(bb).deflate(0.25). Since
+/// AABB.of adds +1 to each max coord, for integer BBs the 0.25 deflation
+/// still means adjacent pieces (sharing a face) collide — equivalent to
+/// standard `intersects` with `>=`.
 fn check_collision(
     candidate_bb: &BoundingBox,
     constraint_bb: &BoundingBox,
@@ -503,6 +527,10 @@ fn try_placing_children(
     let source_box_y = source_bb.min_y;
     let source_rigid = source_piece.projection == Projection::Rigid;
 
+    // Vanilla's sourceFree: tracks free space inside source piece for internal placements.
+    // Only internal pieces are subtracted, not external ones.
+    let mut internal_bbs: Vec<BoundingBox> = Vec::new();
+
     // Get the pool element to retrieve jigsaws
     let source_pool_element = source_element_loc
         .and_then(|loc| {
@@ -561,15 +589,14 @@ fn try_placing_children(
 
         let source_jigsaw_local_y = source_jigsaw_pos.1 - source_box_y;
 
-        // Resolve target pool
+        // Resolve target pool — vanilla always resolves fallback from the pool,
+        // even if the main pool is empty
         let pool_key = alias_map
             .get(&source_jigsaw.pool)
             .unwrap_or(&source_jigsaw.pool);
-        let target_pool = match pools.get(pool_key) {
-            Some(p) if !p.elements.is_empty() => Some(p),
-            _ => None,
-        };
-        let fallback_pool = target_pool
+        let raw_pool = pools.get(pool_key);
+        let target_pool = raw_pool.filter(|p| !p.elements.is_empty());
+        let fallback_pool = raw_pool
             .and_then(|p| pools.get(&p.fallback))
             .filter(|p| !p.elements.is_empty());
 
@@ -595,7 +622,7 @@ fn try_placing_children(
         let mut source_jigsaw_base_height: Option<i32> = None;
 
         // Try each candidate
-        for candidate_element in &candidates {
+        for candidate_element in candidates.iter() {
             if candidate_element.is_empty() {
                 break;
             }
@@ -610,9 +637,36 @@ fn try_placing_children(
                     candidate_element, templates, candidate_rotation, rng,
                 );
 
-                let _candidate_bb_at_origin = element_bounding_box(
+                let candidate_bb_at_origin = element_bounding_box(
                     candidate_element, templates, 0, 0, 0, candidate_rotation,
                 );
+
+                // Expansion hack: compute max child pool size for Y expansion
+                let expand_to = if config.use_expansion_hack {
+                    if let Some(ref hack_box) = candidate_bb_at_origin {
+                        if hack_box.max_y - hack_box.min_y + 1 <= 16 {
+                            candidate_jigsaws.iter().map(|cj| {
+                                let front = cj.orientation.front_direction();
+                                let (fdx2, fdy2, fdz2) = front.offset();
+                                let front_pos = (cj.pos.0 + fdx2, cj.pos.1 + fdy2, cj.pos.2 + fdz2);
+                                if !hack_box.contains_xyz(front_pos.0, front_pos.1, front_pos.2) {
+                                    return 0;
+                                }
+                                let child_pool_key = alias_map
+                                    .get(&cj.pool)
+                                    .unwrap_or(&cj.pool);
+                                let child_pool_size = pools.get(child_pool_key)
+                                    .map(|p| pool_max_y_size(p, templates))
+                                    .unwrap_or(0);
+                                let child_fallback_size = pools.get(child_pool_key)
+                                    .and_then(|p| pools.get(&p.fallback))
+                                    .map(|p| pool_max_y_size(p, templates))
+                                    .unwrap_or(0);
+                                child_pool_size.max(child_fallback_size)
+                            }).max().unwrap_or(0)
+                        } else { 0 }
+                    } else { 0 }
+                } else { 0 };
 
                 // Try each target jigsaw
                 for target_jigsaw in &candidate_jigsaws {
@@ -656,19 +710,23 @@ fn try_placing_children(
                     );
                     let target_position = (raw_target_x, raw_bb.min_y + y_offset, raw_target_z);
 
-                    // Collision check
-                    let collision_bbs = if attach_inside {
-                        // Use source piece as constraint for internal attachments
-                        // Check collision against all pieces that overlap the source
-                        placed_bbs.as_slice()
+                    // Apply expansion hack: expand BB vertically
+                    let candidate_bb = if expand_to > 0 {
+                        let new_size = (expand_to + 1).max(candidate_bb.max_y - candidate_bb.min_y);
+                        BoundingBox::new(
+                            candidate_bb.min_x, candidate_bb.min_y, candidate_bb.min_z,
+                            candidate_bb.max_x, candidate_bb.min_y + new_size, candidate_bb.max_z,
+                        )
                     } else {
-                        placed_bbs.as_slice()
+                        candidate_bb
                     };
 
-                    let effective_constraint = if attach_inside {
-                        &source_bb
+                    // Collision check — vanilla uses separate free space for internal placements
+                    let (effective_constraint, collision_bbs) = if attach_inside {
+                        // Internal: must fit within source BB, only collides with other internal pieces
+                        (&source_bb, internal_bbs.as_slice())
                     } else {
-                        constraint_bb
+                        (constraint_bb, placed_bbs.as_slice())
                     };
 
                     if check_collision(&candidate_bb, effective_constraint, collision_bbs) {
@@ -676,6 +734,9 @@ fn try_placing_children(
                     }
 
                     // Success! Place this piece.
+                    if attach_inside {
+                        internal_bbs.push(candidate_bb);
+                    }
                     placed_bbs.push(candidate_bb);
 
                     // Compute ground level delta
