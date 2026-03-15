@@ -151,6 +151,23 @@ impl RegistryCache {
 
         tags_by_registry.push((TIMELINE_REGISTRY, timeline_tags));
 
+        // Build timeline tags
+        let mut damage_type_tags: Vec<(Identifier, Vec<VarInt>)> =
+            Vec::with_capacity(registry.damage_types.tag_keys().count());
+        for tag_key in registry.damage_types.tag_keys() {
+            let mut damage_type_ids =
+                Vec::with_capacity(registry.damage_types.iter_tag(tag_key).count());
+
+            for timeline in registry.damage_types.iter_tag(tag_key) {
+                let timeline_id = *registry.damage_types.get_id(timeline);
+                damage_type_ids.push(VarInt::from(timeline_id));
+            }
+
+            damage_type_tags.push((tag_key.clone(), damage_type_ids));
+        }
+
+        tags_by_registry.push((DAMAGE_TYPE_REGISTRY, damage_type_tags));
+
         // Build dialog tags
         let mut dialog_tags: Vec<(Identifier, Vec<VarInt>)> =
             Vec::with_capacity(registry.dialogs.tag_keys().count());
