@@ -344,7 +344,7 @@ impl BlockBehaviour for StandingSignBlock {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
@@ -432,7 +432,7 @@ impl BlockBehaviour for WallSignBlock {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
@@ -554,7 +554,7 @@ impl BlockBehaviour for CeilingHangingSignBlock {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
@@ -660,7 +660,7 @@ impl BlockBehaviour for WallHangingSignBlock {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,

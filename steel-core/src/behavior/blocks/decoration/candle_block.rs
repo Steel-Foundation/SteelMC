@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY,
@@ -89,7 +91,7 @@ impl BlockBehaviour for CandleBlock {
         &self,
         item_stack: &ItemStack,
         state: steel_utils::BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _player: &player::Player,
         _hand: types::InteractionHand,

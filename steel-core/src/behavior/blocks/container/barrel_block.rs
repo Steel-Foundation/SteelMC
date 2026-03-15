@@ -2,7 +2,7 @@
 //!
 //! Opens a 27-slot container menu when right-clicked.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -53,7 +53,7 @@ impl BlockBehaviour for BarrelBlock {
     fn use_without_item(
         &self,
         _state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,

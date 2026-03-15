@@ -2,6 +2,8 @@
 //!
 //! Opens the 3x3 crafting grid when right-clicked.
 
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
@@ -37,7 +39,7 @@ impl BlockBehaviour for CraftingTableBlock {
     fn use_without_item(
         &self,
         _state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
