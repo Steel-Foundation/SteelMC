@@ -1,0 +1,21 @@
+name: Auto Label Conflicts
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  auto-label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: prince-chrismc/label-merge-conflicts-action@v3
+        with:
+          conflict_label_name: "has conflict"
+          github_token: ${{ github.token }}
+
+          detect_merge_changes: false
+          conflict_comment: |
+            :wave: Hi, @${author},
+            I detected conflicts against the base branch :speak_no_evil:
+            You'll want to sync :arrows_counterclockwise: your branch with upstream!

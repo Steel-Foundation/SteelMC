@@ -1918,12 +1918,7 @@ impl Player {
         }
 
         // 8. Call use_item_on
-        let result = game_mode::use_item_on(
-            self,
-            Arc::clone(&self.world),
-            packet.hand,
-            &packet.block_hit,
-        );
+        let result = game_mode::use_item_on(self, &self.world, packet.hand, &packet.block_hit);
 
         // 9. Handle result
         if let InteractionResult::Success = result {

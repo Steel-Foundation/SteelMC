@@ -28,7 +28,7 @@ use crate::world::World;
 /// 6. Handle creative mode infinite materials
 pub fn use_item_on(
     player: &Player,
-    world: Arc<World>,
+    world: &Arc<World>,
     hand: InteractionHand,
     hit_result: &BlockHitResult,
 ) -> InteractionResult {
