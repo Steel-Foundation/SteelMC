@@ -239,6 +239,31 @@ pub mod vanilla_poi_types;
 
 #[allow(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_banner_pattern_tags.rs"]
+pub mod vanilla_banner_pattern_tags;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_entity_type_tags.rs"]
+pub mod vanilla_entity_type_tags;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_instrument_tags.rs"]
+pub mod vanilla_instrument_tags;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_painting_variant_tags.rs"]
+pub mod vanilla_painting_variant_tags;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_poi_type_tags.rs"]
+pub mod vanilla_poi_type_tags;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_fluid_tags.rs"]
 pub mod vanilla_fluid_tags;
 
@@ -353,6 +378,7 @@ pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline")
 pub const LOOT_TABLE_REGISTRY: Identifier = Identifier::vanilla_static("loot_table");
 pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("block_entity_type");
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
+pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 
 pub struct Registry {
@@ -427,12 +453,17 @@ impl Registry {
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
         vanilla_chicken_variants::register_chicken_variants(&mut registry.chicken_variants);
         vanilla_painting_variants::register_painting_variants(&mut registry.painting_variants);
+        vanilla_painting_variant_tags::register_painting_variant_tags(
+            &mut registry.painting_variants,
+        );
         vanilla_dimension_types::register_dimension_types(&mut registry.dimension_types);
         vanilla_damage_types::register_damage_types(&mut registry.damage_types);
         vanilla_damage_types_tags::register_damage_types_tags(&mut registry.damage_types);
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
+        vanilla_banner_pattern_tags::register_banner_pattern_tags(&mut registry.banner_patterns);
         vanilla_jukebox_songs::register_jukebox_songs(&mut registry.jukebox_songs);
         vanilla_instruments::register_instruments(&mut registry.instruments);
+        vanilla_instrument_tags::register_instrument_tags(&mut registry.instruments);
         vanilla_dialogs::register_dialogs(&mut registry.dialogs);
         vanilla_dialog_tags::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
@@ -443,6 +474,7 @@ impl Registry {
         vanilla_timeline_tags::register_timeline_tags(&mut registry.timelines);
         vanilla_recipes::register_recipes(&mut registry.recipes);
         vanilla_entities::register_entity_types(&mut registry.entity_types);
+        vanilla_entity_type_tags::register_entity_type_tags(&mut registry.entity_types);
         vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
@@ -451,6 +483,7 @@ impl Registry {
         vanilla_fluid_tags::register_fluid_tags(&mut registry.fluids);
 
         vanilla_poi_types::register_poi_types(&mut registry.poi_types);
+        vanilla_poi_type_tags::register_poi_type_tags(&mut registry.poi_types);
 
         registry
     }
