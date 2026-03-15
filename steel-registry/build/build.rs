@@ -52,6 +52,8 @@ mod multi_noise;
 mod noise_parameters;
 mod surface_rules;
 
+mod damage_types_tags;
+
 const FMT: bool = cfg!(feature = "fmt");
 
 const BLOCKS: &str = "blocks";
@@ -78,6 +80,7 @@ const CHICKEN_VARIANTS: &str = "chicken_variants";
 const PAINTING_VARIANTS: &str = "painting_variants";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
+const DAMAGE_TYPES_TAGS: &str = "damage_types_tags";
 const JUKEBOX_SONGS: &str = "jukebox_songs";
 const INSTRUMENTS: &str = "instruments";
 const DIALOGS: &str = "dialogs";
@@ -142,6 +145,7 @@ pub fn main() {
         (painting_variants::build(), PAINTING_VARIANTS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
+        (damage_types_tags::build(), DAMAGE_TYPES_TAGS),
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),
         (dialogs::build(), DIALOGS),
