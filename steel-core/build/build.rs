@@ -1,9 +1,9 @@
 #![allow(missing_docs)]
 #![allow(clippy::disallowed_types)] // Build scripts don't have access to FxHashMap
 
-use std::fs;
-
 use serde::Deserialize;
+use std::env;
+use std::fs;
 
 mod blocks;
 mod items;
@@ -16,7 +16,7 @@ struct Classes {
 }
 
 pub fn main() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let out_dir = format!("{manifest_dir}/src/behavior/generated");
 
     let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))

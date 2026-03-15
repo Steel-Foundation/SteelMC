@@ -3,13 +3,13 @@
 //! Scans `src/behavior/blocks/**/*.rs` for structs annotated with `#[block_behavior]`,
 //! cross-references with `classes.json`, and generates `register_block_behaviors()`.
 
-use std::collections::{BTreeSet, HashMap};
-use std::fs;
-
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+use std::collections::{BTreeSet, HashMap};
+use std::env;
+use std::fs;
 
 #[derive(Debug, Deserialize)]
 pub struct BlockClass {
@@ -134,7 +134,7 @@ fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
 }
 
 fn scan_block_behaviors() -> HashMap<String, DiscoveredBlock> {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let pattern = format!("{manifest_dir}/src/behavior/blocks/**/*.rs");
     let mut discovered = HashMap::new();
 
