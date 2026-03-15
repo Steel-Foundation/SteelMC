@@ -130,7 +130,7 @@ pub trait BlockBehaviour: Send + Sync {
         &self,
         item_stack: &ItemStack,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hand: InteractionHand,
@@ -148,7 +148,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hit_result: &BlockHitResult,

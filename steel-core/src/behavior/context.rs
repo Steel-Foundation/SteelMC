@@ -1,5 +1,7 @@
 //! Context types and results for block and item interactions.
 
+use std::sync::Arc;
+
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
@@ -55,7 +57,7 @@ pub struct BlockPlaceContext<'a> {
     /// The player's pitch (vertical look angle).
     pub pitch: f32,
     /// The world where the block is being placed.
-    pub world: &'a World,
+    pub world: &'a Arc<World>,
 }
 
 impl BlockPlaceContext<'_> {
@@ -118,7 +120,7 @@ pub struct UseOnContext<'a> {
     /// Information about where the block was hit.
     pub hit_result: BlockHitResult,
     /// The world where the interaction is happening.
-    pub world: &'a World,
+    pub world: &'a Arc<World>,
     /// The item stack being used (mutable for consumption).
     pub item_stack: &'a mut ItemStack,
     /// Lock guard holding the player's inventory.

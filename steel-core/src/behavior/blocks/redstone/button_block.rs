@@ -150,7 +150,7 @@ impl BlockBehaviour for ButtonBlock {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
