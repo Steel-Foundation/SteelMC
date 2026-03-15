@@ -1,8 +1,9 @@
+use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags, vanilla_blocks,
 };
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
@@ -17,6 +18,7 @@ use crate::{
 };
 
 /// Behavior for the Azalea Block
+#[block_behavior]
 pub struct AzaleaBlock {
     block: BlockRef,
 }
@@ -30,10 +32,7 @@ impl AzaleaBlock {
 }
 
 impl BlockBehaviour for AzaleaBlock {
-    fn get_state_for_placement(
-        &self,
-        context: &BlockPlaceContext<'_>,
-    ) -> Option<steel_utils::BlockStateId> {
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
             context.world.get_block_state(&context.relative_pos.below()),
             context.world,
@@ -50,8 +49,8 @@ impl BlockBehaviour for AzaleaBlock {
         state: BlockStateId,
         world: &World,
         pos: BlockPos,
-        _direction: steel_utils::Direction,
-        _neighbor_pos: steel_utils::BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         vegetation_update_shape(self, state, world, pos)
@@ -63,12 +62,7 @@ impl BlockBehaviour for AzaleaBlock {
 }
 
 impl Vegetation for AzaleaBlock {
-    fn may_place_on(
-        &self,
-        state: BlockStateId,
-        _world: &World,
-        _pos: steel_utils::BlockPos,
-    ) -> bool {
+    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
         state.get_block() == vanilla_blocks::CLAY
             || steel_registry::REGISTRY
                 .blocks

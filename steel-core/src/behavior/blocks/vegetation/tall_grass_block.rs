@@ -1,3 +1,4 @@
+use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
         BlockRef,
@@ -23,6 +24,7 @@ use crate::{
 };
 
 /// Behavior for Tall Grass
+#[block_behavior]
 pub struct TallGrassBlock {
     block: BlockRef,
 }

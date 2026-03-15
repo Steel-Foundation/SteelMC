@@ -1,3 +1,4 @@
+use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
     block_state_ext::BlockStateExt,
@@ -17,6 +18,7 @@ use crate::{
 };
 
 /// Behavior for Two High Plants
+#[block_behavior]
 pub struct DoublePlantBlock {
     block: BlockRef,
 }

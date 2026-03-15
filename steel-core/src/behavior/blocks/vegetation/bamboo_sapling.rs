@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
         BlockRef,
@@ -22,6 +23,7 @@ use crate::{
 /// Behavior for the Bamboo Sapling Block
 /// /// TODO:
 /// - [ ] brightness
+#[block_behavior]
 pub struct BambooSaplingBlock {
     block: BlockRef,
 }

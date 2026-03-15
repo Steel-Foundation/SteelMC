@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
         BlockRef,
@@ -26,6 +27,7 @@ const MAX_AGE: u8 = 3;
 const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_3;
 
 /// Behavior for Nether Warts
+#[block_behavior]
 pub struct NetherWartBlock {
     block: BlockRef,
 }

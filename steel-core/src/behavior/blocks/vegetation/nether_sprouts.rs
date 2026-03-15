@@ -1,3 +1,4 @@
+use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -18,6 +19,7 @@ use crate::{
 };
 
 /// Behavior for Nether Sprouts
+#[block_behavior]
 pub struct NetherSproutsBlock {
     block: BlockRef,
 }

@@ -1,3 +1,4 @@
+use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
         BlockRef,
@@ -20,6 +21,7 @@ use crate::{
 };
 
 /// Behavior for the Seagrass Block
+#[block_behavior]
 pub struct SeagrassBlock {
     block: BlockRef,
 }

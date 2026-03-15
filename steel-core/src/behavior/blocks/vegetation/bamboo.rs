@@ -1,5 +1,6 @@
 use std::{ops::Not, sync::Arc};
 
+use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY,
     blocks::{
@@ -23,6 +24,7 @@ use crate::{
 /// TODO:
 /// - [ ] brightness
 /// - [ ] dont replace fluids
+#[block_behavior]
 pub struct BambooStalkBlock;
 
 const BAMBOO_LEAVES_PROPERTY: EnumProperty<BambooLeaves> = BlockStateProperties::BAMBOO_LEAVES;

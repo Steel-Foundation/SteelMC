@@ -1,3 +1,4 @@
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -13,6 +14,7 @@ use crate::{
 };
 
 /// Behavior for all most flower blocks
+#[block_behavior]
 pub struct FlowerBlock {
     block: BlockRef,
 }
