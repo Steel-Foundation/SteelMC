@@ -495,10 +495,10 @@ impl ItemEntity {
 
     /// Attempts to merge this item with nearby item entities.
     ///
-    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbours()`.
+    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbors()`.
     /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
-    pub fn merge_with_neighbours(&self, world: &Arc<World>) {
+    pub fn merge_with_neighbors(&self, world: &Arc<World>) {
         if !self.is_mergeable() {
             return;
         }
@@ -824,7 +824,7 @@ impl Entity for ItemEntity {
             && self.is_mergeable()
             && let Some(world) = self.level()
         {
-            self.merge_with_neighbours(&world);
+            self.merge_with_neighbors(&world);
         }
 
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)

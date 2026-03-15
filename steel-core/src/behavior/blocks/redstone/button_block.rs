@@ -70,7 +70,7 @@ impl ButtonBlock {
 
     /// Updates neighbors at both the button position and the support block position.
     ///
-    /// Vanilla equivalent: `ButtonBlock.updateNeighbours()`.
+    /// Vanilla equivalent: `ButtonBlock.updateNeighbors()`.
     fn update_button_neighbors(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         world.update_neighbors_at(&pos, self.block);
         let support_dir = Self::get_connected_direction(state).opposite();
@@ -170,7 +170,7 @@ impl BlockBehavior for ButtonBlock {
         }
         // TODO: Check for arrows via checkPressed() — wooden buttons should stay
         // pressed while an arrow is touching them and reschedule the tick.
-        // Also needs entity_inside() on BlockBehaviour trait for arrows pressing
+        // Also needs entity_inside() on BlockBehavior trait for arrows pressing
         // unpowered wooden buttons. Blocked on entity collision system.
 
         // Unpress the button

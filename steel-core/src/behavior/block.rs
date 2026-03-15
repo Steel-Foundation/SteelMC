@@ -66,7 +66,7 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns whether this block can survive at the given position.
     ///
-    /// Vanilla parity: `BlockBehaviour.canSurvive(BlockState, LevelReader, BlockPos)`.
+    /// Vanilla parity: `BlockBehavior.canSurvive(BlockState, LevelReader, BlockPos)`.
     ///
     /// Used during placement validation, shape updates (to break unsupported
     /// blocks), and when removing water from waterlogged blocks. The default
@@ -375,7 +375,7 @@ pub trait BlockBehavior: Send + Sync {
     /// Default (`SimpleWaterloggedBlock`): sets `WATERLOGGED = true` and schedules
     /// a fluid tick.  Delegates the guard to [`can_place_liquid`].
     ///
-    /// [`can_place_liquid`]: BlockBehaviour::can_place_liquid
+    /// [`can_place_liquid`]: BlockBehavior::can_place_liquid
     #[allow(unused_variables)]
     fn place_liquid(
         &self,
@@ -398,11 +398,11 @@ pub trait BlockBehavior: Send + Sync {
 }
 
 /// Default block behavior that returns the block's default state for placement.
-pub struct DefaultBlockBehaviour {
+pub struct DefaultBlockBehavior {
     block: BlockRef,
 }
 
-impl DefaultBlockBehaviour {
+impl DefaultBlockBehavior {
     /// Creates a new default block behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -410,7 +410,7 @@ impl DefaultBlockBehaviour {
     }
 }
 
-impl BlockBehavior for DefaultBlockBehaviour {
+impl BlockBehavior for DefaultBlockBehavior {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -433,7 +433,7 @@ impl BlockBehaviorRegistry {
 
         // Initialize all blocks with default behavior
         for (_, block) in REGISTRY.blocks.iter() {
-            behaviors.push(Box::new(DefaultBlockBehaviour::new(block)));
+            behaviors.push(Box::new(DefaultBlockBehavior::new(block)));
         }
 
         Self { behaviors }

@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId};
 /// Trait for fluid behavior implementations.
 /// Conceptual equivalent of Minecraft's `Fluid` class.
 pub trait FluidBehavior: Send + Sync {
-    /// Gets the fluid type for this behaviour.
+    /// Gets the fluid type for this behavior.
     fn fluid_type(&self) -> FluidRef;
 
     /// Checks if this fluid is the same type as another fluid ref.

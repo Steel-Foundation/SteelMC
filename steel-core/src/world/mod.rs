@@ -481,7 +481,7 @@ impl World {
         if flags.contains(UpdateFlags::UPDATE_NEIGHBORS) {
             self.update_neighbors_at(&pos, old_state.get_block());
             // TODO: if block has analog output signal, update comparator neighbors
-            // via updateNeighbourForOutputSignal
+            // via updateNeighborForOutputSignal
         }
 
         // Shape updates (unless UPDATE_KNOWN_SHAPE is set)
@@ -1344,7 +1344,7 @@ impl World {
     /// Returns `None` if the AABB is missed or entirely behind the ray origin.
     ///
     /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
-    /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behaviour.
+    /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behavior.
     fn intersects_aabb_with_t(
         start: Vector3<f64>,
         end: Vector3<f64>,

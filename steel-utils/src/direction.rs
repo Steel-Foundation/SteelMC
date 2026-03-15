@@ -159,7 +159,7 @@ impl Direction {
     }
 
     /// The order in which neighbor shape updates are processed.
-    /// This matches vanilla's `BlockBehaviour.UPDATE_SHAPE_ORDER`.
+    /// This matches vanilla's `BlockBehavior.UPDATE_SHAPE_ORDER`.
     pub const UPDATE_SHAPE_ORDER: [Direction; 6] = [
         Direction::West,
         Direction::East,

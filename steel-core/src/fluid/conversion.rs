@@ -209,9 +209,9 @@ pub fn get_spread(
     slope_find_distance: u8,
 ) -> Vec<(Direction, FluidState)> {
     let mut candidates: Vec<(Direction, FluidState, u16)> = Vec::new();
-    // Lazily initialised on first use, matching vanilla's SpreadContext init.
+    // Lazily initialized on first use, matching vanilla's SpreadContext init.
     // Shared across all directions so cached block states and hole checks are
-    // reused, matching vanilla's single-context-per-getSpread() behaviour.
+    // reused, matching vanilla's single-context-per-getSpread() behavior.
     let mut ctx: Option<SpreadContext<'_>> = None;
 
     for direction in [

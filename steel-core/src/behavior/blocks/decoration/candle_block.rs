@@ -30,14 +30,14 @@ const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
 const MAX_CANDLES: u8 = 4;
 
-/// Behaviour for all Candle type blocks
+/// Behavior for all Candle type blocks
 #[block_behavior]
 pub struct CandleBlock {
     block: BlockRef,
 }
 
 impl CandleBlock {
-    /// Creates a new candle block behaviour for the given block
+    /// Creates a new candle block behavior for the given block
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }

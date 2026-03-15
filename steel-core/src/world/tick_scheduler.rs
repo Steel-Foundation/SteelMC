@@ -239,7 +239,7 @@ impl<T: TickKey> Default for TickList<T> {
 mod tests {
     use super::*;
     use steel_registry::blocks::Block;
-    use steel_registry::blocks::behaviour::BlockConfig;
+    use steel_registry::blocks::behavior::BlockConfig;
     use steel_utils::Identifier;
 
     fn test_block() -> BlockRef {

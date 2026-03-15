@@ -143,7 +143,7 @@ pub struct ClientInformation {
     /// Whether chat colors are enabled.
     pub chat_colors: bool,
     /// Bitmask for displayed skin parts.
-    pub model_customisation: i32,
+    pub model_customization: i32,
     /// The player's main hand (left or right).
     pub main_hand: HumanoidArm,
     /// Whether text filtering is enabled.
@@ -161,7 +161,7 @@ impl Default for ClientInformation {
             view_distance: 8, // Default client view distance
             chat_visibility: ChatVisibility::Full,
             chat_colors: true,
-            model_customisation: 0,
+            model_customization: 0,
             main_hand: HumanoidArm::Right,
             text_filtering_enabled: false,
             allows_listing: true,
@@ -1275,7 +1275,7 @@ impl Player {
             view_distance: packet.view_distance.clamp(2, 32) as u8,
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
-            model_customisation: packet.model_customisation,
+            model_customization: packet.model_customization,
             main_hand: packet.main_hand,
             text_filtering_enabled: packet.text_filtering_enabled,
             allows_listing: packet.allows_listing,
