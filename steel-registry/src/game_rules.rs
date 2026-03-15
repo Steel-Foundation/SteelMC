@@ -1,4 +1,4 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
+use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
@@ -139,22 +139,10 @@ impl GameRuleRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<GameRuleRef> {
-        self.game_rules_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, game_rule: GameRuleRef) -> &usize {
         self.game_rules_by_key
             .get(&game_rule.key)
             .expect("Game rule not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<GameRuleRef> {
-        self.game_rules_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, GameRuleRef)> + '_ {
@@ -164,60 +152,10 @@ impl GameRuleRegistry {
             .map(|(id, &gr)| (id, gr))
     }
 
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.game_rules_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.game_rules_by_id.is_empty()
-    }
-
     /// Gets the ID of a game rule by its key.
     #[must_use]
     pub fn get_id_by_key(&self, key: &Identifier) -> Option<usize> {
         self.game_rules_by_key.get(key).copied()
-    }
-}
-
-impl RegistryExt for GameRuleRegistry {
-    type Entry = GameRuleRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<GameRuleRef> {
-        self.game_rules_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<GameRuleRef> {
-        self.game_rules_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.game_rules_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.game_rules_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.game_rules_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for GameRule {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.game_rules.id_from_key(&self.key)
     }
 }
 
@@ -226,6 +164,15 @@ impl Default for GameRuleRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    GameRuleRegistry,
+    GameRule,
+    GameRuleRef,
+    game_rules_by_id,
+    game_rules_by_key,
+    game_rules
+);
 
 /// Stores per-world game rule values.
 ///

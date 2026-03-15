@@ -1,6 +1,6 @@
 //! Item behavior trait and registry.
 
-use steel_registry::REGISTRY;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_registry::items::ItemRef;
 
 use crate::behavior::items::DefaultItemBehavior;

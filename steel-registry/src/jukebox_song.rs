@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -56,22 +55,10 @@ impl JukeboxSongRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<JukeboxSongRef> {
-        self.jukebox_songs_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, jukebox_song: JukeboxSongRef) -> &usize {
         self.jukebox_songs_by_key
             .get(&jukebox_song.key)
             .expect("Jukebox song not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<JukeboxSongRef> {
-        self.jukebox_songs_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, JukeboxSongRef)> + '_ {
@@ -80,56 +67,6 @@ impl JukeboxSongRegistry {
             .enumerate()
             .map(|(id, &song)| (id, song))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.jukebox_songs_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.jukebox_songs_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for JukeboxSongRegistry {
-    type Entry = JukeboxSongRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<JukeboxSongRef> {
-        self.jukebox_songs_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<JukeboxSongRef> {
-        self.jukebox_songs_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.jukebox_songs_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.jukebox_songs_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.jukebox_songs_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for JukeboxSong {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.jukebox_songs.id_from_key(&self.key)
-    }
 }
 
 impl Default for JukeboxSongRegistry {
@@ -137,3 +74,12 @@ impl Default for JukeboxSongRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    JukeboxSongRegistry,
+    JukeboxSong,
+    JukeboxSongRef,
+    jukebox_songs_by_id,
+    jukebox_songs_by_key,
+    jukebox_songs
+);

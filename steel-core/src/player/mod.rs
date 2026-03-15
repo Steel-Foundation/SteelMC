@@ -67,7 +67,7 @@ use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ELYTRA_MOVEMENT_CHECK, IMMEDIATE_RESPAWN, KEEP_INVENTORY, PLAYER_MOVEMENT_CHECK,
     SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{REGISTRY, vanilla_chat_types};
+use steel_registry::{REGISTRY, RegistryExt, vanilla_chat_types};
 use steel_utils::entity_events::EntityStatus;
 
 use steel_utils::locks::SyncMutex;

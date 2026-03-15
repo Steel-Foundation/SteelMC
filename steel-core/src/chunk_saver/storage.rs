@@ -15,7 +15,7 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::{REGISTRY, Registry, vanilla_biomes};
+use steel_registry::{REGISTRY, Registry, RegistryExt, vanilla_biomes};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier};
 
 use crate::world::structure::{

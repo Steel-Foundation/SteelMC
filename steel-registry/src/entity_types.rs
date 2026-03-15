@@ -1,8 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
-
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobCategory {
@@ -143,19 +141,12 @@ impl EntityTypeRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: i32) -> Option<EntityTypeRef> {
+    pub fn by_protocol_id(&self, id: i32) -> Option<EntityTypeRef> {
         if id >= 0 {
             self.types_by_id.get(id as usize).copied()
         } else {
             None
         }
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
-        self.types_by_key
-            .get(key)
-            .and_then(|&idx| self.types_by_id.get(idx).copied())
     }
 
     /// Gets the registry ID for an entity type.
@@ -165,54 +156,13 @@ impl EntityTypeRegistry {
             .get(&entity_type.key)
             .expect("Entity type not found")
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.types_by_id.is_empty()
-    }
 }
 
-impl RegistryExt for EntityTypeRegistry {
-    type Entry = EntityTypeRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<EntityTypeRef> {
-        self.types_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
-        self.types_by_key
-            .get(key)
-            .and_then(|&id| self.types_by_id.get(id).copied())
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.types_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.types_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.types_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for EntityType {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.entity_types.id_from_key(&self.key)
-    }
-}
+crate::impl_registry!(
+    EntityTypeRegistry,
+    EntityType,
+    EntityTypeRef,
+    types_by_id,
+    types_by_key,
+    entity_types
+);

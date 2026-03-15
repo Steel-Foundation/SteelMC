@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -56,22 +55,10 @@ impl InstrumentRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<InstrumentRef> {
-        self.instruments_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, instrument: InstrumentRef) -> &usize {
         self.instruments_by_key
             .get(&instrument.key)
             .expect("Instrument not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<InstrumentRef> {
-        self.instruments_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, InstrumentRef)> + '_ {
@@ -80,56 +67,6 @@ impl InstrumentRegistry {
             .enumerate()
             .map(|(id, &instrument)| (id, instrument))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.instruments_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.instruments_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for InstrumentRegistry {
-    type Entry = InstrumentRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<InstrumentRef> {
-        self.instruments_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<InstrumentRef> {
-        self.instruments_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.instruments_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.instruments_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.instruments_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for Instrument {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.instruments.id_from_key(&self.key)
-    }
 }
 
 impl Default for InstrumentRegistry {
@@ -137,3 +74,12 @@ impl Default for InstrumentRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    InstrumentRegistry,
+    Instrument,
+    InstrumentRef,
+    instruments_by_id,
+    instruments_by_key,
+    instruments
+);

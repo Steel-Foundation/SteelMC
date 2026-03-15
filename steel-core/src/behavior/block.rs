@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Weak};
 
-use steel_registry::REGISTRY;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};

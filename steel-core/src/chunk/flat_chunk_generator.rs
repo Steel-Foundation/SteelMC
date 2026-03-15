@@ -1,4 +1,4 @@
-use steel_registry::REGISTRY;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::{BlockStateId, Identifier};
 
 use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};

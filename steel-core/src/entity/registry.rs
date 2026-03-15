@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
-use steel_registry::REGISTRY;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_utils::math::Vector3;

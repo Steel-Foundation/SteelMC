@@ -3,7 +3,7 @@
 use std::ops::Deref;
 use std::sync::OnceLock;
 
-use steel_registry::REGISTRY;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_registry::fluid::FluidRef;
 
 use crate::fluid::{EmptyFluid, FluidBehavior};

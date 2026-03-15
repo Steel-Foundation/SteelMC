@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -76,22 +75,10 @@ impl ChickenVariantRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<ChickenVariantRef> {
-        self.chicken_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, chicken_variant: ChickenVariantRef) -> &usize {
         self.chicken_variants_by_key
             .get(&chicken_variant.key)
             .expect("Chicken variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<ChickenVariantRef> {
-        self.chicken_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, ChickenVariantRef)> + '_ {
@@ -100,56 +87,6 @@ impl ChickenVariantRegistry {
             .enumerate()
             .map(|(id, &variant)| (id, variant))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.chicken_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.chicken_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for ChickenVariantRegistry {
-    type Entry = ChickenVariantRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<ChickenVariantRef> {
-        self.chicken_variants_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<ChickenVariantRef> {
-        self.chicken_variants_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.chicken_variants_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.chicken_variants_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.chicken_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for ChickenVariant {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.chicken_variants.id_from_key(&self.key)
-    }
 }
 
 impl Default for ChickenVariantRegistry {
@@ -157,3 +94,12 @@ impl Default for ChickenVariantRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    ChickenVariantRegistry,
+    ChickenVariant,
+    ChickenVariantRef,
+    chicken_variants_by_id,
+    chicken_variants_by_key,
+    chicken_variants
+);

@@ -25,7 +25,8 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::{
-    REGISTRY, data_components::DataComponentPatch, item_stack::ItemStack, menu_type::MenuTypeRef,
+    REGISTRY, RegistryExt, data_components::DataComponentPatch, item_stack::ItemStack,
+    menu_type::MenuTypeRef,
 };
 
 use crate::{
@@ -141,7 +142,7 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
         .filter_map(|k| {
             REGISTRY
                 .data_components
-                .get_id_by_key(k)
+                .id_from_key(k)
                 .map(|id| id as i32)
         })
         .collect();
@@ -158,7 +159,7 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
     // For each component in our patch, verify the client sent the correct hash
     for (key, entry) in patch.iter() {
         if let ComponentPatchEntry::Set(value) = entry {
-            let Some(id) = REGISTRY.data_components.get_id_by_key(key) else {
+            let Some(id) = REGISTRY.data_components.id_from_key(key) else {
                 continue; // Unknown component, skip
             };
             let id = id as i32;

@@ -9,7 +9,7 @@ use steel_utils::{
 };
 
 use crate::{
-    REGISTRY,
+    REGISTRY, RegistryExt,
     data_components::{
         Component, ComponentData, ComponentPatchEntry, DataComponentMap, DataComponentPatch,
         DataComponentType,

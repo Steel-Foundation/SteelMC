@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -67,22 +66,10 @@ impl CatVariantRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<CatVariantRef> {
-        self.cat_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, cat_variant: CatVariantRef) -> &usize {
         self.cat_variants_by_key
             .get(&cat_variant.key)
             .expect("Cat variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<CatVariantRef> {
-        self.cat_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, CatVariantRef)> + '_ {
@@ -91,56 +78,6 @@ impl CatVariantRegistry {
             .enumerate()
             .map(|(id, &variant)| (id, variant))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.cat_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.cat_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for CatVariantRegistry {
-    type Entry = CatVariantRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<CatVariantRef> {
-        self.cat_variants_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<CatVariantRef> {
-        self.cat_variants_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.cat_variants_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.cat_variants_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.cat_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for CatVariant {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.cat_variants.id_from_key(&self.key)
-    }
 }
 
 impl Default for CatVariantRegistry {
@@ -148,3 +85,12 @@ impl Default for CatVariantRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    CatVariantRegistry,
+    CatVariant,
+    CatVariantRef,
+    cat_variants_by_id,
+    cat_variants_by_key,
+    cat_variants
+);

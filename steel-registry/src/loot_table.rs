@@ -1,5 +1,5 @@
 use crate::{
-    REGISTRY, RegistryEntry, RegistryExt, blocks::block_state_ext::BlockStateExt,
+    REGISTRY, RegistryExt, TaggedRegistryExt, blocks::block_state_ext::BlockStateExt,
     item_stack::ItemStack,
 };
 use rand::RngExt;
@@ -1871,69 +1871,11 @@ impl LootTableRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<LootTableRef> {
-        self.tables_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<LootTableRef> {
-        self.tables_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, LootTableRef)> + '_ {
         self.tables_by_id
             .iter()
             .enumerate()
             .map(|(id, &table)| (id, table))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.tables_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.tables_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for LootTableRegistry {
-    type Entry = LootTableRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<LootTableRef> {
-        self.tables_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<LootTableRef> {
-        self.tables_by_key.get(key).and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.tables_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.tables_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.tables_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for LootTable {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.loot_tables.id_from_key(&self.key)
     }
 }
 
@@ -1942,6 +1884,15 @@ impl Default for LootTableRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    LootTableRegistry,
+    LootTable,
+    LootTableRef,
+    tables_by_id,
+    tables_by_key,
+    loot_tables
+);
 
 #[cfg(test)]
 mod tests {

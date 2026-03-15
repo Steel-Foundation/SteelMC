@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -82,22 +81,10 @@ impl DamageTypeRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<DamageTypeRef> {
-        self.damage_types_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, damage_type: DamageTypeRef) -> &usize {
         self.damage_types_by_key
             .get(&damage_type.key)
             .expect("Damage type not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<DamageTypeRef> {
-        self.damage_types_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, DamageTypeRef)> + '_ {
@@ -106,56 +93,6 @@ impl DamageTypeRegistry {
             .enumerate()
             .map(|(id, &dt)| (id, dt))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.damage_types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.damage_types_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for DamageTypeRegistry {
-    type Entry = DamageTypeRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<DamageTypeRef> {
-        self.damage_types_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<DamageTypeRef> {
-        self.damage_types_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.damage_types_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.damage_types_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.damage_types_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for DamageType {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.damage_types.id_from_key(&self.key)
-    }
 }
 
 impl Default for DamageTypeRegistry {
@@ -163,3 +100,12 @@ impl Default for DamageTypeRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    DamageTypeRegistry,
+    DamageType,
+    DamageTypeRef,
+    damage_types_by_id,
+    damage_types_by_key,
+    damage_types
+);

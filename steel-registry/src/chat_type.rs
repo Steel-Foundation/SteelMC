@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -71,22 +70,10 @@ impl ChatTypeRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<ChatTypeRef> {
-        self.chat_types_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, chat_type: ChatTypeRef) -> &usize {
         self.chat_types_by_key
             .get(&chat_type.key)
             .expect("Chat type not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<ChatTypeRef> {
-        self.chat_types_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, ChatTypeRef)> + '_ {
@@ -95,56 +82,6 @@ impl ChatTypeRegistry {
             .enumerate()
             .map(|(id, &ct)| (id, ct))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.chat_types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.chat_types_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for ChatTypeRegistry {
-    type Entry = ChatTypeRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<ChatTypeRef> {
-        self.chat_types_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<ChatTypeRef> {
-        self.chat_types_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.chat_types_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.chat_types_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.chat_types_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for ChatType {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.chat_types.id_from_key(&self.key)
-    }
 }
 
 impl Default for ChatTypeRegistry {
@@ -152,3 +89,12 @@ impl Default for ChatTypeRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    ChatTypeRegistry,
+    ChatType,
+    ChatTypeRef,
+    chat_types_by_id,
+    chat_types_by_key,
+    chat_types
+);

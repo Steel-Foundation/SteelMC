@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -143,29 +142,8 @@ impl BiomeRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<BiomeRef> {
-        self.biomes_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, biome: BiomeRef) -> &usize {
         self.biomes_by_key.get(&biome.key).expect("Biome not found")
-    }
-
-    #[must_use]
-    pub fn get(&self, key: &Identifier) -> Option<BiomeRef> {
-        self.biomes_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<BiomeRef> {
-        self.get(key)
-    }
-
-    /// Gets the numeric ID for a biome by its key.
-    #[must_use]
-    pub fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.biomes_by_key.get(key).copied()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, BiomeRef)> + '_ {
@@ -174,54 +152,6 @@ impl BiomeRegistry {
             .enumerate()
             .map(|(id, &biome)| (id, biome))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.biomes_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.biomes_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for BiomeRegistry {
-    type Entry = BiomeRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<BiomeRef> {
-        self.biomes_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<BiomeRef> {
-        self.biomes_by_key.get(key).and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.biomes_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.biomes_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.biomes_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for Biome {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.biomes.id_from_key(&self.key)
-    }
 }
 
 impl Default for BiomeRegistry {
@@ -229,3 +159,12 @@ impl Default for BiomeRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    BiomeRegistry,
+    Biome,
+    BiomeRef,
+    biomes_by_id,
+    biomes_by_key,
+    biomes
+);

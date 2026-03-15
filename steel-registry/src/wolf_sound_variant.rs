@@ -1,8 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
-
 /// Represents a set of sounds for a wolf variant from a data pack JSON file.
 #[derive(Debug)]
 pub struct WolfSoundVariant {
@@ -58,22 +56,10 @@ impl WolfSoundVariantRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<WolfSoundVariantRef> {
-        self.wolf_sound_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, wolf_sound_variant: WolfSoundVariantRef) -> &usize {
         self.wolf_sound_variants_by_key
             .get(&wolf_sound_variant.key)
             .expect("Wolf sound variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<WolfSoundVariantRef> {
-        self.wolf_sound_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, WolfSoundVariantRef)> + '_ {
@@ -82,56 +68,6 @@ impl WolfSoundVariantRegistry {
             .enumerate()
             .map(|(id, &variant)| (id, variant))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.wolf_sound_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.wolf_sound_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for WolfSoundVariantRegistry {
-    type Entry = WolfSoundVariantRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<WolfSoundVariantRef> {
-        self.wolf_sound_variants_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<WolfSoundVariantRef> {
-        self.wolf_sound_variants_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.wolf_sound_variants_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.wolf_sound_variants_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.wolf_sound_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for WolfSoundVariant {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.wolf_sound_variants.id_from_key(&self.key)
-    }
 }
 
 impl Default for WolfSoundVariantRegistry {
@@ -139,3 +75,12 @@ impl Default for WolfSoundVariantRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    WolfSoundVariantRegistry,
+    WolfSoundVariant,
+    WolfSoundVariantRef,
+    wolf_sound_variants_by_id,
+    wolf_sound_variants_by_key,
+    wolf_sound_variants
+);

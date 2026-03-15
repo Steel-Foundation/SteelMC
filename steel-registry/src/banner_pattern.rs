@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -53,22 +52,10 @@ impl BannerPatternRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<BannerPatternRef> {
-        self.banner_patterns_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, banner_pattern: BannerPatternRef) -> &usize {
         self.banner_patterns_by_key
             .get(&banner_pattern.key)
             .expect("Banner pattern not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<BannerPatternRef> {
-        self.banner_patterns_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, BannerPatternRef)> + '_ {
@@ -76,16 +63,6 @@ impl BannerPatternRegistry {
             .iter()
             .enumerate()
             .map(|(id, &pattern)| (id, pattern))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.banner_patterns_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.banner_patterns_by_id.is_empty()
     }
 }
 
@@ -95,42 +72,11 @@ impl Default for BannerPatternRegistry {
     }
 }
 
-impl RegistryExt for BannerPatternRegistry {
-    type Entry = BannerPatternRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<BannerPatternRef> {
-        self.banner_patterns_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<BannerPatternRef> {
-        self.banner_patterns_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.banner_patterns_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.banner_patterns_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.banner_patterns_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for BannerPattern {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.banner_patterns.id_from_key(&self.key)
-    }
-}
+crate::impl_registry!(
+    BannerPatternRegistry,
+    BannerPattern,
+    BannerPatternRef,
+    banner_patterns_by_id,
+    banner_patterns_by_key,
+    banner_patterns
+);

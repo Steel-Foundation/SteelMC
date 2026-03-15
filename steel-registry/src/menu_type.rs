@@ -1,4 +1,3 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -52,22 +51,10 @@ impl MenuTypeRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<MenuTypeRef> {
-        self.menu_types_by_id.get(id).copied()
-    }
-
-    #[must_use]
     pub fn get_id(&self, menu_type: MenuTypeRef) -> &usize {
         self.menu_types_by_key
             .get(&menu_type.key)
             .expect("Menu type not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<MenuTypeRef> {
-        self.menu_types_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, MenuTypeRef)> + '_ {
@@ -76,56 +63,6 @@ impl MenuTypeRegistry {
             .enumerate()
             .map(|(id, &menu_type)| (id, menu_type))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.menu_types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.menu_types_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for MenuTypeRegistry {
-    type Entry = MenuTypeRef;
-
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-
-    fn by_id(&self, id: usize) -> Option<MenuTypeRef> {
-        self.menu_types_by_id.get(id).copied()
-    }
-
-    fn by_key(&self, key: &Identifier) -> Option<MenuTypeRef> {
-        self.menu_types_by_key
-            .get(key)
-            .and_then(|&id| self.by_id(id))
-    }
-
-    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
-        self.menu_types_by_key.get(key).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.menu_types_by_id.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.menu_types_by_id.is_empty()
-    }
-}
-
-impl RegistryEntry for MenuType {
-    fn key(&self) -> &Identifier {
-        &self.key
-    }
-
-    fn try_id(&self) -> Option<usize> {
-        REGISTRY.menu_types.id_from_key(&self.key)
-    }
 }
 
 impl Default for MenuTypeRegistry {
@@ -133,3 +70,12 @@ impl Default for MenuTypeRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    MenuTypeRegistry,
+    MenuType,
+    MenuTypeRef,
+    menu_types_by_id,
+    menu_types_by_key,
+    menu_types
+);
