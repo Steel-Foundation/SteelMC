@@ -54,13 +54,6 @@ impl InstrumentRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, instrument: InstrumentRef) -> &usize {
-        self.instruments_by_key
-            .get(&instrument.key)
-            .expect("Instrument not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, InstrumentRef)> + '_ {
         self.instruments_by_id
             .iter()

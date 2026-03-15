@@ -55,13 +55,6 @@ impl PaintingVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, painting_variant: PaintingVariantRef) -> &usize {
-        self.painting_variants_by_key
-            .get(&painting_variant.key)
-            .expect("Painting variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, PaintingVariantRef)> + '_ {
         self.painting_variants_by_id
             .iter()

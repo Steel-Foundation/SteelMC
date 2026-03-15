@@ -80,13 +80,6 @@ impl DamageTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, damage_type: DamageTypeRef) -> &usize {
-        self.damage_types_by_key
-            .get(&damage_type.key)
-            .expect("Damage type not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, DamageTypeRef)> + '_ {
         self.damage_types_by_id
             .iter()

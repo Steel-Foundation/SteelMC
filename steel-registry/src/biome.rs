@@ -141,11 +141,6 @@ impl BiomeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, biome: BiomeRef) -> &usize {
-        self.biomes_by_key.get(&biome.key).expect("Biome not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, BiomeRef)> + '_ {
         self.biomes_by_id
             .iter()

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use sha2::{Digest, Sha256};
-use steel_registry::REGISTRY;
+use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_registry::vanilla_biomes;
@@ -135,7 +135,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         let quart_z = chunk_z * 4 + local_quart_z;
 
                         let biome = sampler.sample(quart_x, quart_y, quart_z);
-                        let biome_id = *REGISTRY.biomes.get_id(biome) as u16;
+                        let biome_id = biome.id() as u16;
 
                         section_guard.biomes.set(
                             local_quart_x as usize,
@@ -279,10 +279,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             .get(HeightmapType::WorldSurfaceWg)
             .expect("WorldSurfaceWg heightmap not initialized");
 
-        let eroded_badlands_id = *REGISTRY.biomes.get_id(&vanilla_biomes::ERODED_BADLANDS) as u16;
-        let frozen_ocean_id = *REGISTRY.biomes.get_id(&vanilla_biomes::FROZEN_OCEAN) as u16;
-        let deep_frozen_ocean_id =
-            *REGISTRY.biomes.get_id(&vanilla_biomes::DEEP_FROZEN_OCEAN) as u16;
+        let eroded_badlands_id = vanilla_biomes::ERODED_BADLANDS.id() as u16;
+        let frozen_ocean_id = vanilla_biomes::FROZEN_OCEAN.id() as u16;
+        let deep_frozen_ocean_id = vanilla_biomes::DEEP_FROZEN_OCEAN.id() as u16;
 
         // Pre-extract all biome palette values to avoid per-read section locking.
         let biome_data = chunk.sections().read_all_biomes();

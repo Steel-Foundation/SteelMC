@@ -53,13 +53,6 @@ impl TrimPatternRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, trim_pattern: TrimPatternRef) -> &usize {
-        self.trim_patterns_by_key
-            .get(&trim_pattern.key)
-            .expect("Trim pattern not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, TrimPatternRef)> + '_ {
         self.trim_patterns_by_id
             .iter()

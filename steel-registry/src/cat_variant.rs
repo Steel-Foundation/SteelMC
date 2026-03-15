@@ -65,13 +65,6 @@ impl CatVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, cat_variant: CatVariantRef) -> &usize {
-        self.cat_variants_by_key
-            .get(&cat_variant.key)
-            .expect("Cat variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, CatVariantRef)> + '_ {
         self.cat_variants_by_id
             .iter()

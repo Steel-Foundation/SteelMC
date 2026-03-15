@@ -50,13 +50,6 @@ impl MenuTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, menu_type: MenuTypeRef) -> &usize {
-        self.menu_types_by_key
-            .get(&menu_type.key)
-            .expect("Menu type not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, MenuTypeRef)> + '_ {
         self.menu_types_by_id
             .iter()

@@ -58,13 +58,6 @@ impl TrimMaterialRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, trim_material: TrimMaterialRef) -> &usize {
-        self.trim_materials_by_key
-            .get(&trim_material.key)
-            .expect("Trim material not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, TrimMaterialRef)> + '_ {
         self.trim_materials_by_id
             .iter()

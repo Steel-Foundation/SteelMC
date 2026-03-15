@@ -199,12 +199,6 @@ impl FluidRegistry {
         true
     }
 
-    /// Gets the numeric ID for a fluid.
-    #[must_use]
-    pub fn get_id(&self, fluid: FluidRef) -> Option<&usize> {
-        self.fluids_by_key.get(&fluid.key)
-    }
-
     /// Iterates over all fluids with their IDs.
     pub fn iter(&self) -> impl Iterator<Item = (usize, FluidRef)> + '_ {
         self.fluids_by_id
@@ -214,7 +208,14 @@ impl FluidRegistry {
     }
 }
 
-crate::impl_registry!(FluidRegistry, Fluid, FluidRef, fluids_by_id, fluids_by_key, fluids);
+crate::impl_registry!(
+    FluidRegistry,
+    Fluid,
+    FluidRef,
+    fluids_by_id,
+    fluids_by_key,
+    fluids
+);
 crate::impl_tagged_registry!(FluidRegistry, fluids_by_key, "fluid");
 
 // --- Fluid type checking helpers ---

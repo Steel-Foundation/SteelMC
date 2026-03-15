@@ -68,11 +68,6 @@ impl PoiTypeRegistry {
     }
 
     #[must_use]
-    pub fn get_id(&self, poi_type: PoiTypeRef) -> Option<&usize> {
-        self.types_by_key.get(&poi_type.key)
-    }
-
-    #[must_use]
     pub fn type_for_state(&self, state_id: BlockStateId) -> Option<PoiTypeRef> {
         use crate::RegistryExt;
         self.state_to_type
@@ -98,5 +93,12 @@ impl PoiTypeRegistry {
     }
 }
 
-crate::impl_registry!(PoiTypeRegistry, PointOfInterestType, PoiTypeRef, types_by_id, types_by_key, poi_types);
+crate::impl_registry!(
+    PoiTypeRegistry,
+    PointOfInterestType,
+    PoiTypeRef,
+    types_by_id,
+    types_by_key,
+    poi_types
+);
 crate::impl_tagged_registry!(PoiTypeRegistry, types_by_key, "POI type");

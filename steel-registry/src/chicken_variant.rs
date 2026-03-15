@@ -74,13 +74,6 @@ impl ChickenVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, chicken_variant: ChickenVariantRef) -> &usize {
-        self.chicken_variants_by_key
-            .get(&chicken_variant.key)
-            .expect("Chicken variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ChickenVariantRef)> + '_ {
         self.chicken_variants_by_id
             .iter()

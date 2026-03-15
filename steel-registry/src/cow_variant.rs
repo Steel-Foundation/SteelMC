@@ -74,13 +74,6 @@ impl CowVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, cow_variant: CowVariantRef) -> &usize {
-        self.cow_variants_by_key
-            .get(&cow_variant.key)
-            .expect("Cow variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, CowVariantRef)> + '_ {
         self.cow_variants_by_id
             .iter()

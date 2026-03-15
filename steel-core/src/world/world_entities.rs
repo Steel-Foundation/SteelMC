@@ -4,7 +4,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{
     CAddEntity, CGameEvent, CPlayerInfoUpdate, CRemoveEntities, CRemovePlayerInfo, GameEventType,
 };
-use steel_registry::{REGISTRY, vanilla_entities};
+use steel_registry::{RegistryEntry, vanilla_entities};
 use tokio::time::Instant;
 
 use crate::{
@@ -107,7 +107,7 @@ impl World {
                 // Spawn existing player entity for new player (bundled for atomic processing)
                 let existing_pos = *existing_player.position.lock();
                 let (existing_yaw, existing_pitch) = existing_player.rotation.load();
-                let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
+                let player_type_id = vanilla_entities::PLAYER.id() as i32;
                 player.send_bundle(|bundle| {
                     bundle.add(CAddEntity::player(
                         existing_player.id,
@@ -135,7 +135,7 @@ impl World {
             None, // display_name
             true, // show_hat
         );
-        let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
+        let player_type_id = vanilla_entities::PLAYER.id() as i32;
         let spawn_packet = CAddEntity::player(
             player.id,
             player.gameprofile.id,

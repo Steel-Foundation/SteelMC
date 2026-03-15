@@ -280,45 +280,48 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
         };
     }
 
-    reg!("byte", ser_byte);                                        // 0
-    reg!("int", ser_int);                                          // 1
-    reg!("long", ser_long);                                        // 2
-    reg!("float", ser_float);                                      // 3
-    reg!("string", ser_string);                                    // 4
-    reg!("component", ser_component);                              // 5
-    reg!("optional_component", ser_optional_component);            // 6
-    reg!("item_stack", ser_item_stack);                             // 7
-    reg!("boolean", ser_boolean);                                  // 8
-    reg!("rotations", ser_rotations);                               // 9
-    reg!("block_pos", ser_block_pos);                              // 10
-    reg!("optional_block_pos", ser_optional_block_pos);            // 11
-    reg!("direction", ser_direction);                               // 12
-    reg!("optional_living_entity_reference", ser_optional_living_entity_reference); // 13
-    reg!("block_state", ser_block_state);                          // 14
-    reg!("optional_block_state", ser_optional_block_state);        // 15
-    reg!("particle", ser_particle);                                // 16
-    reg!("particles", ser_particles);                              // 17
-    reg!("villager_data", ser_villager_data);                      // 18
-    reg!("optional_unsigned_int", ser_optional_unsigned_int);      // 19
-    reg!("pose", ser_pose);                                        // 20
-    reg!("cat_variant", ser_cat_variant);                          // 21
-    reg!("cow_variant", ser_cow_variant);                          // 22
-    reg!("wolf_variant", ser_wolf_variant);                        // 23
-    reg!("wolf_sound_variant", ser_wolf_sound_variant);            // 24
-    reg!("frog_variant", ser_frog_variant);                        // 25
-    reg!("pig_variant", ser_pig_variant);                          // 26
-    reg!("chicken_variant", ser_chicken_variant);                  // 27
-    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant);   // 28
-    reg!("optional_global_pos", ser_optional_global_pos);          // 29
-    reg!("painting_variant", ser_painting_variant);                // 30
-    reg!("sniffer_state", ser_sniffer_state);                      // 31
-    reg!("armadillo_state", ser_armadillo_state);                  // 32
-    reg!("copper_golem_state", ser_copper_golem_state);            // 33
-    reg!("weathering_copper_state", ser_weathering_copper_state);  // 34
-    reg!("vector3", ser_vector3);                                  // 35
-    reg!("quaternion", ser_quaternion);                             // 36
-    reg!("resolvable_profile", ser_resolvable_profile);            // 37
-    reg!("humanoid_arm", ser_humanoid_arm);                        // 38
+    reg!("byte", ser_byte); // 0
+    reg!("int", ser_int); // 1
+    reg!("long", ser_long); // 2
+    reg!("float", ser_float); // 3
+    reg!("string", ser_string); // 4
+    reg!("component", ser_component); // 5
+    reg!("optional_component", ser_optional_component); // 6
+    reg!("item_stack", ser_item_stack); // 7
+    reg!("boolean", ser_boolean); // 8
+    reg!("rotations", ser_rotations); // 9
+    reg!("block_pos", ser_block_pos); // 10
+    reg!("optional_block_pos", ser_optional_block_pos); // 11
+    reg!("direction", ser_direction); // 12
+    reg!(
+        "optional_living_entity_reference",
+        ser_optional_living_entity_reference
+    ); // 13
+    reg!("block_state", ser_block_state); // 14
+    reg!("optional_block_state", ser_optional_block_state); // 15
+    reg!("particle", ser_particle); // 16
+    reg!("particles", ser_particles); // 17
+    reg!("villager_data", ser_villager_data); // 18
+    reg!("optional_unsigned_int", ser_optional_unsigned_int); // 19
+    reg!("pose", ser_pose); // 20
+    reg!("cat_variant", ser_cat_variant); // 21
+    reg!("cow_variant", ser_cow_variant); // 22
+    reg!("wolf_variant", ser_wolf_variant); // 23
+    reg!("wolf_sound_variant", ser_wolf_sound_variant); // 24
+    reg!("frog_variant", ser_frog_variant); // 25
+    reg!("pig_variant", ser_pig_variant); // 26
+    reg!("chicken_variant", ser_chicken_variant); // 27
+    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant); // 28
+    reg!("optional_global_pos", ser_optional_global_pos); // 29
+    reg!("painting_variant", ser_painting_variant); // 30
+    reg!("sniffer_state", ser_sniffer_state); // 31
+    reg!("armadillo_state", ser_armadillo_state); // 32
+    reg!("copper_golem_state", ser_copper_golem_state); // 33
+    reg!("weathering_copper_state", ser_weathering_copper_state); // 34
+    reg!("vector3", ser_vector3); // 35
+    reg!("quaternion", ser_quaternion); // 36
+    reg!("resolvable_profile", ser_resolvable_profile); // 37
+    reg!("humanoid_arm", ser_humanoid_arm); // 38
 }
 
 #[cfg(test)]

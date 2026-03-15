@@ -1,4 +1,4 @@
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
@@ -138,24 +138,11 @@ impl GameRuleRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, game_rule: GameRuleRef) -> &usize {
-        self.game_rules_by_key
-            .get(&game_rule.key)
-            .expect("Game rule not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, GameRuleRef)> + '_ {
         self.game_rules_by_id
             .iter()
             .enumerate()
             .map(|(id, &gr)| (id, gr))
-    }
-
-    /// Gets the ID of a game rule by its key.
-    #[must_use]
-    pub fn get_id_by_key(&self, key: &Identifier) -> Option<usize> {
-        self.game_rules_by_key.get(key).copied()
     }
 }
 
@@ -197,8 +184,8 @@ impl GameRuleValues {
 
     /// Gets the value of a game rule.
     #[must_use]
-    pub fn get(&self, rule: GameRuleRef, registry: &GameRuleRegistry) -> GameRuleValue {
-        let id = *registry.get_id(rule);
+    pub fn get(&self, rule: GameRuleRef, _registry: &GameRuleRegistry) -> GameRuleValue {
+        let id = rule.id();
         self.values[id]
     }
 
@@ -210,7 +197,7 @@ impl GameRuleValues {
         &mut self,
         rule: GameRuleRef,
         value: GameRuleValue,
-        registry: &GameRuleRegistry,
+        _registry: &GameRuleRegistry,
     ) -> bool {
         if !value.matches_type(rule.value_type) {
             return false;
@@ -228,7 +215,7 @@ impl GameRuleValues {
                 return false;
             }
         }
-        let id = *registry.get_id(rule);
+        let id = rule.id();
         self.values[id] = value;
         true
     }
@@ -237,7 +224,7 @@ impl GameRuleValues {
     #[must_use]
     pub fn get_by_name(&self, name: &str, registry: &GameRuleRegistry) -> Option<GameRuleValue> {
         let key = Identifier::vanilla(name.to_string());
-        let id = registry.get_id_by_key(&key)?;
+        let id = registry.id_from_key(&key)?;
         self.values.get(id).copied()
     }
 

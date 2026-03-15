@@ -55,13 +55,6 @@ impl WolfSoundVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, wolf_sound_variant: WolfSoundVariantRef) -> &usize {
-        self.wolf_sound_variants_by_key
-            .get(&wolf_sound_variant.key)
-            .expect("Wolf sound variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, WolfSoundVariantRef)> + '_ {
         self.wolf_sound_variants_by_id
             .iter()

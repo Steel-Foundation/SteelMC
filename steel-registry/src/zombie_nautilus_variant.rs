@@ -71,13 +71,6 @@ impl ZombieNautilusVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, zombie_nautilus_variant: ZombieNautilusVariantRef) -> &usize {
-        self.zombie_nautilus_variants_by_key
-            .get(&zombie_nautilus_variant.key)
-            .expect("Zombie nautilus variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ZombieNautilusVariantRef)> + '_ {
         self.zombie_nautilus_variants_by_id
             .iter()

@@ -54,13 +54,6 @@ impl JukeboxSongRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, jukebox_song: JukeboxSongRef) -> &usize {
-        self.jukebox_songs_by_key
-            .get(&jukebox_song.key)
-            .expect("Jukebox song not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, JukeboxSongRef)> + '_ {
         self.jukebox_songs_by_id
             .iter()

@@ -73,13 +73,6 @@ impl WolfVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, wolf_variant: WolfVariantRef) -> &usize {
-        self.wolf_variants_by_key
-            .get(&wolf_variant.key)
-            .expect("Wolf variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, WolfVariantRef)> + '_ {
         self.wolf_variants_by_id
             .iter()

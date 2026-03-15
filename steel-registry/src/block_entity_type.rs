@@ -51,13 +51,6 @@ impl BlockEntityTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, block_entity_type: BlockEntityTypeRef) -> &usize {
-        self.block_entity_types_by_key
-            .get(&block_entity_type.key)
-            .expect("Block entity type not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, BlockEntityTypeRef)> + '_ {
         self.block_entity_types_by_id
             .iter()

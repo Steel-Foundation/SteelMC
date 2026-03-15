@@ -73,13 +73,6 @@ impl PigVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, pig_variant: PigVariantRef) -> &usize {
-        self.pig_variants_by_key
-            .get(&pig_variant.key)
-            .expect("Pig variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, PigVariantRef)> + '_ {
         self.pig_variants_by_id
             .iter()

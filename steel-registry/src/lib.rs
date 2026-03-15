@@ -341,21 +341,17 @@ pub trait RegistryExt {
 /// Trait for registries that support tagging entries.
 pub trait TaggedRegistryExt: RegistryExt {
     fn register_tag(&mut self, tag: Identifier, keys: &[&'static str]);
-    fn modify_tag(
-        &mut self,
-        tag: &Identifier,
-        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
-    );
+    fn modify_tag(&mut self, tag: &Identifier, f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>);
     fn is_in_tag(&self, entry: Self::Entry, tag: &Identifier) -> bool;
     fn get_tag(&self, tag: &Identifier) -> Option<Vec<Self::Entry>>;
     fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = Self::Entry> + '_;
     fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_;
 }
 
-/// Implements `RegistryExt` and `RegistryEntry` for a standard registry.
+/// Implements `RegistryExt` for a registry type.
 #[macro_export]
-macro_rules! impl_registry {
-    ($Registry:ty, $Entry:ty, $EntryRef:ty, $id_field:ident, $key_field:ident, $global_field:ident) => {
+macro_rules! impl_registry_ext {
+    ($Registry:ty, $EntryRef:ty, $id_field:ident, $key_field:ident) => {
         impl $crate::RegistryExt for $Registry {
             type Entry = $EntryRef;
 
@@ -385,7 +381,13 @@ macro_rules! impl_registry {
                 self.$id_field.is_empty()
             }
         }
+    };
+}
 
+/// Implements `RegistryEntry` for an entry type via hash map lookup.
+#[macro_export]
+macro_rules! impl_registry_entry {
+    ($Entry:ty, $global_field:ident) => {
         impl $crate::RegistryEntry for $Entry {
             fn key(&self) -> &steel_utils::Identifier {
                 &self.key
@@ -399,16 +401,21 @@ macro_rules! impl_registry {
     };
 }
 
+/// Implements both `RegistryExt` and `RegistryEntry` for a standard registry.
+#[macro_export]
+macro_rules! impl_registry {
+    ($Registry:ty, $Entry:ty, $EntryRef:ty, $id_field:ident, $key_field:ident, $global_field:ident) => {
+        $crate::impl_registry_ext!($Registry, $EntryRef, $id_field, $key_field);
+        $crate::impl_registry_entry!($Entry, $global_field);
+    };
+}
+
 /// Implements `TaggedRegistryExt` for a registry with tag support.
 #[macro_export]
 macro_rules! impl_tagged_registry {
     ($Registry:ty, $key_field:ident, $entity_name:literal) => {
         impl $crate::TaggedRegistryExt for $Registry {
-            fn register_tag(
-                &mut self,
-                tag: steel_utils::Identifier,
-                keys: &[&'static str],
-            ) {
+            fn register_tag(&mut self, tag: steel_utils::Identifier, keys: &[&'static str]) {
                 assert!(
                     self.allows_registering,
                     "Cannot register tags after registry has been frozen"
@@ -417,8 +424,7 @@ macro_rules! impl_tagged_registry {
                 let identifiers: Vec<steel_utils::Identifier> = keys
                     .iter()
                     .filter_map(|key| {
-                        let ident =
-                            steel_utils::registry::registry_vanilla_or_custom_tag(key);
+                        let ident = steel_utils::registry::registry_vanilla_or_custom_tag(key);
                         if self.$key_field.contains_key(&ident) {
                             Some(ident)
                         } else {
@@ -433,9 +439,7 @@ macro_rules! impl_tagged_registry {
             fn modify_tag(
                 &mut self,
                 tag: &steel_utils::Identifier,
-                f: impl FnOnce(
-                    Vec<steel_utils::Identifier>,
-                ) -> Vec<steel_utils::Identifier>,
+                f: impl FnOnce(Vec<steel_utils::Identifier>) -> Vec<steel_utils::Identifier>,
             ) {
                 let existing = self.tags.remove(tag).unwrap_or_default();
                 let entries = f(existing)
@@ -456,20 +460,13 @@ macro_rules! impl_tagged_registry {
                 self.tags.insert(tag.clone(), entries);
             }
 
-            fn is_in_tag(
-                &self,
-                entry: Self::Entry,
-                tag: &steel_utils::Identifier,
-            ) -> bool {
+            fn is_in_tag(&self, entry: Self::Entry, tag: &steel_utils::Identifier) -> bool {
                 self.tags
                     .get(tag)
                     .is_some_and(|entries| entries.contains(&entry.key))
             }
 
-            fn get_tag(
-                &self,
-                tag: &steel_utils::Identifier,
-            ) -> Option<Vec<Self::Entry>> {
+            fn get_tag(&self, tag: &steel_utils::Identifier) -> Option<Vec<Self::Entry>> {
                 use $crate::RegistryExt;
                 self.tags.get(tag).map(|idents| {
                     idents

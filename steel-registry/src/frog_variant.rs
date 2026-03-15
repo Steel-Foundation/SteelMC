@@ -65,13 +65,6 @@ impl FrogVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, frog_variant: FrogVariantRef) -> &usize {
-        self.frog_variants_by_key
-            .get(&frog_variant.key)
-            .expect("Frog variant not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, FrogVariantRef)> + '_ {
         self.frog_variants_by_id
             .iter()

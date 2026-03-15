@@ -69,13 +69,6 @@ impl ChatTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, chat_type: ChatTypeRef) -> &usize {
-        self.chat_types_by_key
-            .get(&chat_type.key)
-            .expect("Chat type not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ChatTypeRef)> + '_ {
         self.chat_types_by_id
             .iter()

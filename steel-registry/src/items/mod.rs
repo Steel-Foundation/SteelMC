@@ -130,11 +130,6 @@ impl ItemRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, item: ItemRef) -> &usize {
-        self.items_by_key.get(&item.key).expect("Item not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ItemRef)> + '_ {
         self.items_by_id
             .iter()
@@ -143,5 +138,12 @@ impl ItemRegistry {
     }
 }
 
-crate::impl_registry!(ItemRegistry, Item, ItemRef, items_by_id, items_by_key, items);
+crate::impl_registry!(
+    ItemRegistry,
+    Item,
+    ItemRef,
+    items_by_id,
+    items_by_key,
+    items
+);
 crate::impl_tagged_registry!(ItemRegistry, items_by_key, "item");

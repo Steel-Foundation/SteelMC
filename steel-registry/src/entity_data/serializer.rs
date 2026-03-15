@@ -64,7 +64,10 @@ impl EntityDataSerializerRegistry {
             "Serializer '{key}' already registered",
         );
 
-        let entry = Box::leak(Box::new(EntityDataSerializerEntry { key: key.clone(), writer }));
+        let entry = Box::leak(Box::new(EntityDataSerializerEntry {
+            key: key.clone(),
+            writer,
+        }));
         let id = self.entries_by_id.len();
         self.entries_by_id.push(entry);
         self.entries_by_key.insert(key, id);

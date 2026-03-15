@@ -25,8 +25,8 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::{
-    REGISTRY, RegistryExt, data_components::DataComponentPatch, item_stack::ItemStack,
-    menu_type::MenuTypeRef,
+    REGISTRY, RegistryEntry, RegistryExt, data_components::DataComponentPatch,
+    item_stack::ItemStack, menu_type::MenuTypeRef,
 };
 
 use crate::{
@@ -108,7 +108,7 @@ fn hashed_stack_matches(hash: &HashedStack, item: &ItemStack) -> bool {
             }
 
             // Check item type and count match
-            let local_id = *REGISTRY.items.get_id(item.item) as i32;
+            let local_id = item.item.id() as i32;
             if local_id != *item_id {
                 log::info!(
                     "HashedStack mismatch: item_id client={item_id} server={local_id} ({})",
@@ -139,12 +139,7 @@ fn validate_component_hashes(hashed: &HashedPatchMap, patch: &DataComponentPatch
     // Check removed components match
     let local_removed: FxHashSet<i32> = patch
         .iter_removed()
-        .filter_map(|k| {
-            REGISTRY
-                .data_components
-                .id_from_key(k)
-                .map(|id| id as i32)
-        })
+        .filter_map(|k| REGISTRY.data_components.id_from_key(k).map(|id| id as i32))
         .collect();
     let hashed_removed: FxHashSet<i32> = hashed.removed_components.iter().copied().collect();
 

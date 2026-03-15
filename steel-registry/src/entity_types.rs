@@ -139,23 +139,6 @@ impl EntityTypeRegistry {
         self.types_by_id[id] = entity_type;
         true
     }
-
-    #[must_use]
-    pub fn by_protocol_id(&self, id: i32) -> Option<EntityTypeRef> {
-        if id >= 0 {
-            self.types_by_id.get(id as usize).copied()
-        } else {
-            None
-        }
-    }
-
-    /// Gets the registry ID for an entity type.
-    #[must_use]
-    pub fn get_id(&self, entity_type: EntityTypeRef) -> &usize {
-        self.types_by_key
-            .get(&entity_type.key)
-            .expect("Entity type not found")
-    }
 }
 
 crate::impl_registry!(

@@ -5,9 +5,9 @@ pub mod shapes;
 
 use rustc_hash::FxHashMap;
 
+use crate::RegistryExt;
 use crate::blocks::behaviour::BlockConfig;
 use crate::blocks::properties::{DynProperty, Property};
-use crate::RegistryExt;
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> &'static [shapes::AABB];
@@ -206,19 +206,16 @@ impl BlockRegistry {
 
     #[must_use]
     pub fn get_base_state_id(&self, block: BlockRef) -> BlockStateId {
-        BlockStateId(self.block_to_base_state[*self.get_id(block)])
+        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        BlockStateId(self.block_to_base_state[id])
     }
 
     /// Gets the default state ID for a block (base state + default offset)
     #[must_use]
     pub fn get_default_state_id(&self, block: BlockRef) -> BlockStateId {
-        let base = self.block_to_base_state[*self.get_id(block)];
+        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        let base = self.block_to_base_state[id];
         BlockStateId(base + block.default_state_offset)
-    }
-
-    #[must_use]
-    pub fn get_id(&self, block: BlockRef) -> &usize {
-        self.blocks_by_key.get(&block.key).expect("Block not found")
     }
 
     #[must_use]
@@ -423,7 +420,14 @@ impl BlockRegistry {
     }
 }
 
-crate::impl_registry!(BlockRegistry, Block, BlockRef, blocks_by_id, blocks_by_key, blocks);
+crate::impl_registry!(
+    BlockRegistry,
+    Block,
+    BlockRef,
+    blocks_by_id,
+    blocks_by_key,
+    blocks
+);
 crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 
 // Shape lookup methods

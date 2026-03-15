@@ -83,13 +83,6 @@ impl DimensionTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, dimension_type: DimensionTypeRef) -> &usize {
-        self.dimension_types_by_key
-            .get(&dimension_type.key)
-            .expect("Dimension type not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, DimensionTypeRef)> + '_ {
         self.dimension_types_by_id
             .iter()

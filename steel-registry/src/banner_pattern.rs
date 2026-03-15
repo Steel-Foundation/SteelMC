@@ -51,13 +51,6 @@ impl BannerPatternRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, banner_pattern: BannerPatternRef) -> &usize {
-        self.banner_patterns_by_key
-            .get(&banner_pattern.key)
-            .expect("Banner pattern not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, BannerPatternRef)> + '_ {
         self.banner_patterns_by_id
             .iter()

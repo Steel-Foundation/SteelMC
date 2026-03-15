@@ -73,13 +73,6 @@ impl DialogRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, dialog: DialogRef) -> &usize {
-        self.dialogs_by_key
-            .get(&dialog.key)
-            .expect("Dialog not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, DialogRef)> + '_ {
         self.dialogs_by_id
             .iter()
@@ -88,7 +81,14 @@ impl DialogRegistry {
     }
 }
 
-crate::impl_registry!(DialogRegistry, Dialog, DialogRef, dialogs_by_id, dialogs_by_key, dialogs);
+crate::impl_registry!(
+    DialogRegistry,
+    Dialog,
+    DialogRef,
+    dialogs_by_id,
+    dialogs_by_key,
+    dialogs
+);
 crate::impl_tagged_registry!(DialogRegistry, dialogs_by_key, "dialog");
 
 impl Default for DialogRegistry {

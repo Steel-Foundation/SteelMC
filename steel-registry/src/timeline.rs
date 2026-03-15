@@ -50,13 +50,6 @@ impl TimelineRegistry {
         true
     }
 
-    #[must_use]
-    pub fn get_id(&self, timeline: TimelineRef) -> &usize {
-        self.timelines_by_key
-            .get(&timeline.key)
-            .expect("Timeline not found")
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, TimelineRef)> + '_ {
         self.timelines_by_id
             .iter()
@@ -65,7 +58,14 @@ impl TimelineRegistry {
     }
 }
 
-crate::impl_registry!(TimelineRegistry, Timeline, TimelineRef, timelines_by_id, timelines_by_key, timelines);
+crate::impl_registry!(
+    TimelineRegistry,
+    Timeline,
+    TimelineRef,
+    timelines_by_id,
+    timelines_by_key,
+    timelines
+);
 crate::impl_tagged_registry!(TimelineRegistry, timelines_by_key, "timeline");
 
 impl Default for TimelineRegistry {
