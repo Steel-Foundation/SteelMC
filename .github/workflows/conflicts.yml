@@ -1,21 +1,26 @@
-name: Auto Label Conflicts
+name: "Merge Conflict Label"
 on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+    # So that PRs touching the same files as the push are updated
+    push:
+        branches: [ master ]
+    # So that the `dirtyLabel` is removed if conflicts are resolved
+    # We recommend `pull_request_target` so that GitHub secrets are available.
+    # In `pull_request` we wouldn't be able to change labels of fork PRs
+    pull_request_target:
+        types: [ synchronize ]
 
 jobs:
-  auto-label:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: prince-chrismc/label-merge-conflicts-action@v3
-        with:
-          conflict_label_name: "has conflict"
-          github_token: ${{ github.token }}
-
-          detect_merge_changes: false
-          conflict_comment: |
-            :wave: Hi, @${author},
-            I detected conflicts against the base branch :speak_no_evil:
-            You'll want to sync :arrows_counterclockwise: your branch with upstream!
+    conflicts:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: write
+        steps:
+            -   name: Update PRs with conflict labels
+                uses: eps1lon/actions-label-merge-conflict@v3
+                with:
+                    dirtyLabel: "Merge Conflicts"
+                    #removeOnDirtyLabel: "PR: ready to ship"
+                    repoToken: "${{ secrets.GITHUB_TOKEN }}"
+                    commentOnDirty: "This pull request has conflicts with the base branch \"master\". Please resolve those so we can test out your changes."
+                    commentOnClean: "Conflicts have been resolved! 🎉"
