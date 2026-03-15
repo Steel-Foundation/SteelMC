@@ -1,6 +1,7 @@
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    sound_events, vanilla_blocks,
+    item_stack::ItemStack,
+    sound_events, vanilla_blocks, vanilla_items,
 };
 use steel_utils::{Direction, types::UpdateFlags};
 
@@ -43,7 +44,11 @@ impl ItemBehavior for HoeBehavior {
         }
 
         if state.get_block() == vanilla_blocks::ROOTED_DIRT {
-            // TODO: Spawn Item
+            context.world.pop_resource_from_face(
+                &context.hit_result.block_pos,
+                context.hit_result.direction,
+                ItemStack::new(&vanilla_items::ITEMS.hanging_roots),
+            );
         }
 
         context.world.set_block(
@@ -59,6 +64,10 @@ impl ItemBehavior for HoeBehavior {
             1.0,
             Some(context.player.id),
         );
+
+        context
+            .item_stack
+            .hurt_and_break(1, context.player.has_infinite_materials());
 
         InteractionResult::Success
     }
