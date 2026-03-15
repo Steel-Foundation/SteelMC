@@ -63,16 +63,6 @@ impl PaintingVariantRegistry {
             .enumerate()
             .map(|(id, &variant)| (id, variant))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.painting_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.painting_variants_by_id.is_empty()
-    }
 }
 
 impl Default for PaintingVariantRegistry {

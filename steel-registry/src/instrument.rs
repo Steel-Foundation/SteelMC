@@ -62,16 +62,6 @@ impl InstrumentRegistry {
             .enumerate()
             .map(|(id, &instrument)| (id, instrument))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.instruments_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.instruments_by_id.is_empty()
-    }
 }
 
 impl Default for InstrumentRegistry {
