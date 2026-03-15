@@ -134,11 +134,11 @@ fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
 }
 
 fn scan_block_behaviors() -> HashMap<String, DiscoveredBlock> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let pattern = format!("{manifest_dir}/src/behavior/blocks/**/*.rs");
     let mut discovered = HashMap::new();
 
-    for entry in
-        glob::glob("src/behavior/blocks/**/*.rs").expect("Failed to glob block behavior sources")
-    {
+    for entry in glob::glob(&pattern).expect("Failed to glob block behavior sources") {
         let path = entry.expect("Failed to read glob entry");
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
