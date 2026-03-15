@@ -9,7 +9,7 @@ use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -39,12 +39,12 @@ impl FarmlandBlock {
     ///
     /// This checks both water blocks and waterlogged blocks (matching vanilla's
     /// FluidTags.WATER check on fluid state).
-    fn is_near_water(world: &World, pos: BlockPos) -> bool {
+    fn is_near_water(world: &Arc<World>, pos: BlockPos) -> bool {
         for dy in 0..=1 {
             for dx in -4..=4 {
                 for dz in -4..=4 {
                     let check_pos = pos.offset(dx, dy, dz);
-                    let state = world.get_block_state(&check_pos);
+                    let state = world.get_block_state(check_pos);
 
                     // Check if block is water
                     if state.get_block() == vanilla_blocks::WATER {
@@ -66,8 +66,8 @@ impl FarmlandBlock {
 
     /// Checks if the block above is a crop that should maintain the farmland.
     /// This prevents farmland from turning to dirt when crops are planted.
-    fn should_maintain_farmland(world: &World, pos: BlockPos) -> bool {
-        let above = world.get_block_state(&pos.above());
+    fn should_maintain_farmland(world: &Arc<World>, pos: BlockPos) -> bool {
+        let above = world.get_block_state(pos.above());
         let block = above.get_block();
 
         // Check for crops that maintain farmland
@@ -85,13 +85,13 @@ impl FarmlandBlock {
     }
 
     /// Turns the farmland into dirt.
-    fn turn_to_dirt(world: &World, pos: BlockPos) {
+    fn turn_to_dirt(world: &Arc<World>, pos: BlockPos) {
         let dirt_state = vanilla_blocks::DIRT.default_state();
         world.set_block(pos, dirt_state, UpdateFlags::UPDATE_ALL);
     }
 }
 
-impl BlockBehaviour for FarmlandBlock {
+impl BlockBehavior for FarmlandBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Farmland is placed with moisture 0
         Some(

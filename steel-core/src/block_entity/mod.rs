@@ -148,7 +148,7 @@ pub trait BlockEntity: Send + Sync {
     ///
     /// Only called if `is_ticking()` returns `true`.
     #[allow(unused_variables)]
-    fn tick(&mut self, world: &World) {
+    fn tick(&mut self, world: &Arc<World>) {
         // Default: no-op
     }
 

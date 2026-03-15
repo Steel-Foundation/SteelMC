@@ -6,6 +6,8 @@
 //!
 //! Both break when their supporting block is removed.
 
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -15,7 +17,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -36,19 +38,19 @@ impl TorchBlock {
     }
 }
 
-impl BlockBehaviour for TorchBlock {
+impl BlockBehavior for TorchBlock {
     /// Checks if a torch can survive at the given position.
     /// Requires the block below to provide center support on its top face.
-    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let below_pos = pos.below();
-        let below_state = world.get_block_state(&below_pos);
+        let below_state = world.get_block_state(below_pos);
         below_state.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -89,21 +91,21 @@ impl WallTorchBlock {
     }
 }
 
-impl BlockBehaviour for WallTorchBlock {
+impl BlockBehavior for WallTorchBlock {
     /// Checks if a wall torch can survive at the given position.
     /// Requires the block behind (opposite of facing) to provide a sturdy face.
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let attach_direction = facing.opposite();
-        let attach_pos = attach_direction.relative(&pos);
-        let attach_state = world.get_block_state(&attach_pos);
+        let attach_pos = attach_direction.relative(pos);
+        let attach_state = world.get_block_state(attach_pos);
         attach_state.is_face_sturdy(facing)
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

@@ -144,7 +144,7 @@ impl ChunkMap {
 
     /// Records a block change at the given position.
     /// This marks the chunk as having pending changes to broadcast.
-    pub fn block_changed(&self, pos: &BlockPos) {
+    pub fn block_changed(&self, pos: BlockPos) {
         let chunk_pos = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.0.x),
             SectionPos::block_to_section_coord(pos.0.z),
@@ -199,7 +199,7 @@ impl ChunkMap {
                     // Single block change - use CBlockUpdate
                     let packed = *changed_positions.iter().next().expect("len == 1");
                     let block_pos = section_pos.relative_to_block_pos(packed);
-                    let block_state = world.get_block_state(&block_pos);
+                    let block_state = world.get_block_state(block_pos);
 
                     tracing::debug!(
                         ?block_pos,
@@ -224,7 +224,7 @@ impl ChunkMap {
                         .iter()
                         .map(|&packed| {
                             let block_pos = section_pos.relative_to_block_pos(packed);
-                            let block_state = world.get_block_state(&block_pos);
+                            let block_state = world.get_block_state(block_pos);
                             BlockChange {
                                 pos: block_pos,
                                 block_state,
@@ -508,7 +508,7 @@ impl ChunkMap {
 
             let block_behaviors = &*BLOCK_BEHAVIORS;
             for tick in ready_block_ticks.iter().take(MAX_TICKS) {
-                let state = world.get_block_state(&tick.pos);
+                let state = world.get_block_state(tick.pos);
                 if state.get_block() != tick.tick_type {
                     continue;
                 }
@@ -527,7 +527,7 @@ impl ChunkMap {
 
             let fluid_behaviors = &*FLUID_BEHAVIORS;
             for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
-                let state = world.get_block_state(&tick.pos);
+                let state = world.get_block_state(tick.pos);
                 let fluid_state = state.get_fluid_state();
 
                 // Only execute if the fluid at this location still matches the scheduled tick

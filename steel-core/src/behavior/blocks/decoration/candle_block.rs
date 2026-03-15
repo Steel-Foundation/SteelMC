@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
@@ -18,7 +20,7 @@ use steel_utils::{
 };
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext, InteractionResult},
+    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult},
     player,
     world::World,
 };
@@ -28,25 +30,30 @@ const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
 const MAX_CANDLES: u8 = 4;
 
-/// Behaviour for all Candle type blocks
+/// Behavior for all Candle type blocks
 #[block_behavior]
 pub struct CandleBlock {
     block: BlockRef,
 }
 
 impl CandleBlock {
-    /// Creates a new candle block behaviour for the given block
+    /// Creates a new candle block behavior for the given block
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehaviour for CandleBlock {
+impl BlockBehavior for CandleBlock {
     /// Checks if the candle block can survive at the given position.
-    fn can_survive(&self, _state: steel_utils::BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(
+        &self,
+        _state: steel_utils::BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> bool {
         world
-            .get_block_state(&pos.below())
+            .get_block_state(pos.below())
             .is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 
@@ -58,7 +65,7 @@ impl BlockBehaviour for CandleBlock {
         if self.can_survive(default_state, context.world, context.relative_pos) {
             if context
                 .world
-                .get_block_state(&context.relative_pos)
+                .get_block_state(context.relative_pos)
                 .get_block()
                 == vanilla_blocks::WATER
             {
@@ -73,7 +80,7 @@ impl BlockBehaviour for CandleBlock {
     fn update_shape(
         &self,
         state: steel_utils::BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -89,7 +96,7 @@ impl BlockBehaviour for CandleBlock {
         &self,
         item_stack: &ItemStack,
         state: steel_utils::BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _player: &player::Player,
         _hand: types::InteractionHand,

@@ -93,7 +93,7 @@ fn teleport_to_pos(
     rotation: (f32, f32),
     ctx: &mut CommandContext,
 ) {
-    if !ctx.world.is_in_valid_bounds(&BlockPos::from(pos)) {
+    if !ctx.world.is_in_valid_bounds(BlockPos::from(pos)) {
         ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_INVALID_POSITION
                 .message([] as [TextComponent; 0])

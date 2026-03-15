@@ -303,7 +303,7 @@ impl SurfaceSystem {
         bands
     }
 
-    /// Place random bands of a single colour.
+    /// Place random bands of a single color.
     ///
     /// Matches vanilla's `SurfaceSystem.makeBands()`.
     fn make_bands(

@@ -6,7 +6,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_utils::BlockStateId;
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 
 /// Behavior for end portal frame blocks.
@@ -23,7 +23,7 @@ impl EndPortalFrameBlock {
     }
 }
 
-impl BlockBehaviour for EndPortalFrameBlock {
+impl BlockBehavior for EndPortalFrameBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
             &BlockStateProperties::HORIZONTAL_FACING,
