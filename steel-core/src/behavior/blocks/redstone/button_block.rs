@@ -17,7 +17,7 @@ use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
 use crate::world::World;
@@ -70,17 +70,17 @@ impl ButtonBlock {
 
     /// Updates neighbors at both the button position and the support block position.
     ///
-    /// Vanilla equivalent: `ButtonBlock.updateNeighbours()`.
-    fn update_button_neighbors(&self, state: BlockStateId, world: &World, pos: BlockPos) {
-        world.update_neighbors_at(&pos, self.block);
+    /// Vanilla equivalent: `ButtonBlock.updateNeighbors()`.
+    fn update_button_neighbors(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        world.update_neighbors_at(pos, self.block);
         let support_dir = Self::get_connected_direction(state).opposite();
-        let support_pos = support_dir.relative(&pos);
-        world.update_neighbors_at(&support_pos, self.block);
+        let support_pos = support_dir.relative(pos);
+        world.update_neighbors_at(support_pos, self.block);
     }
 
     /// Presses the button: sets POWERED=true, updates neighbors, schedules unpress tick,
     /// and plays the click sound.
-    fn press(&self, state: BlockStateId, world: &World, pos: BlockPos, player: &Player) {
+    fn press(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {
         let powered_state = state.set_value(&BlockStateProperties::POWERED, true);
         world.set_block(pos, powered_state, UpdateFlags::UPDATE_ALL);
         self.update_button_neighbors(powered_state, world, pos);
@@ -90,12 +90,12 @@ impl ButtonBlock {
     }
 }
 
-impl BlockBehaviour for ButtonBlock {
+impl BlockBehavior for ButtonBlock {
     /// Checks if a button with the given state can survive at the given position.
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let support_dir = Self::get_connected_direction(state).opposite();
-        let support_pos = support_dir.relative(&pos);
-        let support_state = world.get_block_state(&support_pos);
+        let support_pos = support_dir.relative(pos);
+        let support_state = world.get_block_state(support_pos);
         support_state.is_face_sturdy(support_dir.opposite())
     }
 
@@ -134,7 +134,7 @@ impl BlockBehaviour for ButtonBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -150,7 +150,7 @@ impl BlockBehaviour for ButtonBlock {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
@@ -170,7 +170,7 @@ impl BlockBehaviour for ButtonBlock {
         }
         // TODO: Check for arrows via checkPressed() — wooden buttons should stay
         // pressed while an arrow is touching them and reschedule the tick.
-        // Also needs entity_inside() on BlockBehaviour trait for arrows pressing
+        // Also needs entity_inside() on BlockBehavior trait for arrows pressing
         // unpowered wooden buttons. Blocked on entity collision system.
 
         // Unpress the button
@@ -184,7 +184,7 @@ impl BlockBehaviour for ButtonBlock {
     fn affect_neighbors_after_removal(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         moved_by_piston: bool,
     ) {

@@ -202,7 +202,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let ender_eye_type = Ident::new("EnderEyeBehavior", Span::call_site());
     let ender_eye_registrations =
         generate_simple_registrations(ender_eye_items.iter(), &ender_eye_type);
-    let shovel_type = Ident::new("ShovelBehaviour", Span::call_site());
+    let shovel_type = Ident::new("ShovelBehavior", Span::call_site());
     let shovel_registrations = generate_simple_registrations(shovel_items.iter(), &shovel_type);
     let filled_bucket_registrations =
         generate_filled_bucket_item_registrations(filled_bucket_items.iter());
@@ -215,7 +215,7 @@ pub fn build(items: &[ItemClass]) -> String {
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, EmptyBucketBehavior};
+        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehavior, FilledBucketBehavior, EmptyBucketBehavior};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations

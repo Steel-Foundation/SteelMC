@@ -6,6 +6,8 @@
 //! This avoids repeatedly querying the world for the same positions during
 //! the recursive slope-finding algorithm.
 
+use std::sync::Arc;
+
 use rustc_hash::FxHashMap;
 use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
@@ -25,7 +27,7 @@ pub(super) struct SpreadContext<'a> {
     /// Cache for hole check results by encoded relative position
     hole_cache: FxHashMap<i16, bool>,
     /// Reference to world for cache misses
-    world: &'a World,
+    world: &'a Arc<World>,
     /// The block from which spreading originates — used to compute relative cache keys.
     origin: BlockPos,
 }
@@ -36,7 +38,7 @@ impl<'a> SpreadContext<'a> {
     /// `origin` must be the block that triggered the spread (the block passed to
     /// `get_spread()`), matching vanilla's `new FlowingFluid.SpreadContext(level, blockPos)`.
     #[must_use]
-    pub(super) fn new(world: &'a World, origin: BlockPos) -> Self {
+    pub(super) fn new(world: &'a Arc<World>, origin: BlockPos) -> Self {
         Self {
             state_cache: FxHashMap::default(),
             hole_cache: FxHashMap::default(),
@@ -61,7 +63,7 @@ impl<'a> SpreadContext<'a> {
         *self
             .state_cache
             .entry(key)
-            .or_insert_with(|| self.world.get_block_state(&pos))
+            .or_insert_with(|| self.world.get_block_state(pos))
     }
 
     /// Checks if the position is a hole (can fluid flow down into it?), with caching.
@@ -71,7 +73,7 @@ impl<'a> SpreadContext<'a> {
         *self
             .hole_cache
             .entry(key)
-            .or_insert_with(|| is_hole(self.world, &pos, fluid_id))
+            .or_insert_with(|| is_hole(self.world, pos, fluid_id))
     }
 
     /// Checks if fluid can pass horizontally to the given position.
@@ -85,7 +87,7 @@ impl<'a> SpreadContext<'a> {
 
     /// Returns a reference to the world.
     #[must_use]
-    pub(super) const fn world(&self) -> &'a World {
+    pub(super) const fn world(&self) -> &'a Arc<World> {
         self.world
     }
 }

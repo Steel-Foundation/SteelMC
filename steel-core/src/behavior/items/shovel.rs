@@ -23,16 +23,16 @@ const FLATTENABLES: [&Block; 6] = [
 
 const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
 
-/// Behaviour for Shovels, extinguises campfires and turns grass blocks into paths
-pub struct ShovelBehaviour;
+/// Behavior for Shovels, extinguises campfires and turns grass blocks into paths
+pub struct ShovelBehavior;
 
-impl ItemBehavior for ShovelBehaviour {
+impl ItemBehavior for ShovelBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         if context.hit_result.direction == Direction::Down {
             return InteractionResult::Pass;
         }
 
-        let block_state = context.world.get_block_state(&context.hit_result.block_pos);
+        let block_state = context.world.get_block_state(context.hit_result.block_pos);
         let block = block_state.get_block();
 
         if REGISTRY
@@ -52,7 +52,7 @@ impl ItemBehavior for ShovelBehaviour {
 
         if !context
             .world
-            .get_block_state(&context.hit_result.block_pos.above())
+            .get_block_state(context.hit_result.block_pos.above())
             .is_air()
         {
             return InteractionResult::Pass;

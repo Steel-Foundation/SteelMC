@@ -2,7 +2,7 @@
 //!
 //! Opens a 27-slot container menu when right-clicked.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -12,7 +12,7 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::inventory::chest_menu::ChestMenuProvider;
@@ -38,7 +38,7 @@ impl BarrelBlock {
     }
 }
 
-impl BlockBehaviour for BarrelBlock {
+impl BlockBehavior for BarrelBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Barrel faces opposite to the player's look direction (all 6 directions).
         let facing = context.get_nearest_looking_direction().opposite();
@@ -53,13 +53,13 @@ impl BlockBehaviour for BarrelBlock {
     fn use_without_item(
         &self,
         _state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
     ) -> InteractionResult {
         // Get the block entity
-        let Some(block_entity) = world.get_block_entity(&pos) else {
+        let Some(block_entity) = world.get_block_entity(pos) else {
             return InteractionResult::Pass;
         };
 
@@ -101,9 +101,14 @@ impl BlockBehaviour for BarrelBlock {
         true
     }
 
-    fn get_analog_output_signal(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
+    fn get_analog_output_signal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> i32 {
         // Get the block entity and calculate signal from container contents
-        world.get_block_entity(&pos).map_or(0, |be| {
+        world.get_block_entity(pos).map_or(0, |be| {
             let guard = be.lock();
             if let Some(container) = guard.as_container() {
                 calculate_redstone_signal_from_container(container)

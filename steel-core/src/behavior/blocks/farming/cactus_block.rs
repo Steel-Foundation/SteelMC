@@ -15,7 +15,7 @@ use steel_registry::{vanilla_block_tags, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
@@ -53,7 +53,7 @@ impl CactusBlock {
     }
 }
 
-impl BlockBehaviour for CactusBlock {
+impl BlockBehavior for CactusBlock {
     /// Checks if cactus can survive at the given position.
     ///
     /// Survival requirements:
@@ -61,7 +61,7 @@ impl BlockBehaviour for CactusBlock {
     /// 2. No lava on horizontal neighbors
     /// 3. Block below must be `CACTUS`, `SAND`, or `RED_SAND`
     /// 4. Block above must not be liquid
-    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         // Check horizontal neighbors - no solid blocks or lava
         for dir in [
             Direction::North,
@@ -69,8 +69,8 @@ impl BlockBehaviour for CactusBlock {
             Direction::East,
             Direction::West,
         ] {
-            let neighbor_pos = dir.relative(&pos);
-            let neighbor = world.get_block_state(&neighbor_pos);
+            let neighbor_pos = dir.relative(pos);
+            let neighbor = world.get_block_state(neighbor_pos);
             if neighbor.is_solid() {
                 return false;
             }
@@ -86,7 +86,7 @@ impl BlockBehaviour for CactusBlock {
 
         // Block below must be CACTUS or SAND variant
         let below_pos = pos.below();
-        let below = world.get_block_state(&below_pos);
+        let below = world.get_block_state(below_pos);
         let below_block = below.get_block();
 
         let valid_below = below_block == vanilla_blocks::CACTUS
@@ -100,7 +100,7 @@ impl BlockBehaviour for CactusBlock {
         }
 
         // Block above must not be liquid
-        let above = world.get_block_state(&pos.above());
+        let above = world.get_block_state(pos.above());
 
         if !above.get_fluid_state().is_empty() {
             return false;
@@ -131,7 +131,7 @@ impl BlockBehaviour for CactusBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let above_pos = pos.above();
 
-        if !world.get_block_state(&above_pos).is_air() {
+        if !world.get_block_state(above_pos).is_air() {
             return;
         }
 
@@ -140,7 +140,7 @@ impl BlockBehaviour for CactusBlock {
         let age = state.get_value(&BlockStateProperties::AGE_15);
 
         while world
-            .get_block_state(&pos.offset(0, -(height as i32), 0))
+            .get_block_state(pos.offset(0, -(height as i32), 0))
             .get_block()
             == vanilla_blocks::CACTUS
         {
@@ -186,7 +186,7 @@ impl BlockBehaviour for CactusBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -202,7 +202,7 @@ impl BlockBehaviour for CactusBlock {
     fn entity_inside(
         &self,
         _state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
     ) {

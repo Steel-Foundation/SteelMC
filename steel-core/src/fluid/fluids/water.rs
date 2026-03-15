@@ -31,15 +31,15 @@ impl FluidBehavior for WaterFluid {
         is_water_fluid(fluid)
     }
 
-    fn tick_delay(&self, _world: &World) -> i32 {
+    fn tick_delay(&self, _world: &Arc<World>) -> i32 {
         5
     }
 
-    fn drop_off(&self, _world: &World) -> u8 {
+    fn drop_off(&self, _world: &Arc<World>) -> u8 {
         1
     }
 
-    fn slope_find_distance(&self, _world: &World) -> u8 {
+    fn slope_find_distance(&self, _world: &Arc<World>) -> u8 {
         4
     }
 
@@ -47,7 +47,7 @@ impl FluidBehavior for WaterFluid {
         100.0
     }
 
-    fn can_convert_to_source(&self, world: &World) -> bool {
+    fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
         match world.get_game_rule(WATER_SOURCE_CONVERSION) {
             GameRuleValue::Bool(val) => val,
             GameRuleValue::Int(_) => true,
@@ -58,7 +58,7 @@ impl FluidBehavior for WaterFluid {
     fn can_be_replaced_with(
         &self,
         _fluid_state: FluidState,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         other_fluid: FluidRef,
         direction: Direction,
@@ -74,7 +74,7 @@ impl FluidBehavior for WaterFluid {
 
     /// Flowing water: 1/64 chance for ambient sound.
     /// Source water: 1/10 chance for underwater particles.
-    fn animate_tick(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {
+    fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         if !fluid_state.is_source() && !fluid_state.falling {
             // 1/64 chance for flowing water ambient sound
             if rand::random_range(0u32..64) == 0 {

@@ -1215,7 +1215,7 @@ pub trait Menu {
     ///
     /// `has_infinite_materials` should be true if the player is in creative mode.
     ///
-    /// TODO: Add `tryItemClickBehaviourOverride` for bundle item support.
+    /// TODO: Add `tryItemClickBehaviorOverride` for bundle item support.
     fn clicked(
         &mut self,
         slot_num: i16,

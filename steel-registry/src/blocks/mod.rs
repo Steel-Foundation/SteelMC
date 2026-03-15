@@ -1,4 +1,4 @@
-pub mod behaviour;
+pub mod behavior;
 pub mod block_state_ext;
 pub mod properties;
 pub mod shapes;
@@ -6,7 +6,7 @@ pub mod shapes;
 use rustc_hash::FxHashMap;
 
 use crate::RegistryExt;
-use crate::blocks::behaviour::BlockConfig;
+use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::{DynProperty, Property};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
@@ -500,7 +500,7 @@ impl BlockRegistry {
 /// ```ignore
 /// use steel_registry::{offset, properties::{BlockStateProperties as Props, RedstoneSide}};
 ///
-/// const WIRE: Block = Block::new("wire", behaviour, PROPS)
+/// const WIRE: Block = Block::new("wire", behavior, PROPS)
 ///     .with_default_state(offset!(
 ///         Props::EAST_REDSTONE => RedstoneSide::Up,
 ///         Props::NORTH_REDSTONE => RedstoneSide::None,

@@ -143,7 +143,7 @@ pub struct ClientInformation {
     /// Whether chat colors are enabled.
     pub chat_colors: bool,
     /// Bitmask for displayed skin parts.
-    pub model_customisation: i32,
+    pub model_customization: i32,
     /// The player's main hand (left or right).
     pub main_hand: HumanoidArm,
     /// Whether text filtering is enabled.
@@ -161,7 +161,7 @@ impl Default for ClientInformation {
             view_distance: 8, // Default client view distance
             chat_visibility: ChatVisibility::Full,
             chat_colors: true,
-            model_customisation: 0,
+            model_customization: 0,
             main_hand: HumanoidArm::Right,
             text_filtering_enabled: false,
             allows_listing: true,
@@ -1275,7 +1275,7 @@ impl Player {
             view_distance: packet.view_distance.clamp(2, 32) as u8,
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
-            model_customisation: packet.model_customisation,
+            model_customization: packet.model_customization,
             main_hand: packet.main_hand,
             text_filtering_enabled: packet.text_filtering_enabled,
             allows_listing: packet.allows_listing,
@@ -1571,7 +1571,7 @@ impl Player {
     /// Uses eye position and AABB distance (nearest point on block surface),
     /// matching vanilla's `Player.isWithinBlockInteractionRange(pos, 1.0)`.
     #[must_use]
-    pub fn is_within_block_interaction_range(&self, pos: &BlockPos) -> bool {
+    pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         let player_pos = *self.position.lock();
         let eye_y = player_pos.y + self.get_eye_height();
 
@@ -1822,15 +1822,15 @@ impl Player {
     /// Sends block update packets for a position and its neighbor.
     /// Optionally also sends an update for an additional placement position
     /// (useful for items like buckets that place blocks at different positions).
-    fn send_block_updates(&self, pos: &BlockPos, direction: Direction) {
+    fn send_block_updates(&self, pos: BlockPos, direction: Direction) {
         let state = self.world.get_block_state(pos);
         self.send_packet(CBlockUpdate {
-            pos: *pos,
+            pos,
             block_state: state,
         });
 
         let neighbor_pos = direction.relative(pos);
-        let neighbor_state = self.world.get_block_state(&neighbor_pos);
+        let neighbor_state = self.world.get_block_state(neighbor_pos);
         self.send_packet(CBlockUpdate {
             pos: neighbor_pos,
             block_state: neighbor_state,
@@ -1868,7 +1868,7 @@ impl Player {
         // 2. Ack block changes
         self.ack_block_changes_up_to(packet.sequence);
 
-        let pos = &packet.block_hit.block_pos;
+        let pos = packet.block_hit.block_pos;
         let direction = packet.block_hit.direction;
 
         // 3. Validate interaction range
@@ -2029,12 +2029,12 @@ impl Player {
     /// Panics if the behavior registry has not been initialized.
     pub fn handle_pick_item_from_block(&self, packet: SPickItemFromBlock) {
         // Check if player is within interaction range (with 1.0 buffer like vanilla)
-        if !self.is_within_block_interaction_range(&packet.pos) {
+        if !self.is_within_block_interaction_range(packet.pos) {
             return;
         }
 
         // Get block state at position
-        let state = self.world.get_block_state(&packet.pos);
+        let state = self.world.get_block_state(packet.pos);
         if state.is_air() {
             return;
         }
@@ -2103,12 +2103,12 @@ impl Player {
     /// Handles a sign update packet from the client.
     pub fn handle_sign_update(&self, packet: SSignUpdate) {
         // Check if player is within interaction range
-        if !self.is_within_block_interaction_range(&packet.pos) {
+        if !self.is_within_block_interaction_range(packet.pos) {
             return;
         }
 
         // Get the block entity at the position
-        let Some(block_entity) = self.world.get_block_entity(&packet.pos) else {
+        let Some(block_entity) = self.world.get_block_entity(packet.pos) else {
             return;
         };
 
@@ -2172,7 +2172,7 @@ impl Player {
     /// * `is_front_text` - Whether to edit front (true) or back (false) text
     pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
         // Set this player as the one who may edit the sign
-        if let Some(block_entity) = self.world.get_block_entity(&pos) {
+        if let Some(block_entity) = self.world.get_block_entity(pos) {
             let mut guard = block_entity.lock();
             if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
                 sign.set_player_who_may_edit(Some(self.gameprofile.id));
@@ -2180,7 +2180,7 @@ impl Player {
         }
 
         // Send the block update first to ensure client has latest state
-        let state = self.world.get_block_state(&pos);
+        let state = self.world.get_block_state(pos);
         self.send_packet(CBlockUpdate {
             pos,
             block_state: state,
@@ -2459,7 +2459,7 @@ impl Player {
             for y in min_y..=max_y {
                 for z in min_z..=max_z {
                     let pos = BlockPos::new(x, y, z);
-                    let state = self.world.get_block_state(&pos);
+                    let state = self.world.get_block_state(pos);
                     if state.is_air() {
                         continue;
                     }

@@ -319,7 +319,7 @@ impl BlockEntity for SignBlockEntity {
         self.player_who_may_edit.is_some()
     }
 
-    fn tick(&mut self, world: &World) {
+    fn tick(&mut self, world: &Arc<World>) {
         // Clear the edit lock if the editing player is too far away or gone
         if let Some(editor_uuid) = self.player_who_may_edit {
             let should_clear = world

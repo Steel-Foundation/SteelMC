@@ -9,7 +9,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty};
 use steel_utils::BlockStateId;
 use steel_utils::math::Axis;
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 
 /// Behavior for rotated pillar blocks (logs, pillars, etc.).
@@ -32,7 +32,7 @@ impl RotatedPillarBlock {
     }
 }
 
-impl BlockBehaviour for RotatedPillarBlock {
+impl BlockBehavior for RotatedPillarBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(
             self.block

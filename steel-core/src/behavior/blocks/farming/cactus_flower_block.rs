@@ -5,6 +5,8 @@
 //!
 //! Vanilla equivalent: `CactusFlowerBlock` extends `VegetationBlock`.
 
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -13,7 +15,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -35,14 +37,14 @@ impl CactusFlowerBlock {
     }
 }
 
-impl BlockBehaviour for CactusFlowerBlock {
+impl BlockBehavior for CactusFlowerBlock {
     /// Checks if the block below can support a cactus flower.
     ///
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts CACTUS, FARMLAND,
     /// or any block with a sturdy center face on top.
-    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let below_pos = pos.below();
-        let below = world.get_block_state(&below_pos);
+        let below = world.get_block_state(below_pos);
         let below_block = below.get_block();
 
         below_block == vanilla_blocks::CACTUS
@@ -62,7 +64,7 @@ impl BlockBehaviour for CactusFlowerBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

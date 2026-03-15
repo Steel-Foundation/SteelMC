@@ -32,7 +32,7 @@ pub struct PickupResult {
 /// - Neighbor updates
 /// - Player interactions
 /// - State changes
-pub trait BlockBehaviour: Send + Sync {
+pub trait BlockBehavior: Send + Sync {
     /// Called when a player uses an empty bucket on this block.
     ///
     /// Should:
@@ -43,7 +43,7 @@ pub trait BlockBehaviour: Send + Sync {
     #[allow(unused_variables)]
     fn pickup_block(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         player: Option<&Player>,
@@ -55,7 +55,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -66,14 +66,14 @@ pub trait BlockBehaviour: Send + Sync {
 
     /// Returns whether this block can survive at the given position.
     ///
-    /// Vanilla parity: `BlockBehaviour.canSurvive(BlockState, LevelReader, BlockPos)`.
+    /// Vanilla parity: `BlockBehavior.canSurvive(BlockState, LevelReader, BlockPos)`.
     ///
     /// Used during placement validation, shape updates (to break unsupported
     /// blocks), and when removing water from waterlogged blocks. The default
     /// returns `true`; override for blocks that require physical support
     /// (torches, buttons, candles, cactus, etc.).
     #[allow(unused_variables)]
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         true
     }
 
@@ -92,7 +92,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn on_place(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         old_state: BlockStateId,
         moved_by_piston: bool,
@@ -113,7 +113,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn affect_neighbors_after_removal(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         moved_by_piston: bool,
     ) {
@@ -130,7 +130,7 @@ pub trait BlockBehaviour: Send + Sync {
         &self,
         item_stack: &ItemStack,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hand: InteractionHand,
@@ -148,7 +148,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn use_without_item(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hit_result: &BlockHitResult,
@@ -171,7 +171,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn handle_neighbor_changed(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         source_block: BlockRef,
         moved_by_piston: bool,
@@ -253,7 +253,7 @@ pub trait BlockBehaviour: Send + Sync {
     fn entity_inside(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
     ) {
@@ -321,7 +321,12 @@ pub trait BlockBehaviour: Send + Sync {
     /// * `world` - The world
     /// * `pos` - The position of the block
     #[allow(unused_variables)]
-    fn get_analog_output_signal(&self, state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
+    fn get_analog_output_signal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> i32 {
         0
     }
 
@@ -370,11 +375,11 @@ pub trait BlockBehaviour: Send + Sync {
     /// Default (`SimpleWaterloggedBlock`): sets `WATERLOGGED = true` and schedules
     /// a fluid tick.  Delegates the guard to [`can_place_liquid`].
     ///
-    /// [`can_place_liquid`]: BlockBehaviour::can_place_liquid
+    /// [`can_place_liquid`]: BlockBehavior::can_place_liquid
     #[allow(unused_variables)]
     fn place_liquid(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         fluid_state: FluidState,
@@ -393,11 +398,11 @@ pub trait BlockBehaviour: Send + Sync {
 }
 
 /// Default block behavior that returns the block's default state for placement.
-pub struct DefaultBlockBehaviour {
+pub struct DefaultBlockBehavior {
     block: BlockRef,
 }
 
-impl DefaultBlockBehaviour {
+impl DefaultBlockBehavior {
     /// Creates a new default block behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -405,7 +410,7 @@ impl DefaultBlockBehaviour {
     }
 }
 
-impl BlockBehaviour for DefaultBlockBehaviour {
+impl BlockBehavior for DefaultBlockBehavior {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -416,7 +421,7 @@ impl BlockBehaviour for DefaultBlockBehaviour {
 /// Created after the main registry is frozen. All blocks are initialized with
 /// default behaviors, then custom behaviors are registered for specific blocks.
 pub struct BlockBehaviorRegistry {
-    behaviors: Vec<Box<dyn BlockBehaviour>>,
+    behaviors: Vec<Box<dyn BlockBehavior>>,
 }
 
 impl BlockBehaviorRegistry {
@@ -424,38 +429,38 @@ impl BlockBehaviorRegistry {
     #[must_use]
     pub fn new() -> Self {
         let block_count = REGISTRY.blocks.len();
-        let mut behaviors: Vec<Box<dyn BlockBehaviour>> = Vec::with_capacity(block_count);
+        let mut behaviors: Vec<Box<dyn BlockBehavior>> = Vec::with_capacity(block_count);
 
         // Initialize all blocks with default behavior
         for (_, block) in REGISTRY.blocks.iter() {
-            behaviors.push(Box::new(DefaultBlockBehaviour::new(block)));
+            behaviors.push(Box::new(DefaultBlockBehavior::new(block)));
         }
 
         Self { behaviors }
     }
 
     /// Sets a custom behavior for a block.
-    pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehaviour>) {
+    pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehavior>) {
         let id = block.id();
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for a block.
     #[must_use]
-    pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehaviour {
+    pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehavior {
         let id = block.id();
         self.behaviors[id].as_ref()
     }
 
     /// Gets the behavior for a block by its ID.
     #[must_use]
-    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehaviour> {
+    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehavior> {
         self.behaviors.get(id).map(AsRef::as_ref)
     }
 
     /// Gets the behavior for a block state.
     #[must_use]
-    pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehaviour> {
+    pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehavior> {
         let block = REGISTRY.blocks.by_state_id(state)?;
         Some(self.get_behavior(block))
     }
