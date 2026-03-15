@@ -6,7 +6,7 @@ use quote::quote;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
-struct BehaviourProperties {
+struct BehaviorProperties {
     is_empty: bool,
     is_source: bool,
     #[allow(dead_code)]
@@ -33,7 +33,7 @@ struct FluidJson {
     name: String,
     block: String,
     bucket_item: String,
-    behavior_properties: BehaviourProperties,
+    behavior_properties: BehaviorProperties,
     #[serde(default)]
     #[allow(dead_code)]
     properties: Vec<String>,
