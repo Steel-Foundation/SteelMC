@@ -1,14 +1,13 @@
 #![allow(missing_docs)]
-
-use std::fs;
+#![allow(clippy::disallowed_types)] // Build scripts don't have access to FxHashMap
 
 use serde::Deserialize;
+use std::env;
+use std::fs;
 
 mod blocks;
 mod items;
 mod weathering;
-
-const OUT_DIR: &str = "src/behavior/generated";
 
 #[derive(Debug, Deserialize)]
 struct Classes {
@@ -17,22 +16,26 @@ struct Classes {
 }
 
 pub fn main() {
-    let classes_json =
-        fs::read_to_string("build/classes.json").expect("Failed to read classes.json");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let out_dir = format!("{manifest_dir}/src/behavior/generated");
+
+    let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))
+        .expect("Failed to read classes.json");
     let classes: Classes =
         serde_json::from_str(&classes_json).expect("Failed to parse classes.json");
 
-    fs::create_dir_all(OUT_DIR).expect("Failed to create output directory");
+    fs::create_dir_all(&out_dir).expect("Failed to create output directory");
 
     fs::write(
-        format!("{OUT_DIR}/blocks.rs"),
+        format!("{out_dir}/blocks.rs"),
         blocks::build(&classes.blocks),
     )
     .expect("Failed to write blocks.rs");
-    fs::write(format!("{OUT_DIR}/items.rs"), items::build(&classes.items))
+    fs::write(format!("{out_dir}/items.rs"), items::build(&classes.items))
         .expect("Failed to write items.rs");
-    fs::write(format!("{OUT_DIR}/weathering.rs"), weathering::build())
+    fs::write(format!("{out_dir}/weathering.rs"), weathering::build())
         .expect("Failed to write weathering.rs");
 
-    println!("cargo:rerun-if-changed=build/classes.json");
+    println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
+    println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
 }

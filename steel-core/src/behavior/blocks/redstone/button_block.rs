@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -25,10 +26,14 @@ use crate::world::World;
 ///
 /// Stone buttons stay pressed for 20 ticks, wood buttons for 30 ticks.
 /// Each variant has its own click on/off sounds determined by the block set type.
+#[block_behavior]
 pub struct ButtonBlock {
     block: BlockRef,
+    #[json_arg(value)]
     ticks_to_stay_pressed: i32,
+    #[json_arg(sound_events, json = "type_button_click_on")]
     sound_click_on: i32,
+    #[json_arg(sound_events, json = "type_button_click_off")]
     sound_click_off: i32,
 }
 

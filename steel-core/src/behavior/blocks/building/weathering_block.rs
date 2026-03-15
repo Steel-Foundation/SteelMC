@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -150,8 +151,10 @@ impl WeatheringCopper {
 /// Block behavior for `WeatheringCopperFullBlock`
 ///
 /// See [`WeatherState`]
+#[block_behavior]
 pub struct WeatheringCopperFullBlock {
     block: BlockRef,
+    #[json_arg(r#enum = "WeatherState", json = "weather_state")]
     weathering: WeatheringCopper,
 }
 
