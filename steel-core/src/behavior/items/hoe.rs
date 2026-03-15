@@ -6,6 +6,7 @@ use steel_utils::{Direction, types::UpdateFlags};
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
 
+/// Behavior for Hoes
 pub struct HoeBehavior;
 
 impl HoeBehavior {
