@@ -66,7 +66,7 @@ pub fn use_item_on(
         let item_snapshot = player.inventory.lock().get_item_in_hand(hand).clone();
 
         let block_result =
-            behavior.use_item_on(&item_snapshot, state, &world, pos, player, hand, hit_result);
+            behavior.use_item_on(&item_snapshot, state, world, pos, player, hand, hit_result);
 
         if block_result.consumes_action() {
             return block_result;
@@ -75,7 +75,7 @@ pub fn use_item_on(
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
-            let empty_result = behavior.use_without_item(state, &world, pos, player, hit_result);
+            let empty_result = behavior.use_without_item(state, world, pos, player, hit_result);
 
             if empty_result.consumes_action() {
                 return empty_result;
@@ -106,7 +106,7 @@ pub fn use_item_on(
                 player,
                 hand,
                 hit_result: hit_result.clone(),
-                world: &world,
+                world,
                 item_stack: &mut item_stack,
                 inv_guard: &mut guard,
             };
