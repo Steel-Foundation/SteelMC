@@ -1,7 +1,6 @@
 use rustc_hash::FxHashMap;
 
 use steel_utils::Identifier;
-use steel_utils::registry::registry_vanilla_or_custom_tag;
 
 pub mod item;
 
@@ -131,115 +130,13 @@ impl ItemRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<ItemRef> {
-        self.items_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, item: ItemRef) -> &usize {
-        self.items_by_key.get(&item.key).expect("Item not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<ItemRef> {
-        self.items_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ItemRef)> + '_ {
         self.items_by_id
             .iter()
             .enumerate()
             .map(|(id, &item)| (id, item))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.items_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.items_by_id.is_empty()
-    }
-
-    // Tag-related methods
-
-    /// Registers a tag with a list of item keys.
-    /// Item keys that don't exist in the registry are silently skipped.
-    pub fn register_tag(&mut self, tag: Identifier, item_keys: &[&'static str]) {
-        assert!(
-            self.allows_registering,
-            "Cannot register tags after registry has been frozen"
-        );
-
-        let identifier: Vec<Identifier> = item_keys
-            .iter()
-            .filter_map(|key| {
-                let ident = registry_vanilla_or_custom_tag(key);
-                // Only include if the item actually exists
-                self.by_key(&ident).map(|_| ident)
-            })
-            .collect();
-
-        self.tags.insert(tag, identifier);
-    }
-
-    /// Gives the access to all blocks to delete and add new entries
-    pub fn modify_tag(
-        &mut self,
-        tag: &Identifier,
-        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
-    ) {
-        let existing = self.tags.remove(tag).unwrap_or_default();
-        let new_items = f(existing)
-            .into_iter()
-            .filter(|item| {
-                let exists = self.items_by_key.contains_key(item);
-                if !exists {
-                    tracing::error!("item {item} not found in registry, skipping from tag {tag}");
-                }
-                exists
-            })
-            .collect();
-        self.tags.insert(tag.clone(), new_items);
-    }
-
-    /// Checks if an item is in a given tag.
-    #[must_use]
-    pub fn is_in_tag(&self, item: ItemRef, tag: &Identifier) -> bool {
-        self.tags
-            .get(tag)
-            .is_some_and(|items| items.contains(&item.key))
-    }
-
-    /// Gets all items in a tag.
-    #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<ItemRef>> {
-        self.tags.get(tag).map(|idents| {
-            idents
-                .iter()
-                .filter_map(|ident| self.by_key(ident))
-                .collect()
-        })
-    }
-
-    /// Iterates over all items in a tag.
-    pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = ItemRef> + '_ {
-        self.tags
-            .get(tag)
-            .into_iter()
-            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
-    }
-
-    /// Gets all tag keys.
-    pub fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_ {
-        self.tags.keys()
-    }
 }
 
-impl RegistryExt for ItemRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(ItemRegistry, Item, items_by_id, items_by_key, items);
+crate::impl_tagged_registry!(ItemRegistry, items_by_key, "item");

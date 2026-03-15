@@ -4,10 +4,10 @@
 //! data, and positional random sources needed by transpiled surface rules.
 
 use rustc_hash::FxHashMap;
-use steel_registry::REGISTRY;
 use steel_registry::biome::TemperatureModifier;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::BlockStateId;
 use steel_utils::density::NoiseParameters;
 use steel_utils::noise::{NormalNoise, PerlinSimplexNoise};

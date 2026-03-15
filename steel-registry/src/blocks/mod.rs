@@ -206,36 +206,21 @@ impl BlockRegistry {
 
     #[must_use]
     pub fn get_base_state_id(&self, block: BlockRef) -> BlockStateId {
-        BlockStateId(self.block_to_base_state[*self.get_id(block)])
+        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        BlockStateId(self.block_to_base_state[id])
     }
 
     /// Gets the default state ID for a block (base state + default offset)
     #[must_use]
     pub fn get_default_state_id(&self, block: BlockRef) -> BlockStateId {
-        let base = self.block_to_base_state[*self.get_id(block)];
+        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        let base = self.block_to_base_state[id];
         BlockStateId(base + block.default_state_offset)
-    }
-
-    // Retrieves a block by its ID.
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<BlockRef> {
-        self.blocks_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, block: BlockRef) -> &usize {
-        self.blocks_by_key.get(&block.key).expect("Block not found")
     }
 
     #[must_use]
     pub fn by_state_id(&self, state_id: BlockStateId) -> Option<BlockRef> {
         self.state_to_block_lookup.get(state_id.0 as usize).copied()
-    }
-
-    // Retrieves a block by its name.
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<BlockRef> {
-        self.blocks_by_key.get(key).and_then(|id| self.by_id(*id))
     }
 
     #[must_use]
@@ -433,97 +418,10 @@ impl BlockRegistry {
             .enumerate()
             .map(|(id, &block)| (id, block))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.blocks_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.blocks_by_id.is_empty()
-    }
-
-    // Tag-related methods
-
-    /// Registers a tag with a list of block keys.
-    /// Block keys that don't exist in the registry are silently skipped.
-    pub fn register_tag(&mut self, tag: Identifier, block_keys: &[&'static str]) {
-        assert!(
-            self.allows_registering,
-            "Cannot register tags after registry has been frozen"
-        );
-
-        let identifier: Vec<Identifier> = block_keys
-            .iter()
-            .filter_map(|key| {
-                let ident = registry_vanilla_or_custom_tag(key);
-                // Only include if the block actually exists
-                self.by_key(&ident).map(|_| ident)
-            })
-            .collect();
-
-        self.tags.insert(tag, identifier);
-    }
-
-    /// Gives the access to all blocks to delete and add new entries
-    pub fn modify_tag(
-        &mut self,
-        tag: &Identifier,
-        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
-    ) {
-        let existing = self.tags.remove(tag).unwrap_or_default();
-        let new_items = f(existing)
-            .into_iter()
-            .filter(|block| {
-                let exists = self.blocks_by_key.contains_key(block);
-                if !exists {
-                    tracing::error!("block {block} not found in registry, skipping from tag {tag}");
-                }
-                exists
-            })
-            .collect();
-        self.tags.insert(tag.clone(), new_items);
-    }
-
-    /// Checks if a block is in a given tag.
-    #[must_use]
-    pub fn is_in_tag(&self, block: BlockRef, tag: &Identifier) -> bool {
-        self.tags
-            .get(tag)
-            .is_some_and(|ident| ident.contains(&block.key))
-    }
-
-    /// Gets all blocks in a tag.
-    #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<BlockRef>> {
-        self.tags.get(tag).map(|idents| {
-            idents
-                .iter()
-                .filter_map(|ident| self.by_key(ident))
-                .collect()
-        })
-    }
-
-    /// Iterates over all blocks in a tag.
-    pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = BlockRef> + '_ {
-        self.tags
-            .get(tag)
-            .into_iter()
-            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
-    }
-
-    /// Gets all tag keys.
-    pub fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_ {
-        self.tags.keys()
-    }
 }
 
-impl RegistryExt for BlockRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(BlockRegistry, Block, blocks_by_id, blocks_by_key, blocks);
+crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 
 // Shape lookup methods
 impl BlockRegistry {
@@ -621,7 +519,6 @@ macro_rules! offset {
 
 /// Re-export for easier access
 pub use offset;
-use steel_utils::registry::registry_vanilla_or_custom_tag;
 use steel_utils::{BlockStateId, Identifier};
 
 #[cfg(test)]

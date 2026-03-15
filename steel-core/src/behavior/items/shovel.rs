@@ -1,5 +1,5 @@
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{
         Block,
         block_state_ext::BlockStateExt,

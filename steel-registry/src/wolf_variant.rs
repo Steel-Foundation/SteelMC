@@ -1,8 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
-
 /// Represents a full wolf variant definition from a data pack JSON file.
 #[derive(Debug)]
 pub struct WolfVariant {
@@ -75,46 +73,11 @@ impl WolfVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<WolfVariantRef> {
-        self.wolf_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, wolf_variant: WolfVariantRef) -> &usize {
-        self.wolf_variants_by_key
-            .get(&wolf_variant.key)
-            .expect("Wolf variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<WolfVariantRef> {
-        self.wolf_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, WolfVariantRef)> + '_ {
         self.wolf_variants_by_id
             .iter()
             .enumerate()
             .map(|(id, &variant)| (id, variant))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.wolf_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.wolf_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for WolfVariantRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -123,3 +86,11 @@ impl Default for WolfVariantRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    WolfVariantRegistry,
+    WolfVariant,
+    wolf_variants_by_id,
+    wolf_variants_by_key,
+    wolf_variants
+);

@@ -140,6 +140,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::blocks::BlockRegistry;
+        use crate::TaggedRegistryExt;
         use steel_utils::Identifier;
     });
 

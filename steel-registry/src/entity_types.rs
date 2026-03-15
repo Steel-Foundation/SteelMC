@@ -1,8 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
-
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobCategory {
@@ -141,44 +139,12 @@ impl EntityTypeRegistry {
         self.types_by_id[id] = entity_type;
         true
     }
-
-    #[must_use]
-    pub fn by_id(&self, id: i32) -> Option<EntityTypeRef> {
-        if id >= 0 {
-            self.types_by_id.get(id as usize).copied()
-        } else {
-            None
-        }
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
-        self.types_by_key
-            .get(key)
-            .and_then(|&idx| self.types_by_id.get(idx).copied())
-    }
-
-    /// Gets the registry ID for an entity type.
-    #[must_use]
-    pub fn get_id(&self, entity_type: EntityTypeRef) -> &usize {
-        self.types_by_key
-            .get(&entity_type.key)
-            .expect("Entity type not found")
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.types_by_id.is_empty()
-    }
 }
 
-impl RegistryExt for EntityTypeRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(
+    EntityTypeRegistry,
+    EntityType,
+    types_by_id,
+    types_by_key,
+    entity_types
+);

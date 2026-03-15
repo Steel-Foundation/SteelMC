@@ -1,9 +1,8 @@
 //! Fluid registry for Minecraft fluids.
 
-use crate::{RegistryExt, vanilla_fluids};
+use crate::vanilla_fluids;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-use steel_utils::registry::registry_vanilla_or_custom_tag;
 
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug, Clone)]
@@ -200,24 +199,6 @@ impl FluidRegistry {
         true
     }
 
-    /// Gets a fluid by its numeric ID.
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<FluidRef> {
-        self.fluids_by_id.get(id).copied()
-    }
-
-    /// Gets the numeric ID for a fluid.
-    #[must_use]
-    pub fn get_id(&self, fluid: FluidRef) -> Option<&usize> {
-        self.fluids_by_key.get(&fluid.key)
-    }
-
-    /// Gets a fluid by its key.
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<FluidRef> {
-        self.fluids_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
     /// Iterates over all fluids with their IDs.
     pub fn iter(&self) -> impl Iterator<Item = (usize, FluidRef)> + '_ {
         self.fluids_by_id
@@ -225,102 +206,14 @@ impl FluidRegistry {
             .enumerate()
             .map(|(id, &fluid)| (id, fluid))
     }
-
-    /// Returns the number of registered fluids.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.fluids_by_id.len()
-    }
-
-    /// Returns true if no fluids are registered.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.fluids_by_id.is_empty()
-    }
-
-    // Tag-related methods
-
-    /// Registers a tag with a list of fluid keys.
-    pub fn register_tag(&mut self, tag: Identifier, fluid_keys: &[&'static str]) {
-        assert!(
-            self.allows_registering,
-            "Cannot register tags after registry has been frozen"
-        );
-
-        let identifier: Vec<Identifier> = fluid_keys
-            .iter()
-            .filter_map(|key| {
-                let ident = registry_vanilla_or_custom_tag(key);
-                // Only include if the item actually exists
-                self.by_key(&ident).map(|_| ident)
-            })
-            .collect();
-
-        self.tags.insert(tag, identifier);
-    }
-
-    /// Checks if a fluid is in a given tag.
-    #[must_use]
-    pub fn is_in_tag(&self, fluid: FluidRef, tag: &Identifier) -> bool {
-        self.tags
-            .get(tag)
-            .is_some_and(|fluids| fluids.contains(&fluid.key))
-    }
-
-    /// Gives the access to all blocks to delete and add new entries
-    pub fn modify_tag(
-        &mut self,
-        tag: &Identifier,
-        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
-    ) {
-        let existing = self.tags.remove(tag).unwrap_or_default();
-        let fluids = f(existing)
-            .into_iter()
-            .filter(|fluid| {
-                let exists = self.fluids_by_key.contains_key(fluid);
-                if !exists {
-                    tracing::error!("fluid {fluid} not found in registry, skipping from tag {tag}");
-                }
-                exists
-            })
-            .collect();
-        self.tags.insert(tag.clone(), fluids);
-    }
-
-    /// Gets all fluids in a tag.
-    #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<FluidRef>> {
-        self.tags.get(tag).map(|idents| {
-            idents
-                .iter()
-                .filter_map(|ident| self.by_key(ident))
-                .collect()
-        })
-    }
-
-    /// Iterates over all fluids in a tag.
-    pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = FluidRef> + '_ {
-        self.tags
-            .get(tag)
-            .into_iter()
-            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
-    }
-
-    /// Gets all tag keys.
-    pub fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_ {
-        self.tags.keys()
-    }
 }
 
-impl RegistryExt for FluidRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(FluidRegistry, Fluid, fluids_by_id, fluids_by_key, fluids);
+crate::impl_tagged_registry!(FluidRegistry, fluids_by_key, "fluid");
 
 // --- Fluid type checking helpers ---
 
-use crate::{REGISTRY, vanilla_fluid_tags};
+use crate::{REGISTRY, TaggedRegistryExt, vanilla_fluid_tags};
 
 /// Returns true if the given `FluidRef` is water (including flowing water).
 #[must_use]

@@ -15,9 +15,9 @@ use steel_registry::{
     CHAT_TYPE_REGISTRY, CHICKEN_VARIANT_REGISTRY, COW_VARIANT_REGISTRY, DAMAGE_TYPE_REGISTRY,
     DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, FLUID_REGISTRY, FROG_VARIANT_REGISTRY,
     INSTRUMENT_REGISTRY, ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY, PAINTING_VARIANT_REGISTRY,
-    PIG_VARIANT_REGISTRY, REGISTRY, Registry, TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY,
-    TRIM_PATTERN_REGISTRY, WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY,
-    ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
+    PIG_VARIANT_REGISTRY, REGISTRY, Registry, RegistryEntry as _, TIMELINE_REGISTRY,
+    TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, TaggedRegistryExt, WOLF_SOUND_VARIANT_REGISTRY,
+    WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -110,8 +110,7 @@ impl RegistryCache {
             let mut block_ids = Vec::with_capacity(registry.blocks.iter_tag(tag_key).count());
 
             for block in registry.blocks.iter_tag(tag_key) {
-                let block_id = *registry.blocks.get_id(block);
-                block_ids.push(VarInt::from(block_id));
+                block_ids.push(VarInt::from(block.id()));
             }
 
             block_tags.push((tag_key.clone(), block_ids));
@@ -126,8 +125,7 @@ impl RegistryCache {
             let mut item_ids = Vec::with_capacity(registry.items.iter_tag(tag_key).count());
 
             for item in registry.items.iter_tag(tag_key) {
-                let item_id = *registry.items.get_id(item);
-                item_ids.push(VarInt::from(item_id));
+                item_ids.push(VarInt::from(item.id()));
             }
 
             item_tags.push((tag_key.clone(), item_ids));
@@ -142,8 +140,7 @@ impl RegistryCache {
             let mut timeline_ids = Vec::with_capacity(registry.timelines.iter_tag(tag_key).count());
 
             for timeline in registry.timelines.iter_tag(tag_key) {
-                let timeline_id = *registry.timelines.get_id(timeline);
-                timeline_ids.push(VarInt::from(timeline_id));
+                timeline_ids.push(VarInt::from(timeline.id()));
             }
 
             timeline_tags.push((tag_key.clone(), timeline_ids));
@@ -158,8 +155,7 @@ impl RegistryCache {
             let mut dialog_ids = Vec::with_capacity(registry.dialogs.iter_tag(tag_key).count());
 
             for dialog in registry.dialogs.iter_tag(tag_key) {
-                let dialog_id = *registry.dialogs.get_id(dialog);
-                dialog_ids.push(VarInt::from(dialog_id as i32));
+                dialog_ids.push(VarInt::from(dialog.id() as i32));
             }
 
             dialog_tags.push((tag_key.clone(), dialog_ids));
@@ -174,8 +170,7 @@ impl RegistryCache {
             let mut fluid_ids = Vec::with_capacity(registry.fluids.iter_tag(tag_key).count());
 
             for fluid in registry.fluids.iter_tag(tag_key) {
-                let fluid_id = *registry.fluids.get_id(fluid).expect("Fluid not found");
-                fluid_ids.push(VarInt::from(fluid_id as i32));
+                fluid_ids.push(VarInt::from(fluid.id() as i32));
             }
 
             fluid_tags.push((tag_key.clone(), fluid_ids));

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,

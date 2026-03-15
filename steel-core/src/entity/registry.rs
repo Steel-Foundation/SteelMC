@@ -4,9 +4,9 @@ use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
-use steel_registry::REGISTRY;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::vanilla_entities;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::math::Vector3;
 use uuid::Uuid;
 
@@ -74,7 +74,7 @@ impl EntityRegistry {
 
     /// Registers a factory function for an entity type.
     pub fn register(&mut self, entity_type: EntityTypeRef, factory: EntityFactory) {
-        let id = *REGISTRY.entity_types.get_id(entity_type);
+        let id = entity_type.id();
         self.entries[id].factory = Some(factory);
     }
 
@@ -82,7 +82,7 @@ impl EntityRegistry {
     ///
     /// The load factory is used when loading entities from disk.
     pub fn register_load(&mut self, entity_type: EntityTypeRef, factory: EntityLoadFactory) {
-        let id = *REGISTRY.entity_types.get_id(entity_type);
+        let id = entity_type.id();
         self.entries[id].load_factory = Some(factory);
     }
 
@@ -97,7 +97,7 @@ impl EntityRegistry {
         pos: Vector3<f64>,
         world: Weak<World>,
     ) -> Option<SharedEntity> {
-        let id = *REGISTRY.entity_types.get_id(entity_type);
+        let id = entity_type.id();
         self.entries
             .get(id)?
             .factory
@@ -120,7 +120,7 @@ impl EntityRegistry {
         world: Weak<World>,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> Option<SharedEntity> {
-        let id = *REGISTRY.entity_types.get_id(entity_type);
+        let id = entity_type.id();
         let load_factory = self.entries.get(id)?.load_factory?;
 
         let entity_id = next_entity_id();
@@ -132,14 +132,14 @@ impl EntityRegistry {
     /// Returns whether a factory is registered for the given type.
     #[must_use]
     pub fn has_factory(&self, entity_type: EntityTypeRef) -> bool {
-        let id = *REGISTRY.entity_types.get_id(entity_type);
+        let id = entity_type.id();
         self.entries.get(id).is_some_and(|e| e.factory.is_some())
     }
 
     /// Returns whether a load factory is registered for the given type.
     #[must_use]
     pub fn has_load_factory(&self, entity_type: EntityTypeRef) -> bool {
-        let id = *REGISTRY.entity_types.get_id(entity_type);
+        let id = entity_type.id();
         self.entries
             .get(id)
             .is_some_and(|e| e.load_factory.is_some())

@@ -2,7 +2,7 @@
 
 use steel_utils::Identifier;
 
-use crate::{REGISTRY, item_stack::ItemStack, items::ItemRef};
+use crate::{REGISTRY, TaggedRegistryExt, item_stack::ItemStack, items::ItemRef};
 
 /// Represents what items can satisfy a recipe slot.
 /// Matches Java's `Ingredient` class.
