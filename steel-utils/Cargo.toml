@@ -33,7 +33,6 @@ uuid.workspace = true
 tracing.workspace = true
 
 # Cryptography
-md5.workspace = true
 crc32c = "0.6"
 
 # Utilities
@@ -50,6 +49,7 @@ codegen = ["dep:proc-macro2", "dep:quote"]
 
 [dev-dependencies]
 criterion.workspace = true
+md5.workspace = true
 
 [build-dependencies]
 # Serialization

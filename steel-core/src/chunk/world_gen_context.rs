@@ -3,6 +3,7 @@
 use std::sync::{Arc, Weak};
 
 use enum_dispatch::enum_dispatch;
+use steel_registry::density_functions::{OverworldNoises, end::EndNoises, nether::NetherNoises};
 
 use crate::chunk::{
     chunk_access::ChunkAccess, chunk_generator::ChunkGenerator,
@@ -11,12 +12,23 @@ use crate::chunk::{
 };
 use crate::world::World;
 
+/// Type alias for overworld generator.
+pub type OverworldGenerator = VanillaGenerator<OverworldNoises>;
+
+/// Type alias for nether generator.
+pub type NetherGenerator = VanillaGenerator<NetherNoises>;
+
+/// Type alias for end generator.
+pub type EndGenerator = VanillaGenerator<EndNoises>;
+
 #[allow(missing_docs)]
 #[enum_dispatch(ChunkGenerator)]
 pub enum ChunkGeneratorType {
     Flat(FlatChunkGenerator),
     Empty(EmptyChunkGenerator),
-    Vanilla(VanillaGenerator),
+    Overworld(OverworldGenerator),
+    Nether(NetherGenerator),
+    End(EndGenerator),
     //Custom(Box<dyn ChunkGenerator>),
 }
 

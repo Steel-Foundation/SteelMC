@@ -3,6 +3,7 @@ use enum_dispatch::enum_dispatch;
 
 use crate::random::{
     legacy_random::{LegacyRandom, LegacyRandomSplitter},
+    name_hash::NameHash,
     xoroshiro::{Xoroshiro, XoroshiroSplitter},
 };
 
@@ -10,6 +11,8 @@ use crate::random::{
 pub mod gaussian;
 /// This module contains the legacy random number generator implementation.
 pub mod legacy_random;
+/// Precomputed name hashes for positional random seeding.
+pub mod name_hash;
 /// This module contains the xoroshiro random number generator.
 pub mod xoroshiro;
 
@@ -65,7 +68,7 @@ pub trait Random {
 pub trait PositionalRandom {
     fn at(&self, x: i32, y: i32, z: i32) -> RandomSource;
 
-    fn with_hash_of(&self, name: &str) -> RandomSource;
+    fn with_hash_of(&self, hash: &NameHash) -> RandomSource;
 
     fn with_seed(&self, seed: u64) -> RandomSource;
 }
@@ -80,6 +83,7 @@ pub enum RandomSource {
 }
 
 /// A random number generator that can be split.
+#[derive(Clone)]
 #[enum_dispatch(PositionalRandom)]
 pub enum RandomSplitter {
     /// A xoroshiro random number generator.

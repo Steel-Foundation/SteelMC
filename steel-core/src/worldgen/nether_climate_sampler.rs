@@ -12,9 +12,9 @@
 
 use steel_registry::density_functions::nether::{self, NetherColumnCache, NetherNoises};
 use steel_utils::climate::{TargetPoint, quantize_coord};
-use steel_utils::noise::NormalNoise;
+use steel_utils::noise::{BlendedNoise, NormalNoise};
+use steel_utils::random::RandomSource;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::random::{PositionalRandom, Random, RandomSource};
 
 /// Climate sampler for the nether using compiled density functions.
 ///
@@ -43,17 +43,14 @@ impl NetherClimateSampler {
         let mut veg_rng = RandomSource::Legacy(LegacyRandom::from_seed(seed.wrapping_add(1)));
         let n_vegetation = NormalNoise::create_legacy_nether_biome(&mut veg_rng, -7, &[1.0, 1.0]);
 
-        // Offset (shift) noise: LegacyRandom(seed).forkPositional().fromHashOf("minecraft:offset")
-        // With params (0, [0.0]) — effectively zero, making nether shifts negligible.
-        let mut rng = LegacyRandom::from_seed(seed);
-        let splitter = rng.next_positional();
-        let mut offset_rng = splitter.with_hash_of("minecraft:offset");
-        let n_offset = NormalNoise::create_from_random(&mut offset_rng, 0, &[0.0]);
+        // BlendedNoise: nether uses legacy random with seed + 0 (useLegacyRandomSource=true)
+        let mut blended_rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
+        let blended_noise = BlendedNoise::new(&mut blended_rng, 0.25, 0.375, 80.0, 60.0, 8.0);
 
         let noises = NetherNoises {
-            n_offset,
             n_nether__temperature: n_temperature,
             n_nether__vegetation: n_vegetation,
+            blended_noise,
         };
 
         Self {

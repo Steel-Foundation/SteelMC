@@ -9,9 +9,10 @@
 //!
 //! Result range: `[-0.84375, 0.5625]`.
 
-use steel_utils::noise::SimplexNoise;
-use steel_utils::random::Random;
-use steel_utils::random::legacy_random::LegacyRandom;
+use crate::random::Random;
+use crate::random::legacy_random::LegacyRandom;
+
+use super::SimplexNoise;
 
 /// Threshold for simplex noise below which an island is spawned.
 ///
@@ -44,10 +45,9 @@ impl EndIslands {
         Self { island_noise }
     }
 
-    /// Sample the erosion value at block coordinates.
+    /// Sample the density value at block coordinates.
     ///
-    /// Used by `EndBiomeSource` to determine biome thresholds. Converts block
-    /// coordinates to section coordinates internally (divides by 8).
+    /// Converts block coordinates to section coordinates internally (divides by 8).
     #[must_use]
     pub fn sample(&self, block_x: i32, _block_y: i32, block_z: i32) -> f64 {
         // Widen to f64 BEFORE subtracting 8.0, matching Java's `float - 8.0` (double literal)
@@ -97,7 +97,12 @@ impl EndIslands {
                     let zd = sub_section_z as f32 - (zo * 2) as f32;
                     let new_doffs =
                         (100.0_f32 - (xd * xd + zd * zd).sqrt() * island_size).clamp(-100.0, 80.0);
-                    doffs = doffs.max(new_doffs);
+                    // Must NOT use f32::max here — Rust's max returns the non-NaN
+                    // argument, while Java's Math.max propagates NaN. When the initial
+                    // distance overflows i32, doffs becomes NaN and must stay NaN.
+                    if new_doffs > doffs {
+                        doffs = new_doffs;
+                    }
                 }
             }
         }

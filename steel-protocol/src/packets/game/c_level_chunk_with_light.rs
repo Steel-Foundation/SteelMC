@@ -28,6 +28,7 @@ pub struct BlockEntityInfo {
 #[derive(Debug, Clone, WriteTo)]
 pub struct ChunkPacketData {
     pub heightmaps: Heightmaps,
+    #[write(as = Prefixed(VarInt), bound = 2097152)]
     pub data: Vec<u8>,
     pub block_entities: Vec<BlockEntityInfo>,
 }

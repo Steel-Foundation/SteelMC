@@ -1,5 +1,9 @@
 //! This module contains all the chunk related structures and logic.
 
+/// Noise-based aquifer for underground fluid placement.
+pub mod aquifer;
+/// Terrain density modification around structure pieces.
+pub mod beardifier;
 pub mod chunk_access;
 pub mod chunk_generation_task;
 pub mod chunk_generator;
@@ -19,9 +23,15 @@ pub mod empty_chunk_generator;
 /// Generates flat worlds with configurable layers.
 pub mod flat_chunk_generator;
 pub mod level_chunk;
+/// Noise-based terrain generation with cell-level interpolation.
+pub mod noise_chunk;
+/// Ore vein generation during terrain fill.
+pub mod ore_veinifier;
 pub mod paletted_container;
 pub mod proto_chunk;
 pub mod section;
+/// Surface system for biome-specific block replacement.
+pub mod surface_system;
 /// Generates vanilla worlds using noise-based biomes and terrain.
 pub mod vanilla_generator;
 pub mod world_gen_context;
