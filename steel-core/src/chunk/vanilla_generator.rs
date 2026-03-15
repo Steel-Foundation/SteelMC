@@ -5,7 +5,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_registry::vanilla_biomes;
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::{BlockStateId, BoundingBox, Identifier};
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
 use steel_utils::random::{
@@ -259,16 +259,40 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let cell_w = N::Settings::CELL_WIDTH;
         let cell_h = N::Settings::CELL_HEIGHT;
 
-        // Interpolated base height scan matching vanilla's getBaseHeight / iterateNoiseColumn.
-        // WORLD_SURFACE_WG: first non-air (density > 0 or water below sea level)
-        // OCEAN_FLOOR_WG: first solid only (density > 0, ignoring water)
-        let interp_base_height = |cache: &mut N::ColumnCache, noises: &N, x: i32, z: i32, ocean_floor: bool| -> i32 {
+        // Create an aquifer for this chunk to match vanilla's iterateNoiseColumn,
+        // which creates a NoiseChunk (containing an aquifer) per height query.
+        // We reuse one aquifer for all queries in this chunk — the grid extends
+        // beyond the 16-block chunk boundary due to sample offsets, covering
+        // nearby positions needed by structure placement.
+        let mut aquifer_cache = N::ColumnCache::default();
+        aquifer_cache.init_grid(chunk_min_x, chunk_min_z, &self.noises);
+        let mut aquifer = Aquifer::<N>::new(
+            chunk_min_x,
+            chunk_min_z,
+            N::Settings::MIN_Y,
+            N::Settings::HEIGHT,
+            &self.splitter,
+            &self.noises,
+            aquifer_cache,
+        );
+
+        // Aquifer-aware height scan matching vanilla's iterateNoiseColumn.
+        // Uses trilinear-interpolated density + aquifer to determine block state,
+        // then checks against the heightmap predicate.
+        // WORLD_SURFACE_WG (ocean_floor=false): opaque = Solid or Fluid
+        // OCEAN_FLOOR_WG (ocean_floor=true): opaque = Solid only
+        let base_height = |cache: &mut N::ColumnCache, noises: &N, aquifer: &mut Aquifer<N>, x: i32, z: i32, ocean_floor: bool| -> i32 {
             let estimate = preliminary_surface_level::<N>(noises, cache, x, z);
             let start_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
             let min_y = N::Settings::MIN_Y;
             for y in (min_y..=start_y).rev() {
                 let density = interpolated_density::<N>(cache, noises, x, y, z, cell_w, cell_h);
-                if density > 0.0 || (!ocean_floor && y < sea_level) {
+                let opaque = match aquifer.compute_substance(noises, x, y, z, density) {
+                    AquiferResult::Solid => true,
+                    AquiferResult::Fluid(_) => !ocean_floor,
+                    AquiferResult::Air => false,
+                };
+                if opaque {
                     return y + 1;
                 }
             }
@@ -276,11 +300,24 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         };
 
         // onTopOfChunkCenter uses getFirstOccupiedHeight = getBaseHeight - 1
-        let surface_y = interp_base_height(&mut height_cache, &self.noises, center_block_x, center_block_z, false) - 1;
+        let surface_y = base_height(&mut height_cache, &self.noises, &mut aquifer, center_block_x, center_block_z, false) - 1;
 
         // Collect selected structures first (while can_generate borrows height_cache),
         // then run jigsaw assembly afterward (which also needs height_cache).
-        let mut selected_entries: Vec<(Identifier, String, Option<steel_registry::structure_set::JigsawConfig>, Vec<Identifier>)> = Vec::new();
+        //
+        // For jigsaw sets: store the full entry list so post-processing can do
+        // weighted selection + assembly + biome check with retry (matching vanilla).
+        // For non-jigsaw sets: store just the selected entry.
+        enum SelectedSet {
+            /// Non-jigsaw: already selected by can_generate + weighted pick.
+            Single {
+                structure: Identifier,
+                structure_type: String,
+            },
+            /// Jigsaw: needs assembly + biome check with retry in post-processing.
+            Jigsaw(Vec<StructureSelectionEntry>),
+        }
+        let mut selected_sets: Vec<SelectedSet> = Vec::new();
 
         // Checks if findGenerationPoint would succeed and if the biome at the
         // generation point matches. Returns false if the structure type rejects
@@ -302,7 +339,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     let mut get_height = |x: i32, z: i32| -> i32 {
                         self.get_base_height(x, z, &mut height_cache)
                     };
-                    let (bx, by, bz) = mineshaft::find_generation_point(
+                    let result = mineshaft::find_generation_point(
                         &mut ms_rng,
                         chunk_x,
                         chunk_z,
@@ -311,7 +348,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         N::Settings::MIN_Y,
                         &mut get_height,
                     );
-                    (bx, by, bz)
+                    result.biome_check_pos
                 }
 
                 // SinglePieceStructure (desert_pyramid, jungle_temple):
@@ -324,10 +361,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     };
                     // Vanilla uses getFirstOccupiedHeight(WORLD_SURFACE_WG) = getBaseHeight - 1.
                     // interp_base_height returns getBaseHeight (posY + 1), so subtract 1.
-                    let h0 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x, chunk_min_z, false) - 1;
-                    let h1 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x, chunk_min_z + depth, false) - 1;
-                    let h2 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x + width, chunk_min_z, false) - 1;
-                    let h3 = interp_base_height(&mut height_cache, &self.noises, chunk_min_x + width, chunk_min_z + depth, false) - 1;
+                    let h0 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x, chunk_min_z, false) - 1;
+                    let h1 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x, chunk_min_z + depth, false) - 1;
+                    let h2 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x + width, chunk_min_z, false) - 1;
+                    let h3 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x + width, chunk_min_z + depth, false) - 1;
                     let lowest = h0.min(h1).min(h2).min(h3);
                     if lowest < sea_level {
                         return false;
@@ -384,11 +421,15 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     let mut terrain = |q: TerrainQuery| -> TerrainResult {
                         match q {
                             TerrainQuery::SurfaceHeight(x, z) => {
-                                TerrainResult::Height(interp_base_height(&mut height_cache, &self.noises, x, z, false))
+                                TerrainResult::Height(base_height(&mut height_cache, &self.noises, &mut aquifer, x, z, false))
                             }
                             TerrainQuery::IsOpaque(x, y, z) => {
                                 let density = interpolated_density::<N>(&mut height_cache, &self.noises, x, y, z, cell_w, cell_h);
-                                TerrainResult::Opaque(density > 0.0 || y < sea_level)
+                                let opaque = match aquifer.compute_substance(&self.noises, x, y, z, density) {
+                                    AquiferResult::Solid | AquiferResult::Fluid(_) => true,
+                                    AquiferResult::Air => false,
+                                };
+                                TerrainResult::Opaque(opaque)
                             }
                         }
                     };
@@ -409,7 +450,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // onTopOfChunkCenter with OCEAN_FLOOR_WG heightmap
                 "minecraft:ocean_ruin" | "minecraft:buried_treasure" => {
-                    let ocean_floor_y = interp_base_height(&mut height_cache, &self.noises, center_block_x, center_block_z, true);
+                    let ocean_floor_y = base_height(&mut height_cache, &self.noises, &mut aquifer, center_block_x, center_block_z, true);
                     (center_block_x, ocean_floor_y, center_block_z)
                 }
 
@@ -419,10 +460,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 "minecraft:woodland_mansion" | "minecraft:end_city" => {
                     let bx = chunk_min_x + 7;
                     let bz = chunk_min_z + 7;
-                    let h0 = interp_base_height(&mut height_cache, &self.noises, bx, bz, false) - 1;
-                    let h1 = interp_base_height(&mut height_cache, &self.noises, bx, bz + 5, false) - 1;
-                    let h2 = interp_base_height(&mut height_cache, &self.noises, bx + 5, bz, false) - 1;
-                    let h3 = interp_base_height(&mut height_cache, &self.noises, bx + 5, bz + 5, false) - 1;
+                    let h0 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx, bz, false) - 1;
+                    let h1 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx, bz + 5, false) - 1;
+                    let h2 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx + 5, bz, false) - 1;
+                    let h3 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx + 5, bz + 5, false) - 1;
                     let lowest = h0.min(h1).min(h2).min(h3);
                     if lowest < 60 {
                         return false;
@@ -465,8 +506,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         };
 
         for (set_key, set) in &self.structure_sets {
-            // Skip if no structure in this set can generate at this chunk
-            if !set.structures.iter().any(|e| can_generate(e)) {
+            let is_jigsaw_set = set.structures.iter().any(|e| e.structure_type == "minecraft:jigsaw");
+
+            // For jigsaw sets: skip biome pre-check (biome is checked post-assembly).
+            // For non-jigsaw sets: require at least one entry to pass biome check.
+            if !is_jigsaw_set && !set.structures.iter().any(|e| can_generate(e)) {
                 continue;
             }
 
@@ -507,132 +551,327 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 continue;
             }
 
-            // Pick which structure from the weighted list, with biome + type validation.
-            // Vanilla: weighted random pick → findGenerationPoint → check biome → retry.
-            let selected = if set.structures.len() == 1 {
-                let entry = &set.structures[0];
-                if can_generate(entry) {
-                    Some(entry)
-                } else {
-                    None
-                }
+            if is_jigsaw_set {
+                // Jigsaw: defer weighted selection + assembly + biome check to post-processing.
+                // This matches vanilla's flow where tryGenerateStructure runs the full
+                // assembly before checking the biome at the stub position.
+                selected_sets.push(SelectedSet::Jigsaw(set.structures.clone()));
             } else {
-                let mut rng = LegacyRandom::from_seed(0);
-                rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                // Non-jigsaw: weighted selection with biome check via can_generate.
+                let selected = if set.structures.len() == 1 {
+                    let entry = &set.structures[0];
+                    if can_generate(entry) {
+                        Some(entry)
+                    } else {
+                        None
+                    }
+                } else {
+                    let mut rng = LegacyRandom::from_seed(0);
+                    rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
 
-                let mut remaining: Vec<&StructureSelectionEntry> =
-                    set.structures.iter().collect();
-                let mut total_weight: i32 = remaining.iter().map(|e| e.weight).sum();
-                let mut result = None;
+                    let mut remaining: Vec<&StructureSelectionEntry> =
+                        set.structures.iter().collect();
+                    let mut total_weight: i32 = remaining.iter().map(|e| e.weight).sum();
+                    let mut result = None;
 
-                while !remaining.is_empty() {
-                    let mut choice = rng.next_i32_bounded(total_weight);
-                    let mut selected_idx = 0;
-                    for (i, entry) in remaining.iter().enumerate() {
-                        choice -= entry.weight;
-                        if choice < 0 {
-                            selected_idx = i;
+                    while !remaining.is_empty() {
+                        let mut choice = rng.next_i32_bounded(total_weight);
+                        let mut selected_idx = 0;
+                        for (i, entry) in remaining.iter().enumerate() {
+                            choice -= entry.weight;
+                            if choice < 0 {
+                                selected_idx = i;
+                                break;
+                            }
+                        }
+
+                        let candidate = remaining[selected_idx];
+                        if can_generate(candidate) {
+                            result = Some(candidate);
                             break;
                         }
+
+                        total_weight -= candidate.weight;
+                        remaining.remove(selected_idx);
                     }
 
-                    let candidate = remaining[selected_idx];
-                    if can_generate(candidate) {
-                        result = Some(candidate);
-                        break;
-                    }
+                    result
+                };
 
-                    total_weight -= candidate.weight;
-                    remaining.remove(selected_idx);
+                if let Some(selected) = selected {
+                    selected_sets.push(SelectedSet::Single {
+                        structure: selected.structure.clone(),
+                        structure_type: selected.structure_type.clone(),
+                    });
                 }
-
-                result
-            };
-
-            let Some(selected) = selected else {
-                continue;
-            };
-
-            // Store the selected structure info for post-processing
-            selected_entries.push((
-                selected.structure.clone(),
-                selected.structure_type.clone(),
-                selected.jigsaw_config.clone(),
-                selected.allowed_biomes.clone(),
-            ));
+            }
         }
 
         // can_generate is dropped here, releasing the height_cache borrow.
-        // Now process the selected entries — run jigsaw assembly for jigsaw structures.
-        for (structure_id, structure_type, jigsaw_config, allowed_biomes) in selected_entries {
-            let pieces = if structure_type == "minecraft:jigsaw" {
-                if let Some(ref jigsaw_config) = jigsaw_config {
-                    let mut jigsaw_rng = LegacyRandom::from_seed(0);
-                    jigsaw_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
-
-                    let alias_map = crate::world::structure::jigsaw::resolve_aliases(
-                        &jigsaw_config.pool_aliases,
-                        &mut jigsaw_rng,
-                    );
-
-                    let mut assembly_rng = LegacyRandom::from_seed(0);
-                    assembly_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
-
-                    let mut get_height_fn = |x: i32, z: i32| -> i32 {
-                        interp_base_height(&mut height_cache, &self.noises, x, z, false)
+        // Now process selected sets — run jigsaw assembly with retry for jigsaw structures.
+        for selected in selected_sets {
+            match selected {
+                SelectedSet::Single { structure: structure_id, structure_type } => {
+                    // Non-jigsaw: generate pieces based on structure type.
+                    let pieces = match structure_type.as_str() {
+                        "minecraft:mineshaft" => {
+                            let mtype = if &*structure_id.path == "mineshaft_mesa" {
+                                MineshaftType::Mesa
+                            } else {
+                                MineshaftType::Normal
+                            };
+                            let mut ms_rng = LegacyRandom::from_seed(0);
+                            ms_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                            let mut get_height = |x: i32, z: i32| -> i32 {
+                                self.get_base_height(x, z, &mut height_cache)
+                            };
+                            let result = mineshaft::find_generation_point(
+                                &mut ms_rng, chunk_x, chunk_z, mtype,
+                                sea_level, N::Settings::MIN_Y, &mut get_height,
+                            );
+                            result.piece_bbs.into_iter().map(|bb| StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "mineshaft"),
+                                bounding_box: bb,
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }).collect()
+                        }
+                        // SinglePieceStructure pattern (desert_pyramid, jungle_temple, swamp_hut):
+                        // Piece BB from makeBoundingBox(west, 64, north, randomDir, width, height, depth).
+                        // Direction axis Z (N/S): (x..x+w-1, y..y+h-1, z..z+d-1)
+                        // Direction axis X (E/W): (x..x+d-1, y..y+h-1, z..z+w-1)
+                        "minecraft:desert_pyramid" | "minecraft:jungle_temple" | "minecraft:swamp_hut" => {
+                            let (w, h, d, piece_type_name) = match structure_type.as_str() {
+                                "minecraft:desert_pyramid" => (21, 15, 21, "desert_pyramid"),
+                                "minecraft:jungle_temple" => (12, 10, 15, "jungle_pyramid"),
+                                _ => (7, 7, 9, "swamp_hut"),
+                            };
+                            // Fresh RNG matching vanilla's GenerationContext
+                            let mut piece_rng = LegacyRandom::from_seed(0);
+                            piece_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                            // getRandomHorizontalDirection: HORIZONTAL faces = [N, E, S, W]
+                            let dir_idx = piece_rng.next_i32_bounded(4);
+                            let z_axis = matches!(dir_idx, 0 | 2); // N=0, E=1, S=2, W=3
+                            let (bw, bd) = if z_axis { (w, d) } else { (d, w) };
+                            vec![StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", piece_type_name),
+                                bounding_box: BoundingBox::new(
+                                    chunk_min_x, 64, chunk_min_z,
+                                    chunk_min_x + bw - 1, 64 + h - 1, chunk_min_z + bd - 1,
+                                ),
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }]
+                        }
+                        "minecraft:buried_treasure" => {
+                            vec![StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "buried_treasure"),
+                                bounding_box: BoundingBox::new(
+                                    chunk_min_x + 9, 90, chunk_min_z + 9,
+                                    chunk_min_x + 9, 90, chunk_min_z + 9,
+                                ),
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }]
+                        }
+                        "minecraft:ocean_monument" => {
+                            // MonumentBuilding: 58×23×58, starts at chunk corner
+                            // Fresh RNG for random direction
+                            let mut piece_rng = LegacyRandom::from_seed(0);
+                            piece_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                            let _dir = piece_rng.next_i32_bounded(4);
+                            // Monument is always 58×58 in XZ regardless of direction
+                            vec![StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "ocean_monument"),
+                                bounding_box: BoundingBox::new(
+                                    chunk_min_x - 29 + 9, surface_y - 7, chunk_min_z - 29 + 9,
+                                    chunk_min_x + 28 + 9, surface_y + 15, chunk_min_z + 28 + 9,
+                                ),
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }]
+                        }
+                        "minecraft:ruined_portal" => {
+                            // Ruined portal piece BB: we already compute this in find_biome_check_pos
+                            // but don't return the BB. For references, the XZ extent from the
+                            // template + rotation is sufficient.
+                            // Re-run the RNG to get the template and rotation, then compute BB.
+                            use crate::world::structure::ruined_portal::{TerrainQuery, TerrainResult};
+                            let mut rp_rng = LegacyRandom::from_seed(0);
+                            rp_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                            let mut terrain = |q: TerrainQuery| -> TerrainResult {
+                                match q {
+                                    TerrainQuery::SurfaceHeight(x, z) => {
+                                        TerrainResult::Height(base_height(&mut height_cache, &self.noises, &mut aquifer, x, z, false))
+                                    }
+                                    TerrainQuery::IsOpaque(x, y, z) => {
+                                        let density = interpolated_density::<N>(&mut height_cache, &self.noises, x, y, z, cell_w, cell_h);
+                                        let opaque = match aquifer.compute_substance(&self.noises, x, y, z, density) {
+                                            AquiferResult::Solid | AquiferResult::Fluid(_) => true,
+                                            AquiferResult::Air => false,
+                                        };
+                                        TerrainResult::Opaque(opaque)
+                                    }
+                                }
+                            };
+                            let result = ruined_portal::find_biome_check_pos(
+                                &mut rp_rng, chunk_x, chunk_z,
+                                &structure_id.path, N::Settings::MIN_Y, &mut terrain,
+                            );
+                            // The biome check pos gives us the Y; the BB comes from the template.
+                            // For now, create a single piece with the overall BB.
+                            // The X/Z are at chunk origin, Y from the result.
+                            vec![StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "ruined_portal"),
+                                bounding_box: BoundingBox::new(
+                                    chunk_min_x, result.1, chunk_min_z,
+                                    chunk_min_x + 15, result.1 + 15, chunk_min_z + 15,
+                                ),
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }]
+                        }
+                        "minecraft:shipwreck" | "minecraft:ocean_ruin" => {
+                            // Template-based structures — BB depends on template + rotation.
+                            // For references, approximate with a 16×16 chunk-sized piece.
+                            // TODO: Load actual template to compute exact BB
+                            vec![StructurePiece {
+                                piece_type: structure_id.clone(),
+                                bounding_box: BoundingBox::new(
+                                    chunk_min_x, 0, chunk_min_z,
+                                    chunk_min_x + 15, 90, chunk_min_z + 15,
+                                ),
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }]
+                        }
+                        "minecraft:stronghold" => {
+                            // Complex recursive structure — needs full piece gen.
+                            // TODO: Implement stronghold piece generation
+                            vec![]
+                        }
+                        _ => vec![],
                     };
 
-                    let result = crate::world::structure::jigsaw::assemble(
-                        jigsaw_config,
-                        &mut assembly_rng,
-                        chunk_x,
-                        chunk_z,
-                        &self.template_pools,
-                        &self.templates,
-                        &alias_map,
-                        &mut get_height_fn,
-                        N::Settings::MIN_Y,
-                        N::Settings::MIN_Y + N::Settings::HEIGHT,
-                    );
-
-                    match result {
-                        Some(assembly) if !assembly.pieces.is_empty() => {
-                            // Biome check at the stub position (vanilla checks AFTER assembly)
-                            let (bx, by, bz) = assembly.biome_check_pos;
-                            let biome = sampler.sample(bx >> 2, by >> 2, bz >> 2);
-                            if !allowed_biomes.contains(&biome.key) {
-                                continue; // Biome mismatch at stub position
-                            }
-
-                            assembly.pieces
-                                .into_iter()
-                                .map(|pp| StructurePiece {
-                                    piece_type: Identifier::new_static("minecraft", "jigsaw"),
-                                    bounding_box: pp.bounding_box,
-                                    gen_depth: pp.depth,
-                                    orientation: None,
-                                    nbt_data: Vec::new(),
-                                    ground_level_delta: pp.ground_level_delta,
-                                    junctions: pp.junctions,
-                                })
-                                .collect()
-                        }
-                        _ => continue, // Assembly failed — skip
-                    }
-                } else {
-                    vec![]
+                    let start = StructureStart {
+                        structure: structure_id.clone(),
+                        chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
+                        references: 0,
+                        pieces,
+                    };
+                    chunk.structure_starts_mut().insert(structure_id, start);
                 }
-            } else {
-                vec![]
-            };
+                SelectedSet::Jigsaw(entries) => {
+                    // Jigsaw: weighted selection with assembly + biome check retry.
+                    // Matches vanilla's flow in ChunkGenerator.createStructures:
+                    // pick entry → tryGenerateStructure (assembly + biome) → retry if fails.
+                    let mut rng = LegacyRandom::from_seed(0);
+                    rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
 
-            let start = StructureStart {
-                structure: structure_id.clone(),
-                chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
-                references: 0,
-                pieces,
-            };
-            chunk.structure_starts_mut().insert(structure_id, start);
+                    let mut remaining: Vec<&StructureSelectionEntry> = entries.iter().collect();
+                    let mut total_weight: i32 = remaining.iter().map(|e| e.weight).sum();
+
+                    while !remaining.is_empty() {
+                        let mut choice = rng.next_i32_bounded(total_weight);
+                        let mut selected_idx = 0;
+                        for (i, entry) in remaining.iter().enumerate() {
+                            choice -= entry.weight;
+                            if choice < 0 {
+                                selected_idx = i;
+                                break;
+                            }
+                        }
+
+                        let candidate = remaining[selected_idx];
+                        let Some(ref jigsaw_config) = candidate.jigsaw_config else {
+                            remaining.remove(selected_idx);
+                            total_weight -= candidate.weight;
+                            continue;
+                        };
+
+                        // Run assembly for this candidate
+                        let mut alias_rng = LegacyRandom::from_seed(0);
+                        alias_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+                        let alias_map = crate::world::structure::jigsaw::resolve_aliases(
+                            &jigsaw_config.pool_aliases,
+                            &mut alias_rng,
+                        );
+
+                        let mut assembly_rng = LegacyRandom::from_seed(0);
+                        assembly_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                        let mut get_height_fn = |x: i32, z: i32| -> i32 {
+                            base_height(&mut height_cache, &self.noises, &mut aquifer, x, z, false)
+                        };
+
+                        let result = crate::world::structure::jigsaw::assemble(
+                            jigsaw_config,
+                            &mut assembly_rng,
+                            chunk_x,
+                            chunk_z,
+                            &self.template_pools,
+                            &self.templates,
+                            &alias_map,
+                            &mut get_height_fn,
+                            N::Settings::MIN_Y,
+                            N::Settings::MIN_Y + N::Settings::HEIGHT,
+                        );
+
+                        if let Some(assembly) = result {
+                            if !assembly.pieces.is_empty() {
+                                // Biome check at the stub position
+                                let (bx, by, bz) = assembly.biome_check_pos;
+                                let biome = sampler.sample(bx >> 2, by >> 2, bz >> 2);
+                                if candidate.allowed_biomes.contains(&biome.key) {
+                                    // Success — create the structure start
+                                    let pieces = assembly.pieces
+                                        .into_iter()
+                                        .map(|pp| StructurePiece {
+                                            piece_type: Identifier::new_static("minecraft", "jigsaw"),
+                                            bounding_box: pp.bounding_box,
+                                            gen_depth: pp.depth,
+                                            orientation: None,
+                                            nbt_data: Vec::new(),
+                                            ground_level_delta: pp.ground_level_delta,
+                                            junctions: pp.junctions,
+                                        })
+                                        .collect();
+                                    let start = StructureStart {
+                                        structure: candidate.structure.clone(),
+                                        chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
+                                        references: 0,
+                                        pieces,
+                                    };
+                                    chunk.structure_starts_mut().insert(candidate.structure.clone(), start);
+                                    break; // Done with this set
+                                }
+                            }
+                        }
+
+                        // Assembly failed or biome mismatch — retry with next candidate
+                        total_weight -= candidate.weight;
+                        remaining.remove(selected_idx);
+                    }
+                }
+            }
         }
     }
 

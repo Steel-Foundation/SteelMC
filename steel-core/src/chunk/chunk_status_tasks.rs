@@ -64,9 +64,71 @@ impl ChunkStatusTasks {
     pub fn generate_structure_references(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
-        _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
+        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+        holder: Arc<ChunkHolder>,
     ) -> Result<(), anyhow::Error> {
+        let chunk = holder
+            .try_chunk(ChunkStatus::StructureStarts)
+            .expect("Chunk not found at status StructureStarts");
+        let target_pos = chunk.pos();
+        let target_x = target_pos.0.x;
+        let target_z = target_pos.0.y;
+        let target_block_x = target_x * 16;
+        let target_block_z = target_z * 16;
+        drop(chunk);
+
+        // Scan radius 8 around the target chunk for structure starts
+        // whose bounding boxes intersect this chunk's area.
+        for source_x in (target_x - 8)..=(target_x + 8) {
+            for source_z in (target_z - 8)..=(target_z + 8) {
+                let source_holder = cache.get(source_x, source_z);
+                let Some(source_chunk) = source_holder.try_chunk(ChunkStatus::StructureStarts) else {
+                    continue;
+                };
+
+                let starts = source_chunk.structure_starts();
+                for (structure_id, start) in starts.iter() {
+                    if start.pieces.is_empty() {
+                        continue;
+                    }
+
+                    // Compute the overall bounding box of all pieces
+                    let mut bb = start.pieces[0].bounding_box;
+                    for piece in &start.pieces[1..] {
+                        bb = steel_utils::BoundingBox::new(
+                            bb.min_x.min(piece.bounding_box.min_x),
+                            bb.min_y.min(piece.bounding_box.min_y),
+                            bb.min_z.min(piece.bounding_box.min_z),
+                            bb.max_x.max(piece.bounding_box.max_x),
+                            bb.max_y.max(piece.bounding_box.max_y),
+                            bb.max_z.max(piece.bounding_box.max_z),
+                        );
+                    }
+
+                    // Check if the structure's bounding box intersects this chunk's area
+                    if bb.intersects_xz(
+                        target_block_x,
+                        target_block_z,
+                        target_block_x + 15,
+                        target_block_z + 15,
+                    ) {
+                        let target_chunk = holder
+                            .try_chunk(ChunkStatus::StructureStarts)
+                            .expect("Chunk not found");
+                        target_chunk
+                            .structure_references_mut()
+                            .entry(structure_id.clone())
+                            .or_default()
+                            .push(steel_utils::ChunkPos::new(source_x, source_z));
+
+                        // Increment the reference count on the source start
+                        drop(target_chunk);
+                        // Note: reference count updates on the source chunk's start
+                        // are handled during serialization, not here.
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

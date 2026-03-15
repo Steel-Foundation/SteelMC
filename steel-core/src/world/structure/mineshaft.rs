@@ -57,10 +57,15 @@ impl Pieces {
     }
 }
 
-/// Generates mineshaft pieces and returns the biome check position.
-///
-/// Returns `(block_x, block_y, block_z)` — the position where vanilla checks
-/// the biome for this mineshaft.
+/// Result of mineshaft generation.
+pub struct MineshaftResult {
+    /// Biome check position `(block_x, block_y, block_z)`.
+    pub biome_check_pos: (i32, i32, i32),
+    /// Bounding boxes of all generated pieces, offset to final Y position.
+    pub piece_bbs: Vec<BoundingBox>,
+}
+
+/// Generates mineshaft pieces and returns the biome check position + piece data.
 pub fn find_generation_point(
     rng: &mut LegacyRandom,
     chunk_x: i32,
@@ -69,7 +74,7 @@ pub fn find_generation_point(
     sea_level: i32,
     min_y: i32,
     get_surface_height: &mut dyn FnMut(i32, i32) -> i32,
-) -> (i32, i32, i32) {
+) -> MineshaftResult {
     // Vanilla: context.random().nextDouble() — consumed but unused
     rng.next_f64();
 
@@ -120,7 +125,18 @@ pub fn find_generation_point(
         y1_pos - overall.max_y
     };
 
-    (middle_x, 50 + y_offset, min_z)
+    // Offset all piece bounding boxes by y_offset
+    let piece_bbs = pieces.bbs.iter().map(|bb| {
+        BoundingBox::new(
+            bb.min_x, bb.min_y + y_offset, bb.min_z,
+            bb.max_x, bb.max_y + y_offset, bb.max_z,
+        )
+    }).collect();
+
+    MineshaftResult {
+        biome_check_pos: (middle_x, 50 + y_offset, min_z),
+        piece_bbs,
+    }
 }
 
 fn create_room_bb(rng: &mut LegacyRandom, west: i32, north: i32) -> BoundingBox {
