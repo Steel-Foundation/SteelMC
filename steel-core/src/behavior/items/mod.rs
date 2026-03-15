@@ -7,6 +7,7 @@ mod block_item;
 mod bucket;
 mod default;
 mod ender_eye;
+mod hoe;
 mod shovel;
 mod sign_item;
 mod standing_and_wall_block_item;
