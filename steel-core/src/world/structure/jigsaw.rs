@@ -300,9 +300,17 @@ fn check_collision(
     false // no collision
 }
 
+/// Result of a successful jigsaw assembly.
+pub struct AssemblyResult {
+    /// The placed pieces.
+    pub pieces: Vec<PlacedPiece>,
+    /// The biome check position (centerX, centerY, centerZ from the GenerationStub).
+    pub biome_check_pos: (i32, i32, i32),
+}
+
 /// Assembles a jigsaw structure from the given configuration.
 ///
-/// Returns the list of placed pieces, or `None` if assembly fails
+/// Returns the assembly result, or `None` if assembly fails
 /// (empty start pool, dimension padding violation, etc.).
 pub fn assemble(
     config: &JigsawConfig,
@@ -315,7 +323,7 @@ pub fn assemble(
     get_height: &mut dyn FnMut(i32, i32) -> i32,
     min_y: i32,
     max_y: i32,
-) -> Option<Vec<PlacedPiece>> {
+) -> Option<AssemblyResult> {
     // Sample start height
     let start_y = match &config.start_height {
         StartHeight::Constant(y) => *y,
@@ -405,8 +413,14 @@ pub fn assemble(
         junctions: Vec::new(),
     }];
 
+    // Compute biome check position (vanilla's GenerationStub position)
+    let center_stub_x = (center_bb.min_x + center_bb.max_x) / 2;
+    let center_stub_z = (center_bb.min_z + center_bb.max_z) / 2;
+    let center_stub_y = bottom_y + anchor_offset_y;
+    let biome_check_pos = (center_stub_x, center_stub_y, center_stub_z);
+
     if config.max_depth <= 0 {
-        return Some(pieces);
+        return Some(AssemblyResult { pieces, biome_check_pos });
     }
 
     // Create constraint bounding box
@@ -461,7 +475,7 @@ pub fn assemble(
         );
     }
 
-    Some(pieces)
+    Some(AssemblyResult { pieces, biome_check_pos })
 }
 
 /// Tries to place children for a source piece.

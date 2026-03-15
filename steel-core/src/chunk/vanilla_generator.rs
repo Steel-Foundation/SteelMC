@@ -280,7 +280,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
         // Collect selected structures first (while can_generate borrows height_cache),
         // then run jigsaw assembly afterward (which also needs height_cache).
-        let mut selected_entries: Vec<(Identifier, String, Option<steel_registry::structure_set::JigsawConfig>)> = Vec::new();
+        let mut selected_entries: Vec<(Identifier, String, Option<steel_registry::structure_set::JigsawConfig>, Vec<Identifier>)> = Vec::new();
 
         // Checks if findGenerationPoint would succeed and if the biome at the
         // generation point matches. Returns false if the structure type rejects
@@ -558,12 +558,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 selected.structure.clone(),
                 selected.structure_type.clone(),
                 selected.jigsaw_config.clone(),
+                selected.allowed_biomes.clone(),
             ));
         }
 
         // can_generate is dropped here, releasing the height_cache borrow.
         // Now process the selected entries — run jigsaw assembly for jigsaw structures.
-        for (structure_id, structure_type, jigsaw_config) in selected_entries {
+        for (structure_id, structure_type, jigsaw_config, allowed_biomes) in selected_entries {
             let pieces = if structure_type == "minecraft:jigsaw" {
                 if let Some(ref jigsaw_config) = jigsaw_config {
                     let mut jigsaw_rng = LegacyRandom::from_seed(0);
@@ -595,8 +596,15 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     );
 
                     match result {
-                        Some(placed_pieces) if !placed_pieces.is_empty() => {
-                            placed_pieces
+                        Some(assembly) if !assembly.pieces.is_empty() => {
+                            // Biome check at the stub position (vanilla checks AFTER assembly)
+                            let (bx, by, bz) = assembly.biome_check_pos;
+                            let biome = sampler.sample(bx >> 2, by >> 2, bz >> 2);
+                            if !allowed_biomes.contains(&biome.key) {
+                                continue; // Biome mismatch at stub position
+                            }
+
+                            assembly.pieces
                                 .into_iter()
                                 .map(|pp| StructurePiece {
                                     piece_type: Identifier::new_static("minecraft", "jigsaw"),

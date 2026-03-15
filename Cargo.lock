@@ -2924,6 +2924,7 @@ dependencies = [
 name = "steel-registry"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "heck",
  "log",
  "proc-macro2",
