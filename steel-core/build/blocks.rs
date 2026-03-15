@@ -281,7 +281,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let output = quote! {
         //! Generated block behavior assignments.
 
-        use steel_registry::{sound_events,vanilla_fluids, vanilla_blocks };
+        use steel_registry::{sound_events, vanilla_fluids, vanilla_blocks};
         use crate::behavior::BlockBehaviorRegistry;
         use crate::behavior::blocks::{#(#block_imports),*};
 
