@@ -10,6 +10,7 @@ pub mod jigsaw;
 pub mod mineshaft;
 pub mod placement;
 pub mod ruined_portal;
+pub mod stronghold;
 
 use rustc_hash::FxHashMap;
 

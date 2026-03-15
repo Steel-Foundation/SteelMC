@@ -912,8 +912,20 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 junctions: Vec::new(),
                             }).collect()
                         }
-                        // TODO: Implement piece generation for remaining structure types:
-                        // ocean_monument, stronghold
+                        "minecraft:stronghold" => {
+                            use crate::world::structure::stronghold;
+                            let piece_bbs = stronghold::generate_pieces(self.seed, chunk_x, chunk_z);
+                            piece_bbs.into_iter().map(|bb| StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "stronghold"),
+                                bounding_box: bb,
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            }).collect()
+                        }
+                        // TODO: ocean_monument
                         _ => vec![],
                     };
 

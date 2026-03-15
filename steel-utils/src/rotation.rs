@@ -95,6 +95,40 @@ impl Rotation {
         }
     }
 
+    /// Transforms a position with mirror (FRONT_BACK) then rotation around a pivot.
+    ///
+    /// Matches vanilla's `StructureTemplate.transform(pos, Mirror.FRONT_BACK, rotation, pivot)`.
+    #[must_use]
+    pub const fn transform_pos_mirrored(
+        self, x: i32, y: i32, z: i32, pivot_x: i32, pivot_z: i32, mirror_front_back: bool,
+    ) -> (i32, i32, i32) {
+        let mx = if mirror_front_back { -x } else { x };
+        self.transform_pos(mx, y, z, pivot_x, pivot_z)
+    }
+
+    /// Computes the bounding box with mirror + rotation + pivot.
+    ///
+    /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror, size)`.
+    #[must_use]
+    pub fn get_bounding_box_full(
+        self, pos_x: i32, pos_y: i32, pos_z: i32,
+        size_x: i32, size_y: i32, size_z: i32,
+        pivot_x: i32, pivot_z: i32,
+        mirror_front_back: bool,
+    ) -> BoundingBox {
+        let dx = size_x - 1;
+        let dy = size_y - 1;
+        let dz = size_z - 1;
+
+        let (c1x, c1y, c1z) = self.transform_pos_mirrored(0, 0, 0, pivot_x, pivot_z, mirror_front_back);
+        let (c2x, c2y, c2z) = self.transform_pos_mirrored(dx, dy, dz, pivot_x, pivot_z, mirror_front_back);
+
+        BoundingBox::new(
+            c1x.min(c2x) + pos_x, c1y.min(c2y) + pos_y, c1z.min(c2z) + pos_z,
+            c1x.max(c2x) + pos_x, c1y.max(c2y) + pos_y, c1z.max(c2z) + pos_z,
+        )
+    }
+
     /// Computes the bounding box for a structure template placed at `position`
     /// with this rotation and a custom pivot point.
     ///

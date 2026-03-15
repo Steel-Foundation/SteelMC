@@ -78,29 +78,6 @@ fn get_setups(structure_path: &str) -> Vec<Setup> {
     }
 }
 
-/// Applies vanilla's `StructureTemplate.transform` for a position relative to a pivot.
-///
-/// `rotation`: 0=NONE, 1=CW_90, 2=CW_180, 3=CCW_90.
-/// `mirror_front_back`: true for FRONT_BACK mirror.
-fn transform(x: i32, z: i32, pivot_x: i32, pivot_z: i32, rotation: i32, mirror_front_back: bool) -> (i32, i32) {
-    let mut dx = x - pivot_x;
-    let dz = z - pivot_z;
-
-    // Mirror FRONT_BACK flips X
-    if mirror_front_back {
-        dx = -dx;
-    }
-
-    let (rx, rz) = match rotation {
-        0 => (dx, dz),
-        1 => (-dz, dx),  // CW_90
-        2 => (-dx, -dz), // CW_180
-        3 => (dz, -dx),  // CCW_90
-        _ => (dx, dz),
-    };
-
-    (rx + pivot_x, rz + pivot_z)
-}
 
 /// Terrain query operations needed by the ruined portal generation.
 pub enum TerrainQuery {
@@ -181,21 +158,22 @@ pub fn find_generation_point(
     };
 
     // Rotation: Util.getRandom(Rotation.values(), random) = nextInt(4)
-    let rotation = rng.next_i32_bounded(4);
+    let rotation = Rotation::get_random(rng);
 
     // Mirror: nextFloat() < 0.5 → FRONT_BACK, else NONE
     let mirror_front_back = rng.next_f32() < 0.5;
 
-    // Compute bounding box via transform of (size-1) around pivot
+    // Compute bounding box via transform with pivot, mirror, and rotation
+    // Matches vanilla's template.getBoundingBox(basePosition, rotation, pivot, mirror)
     let pivot_x = sx / 2;
     let pivot_z = sz / 2;
-    let (tx, tz) = transform(sx - 1, sz - 1, pivot_x, pivot_z, rotation, mirror_front_back);
-
-    // BB corners: base and base+transformed
-    let bb_min_x = base_x.min(base_x + tx);
-    let bb_max_x = base_x.max(base_x + tx);
-    let bb_min_z = base_z.min(base_z + tz);
-    let bb_max_z = base_z.max(base_z + tz);
+    let bb = rotation.get_bounding_box_full(
+        base_x, 0, base_z, sx, sy, sz, pivot_x, pivot_z, mirror_front_back,
+    );
+    let bb_min_x = bb.min_x;
+    let bb_max_x = bb.max_x;
+    let bb_min_z = bb.min_z;
+    let bb_max_z = bb.max_z;
     let bb_center_x = (bb_min_x + bb_max_x) / 2;
     let bb_center_z = (bb_min_z + bb_max_z) / 2;
 
@@ -266,12 +244,10 @@ pub fn find_generation_point(
         projected_y -= 1;
     }
 
-    // Vanilla's piece BB: template at (base_x, projected_y, base_z) with rotation.
-    // The XZ extent was already computed above (bb_min_x..bb_max_x, bb_min_z..bb_max_z).
-    // Y range: projected_y to projected_y + template_height - 1.
-    let piece_bb = BoundingBox::new(
-        bb_min_x, projected_y, bb_min_z,
-        bb_max_x, projected_y + sy - 1, bb_max_z,
+    // Vanilla's piece BB: template.getBoundingBox(placeSettings, templatePosition)
+    // where templatePosition = (base_x, projected_y, base_z).
+    let piece_bb = rotation.get_bounding_box_full(
+        base_x, projected_y, base_z, sx, sy, sz, pivot_x, pivot_z, mirror_front_back,
     );
 
     PortalResult {
