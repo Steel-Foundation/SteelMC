@@ -199,8 +199,8 @@ pub mod vanilla_damage_types;
 
 #[allow(warnings)]
 #[rustfmt::skip]
-#[path = "generated/vanilla_damage_types_tags.rs"]
-pub mod vanilla_damage_types_tags;
+#[path = "generated/vanilla_damage_type_tags.rs"]
+pub mod vanilla_damage_type_tags;
 
 #[allow(warnings)]
 #[rustfmt::skip]
@@ -695,7 +695,7 @@ impl Registry {
         );
         vanilla_dimension_types::register_dimension_types(&mut registry.dimension_types);
         vanilla_damage_types::register_damage_types(&mut registry.damage_types);
-        vanilla_damage_types_tags::register_damage_types_tags(&mut registry.damage_types);
+        vanilla_damage_type_tags::register_damage_type_tags(&mut registry.damage_types);
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
         vanilla_banner_pattern_tags::register_banner_pattern_tags(&mut registry.banner_patterns);
         vanilla_jukebox_songs::register_jukebox_songs(&mut registry.jukebox_songs);
