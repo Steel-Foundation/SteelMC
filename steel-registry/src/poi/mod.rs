@@ -4,7 +4,6 @@
 //! so game systems can efficiently query for nearby points of interest
 //! without scanning every block.
 
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
 
@@ -69,22 +68,8 @@ impl PoiTypeRegistry {
     }
 
     #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<PoiTypeRef> {
-        self.types_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, poi_type: PoiTypeRef) -> Option<&usize> {
-        self.types_by_key.get(&poi_type.key)
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<PoiTypeRef> {
-        self.types_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
-    #[must_use]
     pub fn type_for_state(&self, state_id: BlockStateId) -> Option<PoiTypeRef> {
+        use crate::RegistryExt;
         self.state_to_type
             .get(&state_id)
             .and_then(|id| self.by_id(*id))
@@ -106,86 +91,13 @@ impl PoiTypeRegistry {
             .enumerate()
             .map(|(id, &poi_type)| (id, poi_type))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.types_by_id.is_empty()
-    }
-
-    pub fn register_tag(&mut self, tag: Identifier, poi_keys: &[&'static str]) {
-        assert!(
-            self.allows_registering,
-            "Cannot register tags after registry has been frozen"
-        );
-
-        let identifiers: Vec<Identifier> = poi_keys
-            .iter()
-            .filter_map(|key| {
-                let ident = steel_utils::registry::registry_vanilla_or_custom_tag(key);
-                self.by_key(&ident).map(|_| ident)
-            })
-            .collect();
-
-        self.tags.insert(tag, identifiers);
-    }
-
-    #[must_use]
-    pub fn is_in_tag(&self, poi_type: PoiTypeRef, tag: &Identifier) -> bool {
-        self.tags
-            .get(tag)
-            .is_some_and(|types| types.contains(&poi_type.key))
-    }
-
-    pub fn modify_tag(
-        &mut self,
-        tag: &Identifier,
-        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
-    ) {
-        let existing = self.tags.remove(tag).unwrap_or_default();
-        let types = f(existing)
-            .into_iter()
-            .filter(|key| {
-                let exists = self.types_by_key.contains_key(key);
-                if !exists {
-                    tracing::error!(
-                        "POI type {key} not found in registry, skipping from tag {tag}"
-                    );
-                }
-                exists
-            })
-            .collect();
-        self.tags.insert(tag.clone(), types);
-    }
-
-    #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<PoiTypeRef>> {
-        self.tags.get(tag).map(|idents| {
-            idents
-                .iter()
-                .filter_map(|ident| self.by_key(ident))
-                .collect()
-        })
-    }
-
-    pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = PoiTypeRef> + '_ {
-        self.tags
-            .get(tag)
-            .into_iter()
-            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
-    }
-
-    pub fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_ {
-        self.tags.keys()
-    }
 }
 
-impl RegistryExt for PoiTypeRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(
+    PoiTypeRegistry,
+    PointOfInterestType,
+    types_by_id,
+    types_by_key,
+    poi_types
+);
+crate::impl_tagged_registry!(PoiTypeRegistry, types_by_key, "POI type");

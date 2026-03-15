@@ -153,7 +153,7 @@ impl ChunkHolder {
 
     /// Records a block change at the given position.
     /// Returns `true` if this is the first change (chunk should be added to broadcast list).
-    pub fn block_changed(&self, pos: &BlockPos) -> bool {
+    pub fn block_changed(&self, pos: BlockPos) -> bool {
         let section_index = ((pos.0.y - self.min_y) / 16) as usize;
         if section_index >= self.changed_blocks_per_section.len() {
             return false;

@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
+    TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags, vanilla_blocks,
 };
@@ -7,7 +10,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
+        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
@@ -31,10 +34,10 @@ impl AzaleaBlock {
     }
 }
 
-impl BlockBehaviour for AzaleaBlock {
+impl BlockBehavior for AzaleaBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(&context.relative_pos.below()),
+            context.world.get_block_state(context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
@@ -47,7 +50,7 @@ impl BlockBehaviour for AzaleaBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -56,7 +59,7 @@ impl BlockBehaviour for AzaleaBlock {
         vegetation_update_shape(self, state, world, pos)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 }
@@ -72,9 +75,9 @@ impl Vegetation for AzaleaBlock {
 }
 
 impl Bonemealable for AzaleaBlock {
-    fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         world
-            .get_block_state(&pos.above())
+            .get_block_state(pos.above())
             .get_fluid_state()
             .is_empty()
     }
@@ -83,7 +86,7 @@ impl Bonemealable for AzaleaBlock {
         rand::random_bool(0.45f64)
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, _world: &World, _pos: BlockPos) {
+    fn apply_bonemeal(&self, _state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) {
         // TODO: grow tree
     }
 }

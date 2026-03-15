@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use rand::RngExt;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_shape_full_block},
@@ -17,8 +19,8 @@ use crate::{
 pub struct BonemealBehavior;
 
 impl BonemealBehavior {
-    fn grow(item_stack: &mut ItemStack, world: &World, pos: BlockPos) -> bool {
-        let state = world.get_block_state(&pos);
+    fn grow(item_stack: &mut ItemStack, world: &Arc<World>, pos: BlockPos) -> bool {
+        let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {
             return false;
         };
@@ -37,11 +39,11 @@ impl BonemealBehavior {
 
     fn grow_water_plant(
         item_stack: &mut ItemStack,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _clicked_face: Direction,
     ) -> bool {
-        let state = world.get_block_state(&pos);
+        let state = world.get_block_state(pos);
         if state.get_block() != vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
             return false;
         }
@@ -64,7 +66,7 @@ impl BonemealBehavior {
                     rng.random_range(0i32..3) - 1,
                 );
 
-                if is_shape_full_block(world.get_block_state(&new_pos).get_collision_shape()) {
+                if is_shape_full_block(world.get_block_state(new_pos).get_collision_shape()) {
                     continue 'outer;
                 }
             }
@@ -78,7 +80,7 @@ impl BonemealBehavior {
             };
 
             if behavior.can_survive(new_state, world, new_pos) {
-                let current_state = world.get_block_state(&new_pos);
+                let current_state = world.get_block_state(new_pos);
                 if current_state.get_block() == vanilla_blocks::WATER
                     && current_state.get_fluid_state().amount == 8
                 {
@@ -108,7 +110,7 @@ impl ItemBehavior for BonemealBehavior {
             // TODO: particles
             return InteractionResult::Success;
         }
-        let state = context.world.get_block_state(&context.hit_result.block_pos);
+        let state = context.world.get_block_state(context.hit_result.block_pos);
         let is_clicked_face_sturdy = state.is_face_sturdy(context.hit_result.direction);
         if is_clicked_face_sturdy
             && Self::grow_water_plant(

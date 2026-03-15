@@ -12,5 +12,5 @@ pub use biome_source::{
 };
 pub use climate_sampler::OverworldClimateSampler;
 pub use nether_climate_sampler::NetherClimateSampler;
-pub use steel_registry::density_functions::OverworldColumnCache;
+pub use steel_registry::density_functions::overworld::OverworldColumnCache;
 pub use steel_utils::noise::EndIslands;

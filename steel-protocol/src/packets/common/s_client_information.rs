@@ -29,7 +29,7 @@ pub struct SClientInformation {
     pub chat_visibility: ChatVisibility,
     pub chat_colors: bool,
     #[read(as = VarInt)]
-    pub model_customisation: i32,
+    pub model_customization: i32,
     pub main_hand: HumanoidArm,
     pub text_filtering_enabled: bool,
     pub allows_listing: bool,

@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, Half},
@@ -9,7 +11,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, Direction, math::Axis};
 
 use crate::{
-    behavior::{BlockBehaviour, blocks::vegetation::crop_block::CropLike},
+    behavior::{BlockBehavior, blocks::vegetation::crop_block::CropLike},
     world::World,
 };
 
@@ -31,18 +33,18 @@ pub fn vegetation_can_survive<H: Vegetation>(
     world: &World,
     pos: BlockPos,
 ) -> bool {
-    let state_below = world.get_block_state(&pos.below());
+    let state_below = world.get_block_state(pos.below());
     hooks.may_place_on(state_below, world, pos.below())
 }
 
 /// Shared update-shape logic for vegetation.
 ///
-/// Important: this calls the final `BlockBehaviour::can_survive`,
+/// Important: this calls the final `BlockBehavior::can_survive`,
 /// not `vegetation_can_survive`, so leaf blocks can override survival.
-pub fn vegetation_update_shape<B: BlockBehaviour>(
+pub fn vegetation_update_shape<B: BlockBehavior>(
     block: &B,
     state: BlockStateId,
-    world: &World,
+    world: &Arc<World>,
     pos: BlockPos,
 ) -> BlockStateId {
     if block.can_survive(state, world, pos) {
@@ -60,7 +62,7 @@ pub fn double_plant_can_survive<H: Vegetation>(
     pos: BlockPos,
 ) -> bool {
     if state.get_value(&BlockStateProperties::HALF) == Half::Top {
-        let state_below = world.get_block_state(&pos.below());
+        let state_below = world.get_block_state(pos.below());
         state_below.get_block() == state.get_block()
             && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
     } else {
@@ -71,10 +73,10 @@ pub fn double_plant_can_survive<H: Vegetation>(
 /// Shared update-shape logic for double plants.
 ///
 /// This mirrors the Java superclass logic, but explicitly.
-pub fn double_plant_update_shape<B: BlockBehaviour>(
+pub fn double_plant_update_shape<B: BlockBehavior>(
     block: &B,
     state: BlockStateId,
-    world: &World,
+    world: &Arc<World>,
     pos: BlockPos,
     direction: Direction,
     neighbor_state: BlockStateId,

@@ -3,6 +3,8 @@
 //! This module handles server-side movement simulation and anti-cheat checks.
 //! It implements collision detection and physics similar to vanilla Minecraft.
 
+use std::sync::Arc;
+
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::vanilla_entities;
@@ -110,7 +112,7 @@ pub struct MoveResult {
 /// A `MoveResult` containing the resolved movement and collision info.
 #[must_use]
 pub fn simulate_move(
-    world: &World,
+    world: &Arc<World>,
     start_pos: Vector3<f64>,
     delta: Vector3<f64>,
     is_crouching: bool,
@@ -142,7 +144,7 @@ pub fn simulate_move(
 ///
 /// Used to allow movement when already stuck in blocks.
 #[must_use]
-pub fn is_in_collision(world: &World, pos: Vector3<f64>) -> bool {
+pub fn is_in_collision(world: &Arc<World>, pos: Vector3<f64>) -> bool {
     let aabb = make_player_aabb_deflated(pos);
 
     let min_x = aabb.min_x.floor() as i32;
@@ -156,7 +158,7 @@ pub fn is_in_collision(world: &World, pos: Vector3<f64>) -> bool {
         for by in min_y..max_y {
             for bz in min_z..max_z {
                 let block_pos = BlockPos::new(bx, by, bz);
-                let block_state = world.get_block_state(&block_pos);
+                let block_state = world.get_block_state(block_pos);
                 let collision_shape = block_state.get_collision_shape();
 
                 for block_aabb in collision_shape {
@@ -183,7 +185,7 @@ pub fn is_in_collision(world: &World, pos: Vector3<f64>) -> bool {
 /// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
 #[must_use]
 pub fn is_colliding_with_new_blocks(
-    world: &World,
+    world: &Arc<World>,
     old_pos: Vector3<f64>,
     new_pos: Vector3<f64>,
 ) -> bool {
@@ -262,7 +264,7 @@ pub enum MovementFailure {
 /// This encapsulates the movement validation logic from vanilla's `handleMovePlayer`.
 /// It runs physics simulation and checks for speed hacks, position errors, and collisions.
 #[must_use]
-pub fn validate_movement(world: &World, input: &MovementInput) -> MovementValidation {
+pub fn validate_movement(world: &Arc<World>, input: &MovementInput) -> MovementValidation {
     let target_pos = input.target_pos;
     let first_good = input.first_good_pos;
     let last_good = input.last_good_pos;

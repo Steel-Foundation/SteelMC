@@ -2,8 +2,6 @@ use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::RegistryExt;
-
 /// Represents an armor trim pattern definition from the data packs.
 #[derive(Debug)]
 pub struct TrimPattern {
@@ -55,46 +53,11 @@ impl TrimPatternRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<TrimPatternRef> {
-        self.trim_patterns_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, trim_pattern: TrimPatternRef) -> &usize {
-        self.trim_patterns_by_key
-            .get(&trim_pattern.key)
-            .expect("Trim pattern not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<TrimPatternRef> {
-        self.trim_patterns_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, TrimPatternRef)> + '_ {
         self.trim_patterns_by_id
             .iter()
             .enumerate()
             .map(|(id, &pattern)| (id, pattern))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.trim_patterns_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.trim_patterns_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for TrimPatternRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -103,3 +66,11 @@ impl Default for TrimPatternRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    TrimPatternRegistry,
+    TrimPattern,
+    trim_patterns_by_id,
+    trim_patterns_by_key,
+    trim_patterns
+);

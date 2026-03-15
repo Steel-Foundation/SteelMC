@@ -1,5 +1,7 @@
 //! Bonemeal-related traits and helpers for block behaviors.
 
+use std::sync::Arc;
+
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -9,15 +11,15 @@ use crate::{behavior::blocks::vegetation::crop_block::CropLike, world::World};
 pub trait Bonemealable {
     #[expect(unused_variables)]
     /// Returns the age increase from bonemeal.
-    fn get_age_increase(&self, world: &World) -> u8 {
+    fn get_age_increase(&self, world: &Arc<World>) -> u8 {
         0
     }
 
     /// Returns whether bonemeal can be applied.
-    fn is_bonemealable(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool;
+    fn is_bonemealable(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool;
 
     /// Applies the bonemeal effect.
-    fn apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos);
+    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos);
 
     /// Returns with a random chance whether the bonemeal should by applied or not
     /// use `rand::random_bool(probability_of_success)`
@@ -53,7 +55,7 @@ impl BonemealAction {
 /// Default Bonemeal implementation for all crops
 pub trait CropBonemealExt: CropLike + Bonemealable {
     /// Default `apply_bonemeal` implementation for all crops
-    fn default_apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn default_apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let new_age = self
             .get_age(state)
             .saturating_add(self.get_age_increase(world))

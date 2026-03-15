@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{BambooStalkBlock, bonemealable::Bonemealable},
     },
     world::World,
@@ -36,7 +36,7 @@ impl BambooSaplingBlock {
     }
 
     /// Grows the Bamboo Sapling
-    pub fn grow(world: &World, pos: BlockPos) {
+    pub fn grow(world: &Arc<World>, pos: BlockPos) {
         world.set_block(
             pos.above(),
             vanilla_blocks::BAMBOO
@@ -48,20 +48,20 @@ impl BambooSaplingBlock {
 }
 
 impl Bonemealable for BambooSaplingBlock {
-    fn get_age_increase(&self, _world: &World) -> u8 {
+    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
         1
     }
 
-    fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        world.get_block_state(&pos.above()).is_air()
+    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+        world.get_block_state(pos.above()).is_air()
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         Self::grow(world, pos);
     }
 }
 
-impl BlockBehaviour for BambooSaplingBlock {
+impl BlockBehavior for BambooSaplingBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -69,7 +69,7 @@ impl BlockBehaviour for BambooSaplingBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -91,7 +91,7 @@ impl BlockBehaviour for BambooSaplingBlock {
     }
 
     fn random_tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if rand::random_range(0..3) == 0 && world.get_block_state(&pos.above()).is_air() {
+        if rand::random_range(0..3) == 0 && world.get_block_state(pos.above()).is_air() {
             // TODO: brightness
             Self::grow(world, pos);
         }

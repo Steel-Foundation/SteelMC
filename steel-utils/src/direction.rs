@@ -55,7 +55,7 @@ impl Direction {
 
     /// Returns the block position relative to the given position in this direction.
     #[must_use]
-    pub const fn relative(&self, pos: &BlockPos) -> BlockPos {
+    pub const fn relative(self, pos: BlockPos) -> BlockPos {
         let (dx, dy, dz) = self.offset();
         pos.offset(dx, dy, dz)
     }
@@ -159,7 +159,7 @@ impl Direction {
     }
 
     /// The order in which neighbor shape updates are processed.
-    /// This matches vanilla's `BlockBehaviour.UPDATE_SHAPE_ORDER`.
+    /// This matches vanilla's `BlockBehavior.UPDATE_SHAPE_ORDER`.
     pub const UPDATE_SHAPE_ORDER: [Direction; 6] = [
         Direction::West,
         Direction::East,

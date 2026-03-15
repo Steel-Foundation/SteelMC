@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -13,7 +15,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
+        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
         blocks::vegetation::{
             Vegetation,
             vegetation_block::{double_plant_can_survive, double_plant_update_shape},
@@ -36,13 +38,13 @@ impl TallSeagrassBlock {
     }
 }
 
-impl BlockBehaviour for TallSeagrassBlock {
+impl BlockBehavior for TallSeagrassBlock {
     fn get_state_for_placement(
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         if context.relative_pos.y() < context.world.get_max_y() {
-            let state_above = context.world.get_block_state(&context.relative_pos.above());
+            let state_above = context.world.get_block_state(context.relative_pos.above());
             let fluid_state_above = state_above.get_fluid_state();
             if fluid_state_above.is_water() && fluid_state_above.amount == 8 {
                 return Some(self.block.default_state());
@@ -51,15 +53,15 @@ impl BlockBehaviour for TallSeagrassBlock {
         None
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let half = state.get_value(&BlockStateProperties::HALF);
 
         if half == Half::Top {
-            let state_below = world.get_block_state(&pos.below());
+            let state_below = world.get_block_state(pos.below());
             state_below.get_block() == self.block
                 && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
         } else {
-            let fluid_state = world.get_block_state(&pos).get_fluid_state();
+            let fluid_state = world.get_block_state(pos).get_fluid_state();
 
             double_plant_can_survive(self, state, world, pos)
                 && fluid_state.is_water()
@@ -70,7 +72,7 @@ impl BlockBehaviour for TallSeagrassBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -94,7 +96,7 @@ impl BlockBehaviour for TallSeagrassBlock {
 
     fn place_liquid(
         &self,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         _state: BlockStateId,
         _fluid_state: FluidState,

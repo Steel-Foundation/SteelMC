@@ -10,7 +10,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::{Bonemealable, CropBonemealExt};
 use crate::behavior::blocks::vegetation::vegetation_block::{
@@ -59,7 +59,7 @@ pub trait CropLike {
     /// - Farmland below: +1.0 (dry) or +3.0 (hydrated)
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
-    fn get_growth_speed(&self, world: &World, pos: BlockPos) -> f32 {
+    fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
         let mut speed = 1.0f32;
         let below = pos.below();
 
@@ -67,7 +67,7 @@ pub trait CropLike {
         for dx in -1..=1 {
             for dz in -1..=1 {
                 let check_pos = below.offset(dx, 0, dz);
-                let block_state = world.get_block_state(&check_pos);
+                let block_state = world.get_block_state(check_pos);
                 let mut block_speed = 0.0f32;
 
                 if block_state.get_block() == vanilla_blocks::FARMLAND {
@@ -89,10 +89,10 @@ pub trait CropLike {
         }
 
         // Check for same crop in adjacent positions (reduces growth speed)
-        let north = world.get_block_state(&pos.north());
-        let south = world.get_block_state(&pos.south());
-        let west = world.get_block_state(&pos.west());
-        let east = world.get_block_state(&pos.east());
+        let north = world.get_block_state(pos.north());
+        let south = world.get_block_state(pos.south());
+        let west = world.get_block_state(pos.west());
+        let east = world.get_block_state(pos.east());
 
         let block = self.block();
 
@@ -104,10 +104,10 @@ pub trait CropLike {
             speed /= 2.0;
         } else {
             // Check diagonals
-            let nw = world.get_block_state(&pos.north().west());
-            let ne = world.get_block_state(&pos.north().east());
-            let sw = world.get_block_state(&pos.south().west());
-            let se = world.get_block_state(&pos.south().east());
+            let nw = world.get_block_state(pos.north().west());
+            let ne = world.get_block_state(pos.north().east());
+            let sw = world.get_block_state(pos.south().west());
+            let se = world.get_block_state(pos.south().east());
 
             let has_diagonal = block == nw.get_block()
                 || block == ne.get_block()
@@ -169,23 +169,23 @@ impl CropLike for CropBlock {
 }
 
 impl Bonemealable for CropBlock {
-    fn get_age_increase(&self, _world: &World) -> u8 {
+    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
         rand::random_range(2..=5)
     }
 
-    fn apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.default_apply_bonemeal(state, world, pos);
     }
 
-    fn is_bonemealable(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn is_bonemealable(&self, state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) -> bool {
         !self.is_max_age(state)
     }
 }
 
-impl<T: CropLike + Bonemealable + Send + Sync> BlockBehaviour for T {
+impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(&context.relative_pos.below()),
+            context.world.get_block_state(context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
@@ -195,14 +195,19 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehaviour for T {
         }
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: steel_utils::BlockPos) -> bool {
+    fn can_survive(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: steel_utils::BlockPos,
+    ) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: steel_utils::BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: steel_utils::BlockPos,

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -50,14 +52,14 @@ impl CropLike for CarrotBlock {
 }
 
 impl Bonemealable for CarrotBlock {
-    fn get_age_increase(&self, _world: &World) -> u8 {
+    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
         rand::random_range(2..=5)
     }
-    fn is_bonemealable(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn is_bonemealable(&self, state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) -> bool {
         !self.is_max_age(state)
     }
 
-    fn apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.default_apply_bonemeal(state, world, pos);
     }
 }

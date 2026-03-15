@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -11,7 +13,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
@@ -45,10 +47,10 @@ impl TallGrassBlock {
     }
 }
 
-impl BlockBehaviour for TallGrassBlock {
+impl BlockBehavior for TallGrassBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(&context.relative_pos.below()),
+            context.world.get_block_state(context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
@@ -61,7 +63,7 @@ impl BlockBehaviour for TallGrassBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
@@ -70,7 +72,7 @@ impl BlockBehaviour for TallGrassBlock {
         vegetation_update_shape(self, state, world, pos)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 
@@ -82,12 +84,12 @@ impl BlockBehaviour for TallGrassBlock {
 impl Vegetation for TallGrassBlock {}
 
 impl Bonemealable for TallGrassBlock {
-    fn is_bonemealable(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn is_bonemealable(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         double_plant_can_survive(self, Self::large_variant(state).default_state(), world, pos)
-            && world.get_block_state(&pos.above()).is_air()
+            && world.get_block_state(pos.above()).is_air()
     }
 
-    fn apply_bonemeal(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let base_state = Self::large_variant(state).default_state();
 
         let waterlogged_state = state

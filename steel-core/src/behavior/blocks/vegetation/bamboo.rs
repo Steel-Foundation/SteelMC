@@ -2,7 +2,7 @@ use std::{ops::Not, sync::Arc};
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
+        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
         blocks::vegetation::bonemealable::Bonemealable,
     },
     world::World,
@@ -40,7 +40,7 @@ impl BambooStalkBlock {
     /// Checks if the Block below is in the tag `BAMBOO_PLANTABLE_ON`
     pub fn can_survive(world: &World, pos: BlockPos) -> bool {
         REGISTRY.blocks.is_in_tag(
-            world.get_block_state(&pos.below()).get_block(),
+            world.get_block_state(pos.below()).get_block(),
             &vanilla_block_tags::BAMBOO_PLANTABLE_ON_TAG,
         )
     }
@@ -48,7 +48,7 @@ impl BambooStalkBlock {
     fn stalk_segments_below(world: &World, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
-            && world.get_block_state(&pos.below_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
+            && world.get_block_state(pos.below_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
         {
             height += 1;
         }
@@ -59,7 +59,7 @@ impl BambooStalkBlock {
     fn stalk_segments_above(world: &World, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
-            && world.get_block_state(&pos.above_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
+            && world.get_block_state(pos.above_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
         {
             height += 1;
         }
@@ -67,10 +67,10 @@ impl BambooStalkBlock {
         height
     }
 
-    fn grow(world: &World, pos: BlockPos, state: BlockStateId, height: i32) {
-        let state_below = world.get_block_state(&pos.below());
+    fn grow(world: &Arc<World>, pos: BlockPos, state: BlockStateId, height: i32) {
+        let state_below = world.get_block_state(pos.below());
         let block_below = state_below.get_block();
-        let state_two_below = world.get_block_state(&pos.below_n(2));
+        let state_two_below = world.get_block_state(pos.below_n(2));
         let leaves = if height == 0 {
             BambooLeaves::None
         } else {
@@ -115,29 +115,29 @@ impl BambooStalkBlock {
 }
 
 impl Bonemealable for BambooStalkBlock {
-    fn get_age_increase(&self, _world: &World) -> u8 {
+    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
         1 + rand::random_range(0..2)
     }
 
-    fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let above = Self::stalk_segments_above(world, pos);
         let below = Self::stalk_segments_below(world, pos);
         (above + below + 1 < 16)
             && world
-                .get_block_state(&pos.above_n(above))
+                .get_block_state(pos.above_n(above))
                 .get_value(&BlockStateProperties::STAGE)
                 != 1
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let above = Self::stalk_segments_above(world, pos);
         let below = Self::stalk_segments_below(world, pos);
         let total_height = above + below + 1;
 
         for i in 0..i32::from(self.get_age_increase(world)) {
             let pos_above = pos.above_n(above + i);
-            let state_above = world.get_block_state(&pos_above);
-            let state_two_above = world.get_block_state(&pos_above.above());
+            let state_above = world.get_block_state(pos_above);
+            let state_two_above = world.get_block_state(pos_above.above());
             if total_height + i >= 16
                 || state_above.get_value(&BlockStateProperties::STAGE) == 1
                 || !state_two_above.is_air()
@@ -150,18 +150,18 @@ impl Bonemealable for BambooStalkBlock {
     }
 }
 
-impl BlockBehaviour for BambooStalkBlock {
+impl BlockBehavior for BambooStalkBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if !context
             .world
-            .get_block_state(&context.relative_pos)
+            .get_block_state(context.relative_pos)
             .get_fluid_state()
             .is_empty()
         {
             return None;
         }
 
-        let state_below = context.world.get_block_state(&context.relative_pos.below());
+        let state_below = context.world.get_block_state(context.relative_pos.below());
         let block_below = state_below.get_block();
 
         if !REGISTRY
@@ -183,7 +183,7 @@ impl BlockBehaviour for BambooStalkBlock {
                 state_below.get_value(&BlockStateProperties::AGE_1),
             ))
         } else {
-            let state_above = context.world.get_block_state(&context.clicked_pos.above());
+            let state_above = context.world.get_block_state(context.clicked_pos.above());
             if state_above.get_block() == vanilla_blocks::BAMBOO {
                 Some(
                     vanilla_blocks::BAMBOO
@@ -210,7 +210,7 @@ impl BlockBehaviour for BambooStalkBlock {
         if state.get_value(&BlockStateProperties::STAGE) != 0 {
             return;
         }
-        if rand::random_range(0..3) == 0 && world.get_block_state(&pos.above()).is_air() {
+        if rand::random_range(0..3) == 0 && world.get_block_state(pos.above()).is_air() {
             // TODO: brightness
 
             let height = Self::stalk_segments_below(world, pos);
@@ -223,7 +223,7 @@ impl BlockBehaviour for BambooStalkBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,

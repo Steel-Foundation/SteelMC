@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId};
 /// Trait for fluid behavior implementations.
 /// Conceptual equivalent of Minecraft's `Fluid` class.
 pub trait FluidBehavior: Send + Sync {
-    /// Gets the fluid type for this behaviour.
+    /// Gets the fluid type for this behavior.
     fn fluid_type(&self) -> FluidRef;
 
     /// Checks if this fluid is the same type as another fluid ref.
@@ -24,13 +24,13 @@ pub trait FluidBehavior: Send + Sync {
     }
 
     /// Gets the number of ticks between fluid updates.
-    fn tick_delay(&self, world: &World) -> i32;
+    fn tick_delay(&self, world: &Arc<World>) -> i32;
     /// Gets the amount of fluid level drop per horizontal block.
     /// Takes `world` because some fluids (lava) differ by dimension.
-    fn drop_off(&self, world: &World) -> u8;
+    fn drop_off(&self, world: &Arc<World>) -> u8;
     /// Gets the slope-search distance for horizontal spread.
     /// Takes `world` because some fluids (lava) differ by dimension.
-    fn slope_find_distance(&self, world: &World) -> u8;
+    fn slope_find_distance(&self, world: &Arc<World>) -> u8;
 
     /// Called every tick for fluid blocks.
     fn tick(&self, world: &Arc<World>, pos: BlockPos);
@@ -42,7 +42,7 @@ pub trait FluidBehavior: Send + Sync {
     fn can_be_replaced_with(
         &self,
         fluid_state: FluidState,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         other_fluid: FluidRef,
         direction: Direction,
@@ -60,10 +60,10 @@ pub trait FluidBehavior: Send + Sync {
 
     /// Called at tick time to play ambient animations (sounds, particles).
     #[allow(unused_variables)]
-    fn animate_tick(&self, world: &World, pos: BlockPos, fluid_state: FluidState) {}
+    fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {}
 
     /// Checks if this fluid can convert to a source block at the given position.
-    fn can_convert_to_source(&self, _world: &World) -> bool {
+    fn can_convert_to_source(&self, _world: &Arc<World>) -> bool {
         false
     }
 
@@ -84,14 +84,14 @@ pub trait FluidBehavior: Send + Sync {
     /// Called on random tick for this fluid's block.
     /// Used for lava fire spread.
     #[allow(unused_variables)]
-    fn random_tick(&self, world: &World, pos: BlockPos) {}
+    fn random_tick(&self, world: &Arc<World>, pos: BlockPos) {}
 
     /// Returns the tick delay to use when scheduling a newly-spread block,
     /// taking into account the old and new fluid states.
     #[allow(unused_variables)]
     fn get_spread_delay(
         &self,
-        world: &World,
+        world: &Arc<World>,
         _pos: BlockPos,
         old_state: FluidState,
         new_state: FluidState,
@@ -104,14 +104,14 @@ pub trait FluidBehavior: Send + Sync {
     /// Determines how strongly entities/items are pushed horizontally.
     // TODO: implement flow velocity for entity interactions (pushing, drowning).
     #[allow(unused_variables)]
-    fn get_flow_x(&self, _world: &World, _pos: BlockPos) -> f64 {
+    fn get_flow_x(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
         0.0
     }
 
     /// Returns the z component of the flow velocity at a position (used for entity physics).
     // TODO: implement flow velocity for entity interactions (pushing, drowning).
     #[allow(unused_variables)]
-    fn get_flow_z(&self, _world: &World, _pos: BlockPos) -> f64 {
+    fn get_flow_z(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
         0.0
     }
 }

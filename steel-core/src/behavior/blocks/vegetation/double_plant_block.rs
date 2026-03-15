@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
@@ -8,7 +10,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
             vegetation_block::{double_plant_can_survive, double_plant_update_shape},
@@ -33,12 +35,12 @@ impl DoublePlantBlock {
 
 impl Vegetation for DoublePlantBlock {}
 
-impl BlockBehaviour for DoublePlantBlock {
+impl BlockBehavior for DoublePlantBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context.relative_pos.y() < context.world.get_max_y()
             && context
                 .world
-                .get_block_state(&context.relative_pos.above())
+                .get_block_state(context.relative_pos.above())
                 .is_replaceable()
         {
             Some(self.block.default_state())
@@ -50,7 +52,7 @@ impl BlockBehaviour for DoublePlantBlock {
     fn on_place(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _old_state: BlockStateId,
         _moved_by_piston: bool,
@@ -71,7 +73,7 @@ impl BlockBehaviour for DoublePlantBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -80,7 +82,7 @@ impl BlockBehaviour for DoublePlantBlock {
         double_plant_update_shape(self, state, world, pos, direction, neighbor_state)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         double_plant_can_survive(self, state, world, pos)
     }
 }

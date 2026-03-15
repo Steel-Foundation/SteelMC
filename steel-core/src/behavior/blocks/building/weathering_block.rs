@@ -9,7 +9,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         weathering::{get_weather_state, next_copper_stage},
     },
     world::World,
@@ -67,7 +67,7 @@ impl WeatheringCopper {
     /// Advances the weathering state and replaces the block, with a 5.7% chance.
     ///
     /// Vanilla: [`ChangeOverTimeBlock.changeOverTime`]
-    pub fn change_over_time(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    pub fn change_over_time(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if rand::random::<f32>() >= BASE_CHANCE {
             return;
         }
@@ -88,7 +88,7 @@ impl WeatheringCopper {
     fn get_next_state(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
     ) -> Option<BlockStateId> {
         let own_age = self.weather_state as i32;
@@ -106,7 +106,7 @@ impl WeatheringCopper {
                     }
 
                     let neighbor_pos = BlockPos::new(pos.x() + dx, pos.y() + dy, pos.z() + dz);
-                    let neighbor_state = world.get_block_state(&neighbor_pos);
+                    let neighbor_state = world.get_block_state(neighbor_pos);
                     let neighbor_block = neighbor_state.get_block();
 
                     let Some(neighbor_age) = get_weather_state(neighbor_block) else {
@@ -169,7 +169,7 @@ impl WeatheringCopperFullBlock {
     }
 }
 
-impl BlockBehaviour for WeatheringCopperFullBlock {
+impl BlockBehavior for WeatheringCopperFullBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

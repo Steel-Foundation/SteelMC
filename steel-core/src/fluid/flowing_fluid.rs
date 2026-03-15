@@ -25,7 +25,7 @@ use crate::world::World;
 pub trait FlowingFluid: FluidBehavior {
     /// The base tick logic
     fn base_tick(&self, world: &Arc<World>, pos: BlockPos) {
-        let mut current_fluid = world.get_block_state(&pos).get_fluid_state();
+        let mut current_fluid = world.get_block_state(pos).get_fluid_state();
 
         if current_fluid.is_empty() || !self.is_same(current_fluid.fluid_id) {
             return;
@@ -46,7 +46,7 @@ pub trait FlowingFluid: FluidBehavior {
             } else if new_fluid != current_fluid {
                 let old_fluid = current_fluid;
                 current_fluid = new_fluid;
-                let existing_state = world.get_block_state(&pos);
+                let existing_state = world.get_block_state(pos);
                 let block_state = fluid_state_to_block_with_existing(new_fluid, existing_state);
                 world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL);
 
@@ -70,14 +70,14 @@ pub trait FlowingFluid: FluidBehavior {
         }
 
         let below = pos.below();
-        let below_state = world.get_block_state(&below);
+        let below_state = world.get_block_state(below);
         let below_fluid = below_state.get_fluid_state();
 
         // Vanilla: canMaybePassThrough (source check + canHoldAnyFluid + wall check)
         //          + canBeReplacedWith + canHoldSpecificFluid
-        let can_spread_down = world.is_in_valid_bounds(&below)
+        let can_spread_down = world.is_in_valid_bounds(below)
             && !(self.is_same(below_fluid.fluid_id) && below_fluid.is_source())
-            && can_hold_any_fluid(world, &below)
+            && can_hold_any_fluid(world, below)
             && can_pass_through_wall(world, pos, below, Direction::Down);
 
         if can_spread_down {
@@ -97,7 +97,7 @@ pub trait FlowingFluid: FluidBehavior {
                 if can_replace && can_hold_specific_fluid(below_state, new_below_fluid.fluid_id) {
                     self.spread_to(world, below, new_below_fluid, Direction::Down);
 
-                    if self.source_neighbor_count(world, &pos) >= 3 {
+                    if self.source_neighbor_count(world, pos) >= 3 {
                         self.spread_to_sides(world, pos, fluid_state);
                     }
                     return;
@@ -105,7 +105,7 @@ pub trait FlowingFluid: FluidBehavior {
             }
         }
 
-        if fluid_state.is_source() || !is_hole(world, &pos, self.fluid_type()) {
+        if fluid_state.is_source() || !is_hole(world, pos, self.fluid_type()) {
             self.spread_to_sides(world, pos, fluid_state);
         }
     }
@@ -116,7 +116,7 @@ pub trait FlowingFluid: FluidBehavior {
     /// Note: vanilla's spreadTo does NOT schedule ticks — that's handled by
     /// LiquidBlockContainer.placeLiquid or the new block's onPlace callback.
     fn base_spread_to(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
-        let target_state = world.get_block_state(&pos);
+        let target_state = world.get_block_state(pos);
 
         if target_state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
@@ -152,11 +152,11 @@ pub trait FlowingFluid: FluidBehavior {
     }
 
     /// Returns the number of fluid sources in the 4-directional neighborhood of the given position.
-    fn source_neighbor_count(&self, world: &World, pos: &BlockPos) -> u8 {
+    fn source_neighbor_count(&self, world: &Arc<World>, pos: BlockPos) -> u8 {
         let mut count = 0u8;
         for dir in Direction::HORIZONTAL {
             let neighbor = dir.relative(pos);
-            let f = world.get_block_state(&neighbor).get_fluid_state();
+            let f = world.get_block_state(neighbor).get_fluid_state();
             if self.is_same(f.fluid_id) && f.is_source() {
                 count += 1;
             }
@@ -188,7 +188,7 @@ pub trait FlowingFluid: FluidBehavior {
         );
 
         for (direction, new_fluid) in spreads {
-            let target: BlockPos = direction.relative(&pos);
+            let target: BlockPos = direction.relative(pos);
             self.spread_to(world, target, new_fluid, direction);
         }
     }

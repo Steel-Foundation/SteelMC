@@ -17,6 +17,6 @@ pub use bonemeal::BonemealBehavior;
 pub use bucket::{EmptyBucketBehavior, FilledBucketBehavior};
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeBehavior;
-pub use shovel::ShovelBehaviour;
+pub use shovel::ShovelBehavior;
 pub use sign_item::{HangingSignItemBehavior, SignItemBehavior};
 pub use standing_and_wall_block_item::StandingAndWallBlockItem;

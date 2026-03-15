@@ -3,7 +3,9 @@
 use std::sync::{Arc, Weak};
 
 use enum_dispatch::enum_dispatch;
-use steel_registry::density_functions::{OverworldNoises, end::EndNoises, nether::NetherNoises};
+use steel_registry::density_functions::{
+    end::EndNoises, nether::NetherNoises, overworld::OverworldNoises,
+};
 
 use crate::chunk::{
     chunk_access::ChunkAccess, chunk_generator::ChunkGenerator,

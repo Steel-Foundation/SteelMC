@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
@@ -40,10 +40,10 @@ impl NetherWartBlock {
     }
 }
 
-impl BlockBehaviour for NetherWartBlock {
+impl BlockBehavior for NetherWartBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(&context.relative_pos.below()),
+            context.world.get_block_state(context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
@@ -56,7 +56,7 @@ impl BlockBehaviour for NetherWartBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
@@ -65,7 +65,7 @@ impl BlockBehaviour for NetherWartBlock {
         vegetation_update_shape(self, state, world, pos)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 

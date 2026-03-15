@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
@@ -27,13 +29,13 @@ impl FlowerBlock {
     }
 }
 
-impl BlockBehaviour for FlowerBlock {
+impl BlockBehavior for FlowerBlock {
     fn get_state_for_placement(
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(&context.relative_pos.below()),
+            context.world.get_block_state(context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
@@ -43,14 +45,14 @@ impl BlockBehaviour for FlowerBlock {
         }
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,

@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags::{self},
     vanilla_blocks,
@@ -9,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
@@ -32,10 +34,10 @@ impl NetherSproutsBlock {
     }
 }
 
-impl BlockBehaviour for NetherSproutsBlock {
+impl BlockBehavior for NetherSproutsBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(&context.relative_pos.below()),
+            context.world.get_block_state(context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
@@ -48,7 +50,7 @@ impl BlockBehaviour for NetherSproutsBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
@@ -57,7 +59,7 @@ impl BlockBehaviour for NetherSproutsBlock {
         vegetation_update_shape(self, state, world, pos)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 }

@@ -105,22 +105,22 @@ impl ItemBehavior for FilledBucketBehavior {
         };
 
         // If the block is out of bounds, return fail
-        if !context.world.is_in_valid_bounds(&clicked_pos) {
+        if !context.world.is_in_valid_bounds(clicked_pos) {
             return InteractionResult::Fail;
         }
 
-        let clicked_state = context.world.get_block_state(&clicked_pos);
+        let clicked_state = context.world.get_block_state(clicked_pos);
         let is_sneaking = context.player.is_crouching();
 
         // Define fluid placement logic as a closure to reuse for primary/secondary targets.
         // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:
         // recursive emptyContents passes hitResult=null for fallback, bypassing sneak check).
         let mut try_place_fluid = |pos: BlockPos, check_sneak: bool| -> Option<InteractionResult> {
-            if !context.world.is_in_valid_bounds(&pos) {
+            if !context.world.is_in_valid_bounds(pos) {
                 return None;
             }
 
-            let state = context.world.get_block_state(&pos);
+            let state = context.world.get_block_state(pos);
             let fluid_state = state.get_fluid_state();
 
             // TODO: Nether water evaporation (vanilla uses EnvironmentAttributes.WATER_EVAPORATES)
@@ -220,7 +220,7 @@ impl ItemBehavior for FilledBucketBehavior {
         let primary_pos = if is_water_bucket && clicked_is_waterloggable {
             clicked_pos
         } else {
-            direction.relative(&clicked_pos)
+            direction.relative(clicked_pos)
         };
 
         // Attempt Primary (with sneak check)
@@ -231,7 +231,7 @@ impl ItemBehavior for FilledBucketBehavior {
         // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null).
         // Vanilla's emptyContents always recurses with hitResult=null at the offset position
         // when the primary attempt fails, regardless of bucket type.
-        let secondary_pos = direction.relative(&clicked_pos);
+        let secondary_pos = direction.relative(clicked_pos);
         if let Some(result) = try_place_fluid(secondary_pos, false) {
             return result;
         }
@@ -289,7 +289,7 @@ impl ItemBehavior for EmptyBucketBehavior {
             return InteractionResult::Pass;
         };
 
-        let hit_state = context.world.get_block_state(&hit_pos);
+        let hit_state = context.world.get_block_state(hit_pos);
         let block_behavior = BLOCK_BEHAVIORS.get_behavior(hit_state.get_block());
 
         if let Some(result) =

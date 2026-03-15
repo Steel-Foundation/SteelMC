@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -12,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext, BlockStateBehaviorExt,
+        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
         blocks::vegetation::{
             Vegetation, bonemealable::Bonemealable, vegetation_block::vegetation_update_shape,
         },
@@ -34,14 +36,14 @@ impl SeagrassBlock {
     }
 }
 
-impl BlockBehaviour for SeagrassBlock {
+impl BlockBehavior for SeagrassBlock {
     fn get_state_for_placement(
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         let fluid_state = context
             .world
-            .get_block_state(&context.relative_pos)
+            .get_block_state(context.relative_pos)
             .get_fluid_state();
         if fluid_state.is_water() && fluid_state.amount == 8 {
             return Some(self.block.default_state());
@@ -53,7 +55,7 @@ impl BlockBehaviour for SeagrassBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -70,8 +72,8 @@ impl BlockBehaviour for SeagrassBlock {
         new_state
     }
 
-    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        let state_below = world.get_block_state(&pos.below());
+    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+        let state_below = world.get_block_state(pos.below());
         self.may_place_on(state_below, world, pos.below())
     }
 
@@ -81,7 +83,7 @@ impl BlockBehaviour for SeagrassBlock {
 
     fn place_liquid(
         &self,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         _state: BlockStateId,
         _fluid_state: FluidState,
@@ -99,11 +101,11 @@ impl BlockBehaviour for SeagrassBlock {
 }
 
 impl Bonemealable for SeagrassBlock {
-    fn is_bonemealable(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
-        world.get_block_state(&pos.above()).get_block() == vanilla_blocks::WATER
+    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+        world.get_block_state(pos.above()).get_block() == vanilla_blocks::WATER
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &World, pos: BlockPos) {
+    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let lower_state = vanilla_blocks::TALL_SEAGRASS.default_state();
         let upper_state = lower_state.set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,

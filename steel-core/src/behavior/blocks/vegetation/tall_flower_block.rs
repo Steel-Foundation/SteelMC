@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
@@ -8,7 +10,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
@@ -34,12 +36,12 @@ impl TallFlowerBlock {
 
 impl Vegetation for TallFlowerBlock {}
 
-impl BlockBehaviour for TallFlowerBlock {
+impl BlockBehavior for TallFlowerBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context.relative_pos.y() < context.world.get_max_y()
             && context
                 .world
-                .get_block_state(&context.relative_pos.above())
+                .get_block_state(context.relative_pos.above())
                 .is_replaceable()
         {
             Some(self.block.default_state())
@@ -51,7 +53,7 @@ impl BlockBehaviour for TallFlowerBlock {
     fn on_place(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _old_state: BlockStateId,
         _moved_by_piston: bool,
@@ -72,7 +74,7 @@ impl BlockBehaviour for TallFlowerBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -81,17 +83,17 @@ impl BlockBehaviour for TallFlowerBlock {
         double_plant_update_shape(self, state, world, pos, direction, neighbor_state)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         double_plant_can_survive(self, state, world, pos)
     }
 }
 
 impl Bonemealable for TallFlowerBlock {
-    fn is_bonemealable(&self, _state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn is_bonemealable(&self, _state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) -> bool {
         true
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, _world: &World, _pos: BlockPos) {
+    fn apply_bonemeal(&self, _state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) {
         // FIXME: pop_resource only works on a &Arc<World>
     }
 }
