@@ -904,6 +904,7 @@ impl ChunkStorage {
                     chunk_pos: ChunkPos::new(ps.chunk_x, ps.chunk_z),
                     references: ps.references,
                     pieces,
+                    bb_inflate: 0,
                 };
                 (ps.structure.clone(), start)
             })

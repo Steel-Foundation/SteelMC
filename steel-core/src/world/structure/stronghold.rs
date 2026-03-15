@@ -40,6 +40,26 @@ fn is_ok(bb: &BoundingBox) -> bool { bb.min_y > LOWEST_Y }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PT { Straight, Prison, LeftTurn, RightTurn, RoomCrossing, StraightStairs, StairsDown, FiveCrossing, ChestCorridor, Library, Portal, Filler }
 
+impl PT {
+    fn vanilla_id(self, depth: i32) -> &'static str {
+        match self {
+            PT::StairsDown if depth == 0 => "shstart",
+            PT::StairsDown => "shsd",
+            PT::FiveCrossing => "sh5c",
+            PT::Straight => "shs",
+            PT::LeftTurn => "shlt",
+            PT::RightTurn => "shrt",
+            PT::RoomCrossing => "shrc",
+            PT::StraightStairs => "shssd",
+            PT::ChestCorridor => "shcc",
+            PT::Prison => "shph",
+            PT::Library => "shli",
+            PT::Portal => "shpr",
+            PT::Filler => "shfc",
+        }
+    }
+}
+
 struct PieceWeight { pt: PT, weight: i32, max: i32, count: i32, min_depth: i32 }
 impl PieceWeight {
     fn can(&self, depth: i32) -> bool { (self.max == 0 || self.count < self.max) && depth >= self.min_depth }
@@ -159,14 +179,15 @@ fn create_piece(pt: PT, bb: BoundingBox, dir: Direction, depth: i32, rng: &mut L
     match pt {
         PT::Straight => {
             rng.next_i32_bounded(5); // randomSmallDoor
+            // Vanilla uses nextInt(2) == 0 here, NOT nextBoolean()
             p.left_child = rng.next_i32_bounded(2) == 0;
             p.right_child = rng.next_i32_bounded(2) == 0;
         }
         PT::FiveCrossing => {
             rng.next_i32_bounded(5); // randomSmallDoor
-            p.left_low = rng.next_i32_bounded(2) == 0;  // nextBoolean
-            p.left_high = rng.next_i32_bounded(2) == 0;
-            p.right_low = rng.next_i32_bounded(2) == 0;
+            p.left_low = rng.next_bool();
+            p.left_high = rng.next_bool();
+            p.right_low = rng.next_bool();
             p.right_high = rng.next_i32_bounded(3) > 0;  // nextInt(3) > 0
         }
         PT::RoomCrossing => {
@@ -228,8 +249,7 @@ fn generate_piece(s: &mut State, rng: &mut LegacyRandom, fx: i32, fy: i32, fz: i
                     }
                     return Some(piece);
                 }
-
-                break; // BB didn't fit, retry
+                // Vanilla falls through to try subsequent weights in the list
             }
         }
     }
@@ -278,8 +298,20 @@ fn add_children(s: &mut State, rng: &mut LegacyRandom, idx: usize) {
             if lc { left(s, rng, bb, dir, depth, 1, 2); }
             if rc { right(s, rng, bb, dir, depth, 1, 2); }
         }
-        PT::LeftTurn => { left(s, rng, bb, dir, depth, 1, 1); }
-        PT::RightTurn => { right(s, rng, bb, dir, depth, 1, 1); }
+        PT::LeftTurn => {
+            if dir == Direction::North || dir == Direction::East {
+                left(s, rng, bb, dir, depth, 1, 1);
+            } else {
+                right(s, rng, bb, dir, depth, 1, 1);
+            }
+        }
+        PT::RightTurn => {
+            if dir == Direction::North || dir == Direction::East {
+                right(s, rng, bb, dir, depth, 1, 1);
+            } else {
+                left(s, rng, bb, dir, depth, 1, 1);
+            }
+        }
         PT::RoomCrossing => {
             fwd(s, rng, bb, dir, depth, 4, 1);
             left(s, rng, bb, dir, depth, 1, 4);
@@ -317,29 +349,33 @@ fn fwd(s: &mut State, rng: &mut LegacyRandom, bb: BoundingBox, dir: Direction, d
 }
 
 /// Vanilla's `generateSmallDoorChildLeft(startPiece, accessor, random, yOff, zOff)`.
+/// Vanilla uses identical coordinates for NORTH/SOUTH and WEST/EAST —
+/// "left" always means towards minX (or minZ for W/E), not relative to facing.
 fn left(s: &mut State, rng: &mut LegacyRandom, bb: BoundingBox, dir: Direction, depth: i32, y_off: i32, z_off: i32) {
     match dir {
-        Direction::North => gen_and_add(s, rng, bb.min_x-1, bb.min_y+y_off, bb.min_z+z_off, Direction::West, depth+1),
-        Direction::South => gen_and_add(s, rng, bb.max_x+1, bb.min_y+y_off, bb.min_z+z_off, Direction::East, depth+1),
-        Direction::West => gen_and_add(s, rng, bb.min_x+z_off, bb.min_y+y_off, bb.max_z+1, Direction::South, depth+1),
-        Direction::East => gen_and_add(s, rng, bb.min_x+z_off, bb.min_y+y_off, bb.min_z-1, Direction::North, depth+1),
+        Direction::North | Direction::South =>
+            gen_and_add(s, rng, bb.min_x-1, bb.min_y+y_off, bb.min_z+z_off, Direction::West, depth+1),
+        Direction::West | Direction::East =>
+            gen_and_add(s, rng, bb.min_x+z_off, bb.min_y+y_off, bb.min_z-1, Direction::North, depth+1),
         _ => {}
     }
 }
 
 /// Vanilla's `generateSmallDoorChildRight(startPiece, accessor, random, yOff, zOff)`.
+/// Same as left(): NORTH/SOUTH identical, WEST/EAST identical.
 fn right(s: &mut State, rng: &mut LegacyRandom, bb: BoundingBox, dir: Direction, depth: i32, y_off: i32, z_off: i32) {
     match dir {
-        Direction::North => gen_and_add(s, rng, bb.max_x+1, bb.min_y+y_off, bb.min_z+z_off, Direction::East, depth+1),
-        Direction::South => gen_and_add(s, rng, bb.min_x-1, bb.min_y+y_off, bb.min_z+z_off, Direction::West, depth+1),
-        Direction::West => gen_and_add(s, rng, bb.min_x+z_off, bb.min_y+y_off, bb.min_z-1, Direction::North, depth+1),
-        Direction::East => gen_and_add(s, rng, bb.min_x+z_off, bb.min_y+y_off, bb.max_z+1, Direction::South, depth+1),
+        Direction::North | Direction::South =>
+            gen_and_add(s, rng, bb.max_x+1, bb.min_y+y_off, bb.min_z+z_off, Direction::East, depth+1),
+        Direction::West | Direction::East =>
+            gen_and_add(s, rng, bb.min_x+z_off, bb.min_y+y_off, bb.max_z+1, Direction::South, depth+1),
         _ => {}
     }
 }
 
 /// Generates all stronghold pieces for a chunk.
-pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<BoundingBox> {
+/// Returns (bounding_box, vanilla_piece_type_id) pairs.
+pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<(BoundingBox, &'static str)> {
     let west = chunk_x * 16 + 2;
     let north = chunk_z * 16 + 2;
 
@@ -385,6 +421,9 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<BoundingBox
             add_children(&mut s, &mut rng, piece_idx);
         }
 
+        // Remove trace debug
+
+
         if !s.pieces.is_empty() && s.has_portal {
             // moveBelowSeaLevel(seaLevel=63, minY=-64, random, offset=10)
             let sea_level = 63;
@@ -405,10 +444,10 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<BoundingBox
             }
             let dy = y1_pos - overall.max_y;
 
-            return s.pieces.into_iter().map(|p| BoundingBox::new(
+            return s.pieces.into_iter().map(|p| (BoundingBox::new(
                 p.bb.min_x, p.bb.min_y + dy, p.bb.min_z,
                 p.bb.max_x, p.bb.max_y + dy, p.bb.max_z,
-            )).collect();
+            ), p.pt.vanilla_id(p.depth))).collect();
         }
     }
 }

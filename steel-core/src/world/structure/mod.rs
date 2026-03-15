@@ -31,6 +31,9 @@ pub struct StructureStart {
     pub references: i32,
     /// The pieces composing this structure.
     pub pieces: Vec<StructurePiece>,
+    /// Bounding box inflation for reference intersection checks.
+    /// Vanilla inflates by 12 when `terrain_adaptation != NONE`.
+    pub bb_inflate: i32,
 }
 
 /// A single piece of a structure.

@@ -171,6 +171,18 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
 
 /// Evaluates density using trilinear interpolation from cell corners,
 /// matching vanilla's NoiseChunk behavior.
+/// Vanilla inflates the structure BB by 12 when `terrain_adaptation != NONE`.
+/// Returns the inflate value for reference intersection checks.
+fn terrain_adapt_inflate(id: &Identifier) -> i32 {
+    match id.path.as_ref() {
+        "stronghold" | "trail_ruins" | "ancient_city" | "nether_fossil"
+        | "pillager_outpost" | "trial_chambers"
+        | "village_desert" | "village_plains" | "village_savanna"
+        | "village_snowy" | "village_taiga" => 12,
+        _ => 0,
+    }
+}
+
 fn interpolated_density<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
     noises: &N,
@@ -915,8 +927,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         "minecraft:stronghold" => {
                             use crate::world::structure::stronghold;
                             let piece_bbs = stronghold::generate_pieces(self.seed, chunk_x, chunk_z);
-                            piece_bbs.into_iter().map(|bb| StructurePiece {
-                                piece_type: Identifier::new_static("minecraft", "stronghold"),
+                            piece_bbs.into_iter().map(|(bb, piece_id)| StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", piece_id),
                                 bounding_box: bb,
                                 gen_depth: 0,
                                 orientation: None,
@@ -934,6 +946,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
                         references: 0,
                         pieces,
+                        bb_inflate: terrain_adapt_inflate(&structure_id),
                     };
                     chunk.structure_starts_mut().insert(structure_id, start);
                 }
@@ -1017,6 +1030,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
                                         references: 0,
                                         pieces,
+                                        bb_inflate: terrain_adapt_inflate(&candidate.structure),
                                     };
                                     chunk.structure_starts_mut().insert(candidate.structure.clone(), start);
                                     break; // Done with this set

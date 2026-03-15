@@ -105,12 +105,13 @@ impl ChunkStatusTasks {
                         );
                     }
 
-                    // Check if the structure's bounding box intersects this chunk's area
+                    // Vanilla inflates the BB when terrain_adaptation != NONE
+                    let inflate = start.bb_inflate;
                     if bb.intersects_xz(
-                        target_block_x,
-                        target_block_z,
-                        target_block_x + 15,
-                        target_block_z + 15,
+                        target_block_x - inflate,
+                        target_block_z - inflate,
+                        target_block_x + 15 + inflate,
+                        target_block_z + 15 + inflate,
                     ) {
                         let target_chunk = holder
                             .try_chunk(ChunkStatus::StructureStarts)
