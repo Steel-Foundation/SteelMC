@@ -132,6 +132,7 @@ impl RegistryCache {
         add_tags!(ITEMS_REGISTRY, items);
         add_tags!(TIMELINE_REGISTRY, timelines);
         add_tags!(DIALOG_REGISTRY, dialogs);
+        add_tags!(DAMAGE_TYPE_REGISTRY, damage_types);
 
         // fluids: get_id returns Option — handled separately
         {
