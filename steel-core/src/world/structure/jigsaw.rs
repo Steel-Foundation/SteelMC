@@ -401,7 +401,7 @@ pub fn assemble(
     let bottom_y = if let Some(ref _heightmap) = config.project_start_to_heightmap {
         let center_bx = (center_bb.min_x + center_bb.max_x) / 2;
         let center_bz = (center_bb.min_z + center_bb.max_z) / 2;
-        // getFirstFreeHeight = getBaseHeight - 1 at center of BB
+        // Vanilla: start_y + getFirstFreeHeight(...) - 1
         let surface = get_height(center_bx, center_bz) - 1;
         start_y + surface
     } else {
@@ -447,11 +447,18 @@ pub fn assemble(
         return Some(AssemblyResult { pieces, biome_check_pos });
     }
 
-    // Create constraint bounding box
+    // Create constraint bounding box — vanilla centers on (centerX, centerY, centerZ),
+    // NOT on the BB corners. Uses AABB with +1 on max side, but for integer BB collision
+    // the effective range is [center - maxDist, center + maxDist].
     let max_dist = config.max_distance_from_center;
+    let center_y = center_stub_y;
     let constraint_bb = BoundingBox::new(
-        center_bb.min_x - max_dist, center_bb.min_y - max_dist, center_bb.min_z - max_dist,
-        center_bb.max_x + max_dist, center_bb.max_y + max_dist, center_bb.max_z + max_dist,
+        center_stub_x - max_dist,
+        (center_y - max_dist).max(min_y + config.dimension_padding.bottom),
+        center_stub_z - max_dist,
+        center_stub_x + max_dist,
+        (center_y + max_dist).min(max_y - config.dimension_padding.top),
+        center_stub_z + max_dist,
     );
 
     // Placed bounding boxes for collision detection
@@ -698,7 +705,7 @@ fn try_placing_children(
                         source_box_y + delta_y
                     } else {
                         let base_height = *source_jigsaw_base_height.get_or_insert_with(|| {
-                            get_height(source_jigsaw_pos.0, source_jigsaw_pos.2) - 1
+                            get_height(source_jigsaw_pos.0, source_jigsaw_pos.2)
                         });
                         base_height - target_jigsaw_local_y
                     };
@@ -735,9 +742,13 @@ fn try_placing_children(
 
                     // Success! Place this piece.
                     if attach_inside {
+                        // Internal pieces go to source-local tracking only.
+                        // Vanilla: internal pieces are subtracted from sourceFree, NOT contextFree.
+                        // So external pieces from other sources can overlap internal pieces.
                         internal_bbs.push(candidate_bb);
+                    } else {
+                        placed_bbs.push(candidate_bb);
                     }
-                    placed_bbs.push(candidate_bb);
 
                     // Compute ground level delta
                     let target_ground_level_delta = if candidate_rigid {
@@ -753,7 +764,7 @@ fn try_placing_children(
                         target_box_y + target_jigsaw_local_y
                     } else {
                         let base_height = *source_jigsaw_base_height.get_or_insert_with(|| {
-                            get_height(source_jigsaw_pos.0, source_jigsaw_pos.2) - 1
+                            get_height(source_jigsaw_pos.0, source_jigsaw_pos.2)
                         });
                         base_height + delta_y / 2
                     };
