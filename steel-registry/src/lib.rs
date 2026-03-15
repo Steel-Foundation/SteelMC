@@ -314,8 +314,28 @@ impl Deref for RegistryLock {
 
 pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
 
+/// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
+pub trait RegistryEntry {
+    fn key(&self) -> &Identifier;
+    fn try_id(&self) -> Option<usize>;
+
+    /// # Panics
+    /// Panics if the entry is not registered.
+    fn id(&self) -> usize {
+        self.try_id().expect("entry not found in registry")
+    }
+}
+
+/// Generic trait for registries with a typed entry.
 pub trait RegistryExt {
+    type Entry: Copy;
+
     fn freeze(&mut self);
+    fn by_id(&self, id: usize) -> Option<Self::Entry>;
+    fn by_key(&self, key: &Identifier) -> Option<Self::Entry>;
+    fn id_from_key(&self, key: &Identifier) -> Option<usize>;
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool;
 }
 
 pub const BLOCKS_REGISTRY: Identifier = Identifier::vanilla_static("block");

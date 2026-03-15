@@ -1,4 +1,4 @@
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
@@ -182,8 +182,40 @@ impl GameRuleRegistry {
 }
 
 impl RegistryExt for GameRuleRegistry {
+    type Entry = GameRuleRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<GameRuleRef> {
+        self.game_rules_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<GameRuleRef> {
+        self.game_rules_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.game_rules_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.game_rules_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.game_rules_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for GameRule {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.game_rules.id_from_key(&self.key)
     }
 }
 

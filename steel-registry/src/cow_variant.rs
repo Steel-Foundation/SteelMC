@@ -1,4 +1,4 @@
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -113,8 +113,42 @@ impl CowVariantRegistry {
 }
 
 impl RegistryExt for CowVariantRegistry {
+    type Entry = CowVariantRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<CowVariantRef> {
+        self.cow_variants_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<CowVariantRef> {
+        self.cow_variants_by_key
+            .get(key)
+            .and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.cow_variants_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.cow_variants_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.cow_variants_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for CowVariant {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.cow_variants.id_from_key(&self.key)
     }
 }
 

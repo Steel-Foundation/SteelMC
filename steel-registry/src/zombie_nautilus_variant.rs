@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 
 /// Represents a full zombie nautilus variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -111,8 +111,42 @@ impl ZombieNautilusVariantRegistry {
 }
 
 impl RegistryExt for ZombieNautilusVariantRegistry {
+    type Entry = ZombieNautilusVariantRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<ZombieNautilusVariantRef> {
+        self.zombie_nautilus_variants_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<ZombieNautilusVariantRef> {
+        self.zombie_nautilus_variants_by_key
+            .get(key)
+            .and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.zombie_nautilus_variants_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.zombie_nautilus_variants_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.zombie_nautilus_variants_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for ZombieNautilusVariant {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.zombie_nautilus_variants.id_from_key(&self.key)
     }
 }
 

@@ -24,8 +24,6 @@ use steel_utils::{
     serial::{ReadFrom, WriteTo},
 };
 
-use crate::RegistryExt;
-
 use super::component_data::{Component, ComponentData, ComponentDataDiscriminant};
 use super::vanilla_components::{
     ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
@@ -377,8 +375,8 @@ impl DataComponentRegistry {
     }
 }
 
-impl RegistryExt for DataComponentRegistry {
-    fn freeze(&mut self) {
+impl DataComponentRegistry {
+    pub fn freeze(&mut self) {
         self.allows_registering = false;
     }
 }

@@ -1,4 +1,4 @@
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -93,8 +93,40 @@ impl JukeboxSongRegistry {
 }
 
 impl RegistryExt for JukeboxSongRegistry {
+    type Entry = JukeboxSongRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<JukeboxSongRef> {
+        self.jukebox_songs_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<JukeboxSongRef> {
+        self.jukebox_songs_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.jukebox_songs_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.jukebox_songs_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.jukebox_songs_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for JukeboxSong {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.jukebox_songs.id_from_key(&self.key)
     }
 }
 

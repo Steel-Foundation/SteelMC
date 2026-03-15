@@ -6,7 +6,7 @@ use steel_utils::registry::registry_vanilla_or_custom_tag;
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, blocks::BlockRef, data_components::DataComponentMap,
+    REGISTRY, RegistryEntry, RegistryExt, blocks::BlockRef, data_components::DataComponentMap,
     item_stack::ItemStack,
 };
 
@@ -239,7 +239,39 @@ impl ItemRegistry {
 }
 
 impl RegistryExt for ItemRegistry {
+    type Entry = ItemRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<ItemRef> {
+        self.items_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<ItemRef> {
+        self.items_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.items_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.items_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.items_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for Item {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.items.id_from_key(&self.key)
     }
 }

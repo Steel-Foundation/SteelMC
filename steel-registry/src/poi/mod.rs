@@ -4,7 +4,7 @@
 //! so game systems can efficiently query for nearby points of interest
 //! without scanning every block.
 
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
 
@@ -185,7 +185,39 @@ impl PoiTypeRegistry {
 }
 
 impl RegistryExt for PoiTypeRegistry {
+    type Entry = PoiTypeRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<PoiTypeRef> {
+        self.types_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<PoiTypeRef> {
+        self.types_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.types_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.types_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.types_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for PointOfInterestType {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.poi_types.id_from_key(&self.key)
     }
 }

@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -178,7 +178,39 @@ impl EntityTypeRegistry {
 }
 
 impl RegistryExt for EntityTypeRegistry {
+    type Entry = EntityTypeRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<EntityTypeRef> {
+        self.types_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
+        self.types_by_key.get(key).and_then(|&id| self.types_by_id.get(id).copied())
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.types_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.types_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.types_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for EntityType {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.entity_types.id_from_key(&self.key)
     }
 }

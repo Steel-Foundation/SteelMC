@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 
 /// Represents a full wolf variant definition from a data pack JSON file.
 #[derive(Debug)]
@@ -113,8 +113,42 @@ impl WolfVariantRegistry {
 }
 
 impl RegistryExt for WolfVariantRegistry {
+    type Entry = WolfVariantRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<WolfVariantRef> {
+        self.wolf_variants_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<WolfVariantRef> {
+        self.wolf_variants_by_key
+            .get(key)
+            .and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.wolf_variants_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.wolf_variants_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.wolf_variants_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for WolfVariant {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.wolf_variants.id_from_key(&self.key)
     }
 }
 

@@ -5,7 +5,7 @@ pub mod shapes;
 
 use rustc_hash::FxHashMap;
 
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use crate::blocks::behaviour::BlockConfig;
 use crate::blocks::properties::{DynProperty, Property};
 
@@ -520,8 +520,40 @@ impl BlockRegistry {
 }
 
 impl RegistryExt for BlockRegistry {
+    type Entry = BlockRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<BlockRef> {
+        self.blocks_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<BlockRef> {
+        self.blocks_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.blocks_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.blocks_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.blocks_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for Block {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.blocks.id_from_key(&self.key)
     }
 }
 

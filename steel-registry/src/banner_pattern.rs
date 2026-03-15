@@ -1,4 +1,4 @@
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -96,7 +96,39 @@ impl Default for BannerPatternRegistry {
 }
 
 impl RegistryExt for BannerPatternRegistry {
+    type Entry = BannerPatternRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<BannerPatternRef> {
+        self.banner_patterns_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<BannerPatternRef> {
+        self.banner_patterns_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.banner_patterns_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.banner_patterns_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.banner_patterns_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for BannerPattern {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.banner_patterns.id_from_key(&self.key)
     }
 }

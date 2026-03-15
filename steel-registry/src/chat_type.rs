@@ -1,4 +1,4 @@
-use crate::RegistryExt;
+use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -108,8 +108,40 @@ impl ChatTypeRegistry {
 }
 
 impl RegistryExt for ChatTypeRegistry {
+    type Entry = ChatTypeRef;
+
     fn freeze(&mut self) {
         self.allows_registering = false;
+    }
+
+    fn by_id(&self, id: usize) -> Option<ChatTypeRef> {
+        self.chat_types_by_id.get(id).copied()
+    }
+
+    fn by_key(&self, key: &Identifier) -> Option<ChatTypeRef> {
+        self.chat_types_by_key.get(key).and_then(|&id| self.by_id(id))
+    }
+
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.chat_types_by_key.get(key).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.chat_types_by_id.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.chat_types_by_id.is_empty()
+    }
+}
+
+impl RegistryEntry for ChatType {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        REGISTRY.chat_types.id_from_key(&self.key)
     }
 }
 
