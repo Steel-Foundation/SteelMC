@@ -11,11 +11,6 @@ struct TagJson {
     values: Vec<String>,
 }
 
-#[derive(Deserialize)]
-struct TagFile {
-    item: FxHashMap<String, Vec<String>>,
-}
-
 /// Reads all tag JSON files and returns a map of tag name -> values
 fn read_all_tags(tag_dir: &str) -> FxHashMap<String, Vec<String>> {
     let mut tags = FxHashMap::default();
@@ -28,7 +23,6 @@ fn read_all_tags(tag_dir: &str) -> FxHashMap<String, Vec<String>> {
             if path.is_dir() {
                 read_directory(&path, base_path, tags);
             } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                // Calculate the tag name relative to the base tags directory
                 let relative_path = path.strip_prefix(base_path).unwrap();
                 let tag_name = relative_path
                     .with_extension("")
@@ -50,31 +44,18 @@ fn read_all_tags(tag_dir: &str) -> FxHashMap<String, Vec<String>> {
 
     tags
 }
-fn read_all_fabric_tags(tag_file: &str) -> FxHashMap<String, Vec<String>> {
-    if fs::exists(tag_file).unwrap_or(false)
-        && Path::new(tag_file).is_file()
-        && let Ok(content) = fs::read_to_string(tag_file)
-    {
-        let tag: TagFile = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", tag_file, e));
-        return tag.item;
-    }
-    FxHashMap::default()
-}
 
-/// Resolves tag references recursively and returns a flattened list of item keys
+/// Resolves tag references recursively and returns a flattened list of keys
 fn resolve_tag(
     tag_name: &str,
     all_tags: &FxHashMap<String, Vec<String>>,
     resolved_cache: &mut FxHashMap<String, Vec<String>>,
     visiting: &mut Vec<String>,
 ) -> Vec<String> {
-    // Check if already resolved
     if let Some(cached) = resolved_cache.get(tag_name) {
         return cached.clone();
     }
 
-    // Check for circular dependency
     if visiting.contains(&tag_name.to_string()) {
         panic!("Circular tag dependency detected: {:?}", visiting);
     }
@@ -89,22 +70,17 @@ fn resolve_tag(
 
     for value in values {
         if let Some(nested_tag) = value.strip_prefix('#') {
-            // Remove the "minecraft:" prefix if present
             let nested_tag = nested_tag.strip_prefix("minecraft:").unwrap_or(nested_tag);
-
-            // Recursively resolve the nested tag
             let nested_values = resolve_tag(nested_tag, all_tags, resolved_cache, visiting);
             resolved.extend(nested_values);
         } else {
-            // Direct item reference - remove "minecraft:" prefix
-            let item_key = value.strip_prefix("minecraft:").unwrap_or(value);
-            resolved.push(item_key.to_string());
+            let key = value.strip_prefix("minecraft:").unwrap_or(value);
+            resolved.push(key.to_string());
         }
     }
 
     visiting.pop();
 
-    // Remove duplicates while preserving order
     let mut seen = rustc_hash::FxHashSet::default();
     resolved.retain(|x| seen.insert(x.clone()));
 
@@ -114,14 +90,12 @@ fn resolve_tag(
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/tags/item/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/tags/instrument/"
     );
 
-    let tag_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/tags/item";
-    let mut all_tags = read_all_tags(tag_dir);
-    all_tags.extend(read_all_fabric_tags("build_assets/tags.json"));
+    let tag_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/tags/instrument";
+    let all_tags = read_all_tags(tag_dir);
 
-    // Resolve all tags
     let mut resolved_tags: FxHashMap<String, Vec<String>> = FxHashMap::default();
     let mut resolved_cache = FxHashMap::default();
 
@@ -131,62 +105,41 @@ pub(crate) fn build() -> TokenStream {
         resolved_tags.insert(tag_name.clone(), resolved);
     }
 
-    // Sort tags by name for consistent generation
     let mut sorted_tags: Vec<_> = resolved_tags.into_iter().collect();
     sorted_tags.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::items::ItemRegistry;
+        use crate::instrument::InstrumentRegistry;
         use crate::TaggedRegistryExt;
         use steel_utils::Identifier;
     });
 
-    // Generate const arrays for each tag
     let mut register_stream = TokenStream::new();
-    let mut static_array = TokenStream::new();
-    let mut const_identifier = TokenStream::new();
-    for (tag_name, items) in &sorted_tags {
-        let tag_ident_array = Ident::new(
-            &format!("{}_TAG_LIST", tag_name.to_shouty_snake_case()),
-            Span::call_site(),
-        );
+    for (tag_name, entries) in &sorted_tags {
         let tag_ident = Ident::new(
             &format!("{}_TAG", tag_name.to_shouty_snake_case()),
             Span::call_site(),
         );
 
-        let item_strs = items.iter().map(|s| s.as_str());
+        let entry_strs = entries.iter().map(|s| s.as_str());
 
-        static_array.extend(quote! {
-            static #tag_ident_array: &[&str] = &[#(#item_strs),*];
+        stream.extend(quote! {
+            static #tag_ident: &[&str] = &[#(#entry_strs),*];
         });
-        let tag_key = tag_name.clone();
-        if let Some(key) = tag_key.strip_prefix("c:") {
-            const_identifier.extend(
-                quote! { pub const #tag_ident: Identifier = Identifier::new_static("c", #key); },
-            );
-        } else {
-            const_identifier.extend(
-                quote! {pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);},
-            );
-        }
 
+        let tag_key = tag_name.clone();
         register_stream.extend(quote! {
             registry.register_tag(
-                #tag_ident,
-                #tag_ident_array
+                Identifier::vanilla_static(#tag_key),
+                #tag_ident
             );
         });
     }
 
     stream.extend(quote! {
-        #static_array
-
-        #const_identifier
-
-        pub fn register_item_tags(registry: &mut ItemRegistry) {
+        pub fn register_instrument_tags(registry: &mut InstrumentRegistry) {
             #register_stream
         }
     });

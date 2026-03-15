@@ -1,8 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
-
 /// Represents a set of sounds for a chicken variant from a data pack JSON file.
 #[derive(Debug)]
 pub struct ChickenSoundVariant {
@@ -87,48 +85,21 @@ impl ChickenSoundVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<ChickenSoundVariantRef> {
-        self.chicken_sound_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, chicken_sound_variant: ChickenSoundVariantRef) -> &usize {
-        self.chicken_sound_variants_by_key
-            .get(&chicken_sound_variant.key)
-            .expect("chicken sound variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<ChickenSoundVariantRef> {
-        self.chicken_sound_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ChickenSoundVariantRef)> + '_ {
         self.chicken_sound_variants_by_id
             .iter()
             .enumerate()
             .map(|(id, &variant)| (id, variant))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.chicken_sound_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.chicken_sound_variants_by_id.is_empty()
-    }
 }
 
-impl RegistryExt for ChickenSoundVariantRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(
+    ChickenSoundVariantRegistry,
+    ChickenSoundVariant,
+    chicken_sound_variants_by_id,
+    chicken_sound_variants_by_key,
+    chicken_sound_variants
+);
 
 impl Default for ChickenSoundVariantRegistry {
     fn default() -> Self {

@@ -35,6 +35,7 @@ pub use component_data::{Component, ComponentData, ComponentDataDiscriminant};
 pub use components::{Equippable, EquippableSlot, Tool, ToolRule};
 pub use registry::{
     ComponentEntry,
+    ComponentEntryRef,
     ComponentPatchEntry,
     DataComponentMap,
     DataComponentPatch,

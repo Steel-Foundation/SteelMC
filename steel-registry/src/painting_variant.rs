@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -44,6 +43,7 @@ pub type PaintingVariantRef = &'static PaintingVariant;
 pub struct PaintingVariantRegistry {
     painting_variants_by_id: Vec<PaintingVariantRef>,
     painting_variants_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -53,6 +53,7 @@ impl PaintingVariantRegistry {
         Self {
             painting_variants_by_id: Vec::new(),
             painting_variants_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -81,25 +82,6 @@ impl PaintingVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<PaintingVariantRef> {
-        self.painting_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, painting_variant: PaintingVariantRef) -> &usize {
-        self.painting_variants_by_key
-            .get(&painting_variant.key)
-            .expect("Painting variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<PaintingVariantRef> {
-        self.painting_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, PaintingVariantRef)> + '_ {
         self.painting_variants_by_id
             .iter()
@@ -118,14 +100,21 @@ impl PaintingVariantRegistry {
     }
 }
 
-impl RegistryExt for PaintingVariantRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
-
 impl Default for PaintingVariantRegistry {
     fn default() -> Self {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    PaintingVariantRegistry,
+    PaintingVariant,
+    painting_variants_by_id,
+    painting_variants_by_key,
+    painting_variants
+);
+crate::impl_tagged_registry!(
+    PaintingVariantRegistry,
+    painting_variants_by_key,
+    "painting variant"
+);

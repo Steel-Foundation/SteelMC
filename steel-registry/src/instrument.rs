@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -33,6 +32,7 @@ pub type InstrumentRef = &'static Instrument;
 pub struct InstrumentRegistry {
     instruments_by_id: Vec<InstrumentRef>,
     instruments_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -42,6 +42,7 @@ impl InstrumentRegistry {
         Self {
             instruments_by_id: Vec::new(),
             instruments_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -69,25 +70,6 @@ impl InstrumentRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<InstrumentRef> {
-        self.instruments_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, instrument: InstrumentRef) -> &usize {
-        self.instruments_by_key
-            .get(&instrument.key)
-            .expect("Instrument not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<InstrumentRef> {
-        self.instruments_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, InstrumentRef)> + '_ {
         self.instruments_by_id
             .iter()
@@ -106,14 +88,18 @@ impl InstrumentRegistry {
     }
 }
 
-impl RegistryExt for InstrumentRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
-
 impl Default for InstrumentRegistry {
     fn default() -> Self {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    InstrumentRegistry,
+    Instrument,
+    instruments_by_id,
+    instruments_by_key,
+    instruments
+);
+
+crate::impl_tagged_registry!(InstrumentRegistry, instruments_by_key, "instrument");

@@ -11,15 +11,13 @@ use steel_protocol::{
 };
 
 use steel_registry::{
-    BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCKS_REGISTRY, CAT_SOUND_VARIANT_REGISTRY,
-    CAT_VARIANT_REGISTRY, CHAT_TYPE_REGISTRY, CHICKEN_SOUND_VARIANT_REGISTRY,
-    CHICKEN_VARIANT_REGISTRY, COW_SOUND_VARIANT_REGISTRY, COW_VARIANT_REGISTRY,
-    DAMAGE_TYPE_REGISTRY, DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, FLUID_REGISTRY,
+    BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCKS_REGISTRY, CAT_VARIANT_REGISTRY,
+    CHAT_TYPE_REGISTRY, CHICKEN_VARIANT_REGISTRY, COW_VARIANT_REGISTRY, DAMAGE_TYPE_REGISTRY,
+    DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, ENTITY_TYPE_REGISTRY, FLUID_REGISTRY,
     FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY, ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY,
-    PAINTING_VARIANT_REGISTRY, PIG_SOUND_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY, REGISTRY,
-    Registry, TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY,
-    WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY, WORLD_CLOCK_REGISTRY,
-    ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
+    PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY, REGISTRY, Registry, RegistryEntry as _,
+    TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, TaggedRegistryExt,
+    WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -66,14 +64,11 @@ impl RegistryCache {
                     registry
                         .$field
                         .iter()
-                        .map(|(_, entry)| {
-                            RegistryEntry::new(entry.key.clone(), Some(entry.to_nbt()))
-                        })
+                        .map(|(_, entry)| RegistryEntry::new(entry.key.clone(), None))
                         .collect(),
                 ));
             };
         }
-        //
 
         //TODO: For non vanilla entries we need to encode the data into nbt
 
@@ -84,14 +79,10 @@ impl RegistryCache {
         add_registry!(WOLF_VARIANT_REGISTRY, wolf_variants);
         add_registry!(WOLF_SOUND_VARIANT_REGISTRY, wolf_sound_variants);
         add_registry!(PIG_VARIANT_REGISTRY, pig_variants);
-        add_registry!(PIG_SOUND_VARIANT_REGISTRY, pig_sound_variants);
         add_registry!(FROG_VARIANT_REGISTRY, frog_variants);
         add_registry!(CAT_VARIANT_REGISTRY, cat_variants);
-        add_registry!(CAT_SOUND_VARIANT_REGISTRY, cat_sound_variants);
         add_registry!(COW_VARIANT_REGISTRY, cow_variants);
-        add_registry!(COW_SOUND_VARIANT_REGISTRY, cow_sound_variants);
         add_registry!(CHICKEN_VARIANT_REGISTRY, chicken_variants);
-        add_registry!(CHICKEN_SOUND_VARIANT_REGISTRY, chicken_sound_variants);
         add_registry!(PAINTING_VARIANT_REGISTRY, painting_variants);
         add_registry!(DIMENSION_TYPE_REGISTRY, dimension_types);
         add_registry!(DAMAGE_TYPE_REGISTRY, damage_types);
@@ -105,14 +96,12 @@ impl RegistryCache {
         add_registry!(INSTRUMENT_REGISTRY, instruments);
         add_registry!(TIMELINE_REGISTRY, timelines);
         add_registry!(DIALOG_REGISTRY, dialogs);
-        add_registry!(WORLD_CLOCK_REGISTRY, world_clocks);
 
         packets
     }
 
     fn build_tags_packet(registry: &Registry) -> CUpdateTags {
-        let mut tags_by_registry: TagCollection = Vec::with_capacity(5);
-
+        let mut tags_by_registry: TagCollection = Vec::with_capacity(6);
         macro_rules! add_tags {
             ($reg_key:expr, $field:ident) => {
                 let mut tags: Vec<(Identifier, Vec<VarInt>)> =
@@ -120,7 +109,7 @@ impl RegistryCache {
                 for tag_key in registry.$field.tag_keys() {
                     let mut ids = Vec::with_capacity(registry.$field.iter_tag(tag_key).count());
                     for entry in registry.$field.iter_tag(tag_key) {
-                        ids.push(VarInt::from(*registry.$field.get_id(entry)));
+                        ids.push(VarInt::from(entry.id()));
                     }
                     tags.push((tag_key.clone(), ids));
                 }
@@ -133,23 +122,26 @@ impl RegistryCache {
         add_tags!(TIMELINE_REGISTRY, timelines);
         add_tags!(DIALOG_REGISTRY, dialogs);
         add_tags!(DAMAGE_TYPE_REGISTRY, damage_types);
+        add_tags!(BANNER_PATTERN_REGISTRY, banner_patterns);
+        add_tags!(ENTITY_TYPE_REGISTRY, entity_types);
+        add_tags!(INSTRUMENT_REGISTRY, instruments);
+        add_tags!(PAINTING_VARIANT_REGISTRY, painting_variants);
 
-        // fluids: get_id returns Option — handled separately
-        {
-            let mut tags: Vec<(Identifier, Vec<VarInt>)> =
-                Vec::with_capacity(registry.fluids.tag_keys().count());
-            for tag_key in registry.fluids.tag_keys() {
-                let mut ids = Vec::with_capacity(registry.fluids.iter_tag(tag_key).count());
-                for fluid in registry.fluids.iter_tag(tag_key) {
-                    ids.push(VarInt::from(
-                        *registry.fluids.get_id(fluid).expect("Fluid not found"),
-                    ));
-                }
-                tags.push((tag_key.clone(), ids));
+        // Build fluid tags
+        let mut fluid_tags: Vec<(Identifier, Vec<VarInt>)> =
+            Vec::with_capacity(registry.fluids.tag_keys().count());
+        for tag_key in registry.fluids.tag_keys() {
+            let mut fluid_ids = Vec::with_capacity(registry.fluids.iter_tag(tag_key).count());
+
+            for fluid in registry.fluids.iter_tag(tag_key) {
+                fluid_ids.push(VarInt::from(fluid.id() as i32));
             }
-            tags_by_registry.push((FLUID_REGISTRY, tags));
-        }
 
+            fluid_tags.push((tag_key.clone(), fluid_ids));
+        }
+        tags_by_registry.push((FLUID_REGISTRY, fluid_tags));
+
+        // Build and return a CUpdateTagsPacket based on the registry data
         CUpdateTags::new(tags_by_registry)
     }
 }

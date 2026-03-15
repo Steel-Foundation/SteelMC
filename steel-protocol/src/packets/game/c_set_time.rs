@@ -1,5 +1,6 @@
 use std::io::{Result, Write};
 use steel_macros::ClientPacket;
+use steel_registry::RegistryExt;
 use steel_registry::packets::play::C_SET_TIME;
 use steel_utils::codec::{VarInt, VarLong};
 use steel_utils::serial::WriteTo;
@@ -29,9 +30,10 @@ impl CSetTime {
     #[must_use]
     pub fn new(game_time: i64, day_time: i64, time_of_day_increasing: bool) -> Self {
         use steel_registry::{REGISTRY, vanilla_world_clocks};
-        let clock_id = *REGISTRY
+        let clock_id = REGISTRY
             .world_clocks
-            .get_id(vanilla_world_clocks::OVERWORLD) as i32;
+            .id_from_key(&vanilla_world_clocks::OVERWORLD.key)
+            .unwrap() as i32;
         Self {
             game_time,
             clock_updates: vec![(clock_id, day_time, !time_of_day_increasing)],

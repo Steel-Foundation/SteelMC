@@ -52,7 +52,12 @@ mod multi_noise;
 mod noise_parameters;
 mod surface_rules;
 
+mod banner_pattern_tags;
 mod damage_types_tags;
+mod entity_type_tags;
+mod instrument_tags;
+mod painting_variant_tags;
+mod poi_type_tags;
 
 const FMT: bool = cfg!(feature = "fmt");
 
@@ -81,6 +86,11 @@ const PAINTING_VARIANTS: &str = "painting_variants";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
 const DAMAGE_TYPES_TAGS: &str = "damage_types_tags";
+const BANNER_PATTERN_TAGS: &str = "banner_pattern_tags";
+const ENTITY_TYPE_TAGS: &str = "entity_type_tags";
+const INSTRUMENT_TAGS: &str = "instrument_tags";
+const PAINTING_VARIANT_TAGS: &str = "painting_variant_tags";
+const POI_TYPE_TAGS: &str = "poi_type_tags";
 const JUKEBOX_SONGS: &str = "jukebox_songs";
 const INSTRUMENTS: &str = "instruments";
 const DIALOGS: &str = "dialogs";
@@ -170,6 +180,11 @@ pub fn main() {
         (noise_parameters::build(), NOISE_PARAMETERS),
         (density_functions::build(), DENSITY_FUNCTIONS),
         (poi_types::build(), POI_TYPES),
+        (banner_pattern_tags::build(), BANNER_PATTERN_TAGS),
+        (entity_type_tags::build(), ENTITY_TYPE_TAGS),
+        (instrument_tags::build(), INSTRUMENT_TAGS),
+        (painting_variant_tags::build(), PAINTING_VARIANT_TAGS),
+        (poi_type_tags::build(), POI_TYPE_TAGS),
     ];
 
     // Track which files we're generating this run

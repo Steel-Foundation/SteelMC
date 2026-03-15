@@ -25,16 +25,14 @@ use std::{
 };
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSetTime, CSystemChat, CTabList, CTickingState,
+    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
     CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
-use steel_registry::vanilla_game_rules::{
-    ADVANCE_TIME, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
-};
-use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
+use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_blocks};
 use steel_utils::{Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
@@ -149,7 +147,6 @@ impl Server {
     ///
     /// # Panics
     /// Panics if the registry is not initialized.
-    #[allow(clippy::too_many_lines)]
     pub async fn add_player(&self, player: Arc<Player>) {
         // Load saved player data if it exists
         match self.player_data_storage.load(player.gameprofile.id).await {
@@ -196,12 +193,11 @@ impl Server {
             show_death_screen: !immediate_respawn,
             do_limited_crafting,
             common_player_spawn_info: CommonPlayerSpawnInfo {
-                dimension_type: *(REGISTRY.dimension_types.get_id(
-                    REGISTRY
-                        .dimension_types
-                        .by_key(&dimension_key)
-                        .expect("Should be registered"),
-                )) as i32,
+                dimension_type: REGISTRY
+                    .dimension_types
+                    .by_key(&dimension_key)
+                    .expect("Should be registered")
+                    .id() as i32,
                 dimension: dimension_key,
                 seed: hashed_seed,
                 game_type: player.game_mode.load(),
@@ -257,18 +253,6 @@ impl Server {
 
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
-
-        // Send current time to the joining player
-        {
-            let level_data = world.level_data.read();
-            let game_time = level_data.game_time();
-            let day_time = level_data.day_time();
-            let advance_time = world
-                .get_game_rule(ADVANCE_TIME)
-                .as_bool()
-                .expect("advance_time gamerule should be a bool");
-            player.send_packet(CSetTime::new(game_time, day_time, advance_time));
-        }
 
         // Get player position for teleport sync (must be done before add_player moves the Arc)
         let pos = *player.position.lock();

@@ -67,7 +67,7 @@ use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ELYTRA_MOVEMENT_CHECK, IMMEDIATE_RESPAWN, KEEP_INVENTORY, PLAYER_MOVEMENT_CHECK,
     SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{REGISTRY, vanilla_chat_types};
+use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::entity_events::EntityStatus;
 
 use steel_utils::locks::SyncMutex;
@@ -720,7 +720,7 @@ impl Player {
             idx
         };
 
-        let registry_id = *REGISTRY.chat_types.get_id(vanilla_chat_types::CHAT) as i32;
+        let registry_id = vanilla_chat_types::CHAT.id() as i32;
 
         let chat_packet = CPlayerChat::new(
             0,
@@ -2531,7 +2531,7 @@ impl Player {
         self.actually_hurt(source, effective_amount);
 
         if took_full_damage {
-            let type_id = *REGISTRY.damage_types.get_id(source.damage_type) as i32;
+            let type_id = source.damage_type.id() as i32;
             let chunk_pos = *self.last_chunk_pos.lock();
 
             self.world.broadcast_to_nearby(
@@ -2712,19 +2712,11 @@ impl Player {
 
         self.health_sync.lock().reset_for_respawn();
 
-        let dimension_key = world.dimension.key.clone();
-        let dimension_type_id = *(REGISTRY.dimension_types.get_id(
-            REGISTRY
-                .dimension_types
-                .by_key(&dimension_key)
-                .expect("Dimension should be registered!"),
-        )) as i32;
-
         // TODO: bed/respawn anchor lookup, send NO_RESPAWN_BLOCK_AVAILABLE if missing
 
         self.send_packet(CRespawn {
-            dimension_type: dimension_type_id,
-            dimension_name: dimension_key.clone(),
+            dimension_type: world.dimension.id() as i32,
+            dimension_name: world.dimension.key().to_owned(),
             hashed_seed: world.obfuscated_seed(),
             gamemode: self.game_mode.load() as u8,
             previous_gamemode: self.prev_game_mode.load() as i8,
@@ -2767,7 +2759,7 @@ impl Player {
 
         // Vanilla: ChunkMap.addEntity -> addPairing -> sendPairingData
         // TODO: also send SetEquipment + UpdateAttributes in the bundle
-        let player_type_id = *REGISTRY.entity_types.get_id(vanilla_entities::PLAYER) as i32;
+        let player_type_id = vanilla_entities::PLAYER.id() as i32;
         let spawn_packet = CAddEntity::player(
             self.id,
             self.gameprofile.id,
