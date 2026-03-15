@@ -88,7 +88,8 @@ impl CommandExecutor<((), i32)> for TimeExecutor {
 
             day_time_option = Some(new_day_time);
 
-            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, advance_time));
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, 0.0, rate));
         });
 
         let Some(new_day_time) = day_time_option else {
@@ -124,7 +125,8 @@ impl<const DAYTIME: i64> CommandExecutor<()> for TimeConstSetExecutor<DAYTIME> {
 
             let advance_time = { world.get_game_rule(ADVANCE_TIME).as_bool().expect("todo") };
 
-            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, advance_time));
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, 0.0, rate));
         });
 
         context.sender.send_message(

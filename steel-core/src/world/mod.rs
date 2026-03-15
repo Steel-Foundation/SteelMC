@@ -966,7 +966,8 @@ impl World {
         };
 
         if game_time % 20 == 0 {
-            self.broadcast_to_all(CSetTime::new(game_time, day_time, advance_time));
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate));
         }
     }
 
