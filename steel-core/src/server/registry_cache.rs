@@ -55,7 +55,7 @@ impl RegistryCache {
     }
 
     fn build_registry_packets(registry: &Registry) -> Vec<CRegistryData> {
-        let mut packets = Vec::new();
+        let mut packets = Vec::with_capacity(9);
 
         macro_rules! add_registry {
             ($reg_key:expr, $field:ident) => {
