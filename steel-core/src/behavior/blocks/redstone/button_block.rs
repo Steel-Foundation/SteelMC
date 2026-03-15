@@ -71,7 +71,7 @@ impl ButtonBlock {
     /// Updates neighbors at both the button position and the support block position.
     ///
     /// Vanilla equivalent: `ButtonBlock.updateNeighbours()`.
-    fn update_button_neighbors(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn update_button_neighbors(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         world.update_neighbors_at(&pos, self.block);
         let support_dir = Self::get_connected_direction(state).opposite();
         let support_pos = support_dir.relative(&pos);
@@ -80,7 +80,7 @@ impl ButtonBlock {
 
     /// Presses the button: sets POWERED=true, updates neighbors, schedules unpress tick,
     /// and plays the click sound.
-    fn press(&self, state: BlockStateId, world: &World, pos: BlockPos, player: &Player) {
+    fn press(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {
         let powered_state = state.set_value(&BlockStateProperties::POWERED, true);
         world.set_block(pos, powered_state, UpdateFlags::UPDATE_ALL);
         self.update_button_neighbors(powered_state, world, pos);
@@ -92,7 +92,7 @@ impl ButtonBlock {
 
 impl BlockBehavior for ButtonBlock {
     /// Checks if a button with the given state can survive at the given position.
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let support_dir = Self::get_connected_direction(state).opposite();
         let support_pos = support_dir.relative(&pos);
         let support_state = world.get_block_state(&support_pos);
@@ -134,7 +134,7 @@ impl BlockBehavior for ButtonBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -184,7 +184,7 @@ impl BlockBehavior for ButtonBlock {
     fn affect_neighbors_after_removal(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         moved_by_piston: bool,
     ) {

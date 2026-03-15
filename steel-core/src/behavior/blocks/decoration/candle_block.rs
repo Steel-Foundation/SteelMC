@@ -46,7 +46,12 @@ impl CandleBlock {
 
 impl BlockBehavior for CandleBlock {
     /// Checks if the candle block can survive at the given position.
-    fn can_survive(&self, _state: steel_utils::BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(
+        &self,
+        _state: steel_utils::BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> bool {
         world
             .get_block_state(&pos.below())
             .is_face_sturdy_for(Direction::Up, SupportType::Center)
@@ -75,7 +80,7 @@ impl BlockBehavior for CandleBlock {
     fn update_shape(
         &self,
         state: steel_utils::BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

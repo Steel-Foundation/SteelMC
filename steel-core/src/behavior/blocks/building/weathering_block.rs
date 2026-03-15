@@ -67,7 +67,7 @@ impl WeatheringCopper {
     /// Advances the weathering state and replaces the block, with a 5.7% chance.
     ///
     /// Vanilla: [`ChangeOverTimeBlock.changeOverTime`]
-    pub fn change_over_time(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    pub fn change_over_time(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if rand::random::<f32>() >= BASE_CHANCE {
             return;
         }
@@ -88,7 +88,7 @@ impl WeatheringCopper {
     fn get_next_state(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
     ) -> Option<BlockStateId> {
         let own_age = self.weather_state as i32;

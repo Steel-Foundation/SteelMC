@@ -43,7 +43,7 @@ pub trait BlockBehavior: Send + Sync {
     #[allow(unused_variables)]
     fn pickup_block(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         player: Option<&Player>,
@@ -55,7 +55,7 @@ pub trait BlockBehavior: Send + Sync {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -73,7 +73,7 @@ pub trait BlockBehavior: Send + Sync {
     /// returns `true`; override for blocks that require physical support
     /// (torches, buttons, candles, cactus, etc.).
     #[allow(unused_variables)]
-    fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         true
     }
 
@@ -92,7 +92,7 @@ pub trait BlockBehavior: Send + Sync {
     fn on_place(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         old_state: BlockStateId,
         moved_by_piston: bool,
@@ -113,7 +113,7 @@ pub trait BlockBehavior: Send + Sync {
     fn affect_neighbors_after_removal(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         moved_by_piston: bool,
     ) {
@@ -171,7 +171,7 @@ pub trait BlockBehavior: Send + Sync {
     fn handle_neighbor_changed(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         source_block: BlockRef,
         moved_by_piston: bool,
@@ -253,7 +253,7 @@ pub trait BlockBehavior: Send + Sync {
     fn entity_inside(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         entity: &dyn Entity,
     ) {
@@ -321,7 +321,12 @@ pub trait BlockBehavior: Send + Sync {
     /// * `world` - The world
     /// * `pos` - The position of the block
     #[allow(unused_variables)]
-    fn get_analog_output_signal(&self, state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
+    fn get_analog_output_signal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> i32 {
         0
     }
 
@@ -374,7 +379,7 @@ pub trait BlockBehavior: Send + Sync {
     #[allow(unused_variables)]
     fn place_liquid(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         fluid_state: FluidState,

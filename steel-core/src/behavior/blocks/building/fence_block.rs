@@ -2,6 +2,8 @@
 //!
 //! Fences connect to adjacent fences, fence gates, and solid blocks.
 
+use std::sync::Arc;
+
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
@@ -89,7 +91,7 @@ impl FenceBlock {
     }
 
     /// Gets the connection state for a position by checking all 4 horizontal neighbors.
-    fn get_connection_state(&self, world: &World, pos: &BlockPos) -> BlockStateId {
+    fn get_connection_state(&self, world: &Arc<World>, pos: &BlockPos) -> BlockStateId {
         let mut state = self.block.default_state();
 
         // Check north
@@ -136,7 +138,7 @@ impl BlockBehavior for FenceBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

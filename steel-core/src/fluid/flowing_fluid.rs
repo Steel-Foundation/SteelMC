@@ -152,7 +152,7 @@ pub trait FlowingFluid: FluidBehavior {
     }
 
     /// Returns the number of fluid sources in the 4-directional neighborhood of the given position.
-    fn source_neighbor_count(&self, world: &World, pos: &BlockPos) -> u8 {
+    fn source_neighbor_count(&self, world: &Arc<World>, pos: &BlockPos) -> u8 {
         let mut count = 0u8;
         for dir in Direction::HORIZONTAL {
             let neighbor = dir.relative(pos);

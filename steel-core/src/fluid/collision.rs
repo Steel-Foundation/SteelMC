@@ -2,6 +2,8 @@
 //!
 //! Equivalent to various collision checks in FlowingFluid.java.
 
+use std::sync::Arc;
+
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockStateBehaviorExt;
 use crate::physics::shapes::merged_face_occludes;
@@ -21,7 +23,7 @@ use steel_utils::{BlockPos, BlockStateId};
 /// Checks if fluid can pass through a wall between two positions.
 #[must_use]
 pub fn can_pass_through_wall(
-    world: &World,
+    world: &Arc<World>,
     from: BlockPos,
     to: BlockPos,
     direction: Direction,
@@ -40,7 +42,7 @@ pub fn can_pass_through_wall(
 ///
 /// Vanilla equivalent: `FlowingFluid.canHoldAnyFluid(BlockState)`.
 #[must_use]
-pub fn can_hold_any_fluid(world: &World, pos: &BlockPos) -> bool {
+pub fn can_hold_any_fluid(world: &Arc<World>, pos: &BlockPos) -> bool {
     let state = world.get_block_state(pos);
     can_hold_any_fluid_state(state)
 }
@@ -121,7 +123,11 @@ pub fn can_hold_fluid(state: BlockStateId, fluid: FluidRef) -> bool {
 /// This is the world-querying entry point. It reads the block state at `pos`
 /// and delegates entirely to [`can_pass_horizontally_internal`]
 #[must_use]
-pub fn can_pass_horizontally(world: &World, pos: &BlockPos, target_fluid_id: FluidRef) -> bool {
+pub fn can_pass_horizontally(
+    world: &Arc<World>,
+    pos: &BlockPos,
+    target_fluid_id: FluidRef,
+) -> bool {
     if !world.is_in_valid_bounds(pos) {
         return false;
     }

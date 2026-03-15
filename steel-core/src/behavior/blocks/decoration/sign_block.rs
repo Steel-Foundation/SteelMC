@@ -120,7 +120,7 @@ fn get_sign_rotation_degrees(state: BlockStateId) -> f32 {
 ///
 /// Vanilla uses `isSolid()` which checks if the collision shape is a full cube.
 /// This means signs cannot be placed on other signs, fences, walls, etc.
-fn can_support_standing_sign(world: &World, pos: &BlockPos) -> bool {
+fn can_support_standing_sign(world: &Arc<World>, pos: &BlockPos) -> bool {
     let below_pos = BlockPos::new(pos.x(), pos.y() - 1, pos.z());
     let below_state = world.get_block_state(&below_pos);
     below_state.is_solid()
@@ -130,7 +130,7 @@ fn can_support_standing_sign(world: &World, pos: &BlockPos) -> bool {
 ///
 /// Vanilla uses `isSolid()` which allows wall signs to be placed on other signs
 /// (since signs have `forceSolidOn`).
-fn can_wall_sign_survive(world: &World, pos: &BlockPos, facing: Direction) -> bool {
+fn can_wall_sign_survive(world: &Arc<World>, pos: &BlockPos, facing: Direction) -> bool {
     // Wall sign needs a solid block behind it
     let behind_pos = facing.opposite().relative(pos);
     let behind_state = world.get_block_state(&behind_pos);
@@ -138,7 +138,7 @@ fn can_wall_sign_survive(world: &World, pos: &BlockPos, facing: Direction) -> bo
 }
 
 /// Checks if a ceiling hanging sign can survive at the given position.
-fn can_ceiling_hanging_sign_survive(world: &World, pos: &BlockPos) -> bool {
+fn can_ceiling_hanging_sign_survive(world: &Arc<World>, pos: &BlockPos) -> bool {
     let above_pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
     let above_state = world.get_block_state(&above_pos);
     above_state.is_face_sturdy_for(Direction::Down, SupportType::Center)
@@ -150,7 +150,7 @@ fn can_ceiling_hanging_sign_survive(world: &World, pos: &BlockPos) -> bool {
 /// 1. If the neighbor is a wall hanging sign on the same axis, allow attachment
 /// 2. Otherwise, check if the face is sturdy with FULL support type
 fn can_attach_to(
-    world: &World,
+    world: &Arc<World>,
     sign_facing: Direction,
     attach_pos: &BlockPos,
     attach_face: Direction,
@@ -178,7 +178,7 @@ fn can_attach_to(
 ///
 /// Wall hanging signs need support on at least one side perpendicular to facing.
 /// This matches vanilla's `WallHangingSignBlock.canPlace`.
-fn can_wall_hanging_sign_survive(world: &World, pos: &BlockPos, facing: Direction) -> bool {
+fn can_wall_hanging_sign_survive(world: &Arc<World>, pos: &BlockPos, facing: Direction) -> bool {
     let clockwise = facing.rotate_y_clockwise();
     let counter_clockwise = facing.rotate_y_counter_clockwise();
 
@@ -228,7 +228,7 @@ fn can_wall_hanging_sign_survive(world: &World, pos: &BlockPos, facing: Directio
 /// Returns `Success` if the editor was opened, `Pass` otherwise.
 fn try_open_sign_editor(
     state: BlockStateId,
-    world: &World,
+    world: &Arc<World>,
     pos: BlockPos,
     player: &Player,
 ) -> InteractionResult {
@@ -291,7 +291,7 @@ impl BlockBehavior for StandingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -371,7 +371,7 @@ impl BlockBehavior for WallSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -459,7 +459,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -592,7 +592,7 @@ impl BlockBehavior for WallHangingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

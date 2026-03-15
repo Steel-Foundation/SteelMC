@@ -432,7 +432,12 @@ impl World {
     ///
     /// Returns `true` if the block was successfully set, `false` otherwise.
     /// Uses the default update limit of 512 (matching vanilla).
-    pub fn set_block(&self, pos: BlockPos, block_state: BlockStateId, flags: UpdateFlags) -> bool {
+    pub fn set_block(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> bool {
         self.set_block_with_limit(pos, block_state, flags, 512)
     }
 
@@ -443,7 +448,7 @@ impl World {
     ///
     /// Returns `true` if the block was successfully set, `false` otherwise.
     pub fn set_block_with_limit(
-        &self,
+        self: &Arc<Self>,
         pos: BlockPos,
         block_state: BlockStateId,
         flags: UpdateFlags,
@@ -516,7 +521,7 @@ impl World {
     /// Updates all neighbors of the given position about a block change.
     ///
     /// This is the Rust equivalent of vanilla's `Level.updateNeighborsAt()`.
-    pub fn update_neighbors_at(&self, pos: &BlockPos, source_block: BlockRef) {
+    pub fn update_neighbors_at(self: &Arc<Self>, pos: &BlockPos, source_block: BlockRef) {
         for direction in Self::NEIGHBOR_UPDATE_ORDER {
             let neighbor_pos = pos.relative(direction);
             self.neighbor_changed(neighbor_pos, source_block, false);
@@ -527,7 +532,7 @@ impl World {
     ///
     /// This is the Rust equivalent of vanilla's `NeighborUpdater.executeShapeUpdate()`.
     fn neighbor_shape_changed(
-        &self,
+        self: &Arc<Self>,
         direction: Direction,
         pos: BlockPos,
         neighbor_pos: BlockPos,
@@ -581,7 +586,7 @@ impl World {
     ///
     /// This is the Rust equivalent of vanilla's `Level.neighborChanged()`.
     pub(crate) fn neighbor_changed(
-        &self,
+        self: &Arc<Self>,
         pos: BlockPos,
         source_block: BlockRef,
         moved_by_piston: bool,

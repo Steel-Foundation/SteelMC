@@ -134,7 +134,7 @@ pub struct UseItemContext<'a> {
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
-    pub world: &'a World,
+    pub world: &'a Arc<World>,
     /// The item stack being used (mutable for consumption).
     pub item_stack: &'a mut ItemStack,
     /// Lock guard holding the player's inventory. Behaviors that need to add

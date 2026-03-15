@@ -73,7 +73,7 @@ impl CropBlock {
     /// - Farmland below: +1.0 (dry) or +3.0 (hydrated)
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
-    fn get_growth_speed(&self, world: &World, pos: BlockPos) -> f32 {
+    fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
         let mut speed = 1.0f32;
         let below = pos.below();
 

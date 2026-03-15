@@ -143,7 +143,7 @@ pub fn use_item_on(
 /// Handles using an item (general usage like right-clicking air).
 ///
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
-pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> InteractionResult {
+pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> InteractionResult {
     // Spectator mode: can only open menus
     if player.game_mode.load() == GameType::Spectator {
         return InteractionResult::Pass;

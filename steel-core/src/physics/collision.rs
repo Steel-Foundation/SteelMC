@@ -1,5 +1,7 @@
 //! World collision queries for physics simulation.
 
+use std::sync::Arc;
+
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_utils::math::Vector3;
@@ -36,12 +38,12 @@ pub trait CollisionWorld {
 
 /// Implements `CollisionWorld` for the Steel World struct.
 pub struct WorldCollisionProvider<'a> {
-    world: &'a World,
+    world: &'a Arc<World>,
 }
 
 impl<'a> WorldCollisionProvider<'a> {
     /// Creates a new collision provider for the given world.
-    pub const fn new(world: &'a World) -> Self {
+    pub const fn new(world: &'a Arc<World>) -> Self {
         Self { world }
     }
 }

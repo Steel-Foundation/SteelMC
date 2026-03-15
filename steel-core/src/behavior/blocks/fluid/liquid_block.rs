@@ -53,7 +53,7 @@ impl LiquidBlock {
     ///
     /// Returns `true` if the liquid should spread (schedule tick),
     /// Returns `false` if the liquid was converted to a block (obsidian/cobblestone/basalt).
-    fn should_spread_liquid(&self, world: &World, pos: BlockPos) -> bool {
+    fn should_spread_liquid(&self, world: &Arc<World>, pos: BlockPos) -> bool {
         // Only lava has special interactions with water and blue ice
         if !is_lava_fluid(self.fluid) {
             return true;
@@ -116,7 +116,7 @@ impl BlockBehavior for LiquidBlock {
     fn on_place(
         &self,
         _state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _old_state: BlockStateId,
         _moved_by_piston: bool,
@@ -131,7 +131,7 @@ impl BlockBehavior for LiquidBlock {
     fn handle_neighbor_changed(
         &self,
         _state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _source_block: BlockRef,
         _moved_by_piston: bool,
@@ -149,7 +149,7 @@ impl BlockBehavior for LiquidBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -183,7 +183,7 @@ impl BlockBehavior for LiquidBlock {
 
     fn pickup_block(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         _player: Option<&Player>,

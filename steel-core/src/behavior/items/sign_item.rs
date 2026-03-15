@@ -6,6 +6,8 @@
 //! **Vanilla reference:** `SignItem` extends `StandingAndWallBlockItem` and only
 //! overrides `updateCustomBlockEntityTag` to open the sign editor after placement.
 
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -145,7 +147,7 @@ impl HangingSignItemBehavior {
 ///
 /// This matches vanilla's `WallHangingSignBlock.canAttachTo`.
 fn can_attach_to(
-    world: &World,
+    world: &Arc<World>,
     sign_facing: Direction,
     attach_pos: &BlockPos,
     attach_face: Direction,
@@ -173,7 +175,7 @@ fn can_attach_to(
 ///
 /// This matches vanilla's `WallHangingSignBlock.canPlace` which is called
 /// from `HangingSignItem.canPlace` in addition to `canSurvive`.
-fn can_wall_hanging_sign_place(world: &World, state: BlockStateId, pos: &BlockPos) -> bool {
+fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: &BlockPos) -> bool {
     let Some(facing) = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING) else {
         return false;
     };
@@ -198,7 +200,7 @@ fn can_wall_hanging_sign_place(world: &World, state: BlockStateId, pos: &BlockPo
 ///
 /// This matches vanilla's `HangingSignItem.canPlace` override which adds
 /// an additional check for `WallHangingSignBlock.canPlace`.
-fn can_place_hanging_sign(world: &World, state: BlockStateId, pos: &BlockPos) -> bool {
+fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: &BlockPos) -> bool {
     let block = REGISTRY.blocks.by_state_id(state);
 
     // If it's a wall hanging sign, we need the additional canPlace check

@@ -2,6 +2,8 @@
 //!
 //! Equivalent to FlowingFluid#getNewLiquid and related helpers.
 
+use std::sync::Arc;
+
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::fluid::can_pass_through_wall;
@@ -16,7 +18,7 @@ use steel_utils::BlockPos;
 /// Calculates the new fluid state at a position based on neighbors.
 #[must_use]
 pub fn get_new_liquid(
-    world: &World,
+    world: &Arc<World>,
     pos: BlockPos,
     fluid_id: FluidRef,
     drop_off: u8,
@@ -85,7 +87,7 @@ pub fn get_new_liquid(
 /// Vanilla equivalent: `FlowingFluid.isWaterHole()`.
 /// Checks wall passability, then either same-fluid presence or `canHoldFluid`.
 #[must_use]
-pub fn is_hole(world: &World, pos: &BlockPos, fluid_id: FluidRef) -> bool {
+pub fn is_hole(world: &Arc<World>, pos: &BlockPos, fluid_id: FluidRef) -> bool {
     let below = pos.below();
 
     if !world.is_in_valid_bounds(&below) {
@@ -200,7 +202,7 @@ fn get_slope_distance(
 /// Vanilla equivalent: `FlowingFluid.getSpread()`.
 #[must_use]
 pub fn get_spread(
-    world: &World,
+    world: &Arc<World>,
     pos: BlockPos,
     fluid_id: FluidRef,
     drop_off: u8,

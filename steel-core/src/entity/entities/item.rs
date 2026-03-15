@@ -498,7 +498,7 @@ impl ItemEntity {
     /// Mirrors vanilla's `ItemEntity.mergeWithNeighbours()`.
     /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
-    pub fn merge_with_neighbours(&self, world: &World) {
+    pub fn merge_with_neighbours(&self, world: &Arc<World>) {
         if !self.is_mergeable() {
             return;
         }

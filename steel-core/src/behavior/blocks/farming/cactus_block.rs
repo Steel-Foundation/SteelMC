@@ -61,7 +61,7 @@ impl BlockBehavior for CactusBlock {
     /// 2. No lava on horizontal neighbors
     /// 3. Block below must be `CACTUS`, `SAND`, or `RED_SAND`
     /// 4. Block above must not be liquid
-    fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         // Check horizontal neighbors - no solid blocks or lava
         for dir in [
             Direction::North,
@@ -186,7 +186,7 @@ impl BlockBehavior for CactusBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -202,7 +202,7 @@ impl BlockBehavior for CactusBlock {
     fn entity_inside(
         &self,
         _state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
     ) {

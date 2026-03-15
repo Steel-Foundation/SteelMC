@@ -3,6 +3,8 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode` for handling
 //! block breaking, including progress tracking and validation.
 
+use std::sync::Arc;
+
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::loot_table::LootContext;
@@ -65,7 +67,7 @@ impl BlockBreakingManager {
     /// Ticks the block breaking manager.
     ///
     /// This handles delayed destruction and updates break progress.
-    pub fn tick(&mut self, player: &Player, world: &World) {
+    pub fn tick(&mut self, player: &Player, world: &Arc<World>) {
         self.game_ticks += 1;
 
         if self.has_delayed_destroy {
@@ -108,7 +110,7 @@ impl BlockBreakingManager {
     fn increment_destroy_progress(
         &mut self,
         player: &Player,
-        world: &World,
+        world: &Arc<World>,
         block_state: BlockStateId,
         pos: BlockPos,
         destroy_start_tick: u64,
@@ -134,7 +136,7 @@ impl BlockBreakingManager {
     pub fn handle_block_break_action(
         &mut self,
         player: &Player,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         action: BlockBreakAction,
         _direction: Direction,
@@ -249,7 +251,7 @@ impl BlockBreakingManager {
     }
 
     /// Destroys a block and sends appropriate response.
-    fn destroy_and_ack(&mut self, player: &Player, world: &World, pos: BlockPos) {
+    fn destroy_and_ack(&mut self, player: &Player, world: &Arc<World>, pos: BlockPos) {
         if !self.destroy_block(player, world, pos) {
             // Send block update to resync client
             player.send_packet(CBlockUpdate {
@@ -263,7 +265,7 @@ impl BlockBreakingManager {
     ///
     /// Returns true if the block was successfully destroyed.
     #[allow(clippy::unused_self)]
-    fn destroy_block(&self, player: &Player, world: &World, pos: BlockPos) -> bool {
+    fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(&pos);
 
         // Check if player's tool can destroy this block
@@ -429,7 +431,7 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
 
 /// Drops loot for a destroyed block using its loot table.
 #[allow(clippy::needless_pass_by_value)]
-fn drop_block_loot(player: &Player, _world: &World, pos: BlockPos, state: BlockStateId) {
+fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
     let block = state.get_block();
 
     // Build the loot table key: "blocks/{block_name}"

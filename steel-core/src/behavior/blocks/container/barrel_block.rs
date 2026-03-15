@@ -101,7 +101,12 @@ impl BlockBehavior for BarrelBlock {
         true
     }
 
-    fn get_analog_output_signal(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> i32 {
+    fn get_analog_output_signal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> i32 {
         // Get the block entity and calculate signal from container contents
         world.get_block_entity(&pos).map_or(0, |be| {
             let guard = be.lock();
