@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
@@ -16,6 +17,7 @@ use crate::world::World;
 ///
 /// Crops grow through random ticks when placed on farmland with sufficient light.
 /// Growth speed is affected by nearby farmland moisture and crop arrangement.
+#[block_behavior]
 pub struct CropBlock {
     block: BlockRef,
     age_property: IntProperty,

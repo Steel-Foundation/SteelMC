@@ -5,6 +5,7 @@
 //!
 //! Vanilla equivalent: `CactusFlowerBlock` extends `VegetationBlock`.
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
@@ -21,6 +22,7 @@ use crate::world::World;
 /// Cactus flower can be placed on cactus, farmland, or any block with
 /// a sturdy center face on top. Breaks instantly if the supporting block
 /// is removed (returns AIR from `update_shape`).
+#[block_behavior]
 pub struct CactusFlowerBlock {
     block: BlockRef,
 }

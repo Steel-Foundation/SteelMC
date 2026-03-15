@@ -2,6 +2,7 @@
 //!
 //! Opens the 3x3 crafting grid when right-clicked.
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -15,6 +16,7 @@ use crate::world::World;
 ///
 /// When a player interacts with the crafting table without an item (or with
 /// an item that doesn't consume the action), it opens the 3x3 crafting menu.
+#[block_behavior]
 pub struct CraftingTableBlock {
     block: BlockRef,
 }

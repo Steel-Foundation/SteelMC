@@ -1,5 +1,6 @@
 //! End portal frame block implementation.
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -9,6 +10,7 @@ use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
 
 /// Behavior for end portal frame blocks.
+#[block_behavior]
 pub struct EndPortalFrameBlock {
     block: BlockRef,
 }

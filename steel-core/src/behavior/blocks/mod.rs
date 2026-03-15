@@ -3,38 +3,23 @@
 //! The actual behavior registration is auto-generated from classes.json.
 //! See `src/generated/behaviors.rs` for the generated registration code.
 
-mod barrel_block;
-mod button_block;
-mod cactus_block;
-mod cactus_flower_block;
-mod candle_block;
-mod crafting_table_block;
-mod crop_block;
-mod end_portal_frame_block;
-mod farmland_block;
-mod fence_block;
-mod liquid_block;
-mod redstone_torch_block;
-mod rotated_pillar_block;
-mod sign_block;
-mod torch_block;
-mod weathering_block;
+mod building;
+mod container;
+mod decoration;
+mod farming;
+mod fluid;
+mod portal;
+mod redstone;
 
-pub use barrel_block::BarrelBlock;
-pub use button_block::ButtonBlock;
-pub use cactus_block::CactusBlock;
-pub use cactus_flower_block::CactusFlowerBlock;
-pub use candle_block::CandleBlock;
-pub use crafting_table_block::CraftingTableBlock;
-pub use crop_block::CropBlock;
-pub use end_portal_frame_block::EndPortalFrameBlock;
-pub use farmland_block::FarmlandBlock;
-pub use fence_block::FenceBlock;
-pub use liquid_block::LiquidBlock;
-pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
-pub use rotated_pillar_block::RotatedPillarBlock;
-pub use sign_block::{
-    CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
+pub use building::{
+    FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper, WeatheringCopperFullBlock,
 };
-pub use torch_block::{TorchBlock, WallTorchBlock};
-pub use weathering_block::{WeatherState, WeatheringCopper, WeatheringCopperFullBlock};
+pub use container::{BarrelBlock, CraftingTableBlock};
+pub use decoration::{
+    CandleBlock, CeilingHangingSignBlock, StandingSignBlock, TorchBlock, WallHangingSignBlock,
+    WallSignBlock, WallTorchBlock,
+};
+pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
+pub use fluid::LiquidBlock;
+pub use portal::EndPortalFrameBlock;
+pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};

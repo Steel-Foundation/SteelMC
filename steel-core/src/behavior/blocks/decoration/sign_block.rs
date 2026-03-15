@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::sync::{Arc, Weak};
 
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -273,6 +274,7 @@ fn try_open_sign_editor(
 }
 
 /// Behavior for standing sign blocks (placed on ground).
+#[block_behavior]
 pub struct StandingSignBlock {
     block: BlockRef,
 }
@@ -352,6 +354,7 @@ impl BlockBehaviour for StandingSignBlock {
 }
 
 /// Behavior for wall sign blocks (attached to walls).
+#[block_behavior]
 pub struct WallSignBlock {
     block: BlockRef,
 }
@@ -439,6 +442,7 @@ impl BlockBehaviour for WallSignBlock {
 }
 
 /// Behavior for ceiling hanging sign blocks.
+#[block_behavior]
 pub struct CeilingHangingSignBlock {
     block: BlockRef,
 }
@@ -571,6 +575,7 @@ const fn rotation_to_direction(rotation: u8) -> Option<Direction> {
 }
 
 /// Behavior for wall hanging sign blocks.
+#[block_behavior]
 pub struct WallHangingSignBlock {
     block: BlockRef,
 }

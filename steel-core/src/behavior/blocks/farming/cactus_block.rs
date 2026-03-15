@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -39,6 +40,7 @@ const FLOWER_CHANCE_TALL: f64 = 0.25;
 /// - Cannot have solid blocks adjacent horizontally
 /// - Grows up to 3 blocks tall via random ticks
 /// - Damages entities that touch it (1 HP per tick)
+#[block_behavior]
 pub struct CactusBlock {
     block: BlockRef,
 }

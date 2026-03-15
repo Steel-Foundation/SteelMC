@@ -1,11 +1,9 @@
-//! Torch block implementations.
+//! Redstone torch behaviors (standing and wall variants).
 //!
-//! Torches come in two forms:
-//! - Standing torches (TorchBlock): placed on top of blocks
-//! - Wall torches (WallTorchBlock): placed on the side of blocks
-//!
-//! Both break when their supporting block is removed.
+//! These mirror the placement/survival rules of regular torches but add a `LIT`
+//! property and are intended to be expanded with redstone logic later.
 
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -18,24 +16,25 @@ use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
-/// Behavior for standing torch blocks (torch, `soul_torch`, `copper_torch`).
+/// Standing redstone torch (`redstone_torch`).
 ///
-/// Standing torches are placed on top of blocks and require center support
-/// from the block below to survive.
-pub struct TorchBlock {
+/// TODO: Redstone functionality (signal output, neighbor notifications,
+/// scheduled ticks, burnout, particle effects).
+#[block_behavior]
+pub struct RedstoneTorchBlock {
     block: BlockRef,
 }
 
-impl TorchBlock {
-    /// Creates a new standing torch block behavior.
+impl RedstoneTorchBlock {
     #[must_use]
+    /// Creates a new standing redstone torch behavior for the given block ref.
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehaviour for TorchBlock {
-    /// Checks if a torch can survive at the given position.
+impl BlockBehaviour for RedstoneTorchBlock {
+    /// Checks if a redstone torch can survive at the given position.
     /// Requires the block below to provide center support on its top face.
     fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         let below_pos = pos.below();
@@ -52,7 +51,6 @@ impl BlockBehaviour for TorchBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // Standing torches break when the block below is removed
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
         }
@@ -61,33 +59,34 @@ impl BlockBehaviour for TorchBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = self.block.default_state();
-        // Check if we can place on the block below
         if !self.can_survive(default_state, context.world, context.relative_pos) {
             return None;
         }
-
-        Some(default_state)
+        Some(default_state.set_value(&BlockStateProperties::LIT, true))
     }
+
+    // TODO: implement redstone signal source behavior, neighbor updates, and burnout.
 }
 
-/// Behavior for wall torch blocks (`wall_torch`, `soul_wall_torch`, `copper_wall_torch`).
+/// Wall redstone torch (`redstone_wall_torch`).
 ///
-/// Wall torches are placed on the side of blocks and require a sturdy face
-/// from the block they're attached to.
-pub struct WallTorchBlock {
+/// TODO: Redstone functionality (signal output by facing, neighbor notifications,
+/// scheduled ticks, burnout, particle effects).
+#[block_behavior]
+pub struct RedstoneWallTorchBlock {
     block: BlockRef,
 }
 
-impl WallTorchBlock {
-    /// Creates a new wall torch block behavior.
+impl RedstoneWallTorchBlock {
     #[must_use]
+    /// Creates a new wall redstone torch behavior for the given block ref.
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehaviour for WallTorchBlock {
-    /// Checks if a wall torch can survive at the given position.
+impl BlockBehaviour for RedstoneWallTorchBlock {
+    /// Checks if a wall redstone torch can survive at the given position.
     /// Requires the block behind (opposite of facing) to provide a sturdy face.
     fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
@@ -106,7 +105,6 @@ impl BlockBehaviour for WallTorchBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        // Wall torches break when the block they're attached to is removed
         let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let attach_direction = facing.opposite();
 
@@ -117,21 +115,37 @@ impl BlockBehaviour for WallTorchBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // Vanilla iterates through getNearestLookingDirections() and uses the opposite
-        // of each horizontal direction as the facing (torch points away from wall)
-        for direction in context.get_nearest_looking_directions() {
-            if direction.is_horizontal() {
-                let facing = direction.opposite();
-                let state = self
-                    .block
-                    .default_state()
-                    .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing);
-                if self.can_survive(state, context.world, context.relative_pos) {
-                    return Some(state);
-                }
+        let clicked_face = context.clicked_face;
+        if clicked_face.is_horizontal() {
+            let facing = clicked_face;
+            let state = self
+                .block
+                .default_state()
+                .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
+                .set_value(&BlockStateProperties::LIT, true);
+            if self.can_survive(state, context.world, context.relative_pos) {
+                return Some(state);
+            }
+        }
+
+        for &facing in &[
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
+        ] {
+            let state = self
+                .block
+                .default_state()
+                .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
+                .set_value(&BlockStateProperties::LIT, true);
+            if self.can_survive(state, context.world, context.relative_pos) {
+                return Some(state);
             }
         }
 
         None
     }
+
+    // TODO: implement redstone signal source behavior, neighbor updates, and burnout.
 }
