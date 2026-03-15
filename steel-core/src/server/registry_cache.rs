@@ -101,7 +101,7 @@ impl RegistryCache {
     }
 
     fn build_tags_packet(registry: &Registry) -> CUpdateTags {
-        let mut tags_by_registry: TagCollection = Vec::with_capacity(6);
+        let mut tags_by_registry: TagCollection = Vec::with_capacity(10);
         macro_rules! add_tags {
             ($reg_key:expr, $field:ident) => {
                 let mut tags: Vec<(Identifier, Vec<VarInt>)> =

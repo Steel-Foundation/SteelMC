@@ -48,11 +48,12 @@ mod noise_parameters;
 mod surface_rules;
 
 mod banner_pattern_tags;
-mod damage_types_tags;
+mod damage_type_tags;
 mod entity_type_tags;
 mod instrument_tags;
 mod painting_variant_tags;
 mod poi_type_tags;
+mod tag_utils;
 
 const FMT: bool = cfg!(feature = "fmt");
 
@@ -76,7 +77,7 @@ const CHICKEN_VARIANTS: &str = "chicken_variants";
 const PAINTING_VARIANTS: &str = "painting_variants";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
-const DAMAGE_TYPES_TAGS: &str = "damage_types_tags";
+const DAMAGE_TYPE_TAGS: &str = "damage_type_tags";
 const BANNER_PATTERN_TAGS: &str = "banner_pattern_tags";
 const ENTITY_TYPE_TAGS: &str = "entity_type_tags";
 const INSTRUMENT_TAGS: &str = "instrument_tags";
@@ -141,7 +142,7 @@ pub fn main() {
         (painting_variants::build(), PAINTING_VARIANTS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
-        (damage_types_tags::build(), DAMAGE_TYPES_TAGS),
+        (damage_type_tags::build(), DAMAGE_TYPE_TAGS),
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),
         (dialogs::build(), DIALOGS),
