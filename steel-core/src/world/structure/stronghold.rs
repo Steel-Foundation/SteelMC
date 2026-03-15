@@ -88,7 +88,7 @@ struct State {
     pending: Vec<usize>,
     wts: Vec<PieceWeight>,
     start_bb: BoundingBox,
-    prev: Option<usize>, // index into wts, not PT
+    prev_pt: Option<PT>, // last placed piece type (for repeat prevention)
     has_portal: bool,
     imposed: Option<PT>,
     total_weight: i32,
@@ -213,7 +213,7 @@ fn generate_piece(s: &mut State, rng: &mut LegacyRandom, fx: i32, fy: i32, fz: i
             choice -= s.wts[wi].weight;
             if choice < 0 {
                 // Check if this piece can be placed
-                if !s.wts[wi].can(depth) || Some(wi) == s.prev {
+                if !s.wts[wi].can(depth) || Some(s.wts[wi].pt) == s.prev_pt {
                     break; // Retry
                 }
 
@@ -221,11 +221,10 @@ fn generate_piece(s: &mut State, rng: &mut LegacyRandom, fx: i32, fy: i32, fz: i
                     let pt = s.wts[wi].pt;
                     let piece = create_piece(pt, bb, dir, depth, rng);
                     s.wts[wi].count += 1;
-                    s.prev = Some(wi);
-                    // Remove weight if maxed out
+                    s.prev_pt = Some(pt);
+                    // Remove weight if maxed out (vanilla: !piece.isValid())
                     if s.wts[wi].max > 0 && s.wts[wi].count >= s.wts[wi].max {
                         s.wts.remove(wi);
-                        s.update_weights();
                     }
                     return Some(piece);
                 }
@@ -352,21 +351,28 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<BoundingBox
 
         // Reset weights
         let start_dir = random_horizontal(&mut rng);
-        let start_bb = orient_box(west, 64, north, -1, -7, 0, 5, 11, 5, start_dir);
+        // StartPiece uses makeBoundingBox (NOT orientBox) — no offsets
+        let start_bb = match start_dir {
+            Direction::North | Direction::South =>
+                BoundingBox::new(west, 64, north, west + 4, 74, north + 4),
+            _ => // East/West: swap width and depth
+                BoundingBox::new(west, 64, north, west + 4, 74, north + 4),
+        };
 
         let mut s = State {
             pieces: Vec::new(),
             pending: Vec::new(),
             wts: weights(),
             start_bb,
-            prev: None,
+            prev_pt: None,
             has_portal: false,
             imposed: None,
             total_weight: 0,
         };
 
         // StartPiece (StairsDown with isSource=true)
-        let start_piece = create_piece(PT::StairsDown, start_bb, start_dir, 0, &mut rng);
+        // StartPiece constructor does NOT consume RNG (entryDoor = OPENING, not random)
+        let start_piece = Piece::new(start_bb, start_dir, 0, PT::StairsDown);
         s.pieces.push(start_piece);
 
         // StartPiece.addChildren generates one forward child
