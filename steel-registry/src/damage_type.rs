@@ -125,16 +125,6 @@ impl DamageTypeRegistry {
             .enumerate()
             .map(|(id, &dt)| (id, dt))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.damage_types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.damage_types_by_id.is_empty()
-    }
 }
 
 impl Default for DamageTypeRegistry {
