@@ -246,7 +246,7 @@ impl ShapelessRecipe {
 }
 
 /// Unified crafting recipe enum (replaces trait-based approach).
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CraftingRecipe {
     Shaped(&'static ShapedRecipe),
     Shapeless(&'static ShapelessRecipe),

@@ -113,6 +113,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::poi::PoiTypeRegistry;
+        use crate::TaggedRegistryExt;
         use steel_utils::Identifier;
     });
 

@@ -9,7 +9,7 @@ use steel_utils::{
 };
 
 use crate::{
-    REGISTRY,
+    REGISTRY, RegistryEntry, RegistryExt,
     data_components::{
         Component, ComponentData, ComponentPatchEntry, DataComponentMap, DataComponentPatch,
         DataComponentType,
@@ -765,8 +765,7 @@ impl WriteTo for ItemStack {
         } else {
             VarInt(self.count).write(writer)?;
             // Write item ID as VarInt
-            let item_id = *REGISTRY.items.get_id(self.item);
-            VarInt(item_id as i32).write(writer)?;
+            VarInt(self.item.id() as i32).write(writer)?;
             // Write DataComponentPatch
             self.patch.write(writer)?;
         }

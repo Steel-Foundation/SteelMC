@@ -124,6 +124,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::fluid::FluidRegistry;
+        use crate::TaggedRegistryExt;
         use steel_utils::Identifier;
     });
 

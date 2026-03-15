@@ -2,13 +2,13 @@
 
 use std::sync::{Arc, Weak};
 
-use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -436,14 +436,14 @@ impl BlockBehaviorRegistry {
 
     /// Sets a custom behavior for a block.
     pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehaviour>) {
-        let id = *REGISTRY.blocks.get_id(block);
+        let id = block.id();
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for a block.
     #[must_use]
     pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehaviour {
-        let id = *REGISTRY.blocks.get_id(block);
+        let id = block.id();
         self.behaviors[id].as_ref()
     }
 

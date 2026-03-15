@@ -112,6 +112,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::banner_pattern::BannerPatternRegistry;
+        use crate::TaggedRegistryExt;
         use steel_utils::Identifier;
     });
 

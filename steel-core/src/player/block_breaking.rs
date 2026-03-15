@@ -6,7 +6,7 @@
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::loot_table::LootContext;
-use steel_registry::{REGISTRY, blocks::properties::Direction, vanilla_blocks};
+use steel_registry::{REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks};
 use steel_utils::Identifier;
 use steel_utils::{
     BlockPos, BlockStateId,

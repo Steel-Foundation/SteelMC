@@ -2,8 +2,6 @@ use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use steel_utils::registry::registry_vanilla_or_custom_tag;
 
-use crate::RegistryExt;
-
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobCategory {
@@ -253,8 +251,10 @@ impl EntityTypeRegistry {
     }
 }
 
-impl RegistryExt for EntityTypeRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(
+    EntityTypeRegistry,
+    EntityType,
+    types_by_id,
+    types_by_key,
+    entity_types
+);

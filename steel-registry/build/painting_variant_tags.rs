@@ -112,6 +112,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::painting_variant::PaintingVariantRegistry;
+        use crate::TaggedRegistryExt;
         use steel_utils::Identifier;
     });
 

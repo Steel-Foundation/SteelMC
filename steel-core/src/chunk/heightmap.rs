@@ -7,7 +7,7 @@
 //! the final heightmaps are moved directly into `ChunkHeightmaps` via [`ChunkHeightmaps::from_proto`].
 
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags,
 };

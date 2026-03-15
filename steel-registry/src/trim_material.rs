@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -59,46 +58,11 @@ impl TrimMaterialRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<TrimMaterialRef> {
-        self.trim_materials_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, trim_material: TrimMaterialRef) -> &usize {
-        self.trim_materials_by_key
-            .get(&trim_material.key)
-            .expect("Trim material not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<TrimMaterialRef> {
-        self.trim_materials_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, TrimMaterialRef)> + '_ {
         self.trim_materials_by_id
             .iter()
             .enumerate()
             .map(|(id, &material)| (id, material))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.trim_materials_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.trim_materials_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for TrimMaterialRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -107,3 +71,11 @@ impl Default for TrimMaterialRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    TrimMaterialRegistry,
+    TrimMaterial,
+    trim_materials_by_id,
+    trim_materials_by_key,
+    trim_materials
+);

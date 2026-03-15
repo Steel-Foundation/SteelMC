@@ -226,7 +226,7 @@ impl SurfaceRuleTranspiler {
                             Span::call_site(),
                         );
                         let biome_ident = Ident::new(&upper, Span::call_site());
-                        quote! { ctx.biome_id == *#static_name.get_or_init(|| *crate::REGISTRY.biomes.get_id(&*crate::vanilla_biomes::#biome_ident) as u16) }
+                        quote! { ctx.biome_id == *#static_name.get_or_init(|| crate::RegistryEntry::id(&*crate::vanilla_biomes::#biome_ident) as u16) }
                     })
                     .collect();
                 if checks.len() == 1 {

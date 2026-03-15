@@ -15,9 +15,9 @@ use steel_registry::{
     CHAT_TYPE_REGISTRY, CHICKEN_VARIANT_REGISTRY, COW_VARIANT_REGISTRY, DAMAGE_TYPE_REGISTRY,
     DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, ENTITY_TYPE_REGISTRY, FLUID_REGISTRY,
     FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY, ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY,
-    PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY, REGISTRY, Registry, TIMELINE_REGISTRY,
-    TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, WOLF_SOUND_VARIANT_REGISTRY,
-    WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
+    PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY, REGISTRY, Registry, RegistryEntry as _,
+    TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, TaggedRegistryExt,
+    WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -109,7 +109,7 @@ impl RegistryCache {
                 for tag_key in registry.$field.tag_keys() {
                     let mut ids = Vec::with_capacity(registry.$field.iter_tag(tag_key).count());
                     for entry in registry.$field.iter_tag(tag_key) {
-                        ids.push(VarInt::from(*registry.$field.get_id(entry)));
+                        ids.push(VarInt::from(entry.id()));
                     }
                     tags.push((tag_key.clone(), ids));
                 }
@@ -134,8 +134,7 @@ impl RegistryCache {
             let mut fluid_ids = Vec::with_capacity(registry.fluids.iter_tag(tag_key).count());
 
             for fluid in registry.fluids.iter_tag(tag_key) {
-                let fluid_id = *registry.fluids.get_id(fluid).expect("Fluid not found");
-                fluid_ids.push(VarInt::from(fluid_id as i32));
+                fluid_ids.push(VarInt::from(fluid.id() as i32));
             }
 
             fluid_tags.push((tag_key.clone(), fluid_ids));

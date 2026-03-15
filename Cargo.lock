@@ -2789,7 +2789,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "steel"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "base64",
  "chrono",
@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "steel-core"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2860,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "steel-crypto"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "base64",
  "log",
@@ -2876,7 +2876,7 @@ dependencies = [
 
 [[package]]
 name = "steel-login"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "base64",
  "crossbeam",
@@ -2900,7 +2900,7 @@ dependencies = [
 
 [[package]]
 name = "steel-macros"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2909,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "steel-protocol"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "aes",
  "cfb8",
@@ -2931,7 +2931,7 @@ dependencies = [
 
 [[package]]
 name = "steel-registry"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "heck",
  "log",
@@ -2950,7 +2950,7 @@ dependencies = [
 
 [[package]]
 name = "steel-utils"
-version = "0.1.0"
+version = "0.2.0+mc1.21.11"
 dependencies = [
  "bitflags",
  "crc32c",

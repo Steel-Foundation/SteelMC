@@ -34,7 +34,7 @@ use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
-use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
@@ -1211,7 +1211,7 @@ impl World {
         );
 
         // Get the block entity type ID from the registry
-        let type_id = *REGISTRY.block_entity_types.get_id(block_entity_type);
+        let type_id = block_entity_type.id();
 
         let packet = CBlockEntityData {
             pos,
@@ -1688,7 +1688,7 @@ impl World {
     pub fn block_event(&self, pos: BlockPos, block: BlockRef, action_id: u8, action_param: u8) {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
-        let block_id = *REGISTRY.blocks.get_id(block) as i32;
+        let block_id = block.id() as i32;
 
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x()),
