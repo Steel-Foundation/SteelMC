@@ -72,10 +72,10 @@ impl ButtonBlock {
     ///
     /// Vanilla equivalent: `ButtonBlock.updateNeighbors()`.
     fn update_button_neighbors(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        world.update_neighbors_at(&pos, self.block);
+        world.update_neighbors_at(pos, self.block);
         let support_dir = Self::get_connected_direction(state).opposite();
-        let support_pos = support_dir.relative(&pos);
-        world.update_neighbors_at(&support_pos, self.block);
+        let support_pos = support_dir.relative(pos);
+        world.update_neighbors_at(support_pos, self.block);
     }
 
     /// Presses the button: sets POWERED=true, updates neighbors, schedules unpress tick,
@@ -94,8 +94,8 @@ impl BlockBehavior for ButtonBlock {
     /// Checks if a button with the given state can survive at the given position.
     fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let support_dir = Self::get_connected_direction(state).opposite();
-        let support_pos = support_dir.relative(&pos);
-        let support_state = world.get_block_state(&support_pos);
+        let support_pos = support_dir.relative(pos);
+        let support_state = world.get_block_state(support_pos);
         support_state.is_face_sturdy(support_dir.opposite())
     }
 

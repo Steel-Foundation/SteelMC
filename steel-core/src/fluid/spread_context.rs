@@ -63,7 +63,7 @@ impl<'a> SpreadContext<'a> {
         *self
             .state_cache
             .entry(key)
-            .or_insert_with(|| self.world.get_block_state(&pos))
+            .or_insert_with(|| self.world.get_block_state(pos))
     }
 
     /// Checks if the position is a hole (can fluid flow down into it?), with caching.
@@ -73,7 +73,7 @@ impl<'a> SpreadContext<'a> {
         *self
             .hole_cache
             .entry(key)
-            .or_insert_with(|| is_hole(self.world, &pos, fluid_id))
+            .or_insert_with(|| is_hole(self.world, pos, fluid_id))
     }
 
     /// Checks if fluid can pass horizontally to the given position.

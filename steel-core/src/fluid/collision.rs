@@ -29,12 +29,12 @@ pub fn can_pass_through_wall(
     to: BlockPos,
     direction: Direction,
 ) -> bool {
-    if !world.is_in_valid_bounds(&to) {
+    if !world.is_in_valid_bounds(to) {
         return false;
     }
 
-    let from_shape = world.get_block_state(&from).get_collision_shape();
-    let to_shape = world.get_block_state(&to).get_collision_shape();
+    let from_shape = world.get_block_state(from).get_collision_shape();
+    let to_shape = world.get_block_state(to).get_collision_shape();
 
     !merged_face_occludes(from_shape, to_shape, direction)
 }
@@ -43,7 +43,7 @@ pub fn can_pass_through_wall(
 ///
 /// Vanilla equivalent: `FlowingFluid.canHoldAnyFluid(BlockState)`.
 #[must_use]
-pub fn can_hold_any_fluid(world: &Arc<World>, pos: &BlockPos) -> bool {
+pub fn can_hold_any_fluid(world: &Arc<World>, pos: BlockPos) -> bool {
     let state = world.get_block_state(pos);
     can_hold_any_fluid_state(state)
 }
@@ -124,11 +124,7 @@ pub fn can_hold_fluid(state: BlockStateId, fluid: FluidRef) -> bool {
 /// This is the world-querying entry point. It reads the block state at `pos`
 /// and delegates entirely to [`can_pass_horizontally_internal`]
 #[must_use]
-pub fn can_pass_horizontally(
-    world: &Arc<World>,
-    pos: &BlockPos,
-    target_fluid_id: FluidRef,
-) -> bool {
+pub fn can_pass_horizontally(world: &Arc<World>, pos: BlockPos, target_fluid_id: FluidRef) -> bool {
     if !world.is_in_valid_bounds(pos) {
         return false;
     }

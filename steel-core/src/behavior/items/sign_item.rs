@@ -44,7 +44,7 @@ impl SignItemBehavior {
 impl ItemBehavior for SignItemBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(&clicked_pos);
+        let clicked_state = context.world.get_block_state(clicked_pos);
 
         // Get the clicked block to check if it's replaceable
         let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
@@ -55,16 +55,16 @@ impl ItemBehavior for SignItemBehavior {
         let (place_pos, replace_clicked) = if clicked_replaceable {
             (clicked_pos, true)
         } else {
-            (context.hit_result.direction.relative(&clicked_pos), false)
+            (context.hit_result.direction.relative(clicked_pos), false)
         };
 
         // Check if placement position is within world bounds
-        if !context.world.is_in_valid_bounds(&place_pos) {
+        if !context.world.is_in_valid_bounds(place_pos) {
             return InteractionResult::Fail;
         }
 
         // Check if the placement position already has a non-replaceable block
-        let existing_state = context.world.get_block_state(&place_pos);
+        let existing_state = context.world.get_block_state(place_pos);
         let existing_block = REGISTRY.blocks.by_state_id(existing_state);
         let existing_replaceable = existing_block.is_some_and(|b| b.config.replaceable);
 
@@ -149,7 +149,7 @@ impl HangingSignItemBehavior {
 fn can_attach_to(
     world: &Arc<World>,
     sign_facing: Direction,
-    attach_pos: &BlockPos,
+    attach_pos: BlockPos,
     attach_face: Direction,
 ) -> bool {
     let attach_state = world.get_block_state(attach_pos);
@@ -175,7 +175,7 @@ fn can_attach_to(
 ///
 /// This matches vanilla's `WallHangingSignBlock.canPlace` which is called
 /// from `HangingSignItem.canPlace` in addition to `canSurvive`.
-fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: &BlockPos) -> bool {
+fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: BlockPos) -> bool {
     let Some(facing) = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING) else {
         return false;
     };
@@ -185,12 +185,12 @@ fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: &Bl
 
     let can_attach_clockwise = {
         let attach_pos = clockwise.relative(pos);
-        can_attach_to(world, facing, &attach_pos, counter_clockwise)
+        can_attach_to(world, facing, attach_pos, counter_clockwise)
     };
 
     let can_attach_counter = {
         let attach_pos = counter_clockwise.relative(pos);
-        can_attach_to(world, facing, &attach_pos, clockwise)
+        can_attach_to(world, facing, attach_pos, clockwise)
     };
 
     can_attach_clockwise || can_attach_counter
@@ -200,7 +200,7 @@ fn can_wall_hanging_sign_place(world: &Arc<World>, state: BlockStateId, pos: &Bl
 ///
 /// This matches vanilla's `HangingSignItem.canPlace` override which adds
 /// an additional check for `WallHangingSignBlock.canPlace`.
-fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: &BlockPos) -> bool {
+fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos) -> bool {
     let block = REGISTRY.blocks.by_state_id(state);
 
     // If it's a wall hanging sign, we need the additional canPlace check
@@ -218,7 +218,7 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: &BlockPo
 impl ItemBehavior for HangingSignItemBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(&clicked_pos);
+        let clicked_state = context.world.get_block_state(clicked_pos);
 
         // Get the clicked block to check if it's replaceable
         let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
@@ -228,16 +228,16 @@ impl ItemBehavior for HangingSignItemBehavior {
         let (place_pos, replace_clicked) = if clicked_replaceable {
             (clicked_pos, true)
         } else {
-            (context.hit_result.direction.relative(&clicked_pos), false)
+            (context.hit_result.direction.relative(clicked_pos), false)
         };
 
         // Check if placement position is within world bounds
-        if !context.world.is_in_valid_bounds(&place_pos) {
+        if !context.world.is_in_valid_bounds(place_pos) {
             return InteractionResult::Fail;
         }
 
         // Check if the placement position already has a non-replaceable block
-        let existing_state = context.world.get_block_state(&place_pos);
+        let existing_state = context.world.get_block_state(place_pos);
         let existing_block = REGISTRY.blocks.by_state_id(existing_state);
         let existing_replaceable = existing_block.is_some_and(|b| b.config.replaceable);
 
@@ -276,12 +276,12 @@ impl ItemBehavior for HangingSignItemBehavior {
             let behavior = block_behaviors.get_behavior(block);
             if let Some(state) = behavior.get_state_for_placement(&place_context) {
                 // Vanilla's HangingSignItem.canPlace has additional check for wall hanging signs
-                if !can_place_hanging_sign(context.world, state, &place_pos) {
+                if !can_place_hanging_sign(context.world, state, place_pos) {
                     continue;
                 }
 
                 let collision_shape = state.get_collision_shape();
-                if context.world.is_unobstructed(collision_shape, &place_pos) {
+                if context.world.is_unobstructed(collision_shape, place_pos) {
                     new_state = Some(state);
                     placed_block = Some(block);
                     break;

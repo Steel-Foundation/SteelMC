@@ -19,7 +19,7 @@ use steel_registry::vanilla_fluids;
 ///
 /// Derives `FluidState` from the block state.
 #[must_use]
-pub fn get_fluid_state(world: &Arc<World>, pos: &BlockPos) -> FluidState {
+pub fn get_fluid_state(world: &Arc<World>, pos: BlockPos) -> FluidState {
     let state = world.get_block_state(pos);
     get_fluid_state_from_block(state)
 }
@@ -146,9 +146,9 @@ pub fn get_own_height(fluid_state: FluidState) -> f32 {
 /// If the same fluid type occupies the block directly above (`hasSameAbove`),
 /// the height is `1.0` (full block). Otherwise it is `get_own_height(fluid_state)`.
 #[must_use]
-pub fn get_height(world: &Arc<World>, pos: &BlockPos, fluid_state: FluidState) -> f32 {
+pub fn get_height(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> f32 {
     let above = pos.offset(0, 1, 0);
-    let above_fluid = get_fluid_state(world, &above);
+    let above_fluid = get_fluid_state(world, above);
     if above_fluid.fluid_id == fluid_state.fluid_id {
         1.0
     } else {

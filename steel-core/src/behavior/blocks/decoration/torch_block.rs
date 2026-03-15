@@ -43,7 +43,7 @@ impl BlockBehavior for TorchBlock {
     /// Requires the block below to provide center support on its top face.
     fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let below_pos = pos.below();
-        let below_state = world.get_block_state(&below_pos);
+        let below_state = world.get_block_state(below_pos);
         below_state.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 
@@ -97,8 +97,8 @@ impl BlockBehavior for WallTorchBlock {
     fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let attach_direction = facing.opposite();
-        let attach_pos = attach_direction.relative(&pos);
-        let attach_state = world.get_block_state(&attach_pos);
+        let attach_pos = attach_direction.relative(pos);
+        let attach_state = world.get_block_state(attach_pos);
         attach_state.is_face_sturdy(facing)
     }
 

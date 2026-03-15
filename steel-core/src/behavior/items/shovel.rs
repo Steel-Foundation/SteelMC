@@ -32,7 +32,7 @@ impl ItemBehavior for ShovelBehavior {
             return InteractionResult::Pass;
         }
 
-        let block_state = context.world.get_block_state(&context.hit_result.block_pos);
+        let block_state = context.world.get_block_state(context.hit_result.block_pos);
         let block = block_state.get_block();
 
         if REGISTRY
@@ -52,7 +52,7 @@ impl ItemBehavior for ShovelBehavior {
 
         if !context
             .world
-            .get_block_state(&context.hit_result.block_pos.above())
+            .get_block_state(context.hit_result.block_pos.above())
             .is_air()
         {
             return InteractionResult::Pass;

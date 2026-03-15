@@ -44,7 +44,7 @@ impl FarmlandBlock {
             for dx in -4..=4 {
                 for dz in -4..=4 {
                     let check_pos = pos.offset(dx, dy, dz);
-                    let state = world.get_block_state(&check_pos);
+                    let state = world.get_block_state(check_pos);
 
                     // Check if block is water
                     if state.get_block() == vanilla_blocks::WATER {
@@ -67,7 +67,7 @@ impl FarmlandBlock {
     /// Checks if the block above is a crop that should maintain the farmland.
     /// This prevents farmland from turning to dirt when crops are planted.
     fn should_maintain_farmland(world: &Arc<World>, pos: BlockPos) -> bool {
-        let above = world.get_block_state(&pos.above());
+        let above = world.get_block_state(pos.above());
         let block = above.get_block();
 
         // Check for crops that maintain farmland

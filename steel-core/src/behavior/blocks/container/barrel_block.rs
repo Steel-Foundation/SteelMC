@@ -59,7 +59,7 @@ impl BlockBehavior for BarrelBlock {
         _hit_result: &BlockHitResult,
     ) -> InteractionResult {
         // Get the block entity
-        let Some(block_entity) = world.get_block_entity(&pos) else {
+        let Some(block_entity) = world.get_block_entity(pos) else {
             return InteractionResult::Pass;
         };
 
@@ -108,7 +108,7 @@ impl BlockBehavior for BarrelBlock {
         pos: BlockPos,
     ) -> i32 {
         // Get the block entity and calculate signal from container contents
-        world.get_block_entity(&pos).map_or(0, |be| {
+        world.get_block_entity(pos).map_or(0, |be| {
             let guard = be.lock();
             if let Some(container) = guard.as_container() {
                 calculate_redstone_signal_from_container(container)

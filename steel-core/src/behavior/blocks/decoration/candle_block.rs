@@ -53,7 +53,7 @@ impl BlockBehavior for CandleBlock {
         pos: BlockPos,
     ) -> bool {
         world
-            .get_block_state(&pos.below())
+            .get_block_state(pos.below())
             .is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 
@@ -65,7 +65,7 @@ impl BlockBehavior for CandleBlock {
         if self.can_survive(default_state, context.world, context.relative_pos) {
             if context
                 .world
-                .get_block_state(&context.relative_pos)
+                .get_block_state(context.relative_pos)
                 .get_block()
                 == vanilla_blocks::WATER
             {

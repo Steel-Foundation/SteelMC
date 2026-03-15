@@ -158,7 +158,7 @@ pub fn is_in_collision(world: &Arc<World>, pos: Vector3<f64>) -> bool {
         for by in min_y..max_y {
             for bz in min_z..max_z {
                 let block_pos = BlockPos::new(bx, by, bz);
-                let block_state = world.get_block_state(&block_pos);
+                let block_state = world.get_block_state(block_pos);
                 let collision_shape = block_state.get_collision_shape();
 
                 for block_aabb in collision_shape {

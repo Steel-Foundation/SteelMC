@@ -106,7 +106,7 @@ impl BlockPlaceContext<'_> {
     #[must_use]
     pub fn is_water_source(&self) -> bool {
         use crate::fluid::get_fluid_state;
-        let fluid_state = get_fluid_state(self.world, &self.relative_pos);
+        let fluid_state = get_fluid_state(self.world, self.relative_pos);
         fluid_state.is_source() && fluid_state.is_water()
     }
 }

@@ -60,15 +60,15 @@ impl LiquidBlock {
         }
         // Check if there's soul soil below (for basalt generation)
         let below_pos = pos.offset(0, -1, 0);
-        let below_state = world.get_block_state(&below_pos);
+        let below_state = world.get_block_state(below_pos);
         let has_soul_soil_below = below_state.get_block() == vanilla_blocks::SOUL_SOIL;
 
         // Get fluid state to check if this is a source
-        let fluid_state = world.get_block_state(&pos).get_fluid_state();
+        let fluid_state = world.get_block_state(pos).get_fluid_state();
 
         for direction in Direction::FLOW_NEIGHBOR_CHECK {
-            let neighbor_pos = direction.relative(&pos);
-            let neighbor_fluid = world.get_block_state(&neighbor_pos).get_fluid_state();
+            let neighbor_pos = direction.relative(pos);
+            let neighbor_fluid = world.get_block_state(neighbor_pos).get_fluid_state();
 
             // Check for water (including flowing_water and waterlogged blocks)
             // Using fluid tag check to support modded fluids registered in the water tag
@@ -88,7 +88,7 @@ impl LiquidBlock {
 
             // Check for basalt generation: soul soil below + blue ice adjacent
             if has_soul_soil_below {
-                let neighbor_state = world.get_block_state(&neighbor_pos);
+                let neighbor_state = world.get_block_state(neighbor_pos);
                 if neighbor_state.get_block() == vanilla_blocks::BLUE_ICE {
                     let new_state = REGISTRY.blocks.get_default_state_id(vanilla_blocks::BASALT);
                     world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);

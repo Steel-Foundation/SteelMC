@@ -32,7 +32,7 @@ pub fn use_item_on(
     hand: InteractionHand,
     hit_result: &BlockHitResult,
 ) -> InteractionResult {
-    let pos = &hit_result.block_pos;
+    let pos = hit_result.block_pos;
     let state = world.get_block_state(pos);
 
     // Spectator mode: can only open menus
@@ -65,15 +65,8 @@ pub fn use_item_on(
         // Brief lock for an immutable snapshot used during block interaction check
         let item_snapshot = player.inventory.lock().get_item_in_hand(hand).clone();
 
-        let block_result = behavior.use_item_on(
-            &item_snapshot,
-            state,
-            &world,
-            *pos,
-            player,
-            hand,
-            hit_result,
-        );
+        let block_result =
+            behavior.use_item_on(&item_snapshot, state, &world, pos, player, hand, hit_result);
 
         if block_result.consumes_action() {
             return block_result;
@@ -82,7 +75,7 @@ pub fn use_item_on(
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
-            let empty_result = behavior.use_without_item(state, &world, *pos, player, hit_result);
+            let empty_result = behavior.use_without_item(state, &world, pos, player, hit_result);
 
             if empty_result.consumes_action() {
                 return empty_result;

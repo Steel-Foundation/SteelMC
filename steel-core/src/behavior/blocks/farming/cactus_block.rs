@@ -69,8 +69,8 @@ impl BlockBehavior for CactusBlock {
             Direction::East,
             Direction::West,
         ] {
-            let neighbor_pos = dir.relative(&pos);
-            let neighbor = world.get_block_state(&neighbor_pos);
+            let neighbor_pos = dir.relative(pos);
+            let neighbor = world.get_block_state(neighbor_pos);
             if neighbor.is_solid() {
                 return false;
             }
@@ -86,7 +86,7 @@ impl BlockBehavior for CactusBlock {
 
         // Block below must be CACTUS or SAND variant
         let below_pos = pos.below();
-        let below = world.get_block_state(&below_pos);
+        let below = world.get_block_state(below_pos);
         let below_block = below.get_block();
 
         let valid_below = below_block == vanilla_blocks::CACTUS
@@ -100,7 +100,7 @@ impl BlockBehavior for CactusBlock {
         }
 
         // Block above must not be liquid
-        let above = world.get_block_state(&pos.above());
+        let above = world.get_block_state(pos.above());
 
         if !above.get_fluid_state().is_empty() {
             return false;
@@ -131,7 +131,7 @@ impl BlockBehavior for CactusBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let above_pos = pos.above();
 
-        if !world.get_block_state(&above_pos).is_air() {
+        if !world.get_block_state(above_pos).is_air() {
             return;
         }
 
@@ -140,7 +140,7 @@ impl BlockBehavior for CactusBlock {
         let age = state.get_value(&BlockStateProperties::AGE_15);
 
         while world
-            .get_block_state(&pos.offset(0, -(height as i32), 0))
+            .get_block_state(pos.offset(0, -(height as i32), 0))
             .get_block()
             == vanilla_blocks::CACTUS
         {

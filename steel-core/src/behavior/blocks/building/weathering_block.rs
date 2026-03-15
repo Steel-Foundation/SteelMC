@@ -106,7 +106,7 @@ impl WeatheringCopper {
                     }
 
                     let neighbor_pos = BlockPos::new(pos.x() + dx, pos.y() + dy, pos.z() + dz);
-                    let neighbor_state = world.get_block_state(&neighbor_pos);
+                    let neighbor_state = world.get_block_state(neighbor_pos);
                     let neighbor_block = neighbor_state.get_block();
 
                     let Some(neighbor_age) = get_weather_state(neighbor_block) else {

@@ -55,7 +55,7 @@ impl Direction {
 
     /// Returns the block position relative to the given position in this direction.
     #[must_use]
-    pub const fn relative(&self, pos: &BlockPos) -> BlockPos {
+    pub const fn relative(self, pos: BlockPos) -> BlockPos {
         let (dx, dy, dz) = self.offset();
         pos.offset(dx, dy, dz)
     }

@@ -674,7 +674,7 @@ impl ItemEntity {
             for y in min_y..=max_y {
                 for z in min_z..=max_z {
                     let pos = steel_utils::BlockPos::new(x, y, z);
-                    let state = world.get_block_state(&pos);
+                    let state = world.get_block_state(pos);
                     if state.is_air() {
                         continue;
                     }
@@ -785,7 +785,7 @@ impl Entity for ItemEntity {
                             (pos.y - 0.999_999).floor() as i32,
                             pos.z.floor() as i32,
                         );
-                        let block_state = world.get_block_state(&block_pos);
+                        let block_state = world.get_block_state(block_pos);
                         f64::from(block_state.get_block().config.friction) * 0.98
                     } else {
                         0.98 // Air friction
