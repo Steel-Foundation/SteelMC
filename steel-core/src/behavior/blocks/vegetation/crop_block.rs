@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{REGISTRY, vanilla_blocks};
-use steel_utils::Identifier;
+use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehaviour;
@@ -23,17 +23,21 @@ use crate::world::World;
 ///
 /// Crops grow through random ticks when placed on farmland with sufficient light.
 /// Growth speed is affected by nearby farmland moisture and crop arrangement.
+#[block_behavior]
 pub struct CropBlock {
     block: BlockRef,
-    age_property: IntProperty,
-    max_age: u8,
-    clone_item: Identifier,
 }
 
 pub trait CropLike {
     fn block(&self) -> BlockRef;
     fn age_property(&self) -> &IntProperty;
     fn max_age(&self) -> u8;
+    fn clone_item_stack(&self) -> ItemStack;
+
+    /// Additional checks before calling the standard `on_random_tick` code
+    fn should_random_tick(&self) -> bool {
+        true
+    }
 
     fn get_age(&self, state: BlockStateId) -> u8 {
         state.get_value(self.age_property())
@@ -141,18 +145,8 @@ pub trait CropLike {
 impl CropBlock {
     /// Creates a new crop block behavior with a custom age property.
     #[must_use]
-    pub const fn with_age(
-        block: BlockRef,
-        age_property: IntProperty,
-        max_age: u8,
-        clone_item: &'static str,
-    ) -> Self {
-        Self {
-            block,
-            age_property,
-            max_age,
-            clone_item: Identifier::vanilla_static(clone_item),
-        }
+    pub const fn new(block: BlockRef) -> Self {
+        Self { block }
     }
 }
 
@@ -162,11 +156,15 @@ impl CropLike for CropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        &self.age_property
+        &BlockStateProperties::AGE_7
     }
 
     fn max_age(&self) -> u8 {
-        self.max_age
+        7
+    }
+
+    fn clone_item_stack(&self) -> ItemStack {
+        ItemStack::new(&vanilla_items::ITEMS.wheat_seeds)
     }
 }
 
@@ -184,14 +182,14 @@ impl Bonemealable for CropBlock {
     }
 }
 
-impl BlockBehaviour for CropBlock {
+impl<T: CropLike + Bonemealable + Send + Sync> BlockBehaviour for T {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
             context.world.get_block_state(&context.relative_pos.below()),
             context.world,
             context.relative_pos.below(),
         ) {
-            Some(self.block.default_state())
+            Some(self.block().default_state())
         } else {
             None
         }
@@ -219,7 +217,9 @@ impl BlockBehaviour for CropBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.on_random_tick(state, world, pos);
+        if self.should_random_tick() {
+            self.on_random_tick(state, world, pos);
+        }
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
@@ -232,6 +232,6 @@ impl BlockBehaviour for CropBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        REGISTRY.items.by_key(&self.clone_item).map(ItemStack::new)
+        Some(self.clone_item_stack())
     }
 }

@@ -2,6 +2,7 @@
 //!
 //! Pillar blocks (like logs) have an axis property that determines their orientation.
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty};
@@ -15,6 +16,7 @@ use crate::behavior::context::BlockPlaceContext;
 ///
 /// These blocks have an axis property that is set based on which face
 /// was clicked during placement.
+#[block_behavior]
 pub struct RotatedPillarBlock {
     block: BlockRef,
 }

@@ -97,7 +97,12 @@ impl EndIslands {
                     let zd = sub_section_z as f32 - (zo * 2) as f32;
                     let new_doffs =
                         (100.0_f32 - (xd * xd + zd * zd).sqrt() * island_size).clamp(-100.0, 80.0);
-                    doffs = doffs.max(new_doffs);
+                    // Must NOT use f32::max here — Rust's max returns the non-NaN
+                    // argument, while Java's Math.max propagates NaN. When the initial
+                    // distance overflows i32, doffs becomes NaN and must stay NaN.
+                    if new_doffs > doffs {
+                        doffs = new_doffs;
+                    }
                 }
             }
         }

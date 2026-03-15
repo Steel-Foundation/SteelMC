@@ -6,6 +6,7 @@
 
 use crate::BlockStateId;
 use crate::random::RandomSplitter;
+use crate::surface::SurfaceRuleContext;
 use rustc_hash::FxHashMap;
 
 use super::NoiseParameters;
@@ -28,6 +29,8 @@ pub trait NoiseSettings: Send + Sync {
     const AQUIFERS_ENABLED: bool;
     /// Whether ore veins are enabled for this dimension.
     const ORE_VEINS_ENABLED: bool;
+    /// Whether this dimension uses Java's LCG random (true) or Xoroshiro (false).
+    const LEGACY_RANDOM_SOURCE: bool;
 
     /// Get the default block state ID for this dimension.
     fn default_block_id() -> BlockStateId;
@@ -197,4 +200,13 @@ pub trait DimensionNoises: Sized + Send + Sync {
         y: i32,
         z: i32,
     ) -> f64;
+
+    // ── Surface rules ───────────────────────────────────────────────────────
+
+    /// Noise IDs referenced by this dimension's surface rule `NoiseThreshold`
+    /// conditions. Used to construct the `SurfaceSystem`'s condition noises.
+    fn surface_noise_ids() -> &'static [&'static str];
+
+    /// Apply the transpiled surface rule at the given context position.
+    fn try_apply_surface_rule(ctx: &SurfaceRuleContext<'_>) -> Option<BlockStateId>;
 }

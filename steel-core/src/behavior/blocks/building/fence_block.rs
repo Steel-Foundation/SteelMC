@@ -5,6 +5,7 @@
 use crate::behavior::block::BlockBehaviour;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -19,6 +20,7 @@ use steel_utils::{BlockPos, BlockStateId};
 /// - Other fences of the same type
 /// - Fence gates facing the appropriate direction
 /// - Blocks with a sturdy face on the connecting side
+#[block_behavior]
 pub struct FenceBlock {
     block: BlockRef,
 }

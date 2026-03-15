@@ -12,10 +12,9 @@ pub struct ItemClass {
     #[serde(default)]
     pub block: Option<String>,
     #[serde(default)]
-    #[serde(rename = "wallBlock")]
     pub wall_block: Option<String>,
     #[serde(default)]
-    #[serde(rename = "fluid")]
+    #[serde(rename = "content")]
     pub fluid: Option<String>,
 }
 
