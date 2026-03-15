@@ -4,7 +4,8 @@
 //! by comparing MD5 hashes of block data. When a mismatch is found and binary
 //! reference data is available, shows exact block-level diffs.
 //!
-//! Enable stages one at a time as they are implemented.
+//! Tests all dimensions (overworld, nether, end) using the new JSON format
+//! with a `dimensions` wrapper.
 
 use std::fmt::Write;
 use std::fs;
@@ -23,17 +24,20 @@ struct ChunkStageEntry {
 }
 
 #[derive(Deserialize, Debug)]
+struct DimensionData {
+    chunks: Vec<ChunkStageEntry>,
+}
+
+#[derive(Deserialize, Debug)]
 struct ChunkStageHashesJson {
     seed: u64,
-    chunks: Vec<ChunkStageEntry>,
-    #[allow(dead_code)]
-    chunk_count: usize,
+    dimensions: FxHashMap<String, DimensionData>,
 }
 
 /// Stages to verify. Uncomment as each stage is implemented.
 const STAGES: &[&str] = &[
     "minecraft:noise",
-    // "minecraft:surface",
+    "minecraft:surface",
     // "minecraft:carvers",
     // "minecraft:features",
 ];
@@ -44,10 +48,7 @@ const MAX_DIFFS_PER_CHUNK: usize = 30;
 /// Set specific chunk coordinates to test only those chunks.
 /// When non-empty, only these chunks are generated and checked (ignores the JSON list).
 /// Example: &[(24, 35)] to debug a single failing chunk.
-const DEBUG_CHUNKS: &[(i32, i32)] = &[
-    //(24, 35),
-    //
-];
+const DEBUG_CHUNKS: &[(i32, i32)] = &[];
 
 fn load_expected_hashes() -> ChunkStageHashesJson {
     let json_str = include_str!("../test_assets/chunk_stage_hashes.json");
@@ -82,11 +83,11 @@ fn compute_block_hash(sections: &Sections) -> String {
 
 /// Per-chunk reference block data from the extractor binary.
 struct ChunkBlockData {
-    /// 24 sections, each None (all air) or Some(4096 state IDs in YZX order).
+    /// Sections, each None (all air) or Some(4096 state IDs in YZX order).
     sections: Vec<Option<Vec<i32>>>,
 }
 
-/// Loads binary reference block data for a given stage.
+/// Loads binary reference block data for a given stage and dimension.
 ///
 /// Binary format (gzip compressed, all integers big-endian):
 ///   `chunk_count`: i32
@@ -97,10 +98,13 @@ struct ChunkBlockData {
 ///     For each section:
 ///       `has_data`: u8
 ///       if `has_data` == 1: `state_ids`: [i32; 4096]
-fn load_reference_blocks(stage: &str) -> Option<FxHashMap<(i32, i32), ChunkBlockData>> {
+fn load_reference_blocks(
+    stage: &str,
+    dim_short: &str,
+) -> Option<FxHashMap<(i32, i32), ChunkBlockData>> {
     let short_name = stage.strip_prefix("minecraft:").unwrap_or(stage);
     let path = format!(
-        "{}/test_assets/chunk_stage_{short_name}_blocks.bin.gz",
+        "{}/test_assets/chunk_stage_{dim_short}_{short_name}_blocks.bin.gz",
         env!("CARGO_MANIFEST_DIR"),
     );
     let compressed = fs::read(&path).ok()?;
@@ -306,13 +310,40 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
 #[test]
 #[ignore = "This test takes too long to run for normal testing"]
 fn chunk_stage_hashes() {
+    use std::panic;
+    use std::thread;
+
+    // Run on a thread with a larger stack to avoid overflow in debug builds,
+    // since pre-generating biome data for neighbor lookups increases stack usage.
+    let result = thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(chunk_stage_hashes_inner)
+        .expect("Failed to spawn test thread")
+        .join();
+
+    if let Err(payload) = result {
+        panic::resume_unwind(payload);
+    }
+}
+
+/// Dimension order for deterministic test output (`HashMap` iteration is unordered).
+const DIMENSION_ORDER: &[&str] = &[
+    "minecraft:overworld",
+    "minecraft:the_nether",
+    "minecraft:the_end",
+];
+
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn chunk_stage_hashes_inner() {
     use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::chunk_generator::ChunkGenerator;
     use steel_core::chunk::proto_chunk::ProtoChunk;
     use steel_core::chunk::section::ChunkSection;
-    use steel_core::chunk::world_gen_context::OverworldGenerator;
+    use steel_core::chunk::world_gen_context::{
+        ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
+    };
     use steel_core::worldgen::BiomeSourceKind;
-    use steel_registry::{REGISTRY, Registry};
+    use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
     use steel_utils::ChunkPos;
 
     let mut registry = Registry::new_vanilla();
@@ -323,98 +354,210 @@ fn chunk_stage_hashes() {
     let seed = expected.seed;
     assert_eq!(seed, 13579, "Expected seed 13579");
 
-    let source = BiomeSourceKind::overworld(seed);
-    let generator = OverworldGenerator::new(source, seed);
+    for &dim_key in DIMENSION_ORDER {
+        let Some(dim_data) = expected.dimensions.get(dim_key) else {
+            continue;
+        };
 
-    let section_count = 24;
-    let min_y = -64;
-    let height = 384;
+        let dim_short = dim_key.strip_prefix("minecraft:").unwrap_or(dim_key);
+        let dim_type = match dim_key {
+            "minecraft:overworld" => vanilla_dimension_types::OVERWORLD,
+            "minecraft:the_nether" => vanilla_dimension_types::THE_NETHER,
+            "minecraft:the_end" => vanilla_dimension_types::THE_END,
+            _ => panic!("Unknown dimension: {dim_key}"),
+        };
 
-    for &stage in STAGES {
-        let reference_blocks = load_reference_blocks(stage);
-        let has_reference = reference_blocks.is_some();
+        let min_y = dim_type.min_y;
+        let height = dim_type.height;
+        let section_count = (height / 16) as usize;
+        let min_qy = min_y >> 2;
+        let total_quarts_y = (section_count * 4) as i32;
 
-        let stage_chunks: Vec<_> = if DEBUG_CHUNKS.is_empty() {
-            expected
-                .chunks
-                .iter()
-                .filter_map(|c| c.stages.get(stage).map(|hash| (c.x, c.z, hash.clone())))
-                .collect()
+        let generator: ChunkGeneratorType = match dim_key {
+            "minecraft:overworld" => {
+                let source = BiomeSourceKind::overworld(seed);
+                ChunkGeneratorType::Overworld(OverworldGenerator::new(source, seed))
+            }
+            "minecraft:the_nether" => {
+                let source = BiomeSourceKind::nether(seed);
+                ChunkGeneratorType::Nether(NetherGenerator::new(source, seed))
+            }
+            "minecraft:the_end" => {
+                let source = BiomeSourceKind::end(seed);
+                ChunkGeneratorType::End(EndGenerator::new(source, seed))
+            }
+            _ => unreachable!(),
+        };
+
+        eprintln!("=== {dim_key} ===");
+
+        // Filter entries by DEBUG_CHUNKS if set
+        let test_entries: Vec<&ChunkStageEntry> = if DEBUG_CHUNKS.is_empty() {
+            dim_data.chunks.iter().collect()
         } else {
-            expected
+            dim_data
                 .chunks
                 .iter()
                 .filter(|c| DEBUG_CHUNKS.contains(&(c.x, c.z)))
-                .filter_map(|c| c.stages.get(stage).map(|hash| (c.x, c.z, hash.clone())))
                 .collect()
         };
 
-        let mut mismatches = Vec::new();
+        // Reuse chunks across stages — each stage builds on the previous
+        let mut chunks: FxHashMap<(i32, i32), ChunkAccess> =
+            FxHashMap::with_capacity_and_hasher(test_entries.len(), FxBuildHasher);
+        // Biome-only neighbors for surface and later stages (positions not in `chunks`)
+        let mut biome_neighbors: FxHashMap<(i32, i32), ChunkAccess> = FxHashMap::default();
+        let mut neighbors_built = false;
 
-        for (chunk_x, chunk_z, expected_hash) in &stage_chunks {
-            let sections: Box<[ChunkSection]> = (0..section_count)
-                .map(|_| ChunkSection::new_empty())
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
+        for &stage in STAGES {
+            let reference_blocks = load_reference_blocks(stage, dim_short);
+            let has_reference = reference_blocks.is_some();
+            let needs_neighbors = stage != "minecraft:noise";
 
-            let proto = ProtoChunk::new(
-                Sections::from_owned(sections),
-                ChunkPos::new(*chunk_x, *chunk_z),
-                min_y,
-                height,
-            );
-
-            let chunk = ChunkAccess::Proto(proto);
-            generator.fill_from_noise(&chunk);
-
-            let actual_hash = compute_block_hash(chunk.sections());
-
-            println!(
-                "chunk {chunk_x}, {chunk_z}: expected {expected_hash:?}, actual {actual_hash:?}"
-            );
-
-            if actual_hash != *expected_hash {
-                let block_diffs = reference_blocks
-                    .as_ref()
-                    .and_then(|refs| refs.get(&(*chunk_x, *chunk_z)))
-                    .map(|ref_data| diff_chunk(chunk.sections(), ref_data, min_y));
-
-                mismatches.push((
-                    *chunk_x,
-                    *chunk_z,
-                    expected_hash.clone(),
-                    actual_hash,
-                    block_diffs,
-                ));
-            }
-        }
-
-        if mismatches.is_empty() {
-            continue;
-        }
-
-        let total = stage_chunks.len();
-        let failed = mismatches.len();
-        let mut msg = format!("{stage}: {failed}/{total} chunks do not match vanilla");
-        if !has_reference {
-            msg.push_str(" (no binary reference data, showing hashes only)");
-        }
-        msg.push('\n');
-
-        for (x, z, expected_hash, actual_hash, block_diffs) in &mismatches {
-            match block_diffs {
-                Some(diffs) if !diffs.is_empty() => {
-                    msg.push_str(&format_chunk_diffs(diffs, *x, *z, min_y));
+            // Generate biome-only neighbor chunks once before the first post-noise stage.
+            // Only creates chunks for 3x3 neighborhood positions not already in the test set.
+            if needs_neighbors && !neighbors_built {
+                for entry in &test_entries {
+                    for dx in -1i32..=1 {
+                        for dz in -1i32..=1 {
+                            let pos = (entry.x + dx, entry.z + dz);
+                            if chunks.contains_key(&pos) || biome_neighbors.contains_key(&pos) {
+                                continue;
+                            }
+                            let sections: Box<[ChunkSection]> = (0..section_count)
+                                .map(|_| ChunkSection::new_empty())
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice();
+                            let proto = ProtoChunk::new(
+                                Sections::from_owned(sections),
+                                ChunkPos::new(pos.0, pos.1),
+                                min_y,
+                                height,
+                            );
+                            let chunk = ChunkAccess::Proto(proto);
+                            generator.create_biomes(&chunk);
+                            biome_neighbors.insert(pos, chunk);
+                        }
+                    }
                 }
-                _ => {
-                    let _ = writeln!(
-                        msg,
-                        "  ({x:3},{z:3}): expected {expected_hash}, got {actual_hash}"
+                eprintln!(
+                    "[{dim_short}] Generated {} biome-only neighbor chunks",
+                    biome_neighbors.len()
+                );
+                neighbors_built = true;
+            }
+
+            let stage_entries: Vec<_> = test_entries
+                .iter()
+                .filter_map(|e| e.stages.get(stage).map(|hash| (e.x, e.z, hash.as_str())))
+                .collect();
+            let total = stage_entries.len();
+            let mut mismatches = Vec::new();
+
+            for (i, &(chunk_x, chunk_z, expected_hash)) in stage_entries.iter().enumerate() {
+                // Ensure chunk exists with biomes + noise applied
+                chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
+                    let sections: Box<[ChunkSection]> = (0..section_count)
+                        .map(|_| ChunkSection::new_empty())
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice();
+                    let proto = ProtoChunk::new(
+                        Sections::from_owned(sections),
+                        ChunkPos::new(chunk_x, chunk_z),
+                        min_y,
+                        height,
+                    );
+                    let chunk = ChunkAccess::Proto(proto);
+                    generator.create_biomes(&chunk);
+                    generator.fill_from_noise(&chunk);
+                    chunk
+                });
+
+                let chunk = &chunks[&(chunk_x, chunk_z)];
+
+                // Apply current stage (noise already applied during chunk creation)
+                if stage != "minecraft:noise" {
+                    let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
+                        let cx = qx >> 2;
+                        let cz = qz >> 2;
+                        let neighbor = chunks
+                            .get(&(cx, cz))
+                            .or_else(|| biome_neighbors.get(&(cx, cz)))
+                            .unwrap_or_else(|| {
+                                panic!("Missing neighbor biome data for chunk ({cx}, {cz})")
+                            });
+                        let sections = neighbor.sections();
+                        let local_qx = (qx - cx * 4) as usize;
+                        let local_qz = (qz - cz * 4) as usize;
+                        let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                        let section_idx = qy_clamped / 4;
+                        let local_qy = qy_clamped % 4;
+                        sections.sections[section_idx]
+                            .read()
+                            .biomes
+                            .get(local_qx, local_qy, local_qz)
+                    };
+
+                    match stage {
+                        "minecraft:surface" => generator.build_surface(chunk, &neighbor_biomes),
+                        _ => panic!("Stage {stage} not yet implemented in test harness"),
+                    }
+                }
+
+                let actual_hash = compute_block_hash(chunk.sections());
+
+                let ok = actual_hash == expected_hash;
+                if (i + 1) % 10 == 0 || i + 1 == total || !ok {
+                    let status = if ok { "OK" } else { "MISMATCH" };
+                    eprintln!(
+                        "[{dim_short}/{stage}] ({chunk_x:3},{chunk_z:3}) {status} expected={expected_hash} actual={actual_hash}  [{}/{total}]",
+                        i + 1,
                     );
                 }
-            }
-        }
 
-        panic!("{msg}");
+                if actual_hash != expected_hash {
+                    let block_diffs = reference_blocks
+                        .as_ref()
+                        .and_then(|refs| refs.get(&(chunk_x, chunk_z)))
+                        .map(|ref_data| diff_chunk(chunk.sections(), ref_data, min_y));
+
+                    mismatches.push((
+                        chunk_x,
+                        chunk_z,
+                        expected_hash.to_owned(),
+                        actual_hash,
+                        block_diffs,
+                    ));
+                }
+            }
+
+            if mismatches.is_empty() {
+                continue;
+            }
+
+            let failed = mismatches.len();
+            let mut msg =
+                format!("{dim_short}/{stage}: {failed}/{total} chunks do not match vanilla");
+            if !has_reference {
+                msg.push_str(" (no binary reference data, showing hashes only)");
+            }
+            msg.push('\n');
+
+            for (x, z, expected_hash, actual_hash, block_diffs) in &mismatches {
+                match block_diffs {
+                    Some(diffs) if !diffs.is_empty() => {
+                        msg.push_str(&format_chunk_diffs(diffs, *x, *z, min_y));
+                    }
+                    _ => {
+                        let _ = writeln!(
+                            msg,
+                            "  ({x:3},{z:3}): expected {expected_hash}, got {actual_hash}"
+                        );
+                    }
+                }
+            }
+
+            panic!("{msg}");
+        }
     }
 }

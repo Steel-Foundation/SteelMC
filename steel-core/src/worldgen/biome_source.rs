@@ -6,7 +6,15 @@
 //!
 //! Each dimension creates a different `BiomeSourceKind` variant. The chunk generator
 //! calls `chunk_sampler()` per chunk to get a `ChunkBiomeSampler` that holds per-chunk
-//! caches (column cache, `RTree` warm-start index).
+//! caches (column cache, R-tree warm-start index).
+//!
+//! ## R-tree cache strategy
+//!
+//! Vanilla uses `ThreadLocal<Leaf>` which persists the warm-start index across chunks,
+//! making tie-breaking at equidistant biome boundaries depend on chunk generation order.
+//! We use a per-sampler cache instead: reset per chunk, deterministic regardless of
+//! generation order, and better L1 locality since the cache lives on the sampler struct
+//! alongside the column cache. The only cost is one cold start per chunk (1/1536 lookups).
 
 use steel_registry::biome::BiomeRef;
 use steel_registry::density_functions::OverworldColumnCache;
@@ -69,9 +77,9 @@ impl BiomeSourceKind {
 
 /// Per-chunk biome sampler with internal caches.
 ///
-/// Created by [`BiomeSourceKind::chunk_sampler`] for each chunk. Holds caches like
-/// column-level density function values and `RTree` warm-start indices that persist
-/// across positions within a single chunk.
+/// Created by [`BiomeSourceKind::chunk_sampler`] for each chunk. Holds per-chunk
+/// caches: column-level density function values and an R-tree warm-start index
+/// that resets each chunk for deterministic biome selection.
 ///
 /// Uses enum dispatch instead of `dyn` to avoid vtable overhead on the hot
 /// per-quart sampling path (1536 calls per overworld chunk).
@@ -225,18 +233,43 @@ impl EndBiomeSource {
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
-        ChunkBiomeSampler::End(Box::new(EndChunkBiomeSampler { source: self }))
+        ChunkBiomeSampler::End(Box::new(EndChunkBiomeSampler {
+            source: self,
+            cached_erosion: None,
+        }))
     }
 }
 
 pub struct EndChunkBiomeSampler<'a> {
     source: &'a EndBiomeSource,
+    /// Cached erosion value keyed by (`chunk_x`, `chunk_z`).
+    ///
+    /// All quart positions within a chunk produce the same chunk coordinates,
+    /// and `EndIslands::sample` ignores `block_y`, so the erosion is constant
+    /// per chunk. This avoids redundant 25×25 simplex neighborhood scans.
+    cached_erosion: Option<(i32, i32, f64)>,
 }
 
 impl EndChunkBiomeSampler<'_> {
-    fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
+    fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> f64 {
+        if let Some((cx, cz, erosion)) = self.cached_erosion
+            && cx == chunk_x
+            && cz == chunk_z
+        {
+            return erosion;
+        }
+        let weird_block_x = (chunk_x * 2 + 1) * 8;
+        let weird_block_z = (chunk_z * 2 + 1) * 8;
+        let erosion = self
+            .source
+            .end_islands
+            .sample(weird_block_x, 0, weird_block_z);
+        self.cached_erosion = Some((chunk_x, chunk_z, erosion));
+        erosion
+    }
+
+    fn sample(&mut self, quart_x: i32, _quart_y: i32, quart_z: i32) -> BiomeRef {
         let block_x = quart_x << 2;
-        let block_y = quart_y << 2;
         let block_z = quart_z << 2;
         let chunk_x = block_x >> 4;
         let chunk_z = block_z >> 4;
@@ -247,13 +280,7 @@ impl EndChunkBiomeSampler<'_> {
             return &vanilla_biomes::THE_END;
         }
 
-        // Outer islands: sample erosion (EndIslands) at transformed coordinates
-        let weird_block_x = (chunk_x * 2 + 1) * 8;
-        let weird_block_z = (chunk_z * 2 + 1) * 8;
-        let erosion = self
-            .source
-            .end_islands
-            .sample(weird_block_x, block_y, weird_block_z);
+        let erosion = self.get_erosion(chunk_x, chunk_z);
 
         if erosion > 0.25 {
             &vanilla_biomes::END_HIGHLANDS

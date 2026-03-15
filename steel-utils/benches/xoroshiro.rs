@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use steel_utils::random::{PositionalRandom, Random, xoroshiro::Xoroshiro};
+use steel_utils::random::{PositionalRandom, Random, name_hash::NameHash, xoroshiro::Xoroshiro};
 
 fn bench_from_seed(c: &mut Criterion) {
     c.bench_function("xoroshiro from_seed", |b| {
@@ -115,9 +115,10 @@ fn bench_split_u64(c: &mut Criterion) {
 fn bench_split_string(c: &mut Criterion) {
     let mut rng = Xoroshiro::from_seed(0);
     let splitter = rng.next_positional();
+    let hash = NameHash::new("minecraft:overworld");
     c.bench_function("xoroshiro splitter split_string", |b| {
         b.iter(|| {
-            black_box(splitter.with_hash_of(black_box("minecraft:overworld")));
+            black_box(splitter.with_hash_of(black_box(&hash)));
         });
     });
 }

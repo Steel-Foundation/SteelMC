@@ -45,6 +45,7 @@ mod zombie_nautilus_variants;
 mod density_functions;
 mod multi_noise;
 mod noise_parameters;
+mod surface_rules;
 
 const FMT: bool = cfg!(feature = "fmt");
 

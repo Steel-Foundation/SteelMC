@@ -11,6 +11,7 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::{clamp, map, map_clamped};
+use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 
 // Grid spacing
@@ -49,27 +50,25 @@ const SURFACE_SAMPLING_OFFSETS: [[i32; 2]; 13] = [
 ];
 
 /// Fluid status at an aquifer cell center.
+///
+/// Matches vanilla's `Aquifer.FluidStatus` — stores the actual fluid block state
+/// rather than a boolean flag, so the aquifer is agnostic to which fluids exist.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct FluidStatus {
     /// Y level of the fluid surface (exclusive upper bound).
     fluid_level: i32,
-    /// Whether this fluid is lava (false = water).
-    is_lava: bool,
+    /// Block state placed below `fluid_level`.
+    fluid_type: BlockStateId,
 }
 
 impl FluidStatus {
-    /// What block is at `block_y`? Returns the fluid ID if below the surface,
+    /// What block is at `block_y`? Returns the fluid type if below the surface,
     /// or `None` for air above the surface.
-    const fn at(
-        self,
-        block_y: i32,
-        water_id: BlockStateId,
-        lava_id: BlockStateId,
-    ) -> Option<BlockStateId> {
+    const fn at(self, block_y: i32) -> Option<BlockStateId> {
         if block_y < self.fluid_level {
-            Some(if self.is_lava { lava_id } else { water_id })
+            Some(self.fluid_type)
         } else {
-            None // air
+            None
         }
     }
 }
@@ -110,6 +109,8 @@ pub struct Aquifer<N: DimensionNoises> {
     /// Block state IDs.
     water_id: BlockStateId,
     lava_id: BlockStateId,
+    /// The dimension's default fluid (water for overworld, lava for nether).
+    default_fluid_id: BlockStateId,
 }
 
 // Grid coordinate conversions
@@ -188,17 +189,25 @@ fn is_deep_dark_region<N: DimensionNoises>(
     erosion < -0.225 && depth > 0.9
 }
 
-/// Global fluid picker: below min(-54, `sea_level`) → lava at -54, else water at sea level.
-fn global_fluid(y: i32, sea_level: i32) -> FluidStatus {
+/// Global fluid picker matching vanilla's `NoiseBasedChunkGenerator.createFluidPicker`.
+///
+/// Below `min(-54, sea_level)` → lava at Y=-54. Otherwise → the dimension's
+/// default fluid at sea level (water for overworld, lava for nether).
+fn global_fluid(
+    y: i32,
+    sea_level: i32,
+    lava_id: BlockStateId,
+    default_fluid_id: BlockStateId,
+) -> FluidStatus {
     if y < LAVA_LEVEL.min(sea_level) {
         FluidStatus {
             fluid_level: LAVA_LEVEL,
-            is_lava: true,
+            fluid_type: lava_id,
         }
     } else {
         FluidStatus {
             fluid_level: sea_level,
-            is_lava: false,
+            fluid_type: default_fluid_id,
         }
     }
 }
@@ -221,10 +230,36 @@ impl<N: DimensionNoises> Aquifer<N> {
         noises: &N,
         mut cache: N::ColumnCache,
     ) -> Self {
-        let sea_level = N::Settings::SEA_LEVEL;
+        const AQUIFER_HASH: NameHash = NameHash::new("minecraft:aquifer");
 
-        let mut aquifer_rng = splitter.with_hash_of("minecraft:aquifer");
+        let sea_level = N::Settings::SEA_LEVEL;
+        let water_id = REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER);
+        let lava_id = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
+        let default_fluid_id = N::Settings::default_fluid_id();
+
+        let mut aquifer_rng = splitter.with_hash_of(&AQUIFER_HASH);
         let splitter = aquifer_rng.next_positional();
+
+        // When aquifers are disabled (nether/end), compute_substance uses only
+        // the global fluid picker — skip grid allocation and surface sampling.
+        if !N::Settings::AQUIFERS_ENABLED {
+            return Self {
+                location_cache: Vec::new(),
+                status_cache: Vec::new(),
+                splitter,
+                cache,
+                min_grid_x: 0,
+                min_grid_y: 0,
+                min_grid_z: 0,
+                grid_size_x: 0,
+                grid_size_z: 0,
+                skip_sampling_above_y: 0,
+                sea_level,
+                water_id,
+                lava_id,
+                default_fluid_id,
+            };
+        }
 
         let chunk_max_x = chunk_min_x + 15;
         let chunk_max_z = chunk_min_z + 15;
@@ -270,8 +305,9 @@ impl<N: DimensionNoises> Aquifer<N> {
             grid_size_z,
             skip_sampling_above_y,
             sea_level,
-            water_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER),
-            lava_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA),
+            water_id,
+            lava_id,
+            default_fluid_id,
         }
     }
 
@@ -323,18 +359,28 @@ impl<N: DimensionNoises> Aquifer<N> {
             return AquiferResult::Solid;
         }
 
-        let gf = global_fluid(world_y, self.sea_level);
+        // Disabled aquifers (nether/end): use global fluid picker directly,
+        // matching vanilla's `Aquifer.createDisabled`.
+        if !N::Settings::AQUIFERS_ENABLED {
+            let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
+            return match gf.at(world_y) {
+                Some(id) => AquiferResult::Fluid(id),
+                None => AquiferResult::Air,
+            };
+        }
+
+        let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
 
         // Above the skip threshold: use global fluid directly
         if world_y > self.skip_sampling_above_y {
-            return match gf.at(world_y, self.water_id, self.lava_id) {
+            return match gf.at(world_y) {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
             };
         }
 
         // If global fluid is lava here, return lava
-        if gf.is_lava && world_y < gf.fluid_level {
+        if gf.fluid_type == self.lava_id && world_y < gf.fluid_level {
             return AquiferResult::Fluid(self.lava_id);
         }
 
@@ -407,7 +453,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         let status1 = self.get_aquifer_status(closest_idx[0], noises);
         let sim12 = similarity(dist_sq[0], dist_sq[1]);
 
-        let fluid_at = status1.at(world_y, self.water_id, self.lava_id);
+        let fluid_at = status1.at(world_y);
 
         if sim12 <= 0.0 {
             // Not near a boundary — return closest fluid
@@ -421,8 +467,13 @@ impl<N: DimensionNoises> Aquifer<N> {
         if let Some(id) = fluid_at
             && id == self.water_id
         {
-            let below = global_fluid(world_y - 1, self.sea_level);
-            if below.is_lava && (world_y - 1) < below.fluid_level {
+            let below = global_fluid(
+                world_y - 1,
+                self.sea_level,
+                self.lava_id,
+                self.default_fluid_id,
+            );
+            if below.fluid_type == self.lava_id && (world_y - 1) < below.fluid_level {
                 return AquiferResult::Fluid(id);
             }
         }
@@ -505,7 +556,7 @@ impl<N: DimensionNoises> Aquifer<N> {
 
     /// Compute the fluid status for an aquifer cell centered at (x, y, z).
     fn compute_fluid(&mut self, x: i32, y: i32, z: i32, noises: &N) -> FluidStatus {
-        let gf = global_fluid(y, self.sea_level);
+        let gf = global_fluid(y, self.sea_level, self.lava_id, self.default_fluid_id);
         let mut lowest_surface = i32::MAX;
         let top_of_cell = y + Y_SPACING;
         let bottom_of_cell = y - Y_SPACING;
@@ -526,7 +577,12 @@ impl<N: DimensionNoises> Aquifer<N> {
 
             let top_pokes_above = top_of_cell > adjusted;
             if top_pokes_above || is_center {
-                let gf_at_surface = global_fluid(adjusted, self.sea_level);
+                let gf_at_surface = global_fluid(
+                    adjusted,
+                    self.sea_level,
+                    self.lava_id,
+                    self.default_fluid_id,
+                );
                 let has_fluid = adjusted < gf_at_surface.fluid_level;
                 if has_fluid {
                     if is_center {
@@ -545,10 +601,10 @@ impl<N: DimensionNoises> Aquifer<N> {
 
         let fluid_level =
             self.compute_surface_level(x, y, z, noises, gf, lowest_surface, surface_under_global);
-        let is_lava = self.compute_fluid_type(x, y, z, noises, gf, fluid_level);
+        let fluid_type = self.compute_fluid_type(x, y, z, noises, gf, fluid_level);
         FluidStatus {
             fluid_level,
-            is_lava,
+            fluid_type,
         }
     }
 
@@ -630,21 +686,23 @@ impl<N: DimensionNoises> Aquifer<N> {
         noises: &N,
         gf: FluidStatus,
         fluid_level: i32,
-    ) -> bool {
-        if fluid_level <= -10 && fluid_level != WAY_BELOW_MIN_Y && !gf.is_lava {
+    ) -> BlockStateId {
+        if fluid_level <= -10 && fluid_level != WAY_BELOW_MIN_Y && gf.fluid_type != self.lava_id {
             let cell_x = x.div_euclid(64);
             let cell_y = y.div_euclid(40);
             let cell_z = z.div_euclid(64);
             self.cache.ensure(cell_x, cell_z, noises);
             let lava_noise = noises.router_lava(&mut self.cache, cell_x, cell_y, cell_z);
             if lava_noise.abs() > 0.3 {
-                return true; // lava
+                return self.lava_id;
             }
         }
-        gf.is_lava
+        gf.fluid_type
     }
 
     /// Calculate barrier pressure between two aquifer cells.
+    ///
+    /// Matches vanilla's check: if lava meets water at this Y, return max pressure.
     #[allow(clippy::too_many_arguments)]
     fn calculate_pressure(
         &mut self,
@@ -656,15 +714,15 @@ impl<N: DimensionNoises> Aquifer<N> {
         s1: FluidStatus,
         s2: FluidStatus,
     ) -> f64 {
-        let at1 = y < s1.fluid_level;
-        let at2 = y < s2.fluid_level;
-        let lava1 = s1.is_lava && at1;
-        let lava2 = s2.is_lava && at2;
-        let water1 = !s1.is_lava && at1;
-        let water2 = !s2.is_lava && at2;
+        let f1 = s1.at(y);
+        let f2 = s2.at(y);
+        let f1_is_lava = f1 == Some(self.lava_id);
+        let f2_is_lava = f2 == Some(self.lava_id);
+        let f1_is_water = f1 == Some(self.water_id);
+        let f2_is_water = f2 == Some(self.water_id);
 
         // Lava–water interface → max pressure
-        if (lava1 && water2) || (water1 && lava2) {
+        if (f1_is_lava && f2_is_water) || (f1_is_water && f2_is_lava) {
             return 2.0;
         }
 
@@ -719,7 +777,7 @@ fn quantize(value: f64, quantum: i32) -> i32 {
 ///
 /// Vanilla's `NoiseChunk.preliminarySurfaceLevel()` quantizes X/Z to quart
 /// positions before lookup, matching `FlatCache`'s 4-block grid.
-fn preliminary_surface_level<N: DimensionNoises>(
+pub(crate) fn preliminary_surface_level<N: DimensionNoises>(
     noises: &N,
     cache: &mut N::ColumnCache,
     x: i32,

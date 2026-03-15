@@ -14,6 +14,7 @@ use steel_registry::density_functions::nether::{self, NetherColumnCache, NetherN
 use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::noise::{BlendedNoise, NormalNoise};
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSource};
 
 /// Climate sampler for the nether using compiled density functions.
@@ -35,6 +36,10 @@ impl NetherClimateSampler {
     /// - Offset (shift): `random.fromHashOf("minecraft:offset")`, regular create, params `(0, [0.0])`
     #[must_use]
     pub fn new(seed: u64) -> Self {
+        // Offset (shift) noise: LegacyRandom(seed).forkPositional().fromHashOf("minecraft:offset")
+        // With params (0, [0.0]) — effectively zero, making nether shifts negligible.
+        const OFFSET_HASH: NameHash = NameHash::new("minecraft:offset");
+
         // Temperature: LegacyRandomSource(seed + 0), legacy nether biome path
         let mut temp_rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
         let n_temperature = NormalNoise::create_legacy_nether_biome(&mut temp_rng, -7, &[1.0, 1.0]);
@@ -43,11 +48,9 @@ impl NetherClimateSampler {
         let mut veg_rng = RandomSource::Legacy(LegacyRandom::from_seed(seed.wrapping_add(1)));
         let n_vegetation = NormalNoise::create_legacy_nether_biome(&mut veg_rng, -7, &[1.0, 1.0]);
 
-        // Offset (shift) noise: LegacyRandom(seed).forkPositional().fromHashOf("minecraft:offset")
-        // With params (0, [0.0]) — effectively zero, making nether shifts negligible.
         let mut rng = LegacyRandom::from_seed(seed);
         let splitter = rng.next_positional();
-        let mut offset_rng = splitter.with_hash_of("minecraft:offset");
+        let mut offset_rng = splitter.with_hash_of(&OFFSET_HASH);
         let n_offset = NormalNoise::create_from_random(&mut offset_rng, 0, &[0.0]);
 
         // BlendedNoise: nether uses legacy random with seed + 0 (useLegacyRandomSource=true)

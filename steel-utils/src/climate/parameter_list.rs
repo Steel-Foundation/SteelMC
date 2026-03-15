@@ -5,6 +5,10 @@
 //! using vanilla's algorithm, then flattened into a BFS-ordered contiguous
 //! array where children of the same parent occupy adjacent indices.
 
+// Vanilla uses `(a + b) / 2` (integer division, truncates toward zero) for midpoints.
+// `i64::midpoint` rounds differently for negative odd sums, so we can't use it.
+#![allow(clippy::manual_midpoint)]
+
 use std::cmp::Ordering;
 
 use super::PARAMETER_COUNT;
@@ -47,6 +51,7 @@ impl RTreeNode {
 }
 
 /// Build data used during tree construction.
+#[derive(Clone)]
 struct BuildEntry {
     parameter_space: [Parameter; PARAMETER_COUNT],
     index: usize,
@@ -91,7 +96,7 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
             let mut total: i64 = 0;
             for d in 0..PARAMETER_COUNT {
                 let p = &e.parameter_space[d];
-                total += i64::midpoint(p.min, p.max).abs();
+                total += ((p.min + p.max) / 2).abs();
             }
             total
         });
@@ -110,78 +115,50 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
         };
     }
 
-    // Try splitting along each dimension, choose minimum cost
+    // Try splitting along each dimension, choose minimum cost.
+    // Like vanilla, save the bucketized entries when we find a better dimension.
+    // This is critical because vanilla sorts `children` in-place for each dimension
+    // and `bucketize()` captures a snapshot. Later sorts don't affect saved buckets.
+    // Re-sorting after the loop would produce different stable-sort tie-breaking.
     let mut min_cost = i64::MAX;
     let mut best_dim = 0;
+    let mut best_buckets: Option<Vec<Vec<BuildEntry>>> = None;
 
     for d in 0..PARAMETER_COUNT {
         sort_entries(entries, d);
-        let bucket_cost = compute_bucket_cost(entries);
+        let (bucket_cost, buckets) = snapshot_buckets(entries);
         if min_cost > bucket_cost {
             min_cost = bucket_cost;
             best_dim = d;
+            best_buckets = Some(buckets);
         }
     }
 
-    // Sort by the best dimension and bucketize
-    sort_entries(entries, best_dim);
-    let bucket_ranges = compute_bucket_ranges(entries.len());
+    // Build subtrees from the saved buckets (entries in the order sorted by best_dim)
+    let buckets = best_buckets.expect("should have found at least one dimension");
 
-    // Build subtrees for each bucket
-    let mut bucket_subtrees: Vec<(RTreeNode, [Parameter; PARAMETER_COUNT])> = Vec::new();
-    for (start, end) in &bucket_ranges {
-        let bucket_entries = &entries[*start..*end];
-        let ps = {
+    // Compute bounding box for each bucket, pair with entries for sorting
+    let mut bucket_subtrees: Vec<([Parameter; PARAMETER_COUNT], Vec<BuildEntry>)> = buckets
+        .into_iter()
+        .map(|bucket_entries| {
             let mut bounds: [Option<Parameter>; PARAMETER_COUNT] = [None; PARAMETER_COUNT];
-            for e in bucket_entries {
+            for e in &bucket_entries {
                 for dim in 0..PARAMETER_COUNT {
                     bounds[dim] = Some(e.parameter_space[dim].span_with(bounds[dim].as_ref()));
                 }
             }
-            bounds.map(|b| b.expect("bounds should be initialized"))
-        };
-        bucket_subtrees.push((
-            RTreeNode::SubTree {
-                parameter_space: ps,
-                children: bucket_entries
-                    .iter()
-                    .map(|e| RTreeNode::Leaf {
-                        parameter_space: e.parameter_space,
-                        value_index: e.index,
-                    })
-                    .collect(),
-            },
-            ps,
-        ));
-    }
+            let ps = bounds.map(|b| b.expect("bounds should be initialized"));
+            (ps, bucket_entries)
+        })
+        .collect();
 
     // Sort the bucket subtrees by the best dimension (absolute=true)
-    sort_subtrees(&mut bucket_subtrees, best_dim);
+    sort_bucket_subtrees(&mut bucket_subtrees, best_dim);
 
-    // For each bucket subtree, take its children and recursively build
+    // For each bucket, recursively build
     let mut final_children: Vec<RTreeNode> = Vec::new();
-    for (subtree, _) in bucket_subtrees {
-        match subtree {
-            RTreeNode::SubTree { children, .. } => {
-                // Convert children back to BuildEntry for recursive build
-                let mut child_entries: Vec<BuildEntry> = children
-                    .into_iter()
-                    .map(|node| {
-                        let ps = *node.parameter_space();
-                        let idx = match &node {
-                            RTreeNode::Leaf { value_index, .. } => *value_index,
-                            RTreeNode::SubTree { .. } => unreachable!(),
-                        };
-                        BuildEntry {
-                            parameter_space: ps,
-                            index: idx,
-                        }
-                    })
-                    .collect();
-                final_children.push(build_tree(&mut child_entries));
-            }
-            RTreeNode::Leaf { .. } => unreachable!(),
-        }
+    for (_, mut child_entries) in bucket_subtrees {
+        final_children.push(build_tree(&mut child_entries));
     }
 
     let ps = build_parameter_space(&final_children);
@@ -196,8 +173,8 @@ fn sort_entries(entries: &mut [BuildEntry], dimension: usize) {
     entries.sort_by(|a, b| {
         for offset in 0..PARAMETER_COUNT {
             let d = (dimension + offset) % PARAMETER_COUNT;
-            let center_a = i64::midpoint(a.parameter_space[d].min, a.parameter_space[d].max);
-            let center_b = i64::midpoint(b.parameter_space[d].min, b.parameter_space[d].max);
+            let center_a = (a.parameter_space[d].min + a.parameter_space[d].max) / 2;
+            let center_b = (b.parameter_space[d].min + b.parameter_space[d].max) / 2;
             let cmp = center_a.cmp(&center_b);
             if cmp != Ordering::Equal {
                 return cmp;
@@ -207,13 +184,17 @@ fn sort_entries(entries: &mut [BuildEntry], dimension: usize) {
     });
 }
 
-/// Sort bucket subtrees by a dimension (absolute=true).
-fn sort_subtrees(subtrees: &mut [(RTreeNode, [Parameter; PARAMETER_COUNT])], dimension: usize) {
+/// Sort bucket subtrees by a dimension (absolute=true), matching vanilla's
+/// `sort(minBuckets, dimensions, minDimension, true)`.
+fn sort_bucket_subtrees(
+    subtrees: &mut [([Parameter; PARAMETER_COUNT], Vec<BuildEntry>)],
+    dimension: usize,
+) {
     subtrees.sort_by(|a, b| {
         for offset in 0..PARAMETER_COUNT {
             let d = (dimension + offset) % PARAMETER_COUNT;
-            let center_a = i64::midpoint(a.1[d].min, a.1[d].max);
-            let center_b = i64::midpoint(b.1[d].min, b.1[d].max);
+            let center_a = (a.0[d].min + a.0[d].max) / 2;
+            let center_b = (b.0[d].min + b.0[d].max) / 2;
             let cmp = center_a.abs().cmp(&center_b.abs());
             if cmp != Ordering::Equal {
                 return cmp;
@@ -229,35 +210,33 @@ fn expected_children_count(total: usize) -> usize {
     (CHILDREN_PER_NODE as f64).powf(log_base_6.floor()) as usize
 }
 
-/// Compute bucket index ranges for a list of entries.
-fn compute_bucket_ranges(total: usize) -> Vec<(usize, usize)> {
-    let expected = expected_children_count(total);
-    let mut ranges = Vec::new();
-    let mut start = 0;
-    while start < total {
-        let end = (start + expected).min(total);
-        ranges.push((start, end));
-        start = end;
-    }
-    ranges
-}
-
-/// Compute the total cost of bucketing entries.
+/// Snapshot the current entry order into buckets and compute total cost.
+///
+/// This matches vanilla's `bucketize()` which creates `SubTree` objects that
+/// capture the children's current sorted order. We return cloned entries so
+/// that later sorts of the original slice don't affect the saved buckets.
 #[allow(clippy::needless_range_loop)]
-fn compute_bucket_cost(entries: &[BuildEntry]) -> i64 {
-    let ranges = compute_bucket_ranges(entries.len());
+fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
+    let expected = expected_children_count(entries.len());
+    let mut buckets = Vec::new();
     let mut total_cost = 0i64;
-    for (start, end) in ranges {
+    let mut start = 0;
+    while start < entries.len() {
+        let end = (start + expected).min(entries.len());
+        let bucket = entries[start..end].to_vec();
+        // Compute bounding box cost for this bucket
         let mut bounds: [Option<Parameter>; PARAMETER_COUNT] = [None; PARAMETER_COUNT];
-        for e in &entries[start..end] {
+        for e in &bucket {
             for d in 0..PARAMETER_COUNT {
                 bounds[d] = Some(e.parameter_space[d].span_with(bounds[d].as_ref()));
             }
         }
         let ps = bounds.map(|b| b.expect("bounds should be initialized"));
         total_cost += cost(&ps);
+        buckets.push(bucket);
+        start = end;
     }
-    total_cost
+    (total_cost, buckets)
 }
 
 // =============================================================================
@@ -367,9 +346,8 @@ fn flatten_tree(root: RTreeNode) -> Vec<FlatNode> {
 
 /// Search the flat R-Tree for the nearest leaf to the target.
 ///
-/// When a child passes the bounding-box distance test and is a leaf, the
-/// distance is used directly instead of recursing, avoiding redundant
-/// recomputation. Vanilla's strict `>` pruning semantics are preserved.
+/// Matches vanilla's `SubTree.search()` which passes the candidate through
+/// recursion and checks the returned leaf distance against the local best.
 fn search_nearest(
     nodes: &[FlatNode],
     node: &FlatNode,
@@ -527,6 +505,7 @@ impl<T> ParameterList<T> {
             &mut best_idx,
         );
         let result_idx = best_idx.expect("R-Tree search should always find a value") as usize;
+
         *cache = Some(result_idx);
         &self.values[result_idx].1
     }

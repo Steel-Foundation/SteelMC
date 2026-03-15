@@ -19,7 +19,8 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn fill_from_noise(&self, _chunk: &ChunkAccess) {}
 
-    fn build_surface(&self, _chunk: &ChunkAccess) {}
+    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
+    }
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 

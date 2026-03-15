@@ -30,6 +30,8 @@ pub mod ore_veinifier;
 pub mod paletted_container;
 pub mod proto_chunk;
 pub mod section;
+/// Surface system for biome-specific block replacement.
+pub mod surface_system;
 /// Generates vanilla worlds using noise-based biomes and terrain.
 pub mod vanilla_generator;
 pub mod world_gen_context;

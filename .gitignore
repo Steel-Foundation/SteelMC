@@ -13,3 +13,4 @@ AGENTS.md
 steel-flint/.cache
 /players
 *.gz
+*.class

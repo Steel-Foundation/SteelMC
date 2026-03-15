@@ -40,6 +40,13 @@ pub struct TranspilerInput {
     /// Cell width in blocks (XZ direction). Determines the `FlatCache` grid size:
     /// `grid_side = (16 / cell_width) + 1`, total entries = `grid_side²`.
     pub cell_width: i32,
+    /// Whether this dimension uses Java's LCG random (`true`) or Xoroshiro (`false`).
+    ///
+    /// When `true`, vanilla's `RandomState` intercepts noise creation:
+    /// - Temperature/vegetation use `NormalNoise.createLegacyNetherBiome()` with
+    ///   hardcoded params `(-7, [1.0, 1.0])` and direct `LegacyRandom(seed)`.
+    /// - `BlendedNoise` uses `LegacyRandom(seed)` instead of the positional splitter.
+    pub legacy_random_source: bool,
 }
 
 /// Compile density function trees into a `TokenStream` of Rust code.
@@ -52,6 +59,7 @@ pub struct TranspilerInput {
 #[must_use]
 pub fn transpile(input: &TranspilerInput) -> TokenStream {
     let mut ctx = TranspileContext::new(&input.prefix);
+    ctx.legacy_random_source = input.legacy_random_source;
 
     // Phase 1: Analyze the graph
     ctx.analyze(input);
@@ -105,6 +113,8 @@ struct TranspileContext {
     cache_ident: Ident,
     /// `BlendedNoise` configuration (if any density function uses it).
     blended_noise_config: Option<BlendedNoiseConfig>,
+    /// Whether this dimension uses legacy random source (Java LCG).
+    legacy_random_source: bool,
     /// Whether any density function uses `EndIslands`.
     uses_end_islands: bool,
     /// When true, `Interpolated` markers emit `interpolated[i]` parameter references
@@ -130,6 +140,7 @@ impl TranspileContext {
             noises_ident: format_ident!("{prefix}Noises"),
             cache_ident: format_ident!("{prefix}ColumnCache"),
             blended_noise_config: None,
+            legacy_random_source: false,
             uses_end_islands: false,
             interpolated_param_mode: false,
             interpolated_param_counter: 0,
@@ -349,16 +360,41 @@ impl TranspileContext {
     }
 
     fn gen_noises_impl(&self) -> TokenStream {
+        let legacy = self.legacy_random_source;
         let field_inits: Vec<TokenStream> = self
             .noise_ids
             .iter()
             .map(|id| {
                 let field = noise_field_ident(id);
                 let id_lit = Literal::string(id);
-                quote! {
-                    #field: {
-                        let p = params.get(#id_lit).expect(concat!("missing noise params: ", #id_lit));
-                        NormalNoise::create(splitter, #id_lit, p.first_octave, &p.amplitudes)
+
+                // Vanilla's RandomState intercepts temperature/vegetation noise creation
+                // when useLegacyRandomSource=true: uses createLegacyNetherBiome with
+                // hardcoded params (-7, [1.0, 1.0]) and direct LegacyRandom(seed+offset).
+                if legacy && id == "minecraft:temperature" {
+                    quote! {
+                        #field: {
+                            let mut rng = steel_utils::random::RandomSource::Legacy(
+                                steel_utils::random::legacy_random::LegacyRandom::from_seed(seed)
+                            );
+                            NormalNoise::create_legacy_nether_biome(&mut rng, -7, &[1.0, 1.0])
+                        }
+                    }
+                } else if legacy && id == "minecraft:vegetation" {
+                    quote! {
+                        #field: {
+                            let mut rng = steel_utils::random::RandomSource::Legacy(
+                                steel_utils::random::legacy_random::LegacyRandom::from_seed(seed.wrapping_add(1))
+                            );
+                            NormalNoise::create_legacy_nether_biome(&mut rng, -7, &[1.0, 1.0])
+                        }
+                    }
+                } else {
+                    quote! {
+                        #field: {
+                            let p = params.get(#id_lit).expect(concat!("missing noise params: ", #id_lit));
+                            NormalNoise::create(splitter, #id_lit, p.first_octave, &p.amplitudes)
+                        }
                     }
                 }
             })
@@ -370,15 +406,34 @@ impl TranspileContext {
             let xz_factor = Literal::f64_unsuffixed(bn.xz_factor);
             let y_factor = Literal::f64_unsuffixed(bn.y_factor);
             let smear = Literal::f64_unsuffixed(bn.smear_scale_multiplier);
-            quote! {
-                blended_noise: {
-                    use steel_utils::random::PositionalRandom;
-                    let mut terrain_random = splitter.with_hash_of("minecraft:terrain");
-                    steel_utils::noise::BlendedNoise::new(
-                        &mut terrain_random,
-                        #xz_scale, #y_scale, #xz_factor, #y_factor, #smear,
-                    )
-                },
+
+            if legacy {
+                // Vanilla's RandomState uses LegacyRandom(seed) directly for BlendedNoise
+                // instead of splitter.fromHashOf("minecraft:terrain").
+                quote! {
+                    blended_noise: {
+                        let mut rng = steel_utils::random::RandomSource::Legacy(
+                            steel_utils::random::legacy_random::LegacyRandom::from_seed(seed)
+                        );
+                        steel_utils::noise::BlendedNoise::new(
+                            &mut rng,
+                            #xz_scale, #y_scale, #xz_factor, #y_factor, #smear,
+                        )
+                    },
+                }
+            } else {
+                quote! {
+                    blended_noise: {
+                        use steel_utils::random::PositionalRandom;
+                        use steel_utils::random::name_hash::NameHash;
+                        const TERRAIN_HASH: NameHash = NameHash::new("minecraft:terrain");
+                        let mut terrain_random = splitter.with_hash_of(&TERRAIN_HASH);
+                        steel_utils::noise::BlendedNoise::new(
+                            &mut terrain_random,
+                            #xz_scale, #y_scale, #xz_factor, #y_factor, #smear,
+                        )
+                    },
+                }
             }
         });
 
