@@ -9,7 +9,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{
-        BlockBehaviour, BlockPlaceContext,
+        BlockBehavior, BlockPlaceContext,
         weathering::{get_weather_state, next_copper_stage},
     },
     world::World,
@@ -169,7 +169,7 @@ impl WeatheringCopperFullBlock {
     }
 }
 
-impl BlockBehaviour for WeatheringCopperFullBlock {
+impl BlockBehavior for WeatheringCopperFullBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

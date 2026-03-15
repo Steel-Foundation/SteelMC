@@ -15,7 +15,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -36,7 +36,7 @@ impl TorchBlock {
     }
 }
 
-impl BlockBehaviour for TorchBlock {
+impl BlockBehavior for TorchBlock {
     /// Checks if a torch can survive at the given position.
     /// Requires the block below to provide center support on its top face.
     fn can_survive(&self, _state: BlockStateId, world: &World, pos: BlockPos) -> bool {
@@ -89,7 +89,7 @@ impl WallTorchBlock {
     }
 }
 
-impl BlockBehaviour for WallTorchBlock {
+impl BlockBehavior for WallTorchBlock {
     /// Checks if a wall torch can survive at the given position.
     /// Requires the block behind (opposite of facing) to provide a sturdy face.
     fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {

@@ -20,7 +20,7 @@ use steel_utils::{
 };
 
 use crate::{
-    behavior::{BlockBehaviour, BlockPlaceContext, InteractionResult},
+    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult},
     player,
     world::World,
 };
@@ -44,7 +44,7 @@ impl CandleBlock {
     }
 }
 
-impl BlockBehaviour for CandleBlock {
+impl BlockBehavior for CandleBlock {
     /// Checks if the candle block can survive at the given position.
     fn can_survive(&self, _state: steel_utils::BlockStateId, world: &World, pos: BlockPos) -> bool {
         world

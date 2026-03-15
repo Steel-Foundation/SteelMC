@@ -17,7 +17,7 @@ use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
 use crate::world::World;
@@ -90,7 +90,7 @@ impl ButtonBlock {
     }
 }
 
-impl BlockBehaviour for ButtonBlock {
+impl BlockBehavior for ButtonBlock {
     /// Checks if a button with the given state can survive at the given position.
     fn can_survive(&self, state: BlockStateId, world: &World, pos: BlockPos) -> bool {
         let support_dir = Self::get_connected_direction(state).opposite();

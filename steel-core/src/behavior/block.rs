@@ -32,7 +32,7 @@ pub struct PickupResult {
 /// - Neighbor updates
 /// - Player interactions
 /// - State changes
-pub trait BlockBehaviour: Send + Sync {
+pub trait BlockBehavior: Send + Sync {
     /// Called when a player uses an empty bucket on this block.
     ///
     /// Should:
@@ -405,7 +405,7 @@ impl DefaultBlockBehaviour {
     }
 }
 
-impl BlockBehaviour for DefaultBlockBehaviour {
+impl BlockBehavior for DefaultBlockBehaviour {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -416,7 +416,7 @@ impl BlockBehaviour for DefaultBlockBehaviour {
 /// Created after the main registry is frozen. All blocks are initialized with
 /// default behaviors, then custom behaviors are registered for specific blocks.
 pub struct BlockBehaviorRegistry {
-    behaviors: Vec<Box<dyn BlockBehaviour>>,
+    behaviors: Vec<Box<dyn BlockBehavior>>,
 }
 
 impl BlockBehaviorRegistry {
@@ -424,7 +424,7 @@ impl BlockBehaviorRegistry {
     #[must_use]
     pub fn new() -> Self {
         let block_count = REGISTRY.blocks.len();
-        let mut behaviors: Vec<Box<dyn BlockBehaviour>> = Vec::with_capacity(block_count);
+        let mut behaviors: Vec<Box<dyn BlockBehavior>> = Vec::with_capacity(block_count);
 
         // Initialize all blocks with default behavior
         for (_, block) in REGISTRY.blocks.iter() {
@@ -435,27 +435,27 @@ impl BlockBehaviorRegistry {
     }
 
     /// Sets a custom behavior for a block.
-    pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehaviour>) {
+    pub fn set_behavior(&mut self, block: BlockRef, behavior: Box<dyn BlockBehavior>) {
         let id = *REGISTRY.blocks.get_id(block);
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for a block.
     #[must_use]
-    pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehaviour {
+    pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehavior {
         let id = *REGISTRY.blocks.get_id(block);
         self.behaviors[id].as_ref()
     }
 
     /// Gets the behavior for a block by its ID.
     #[must_use]
-    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehaviour> {
+    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehavior> {
         self.behaviors.get(id).map(AsRef::as_ref)
     }
 
     /// Gets the behavior for a block state.
     #[must_use]
-    pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehaviour> {
+    pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehavior> {
         let block = REGISTRY.blocks.by_state_id(state)?;
         Some(self.get_behavior(block))
     }

@@ -15,7 +15,7 @@ use steel_registry::{vanilla_block_tags, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
@@ -53,7 +53,7 @@ impl CactusBlock {
     }
 }
 
-impl BlockBehaviour for CactusBlock {
+impl BlockBehavior for CactusBlock {
     /// Checks if cactus can survive at the given position.
     ///
     /// Survival requirements:

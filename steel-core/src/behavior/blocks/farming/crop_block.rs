@@ -9,7 +9,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -137,7 +137,7 @@ impl CropBlock {
     }
 }
 
-impl BlockBehaviour for CropBlock {
+impl BlockBehavior for CropBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Crops are placed at age 0
         Some(self.get_state_for_age(0))

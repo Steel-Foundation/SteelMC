@@ -8,7 +8,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::inventory::CraftingMenuProvider;
 use crate::player::Player;
@@ -31,7 +31,7 @@ impl CraftingTableBlock {
     }
 }
 
-impl BlockBehaviour for CraftingTableBlock {
+impl BlockBehavior for CraftingTableBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

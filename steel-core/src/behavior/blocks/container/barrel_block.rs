@@ -12,7 +12,7 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::inventory::chest_menu::ChestMenuProvider;
@@ -38,7 +38,7 @@ impl BarrelBlock {
     }
 }
 
-impl BlockBehaviour for BarrelBlock {
+impl BlockBehavior for BarrelBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Barrel faces opposite to the player's look direction (all 6 directions).
         let facing = context.get_nearest_looking_direction().opposite();

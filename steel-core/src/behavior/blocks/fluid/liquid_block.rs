@@ -22,7 +22,7 @@ use steel_registry::vanilla_items;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
-use crate::behavior::block::{BlockBehaviour, PickupResult};
+use crate::behavior::block::{BlockBehavior, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
@@ -102,7 +102,7 @@ impl LiquidBlock {
     }
 }
 
-impl BlockBehaviour for LiquidBlock {
+impl BlockBehavior for LiquidBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

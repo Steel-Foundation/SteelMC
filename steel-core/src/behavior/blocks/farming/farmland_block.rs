@@ -9,7 +9,7 @@ use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -91,7 +91,7 @@ impl FarmlandBlock {
     }
 }
 
-impl BlockBehaviour for FarmlandBlock {
+impl BlockBehavior for FarmlandBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Farmland is placed with moisture 0
         Some(

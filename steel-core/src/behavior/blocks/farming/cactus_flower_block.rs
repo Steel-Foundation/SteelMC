@@ -13,7 +13,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -35,7 +35,7 @@ impl CactusFlowerBlock {
     }
 }
 
-impl BlockBehaviour for CactusFlowerBlock {
+impl BlockBehavior for CactusFlowerBlock {
     /// Checks if the block below can support a cactus flower.
     ///
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts CACTUS, FARMLAND,

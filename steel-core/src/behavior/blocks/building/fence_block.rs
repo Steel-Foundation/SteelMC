@@ -2,7 +2,7 @@
 //!
 //! Fences connect to adjacent fences, fence gates, and solid blocks.
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 use steel_macros::block_behavior;
@@ -120,7 +120,7 @@ impl FenceBlock {
     }
 }
 
-impl BlockBehaviour for FenceBlock {
+impl BlockBehavior for FenceBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         log::debug!(
             "FenceBlock::get_state_for_placement called for {:?} at {:?}",

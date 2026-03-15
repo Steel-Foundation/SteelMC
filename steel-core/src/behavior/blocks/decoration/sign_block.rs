@@ -16,7 +16,7 @@ use steel_registry::vanilla_blocks;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
@@ -287,7 +287,7 @@ impl StandingSignBlock {
     }
 }
 
-impl BlockBehaviour for StandingSignBlock {
+impl BlockBehavior for StandingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -367,7 +367,7 @@ impl WallSignBlock {
     }
 }
 
-impl BlockBehaviour for WallSignBlock {
+impl BlockBehavior for WallSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -455,7 +455,7 @@ impl CeilingHangingSignBlock {
     }
 }
 
-impl BlockBehaviour for CeilingHangingSignBlock {
+impl BlockBehavior for CeilingHangingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -588,7 +588,7 @@ impl WallHangingSignBlock {
     }
 }
 
-impl BlockBehaviour for WallHangingSignBlock {
+impl BlockBehavior for WallHangingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
