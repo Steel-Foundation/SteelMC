@@ -95,6 +95,29 @@ impl Rotation {
         }
     }
 
+    /// Computes the bounding box for a structure template placed at `position`
+    /// with this rotation and a custom pivot point.
+    ///
+    /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror=NONE, size)`.
+    #[must_use]
+    pub fn get_bounding_box_with_pivot(
+        self, pos_x: i32, pos_y: i32, pos_z: i32,
+        size_x: i32, size_y: i32, size_z: i32,
+        pivot_x: i32, pivot_z: i32,
+    ) -> BoundingBox {
+        let dx = size_x - 1;
+        let dy = size_y - 1;
+        let dz = size_z - 1;
+
+        let (c1x, c1y, c1z) = self.transform_pos(0, 0, 0, pivot_x, pivot_z);
+        let (c2x, c2y, c2z) = self.transform_pos(dx, dy, dz, pivot_x, pivot_z);
+
+        BoundingBox::new(
+            c1x.min(c2x) + pos_x, c1y.min(c2y) + pos_y, c1z.min(c2z) + pos_z,
+            c1x.max(c2x) + pos_x, c1y.max(c2y) + pos_y, c1z.max(c2z) + pos_z,
+        )
+    }
+
     /// Computes the bounding box for a structure template placed at `position` with this rotation.
     ///
     /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot=ZERO, mirror=NONE, size)`.

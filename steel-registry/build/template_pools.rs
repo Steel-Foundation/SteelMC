@@ -74,8 +74,24 @@ fn extract_template(path: &str) -> Option<ExtractedTemplate> {
     }
     let size = [size_ints[0], size_ints[1], size_ints[2]];
 
-    // Build palette to find jigsaw block indices
-    let palette = compound.list("palette")?.compounds()?;
+    // Build palette to find jigsaw block indices.
+    // Most templates use "palette" (singular), but some (shipwrecks) use "palettes"
+    // (list of palettes for random block variants). Use the first palette in that case.
+    let palette = if let Some(p) = compound.list("palette").and_then(|l| l.compounds()) {
+        p
+    } else if let Some(palettes) = compound.list("palettes").and_then(|l| l.lists()) {
+        // palettes is a list of lists; each inner list is a palette (list of compounds)
+        let mut iter = palettes.into_iter();
+        match iter.next() {
+            Some(first_palette) => match first_palette.compounds() {
+                Some(c) => c,
+                None => return Some(ExtractedTemplate { size, jigsaws: Vec::new() }),
+            },
+            None => return Some(ExtractedTemplate { size, jigsaws: Vec::new() }),
+        }
+    } else {
+        return Some(ExtractedTemplate { size, jigsaws: Vec::new() });
+    };
     let mut jigsaw_indices: Vec<(usize, String)> = Vec::new();
     for (i, entry) in palette.into_iter().enumerate() {
         let Some(name) = entry.string("Name") else {

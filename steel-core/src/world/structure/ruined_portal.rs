@@ -5,6 +5,7 @@
 
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::{BoundingBox, Rotation};
 
 /// Template sizes (x, y, z) for regular portals (portal_1 through portal_10).
 const PORTAL_SIZES: [(i32, i32, i32); 10] = [
@@ -117,18 +118,26 @@ pub enum TerrainResult {
     Opaque(bool),
 }
 
-/// Computes the biome check position for a ruined portal.
+/// Result of ruined portal generation point computation.
+pub struct PortalResult {
+    /// Biome check position `(block_x, block_y, block_z)`.
+    pub biome_check_pos: (i32, i32, i32),
+    /// Bounding box of the placed portal piece.
+    pub bounding_box: BoundingBox,
+}
+
+/// Computes the biome check position and piece bounding box for a ruined portal.
 ///
-/// Returns `(block_x, block_y, block_z)` matching vanilla's `findGenerationPoint`.
+/// Matches vanilla's `RuinedPortalStructure.findGenerationPoint`.
 /// `terrain` handles both surface height queries and block opacity checks.
-pub fn find_biome_check_pos(
+pub fn find_generation_point(
     rng: &mut LegacyRandom,
     chunk_x: i32,
     chunk_z: i32,
     structure_path: &str,
     min_y: i32,
     terrain: &mut dyn FnMut(TerrainQuery) -> TerrainResult,
-) -> (i32, i32, i32) {
+) -> PortalResult {
     let base_x = chunk_x * 16;
     let base_z = chunk_z * 16;
 
@@ -257,5 +266,16 @@ pub fn find_biome_check_pos(
         projected_y -= 1;
     }
 
-    (base_x, projected_y, base_z)
+    // Vanilla's piece BB: template at (base_x, projected_y, base_z) with rotation.
+    // The XZ extent was already computed above (bb_min_x..bb_max_x, bb_min_z..bb_max_z).
+    // Y range: projected_y to projected_y + template_height - 1.
+    let piece_bb = BoundingBox::new(
+        bb_min_x, projected_y, bb_min_z,
+        bb_max_x, projected_y + sy - 1, bb_max_z,
+    );
+
+    PortalResult {
+        biome_check_pos: (base_x, projected_y, base_z),
+        bounding_box: piece_bb,
+    }
 }

@@ -5,7 +5,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_registry::vanilla_biomes;
-use steel_utils::{BlockStateId, BoundingBox, Identifier};
+use steel_utils::{BlockStateId, BoundingBox, Identifier, Rotation};
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
 use steel_utils::random::{
@@ -433,14 +433,15 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             }
                         }
                     };
-                    ruined_portal::find_biome_check_pos(
+                    let result = ruined_portal::find_generation_point(
                         &mut rp_rng,
                         chunk_x,
                         chunk_z,
                         &entry.structure.path,
                         N::Settings::MIN_Y,
                         &mut terrain,
-                    )
+                    );
+                    result.biome_check_pos
                 }
 
                 // onTopOfChunkCenter with WORLD_SURFACE_WG heightmap
@@ -683,31 +684,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 junctions: Vec::new(),
                             }]
                         }
-                        "minecraft:ocean_monument" => {
-                            // MonumentBuilding: 58×23×58, starts at chunk corner
-                            // Fresh RNG for random direction
-                            let mut piece_rng = LegacyRandom::from_seed(0);
-                            piece_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
-                            let _dir = piece_rng.next_i32_bounded(4);
-                            // Monument is always 58×58 in XZ regardless of direction
-                            vec![StructurePiece {
-                                piece_type: Identifier::new_static("minecraft", "ocean_monument"),
-                                bounding_box: BoundingBox::new(
-                                    chunk_min_x - 29 + 9, surface_y - 7, chunk_min_z - 29 + 9,
-                                    chunk_min_x + 28 + 9, surface_y + 15, chunk_min_z + 28 + 9,
-                                ),
-                                gen_depth: 0,
-                                orientation: None,
-                                nbt_data: Vec::new(),
-                                ground_level_delta: 0,
-                                junctions: Vec::new(),
-                            }]
-                        }
                         "minecraft:ruined_portal" => {
-                            // Ruined portal piece BB: we already compute this in find_biome_check_pos
-                            // but don't return the BB. For references, the XZ extent from the
-                            // template + rotation is sufficient.
-                            // Re-run the RNG to get the template and rotation, then compute BB.
                             use crate::world::structure::ruined_portal::{TerrainQuery, TerrainResult};
                             let mut rp_rng = LegacyRandom::from_seed(0);
                             rp_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
@@ -726,19 +703,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                     }
                                 }
                             };
-                            let result = ruined_portal::find_biome_check_pos(
+                            let result = ruined_portal::find_generation_point(
                                 &mut rp_rng, chunk_x, chunk_z,
                                 &structure_id.path, N::Settings::MIN_Y, &mut terrain,
                             );
-                            // The biome check pos gives us the Y; the BB comes from the template.
-                            // For now, create a single piece with the overall BB.
-                            // The X/Z are at chunk origin, Y from the result.
                             vec![StructurePiece {
                                 piece_type: Identifier::new_static("minecraft", "ruined_portal"),
-                                bounding_box: BoundingBox::new(
-                                    chunk_min_x, result.1, chunk_min_z,
-                                    chunk_min_x + 15, result.1 + 15, chunk_min_z + 15,
-                                ),
+                                bounding_box: result.bounding_box,
                                 gen_depth: 0,
                                 orientation: None,
                                 nbt_data: Vec::new(),
@@ -746,28 +717,203 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 junctions: Vec::new(),
                             }]
                         }
-                        "minecraft:shipwreck" | "minecraft:ocean_ruin" => {
-                            // Template-based structures — BB depends on template + rotation.
-                            // For references, approximate with a 16×16 chunk-sized piece.
-                            // TODO: Load actual template to compute exact BB
-                            vec![StructurePiece {
-                                piece_type: structure_id.clone(),
-                                bounding_box: BoundingBox::new(
-                                    chunk_min_x, 0, chunk_min_z,
-                                    chunk_min_x + 15, 90, chunk_min_z + 15,
-                                ),
+                        "minecraft:shipwreck" => {
+                            // Vanilla: picks random template, random rotation, position at (minBlockX, 90, minBlockZ)
+                            // BB from template size + rotation with pivot (4, 0, 15).
+                            let mut sw_rng = LegacyRandom::from_seed(0);
+                            sw_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                            let is_beached = structure_id.path == "shipwreck_beached";
+                            let beached_count = 11i32;
+                            let ocean_count = 20i32;
+                            let template_count = if is_beached { beached_count } else { ocean_count };
+
+                            static BEACHED: &[&str] = &[
+                                "shipwreck/with_mast", "shipwreck/sideways_full", "shipwreck/sideways_fronthalf",
+                                "shipwreck/sideways_backhalf", "shipwreck/rightsideup_full", "shipwreck/rightsideup_fronthalf",
+                                "shipwreck/rightsideup_backhalf", "shipwreck/with_mast_degraded", "shipwreck/rightsideup_full_degraded",
+                                "shipwreck/rightsideup_fronthalf_degraded", "shipwreck/rightsideup_backhalf_degraded",
+                            ];
+                            static OCEAN: &[&str] = &[
+                                "shipwreck/with_mast", "shipwreck/upsidedown_full", "shipwreck/upsidedown_fronthalf",
+                                "shipwreck/upsidedown_backhalf", "shipwreck/sideways_full", "shipwreck/sideways_fronthalf",
+                                "shipwreck/sideways_backhalf", "shipwreck/rightsideup_full", "shipwreck/rightsideup_fronthalf",
+                                "shipwreck/rightsideup_backhalf", "shipwreck/with_mast_degraded", "shipwreck/upsidedown_full_degraded",
+                                "shipwreck/upsidedown_fronthalf_degraded", "shipwreck/upsidedown_backhalf_degraded",
+                                "shipwreck/sideways_full_degraded", "shipwreck/sideways_fronthalf_degraded",
+                                "shipwreck/sideways_backhalf_degraded", "shipwreck/rightsideup_full_degraded",
+                                "shipwreck/rightsideup_fronthalf_degraded", "shipwreck/rightsideup_backhalf_degraded",
+                            ];
+
+                            // Rotation.getRandom
+                            let rotation = Rotation::get_random(&mut sw_rng);
+                            // Util.getRandom picks template
+                            let templates_arr = if is_beached { BEACHED } else { OCEAN };
+                            let template_idx = sw_rng.next_i32_bounded(template_count) as usize;
+                            let template_name = Identifier::new("minecraft", templates_arr[template_idx]);
+
+                            if let Some(tmpl) = self.templates.get(&template_name) {
+                                let bb = rotation.get_bounding_box_with_pivot(
+                                    chunk_min_x, 90, chunk_min_z,
+                                    tmpl.size[0], tmpl.size[1], tmpl.size[2],
+                                    4, 15, // Shipwreck pivot
+                                );
+                                vec![StructurePiece {
+                                    piece_type: Identifier::new_static("minecraft", "shipwreck"),
+                                    bounding_box: bb,
+                                    gen_depth: 0,
+                                    orientation: None,
+                                    nbt_data: Vec::new(),
+                                    ground_level_delta: 0,
+                                    junctions: Vec::new(),
+                                }]
+                            } else {
+                                vec![]
+                            }
+                        }
+                        "minecraft:ocean_ruin" => {
+                            // Full ocean ruin piece generation matching vanilla's OceanRuinPieces.addPieces.
+                            let is_warm = structure_id.path.contains("warm");
+                            let large_prob: f32 = 0.3;
+                            let cluster_prob: f32 = 0.9;
+
+                            let mut or_rng = LegacyRandom::from_seed(0);
+                            or_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                            let rotation = Rotation::get_random(&mut or_rng);
+
+                            // isLarge check
+                            let is_large = or_rng.next_f32() <= large_prob;
+
+                            // Template arrays
+                            static WARM_SMALL: &[&str] = &[
+                                "underwater_ruin/warm_1", "underwater_ruin/warm_2", "underwater_ruin/warm_3",
+                                "underwater_ruin/warm_4", "underwater_ruin/warm_5", "underwater_ruin/warm_6",
+                                "underwater_ruin/warm_7", "underwater_ruin/warm_8",
+                            ];
+                            static WARM_LARGE: &[&str] = &[
+                                "underwater_ruin/big_warm_4", "underwater_ruin/big_warm_5",
+                                "underwater_ruin/big_warm_6", "underwater_ruin/big_warm_7",
+                            ];
+                            static COLD_BRICK: &[&str] = &[
+                                "underwater_ruin/brick_1", "underwater_ruin/brick_2", "underwater_ruin/brick_3",
+                                "underwater_ruin/brick_4", "underwater_ruin/brick_5", "underwater_ruin/brick_6",
+                                "underwater_ruin/brick_7", "underwater_ruin/brick_8",
+                            ];
+                            static COLD_CRACKED: &[&str] = &[
+                                "underwater_ruin/cracked_1", "underwater_ruin/cracked_2", "underwater_ruin/cracked_3",
+                                "underwater_ruin/cracked_4", "underwater_ruin/cracked_5", "underwater_ruin/cracked_6",
+                                "underwater_ruin/cracked_7", "underwater_ruin/cracked_8",
+                            ];
+                            static COLD_MOSSY: &[&str] = &[
+                                "underwater_ruin/mossy_1", "underwater_ruin/mossy_2", "underwater_ruin/mossy_3",
+                                "underwater_ruin/mossy_4", "underwater_ruin/mossy_5", "underwater_ruin/mossy_6",
+                                "underwater_ruin/mossy_7", "underwater_ruin/mossy_8",
+                            ];
+                            static COLD_BIG_BRICK: &[&str] = &[
+                                "underwater_ruin/big_brick_1", "underwater_ruin/big_brick_2",
+                                "underwater_ruin/big_brick_3", "underwater_ruin/big_brick_8",
+                            ];
+                            static COLD_BIG_CRACKED: &[&str] = &[
+                                "underwater_ruin/big_cracked_1", "underwater_ruin/big_cracked_2",
+                                "underwater_ruin/big_cracked_3", "underwater_ruin/big_cracked_8",
+                            ];
+                            static COLD_BIG_MOSSY: &[&str] = &[
+                                "underwater_ruin/big_mossy_1", "underwater_ruin/big_mossy_2",
+                                "underwater_ruin/big_mossy_3", "underwater_ruin/big_mossy_8",
+                            ];
+
+                            let mut pieces = Vec::new();
+                            let pos = (chunk_min_x, 90, chunk_min_z);
+
+                            // Add base piece(s)
+                            let add_piece_bb = |templates: &rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplateData>,
+                                                name: &str, px: i32, pz: i32, rot: Rotation| -> Option<BoundingBox> {
+                                let key = Identifier::new("minecraft", name.to_string());
+                                templates.get(&key).map(|t| rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2]))
+                            };
+
+                            if is_warm {
+                                let arr = if is_large { WARM_LARGE } else { WARM_SMALL };
+                                let idx = or_rng.next_i32_bounded(arr.len() as i32) as usize;
+                                if let Some(bb) = add_piece_bb(&self.templates, arr[idx], pos.0, pos.2, rotation) {
+                                    pieces.push(bb);
+                                }
+                            } else {
+                                let bricks = if is_large { COLD_BIG_BRICK } else { COLD_BRICK };
+                                let cracked = if is_large { COLD_BIG_CRACKED } else { COLD_CRACKED };
+                                let mossy = if is_large { COLD_BIG_MOSSY } else { COLD_MOSSY };
+                                let idx = or_rng.next_i32_bounded(bricks.len() as i32) as usize;
+                                if let Some(bb) = add_piece_bb(&self.templates, bricks[idx], pos.0, pos.2, rotation) {
+                                    pieces.push(bb);
+                                }
+                                if let Some(bb) = add_piece_bb(&self.templates, cracked[idx], pos.0, pos.2, rotation) {
+                                    pieces.push(bb);
+                                }
+                                if let Some(bb) = add_piece_bb(&self.templates, mossy[idx], pos.0, pos.2, rotation) {
+                                    pieces.push(bb);
+                                }
+                            }
+
+                            // Cluster ruins (if large and cluster check passes)
+                            if is_large && or_rng.next_f32() <= cluster_prob {
+                                // Compute parent corner for collision check
+                                let (pc_x, _, pc_z) = rotation.transform_pos(15, 0, 15, 0, 0);
+                                let parent_corner_x = pos.0 + pc_x;
+                                let parent_corner_z = pos.2 + pc_z;
+                                let parent_bb = BoundingBox::new(
+                                    pos.0.min(parent_corner_x), 0, pos.2.min(parent_corner_z),
+                                    pos.0.max(parent_corner_x), 255, pos.2.max(parent_corner_z),
+                                );
+                                let bottom_left_x = pos.0.min(parent_corner_x);
+                                let bottom_left_z = pos.2.min(parent_corner_z);
+
+                                // Generate 8 candidate positions
+                                let mut candidates = Vec::with_capacity(8);
+                                candidates.push((bottom_left_x - 16 + or_rng.next_i32_between(1, 8), bottom_left_z + 16 + or_rng.next_i32_between(1, 7)));
+                                candidates.push((bottom_left_x - 16 + or_rng.next_i32_between(1, 8), bottom_left_z + or_rng.next_i32_between(1, 7)));
+                                candidates.push((bottom_left_x - 16 + or_rng.next_i32_between(1, 8), bottom_left_z - 16 + or_rng.next_i32_between(4, 8)));
+                                candidates.push((bottom_left_x + or_rng.next_i32_between(1, 7), bottom_left_z + 16 + or_rng.next_i32_between(1, 7)));
+                                candidates.push((bottom_left_x + or_rng.next_i32_between(1, 7), bottom_left_z - 16 + or_rng.next_i32_between(4, 6)));
+                                candidates.push((bottom_left_x + 16 + or_rng.next_i32_between(1, 7), bottom_left_z + 16 + or_rng.next_i32_between(3, 8)));
+                                candidates.push((bottom_left_x + 16 + or_rng.next_i32_between(1, 7), bottom_left_z + or_rng.next_i32_between(1, 7)));
+                                candidates.push((bottom_left_x + 16 + or_rng.next_i32_between(1, 7), bottom_left_z - 16 + or_rng.next_i32_between(4, 8)));
+
+                                let ruins_count = or_rng.next_i32_between(4, 8);
+                                for _ in 0..ruins_count {
+                                    if candidates.is_empty() { break; }
+                                    let idx = or_rng.next_i32_bounded(candidates.len() as i32) as usize;
+                                    let (cx, cz) = candidates.remove(idx);
+                                    let cluster_rot = Rotation::get_random(&mut or_rng);
+                                    // Check collision with parent
+                                    let (nc_x, _, nc_z) = cluster_rot.transform_pos(5, 0, 6, 0, 0);
+                                    let cluster_bb = BoundingBox::new(
+                                        cx.min(cx + nc_x), 0, cz.min(cz + nc_z),
+                                        cx.max(cx + nc_x), 255, cz.max(cz + nc_z),
+                                    );
+                                    if !cluster_bb.intersects(&parent_bb) {
+                                        // Pick small template for cluster piece
+                                        let cluster_arr = if is_warm { WARM_SMALL } else { COLD_BRICK };
+                                        let tidx = or_rng.next_i32_bounded(cluster_arr.len() as i32) as usize;
+                                        if let Some(bb) = add_piece_bb(&self.templates, cluster_arr[tidx], cx, cz, cluster_rot) {
+                                            pieces.push(bb);
+                                        }
+                                    }
+                                }
+                            }
+
+                            pieces.into_iter().map(|bb| StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "ocean_ruin"),
+                                bounding_box: bb,
                                 gen_depth: 0,
                                 orientation: None,
                                 nbt_data: Vec::new(),
                                 ground_level_delta: 0,
                                 junctions: Vec::new(),
-                            }]
+                            }).collect()
                         }
-                        "minecraft:stronghold" => {
-                            // Complex recursive structure — needs full piece gen.
-                            // TODO: Implement stronghold piece generation
-                            vec![]
-                        }
+                        // TODO: Implement piece generation for remaining structure types:
+                        // ocean_monument, stronghold
                         _ => vec![],
                     };
 
