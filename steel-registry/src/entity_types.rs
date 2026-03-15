@@ -151,13 +151,6 @@ impl EntityTypeRegistry {
         }
     }
 
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
-        self.types_by_key
-            .get(key)
-            .and_then(|&idx| self.types_by_id.get(idx).copied())
-    }
-
     /// Gets the registry ID for an entity type.
     #[must_use]
     pub fn get_id(&self, entity_type: EntityTypeRef) -> &usize {
@@ -182,7 +175,6 @@ impl EntityTypeRegistry {
             .enumerate()
             .map(|(id, &et)| (id, et))
     }
-
 }
 
 crate::impl_registry!(
