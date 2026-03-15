@@ -32144,7 +32144,7 @@
           "delay_ticks": 14,
           "dismount_conditions": {
             "max_duration_ticks": 90,
-            "min_speed": 10.0
+            "min_speed": 13.0
           },
           "knockback_conditions": {
             "max_duration_ticks": 180,
@@ -32229,7 +32229,7 @@
           "delay_ticks": 13,
           "dismount_conditions": {
             "max_duration_ticks": 80,
-            "min_speed": 9.0
+            "min_speed": 12.0
           },
           "knockback_conditions": {
             "max_duration_ticks": 165,
@@ -32314,7 +32314,7 @@
           "delay_ticks": 12,
           "dismount_conditions": {
             "max_duration_ticks": 50,
-            "min_speed": 8.0
+            "min_speed": 11.0
           },
           "knockback_conditions": {
             "max_duration_ticks": 135,
@@ -32399,7 +32399,7 @@
           "delay_ticks": 14,
           "dismount_conditions": {
             "max_duration_ticks": 70,
-            "min_speed": 10.0
+            "min_speed": 13.0
           },
           "knockback_conditions": {
             "max_duration_ticks": 170,
@@ -32484,7 +32484,7 @@
           "delay_ticks": 10,
           "dismount_conditions": {
             "max_duration_ticks": 60,
-            "min_speed": 7.5
+            "min_speed": 10.0
           },
           "knockback_conditions": {
             "max_duration_ticks": 130,
@@ -32572,7 +32572,7 @@
           "delay_ticks": 8,
           "dismount_conditions": {
             "max_duration_ticks": 50,
-            "min_speed": 7.0
+            "min_speed": 9.0
           },
           "knockback_conditions": {
             "max_duration_ticks": 110,

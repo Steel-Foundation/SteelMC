@@ -1,5 +1,5 @@
 {
-  "feature": "minecraft:single_piece_of_grass",
+  "feature": "minecraft:grass",
   "placement": [
     {
       "type": "minecraft:block_predicate_filter",
