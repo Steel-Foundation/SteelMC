@@ -1,4 +1,4 @@
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use steel_utils::registry::registry_vanilla_or_custom_tag;

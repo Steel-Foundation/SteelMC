@@ -1,4 +1,7 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt, blocks::block_state_ext::BlockStateExt, item_stack::ItemStack};
+use crate::{
+    REGISTRY, RegistryEntry, RegistryExt, blocks::block_state_ext::BlockStateExt,
+    item_stack::ItemStack,
+};
 use rand::RngExt;
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};

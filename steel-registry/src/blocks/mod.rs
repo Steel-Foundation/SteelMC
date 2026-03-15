@@ -5,9 +5,9 @@ pub mod shapes;
 
 use rustc_hash::FxHashMap;
 
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
 use crate::blocks::behaviour::BlockConfig;
 use crate::blocks::properties::{DynProperty, Property};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> &'static [shapes::AABB];

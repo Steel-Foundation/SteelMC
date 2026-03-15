@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 /// Represents a full zombie nautilus variant definition from a data pack JSON file.
 #[derive(Debug)]

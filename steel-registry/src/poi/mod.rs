@@ -4,7 +4,7 @@
 //! so game systems can efficiently query for nearby points of interest
 //! without scanning every block.
 
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
 

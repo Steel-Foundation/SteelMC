@@ -1,4 +1,4 @@
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
@@ -193,7 +193,9 @@ impl RegistryExt for GameRuleRegistry {
     }
 
     fn by_key(&self, key: &Identifier) -> Option<GameRuleRef> {
-        self.game_rules_by_key.get(key).and_then(|&id| self.by_id(id))
+        self.game_rules_by_key
+            .get(key)
+            .and_then(|&id| self.by_id(id))
     }
 
     fn id_from_key(&self, key: &Identifier) -> Option<usize> {

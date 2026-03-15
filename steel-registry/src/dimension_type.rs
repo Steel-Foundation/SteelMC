@@ -1,4 +1,4 @@
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -138,7 +138,9 @@ impl RegistryExt for DimensionTypeRegistry {
     }
 
     fn by_key(&self, key: &Identifier) -> Option<DimensionTypeRef> {
-        self.dimension_types_by_key.get(key).and_then(|&id| self.by_id(id))
+        self.dimension_types_by_key
+            .get(key)
+            .and_then(|&id| self.by_id(id))
     }
 
     fn id_from_key(&self, key: &Identifier) -> Option<usize> {

@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::{RegistryEntry, RegistryExt, REGISTRY};
+use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 /// Represents a set of sounds for a wolf variant from a data pack JSON file.
 #[derive(Debug)]
