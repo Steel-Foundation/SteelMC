@@ -31,9 +31,9 @@ pub struct ButtonBlock {
     block: BlockRef,
     #[json_arg(value)]
     ticks_to_stay_pressed: i32,
-    #[json_arg(sound_events, json = "button_click_on")]
+    #[json_arg(sound_events, json = "type_button_click_on")]
     sound_click_on: i32,
-    #[json_arg(sound_events, json = "button_click_off")]
+    #[json_arg(sound_events, json = "type_button_click_off")]
     sound_click_off: i32,
 }
 

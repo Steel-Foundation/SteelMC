@@ -154,7 +154,7 @@ impl WeatheringCopper {
 #[block_behavior]
 pub struct WeatheringCopperFullBlock {
     block: BlockRef,
-    #[json_arg(weather_state)]
+    #[json_arg(r#enum = "WeatherState", json = "weather_state")]
     weathering: WeatheringCopper,
 }
 

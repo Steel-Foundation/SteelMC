@@ -6,7 +6,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 
-use heck::ToShoutySnakeCase;
+use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
@@ -23,20 +23,6 @@ fn to_const_ident(name: &str) -> Ident {
     Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
-/// Derives the `WeatherState` variant from a block name based on its prefix.
-fn weather_state_from_name(name: &str) -> Ident {
-    let variant = if name.starts_with("oxidized_") {
-        "Oxidized"
-    } else if name.starts_with("weathered_") {
-        "Weathered"
-    } else if name.starts_with("exposed_") {
-        "Exposed"
-    } else {
-        "Unaffected"
-    };
-    Ident::new(variant, Span::call_site())
-}
-
 // --- Source scanning ---
 
 #[derive(Debug, Clone)]
@@ -45,8 +31,8 @@ enum JsonArgKind {
     Value,
     /// JSON string → `module::IDENT`. Stores the module name.
     Registry(String),
-    /// Derived from block name prefix, not from JSON
-    WeatherState,
+    /// JSON string → `EnumType::Variant` (`PascalCase`). Stores the enum type name.
+    Enum(String),
 }
 
 #[derive(Debug, Clone)]
@@ -94,8 +80,10 @@ fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
         meta.parse_nested_meta(|meta| {
             if meta.path.is_ident("value") {
                 kind = Some(JsonArgKind::Value);
-            } else if meta.path.is_ident("weather_state") {
-                kind = Some(JsonArgKind::WeatherState);
+            } else if meta.path.is_ident("r#enum") || meta.path.is_ident("enum") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                kind = Some(JsonArgKind::Enum(lit.value()));
             } else if meta.path.is_ident("r#ref") || meta.path.is_ident("ref") {
                 is_ref = true;
             } else if meta.path.is_ident("json") {
@@ -111,7 +99,7 @@ fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     }
 
     let kind = kind.unwrap_or_else(|| {
-        panic!("json_arg on field '{field_name}' must specify a kind (value, weather_state, or a registry module name)")
+        panic!("json_arg on field '{field_name}' must specify a kind (value, enum, or a registry module name)")
     });
 
     Some(JsonArgField {
@@ -220,9 +208,11 @@ fn generate_arg(field: &JsonArgField, block: &BlockClass) -> TokenStream {
             let ident = to_const_ident(get_json_str(block, json_key));
             quote! { #module_ident::#ident }
         }
-        JsonArgKind::WeatherState => {
-            let state = weather_state_from_name(&block.name);
-            quote! { WeatherState::#state }
+        JsonArgKind::Enum(enum_type) => {
+            let enum_ident = Ident::new(enum_type, Span::call_site());
+            let variant_str = get_json_str(block, json_key);
+            let variant = Ident::new(&variant_str.to_pascal_case(), Span::call_site());
+            quote! { #enum_ident::#variant }
         }
     };
 
@@ -237,20 +227,25 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let discovered = scan_block_behaviors();
 
     let mut block_type_imports = BTreeSet::new();
-    // all important block imports
-    block_type_imports.insert("WeatherState".to_string());
-
     let mut registrations = Vec::new();
+    let mut matched_classes = BTreeSet::new();
 
     for block in blocks {
         let Some(info) = discovered.get(&block.class) else {
             continue;
         };
+        matched_classes.insert(&info.class_name);
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let const_ident = to_const_ident(&block.name);
 
         block_type_imports.insert(info.struct_name.clone());
+
+        for field in &info.fields {
+            if let JsonArgKind::Enum(ref enum_type) = field.kind {
+                block_type_imports.insert(enum_type.clone());
+            }
+        }
 
         let mut args = Vec::new();
         for field in &info.fields {
@@ -265,6 +260,16 @@ pub fn build(blocks: &[BlockClass]) -> String {
         };
 
         registrations.push(registration);
+    }
+
+    // Verify all discovered structs matched a class in classes.json
+    for (class_name, info) in &discovered {
+        assert!(
+            matched_classes.contains(class_name),
+            "Block behavior struct `{}` maps to class '{}' which doesn't exist in classes.json",
+            info.struct_name,
+            class_name
+        );
     }
 
     // Build imports
