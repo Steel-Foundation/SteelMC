@@ -62,12 +62,27 @@ struct StructureJson {
     biomes: String,
     #[serde(rename = "type")]
     structure_type: String,
-    /// For jigsaw: the start height provider.
     #[serde(default)]
     start_height: Option<serde_json::Value>,
-    /// For jigsaw: if set, projects start Y to this heightmap (biome check at surface).
     #[serde(default)]
     project_start_to_heightmap: Option<String>,
+    // Jigsaw-specific fields
+    #[serde(default)]
+    start_pool: Option<String>,
+    #[serde(default, rename = "size")]
+    max_depth: Option<i32>,
+    #[serde(default)]
+    use_expansion_hack: Option<bool>,
+    #[serde(default)]
+    max_distance_from_center: Option<serde_json::Value>,
+    #[serde(default)]
+    start_jigsaw_name: Option<String>,
+    #[serde(default)]
+    dimension_padding: Option<serde_json::Value>,
+    #[serde(default)]
+    terrain_adaptation: Option<String>,
+    #[serde(default)]
+    pool_aliases: Option<Vec<serde_json::Value>>,
 }
 
 /// Biome tag JSON.
@@ -169,10 +184,57 @@ fn resolve_tag(
 /// Per-structure data extracted from the structure JSON.
 struct StructureData {
     allowed_biomes: Vec<String>,
-    /// `None` means use surface height for biome check. `Some(y)` means use fixed Y.
     biome_check_y: Option<i32>,
-    /// Structure type identifier (e.g., `"minecraft:jigsaw"`).
     structure_type: String,
+    jigsaw_config: Option<JigsawConfigData>,
+}
+
+/// Build-time representation of jigsaw config.
+struct JigsawConfigData {
+    start_pool: String,
+    max_depth: i32,
+    use_expansion_hack: bool,
+    project_start_to_heightmap: Option<String>,
+    start_height: StartHeightData,
+    max_distance_from_center: i32,
+    start_jigsaw_name: Option<String>,
+    dimension_padding: (i32, i32),
+    terrain_adaptation: String,
+    pool_aliases: Vec<serde_json::Value>,
+}
+
+enum StartHeightData {
+    Constant(i32),
+    Uniform { min: i32, max: i32 },
+}
+
+fn parse_start_height_full(value: &serde_json::Value) -> StartHeightData {
+    // {"absolute": N}
+    if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
+        return StartHeightData::Constant(n as i32);
+    }
+    // {"type": "minecraft:uniform", ...}
+    if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:uniform") {
+        let min = value.get("min_inclusive")
+            .and_then(|v| v.get("absolute"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let max = value.get("max_inclusive")
+            .and_then(|v| v.get("absolute"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        return StartHeightData::Uniform { min, max };
+    }
+    // {"type": "minecraft:constant", "value": ...}
+    if let Some(v) = value.get("value") {
+        if let Some(n) = v.as_i64() {
+            return StartHeightData::Constant(n as i32);
+        }
+        if let Some(n) = v.get("absolute").and_then(|v| v.as_i64()) {
+            return StartHeightData::Constant(n as i32);
+        }
+    }
+    StartHeightData::Constant(0)
 }
 
 /// Parses a HeightProvider value to extract a representative Y level.
@@ -257,10 +319,49 @@ fn load_structure_data(
             _ => None,
         };
 
+        // Extract jigsaw config if this is a jigsaw structure
+        let jigsaw_config = if structure.structure_type == "minecraft:jigsaw" {
+            let start_pool = structure.start_pool.clone().unwrap_or_default();
+            let max_depth = structure.max_depth.unwrap_or(0);
+            let use_expansion_hack = structure.use_expansion_hack.unwrap_or(false);
+            let start_height = structure.start_height.as_ref()
+                .map(parse_start_height_full)
+                .unwrap_or(StartHeightData::Constant(0));
+            let max_distance_from_center = structure.max_distance_from_center.as_ref()
+                .and_then(|v| v.as_i64())
+                .unwrap_or(80) as i32;
+            let dim_pad = structure.dimension_padding.as_ref()
+                .and_then(|v| v.as_i64().map(|n| (n as i32, n as i32)))
+                .or_else(|| {
+                    structure.dimension_padding.as_ref().map(|v| {
+                        let bottom = v.get("bottom").and_then(|b| b.as_i64()).unwrap_or(0) as i32;
+                        let top = v.get("top").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
+                        (bottom, top)
+                    })
+                })
+                .unwrap_or((0, 0));
+
+            Some(JigsawConfigData {
+                start_pool,
+                max_depth,
+                use_expansion_hack,
+                project_start_to_heightmap: structure.project_start_to_heightmap.clone(),
+                start_height,
+                max_distance_from_center,
+                start_jigsaw_name: structure.start_jigsaw_name.clone(),
+                dimension_padding: dim_pad,
+                terrain_adaptation: structure.terrain_adaptation.clone().unwrap_or_else(|| "none".to_string()),
+                pool_aliases: structure.pool_aliases.clone().unwrap_or_default(),
+            })
+        } else {
+            None
+        };
+
         result.insert(full_name, StructureData {
             allowed_biomes,
             biome_check_y,
             structure_type: structure.structure_type.clone(),
+            jigsaw_config,
         });
     }
 
@@ -357,6 +458,85 @@ pub(crate) fn build() -> TokenStream {
                     .map(|d| d.structure_type.as_str())
                     .unwrap_or("minecraft:unknown");
 
+                let jigsaw_config_token = match data.and_then(|d| d.jigsaw_config.as_ref()) {
+                    Some(jc) => {
+                        let start_pool = generate_identifier(&jc.start_pool);
+                        let max_depth = jc.max_depth;
+                        let use_expansion_hack = jc.use_expansion_hack;
+                        let heightmap_token = match &jc.project_start_to_heightmap {
+                            Some(h) => { let h = h.as_str(); quote! { Some(#h.to_string()) } }
+                            None => quote! { None },
+                        };
+                        let start_height_token = match &jc.start_height {
+                            StartHeightData::Constant(y) => quote! { StartHeight::Constant(#y) },
+                            StartHeightData::Uniform { min, max } => quote! { StartHeight::Uniform { min: #min, max: #max } },
+                        };
+                        let max_dist = jc.max_distance_from_center;
+                        let jigsaw_name_token = match &jc.start_jigsaw_name {
+                            Some(n) => { let id = generate_identifier(n); quote! { Some(#id) } }
+                            None => quote! { None },
+                        };
+                        let pad_bottom = jc.dimension_padding.0;
+                        let pad_top = jc.dimension_padding.1;
+                        let terrain = &jc.terrain_adaptation;
+
+                        let alias_tokens: Vec<TokenStream> = jc.pool_aliases.iter().map(|alias| {
+                            let alias_type = alias.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            match alias_type {
+                                "minecraft:direct" => {
+                                    let a = generate_identifier(alias.get("alias").and_then(|v| v.as_str()).unwrap_or(""));
+                                    let t = generate_identifier(alias.get("target").and_then(|v| v.as_str()).unwrap_or(""));
+                                    quote! { PoolAlias::Direct { alias: #a, target: #t } }
+                                }
+                                "minecraft:random" => {
+                                    let a = generate_identifier(alias.get("alias").and_then(|v| v.as_str()).unwrap_or(""));
+                                    let targets: Vec<TokenStream> = alias.get("targets").and_then(|t| t.as_array()).map(|arr| {
+                                        arr.iter().map(|t| {
+                                            let data = generate_identifier(t.get("data").and_then(|d| d.as_str()).unwrap_or(""));
+                                            let w = t.get("weight").and_then(|w| w.as_i64()).unwrap_or(1) as i32;
+                                            quote! { (#data, #w) }
+                                        }).collect()
+                                    }).unwrap_or_default();
+                                    quote! { PoolAlias::Random { alias: #a, targets: vec![#(#targets),*] } }
+                                }
+                                "minecraft:random_group" => {
+                                    let groups: Vec<TokenStream> = alias.get("groups").and_then(|g| g.as_array()).map(|arr| {
+                                        arr.iter().map(|group| {
+                                            let w = group.get("weight").and_then(|w| w.as_i64()).unwrap_or(1) as i32;
+                                            let bindings: Vec<TokenStream> = group.get("data").and_then(|d| d.as_array()).map(|data| {
+                                                data.iter().map(|b| {
+                                                    let a = generate_identifier(b.get("alias").and_then(|v| v.as_str()).unwrap_or(""));
+                                                    let t = generate_identifier(b.get("target").and_then(|v| v.as_str()).unwrap_or(""));
+                                                    quote! { (#a, #t) }
+                                                }).collect()
+                                            }).unwrap_or_default();
+                                            quote! { (vec![#(#bindings),*], #w) }
+                                        }).collect()
+                                    }).unwrap_or_default();
+                                    quote! { PoolAlias::RandomGroup { groups: vec![#(#groups),*] } }
+                                }
+                                _ => quote! { },
+                            }
+                        }).collect();
+
+                        quote! {
+                            Some(JigsawConfig {
+                                start_pool: #start_pool,
+                                max_depth: #max_depth,
+                                use_expansion_hack: #use_expansion_hack,
+                                project_start_to_heightmap: #heightmap_token,
+                                start_height: #start_height_token,
+                                max_distance_from_center: #max_dist,
+                                start_jigsaw_name: #jigsaw_name_token,
+                                dimension_padding: DimensionPadding { bottom: #pad_bottom, top: #pad_top },
+                                terrain_adaptation: #terrain.to_string(),
+                                pool_aliases: vec![#(#alias_tokens),*],
+                            })
+                        }
+                    }
+                    None => quote! { None },
+                };
+
                 quote! {
                     StructureEntryData {
                         structure: #structure,
@@ -364,6 +544,7 @@ pub(crate) fn build() -> TokenStream {
                         allowed_biomes: vec![#(#biome_tokens),*],
                         biome_check_y: #biome_check_y_token,
                         structure_type: #stype.to_string(),
+                        jigsaw_config: #jigsaw_config_token,
                     }
                 }
             })
@@ -451,6 +632,7 @@ pub(crate) fn build() -> TokenStream {
         use crate::structure_set::{
             StructureSetData, StructureEntryData, PlacementData,
             SpreadTypeData, FrequencyMethodData, ExclusionZoneData,
+            JigsawConfig, StartHeight, DimensionPadding, PoolAlias,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;

@@ -14,7 +14,7 @@ use steel_utils::random::{
 use steel_utils::surface::SurfaceRuleContext;
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
-use crate::world::structure::StructureStart;
+use crate::world::structure::{StructurePiece, StructureStart};
 use crate::world::structure::mineshaft::{self, MineshaftType};
 use crate::world::structure::ruined_portal;
 use crate::world::structure::placement::{
@@ -60,6 +60,10 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     structure_sets: Vec<(Identifier, StructureSet)>,
     /// Pre-computed ring positions for `ConcentricRings` placements, keyed by set identifier.
     ring_positions: Vec<(Identifier, Vec<steel_utils::ChunkPos>)>,
+    /// Template pool registry for jigsaw assembly.
+    template_pools: rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplatePoolData>,
+    /// Structure template data (size + jigsaw blocks) for jigsaw assembly.
+    templates: rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplateData>,
     _phantom: PhantomData<N>,
 }
 
@@ -138,6 +142,15 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             }
         }
 
+        // Load template pools and structure templates for jigsaw assembly.
+        let template_pools: rustc_hash::FxHashMap<_, _> = steel_registry::vanilla_template_pools::vanilla_template_pools()
+            .into_iter()
+            .map(|p| (p.key.clone(), p))
+            .collect();
+        let templates: rustc_hash::FxHashMap<_, _> = steel_registry::vanilla_template_pools::vanilla_templates()
+            .into_iter()
+            .collect();
+
         Self {
             biome_source,
             noises: Box::new(noises),
@@ -149,6 +162,8 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             seed: seed as i64,
             structure_sets,
             ring_positions,
+            template_pools,
+            templates,
             _phantom: PhantomData,
         }
     }
@@ -262,6 +277,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
         // onTopOfChunkCenter uses getFirstOccupiedHeight = getBaseHeight - 1
         let surface_y = interp_base_height(&mut height_cache, &self.noises, center_block_x, center_block_z, false) - 1;
+
+        // Collect selected structures first (while can_generate borrows height_cache),
+        // then run jigsaw assembly afterward (which also needs height_cache).
+        let mut selected_entries: Vec<(Identifier, String, Option<steel_registry::structure_set::JigsawConfig>)> = Vec::new();
 
         // Checks if findGenerationPoint would succeed and if the biome at the
         // generation point matches. Returns false if the structure type rejects
@@ -424,10 +443,15 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // Jigsaw structures (villages, trail_ruins, trial_chambers, etc.):
                 // biome check at center, Y from biome_check_y or surface.
-                // Jigsaw assembly may reject later — not modeled here.
                 "minecraft:jigsaw" => {
                     let y = entry.biome_check_y.unwrap_or(surface_y);
                     (center_block_x, y, center_block_z)
+                }
+
+                // Stronghold: uses ConcentricRings placement with biome snapping.
+                // Biome check at center, surface Y.
+                "minecraft:stronghold" => {
+                    (center_block_x, surface_y, center_block_z)
                 }
 
                 other => {
@@ -529,16 +553,78 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 continue;
             };
 
-            // Insert a placeholder start — pieces will be filled by actual generation later
+            // Store the selected structure info for post-processing
+            selected_entries.push((
+                selected.structure.clone(),
+                selected.structure_type.clone(),
+                selected.jigsaw_config.clone(),
+            ));
+        }
+
+        // can_generate is dropped here, releasing the height_cache borrow.
+        // Now process the selected entries — run jigsaw assembly for jigsaw structures.
+        for (structure_id, structure_type, jigsaw_config) in selected_entries {
+            let pieces = if structure_type == "minecraft:jigsaw" {
+                if let Some(ref jigsaw_config) = jigsaw_config {
+                    let mut jigsaw_rng = LegacyRandom::from_seed(0);
+                    jigsaw_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                    let alias_map = crate::world::structure::jigsaw::resolve_aliases(
+                        &jigsaw_config.pool_aliases,
+                        &mut jigsaw_rng,
+                    );
+
+                    let mut assembly_rng = LegacyRandom::from_seed(0);
+                    assembly_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                    let mut get_height_fn = |x: i32, z: i32| -> i32 {
+                        interp_base_height(&mut height_cache, &self.noises, x, z, false)
+                    };
+
+                    let result = crate::world::structure::jigsaw::assemble(
+                        jigsaw_config,
+                        &mut assembly_rng,
+                        chunk_x,
+                        chunk_z,
+                        &self.template_pools,
+                        &self.templates,
+                        &alias_map,
+                        &mut get_height_fn,
+                        N::Settings::MIN_Y,
+                        N::Settings::MIN_Y + N::Settings::HEIGHT,
+                    );
+
+                    match result {
+                        Some(placed_pieces) if !placed_pieces.is_empty() => {
+                            placed_pieces
+                                .into_iter()
+                                .map(|pp| StructurePiece {
+                                    piece_type: Identifier::new_static("minecraft", "jigsaw"),
+                                    bounding_box: pp.bounding_box,
+                                    gen_depth: pp.depth,
+                                    orientation: None,
+                                    nbt_data: Vec::new(),
+                                    ground_level_delta: pp.ground_level_delta,
+                                    junctions: pp.junctions,
+                                })
+                                .collect()
+                        }
+                        _ => continue, // Assembly failed — skip
+                    }
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
+
             let start = StructureStart {
-                structure: selected.structure.clone(),
+                structure: structure_id.clone(),
                 chunk_pos: steel_utils::ChunkPos::new(chunk_x, chunk_z),
                 references: 0,
-                pieces: vec![],
+                pieces,
             };
-            chunk
-                .structure_starts_mut()
-                .insert(selected.structure.clone(), start);
+            chunk.structure_starts_mut().insert(structure_id, start);
         }
     }
 

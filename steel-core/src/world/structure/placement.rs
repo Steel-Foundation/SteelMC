@@ -377,6 +377,8 @@ pub struct StructureSelectionEntry {
     pub biome_check_y: Option<i32>,
     /// Structure type (e.g., `"minecraft:jigsaw"`, `"minecraft:mineshaft"`).
     pub structure_type: String,
+    /// Jigsaw-specific configuration. Present only for `minecraft:jigsaw` structures.
+    pub jigsaw_config: Option<steel_registry::structure_set::JigsawConfig>,
 }
 
 /// A set of structures sharing a placement strategy.
@@ -429,6 +431,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             allowed_biomes: e.allowed_biomes,
             biome_check_y: e.biome_check_y,
             structure_type: e.structure_type,
+            jigsaw_config: e.jigsaw_config,
         })
         .collect();
 
@@ -701,6 +704,7 @@ mod tests {
                 allowed_biomes: vec![],
                 biome_check_y: None,
                 structure_type: String::new(),
+                jigsaw_config: None,
             }],
             placement: StructurePlacement {
                 salt: 10_387_312,

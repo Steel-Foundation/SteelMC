@@ -35,6 +35,7 @@ mod recipes;
 mod sound_events;
 mod sound_types;
 mod structure_sets;
+mod template_pools;
 mod timeline_tags;
 mod timelines;
 mod trim_materials;
@@ -95,6 +96,7 @@ const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
 const DENSITY_FUNCTIONS: &str = "density_functions";
 const STRUCTURE_SETS: &str = "structure_sets";
+const TEMPLATE_POOLS: &str = "template_pools";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -154,6 +156,7 @@ pub fn main() {
         (density_functions::build(), DENSITY_FUNCTIONS),
         (poi_types::build(), POI_TYPES),
         (structure_sets::build(), STRUCTURE_SETS),
+        (template_pools::build(), TEMPLATE_POOLS),
     ];
 
     // Track which files we're generating this run

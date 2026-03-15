@@ -25,6 +25,8 @@ pub mod noise;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;
+/// Rotation enum for structure template placement.
+pub mod rotation;
 pub mod serial;
 /// Surface rule context types for generated code.
 pub mod surface;
@@ -48,6 +50,7 @@ pub mod translations_registry;
 pub mod entity_events;
 
 pub use direction::Direction;
+pub use rotation::Rotation;
 pub use front_vec::FrontVec;
 pub use types::BlockPos;
 pub use types::BlockStateId;

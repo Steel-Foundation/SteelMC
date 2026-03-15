@@ -894,6 +894,8 @@ impl ChunkStorage {
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
                         nbt_data: pp.nbt_data.clone(),
+                        ground_level_delta: 0,
+                        junctions: Vec::new(),
                     })
                     .collect();
 

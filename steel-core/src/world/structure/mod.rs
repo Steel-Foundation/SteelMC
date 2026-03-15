@@ -6,6 +6,7 @@
 //!
 //! The structure key is `Identifier` until a structure registry is added.
 
+pub mod jigsaw;
 pub mod mineshaft;
 pub mod placement;
 pub mod ruined_portal;
@@ -48,6 +49,12 @@ pub struct StructurePiece {
     pub orientation: Option<Direction>,
     /// Type-specific NBT data (simdnbt binary format).
     pub nbt_data: Vec<u8>,
+    /// Ground level delta — offset from piece minY to "ground level".
+    /// Used by Beardifier for terrain adaptation. Default 0 for non-jigsaw pieces.
+    pub ground_level_delta: i32,
+    /// Junctions connecting this piece to neighbors.
+    /// Used by Beardifier for junction-based terrain adaptation.
+    pub junctions: Vec<jigsaw::JigsawJunction>,
 }
 
 /// Map of structure starts keyed by structure identifier.

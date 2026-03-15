@@ -31,6 +31,8 @@ pub struct StructureEntryData {
     pub biome_check_y: Option<i32>,
     /// Structure type identifier (e.g., `"minecraft:jigsaw"`, `"minecraft:mineshaft"`).
     pub structure_type: String,
+    /// Jigsaw-specific configuration. Present only for `minecraft:jigsaw` structures.
+    pub jigsaw_config: Option<JigsawConfig>,
 }
 
 /// Placement configuration from the vanilla datapack.
@@ -70,6 +72,60 @@ pub enum PlacementData {
         /// Frequency reduction method name.
         frequency_reduction_method: FrequencyMethodData,
     },
+}
+
+/// Configuration for a jigsaw structure, parsed from its structure JSON.
+#[derive(Debug, Clone)]
+pub struct JigsawConfig {
+    /// Starting template pool.
+    pub start_pool: Identifier,
+    /// Maximum recursion depth (vanilla calls this `size`).
+    pub max_depth: i32,
+    /// Whether the expansion hack is enabled.
+    pub use_expansion_hack: bool,
+    /// If set, project the start piece to this heightmap type.
+    pub project_start_to_heightmap: Option<String>,
+    /// Start height provider type and value.
+    pub start_height: StartHeight,
+    /// Maximum distance from center for piece placement.
+    pub max_distance_from_center: i32,
+    /// Optional named jigsaw to anchor the start piece to.
+    pub start_jigsaw_name: Option<Identifier>,
+    /// Dimension padding (min distance from world height limits).
+    pub dimension_padding: DimensionPadding,
+    /// Terrain adaptation mode.
+    pub terrain_adaptation: String,
+    /// Pool alias configurations.
+    pub pool_aliases: Vec<PoolAlias>,
+}
+
+/// Start height configuration.
+#[derive(Debug, Clone)]
+pub enum StartHeight {
+    /// Fixed absolute Y.
+    Constant(i32),
+    /// Uniform random between min and max (inclusive).
+    Uniform { min: i32, max: i32 },
+}
+
+/// Dimension padding (how close pieces can be to world height limits).
+#[derive(Debug, Clone, Copy)]
+pub struct DimensionPadding {
+    /// Bottom padding.
+    pub bottom: i32,
+    /// Top padding.
+    pub top: i32,
+}
+
+/// A pool alias remapping.
+#[derive(Debug, Clone)]
+pub enum PoolAlias {
+    /// Direct remapping: alias -> target.
+    Direct { alias: Identifier, target: Identifier },
+    /// Random selection from weighted targets.
+    Random { alias: Identifier, targets: Vec<(Identifier, i32)> },
+    /// Random group: pick one group, apply all bindings in it.
+    RandomGroup { groups: Vec<(Vec<(Identifier, Identifier)>, i32)> },
 }
 
 /// Spread type for random spread placement.
