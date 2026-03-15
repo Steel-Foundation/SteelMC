@@ -155,11 +155,4 @@ impl Default for BiomeRegistry {
     }
 }
 
-crate::impl_registry!(
-    BiomeRegistry,
-    Biome,
-    BiomeRef,
-    biomes_by_id,
-    biomes_by_key,
-    biomes
-);
+crate::impl_registry!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key, biomes);

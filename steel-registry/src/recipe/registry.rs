@@ -8,7 +8,7 @@ use super::crafting::{CraftingInput, CraftingRecipe, ShapedRecipe, ShapelessReci
 /// Registry for all recipes.
 pub struct RecipeRegistry {
     /// All recipes in registration order (unified storage for RegistryExt).
-    recipes_by_id: Vec<CraftingRecipe>,
+    recipes_by_id: Vec<&'static CraftingRecipe>,
     /// Map from recipe key to index in `recipes_by_id`.
     recipes_by_key: FxHashMap<Identifier, usize>,
     /// All shaped crafting recipes (for type-specific iteration).
@@ -46,7 +46,8 @@ impl RecipeRegistry {
         );
         let id = self.recipes_by_id.len();
         self.recipes_by_key.insert(recipe.id.clone(), id);
-        self.recipes_by_id.push(CraftingRecipe::Shaped(recipe));
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Shaped(recipe))));
         self.shaped_recipes.push(recipe);
     }
 
@@ -58,7 +59,8 @@ impl RecipeRegistry {
         );
         let id = self.recipes_by_id.len();
         self.recipes_by_key.insert(recipe.id.clone(), id);
-        self.recipes_by_id.push(CraftingRecipe::Shapeless(recipe));
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Shapeless(recipe))));
         self.shapeless_recipes.push(recipe);
     }
 
@@ -146,11 +148,11 @@ impl crate::RegistryExt for RecipeRegistry {
         self.allows_registering = false;
     }
 
-    fn by_id(&self, id: usize) -> Option<CraftingRecipe> {
+    fn by_id(&self, id: usize) -> Option<&'static CraftingRecipe> {
         self.recipes_by_id.get(id).copied()
     }
 
-    fn by_key(&self, key: &Identifier) -> Option<CraftingRecipe> {
+    fn by_key(&self, key: &Identifier) -> Option<&'static CraftingRecipe> {
         self.recipes_by_key
             .get(key)
             .and_then(|&id| self.recipes_by_id.get(id).copied())

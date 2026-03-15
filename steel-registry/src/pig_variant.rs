@@ -90,7 +90,6 @@ impl Default for PigVariantRegistry {
 crate::impl_registry!(
     PigVariantRegistry,
     PigVariant,
-    PigVariantRef,
     pig_variants_by_id,
     pig_variants_by_key,
     pig_variants

@@ -138,12 +138,5 @@ impl ItemRegistry {
     }
 }
 
-crate::impl_registry!(
-    ItemRegistry,
-    Item,
-    ItemRef,
-    items_by_id,
-    items_by_key,
-    items
-);
+crate::impl_registry!(ItemRegistry, Item, items_by_id, items_by_key, items);
 crate::impl_tagged_registry!(ItemRegistry, items_by_key, "item");

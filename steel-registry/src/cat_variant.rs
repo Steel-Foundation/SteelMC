@@ -82,7 +82,6 @@ impl Default for CatVariantRegistry {
 crate::impl_registry!(
     CatVariantRegistry,
     CatVariant,
-    CatVariantRef,
     cat_variants_by_id,
     cat_variants_by_key,
     cat_variants

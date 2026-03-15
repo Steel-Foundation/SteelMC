@@ -84,7 +84,6 @@ impl DialogRegistry {
 crate::impl_registry!(
     DialogRegistry,
     Dialog,
-    DialogRef,
     dialogs_by_id,
     dialogs_by_key,
     dialogs

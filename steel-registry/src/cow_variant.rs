@@ -91,7 +91,6 @@ impl Default for CowVariantRegistry {
 crate::impl_registry!(
     CowVariantRegistry,
     CowVariant,
-    CowVariantRef,
     cow_variants_by_id,
     cow_variants_by_key,
     cow_variants

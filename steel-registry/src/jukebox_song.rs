@@ -71,7 +71,6 @@ impl Default for JukeboxSongRegistry {
 crate::impl_registry!(
     JukeboxSongRegistry,
     JukeboxSong,
-    JukeboxSongRef,
     jukebox_songs_by_id,
     jukebox_songs_by_key,
     jukebox_songs

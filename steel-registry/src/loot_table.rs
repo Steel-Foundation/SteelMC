@@ -1888,7 +1888,6 @@ impl Default for LootTableRegistry {
 crate::impl_registry!(
     LootTableRegistry,
     LootTable,
-    LootTableRef,
     tables_by_id,
     tables_by_key,
     loot_tables

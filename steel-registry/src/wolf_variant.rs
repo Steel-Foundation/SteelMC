@@ -90,7 +90,6 @@ impl Default for WolfVariantRegistry {
 crate::impl_registry!(
     WolfVariantRegistry,
     WolfVariant,
-    WolfVariantRef,
     wolf_variants_by_id,
     wolf_variants_by_key,
     wolf_variants

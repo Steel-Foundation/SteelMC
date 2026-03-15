@@ -82,7 +82,6 @@ impl Default for FrogVariantRegistry {
 crate::impl_registry!(
     FrogVariantRegistry,
     FrogVariant,
-    FrogVariantRef,
     frog_variants_by_id,
     frog_variants_by_key,
     frog_variants

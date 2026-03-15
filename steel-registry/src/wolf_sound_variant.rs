@@ -72,7 +72,6 @@ impl Default for WolfSoundVariantRegistry {
 crate::impl_registry!(
     WolfSoundVariantRegistry,
     WolfSoundVariant,
-    WolfSoundVariantRef,
     wolf_sound_variants_by_id,
     wolf_sound_variants_by_key,
     wolf_sound_variants

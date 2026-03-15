@@ -88,7 +88,6 @@ impl Default for ZombieNautilusVariantRegistry {
 crate::impl_registry!(
     ZombieNautilusVariantRegistry,
     ZombieNautilusVariant,
-    ZombieNautilusVariantRef,
     zombie_nautilus_variants_by_id,
     zombie_nautilus_variants_by_key,
     zombie_nautilus_variants

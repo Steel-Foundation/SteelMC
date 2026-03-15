@@ -420,14 +420,7 @@ impl BlockRegistry {
     }
 }
 
-crate::impl_registry!(
-    BlockRegistry,
-    Block,
-    BlockRef,
-    blocks_by_id,
-    blocks_by_key,
-    blocks
-);
+crate::impl_registry!(BlockRegistry, Block, blocks_by_id, blocks_by_key, blocks);
 crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 
 // Shape lookup methods

@@ -61,7 +61,6 @@ impl TimelineRegistry {
 crate::impl_registry!(
     TimelineRegistry,
     Timeline,
-    TimelineRef,
     timelines_by_id,
     timelines_by_key,
     timelines

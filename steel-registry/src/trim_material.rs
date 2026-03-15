@@ -75,7 +75,6 @@ impl Default for TrimMaterialRegistry {
 crate::impl_registry!(
     TrimMaterialRegistry,
     TrimMaterial,
-    TrimMaterialRef,
     trim_materials_by_id,
     trim_materials_by_key,
     trim_materials

@@ -89,7 +89,6 @@ impl Default for EntityDataSerializerRegistry {
 crate::impl_registry!(
     EntityDataSerializerRegistry,
     EntityDataSerializerEntry,
-    EntityDataSerializerEntryRef,
     entries_by_id,
     entries_by_key,
     entity_data_serializers

@@ -70,7 +70,6 @@ impl Default for TrimPatternRegistry {
 crate::impl_registry!(
     TrimPatternRegistry,
     TrimPattern,
-    TrimPatternRef,
     trim_patterns_by_id,
     trim_patterns_by_key,
     trim_patterns

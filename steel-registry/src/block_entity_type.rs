@@ -68,7 +68,6 @@ impl Default for BlockEntityTypeRegistry {
 crate::impl_registry!(
     BlockEntityTypeRegistry,
     BlockEntityType,
-    BlockEntityTypeRef,
     block_entity_types_by_id,
     block_entity_types_by_key,
     block_entity_types

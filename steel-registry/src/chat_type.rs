@@ -86,7 +86,6 @@ impl Default for ChatTypeRegistry {
 crate::impl_registry!(
     ChatTypeRegistry,
     ChatType,
-    ChatTypeRef,
     chat_types_by_id,
     chat_types_by_key,
     chat_types

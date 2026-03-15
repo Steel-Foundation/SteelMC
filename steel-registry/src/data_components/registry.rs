@@ -350,7 +350,6 @@ impl DataComponentRegistry {
 crate::impl_registry!(
     DataComponentRegistry,
     ComponentEntry,
-    ComponentEntryRef,
     entries,
     by_key,
     data_components

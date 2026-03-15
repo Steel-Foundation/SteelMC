@@ -96,7 +96,6 @@ impl PoiTypeRegistry {
 crate::impl_registry!(
     PoiTypeRegistry,
     PointOfInterestType,
-    PoiTypeRef,
     types_by_id,
     types_by_key,
     poi_types

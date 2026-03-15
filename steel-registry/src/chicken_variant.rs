@@ -91,7 +91,6 @@ impl Default for ChickenVariantRegistry {
 crate::impl_registry!(
     ChickenVariantRegistry,
     ChickenVariant,
-    ChickenVariantRef,
     chicken_variants_by_id,
     chicken_variants_by_key,
     chicken_variants

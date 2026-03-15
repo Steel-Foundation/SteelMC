@@ -97,7 +97,6 @@ impl Default for DamageTypeRegistry {
 crate::impl_registry!(
     DamageTypeRegistry,
     DamageType,
-    DamageTypeRef,
     damage_types_by_id,
     damage_types_by_key,
     damage_types

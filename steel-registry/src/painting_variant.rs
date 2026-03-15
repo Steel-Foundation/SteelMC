@@ -72,7 +72,6 @@ impl Default for PaintingVariantRegistry {
 crate::impl_registry!(
     PaintingVariantRegistry,
     PaintingVariant,
-    PaintingVariantRef,
     painting_variants_by_id,
     painting_variants_by_key,
     painting_variants

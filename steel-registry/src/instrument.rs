@@ -71,7 +71,6 @@ impl Default for InstrumentRegistry {
 crate::impl_registry!(
     InstrumentRegistry,
     Instrument,
-    InstrumentRef,
     instruments_by_id,
     instruments_by_key,
     instruments

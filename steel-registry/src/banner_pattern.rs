@@ -68,7 +68,6 @@ impl Default for BannerPatternRegistry {
 crate::impl_registry!(
     BannerPatternRegistry,
     BannerPattern,
-    BannerPatternRef,
     banner_patterns_by_id,
     banner_patterns_by_key,
     banner_patterns

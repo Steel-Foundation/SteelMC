@@ -105,7 +105,6 @@ impl Default for DimensionTypeRegistry {
 crate::impl_registry!(
     DimensionTypeRegistry,
     DimensionType,
-    DimensionTypeRef,
     dimension_types_by_id,
     dimension_types_by_key,
     dimension_types

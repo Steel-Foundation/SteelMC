@@ -144,7 +144,6 @@ impl EntityTypeRegistry {
 crate::impl_registry!(
     EntityTypeRegistry,
     EntityType,
-    EntityTypeRef,
     types_by_id,
     types_by_key,
     entity_types

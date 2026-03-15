@@ -155,7 +155,6 @@ impl Default for GameRuleRegistry {
 crate::impl_registry!(
     GameRuleRegistry,
     GameRule,
-    GameRuleRef,
     game_rules_by_id,
     game_rules_by_key,
     game_rules

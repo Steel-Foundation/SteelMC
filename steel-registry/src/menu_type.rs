@@ -67,7 +67,6 @@ impl Default for MenuTypeRegistry {
 crate::impl_registry!(
     MenuTypeRegistry,
     MenuType,
-    MenuTypeRef,
     menu_types_by_id,
     menu_types_by_key,
     menu_types
