@@ -1,5 +1,7 @@
 //! Math utilities for noise generation, matching vanilla Minecraft's Mth.java
 
+use std::f64::consts::PI;
+
 /// Smoothstep - quintic Hermite interpolation (NOT cubic!)
 ///
 /// Formula: 6x^5 - 15x^4 + 10x^3
@@ -152,6 +154,26 @@ pub fn map_clamped(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max
     clamped_lerp(to_min, to_max, t)
 }
 
+/// Inverse linear interpolation (find the factor t such that lerp(t, a, b) == value).
+///
+/// Java reference: `Mth.inverseLerp(double, double, double)`
+#[inline]
+#[must_use]
+pub fn inverse_lerp(value: f64, a: f64, b: f64) -> f64 {
+    (value - a) / (b - a)
+}
+
+/// Map a value from one range to another (unclamped).
+///
+/// Unlike [`map_clamped`], the result can extrapolate outside `[to_min, to_max]`.
+///
+/// Java reference: `Mth.map(double, double, double, double, double)`
+#[inline]
+#[must_use]
+pub fn map(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
+    lerp(inverse_lerp(value, from_min, from_max), to_min, to_max)
+}
+
 /// Square a value.
 #[inline]
 #[must_use]
@@ -164,6 +186,15 @@ pub fn square(x: f64) -> f64 {
 #[must_use]
 pub fn cube(x: f64) -> f64 {
     x * x * x
+}
+
+/// Bias a noise value towards extremes (-1 or 1) using a sine curve.
+///
+/// Java reference: `NoiseUtils.biasTowardsExtreme(double, double)`
+#[inline]
+#[must_use]
+pub fn bias_towards_extreme(noise: f64, factor: f64) -> f64 {
+    noise + (PI * noise).sin() * factor / PI
 }
 
 #[cfg(test)]

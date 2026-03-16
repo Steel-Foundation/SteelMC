@@ -34,7 +34,7 @@ pub struct LavaFluid;
 impl LavaFluid {
     /// Returns true if this world uses fast lava (nether-like).
     // TODO: Vanilla uses EnvironmentAttributes.FAST_LAVA on the dimension type, not a hardcoded check
-    fn is_fast_lava(world: &World) -> bool {
+    fn is_fast_lava(world: &Arc<World>) -> bool {
         world.dimension.key == vanilla_dimension_types::THE_NETHER.key
     }
 }
@@ -48,15 +48,15 @@ impl FluidBehavior for LavaFluid {
         is_lava_fluid(fluid)
     }
 
-    fn tick_delay(&self, world: &World) -> i32 {
+    fn tick_delay(&self, world: &Arc<World>) -> i32 {
         if Self::is_fast_lava(world) { 10 } else { 30 }
     }
 
-    fn drop_off(&self, world: &World) -> u8 {
+    fn drop_off(&self, world: &Arc<World>) -> u8 {
         if Self::is_fast_lava(world) { 1 } else { 2 }
     }
 
-    fn slope_find_distance(&self, world: &World) -> u8 {
+    fn slope_find_distance(&self, world: &Arc<World>) -> u8 {
         if Self::is_fast_lava(world) { 4 } else { 2 }
     }
 
@@ -69,7 +69,7 @@ impl FluidBehavior for LavaFluid {
         true
     }
 
-    fn can_convert_to_source(&self, world: &World) -> bool {
+    fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
         match world.get_game_rule(LAVA_SOURCE_CONVERSION) {
             GameRuleValue::Bool(val) => val,
             GameRuleValue::Int(_) => false,
@@ -84,12 +84,12 @@ impl FluidBehavior for LavaFluid {
     fn can_be_replaced_with(
         &self,
         fluid_state: FluidState,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         other_fluid: FluidRef,
         _direction: Direction,
     ) -> bool {
-        get_height(world, &pos, fluid_state) >= 0.444_444_45 && is_water_fluid(other_fluid)
+        get_height(world, pos, fluid_state) >= 0.444_444_45 && is_water_fluid(other_fluid)
     }
 
     /// Vanilla parity: `LavaFluid.getSpreadDelay`.
@@ -100,7 +100,7 @@ impl FluidBehavior for LavaFluid {
     /// falling lava source (height = 1.0) is correctly treated as "tall".
     fn get_spread_delay(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         old_state: FluidState,
         new_state: FluidState,
@@ -110,7 +110,7 @@ impl FluidBehavior for LavaFluid {
             && !new_state.is_empty()
             && !old_state.falling
             && !new_state.falling
-            && get_height(world, &pos, new_state) > get_height(world, &pos, old_state)
+            && get_height(world, pos, new_state) > get_height(world, pos, old_state)
             && rand::random_range(0u32..4) != 0
         {
             base * 4
@@ -127,9 +127,9 @@ impl FluidBehavior for LavaFluid {
 
     /// Vanilla parity: `LavaFluid.animateTick()`.
     /// Plays pop (1/100) and ambient (1/200) sounds when air is above.
-    fn animate_tick(&self, world: &World, pos: BlockPos, _state: FluidState) {
+    fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, _state: FluidState) {
         let above_pos = pos.above();
-        let above_block = world.get_block_state(&above_pos).get_block();
+        let above_block = world.get_block_state(above_pos).get_block();
 
         if above_block.config.is_air {
             if rand::random_range(0u32..100) == 0 {
@@ -165,7 +165,7 @@ impl FlowingFluid for LavaFluid {
         direction: Direction,
     ) {
         if direction == Direction::Down {
-            let below_fluid = get_fluid_state(world, &pos);
+            let below_fluid = get_fluid_state(world, pos);
             if below_fluid.is_water() {
                 // Vanilla: fizz always plays when lava meets water going down,
                 // regardless of whether stone is formed.
@@ -173,7 +173,7 @@ impl FlowingFluid for LavaFluid {
 
                 // Vanilla: stone only forms when the target is a pure water LiquidBlock,
                 // not a waterlogged block (stairs, slabs, etc.).
-                let below_block = world.get_block_state(&pos).get_block();
+                let below_block = world.get_block_state(pos).get_block();
                 if below_block == vanilla_blocks::WATER {
                     world.set_block(
                         pos,

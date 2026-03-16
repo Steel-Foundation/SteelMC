@@ -596,7 +596,7 @@ pub(crate) fn build() -> TokenStream {
 
     quote! {
         use crate::{
-            blocks::{behaviour::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
+            blocks::{behavior::{BlockConfig, PushReaction}, Block, offset, BlockRegistry},
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
             blocks::shapes::AABB,
         };

@@ -18,10 +18,10 @@ pub struct EnderEyeBehavior;
 
 impl ItemBehavior for EnderEyeBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        // TODO: updateNeighbourForOutputSignal, portal completion check
+        // TODO: updateNeighborForOutputSignal, portal completion check
 
         let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(&clicked_pos);
+        let clicked_state = context.world.get_block_state(clicked_pos);
 
         let Some(clicked_block) = REGISTRY.blocks.by_state_id(clicked_state) else {
             return InteractionResult::Pass;

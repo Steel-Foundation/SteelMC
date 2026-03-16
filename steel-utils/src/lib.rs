@@ -26,6 +26,8 @@ pub mod random;
 /// helpful tools for registry
 pub mod registry;
 pub mod serial;
+/// Surface rule context types for generated code.
+pub mod surface;
 pub mod text;
 /// A module for common types.
 pub mod types;

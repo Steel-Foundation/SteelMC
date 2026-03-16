@@ -12,10 +12,9 @@ pub struct ItemClass {
     #[serde(default)]
     pub block: Option<String>,
     #[serde(default)]
-    #[serde(rename = "wallBlock")]
     pub wall_block: Option<String>,
     #[serde(default)]
-    #[serde(rename = "fluid")]
+    #[serde(rename = "content")]
     pub fluid: Option<String>,
 }
 
@@ -206,7 +205,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let ender_eye_type = Ident::new("EnderEyeBehavior", Span::call_site());
     let ender_eye_registrations =
         generate_simple_registrations(ender_eye_items.iter(), &ender_eye_type);
-    let shovel_type = Ident::new("ShovelBehaviour", Span::call_site());
+    let shovel_type = Ident::new("ShovelBehavior", Span::call_site());
     let shovel_registrations = generate_simple_registrations(shovel_items.iter(), &shovel_type);
     let flint_and_steel_type = Ident::new("FlintAndSteelBehavior", Span::call_site());
     let flint_and_steel_registrations =
@@ -222,7 +221,7 @@ pub fn build(items: &[ItemClass]) -> String {
 
         use steel_registry::{vanilla_blocks, vanilla_items};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehaviour, FilledBucketBehavior, FlintAndSteelBehavior, EmptyBucketBehavior};
+        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehavior, FilledBucketBehavior,FlintAndSteelBehavior, EmptyBucketBehavior};
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #block_item_registrations

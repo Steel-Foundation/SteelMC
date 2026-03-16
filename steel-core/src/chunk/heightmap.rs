@@ -7,7 +7,7 @@
 //! the final heightmaps are moved directly into `ChunkHeightmaps` via [`ChunkHeightmaps::from_proto`].
 
 use steel_registry::{
-    REGISTRY,
+    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags,
 };
@@ -363,6 +363,63 @@ impl ProtoHeightmaps {
             HeightmapType::OceanFloor => &mut self.ocean_floor,
         };
         slot.get_or_insert_with(|| Heightmap::new(heightmap_type, min_y, height))
+    }
+
+    /// Primes missing heightmaps by reading sections directly with batched locking.
+    ///
+    /// Instead of a per-block closure (which acquires a lock per call), this
+    /// holds each section's read lock for all 16 Y values before moving on.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn prime_from_sections(
+        &mut self,
+        types: &[HeightmapType],
+        min_y: i32,
+        height: i32,
+        sections: &[super::section::SectionHolder],
+    ) {
+        let types_to_prime: Vec<HeightmapType> = types
+            .iter()
+            .filter(|&&hm_type| self.get(hm_type).is_none())
+            .copied()
+            .collect();
+
+        if types_to_prime.is_empty() {
+            return;
+        }
+
+        for &hm_type in &types_to_prime {
+            self.get_or_insert(hm_type, min_y, height);
+        }
+
+        for x in 0..16 {
+            for z in 0..16 {
+                let mut pending: Vec<HeightmapType> = types_to_prime.clone();
+
+                'sections: for section_idx in (0..sections.len()).rev() {
+                    let guard = sections[section_idx].read();
+                    for local_y in (0..16).rev() {
+                        if pending.is_empty() {
+                            break 'sections;
+                        }
+                        let y = min_y + (section_idx * 16 + local_y) as i32;
+                        let state = guard.states.get(x, local_y, z);
+                        if state.is_air() {
+                            continue;
+                        }
+                        pending.retain(|&hm_type| {
+                            if hm_type.is_opaque(state) {
+                                self.get_mut(hm_type)
+                                    .expect("heightmap was just inserted")
+                                    .set_height(x, z, y + 1);
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                }
+            }
+        }
     }
 
     /// Primes missing heightmaps by scanning chunk columns from top to bottom.

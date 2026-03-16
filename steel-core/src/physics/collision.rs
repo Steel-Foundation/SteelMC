@@ -1,5 +1,7 @@
 //! World collision queries for physics simulation.
 
+use std::sync::Arc;
+
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_utils::math::Vector3;
@@ -13,7 +15,7 @@ use crate::world::World;
 /// This abstraction allows testing physics without a full world instance.
 pub trait CollisionWorld {
     /// Gets the block state at the given position.
-    fn get_block_state(&self, pos: &BlockPos) -> BlockStateId;
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId;
 
     /// Queries all block collision shapes that intersect with the given AABB.
     ///
@@ -36,18 +38,18 @@ pub trait CollisionWorld {
 
 /// Implements `CollisionWorld` for the Steel World struct.
 pub struct WorldCollisionProvider<'a> {
-    world: &'a World,
+    world: &'a Arc<World>,
 }
 
 impl<'a> WorldCollisionProvider<'a> {
     /// Creates a new collision provider for the given world.
-    pub const fn new(world: &'a World) -> Self {
+    pub const fn new(world: &'a Arc<World>) -> Self {
         Self { world }
     }
 }
 
 impl CollisionWorld for WorldCollisionProvider<'_> {
-    fn get_block_state(&self, pos: &BlockPos) -> BlockStateId {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         self.world.get_block_state(pos)
     }
 
@@ -67,7 +69,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
             for z in min_z..=max_z {
                 for x in min_x..=max_x {
                     let block_pos = BlockPos::new(x, y, z);
-                    let block_state = self.world.get_block_state(&block_pos);
+                    let block_state = self.world.get_block_state(block_pos);
 
                     // Skip air blocks
                     if block_state.is_air() {
@@ -113,7 +115,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         for z in check_min_z..=check_max_z {
             for x in check_min_x..=check_max_x {
                 let block_pos = BlockPos::new(x, check_y - 1, z); // Check block below feet
-                let block_state = self.world.get_block_state(&block_pos);
+                let block_state = self.world.get_block_state(block_pos);
 
                 if block_state.is_air() {
                     continue;

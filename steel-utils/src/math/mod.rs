@@ -4,8 +4,8 @@ pub mod vector2;
 pub mod vector3;
 
 pub use noise_math::{
-    clamp, clamped_lerp, cube, floor, lerp, lerp2, lerp3, lfloor, map_clamped, smoothstep,
-    smoothstep_derivative, square,
+    bias_towards_extreme, clamp, clamped_lerp, cube, floor, inverse_lerp, lerp, lerp2, lerp3,
+    lfloor, map, map_clamped, smoothstep, smoothstep_derivative, square,
 };
 pub use vector2::Vector2;
 pub use vector3::{Axis, Vector3};

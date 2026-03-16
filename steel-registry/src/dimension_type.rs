@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -84,25 +83,6 @@ impl DimensionTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<DimensionTypeRef> {
-        self.dimension_types_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, dimension_type: DimensionTypeRef) -> &usize {
-        self.dimension_types_by_key
-            .get(&dimension_type.key)
-            .expect("Dimension type not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<DimensionTypeRef> {
-        self.dimension_types_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, DimensionTypeRef)> + '_ {
         self.dimension_types_by_id
             .iter()
@@ -111,24 +91,8 @@ impl DimensionTypeRegistry {
     }
 
     #[must_use]
-    pub fn len(&self) -> usize {
-        self.dimension_types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.dimension_types_by_id.is_empty()
-    }
-
-    #[must_use]
     pub fn get_ids(&self) -> Vec<Identifier> {
         self.dimension_types_by_key.keys().cloned().collect()
-    }
-}
-
-impl RegistryExt for DimensionTypeRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -137,3 +101,11 @@ impl Default for DimensionTypeRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    DimensionTypeRegistry,
+    DimensionType,
+    dimension_types_by_id,
+    dimension_types_by_key,
+    dimension_types
+);

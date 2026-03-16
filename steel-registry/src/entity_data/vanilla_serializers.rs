@@ -11,6 +11,8 @@ use steel_utils::{
     serial::{PrefixedWrite, WriteTo},
 };
 
+use steel_utils::Identifier;
+
 use super::{EntityData, EntityDataSerializerRegistry};
 
 /// Simple serializer: extract value and call `.write(buf)`.
@@ -270,94 +272,69 @@ fn ser_humanoid_arm(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
 /// **IMPORTANT**: The registration order MUST match vanilla's `EntityDataSerializers.java` exactly,
 /// as the serializer's network ID is determined by its registration order.
 pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSerializerRegistry) {
-    // Order matches EntityDataSerializers.java static block
+    // Order matches EntityDataSerializers.java static block.
+    // Registration macro keeps lines concise while preserving comments.
+    macro_rules! reg {
+        ($name:literal, $writer:expr) => {
+            registry.register(Identifier::vanilla_static($name), $writer);
+        };
+    }
 
-    // 0: BYTE
-    registry.register("byte", ser_byte);
-    // 1: INT (VarInt)
-    registry.register("int", ser_int);
-    // 2: LONG (VarLong)
-    registry.register("long", ser_long);
-    // 3: FLOAT
-    registry.register("float", ser_float);
-    // 4: STRING
-    registry.register("string", ser_string);
-    // 5: COMPONENT
-    registry.register("component", ser_component);
-    // 6: OPTIONAL_COMPONENT
-    registry.register("optional_component", ser_optional_component);
-    // 7: ITEM_STACK
-    registry.register("item_stack", ser_item_stack);
-    // 8: BOOLEAN
-    registry.register("boolean", ser_boolean);
-    // 9: ROTATIONS
-    registry.register("rotations", ser_rotations);
-    // 10: BLOCK_POS
-    registry.register("block_pos", ser_block_pos);
-    // 11: OPTIONAL_BLOCK_POS
-    registry.register("optional_block_pos", ser_optional_block_pos);
-    // 12: DIRECTION
-    registry.register("direction", ser_direction);
-    // 13: OPTIONAL_LIVING_ENTITY_REFERENCE
-    registry.register(
+    reg!("byte", ser_byte); // 0
+    reg!("int", ser_int); // 1
+    reg!("long", ser_long); // 2
+    reg!("float", ser_float); // 3
+    reg!("string", ser_string); // 4
+    reg!("component", ser_component); // 5
+    reg!("optional_component", ser_optional_component); // 6
+    reg!("item_stack", ser_item_stack); // 7
+    reg!("boolean", ser_boolean); // 8
+    reg!("rotations", ser_rotations); // 9
+    reg!("block_pos", ser_block_pos); // 10
+    reg!("optional_block_pos", ser_optional_block_pos); // 11
+    reg!("direction", ser_direction); // 12
+    reg!(
         "optional_living_entity_reference",
-        ser_optional_living_entity_reference,
-    );
-    // 14: BLOCK_STATE
-    registry.register("block_state", ser_block_state);
-    // 15: OPTIONAL_BLOCK_STATE
-    registry.register("optional_block_state", ser_optional_block_state);
-    // 16: PARTICLE
-    registry.register("particle", ser_particle);
-    // 17: PARTICLES
-    registry.register("particles", ser_particles);
-    // 18: VILLAGER_DATA
-    registry.register("villager_data", ser_villager_data);
-    // 19: OPTIONAL_UNSIGNED_INT
-    registry.register("optional_unsigned_int", ser_optional_unsigned_int);
-    // 20: POSE
-    registry.register("pose", ser_pose);
-    // 21: CAT_VARIANT
-    registry.register("cat_variant", ser_cat_variant);
-    // 22: COW_VARIANT
-    registry.register("cow_variant", ser_cow_variant);
-    // 23: WOLF_VARIANT
-    registry.register("wolf_variant", ser_wolf_variant);
-    // 24: WOLF_SOUND_VARIANT
-    registry.register("wolf_sound_variant", ser_wolf_sound_variant);
-    // 25: FROG_VARIANT
-    registry.register("frog_variant", ser_frog_variant);
-    // 26: PIG_VARIANT
-    registry.register("pig_variant", ser_pig_variant);
-    // 27: CHICKEN_VARIANT
-    registry.register("chicken_variant", ser_chicken_variant);
-    // 28: ZOMBIE_NAUTILUS_VARIANT
-    registry.register("zombie_nautilus_variant", ser_zombie_nautilus_variant);
-    // 29: OPTIONAL_GLOBAL_POS
-    registry.register("optional_global_pos", ser_optional_global_pos);
-    // 30: PAINTING_VARIANT
-    registry.register("painting_variant", ser_painting_variant);
-    // 31: SNIFFER_STATE
-    registry.register("sniffer_state", ser_sniffer_state);
-    // 32: ARMADILLO_STATE
-    registry.register("armadillo_state", ser_armadillo_state);
-    // 33: COPPER_GOLEM_STATE
-    registry.register("copper_golem_state", ser_copper_golem_state);
-    // 34: WEATHERING_COPPER_STATE
-    registry.register("weathering_copper_state", ser_weathering_copper_state);
-    // 35: VECTOR3
-    registry.register("vector3", ser_vector3);
-    // 36: QUATERNION
-    registry.register("quaternion", ser_quaternion);
-    // 37: RESOLVABLE_PROFILE
-    registry.register("resolvable_profile", ser_resolvable_profile);
-    // 38: HUMANOID_ARM
-    registry.register("humanoid_arm", ser_humanoid_arm);
+        ser_optional_living_entity_reference
+    ); // 13
+    reg!("block_state", ser_block_state); // 14
+    reg!("optional_block_state", ser_optional_block_state); // 15
+    reg!("particle", ser_particle); // 16
+    reg!("particles", ser_particles); // 17
+    reg!("villager_data", ser_villager_data); // 18
+    reg!("optional_unsigned_int", ser_optional_unsigned_int); // 19
+    reg!("pose", ser_pose); // 20
+    reg!("cat_variant", ser_cat_variant); // 21
+    reg!("cow_variant", ser_cow_variant); // 22
+    reg!("wolf_variant", ser_wolf_variant); // 23
+    reg!("wolf_sound_variant", ser_wolf_sound_variant); // 24
+    reg!("frog_variant", ser_frog_variant); // 25
+    reg!("pig_variant", ser_pig_variant); // 26
+    reg!("chicken_variant", ser_chicken_variant); // 27
+    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant); // 28
+    reg!("optional_global_pos", ser_optional_global_pos); // 29
+    reg!("painting_variant", ser_painting_variant); // 30
+    reg!("sniffer_state", ser_sniffer_state); // 31
+    reg!("armadillo_state", ser_armadillo_state); // 32
+    reg!("copper_golem_state", ser_copper_golem_state); // 33
+    reg!("weathering_copper_state", ser_weathering_copper_state); // 34
+    reg!("vector3", ser_vector3); // 35
+    reg!("quaternion", ser_quaternion); // 36
+    reg!("resolvable_profile", ser_resolvable_profile); // 37
+    reg!("humanoid_arm", ser_humanoid_arm); // 38
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::RegistryExt;
+
     use super::*;
+
+    macro_rules! id {
+        ($name:literal) => {
+            Identifier::vanilla_static($name)
+        };
+    }
 
     #[test]
     fn test_serializer_registration_order() {
@@ -365,13 +342,13 @@ mod tests {
         register_vanilla_entity_data_serializers(&mut registry);
 
         // Verify key serializers have correct IDs
-        assert_eq!(registry.get_id("byte"), Some(0));
-        assert_eq!(registry.get_id("int"), Some(1));
-        assert_eq!(registry.get_id("long"), Some(2));
-        assert_eq!(registry.get_id("float"), Some(3));
-        assert_eq!(registry.get_id("boolean"), Some(8));
-        assert_eq!(registry.get_id("pose"), Some(20));
-        assert_eq!(registry.get_id("humanoid_arm"), Some(38));
+        assert_eq!(registry.id_from_key(&id!("byte")), Some(0));
+        assert_eq!(registry.id_from_key(&id!("int")), Some(1));
+        assert_eq!(registry.id_from_key(&id!("long")), Some(2));
+        assert_eq!(registry.id_from_key(&id!("float")), Some(3));
+        assert_eq!(registry.id_from_key(&id!("boolean")), Some(8));
+        assert_eq!(registry.id_from_key(&id!("pose")), Some(20));
+        assert_eq!(registry.id_from_key(&id!("humanoid_arm")), Some(38));
 
         // Total count
         assert_eq!(registry.len(), 39);

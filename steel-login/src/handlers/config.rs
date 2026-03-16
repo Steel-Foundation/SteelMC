@@ -36,7 +36,7 @@ impl JavaTcpClient {
             view_distance: packet.view_distance.clamp(2, 32) as u8,
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
-            model_customisation: packet.model_customisation,
+            model_customization: packet.model_customization,
             main_hand: packet.main_hand,
             text_filtering_enabled: packet.text_filtering_enabled,
             allows_listing: packet.allows_listing,

@@ -1,5 +1,6 @@
 //! Portal shape detection for validating obsidian frames.
 
+use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -54,24 +55,28 @@ pub fn nether_portal_config() -> PortalFrameConfig {
 }
 
 /// Interior check: air or fire only (used when creating a new portal).
-fn is_empty_interior(world: &World, pos: BlockPos, _config: &PortalFrameConfig) -> bool {
-    let block = world.get_block_state(&pos).get_block();
+fn is_empty_interior(world: &Arc<World>, pos: BlockPos, _config: &PortalFrameConfig) -> bool {
+    let block = world.get_block_state(pos).get_block();
     block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE
 }
 
 /// Interior check: air, fire, or existing portal blocks (used when validating an existing portal).
-fn is_portal_or_empty_interior(world: &World, pos: BlockPos, config: &PortalFrameConfig) -> bool {
-    let block = world.get_block_state(&pos).get_block();
+fn is_portal_or_empty_interior(
+    world: &Arc<World>,
+    pos: BlockPos,
+    config: &PortalFrameConfig,
+) -> bool {
+    let block = world.get_block_state(pos).get_block();
     block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE || block == config.portal
 }
 
 /// Interior validator function signature.
-type InteriorCheck = fn(&World, BlockPos, &PortalFrameConfig) -> bool;
+type InteriorCheck = fn(&Arc<World>, BlockPos, &PortalFrameConfig) -> bool;
 
 impl PortalShape {
     /// Tries to find a valid portal shape from a position inside or adjacent to a frame.
     pub fn find_portal_shape(
-        world: &World,
+        world: &Arc<World>,
         fire_pos: BlockPos,
         config: &PortalFrameConfig,
     ) -> Option<Self> {
@@ -82,7 +87,7 @@ impl PortalShape {
     /// Finds a portal shape on a specific axis, treating existing portal blocks as valid interior.
     /// Used by `update_shape` to check if the portal frame is still complete.
     pub fn find_any_shape(
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         axis: Axis,
         config: &PortalFrameConfig,
@@ -93,7 +98,7 @@ impl PortalShape {
     /// Tries to find a valid portal on a single axis.
     /// It loops over the interior (not frame blocks) to determine the portal dimensions.
     fn try_axis(
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         axis: Axis,
         config: &PortalFrameConfig,
@@ -153,7 +158,7 @@ impl PortalShape {
 
     /// Returns the width - 1 of the portal interior starting from the given position.
     fn get_width(
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         config: &PortalFrameConfig,
@@ -172,7 +177,7 @@ impl PortalShape {
     }
 
     fn get_height(
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         config: &PortalFrameConfig,
@@ -192,12 +197,12 @@ impl PortalShape {
         0
     }
 
-    fn is_frame_block(world: &World, pos: BlockPos, config: &PortalFrameConfig) -> bool {
-        world.get_block_state(&pos).get_block() == config.frame
+    fn is_frame_block(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
+        world.get_block_state(pos).get_block() == config.frame
     }
 
     fn validate_frame(
-        world: &World,
+        world: &Arc<World>,
         bottom_left: BlockPos,
         width: u32,
         height: u32,
@@ -237,7 +242,7 @@ impl PortalShape {
     }
 
     /// Fills the interior with nether portal blocks.
-    pub fn place_portal_blocks(&self, world: &World) {
+    pub fn place_portal_blocks(&self, world: &Arc<World>) {
         let portal_state = self
             .portal
             .default_state()

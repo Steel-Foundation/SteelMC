@@ -346,7 +346,7 @@ impl BlockPos {
 
     /// Returns the position offset by one block in the given direction.
     #[must_use]
-    pub const fn relative(&self, direction: Direction) -> Self {
+    pub const fn relative(self, direction: Direction) -> Self {
         let (dx, dy, dz) = direction.offset();
         self.offset(dx, dy, dz)
     }
@@ -422,13 +422,13 @@ impl BlockPos {
 
     /// Returns the minimum coordinates of two positions.
     #[must_use]
-    pub const fn min(a: &BlockPos, b: &BlockPos) -> Self {
+    pub const fn min(a: BlockPos, b: BlockPos) -> Self {
         Self::new(a.0.x.min(b.0.x), a.0.y.min(b.0.y), a.0.z.min(b.0.z))
     }
 
     /// Returns the maximum coordinates of two positions.
     #[must_use]
-    pub const fn max(a: &BlockPos, b: &BlockPos) -> Self {
+    pub const fn max(a: BlockPos, b: BlockPos) -> Self {
         Self::new(a.0.x.max(b.0.x), a.0.y.max(b.0.y), a.0.z.max(b.0.z))
     }
 }
@@ -557,7 +557,7 @@ impl SectionPos {
     /// Format: (x << 8) | (z << 4) | y (each coordinate masked to 4 bits)
     #[must_use]
     #[inline]
-    pub const fn section_relative_pos(pos: &BlockPos) -> i16 {
+    pub const fn section_relative_pos(pos: BlockPos) -> i16 {
         let x = pos.0.x & Self::SECTION_MASK;
         let y = pos.0.y & Self::SECTION_MASK;
         let z = pos.0.z & Self::SECTION_MASK;
@@ -648,12 +648,18 @@ impl BoundingBox {
     /// Returns whether the given block position is inside this bounding box.
     #[must_use]
     pub const fn is_inside(&self, pos: BlockPos) -> bool {
-        pos.0.x >= self.min_x
-            && pos.0.x <= self.max_x
-            && pos.0.z >= self.min_z
-            && pos.0.z <= self.max_z
-            && pos.0.y >= self.min_y
-            && pos.0.y <= self.max_y
+        self.contains_xyz(pos.0.x, pos.0.y, pos.0.z)
+    }
+
+    /// Returns whether the given coordinates are inside this bounding box.
+    #[must_use]
+    pub const fn contains_xyz(&self, x: i32, y: i32, z: i32) -> bool {
+        x >= self.min_x
+            && x <= self.max_x
+            && z >= self.min_z
+            && z <= self.max_z
+            && y >= self.min_y
+            && y <= self.max_y
     }
 
     /// Returns the center of this bounding box.
