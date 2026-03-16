@@ -62,7 +62,7 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
 /// Behavior for filled bucket items (water bucket, lava bucket)
 ///
 /// Places fluid and gives back empty bucket.
-#[item_behavior(class = "BucketItem", when(content = "!empty"))]
+#[item_behavior(class = "BucketItem")]
 pub struct FilledBucketBehavior {
     #[json_arg(vanilla_blocks, json = "content")]
     fluid_block: BlockRef,
@@ -242,7 +242,7 @@ impl ItemBehavior for FilledBucketBehavior {
 /// Behavior for empty bucket items.
 ///
 /// Picks up fluid from source blocks and gives filled bucket.
-#[item_behavior(class = "BucketItem", when(content = "empty"))]
+#[item_behavior(class = "BucketItem")]
 pub struct EmptyBucketBehavior;
 
 impl Default for EmptyBucketBehavior {

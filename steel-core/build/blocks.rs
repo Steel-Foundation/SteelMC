@@ -6,11 +6,9 @@
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
-use std::collections::{BTreeSet, HashMap};
-use std::env;
-use std::fs;
+use std::collections::BTreeSet;
 
-use crate::common::{self, JsonArgField, JsonArgKind, extract_class_name};
+use crate::common::{self, JsonArgKind, scan_object_behaviors};
 
 #[derive(Debug, Deserialize)]
 pub struct BlockClass {
@@ -20,66 +18,10 @@ pub struct BlockClass {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-// --- Source scanning ---
-
-#[derive(Debug, Clone)]
-struct DiscoveredBlock {
-    struct_name: String,
-    class_name: String,
-    fields: Vec<JsonArgField>,
-}
-
-fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
-    let attr = s
-        .attrs
-        .iter()
-        .find(|a| common::path_ends_with(a.path(), "block_behavior"))?;
-    let class_name = extract_class_name(attr).unwrap_or(s.ident.to_string());
-
-    let mut fields = Vec::new();
-    if let syn::Fields::Named(ref named) = s.fields {
-        for field in &named.named {
-            if let Some(json_arg) = common::parse_json_arg(field) {
-                fields.push(json_arg);
-            }
-        }
-    }
-
-    Some(DiscoveredBlock {
-        struct_name: s.ident.to_string(),
-        class_name,
-        fields,
-    })
-}
-
-fn scan_block_behaviors() -> HashMap<String, DiscoveredBlock> {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
-    let pattern = format!("{manifest_dir}/src/behavior/blocks/**/*.rs");
-    let mut discovered = HashMap::new();
-
-    for entry in glob::glob(&pattern).expect("Failed to glob block behavior sources") {
-        let path = entry.expect("Failed to read glob entry");
-        let content = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
-        let file = syn::parse_file(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", path.display()));
-
-        for item in &file.items {
-            if let syn::Item::Struct(s) = item
-                && let Some(block) = parse_block_behavior(s)
-            {
-                discovered.insert(block.class_name.clone(), block.clone());
-            }
-        }
-    }
-
-    discovered
-}
-
 // --- Code generation ---
 
 pub fn build(blocks: &[BlockClass]) -> String {
-    let discovered = scan_block_behaviors();
+    let discovered = scan_object_behaviors("blocks", "block_behavior");
 
     let mut block_type_imports = BTreeSet::new();
     let mut registrations = Vec::new();

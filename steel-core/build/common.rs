@@ -6,6 +6,8 @@
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
+use std::collections::HashMap;
+use std::{env, fs};
 
 /// Checks if an attribute path ends with the given identifier.
 ///
@@ -39,6 +41,39 @@ pub(crate) struct JsonArgField {
     pub kind: JsonArgKind,
     pub json_name: Option<String>,
     pub is_ref: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DiscoveredObject {
+    pub(crate) struct_name: String,
+    pub(crate) class_name: String,
+    pub(crate) fields: Vec<JsonArgField>,
+}
+
+pub(crate) fn parse_object_behavior(
+    s: &syn::ItemStruct,
+    attribute_name: &str,
+) -> Option<DiscoveredObject> {
+    let attr = s
+        .attrs
+        .iter()
+        .find(|a| path_ends_with(a.path(), attribute_name))?;
+    let class_name = extract_class_name(attr).unwrap_or(s.ident.to_string());
+
+    let mut fields = Vec::new();
+    if let syn::Fields::Named(ref named) = s.fields {
+        for field in &named.named {
+            if let Some(json_arg) = parse_json_arg(field) {
+                fields.push(json_arg);
+            }
+        }
+    }
+
+    Some(DiscoveredObject {
+        struct_name: s.ident.to_string(),
+        class_name,
+        fields,
+    })
 }
 
 /// Parses a `#[json_arg(...)]` attribute from a `syn::Field`.
@@ -190,4 +225,32 @@ pub(crate) fn extract_class_name(attr: &syn::Attribute) -> Option<String> {
     })
     .unwrap_or_else(|e| panic!("Failed to parse block_behavior attribute: {e}"));
     Some(class_name)
+}
+
+/// Scans item behavior source files for `#[item_behavior]` annotations.
+pub(crate) fn scan_object_behaviors(
+    folder: &str,
+    attribute_name: &str,
+) -> HashMap<String, DiscoveredObject> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let pattern = format!("{manifest_dir}/src/behavior/{folder}/**/*.rs");
+    let mut discovered: HashMap<String, DiscoveredObject> = HashMap::new();
+
+    for entry in glob::glob(&pattern).expect(&format!("Failed to glob {folder} behavior sources")) {
+        let path = entry.expect("Failed to read glob entry");
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+        let file = syn::parse_file(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", path.display()));
+
+        for item in &file.items {
+            if let syn::Item::Struct(s) = item
+                && let Some(info) = parse_object_behavior(s, attribute_name)
+            {
+                discovered.insert(info.class_name.clone(), info.clone());
+            }
+        }
+    }
+
+    discovered
 }
