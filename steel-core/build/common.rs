@@ -1,0 +1,172 @@
+//! Shared types and helpers for block/item behavior code generation.
+//!
+//! Used by both `blocks.rs` and `items.rs` build scripts to parse `#[json_arg]`
+//! attributes and generate constructor arguments from `classes.json`.
+
+use heck::{ToPascalCase, ToShoutySnakeCase};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+
+/// Checks if an attribute path ends with the given identifier.
+///
+/// Handles both `#[item_behavior]` and `#[steel_macros::item_behavior]`.
+pub fn path_ends_with(path: &syn::Path, name: &str) -> bool {
+    path.segments.last().is_some_and(|s| s.ident == name)
+}
+
+/// Converts a name to a `SCREAMING_SNAKE_CASE` identifier.
+pub fn to_const_ident(name: &str) -> Ident {
+    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
+}
+
+// --- JSON arg parsing ---
+
+/// How a `#[json_arg]` field maps JSON data to Rust tokens.
+#[derive(Debug, Clone)]
+pub enum JsonArgKind {
+    /// Raw JSON value → token literal (handles numbers, strings, bools)
+    Value,
+    /// JSON string → `module::IDENT`. Stores the module name.
+    Registry(String),
+    /// JSON string → `EnumType::Variant` (`PascalCase`). Stores the enum type name.
+    Enum(String),
+}
+
+/// A parsed `#[json_arg(...)]` field.
+#[derive(Debug, Clone)]
+pub struct JsonArgField {
+    pub field_name: String,
+    pub kind: JsonArgKind,
+    pub json_name: Option<String>,
+    pub is_ref: bool,
+}
+
+/// Parses a `#[json_arg(...)]` attribute from a `syn::Field`.
+pub fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
+    let attr = field.attrs.iter().find(|a| a.path().is_ident("json_arg"))?;
+    let field_name = field.ident.as_ref()?.to_string();
+
+    let mut kind = None;
+    let mut json_name = None;
+    let mut is_ref = false;
+
+    if let syn::Meta::List(meta) = &attr.meta {
+        meta.parse_nested_meta(|meta| {
+            if meta.path.is_ident("value") {
+                kind = Some(JsonArgKind::Value);
+            } else if meta.path.is_ident("r#enum") || meta.path.is_ident("enum") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                kind = Some(JsonArgKind::Enum(lit.value()));
+            } else if meta.path.is_ident("r#ref") || meta.path.is_ident("ref") {
+                is_ref = true;
+            } else if meta.path.is_ident("json") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                json_name = Some(lit.value());
+            } else if let Some(ident) = meta.path.get_ident() {
+                kind = Some(JsonArgKind::Registry(ident.to_string()));
+            }
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("Failed to parse json_arg: {e}"));
+    }
+
+    let kind = kind.unwrap_or_else(|| {
+        panic!("json_arg on field '{field_name}' must specify a kind (value, enum, or a registry module name)")
+    });
+
+    Some(JsonArgField {
+        field_name,
+        kind,
+        json_name,
+        is_ref,
+    })
+}
+
+// --- JSON helpers ---
+
+/// Gets a string value from a JSON extra map.
+pub fn get_json_str<'a>(
+    extra: &'a serde_json::Map<String, serde_json::Value>,
+    entry_name: &str,
+    key: &str,
+) -> &'a str {
+    extra
+        .get(key)
+        .unwrap_or_else(|| panic!("Entry '{entry_name}' missing JSON field '{key}'"))
+        .as_str()
+        .unwrap_or_else(|| panic!("JSON field '{key}' for entry '{entry_name}' must be a string"))
+}
+
+/// Gets a raw JSON value from a JSON extra map.
+pub fn get_json_value<'a>(
+    extra: &'a serde_json::Map<String, serde_json::Value>,
+    entry_name: &str,
+    key: &str,
+) -> &'a serde_json::Value {
+    extra
+        .get(key)
+        .unwrap_or_else(|| panic!("Entry '{entry_name}' missing JSON field '{key}'"))
+}
+
+/// Converts a JSON value to a token literal.
+pub fn json_value_to_tokens(value: &serde_json::Value, entry_name: &str, key: &str) -> TokenStream {
+    match value {
+        serde_json::Value::Number(n) => {
+            let n = n.as_i64().unwrap_or_else(|| {
+                panic!("JSON field '{key}' for entry '{entry_name}' must be an integer")
+            });
+            let lit = proc_macro2::Literal::i32_suffixed(n as i32);
+            quote! { #lit }
+        }
+        serde_json::Value::String(s) => quote! { #s },
+        serde_json::Value::Bool(b) => quote! { #b },
+        _ => panic!("Unsupported JSON value type for entry '{entry_name}' field '{key}'"),
+    }
+}
+
+// --- Code generation ---
+
+/// Generates a constructor argument token stream from a `JsonArgField` and JSON data.
+///
+/// Registry access modes:
+/// - `vanilla_items` → `vanilla_items::ITEMS.lowercase_field` (struct field access)
+/// - Other registries → `module::SCREAMING_SNAKE` (module constant access)
+pub fn generate_arg(
+    field: &JsonArgField,
+    extra: &serde_json::Map<String, serde_json::Value>,
+    entry_name: &str,
+) -> TokenStream {
+    let json_key = field.json_name.as_deref().unwrap_or(&field.field_name);
+
+    let tokens = match &field.kind {
+        JsonArgKind::Value => {
+            let value = get_json_value(extra, entry_name, json_key);
+            json_value_to_tokens(value, entry_name, json_key)
+        }
+        JsonArgKind::Registry(module) => {
+            let name = get_json_str(extra, entry_name, json_key);
+            if module == "vanilla_items" {
+                let field_ident = Ident::new(name, Span::call_site());
+                quote! { vanilla_items::ITEMS.#field_ident }
+            } else {
+                let module_ident = Ident::new(module, Span::call_site());
+                let const_ident = to_const_ident(name);
+                quote! { #module_ident::#const_ident }
+            }
+        }
+        JsonArgKind::Enum(enum_type) => {
+            let enum_ident = Ident::new(enum_type, Span::call_site());
+            let variant_str = get_json_str(extra, entry_name, json_key);
+            let variant = Ident::new(&variant_str.to_pascal_case(), Span::call_site());
+            quote! { #enum_ident::#variant }
+        }
+    };
+
+    if field.is_ref {
+        quote! { &#tokens }
+    } else {
+        tokens
+    }
+}
