@@ -984,6 +984,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
 name = "h2"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2783,7 +2789,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "steel"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "base64",
  "chrono",
@@ -2810,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "steel-core"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2818,6 +2824,7 @@ dependencies = [
  "enum_dispatch",
  "flate2",
  "futures",
+ "glob",
  "heck",
  "log",
  "md5",
@@ -2836,9 +2843,11 @@ dependencies = [
  "small-map",
  "smallvec",
  "steel-crypto",
+ "steel-macros",
  "steel-protocol",
  "steel-registry",
  "steel-utils",
+ "syn",
  "text_components",
  "thiserror 2.0.18",
  "tokio",
@@ -2851,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "steel-crypto"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "base64",
  "log",
@@ -2867,7 +2876,7 @@ dependencies = [
 
 [[package]]
 name = "steel-login"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "base64",
  "crossbeam",
@@ -2891,7 +2900,7 @@ dependencies = [
 
 [[package]]
 name = "steel-macros"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2900,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "steel-protocol"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "aes",
  "cfb8",
@@ -2922,7 +2931,7 @@ dependencies = [
 
 [[package]]
 name = "steel-registry"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "heck",
  "log",
@@ -2941,7 +2950,7 @@ dependencies = [
 
 [[package]]
 name = "steel-utils"
-version = "0.1.0"
+version = "0.3.0+mc1.21.11"
 dependencies = [
  "bitflags",
  "crc32c",

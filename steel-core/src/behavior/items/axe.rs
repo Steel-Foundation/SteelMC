@@ -36,7 +36,7 @@ impl ItemBehavior for AxeBehavior {
             return InteractionResult::Pass;
         }
 
-        let old_block_state = context.world.get_block_state(&context.hit_result.block_pos);
+        let old_block_state = context.world.get_block_state(context.hit_result.block_pos);
         let old_block = old_block_state.get_block();
 
         let (new_block_state, sound_event) =

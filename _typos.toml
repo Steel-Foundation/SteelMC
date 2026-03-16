@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["**/build_assets/**"]
+extend-exclude = ["**/build_assets/**", "*.json"]
 
 [type.locale]
 extend-glob = ["**/locale.rs"]
@@ -8,3 +8,7 @@ check-file = false
 [default.extend-words]
 flate = "flate"
 strat = "strat"
+axe = "axe"
+
+[default]
+locale = "en-us"

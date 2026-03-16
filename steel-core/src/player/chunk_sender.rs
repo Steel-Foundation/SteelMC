@@ -74,7 +74,7 @@ impl ChunkSender {
     pub fn send_next_chunks(
         &mut self,
         connection: Arc<PlayerConnection>,
-        world: &World,
+        world: &Arc<World>,
         player_chunk_pos: ChunkPos,
     ) {
         if self.unacknowledged_batches < self.max_unacknowledged_batches {
@@ -146,7 +146,7 @@ impl ChunkSender {
 
     fn collect_candidates(
         &mut self,
-        world: &World,
+        world: &Arc<World>,
         player_chunk_pos: ChunkPos,
     ) -> Vec<Arc<ChunkHolder>> {
         let max_batch_size = self.batch_quota.floor() as usize;

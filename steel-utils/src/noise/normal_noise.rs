@@ -4,7 +4,7 @@
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
 use crate::noise::PerlinNoise;
-use crate::random::{PositionalRandom, RandomSource, RandomSplitter};
+use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
 
 /// Input factor for the second Perlin sampler.
 ///
@@ -70,7 +70,7 @@ impl NormalNoise {
         first_octave: i32,
         amplitudes: &[f64],
     ) -> Self {
-        let mut random = splitter.with_hash_of(noise_id);
+        let mut random = splitter.with_hash_of(&NameHash::new(noise_id));
         Self::create_from_random(&mut random, first_octave, amplitudes)
     }
 

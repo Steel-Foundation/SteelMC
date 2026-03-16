@@ -1,8 +1,6 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryExt;
-
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobCategory {
@@ -100,6 +98,7 @@ pub type EntityTypeRef = &'static EntityType;
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
     types_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -116,6 +115,7 @@ impl EntityTypeRegistry {
         Self {
             types_by_id: Vec::new(),
             types_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -151,13 +151,6 @@ impl EntityTypeRegistry {
         }
     }
 
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<EntityTypeRef> {
-        self.types_by_key
-            .get(key)
-            .and_then(|&idx| self.types_by_id.get(idx).copied())
-    }
-
     /// Gets the registry ID for an entity type.
     #[must_use]
     pub fn get_id(&self, entity_type: EntityTypeRef) -> &usize {
@@ -175,10 +168,21 @@ impl EntityTypeRegistry {
     pub fn is_empty(&self) -> bool {
         self.types_by_id.is_empty()
     }
-}
 
-impl RegistryExt for EntityTypeRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
+    pub fn iter(&self) -> impl Iterator<Item = (usize, EntityTypeRef)> + '_ {
+        self.types_by_id
+            .iter()
+            .enumerate()
+            .map(|(id, &et)| (id, et))
     }
 }
+
+crate::impl_registry!(
+    EntityTypeRegistry,
+    EntityType,
+    types_by_id,
+    types_by_key,
+    entity_types
+);
+
+crate::impl_tagged_registry!(EntityTypeRegistry, types_by_key, "entity type");

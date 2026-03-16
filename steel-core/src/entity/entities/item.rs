@@ -495,10 +495,10 @@ impl ItemEntity {
 
     /// Attempts to merge this item with nearby item entities.
     ///
-    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbours()`.
+    /// Mirrors vanilla's `ItemEntity.mergeWithNeighbors()`.
     /// Searches for other mergeable item entities within 0.5 blocks horizontally
     /// and attempts to merge with them.
-    pub fn merge_with_neighbours(&self, world: &World) {
+    pub fn merge_with_neighbors(&self, world: &Arc<World>) {
         if !self.is_mergeable() {
             return;
         }
@@ -674,7 +674,7 @@ impl ItemEntity {
             for y in min_y..=max_y {
                 for z in min_z..=max_z {
                     let pos = steel_utils::BlockPos::new(x, y, z);
-                    let state = world.get_block_state(&pos);
+                    let state = world.get_block_state(pos);
                     if state.is_air() {
                         continue;
                     }
@@ -785,7 +785,7 @@ impl Entity for ItemEntity {
                             (pos.y - 0.999_999).floor() as i32,
                             pos.z.floor() as i32,
                         );
-                        let block_state = world.get_block_state(&block_pos);
+                        let block_state = world.get_block_state(block_pos);
                         f64::from(block_state.get_block().config.friction) * 0.98
                     } else {
                         0.98 // Air friction
@@ -824,7 +824,7 @@ impl Entity for ItemEntity {
             && self.is_mergeable()
             && let Some(world) = self.level()
         {
-            self.merge_with_neighbours(&world);
+            self.merge_with_neighbors(&world);
         }
 
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)

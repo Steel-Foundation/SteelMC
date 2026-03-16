@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -70,46 +69,11 @@ impl ChatTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<ChatTypeRef> {
-        self.chat_types_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, chat_type: ChatTypeRef) -> &usize {
-        self.chat_types_by_key
-            .get(&chat_type.key)
-            .expect("Chat type not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<ChatTypeRef> {
-        self.chat_types_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ChatTypeRef)> + '_ {
         self.chat_types_by_id
             .iter()
             .enumerate()
             .map(|(id, &ct)| (id, ct))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.chat_types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.chat_types_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for ChatTypeRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -118,3 +82,11 @@ impl Default for ChatTypeRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    ChatTypeRegistry,
+    ChatType,
+    chat_types_by_id,
+    chat_types_by_key,
+    chat_types
+);

@@ -102,39 +102,57 @@
     },
     {
       "name": "oak_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "oak",
+      "tree_grower_secondary_chance": 0.1
     },
     {
       "name": "spruce_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "spruce",
+      "tree_grower_secondary_chance": 0.5
     },
     {
       "name": "birch_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "birch",
+      "tree_grower_secondary_chance": 0.0
     },
     {
       "name": "jungle_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "jungle",
+      "tree_grower_secondary_chance": 0.0
     },
     {
       "name": "acacia_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "acacia",
+      "tree_grower_secondary_chance": 0.0
     },
     {
       "name": "cherry_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "cherry",
+      "tree_grower_secondary_chance": 0.0
     },
     {
       "name": "dark_oak_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "dark_oak",
+      "tree_grower_secondary_chance": 0.0
     },
     {
       "name": "pale_oak_sapling",
-      "class": "SaplingBlock"
+      "class": "SaplingBlock",
+      "tree_grower_name": "pale_oak",
+      "tree_grower_secondary_chance": 0.0
     },
     {
       "name": "mangrove_propagule",
-      "class": "MangrovePropaguleBlock"
+      "class": "MangrovePropaguleBlock",
+      "tree_grower_name": "mangrove",
+      "tree_grower_secondary_chance": 0.85
     },
     {
       "name": "bedrock",
@@ -152,51 +170,70 @@
     },
     {
       "name": "sand",
-      "class": "SandBlock"
+      "class": "SandBlock",
+      "dust_color_rgba": 14406560
     },
     {
       "name": "suspicious_sand",
-      "class": "BrushableBlock"
+      "class": "BrushableBlock",
+      "turns_into": "sand",
+      "brush_sound": "item.brush.brushing.sand",
+      "brush_completed_sound": "item.brush.brushing.sand"
     },
     {
       "name": "red_sand",
-      "class": "SandBlock"
+      "class": "SandBlock",
+      "dust_color_rgba": 11098145
     },
     {
       "name": "gravel",
-      "class": "ColoredFallingBlock"
+      "class": "ColoredFallingBlock",
+      "dust_color_rgba": -8356741
     },
     {
       "name": "suspicious_gravel",
-      "class": "BrushableBlock"
+      "class": "BrushableBlock",
+      "turns_into": "gravel",
+      "brush_sound": "item.brush.brushing.gravel",
+      "brush_completed_sound": "item.brush.brushing.gravel"
     },
     {
       "name": "gold_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_value": 0
     },
     {
       "name": "deepslate_gold_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_value": 0
     },
     {
       "name": "iron_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_value": 0
     },
     {
       "name": "deepslate_iron_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_value": 0
     },
     {
       "name": "coal_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 0,
+      "xp_range_max_inclusive": 2
     },
     {
       "name": "deepslate_coal_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 0,
+      "xp_range_max_inclusive": 2
     },
     {
       "name": "nether_gold_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 0,
+      "xp_range_max_inclusive": 1
     },
     {
       "name": "oak_log",
@@ -356,47 +393,60 @@
     },
     {
       "name": "oak_leaves",
-      "class": "TintedParticleLeavesBlock"
+      "class": "TintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "spruce_leaves",
-      "class": "TintedParticleLeavesBlock"
+      "class": "TintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "birch_leaves",
-      "class": "TintedParticleLeavesBlock"
+      "class": "TintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "jungle_leaves",
-      "class": "TintedParticleLeavesBlock"
+      "class": "TintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "acacia_leaves",
-      "class": "TintedParticleLeavesBlock"
+      "class": "TintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "cherry_leaves",
-      "class": "UntintedParticleLeavesBlock"
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.1
     },
     {
       "name": "dark_oak_leaves",
-      "class": "TintedParticleLeavesBlock"
+      "class": "TintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "pale_oak_leaves",
-      "class": "UntintedParticleLeavesBlock"
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_chance": 0.02
     },
     {
       "name": "mangrove_leaves",
-      "class": "MangroveLeavesBlock"
+      "class": "MangroveLeavesBlock",
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "azalea_leaves",
-      "class": "UntintedParticleLeavesBlock"
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_color": -9399763,
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "flowering_azalea_leaves",
-      "class": "UntintedParticleLeavesBlock"
+      "class": "UntintedParticleLeavesBlock",
+      "leaf_particle_color": -9399763,
+      "leaf_particle_chance": 0.01
     },
     {
       "name": "sponge",
@@ -412,11 +462,15 @@
     },
     {
       "name": "lapis_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 2,
+      "xp_range_max_inclusive": 5
     },
     {
       "name": "deepslate_lapis_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 2,
+      "xp_range_max_inclusive": 5
     },
     {
       "name": "lapis_block",
@@ -444,79 +498,98 @@
     },
     {
       "name": "white_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "white"
     },
     {
       "name": "orange_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "lime"
     },
     {
       "name": "pink_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "pink"
     },
     {
       "name": "gray_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "purple"
     },
     {
       "name": "blue_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "blue"
     },
     {
       "name": "brown_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "brown"
     },
     {
       "name": "green_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "green"
     },
     {
       "name": "red_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "red"
     },
     {
       "name": "black_bed",
-      "class": "BedBlock"
+      "class": "BedBlock",
+      "color": "black"
     },
     {
       "name": "powered_rail",
-      "class": "PoweredRailBlock"
+      "class": "PoweredRailBlock",
+      "is_straight": true
     },
     {
       "name": "detector_rail",
-      "class": "DetectorRailBlock"
+      "class": "DetectorRailBlock",
+      "is_straight": true
     },
     {
       "name": "sticky_piston",
-      "class": "PistonBaseBlock"
+      "class": "PistonBaseBlock",
+      "is_sticky": true
     },
     {
       "name": "cobweb",
@@ -556,7 +629,8 @@
     },
     {
       "name": "piston",
-      "class": "PistonBaseBlock"
+      "class": "PistonBaseBlock",
+      "is_sticky": false
     },
     {
       "name": "piston_head",
@@ -784,11 +858,28 @@
     },
     {
       "name": "fire",
-      "class": "FireBlock"
+      "class": "FireBlock",
+      "ignite_odds_mask": 511,
+      "ignite_odds_contains_null_key": false,
+      "ignite_odds_n": 512,
+      "ignite_odds_max_fill": 384,
+      "ignite_odds_min_n": 32,
+      "ignite_odds_size": 206,
+      "ignite_odds_f": 0.75,
+      "burn_odds_mask": 511,
+      "burn_odds_contains_null_key": false,
+      "burn_odds_n": 512,
+      "burn_odds_max_fill": 384,
+      "burn_odds_min_n": 32,
+      "burn_odds_size": 206,
+      "burn_odds_f": 0.75,
+      "registry_key": "fire",
+      "fire_damage": 1.0
     },
     {
       "name": "soul_fire",
-      "class": "SoulFireBlock"
+      "class": "SoulFireBlock",
+      "fire_damage": 2.0
     },
     {
       "name": "spawner",
@@ -800,23 +891,31 @@
     },
     {
       "name": "oak_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "oak_planks"
     },
     {
       "name": "chest",
-      "class": "ChestBlock"
+      "class": "ChestBlock",
+      "open_sound": "block.chest.open",
+      "close_sound": "block.chest.close"
     },
     {
       "name": "redstone_wire",
-      "class": "RedStoneWireBlock"
+      "class": "RedStoneWireBlock",
+      "should_signal": true
     },
     {
       "name": "diamond_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 3,
+      "xp_range_max_inclusive": 7
     },
     {
       "name": "deepslate_diamond_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 3,
+      "xp_range_max_inclusive": 7
     },
     {
       "name": "diamond_block",
@@ -840,47 +939,90 @@
     },
     {
       "name": "oak_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "spruce_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "spruce",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "birch_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "birch",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "acacia_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "acacia",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "cherry_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "cherry",
+      "type_fence_gate_close": "block.cherry_wood_fence_gate.close",
+      "type_fence_gate_open": "block.cherry_wood_fence_gate.open"
     },
     {
       "name": "jungle_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "jungle",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "dark_oak_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "dark_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "pale_oak_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "pale_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "mangrove_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "bamboo_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "bamboo",
+      "type_fence_gate_close": "block.bamboo_wood_fence_gate.close",
+      "type_fence_gate_open": "block.bamboo_wood_fence_gate.open"
     },
     {
       "name": "oak_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "ladder",
@@ -888,147 +1030,251 @@
     },
     {
       "name": "rail",
-      "class": "RailBlock"
+      "class": "RailBlock",
+      "is_straight": false
     },
     {
       "name": "cobblestone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "cobblestone"
     },
     {
       "name": "oak_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "spruce_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "spruce",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "birch_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "birch",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "acacia_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "acacia",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "cherry_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "cherry",
+      "type_fence_gate_close": "block.cherry_wood_fence_gate.close",
+      "type_fence_gate_open": "block.cherry_wood_fence_gate.open"
     },
     {
       "name": "jungle_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "jungle",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "dark_oak_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "dark_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "pale_oak_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "pale_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "mangrove_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "bamboo_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "bamboo",
+      "type_fence_gate_close": "block.bamboo_wood_fence_gate.close",
+      "type_fence_gate_open": "block.bamboo_wood_fence_gate.open"
     },
     {
       "name": "oak_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "spruce_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "spruce",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "birch_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "birch",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "acacia_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "acacia",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "cherry_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "cherry",
+      "type_fence_gate_close": "block.cherry_wood_fence_gate.close",
+      "type_fence_gate_open": "block.cherry_wood_fence_gate.open"
     },
     {
       "name": "jungle_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "jungle",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "dark_oak_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "dark_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "pale_oak_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "pale_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "crimson_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "crimson",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "warped_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "warped",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "mangrove_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "bamboo_hanging_sign",
-      "class": "CeilingHangingSignBlock"
+      "class": "CeilingHangingSignBlock",
+      "type_name": "bamboo",
+      "type_fence_gate_close": "block.bamboo_wood_fence_gate.close",
+      "type_fence_gate_open": "block.bamboo_wood_fence_gate.open"
     },
     {
       "name": "oak_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "spruce_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "spruce",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "birch_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "birch",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "acacia_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "acacia",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "cherry_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "cherry",
+      "type_fence_gate_close": "block.cherry_wood_fence_gate.close",
+      "type_fence_gate_open": "block.cherry_wood_fence_gate.open"
     },
     {
       "name": "jungle_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "jungle",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "dark_oak_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "dark_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "pale_oak_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "pale_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "mangrove_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "crimson_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "crimson",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "warped_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "warped",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "bamboo_wall_hanging_sign",
-      "class": "WallHangingSignBlock"
+      "class": "WallHangingSignBlock",
+      "type_name": "bamboo",
+      "type_fence_gate_close": "block.bamboo_wood_fence_gate.close",
+      "type_fence_gate_open": "block.bamboo_wood_fence_gate.open"
     },
     {
       "name": "lever",
@@ -1036,51 +1282,207 @@
     },
     {
       "name": "stone_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "stone",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "mobs",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.stone_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.stone_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "iron_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "iron",
+      "type_can_open_by_hand": false,
+      "type_can_open_by_wind_charge": false,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "oak_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "spruce_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "spruce",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "birch_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "birch",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "jungle_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "jungle",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "acacia_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "acacia",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "cherry_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "cherry",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.cherry_wood_door.close",
+      "type_door_open": "block.cherry_wood_door.open",
+      "type_trapdoor_close": "block.cherry_wood_trapdoor.close",
+      "type_trapdoor_open": "block.cherry_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.cherry_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.cherry_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.cherry_wood_button.click_off",
+      "type_button_click_on": "block.cherry_wood_button.click_on"
     },
     {
       "name": "dark_oak_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "dark_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "pale_oak_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "pale_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "mangrove_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "mangrove",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "bamboo_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "bamboo",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.bamboo_wood_door.close",
+      "type_door_open": "block.bamboo_wood_door.open",
+      "type_trapdoor_close": "block.bamboo_wood_trapdoor.close",
+      "type_trapdoor_open": "block.bamboo_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.bamboo_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.bamboo_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.bamboo_wood_button.click_off",
+      "type_button_click_on": "block.bamboo_wood_button.click_on"
     },
     {
       "name": "redstone_ore",
@@ -1101,9 +1503,20 @@
     {
       "name": "stone_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 20,
-      "button_click_on": "BLOCK_STONE_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_STONE_BUTTON_CLICK_OFF"
+      "type_name": "stone",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "mobs",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.stone_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.stone_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on",
+      "ticks_to_stay_pressed": 20
     },
     {
       "name": "snow",
@@ -1203,107 +1616,253 @@
     },
     {
       "name": "white_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "white"
     },
     {
       "name": "orange_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "lime"
     },
     {
       "name": "pink_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "pink"
     },
     {
       "name": "gray_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "purple"
     },
     {
       "name": "blue_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "blue"
     },
     {
       "name": "brown_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "brown"
     },
     {
       "name": "green_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "green"
     },
     {
       "name": "red_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "red"
     },
     {
       "name": "black_stained_glass",
-      "class": "StainedGlassBlock"
+      "class": "StainedGlassBlock",
+      "color": "black"
     },
     {
       "name": "oak_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "spruce_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "spruce",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "birch_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "birch",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "jungle_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "jungle",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "acacia_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "acacia",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "cherry_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "cherry",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.cherry_wood_door.close",
+      "type_door_open": "block.cherry_wood_door.open",
+      "type_trapdoor_close": "block.cherry_wood_trapdoor.close",
+      "type_trapdoor_open": "block.cherry_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.cherry_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.cherry_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.cherry_wood_button.click_off",
+      "type_button_click_on": "block.cherry_wood_button.click_on"
     },
     {
       "name": "dark_oak_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "dark_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "pale_oak_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "pale_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "mangrove_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "mangrove",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "bamboo_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "bamboo",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.bamboo_wood_door.close",
+      "type_door_open": "block.bamboo_wood_door.open",
+      "type_trapdoor_close": "block.bamboo_wood_trapdoor.close",
+      "type_trapdoor_open": "block.bamboo_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.bamboo_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.bamboo_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.bamboo_wood_button.click_off",
+      "type_button_click_on": "block.bamboo_wood_button.click_on"
     },
     {
       "name": "stone_bricks",
@@ -1331,27 +1890,33 @@
     },
     {
       "name": "infested_stone",
-      "class": "InfestedBlock"
+      "class": "InfestedBlock",
+      "host_block": "stone"
     },
     {
       "name": "infested_cobblestone",
-      "class": "InfestedBlock"
+      "class": "InfestedBlock",
+      "host_block": "cobblestone"
     },
     {
       "name": "infested_stone_bricks",
-      "class": "InfestedBlock"
+      "class": "InfestedBlock",
+      "host_block": "stone_bricks"
     },
     {
       "name": "infested_mossy_stone_bricks",
-      "class": "InfestedBlock"
+      "class": "InfestedBlock",
+      "host_block": "mossy_stone_bricks"
     },
     {
       "name": "infested_cracked_stone_bricks",
-      "class": "InfestedBlock"
+      "class": "InfestedBlock",
+      "host_block": "cracked_stone_bricks"
     },
     {
       "name": "infested_chiseled_stone_bricks",
-      "class": "InfestedBlock"
+      "class": "InfestedBlock",
+      "host_block": "chiseled_stone_bricks"
     },
     {
       "name": "brown_mushroom_block",
@@ -1371,19 +1936,23 @@
     },
     {
       "name": "copper_bars",
-      "class": "WeatheringCopperBarsBlock"
+      "class": "WeatheringCopperBarsBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_copper_bars",
-      "class": "WeatheringCopperBarsBlock"
+      "class": "WeatheringCopperBarsBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_copper_bars",
-      "class": "WeatheringCopperBarsBlock"
+      "class": "WeatheringCopperBarsBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_copper_bars",
-      "class": "WeatheringCopperBarsBlock"
+      "class": "WeatheringCopperBarsBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "waxed_copper_bars",
@@ -1407,19 +1976,23 @@
     },
     {
       "name": "copper_chain",
-      "class": "WeatheringCopperChainBlock"
+      "class": "WeatheringCopperChainBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_copper_chain",
-      "class": "WeatheringCopperChainBlock"
+      "class": "WeatheringCopperChainBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_copper_chain",
-      "class": "WeatheringCopperChainBlock"
+      "class": "WeatheringCopperChainBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_copper_chain",
-      "class": "WeatheringCopperChainBlock"
+      "class": "WeatheringCopperChainBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "waxed_copper_chain",
@@ -1471,27 +2044,39 @@
     },
     {
       "name": "glow_lichen",
-      "class": "GlowLichenBlock"
+      "class": "GlowLichenBlock",
+      "can_rotate": true,
+      "can_mirror_x": true,
+      "can_mirror_z": true
     },
     {
       "name": "resin_clump",
-      "class": "MultifaceBlock"
+      "class": "MultifaceBlock",
+      "can_rotate": true,
+      "can_mirror_x": true,
+      "can_mirror_z": true
     },
     {
       "name": "oak_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "bricks"
     },
     {
       "name": "stone_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "stone_bricks"
     },
     {
       "name": "mud_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "mud_bricks"
     },
     {
       "name": "mycelium",
@@ -1511,7 +2096,8 @@
     },
     {
       "name": "resin_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "resin_bricks"
     },
     {
       "name": "resin_brick_slab",
@@ -1535,7 +2121,8 @@
     },
     {
       "name": "nether_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "nether_bricks"
     },
     {
       "name": "nether_wart",
@@ -1551,19 +2138,25 @@
     },
     {
       "name": "cauldron",
-      "class": "CauldronBlock"
+      "class": "CauldronBlock",
+      "interactions_name": "empty"
     },
     {
       "name": "water_cauldron",
-      "class": "LayeredCauldronBlock"
+      "class": "LayeredCauldronBlock",
+      "precipitation_type": "rain",
+      "interactions_name": "water"
     },
     {
       "name": "lava_cauldron",
-      "class": "LavaCauldronBlock"
+      "class": "LavaCauldronBlock",
+      "interactions_name": "lava"
     },
     {
       "name": "powder_snow_cauldron",
-      "class": "LayeredCauldronBlock"
+      "class": "LayeredCauldronBlock",
+      "precipitation_type": "snow",
+      "interactions_name": "powder_snow"
     },
     {
       "name": "end_portal",
@@ -1591,15 +2184,20 @@
     },
     {
       "name": "sandstone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "sandstone"
     },
     {
       "name": "emerald_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 3,
+      "xp_range_max_inclusive": 7
     },
     {
       "name": "deepslate_emerald_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 3,
+      "xp_range_max_inclusive": 7
     },
     {
       "name": "ender_chest",
@@ -1611,7 +2209,8 @@
     },
     {
       "name": "tripwire",
-      "class": "TripWireBlock"
+      "class": "TripWireBlock",
+      "hook": "tripwire_hook"
     },
     {
       "name": "emerald_block",
@@ -1619,19 +2218,23 @@
     },
     {
       "name": "spruce_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "spruce_planks"
     },
     {
       "name": "birch_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "birch_planks"
     },
     {
       "name": "jungle_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "jungle_planks"
     },
     {
       "name": "command_block",
-      "class": "CommandBlock"
+      "class": "CommandBlock",
+      "automatic": false
     },
     {
       "name": "beacon",
@@ -1647,119 +2250,148 @@
     },
     {
       "name": "flower_pot",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "air"
     },
     {
       "name": "potted_torchflower",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "torchflower"
     },
     {
       "name": "potted_oak_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "oak_sapling"
     },
     {
       "name": "potted_spruce_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "spruce_sapling"
     },
     {
       "name": "potted_birch_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "birch_sapling"
     },
     {
       "name": "potted_jungle_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "jungle_sapling"
     },
     {
       "name": "potted_acacia_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "acacia_sapling"
     },
     {
       "name": "potted_cherry_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "cherry_sapling"
     },
     {
       "name": "potted_dark_oak_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "dark_oak_sapling"
     },
     {
       "name": "potted_pale_oak_sapling",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "pale_oak_sapling"
     },
     {
       "name": "potted_mangrove_propagule",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "mangrove_propagule"
     },
     {
       "name": "potted_fern",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "fern"
     },
     {
       "name": "potted_dandelion",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "dandelion"
     },
     {
       "name": "potted_poppy",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "poppy"
     },
     {
       "name": "potted_blue_orchid",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "blue_orchid"
     },
     {
       "name": "potted_allium",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "allium"
     },
     {
       "name": "potted_azure_bluet",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "azure_bluet"
     },
     {
       "name": "potted_red_tulip",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "red_tulip"
     },
     {
       "name": "potted_orange_tulip",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "orange_tulip"
     },
     {
       "name": "potted_white_tulip",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "white_tulip"
     },
     {
       "name": "potted_pink_tulip",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "pink_tulip"
     },
     {
       "name": "potted_oxeye_daisy",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "oxeye_daisy"
     },
     {
       "name": "potted_cornflower",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "cornflower"
     },
     {
       "name": "potted_lily_of_the_valley",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "lily_of_the_valley"
     },
     {
       "name": "potted_wither_rose",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "wither_rose"
     },
     {
       "name": "potted_red_mushroom",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "red_mushroom"
     },
     {
       "name": "potted_brown_mushroom",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "brown_mushroom"
     },
     {
       "name": "potted_dead_bush",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "dead_bush"
     },
     {
       "name": "potted_cactus",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "cactus"
     },
     {
       "name": "carrots",
@@ -1772,128 +2404,252 @@
     {
       "name": "oak_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "spruce_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "spruce",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "birch_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "birch",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "jungle_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "jungle",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "acacia_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "acacia",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "cherry_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_CHERRY_WOOD_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_CHERRY_WOOD_BUTTON_CLICK_OFF"
+      "type_name": "cherry",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.cherry_wood_door.close",
+      "type_door_open": "block.cherry_wood_door.open",
+      "type_trapdoor_close": "block.cherry_wood_trapdoor.close",
+      "type_trapdoor_open": "block.cherry_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.cherry_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.cherry_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.cherry_wood_button.click_off",
+      "type_button_click_on": "block.cherry_wood_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "dark_oak_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "dark_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "pale_oak_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "pale_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "mangrove_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_WOODEN_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_WOODEN_BUTTON_CLICK_OFF"
+      "type_name": "mangrove",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "bamboo_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_BAMBOO_WOOD_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_BAMBOO_WOOD_BUTTON_CLICK_OFF"
+      "type_name": "bamboo",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.bamboo_wood_door.close",
+      "type_door_open": "block.bamboo_wood_door.open",
+      "type_trapdoor_close": "block.bamboo_wood_trapdoor.close",
+      "type_trapdoor_open": "block.bamboo_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.bamboo_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.bamboo_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.bamboo_wood_button.click_off",
+      "type_button_click_on": "block.bamboo_wood_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "skeleton_skull",
-      "class": "SkullBlock"
+      "class": "SkullBlock",
+      "type": "skeleton"
     },
     {
       "name": "skeleton_wall_skull",
-      "class": "WallSkullBlock"
+      "class": "WallSkullBlock",
+      "type": "skeleton"
     },
     {
       "name": "wither_skeleton_skull",
-      "class": "WitherSkullBlock"
+      "class": "WitherSkullBlock",
+      "type": "wither_skeleton"
     },
     {
       "name": "wither_skeleton_wall_skull",
-      "class": "WitherWallSkullBlock"
+      "class": "WitherWallSkullBlock",
+      "type": "wither_skeleton"
     },
     {
       "name": "zombie_head",
-      "class": "SkullBlock"
+      "class": "SkullBlock",
+      "type": "zombie"
     },
     {
       "name": "zombie_wall_head",
-      "class": "WallSkullBlock"
+      "class": "WallSkullBlock",
+      "type": "zombie"
     },
     {
       "name": "player_head",
-      "class": "PlayerHeadBlock"
+      "class": "PlayerHeadBlock",
+      "type": "player"
     },
     {
       "name": "player_wall_head",
-      "class": "PlayerWallHeadBlock"
+      "class": "PlayerWallHeadBlock",
+      "type": "player"
     },
     {
       "name": "creeper_head",
-      "class": "SkullBlock"
+      "class": "SkullBlock",
+      "type": "creeper"
     },
     {
       "name": "creeper_wall_head",
-      "class": "WallSkullBlock"
+      "class": "WallSkullBlock",
+      "type": "creeper"
     },
     {
       "name": "dragon_head",
-      "class": "SkullBlock"
+      "class": "SkullBlock",
+      "type": "dragon"
     },
     {
       "name": "dragon_wall_head",
-      "class": "WallSkullBlock"
+      "class": "WallSkullBlock",
+      "type": "dragon"
     },
     {
       "name": "piglin_head",
-      "class": "SkullBlock"
+      "class": "SkullBlock",
+      "type": "piglin"
     },
     {
       "name": "piglin_wall_head",
-      "class": "PiglinWallSkullBlock"
+      "class": "PiglinWallSkullBlock",
+      "type": "piglin"
     },
     {
       "name": "anvil",
@@ -1909,15 +2665,45 @@
     },
     {
       "name": "trapped_chest",
-      "class": "TrappedChestBlock"
+      "class": "TrappedChestBlock",
+      "open_sound": "block.chest.open",
+      "close_sound": "block.chest.close"
     },
     {
       "name": "light_weighted_pressure_plate",
-      "class": "WeightedPressurePlateBlock"
+      "class": "WeightedPressurePlateBlock",
+      "max_weight": 15,
+      "type_name": "gold",
+      "type_can_open_by_hand": false,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "heavy_weighted_pressure_plate",
-      "class": "WeightedPressurePlateBlock"
+      "class": "WeightedPressurePlateBlock",
+      "max_weight": 150,
+      "type_name": "iron",
+      "type_can_open_by_hand": false,
+      "type_can_open_by_wind_charge": false,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "comparator",
@@ -1933,11 +2719,14 @@
     },
     {
       "name": "nether_quartz_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_min_inclusive": 2,
+      "xp_range_max_inclusive": 5
     },
     {
       "name": "hopper",
-      "class": "HopperBlock"
+      "class": "HopperBlock",
+      "interaction_shapes_mask": 7
     },
     {
       "name": "quartz_block",
@@ -1953,11 +2742,13 @@
     },
     {
       "name": "quartz_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "quartz_block"
     },
     {
       "name": "activator_rail",
-      "class": "PoweredRailBlock"
+      "class": "PoweredRailBlock",
+      "is_straight": true
     },
     {
       "name": "dropper",
@@ -2029,95 +2820,118 @@
     },
     {
       "name": "white_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "white"
     },
     {
       "name": "orange_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "lime"
     },
     {
       "name": "pink_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "pink"
     },
     {
       "name": "gray_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "purple"
     },
     {
       "name": "blue_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "blue"
     },
     {
       "name": "brown_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "brown"
     },
     {
       "name": "green_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "green"
     },
     {
       "name": "red_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "red"
     },
     {
       "name": "black_stained_glass_pane",
-      "class": "StainedGlassPaneBlock"
+      "class": "StainedGlassPaneBlock",
+      "color": "black"
     },
     {
       "name": "acacia_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "acacia_planks"
     },
     {
       "name": "cherry_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "cherry_planks"
     },
     {
       "name": "dark_oak_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "dark_oak_planks"
     },
     {
       "name": "pale_oak_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "pale_oak_planks"
     },
     {
       "name": "mangrove_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "mangrove_planks"
     },
     {
       "name": "bamboo_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "bamboo_planks"
     },
     {
       "name": "bamboo_mosaic_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "bamboo_mosaic"
     },
     {
       "name": "slime_block",
@@ -2133,7 +2947,20 @@
     },
     {
       "name": "iron_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "iron",
+      "type_can_open_by_hand": false,
+      "type_can_open_by_wind_charge": false,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "prismarine",
@@ -2149,15 +2976,18 @@
     },
     {
       "name": "prismarine_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "prismarine"
     },
     {
       "name": "prismarine_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "prismarine_bricks"
     },
     {
       "name": "dark_prismarine_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "dark_prismarine"
     },
     {
       "name": "prismarine_slab",
@@ -2181,67 +3011,83 @@
     },
     {
       "name": "white_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "white"
     },
     {
       "name": "orange_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "lime"
     },
     {
       "name": "pink_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "pink"
     },
     {
       "name": "gray_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "purple"
     },
     {
       "name": "blue_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "blue"
     },
     {
       "name": "brown_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "brown"
     },
     {
       "name": "green_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "green"
     },
     {
       "name": "red_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "red"
     },
     {
       "name": "black_carpet",
-      "class": "WoolCarpetBlock"
+      "class": "WoolCarpetBlock",
+      "color": "black"
     },
     {
       "name": "terracotta",
@@ -2281,131 +3127,163 @@
     },
     {
       "name": "white_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "white"
     },
     {
       "name": "orange_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "lime"
     },
     {
       "name": "pink_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "pink"
     },
     {
       "name": "gray_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "purple"
     },
     {
       "name": "blue_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "blue"
     },
     {
       "name": "brown_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "brown"
     },
     {
       "name": "green_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "green"
     },
     {
       "name": "red_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "red"
     },
     {
       "name": "black_banner",
-      "class": "BannerBlock"
+      "class": "BannerBlock",
+      "color": "black"
     },
     {
       "name": "white_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "white"
     },
     {
       "name": "orange_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "lime"
     },
     {
       "name": "pink_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "pink"
     },
     {
       "name": "gray_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "purple"
     },
     {
       "name": "blue_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "blue"
     },
     {
       "name": "brown_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "brown"
     },
     {
       "name": "green_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "green"
     },
     {
       "name": "red_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "red"
     },
     {
       "name": "black_wall_banner",
-      "class": "WallBannerBlock"
+      "class": "WallBannerBlock",
+      "color": "black"
     },
     {
       "name": "red_sandstone",
@@ -2421,7 +3299,8 @@
     },
     {
       "name": "red_sandstone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "red_sandstone"
     },
     {
       "name": "oak_slab",
@@ -2541,39 +3420,66 @@
     },
     {
       "name": "spruce_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "spruce",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "birch_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "birch",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "jungle_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "jungle",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "acacia_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "acacia",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "cherry_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "cherry",
+      "type_fence_gate_close": "block.cherry_wood_fence_gate.close",
+      "type_fence_gate_open": "block.cherry_wood_fence_gate.open"
     },
     {
       "name": "dark_oak_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "dark_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "pale_oak_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "pale_oak",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "mangrove_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "mangrove",
+      "type_fence_gate_close": "block.fence_gate.close",
+      "type_fence_gate_open": "block.fence_gate.open"
     },
     {
       "name": "bamboo_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "bamboo",
+      "type_fence_gate_close": "block.bamboo_wood_fence_gate.close",
+      "type_fence_gate_open": "block.bamboo_wood_fence_gate.open"
     },
     {
       "name": "spruce_fence",
@@ -2613,39 +3519,156 @@
     },
     {
       "name": "spruce_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "spruce",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "birch_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "birch",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "jungle_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "jungle",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "acacia_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "acacia",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "cherry_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "cherry",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.cherry_wood_door.close",
+      "type_door_open": "block.cherry_wood_door.open",
+      "type_trapdoor_close": "block.cherry_wood_trapdoor.close",
+      "type_trapdoor_open": "block.cherry_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.cherry_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.cherry_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.cherry_wood_button.click_off",
+      "type_button_click_on": "block.cherry_wood_button.click_on"
     },
     {
       "name": "dark_oak_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "dark_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "pale_oak_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "pale_oak",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "mangrove_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "mangrove",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.wooden_door.close",
+      "type_door_open": "block.wooden_door.open",
+      "type_trapdoor_close": "block.wooden_trapdoor.close",
+      "type_trapdoor_open": "block.wooden_trapdoor.open",
+      "type_pressure_plate_click_off": "block.wooden_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.wooden_pressure_plate.click_on",
+      "type_button_click_off": "block.wooden_button.click_off",
+      "type_button_click_on": "block.wooden_button.click_on"
     },
     {
       "name": "bamboo_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "bamboo",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.bamboo_wood_door.close",
+      "type_door_open": "block.bamboo_wood_door.open",
+      "type_trapdoor_close": "block.bamboo_wood_trapdoor.close",
+      "type_trapdoor_open": "block.bamboo_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.bamboo_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.bamboo_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.bamboo_wood_button.click_off",
+      "type_button_click_on": "block.bamboo_wood_button.click_on"
     },
     {
       "name": "end_rod",
@@ -2657,7 +3680,8 @@
     },
     {
       "name": "chorus_flower",
-      "class": "ChorusFlowerBlock"
+      "class": "ChorusFlowerBlock",
+      "plant": "chorus_plant"
     },
     {
       "name": "purpur_block",
@@ -2669,7 +3693,8 @@
     },
     {
       "name": "purpur_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "purpur_block"
     },
     {
       "name": "end_stone_bricks",
@@ -2701,11 +3726,13 @@
     },
     {
       "name": "repeating_command_block",
-      "class": "CommandBlock"
+      "class": "CommandBlock",
+      "automatic": false
     },
     {
       "name": "chain_command_block",
-      "class": "CommandBlock"
+      "class": "CommandBlock",
+      "automatic": true
     },
     {
       "name": "frosted_ice",
@@ -2741,67 +3768,83 @@
     },
     {
       "name": "white_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "white"
     },
     {
       "name": "orange_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "orange"
     },
     {
       "name": "magenta_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "magenta"
     },
     {
       "name": "light_blue_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "light_blue"
     },
     {
       "name": "yellow_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "yellow"
     },
     {
       "name": "lime_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "lime"
     },
     {
       "name": "pink_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "pink"
     },
     {
       "name": "gray_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "gray"
     },
     {
       "name": "light_gray_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "light_gray"
     },
     {
       "name": "cyan_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "cyan"
     },
     {
       "name": "purple_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "purple"
     },
     {
       "name": "blue_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "blue"
     },
     {
       "name": "brown_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "brown"
     },
     {
       "name": "green_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "green"
     },
     {
       "name": "red_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "red"
     },
     {
       "name": "black_shulker_box",
-      "class": "ShulkerBoxBlock"
+      "class": "ShulkerBoxBlock",
+      "color": "black"
     },
     {
       "name": "white_glazed_terracotta",
@@ -2933,75 +3976,96 @@
     },
     {
       "name": "white_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "white_concrete"
     },
     {
       "name": "orange_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "orange_concrete"
     },
     {
       "name": "magenta_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "magenta_concrete"
     },
     {
       "name": "light_blue_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "light_blue_concrete"
     },
     {
       "name": "yellow_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "yellow_concrete"
     },
     {
       "name": "lime_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "lime_concrete"
     },
     {
       "name": "pink_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "pink_concrete"
     },
     {
       "name": "gray_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "gray_concrete"
     },
     {
       "name": "light_gray_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "light_gray_concrete"
     },
     {
       "name": "cyan_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "cyan_concrete"
     },
     {
       "name": "purple_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "purple_concrete"
     },
     {
       "name": "blue_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "blue_concrete"
     },
     {
       "name": "brown_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "brown_concrete"
     },
     {
       "name": "green_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "green_concrete"
     },
     {
       "name": "red_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "red_concrete"
     },
     {
       "name": "black_concrete_powder",
-      "class": "ConcretePowderBlock"
+      "class": "ConcretePowderBlock",
+      "concrete": "black_concrete"
     },
     {
       "name": "kelp",
-      "class": "KelpBlock"
+      "class": "KelpBlock",
+      "grow_per_tick_probability": 0.14,
+      "growth_direction": "up",
+      "schedule_fluid_ticks": true
     },
     {
       "name": "kelp_plant",
-      "class": "KelpPlantBlock"
+      "class": "KelpPlantBlock",
+      "growth_direction": "up",
+      "schedule_fluid_ticks": true
     },
     {
       "name": "dried_kelp_block",
@@ -3041,23 +4105,28 @@
     },
     {
       "name": "tube_coral_block",
-      "class": "CoralBlock"
+      "class": "CoralBlock",
+      "dead_block": "dead_tube_coral_block"
     },
     {
       "name": "brain_coral_block",
-      "class": "CoralBlock"
+      "class": "CoralBlock",
+      "dead_block": "dead_brain_coral_block"
     },
     {
       "name": "bubble_coral_block",
-      "class": "CoralBlock"
+      "class": "CoralBlock",
+      "dead_block": "dead_bubble_coral_block"
     },
     {
       "name": "fire_coral_block",
-      "class": "CoralBlock"
+      "class": "CoralBlock",
+      "dead_block": "dead_fire_coral_block"
     },
     {
       "name": "horn_coral_block",
-      "class": "CoralBlock"
+      "class": "CoralBlock",
+      "dead_block": "dead_horn_coral_block"
     },
     {
       "name": "dead_tube_coral",
@@ -3081,23 +4150,28 @@
     },
     {
       "name": "tube_coral",
-      "class": "CoralPlantBlock"
+      "class": "CoralPlantBlock",
+      "dead_block": "dead_tube_coral"
     },
     {
       "name": "brain_coral",
-      "class": "CoralPlantBlock"
+      "class": "CoralPlantBlock",
+      "dead_block": "dead_brain_coral"
     },
     {
       "name": "bubble_coral",
-      "class": "CoralPlantBlock"
+      "class": "CoralPlantBlock",
+      "dead_block": "dead_bubble_coral"
     },
     {
       "name": "fire_coral",
-      "class": "CoralPlantBlock"
+      "class": "CoralPlantBlock",
+      "dead_block": "dead_fire_coral"
     },
     {
       "name": "horn_coral",
-      "class": "CoralPlantBlock"
+      "class": "CoralPlantBlock",
+      "dead_block": "dead_horn_coral"
     },
     {
       "name": "dead_tube_coral_fan",
@@ -3121,23 +4195,28 @@
     },
     {
       "name": "tube_coral_fan",
-      "class": "CoralFanBlock"
+      "class": "CoralFanBlock",
+      "dead_block": "dead_tube_coral_fan"
     },
     {
       "name": "brain_coral_fan",
-      "class": "CoralFanBlock"
+      "class": "CoralFanBlock",
+      "dead_block": "dead_brain_coral_fan"
     },
     {
       "name": "bubble_coral_fan",
-      "class": "CoralFanBlock"
+      "class": "CoralFanBlock",
+      "dead_block": "dead_bubble_coral_fan"
     },
     {
       "name": "fire_coral_fan",
-      "class": "CoralFanBlock"
+      "class": "CoralFanBlock",
+      "dead_block": "dead_fire_coral_fan"
     },
     {
       "name": "horn_coral_fan",
-      "class": "CoralFanBlock"
+      "class": "CoralFanBlock",
+      "dead_block": "dead_horn_coral_fan"
     },
     {
       "name": "dead_tube_coral_wall_fan",
@@ -3161,23 +4240,28 @@
     },
     {
       "name": "tube_coral_wall_fan",
-      "class": "CoralWallFanBlock"
+      "class": "CoralWallFanBlock",
+      "dead_block": "dead_tube_coral_wall_fan"
     },
     {
       "name": "brain_coral_wall_fan",
-      "class": "CoralWallFanBlock"
+      "class": "CoralWallFanBlock",
+      "dead_block": "dead_brain_coral_wall_fan"
     },
     {
       "name": "bubble_coral_wall_fan",
-      "class": "CoralWallFanBlock"
+      "class": "CoralWallFanBlock",
+      "dead_block": "dead_bubble_coral_wall_fan"
     },
     {
       "name": "fire_coral_wall_fan",
-      "class": "CoralWallFanBlock"
+      "class": "CoralWallFanBlock",
+      "dead_block": "dead_fire_coral_wall_fan"
     },
     {
       "name": "horn_coral_wall_fan",
-      "class": "CoralWallFanBlock"
+      "class": "CoralWallFanBlock",
+      "dead_block": "dead_horn_coral_wall_fan"
     },
     {
       "name": "sea_pickle",
@@ -3201,7 +4285,8 @@
     },
     {
       "name": "potted_bamboo",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "bamboo"
     },
     {
       "name": "void_air",
@@ -3217,59 +4302,73 @@
     },
     {
       "name": "polished_granite_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_granite"
     },
     {
       "name": "smooth_red_sandstone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "smooth_red_sandstone"
     },
     {
       "name": "mossy_stone_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "mossy_stone_bricks"
     },
     {
       "name": "polished_diorite_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_diorite"
     },
     {
       "name": "mossy_cobblestone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "mossy_cobblestone"
     },
     {
       "name": "end_stone_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "end_stone_bricks"
     },
     {
       "name": "stone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "stone"
     },
     {
       "name": "smooth_sandstone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "smooth_sandstone"
     },
     {
       "name": "smooth_quartz_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "smooth_quartz"
     },
     {
       "name": "granite_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "granite"
     },
     {
       "name": "andesite_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "andesite"
     },
     {
       "name": "red_nether_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "red_nether_bricks"
     },
     {
       "name": "polished_andesite_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_andesite"
     },
     {
       "name": "diorite_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "diorite"
     },
     {
       "name": "polished_granite_slab",
@@ -3433,19 +4532,23 @@
     },
     {
       "name": "copper_lantern",
-      "class": "WeatheringLanternBlock"
+      "class": "WeatheringLanternBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_copper_lantern",
-      "class": "WeatheringLanternBlock"
+      "class": "WeatheringLanternBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_copper_lantern",
-      "class": "WeatheringLanternBlock"
+      "class": "WeatheringLanternBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_copper_lantern",
-      "class": "WeatheringLanternBlock"
+      "class": "WeatheringLanternBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "waxed_copper_lantern",
@@ -3465,11 +4568,15 @@
     },
     {
       "name": "campfire",
-      "class": "CampfireBlock"
+      "class": "CampfireBlock",
+      "spawn_particles": true,
+      "fire_damage": 1
     },
     {
       "name": "soul_campfire",
-      "class": "CampfireBlock"
+      "class": "CampfireBlock",
+      "spawn_particles": false,
+      "fire_damage": 2
     },
     {
       "name": "sweet_berry_bush",
@@ -3497,7 +4604,8 @@
     },
     {
       "name": "warped_fungus",
-      "class": "FungusBlock"
+      "class": "FungusBlock",
+      "required_block": "warped_nylium"
     },
     {
       "name": "warped_wart_block",
@@ -3533,7 +4641,8 @@
     },
     {
       "name": "crimson_fungus",
-      "class": "FungusBlock"
+      "class": "FungusBlock",
+      "required_block": "crimson_nylium"
     },
     {
       "name": "shroomlight",
@@ -3541,19 +4650,29 @@
     },
     {
       "name": "weeping_vines",
-      "class": "WeepingVinesBlock"
+      "class": "WeepingVinesBlock",
+      "grow_per_tick_probability": 0.1,
+      "growth_direction": "down",
+      "schedule_fluid_ticks": false
     },
     {
       "name": "weeping_vines_plant",
-      "class": "WeepingVinesPlantBlock"
+      "class": "WeepingVinesPlantBlock",
+      "growth_direction": "down",
+      "schedule_fluid_ticks": false
     },
     {
       "name": "twisting_vines",
-      "class": "TwistingVinesBlock"
+      "class": "TwistingVinesBlock",
+      "grow_per_tick_probability": 0.1,
+      "growth_direction": "up",
+      "schedule_fluid_ticks": false
     },
     {
       "name": "twisting_vines_plant",
-      "class": "TwistingVinesPlantBlock"
+      "class": "TwistingVinesPlantBlock",
+      "growth_direction": "up",
+      "schedule_fluid_ticks": false
     },
     {
       "name": "crimson_roots",
@@ -3577,11 +4696,37 @@
     },
     {
       "name": "crimson_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "crimson",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on"
     },
     {
       "name": "warped_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "warped",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on"
     },
     {
       "name": "crimson_fence",
@@ -3593,65 +4738,159 @@
     },
     {
       "name": "crimson_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "crimson",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on"
     },
     {
       "name": "warped_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "warped",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on"
     },
     {
       "name": "crimson_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "crimson",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "warped_fence_gate",
-      "class": "FenceGateBlock"
+      "class": "FenceGateBlock",
+      "type_name": "warped",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "crimson_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "crimson_planks"
     },
     {
       "name": "warped_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "warped_planks"
     },
     {
       "name": "crimson_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_NETHER_WOOD_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF"
+      "type_name": "crimson",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "warped_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 30,
-      "button_click_on": "BLOCK_NETHER_WOOD_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_NETHER_WOOD_BUTTON_CLICK_OFF"
+      "type_name": "warped",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on",
+      "ticks_to_stay_pressed": 30
     },
     {
       "name": "crimson_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "crimson",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on"
     },
     {
       "name": "warped_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "warped",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": true,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.nether_wood_door.close",
+      "type_door_open": "block.nether_wood_door.open",
+      "type_trapdoor_close": "block.nether_wood_trapdoor.close",
+      "type_trapdoor_open": "block.nether_wood_trapdoor.open",
+      "type_pressure_plate_click_off": "block.nether_wood_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.nether_wood_pressure_plate.click_on",
+      "type_button_click_off": "block.nether_wood_button.click_off",
+      "type_button_click_on": "block.nether_wood_button.click_on"
     },
     {
       "name": "crimson_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "crimson",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "warped_sign",
-      "class": "StandingSignBlock"
+      "class": "StandingSignBlock",
+      "type_name": "warped",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "crimson_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "crimson",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "warped_wall_sign",
-      "class": "WallSignBlock"
+      "class": "WallSignBlock",
+      "type_name": "warped",
+      "type_fence_gate_close": "block.nether_wood_fence_gate.close",
+      "type_fence_gate_open": "block.nether_wood_fence_gate.open"
     },
     {
       "name": "structure_block",
@@ -3711,19 +4950,23 @@
     },
     {
       "name": "potted_crimson_fungus",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "crimson_fungus"
     },
     {
       "name": "potted_warped_fungus",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "warped_fungus"
     },
     {
       "name": "potted_crimson_roots",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "crimson_roots"
     },
     {
       "name": "potted_warped_roots",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "warped_roots"
     },
     {
       "name": "lodestone",
@@ -3735,7 +4978,8 @@
     },
     {
       "name": "blackstone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "blackstone"
     },
     {
       "name": "blackstone_wall",
@@ -3767,7 +5011,8 @@
     },
     {
       "name": "polished_blackstone_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_blackstone_bricks"
     },
     {
       "name": "polished_blackstone_brick_wall",
@@ -3779,7 +5024,8 @@
     },
     {
       "name": "polished_blackstone_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_blackstone"
     },
     {
       "name": "polished_blackstone_slab",
@@ -3787,14 +5033,38 @@
     },
     {
       "name": "polished_blackstone_pressure_plate",
-      "class": "PressurePlateBlock"
+      "class": "PressurePlateBlock",
+      "type_name": "polished_blackstone",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "mobs",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.stone_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.stone_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "polished_blackstone_button",
       "class": "ButtonBlock",
-      "ticks_to_stay_pressed": 20,
-      "button_click_on": "BLOCK_STONE_BUTTON_CLICK_ON",
-      "button_click_off": "BLOCK_STONE_BUTTON_CLICK_OFF"
+      "type_name": "stone",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "mobs",
+      "type_door_close": "block.iron_door.close",
+      "type_door_open": "block.iron_door.open",
+      "type_trapdoor_close": "block.iron_trapdoor.close",
+      "type_trapdoor_open": "block.iron_trapdoor.open",
+      "type_pressure_plate_click_off": "block.stone_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.stone_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on",
+      "ticks_to_stay_pressed": 20
     },
     {
       "name": "polished_blackstone_wall",
@@ -3882,71 +5152,88 @@
     },
     {
       "name": "candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "candle"
     },
     {
       "name": "white_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "white_candle"
     },
     {
       "name": "orange_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "orange_candle"
     },
     {
       "name": "magenta_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "magenta_candle"
     },
     {
       "name": "light_blue_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "light_blue_candle"
     },
     {
       "name": "yellow_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "yellow_candle"
     },
     {
       "name": "lime_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "lime_candle"
     },
     {
       "name": "pink_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "pink_candle"
     },
     {
       "name": "gray_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "gray_candle"
     },
     {
       "name": "light_gray_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "light_gray_candle"
     },
     {
       "name": "cyan_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "cyan_candle"
     },
     {
       "name": "purple_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "purple_candle"
     },
     {
       "name": "blue_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "blue_candle"
     },
     {
       "name": "brown_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "brown_candle"
     },
     {
       "name": "green_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "green_candle"
     },
     {
       "name": "red_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "red_candle"
     },
     {
       "name": "black_candle_cake",
-      "class": "CandleCakeBlock"
+      "class": "CandleCakeBlock",
+      "candle_block": "black_candle"
     },
     {
       "name": "amethyst_block",
@@ -3958,19 +5245,27 @@
     },
     {
       "name": "amethyst_cluster",
-      "class": "AmethystClusterBlock"
+      "class": "AmethystClusterBlock",
+      "height": 7.0,
+      "width": 10.0
     },
     {
       "name": "large_amethyst_bud",
-      "class": "AmethystClusterBlock"
+      "class": "AmethystClusterBlock",
+      "height": 5.0,
+      "width": 10.0
     },
     {
       "name": "medium_amethyst_bud",
-      "class": "AmethystClusterBlock"
+      "class": "AmethystClusterBlock",
+      "height": 4.0,
+      "width": 10.0
     },
     {
       "name": "small_amethyst_bud",
-      "class": "AmethystClusterBlock"
+      "class": "AmethystClusterBlock",
+      "height": 3.0,
+      "width": 8.0
     },
     {
       "name": "tuff",
@@ -3982,7 +5277,8 @@
     },
     {
       "name": "tuff_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "tuff"
     },
     {
       "name": "tuff_wall",
@@ -3998,7 +5294,8 @@
     },
     {
       "name": "polished_tuff_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_tuff"
     },
     {
       "name": "polished_tuff_wall",
@@ -4018,7 +5315,8 @@
     },
     {
       "name": "tuff_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "tuff_bricks"
     },
     {
       "name": "tuff_brick_wall",
@@ -4050,15 +5348,20 @@
     },
     {
       "name": "sculk",
-      "class": "SculkBlock"
+      "class": "SculkBlock",
+      "xp_range_value": 1
     },
     {
       "name": "sculk_vein",
-      "class": "SculkVeinBlock"
+      "class": "SculkVeinBlock",
+      "can_rotate": true,
+      "can_mirror_x": true,
+      "can_mirror_z": true
     },
     {
       "name": "sculk_catalyst",
-      "class": "SculkCatalystBlock"
+      "class": "SculkCatalystBlock",
+      "xp_range_value": 5
     },
     {
       "name": "sculk_shrieker",
@@ -4066,59 +5369,73 @@
     },
     {
       "name": "copper_block",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "copper_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_value": 0
     },
     {
       "name": "deepslate_copper_ore",
-      "class": "DropExperienceBlock"
+      "class": "DropExperienceBlock",
+      "xp_range_value": 0
     },
     {
       "name": "oxidized_cut_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "weathered_cut_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "exposed_cut_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "cut_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "oxidized_chiseled_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "weathered_chiseled_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "exposed_chiseled_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "chiseled_copper",
-      "class": "WeatheringCopperFullBlock"
+      "class": "WeatheringCopperFullBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "waxed_oxidized_chiseled_copper",
@@ -4138,35 +5455,47 @@
     },
     {
       "name": "oxidized_cut_copper_stairs",
-      "class": "WeatheringCopperStairBlock"
+      "class": "WeatheringCopperStairBlock",
+      "weather_state": "oxidized",
+      "base": "oxidized_cut_copper"
     },
     {
       "name": "weathered_cut_copper_stairs",
-      "class": "WeatheringCopperStairBlock"
+      "class": "WeatheringCopperStairBlock",
+      "weather_state": "weathered",
+      "base": "weathered_cut_copper"
     },
     {
       "name": "exposed_cut_copper_stairs",
-      "class": "WeatheringCopperStairBlock"
+      "class": "WeatheringCopperStairBlock",
+      "weather_state": "exposed",
+      "base": "exposed_cut_copper"
     },
     {
       "name": "cut_copper_stairs",
-      "class": "WeatheringCopperStairBlock"
+      "class": "WeatheringCopperStairBlock",
+      "weather_state": "unaffected",
+      "base": "cut_copper"
     },
     {
       "name": "oxidized_cut_copper_slab",
-      "class": "WeatheringCopperSlabBlock"
+      "class": "WeatheringCopperSlabBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "weathered_cut_copper_slab",
-      "class": "WeatheringCopperSlabBlock"
+      "class": "WeatheringCopperSlabBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "exposed_cut_copper_slab",
-      "class": "WeatheringCopperSlabBlock"
+      "class": "WeatheringCopperSlabBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "cut_copper_slab",
-      "class": "WeatheringCopperSlabBlock"
+      "class": "WeatheringCopperSlabBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "waxed_copper_block",
@@ -4202,19 +5531,23 @@
     },
     {
       "name": "waxed_oxidized_cut_copper_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "waxed_oxidized_cut_copper"
     },
     {
       "name": "waxed_weathered_cut_copper_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "waxed_weathered_cut_copper"
     },
     {
       "name": "waxed_exposed_cut_copper_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "waxed_exposed_cut_copper"
     },
     {
       "name": "waxed_cut_copper_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "waxed_cut_copper"
     },
     {
       "name": "waxed_oxidized_cut_copper_slab",
@@ -4234,83 +5567,303 @@
     },
     {
       "name": "copper_door",
-      "class": "WeatheringCopperDoorBlock"
+      "class": "WeatheringCopperDoorBlock",
+      "weather_state": "unaffected",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "exposed_copper_door",
-      "class": "WeatheringCopperDoorBlock"
+      "class": "WeatheringCopperDoorBlock",
+      "weather_state": "exposed",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "oxidized_copper_door",
-      "class": "WeatheringCopperDoorBlock"
+      "class": "WeatheringCopperDoorBlock",
+      "weather_state": "oxidized",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "weathered_copper_door",
-      "class": "WeatheringCopperDoorBlock"
+      "class": "WeatheringCopperDoorBlock",
+      "weather_state": "weathered",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_copper_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_exposed_copper_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_oxidized_copper_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_weathered_copper_door",
-      "class": "DoorBlock"
+      "class": "DoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "copper_trapdoor",
-      "class": "WeatheringCopperTrapDoorBlock"
+      "class": "WeatheringCopperTrapDoorBlock",
+      "weather_state": "unaffected",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "exposed_copper_trapdoor",
-      "class": "WeatheringCopperTrapDoorBlock"
+      "class": "WeatheringCopperTrapDoorBlock",
+      "weather_state": "exposed",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "oxidized_copper_trapdoor",
-      "class": "WeatheringCopperTrapDoorBlock"
+      "class": "WeatheringCopperTrapDoorBlock",
+      "weather_state": "oxidized",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "weathered_copper_trapdoor",
-      "class": "WeatheringCopperTrapDoorBlock"
+      "class": "WeatheringCopperTrapDoorBlock",
+      "weather_state": "weathered",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_copper_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_exposed_copper_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_oxidized_copper_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "waxed_weathered_copper_trapdoor",
-      "class": "TrapDoorBlock"
+      "class": "TrapDoorBlock",
+      "type_name": "copper",
+      "type_can_open_by_hand": true,
+      "type_can_open_by_wind_charge": true,
+      "type_can_button_be_activated_by_arrows": false,
+      "type_pressure_plate_sensitivity": "everything",
+      "type_door_close": "block.copper_door.close",
+      "type_door_open": "block.copper_door.open",
+      "type_trapdoor_close": "block.copper_trapdoor.close",
+      "type_trapdoor_open": "block.copper_trapdoor.open",
+      "type_pressure_plate_click_off": "block.metal_pressure_plate.click_off",
+      "type_pressure_plate_click_on": "block.metal_pressure_plate.click_on",
+      "type_button_click_off": "block.stone_button.click_off",
+      "type_button_click_on": "block.stone_button.click_on"
     },
     {
       "name": "copper_grate",
-      "class": "WeatheringCopperGrateBlock"
+      "class": "WeatheringCopperGrateBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_copper_grate",
-      "class": "WeatheringCopperGrateBlock"
+      "class": "WeatheringCopperGrateBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_copper_grate",
-      "class": "WeatheringCopperGrateBlock"
+      "class": "WeatheringCopperGrateBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_copper_grate",
-      "class": "WeatheringCopperGrateBlock"
+      "class": "WeatheringCopperGrateBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "waxed_copper_grate",
@@ -4330,19 +5883,23 @@
     },
     {
       "name": "copper_bulb",
-      "class": "WeatheringCopperBulbBlock"
+      "class": "WeatheringCopperBulbBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_copper_bulb",
-      "class": "WeatheringCopperBulbBlock"
+      "class": "WeatheringCopperBulbBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_copper_bulb",
-      "class": "WeatheringCopperBulbBlock"
+      "class": "WeatheringCopperBulbBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_copper_bulb",
-      "class": "WeatheringCopperBulbBlock"
+      "class": "WeatheringCopperBulbBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "waxed_copper_bulb",
@@ -4362,83 +5919,119 @@
     },
     {
       "name": "copper_chest",
-      "class": "WeatheringCopperChestBlock"
+      "class": "WeatheringCopperChestBlock",
+      "weather_state": "unaffected",
+      "open_sound": "block.copper_chest.open",
+      "close_sound": "block.copper_chest.close"
     },
     {
       "name": "exposed_copper_chest",
-      "class": "WeatheringCopperChestBlock"
+      "class": "WeatheringCopperChestBlock",
+      "weather_state": "exposed",
+      "open_sound": "block.copper_chest.open",
+      "close_sound": "block.copper_chest.close"
     },
     {
       "name": "weathered_copper_chest",
-      "class": "WeatheringCopperChestBlock"
+      "class": "WeatheringCopperChestBlock",
+      "weather_state": "weathered",
+      "open_sound": "block.copper_chest_weathered.open",
+      "close_sound": "block.copper_chest_weathered.close"
     },
     {
       "name": "oxidized_copper_chest",
-      "class": "WeatheringCopperChestBlock"
+      "class": "WeatheringCopperChestBlock",
+      "weather_state": "oxidized",
+      "open_sound": "block.copper_chest_oxidized.open",
+      "close_sound": "block.copper_chest_oxidized.close"
     },
     {
       "name": "waxed_copper_chest",
-      "class": "CopperChestBlock"
+      "class": "CopperChestBlock",
+      "weather_state": "unaffected",
+      "open_sound": "block.copper_chest.open",
+      "close_sound": "block.copper_chest.close"
     },
     {
       "name": "waxed_exposed_copper_chest",
-      "class": "CopperChestBlock"
+      "class": "CopperChestBlock",
+      "weather_state": "exposed",
+      "open_sound": "block.copper_chest.open",
+      "close_sound": "block.copper_chest.close"
     },
     {
       "name": "waxed_weathered_copper_chest",
-      "class": "CopperChestBlock"
+      "class": "CopperChestBlock",
+      "weather_state": "weathered",
+      "open_sound": "block.copper_chest_weathered.open",
+      "close_sound": "block.copper_chest_weathered.close"
     },
     {
       "name": "waxed_oxidized_copper_chest",
-      "class": "CopperChestBlock"
+      "class": "CopperChestBlock",
+      "weather_state": "oxidized",
+      "open_sound": "block.copper_chest_oxidized.open",
+      "close_sound": "block.copper_chest_oxidized.close"
     },
     {
       "name": "copper_golem_statue",
-      "class": "WeatheringCopperGolemStatueBlock"
+      "class": "WeatheringCopperGolemStatueBlock",
+      "weathering_state": "unaffected"
     },
     {
       "name": "exposed_copper_golem_statue",
-      "class": "WeatheringCopperGolemStatueBlock"
+      "class": "WeatheringCopperGolemStatueBlock",
+      "weathering_state": "exposed"
     },
     {
       "name": "weathered_copper_golem_statue",
-      "class": "WeatheringCopperGolemStatueBlock"
+      "class": "WeatheringCopperGolemStatueBlock",
+      "weathering_state": "weathered"
     },
     {
       "name": "oxidized_copper_golem_statue",
-      "class": "WeatheringCopperGolemStatueBlock"
+      "class": "WeatheringCopperGolemStatueBlock",
+      "weathering_state": "oxidized"
     },
     {
       "name": "waxed_copper_golem_statue",
-      "class": "CopperGolemStatueBlock"
+      "class": "CopperGolemStatueBlock",
+      "weathering_state": "unaffected"
     },
     {
       "name": "waxed_exposed_copper_golem_statue",
-      "class": "CopperGolemStatueBlock"
+      "class": "CopperGolemStatueBlock",
+      "weathering_state": "exposed"
     },
     {
       "name": "waxed_weathered_copper_golem_statue",
-      "class": "CopperGolemStatueBlock"
+      "class": "CopperGolemStatueBlock",
+      "weathering_state": "weathered"
     },
     {
       "name": "waxed_oxidized_copper_golem_statue",
-      "class": "CopperGolemStatueBlock"
+      "class": "CopperGolemStatueBlock",
+      "weathering_state": "oxidized"
     },
     {
       "name": "lightning_rod",
-      "class": "WeatheringLightningRodBlock"
+      "class": "WeatheringLightningRodBlock",
+      "weather_state": "unaffected"
     },
     {
       "name": "exposed_lightning_rod",
-      "class": "WeatheringLightningRodBlock"
+      "class": "WeatheringLightningRodBlock",
+      "weather_state": "exposed"
     },
     {
       "name": "weathered_lightning_rod",
-      "class": "WeatheringLightningRodBlock"
+      "class": "WeatheringLightningRodBlock",
+      "weather_state": "weathered"
     },
     {
       "name": "oxidized_lightning_rod",
-      "class": "WeatheringLightningRodBlock"
+      "class": "WeatheringLightningRodBlock",
+      "weather_state": "oxidized"
     },
     {
       "name": "waxed_lightning_rod",
@@ -4466,11 +6059,16 @@
     },
     {
       "name": "cave_vines",
-      "class": "CaveVinesBlock"
+      "class": "CaveVinesBlock",
+      "grow_per_tick_probability": 0.1,
+      "growth_direction": "down",
+      "schedule_fluid_ticks": false
     },
     {
       "name": "cave_vines_plant",
-      "class": "CaveVinesPlantBlock"
+      "class": "CaveVinesPlantBlock",
+      "growth_direction": "down",
+      "schedule_fluid_ticks": false
     },
     {
       "name": "spore_blossom",
@@ -4538,7 +6136,8 @@
     },
     {
       "name": "cobbled_deepslate_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "cobbled_deepslate"
     },
     {
       "name": "cobbled_deepslate_slab",
@@ -4554,7 +6153,8 @@
     },
     {
       "name": "polished_deepslate_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "polished_deepslate"
     },
     {
       "name": "polished_deepslate_slab",
@@ -4570,7 +6170,8 @@
     },
     {
       "name": "deepslate_tile_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "deepslate_tiles"
     },
     {
       "name": "deepslate_tile_slab",
@@ -4586,7 +6187,8 @@
     },
     {
       "name": "deepslate_brick_stairs",
-      "class": "StairBlock"
+      "class": "StairBlock",
+      "base": "deepslate_bricks"
     },
     {
       "name": "deepslate_brick_slab",
@@ -4610,7 +6212,8 @@
     },
     {
       "name": "infested_deepslate",
-      "class": "InfestedRotatedPillarBlock"
+      "class": "InfestedRotatedPillarBlock",
+      "host_block": "deepslate"
     },
     {
       "name": "smooth_basalt",
@@ -4630,11 +6233,13 @@
     },
     {
       "name": "potted_azalea_bush",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "azalea"
     },
     {
       "name": "potted_flowering_azalea_bush",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "flowering_azalea"
     },
     {
       "name": "ochre_froglight",
@@ -4690,19 +6295,23 @@
     },
     {
       "name": "open_eyeblossom",
-      "class": "EyeblossomBlock"
+      "class": "EyeblossomBlock",
+      "type": "open"
     },
     {
       "name": "closed_eyeblossom",
-      "class": "EyeblossomBlock"
+      "class": "EyeblossomBlock",
+      "type": "closed"
     },
     {
       "name": "potted_open_eyeblossom",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "open_eyeblossom"
     },
     {
       "name": "potted_closed_eyeblossom",
-      "class": "FlowerPotBlock"
+      "class": "FlowerPotBlock",
+      "potted": "closed_eyeblossom"
     },
     {
       "name": "firefly_bush",
@@ -6322,8 +7931,9 @@
     {
       "name": "torch",
       "class": "StandingAndWallBlockItem",
-      "block": "torch",
-      "wallBlock": "wall_torch"
+      "wall_block": "wall_torch",
+      "attachment_direction": "down",
+      "block": "torch"
     },
     {
       "name": "end_rod",
@@ -6538,14 +8148,16 @@
     {
       "name": "soul_torch",
       "class": "StandingAndWallBlockItem",
-      "block": "soul_torch",
-      "wallBlock": "soul_wall_torch"
+      "wall_block": "soul_wall_torch",
+      "attachment_direction": "down",
+      "block": "soul_torch"
     },
     {
       "name": "copper_torch",
       "class": "StandingAndWallBlockItem",
-      "block": "copper_torch",
-      "wallBlock": "copper_wall_torch"
+      "wall_block": "copper_wall_torch",
+      "attachment_direction": "down",
+      "block": "copper_torch"
     },
     {
       "name": "glowstone",
@@ -8060,62 +9672,72 @@
     {
       "name": "tube_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "tube_coral_fan",
-      "wallBlock": "tube_coral_wall_fan"
+      "wall_block": "tube_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "tube_coral_fan"
     },
     {
       "name": "brain_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "brain_coral_fan",
-      "wallBlock": "brain_coral_wall_fan"
+      "wall_block": "brain_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "brain_coral_fan"
     },
     {
       "name": "bubble_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "bubble_coral_fan",
-      "wallBlock": "bubble_coral_wall_fan"
+      "wall_block": "bubble_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "bubble_coral_fan"
     },
     {
       "name": "fire_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "fire_coral_fan",
-      "wallBlock": "fire_coral_wall_fan"
+      "wall_block": "fire_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "fire_coral_fan"
     },
     {
       "name": "horn_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "horn_coral_fan",
-      "wallBlock": "horn_coral_wall_fan"
+      "wall_block": "horn_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "horn_coral_fan"
     },
     {
       "name": "dead_tube_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_tube_coral_fan",
-      "wallBlock": "dead_tube_coral_wall_fan"
+      "wall_block": "dead_tube_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "dead_tube_coral_fan"
     },
     {
       "name": "dead_brain_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_brain_coral_fan",
-      "wallBlock": "dead_brain_coral_wall_fan"
+      "wall_block": "dead_brain_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "dead_brain_coral_fan"
     },
     {
       "name": "dead_bubble_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_bubble_coral_fan",
-      "wallBlock": "dead_bubble_coral_wall_fan"
+      "wall_block": "dead_bubble_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "dead_bubble_coral_fan"
     },
     {
       "name": "dead_fire_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_fire_coral_fan",
-      "wallBlock": "dead_fire_coral_wall_fan"
+      "wall_block": "dead_fire_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "dead_fire_coral_fan"
     },
     {
       "name": "dead_horn_coral_fan",
       "class": "StandingAndWallBlockItem",
-      "block": "dead_horn_coral_fan",
-      "wallBlock": "dead_horn_coral_wall_fan"
+      "wall_block": "dead_horn_coral_wall_fan",
+      "attachment_direction": "down",
+      "block": "dead_horn_coral_fan"
     },
     {
       "name": "blue_ice",
@@ -8315,8 +9937,9 @@
     {
       "name": "redstone_torch",
       "class": "StandingAndWallBlockItem",
-      "block": "redstone_torch",
-      "wallBlock": "redstone_wall_torch"
+      "wall_block": "redstone_wall_torch",
+      "attachment_direction": "down",
+      "block": "redstone_torch"
     },
     {
       "name": "redstone_block",
@@ -8978,31 +10601,103 @@
     },
     {
       "name": "minecart",
-      "class": "MinecartItem"
+      "class": "MinecartItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 8,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.minecart",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "chest_minecart",
-      "class": "MinecartItem"
+      "class": "MinecartItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 8,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.chest_minecart",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "furnace_minecart",
-      "class": "MinecartItem"
+      "class": "MinecartItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 8,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.furnace_minecart",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "tnt_minecart",
-      "class": "MinecartItem"
+      "class": "MinecartItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 8,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.tnt_minecart",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "hopper_minecart",
-      "class": "MinecartItem"
+      "class": "MinecartItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 8,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.hopper_minecart",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "carrot_on_a_stick",
-      "class": "FoodOnAStickItem"
+      "class": "FoodOnAStickItem",
+      "can_interact_with_category": "creature",
+      "can_interact_with_serialize": true,
+      "can_interact_with_summon": true,
+      "can_interact_with_fire_immune": false,
+      "can_interact_with_can_spawn_far_from_player": true,
+      "can_interact_with_client_tracking_range": 10,
+      "can_interact_with_update_interval": 3,
+      "can_interact_with_description_id": "entity.minecraft.pig",
+      "can_interact_with_spawn_dimensions_scale": 1.0,
+      "can_interact_with_allowed_in_peaceful": true,
+      "consume_item_damage": 7
     },
     {
       "name": "warped_fungus_on_a_stick",
-      "class": "FoodOnAStickItem"
+      "class": "FoodOnAStickItem",
+      "can_interact_with_category": "creature",
+      "can_interact_with_serialize": true,
+      "can_interact_with_summon": true,
+      "can_interact_with_fire_immune": true,
+      "can_interact_with_can_spawn_far_from_player": true,
+      "can_interact_with_client_tracking_range": 10,
+      "can_interact_with_update_interval": 3,
+      "can_interact_with_description_id": "entity.minecraft.strider",
+      "can_interact_with_spawn_dimensions_scale": 1.0,
+      "can_interact_with_allowed_in_peaceful": true,
+      "consume_item_damage": 1
     },
     {
       "name": "phantom_membrane",
@@ -9014,83 +10709,283 @@
     },
     {
       "name": "oak_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.oak_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "oak_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.oak_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "spruce_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.spruce_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "spruce_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.spruce_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "birch_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.birch_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "birch_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.birch_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "jungle_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.jungle_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "jungle_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.jungle_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "acacia_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.acacia_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "acacia_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.acacia_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "cherry_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.cherry_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "cherry_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.cherry_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "dark_oak_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.dark_oak_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "dark_oak_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.dark_oak_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "pale_oak_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.pale_oak_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "pale_oak_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.pale_oak_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "mangrove_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.mangrove_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "mangrove_chest_boat",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.mangrove_chest_boat",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "bamboo_raft",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.bamboo_raft",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "bamboo_chest_raft",
-      "class": "BoatItem"
+      "class": "BoatItem",
+      "entity_type_category": "misc",
+      "entity_type_serialize": true,
+      "entity_type_summon": true,
+      "entity_type_fire_immune": false,
+      "entity_type_can_spawn_far_from_player": true,
+      "entity_type_client_tracking_range": 10,
+      "entity_type_update_interval": 3,
+      "entity_type_description_id": "entity.minecraft.bamboo_chest_raft",
+      "entity_type_spawn_dimensions_scale": 1.0,
+      "entity_type_allowed_in_peaceful": true
     },
     {
       "name": "structure_block",
@@ -9508,7 +11403,17 @@
     },
     {
       "name": "painting",
-      "class": "HangingEntityItem"
+      "class": "HangingEntityItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 10,
+      "type_update_interval": 2147483647,
+      "type_description_id": "entity.minecraft.painting",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "golden_apple",
@@ -9521,165 +11426,190 @@
     {
       "name": "oak_sign",
       "class": "SignItem",
-      "block": "oak_sign",
-      "wallBlock": "oak_wall_sign"
+      "wall_block": "oak_wall_sign",
+      "attachment_direction": "down",
+      "block": "oak_sign"
     },
     {
       "name": "spruce_sign",
       "class": "SignItem",
-      "block": "spruce_sign",
-      "wallBlock": "spruce_wall_sign"
+      "wall_block": "spruce_wall_sign",
+      "attachment_direction": "down",
+      "block": "spruce_sign"
     },
     {
       "name": "birch_sign",
       "class": "SignItem",
-      "block": "birch_sign",
-      "wallBlock": "birch_wall_sign"
+      "wall_block": "birch_wall_sign",
+      "attachment_direction": "down",
+      "block": "birch_sign"
     },
     {
       "name": "jungle_sign",
       "class": "SignItem",
-      "block": "jungle_sign",
-      "wallBlock": "jungle_wall_sign"
+      "wall_block": "jungle_wall_sign",
+      "attachment_direction": "down",
+      "block": "jungle_sign"
     },
     {
       "name": "acacia_sign",
       "class": "SignItem",
-      "block": "acacia_sign",
-      "wallBlock": "acacia_wall_sign"
+      "wall_block": "acacia_wall_sign",
+      "attachment_direction": "down",
+      "block": "acacia_sign"
     },
     {
       "name": "cherry_sign",
       "class": "SignItem",
-      "block": "cherry_sign",
-      "wallBlock": "cherry_wall_sign"
+      "wall_block": "cherry_wall_sign",
+      "attachment_direction": "down",
+      "block": "cherry_sign"
     },
     {
       "name": "dark_oak_sign",
       "class": "SignItem",
-      "block": "dark_oak_sign",
-      "wallBlock": "dark_oak_wall_sign"
+      "wall_block": "dark_oak_wall_sign",
+      "attachment_direction": "down",
+      "block": "dark_oak_sign"
     },
     {
       "name": "pale_oak_sign",
       "class": "SignItem",
-      "block": "pale_oak_sign",
-      "wallBlock": "pale_oak_wall_sign"
+      "wall_block": "pale_oak_wall_sign",
+      "attachment_direction": "down",
+      "block": "pale_oak_sign"
     },
     {
       "name": "mangrove_sign",
       "class": "SignItem",
-      "block": "mangrove_sign",
-      "wallBlock": "mangrove_wall_sign"
+      "wall_block": "mangrove_wall_sign",
+      "attachment_direction": "down",
+      "block": "mangrove_sign"
     },
     {
       "name": "bamboo_sign",
       "class": "SignItem",
-      "block": "bamboo_sign",
-      "wallBlock": "bamboo_wall_sign"
+      "wall_block": "bamboo_wall_sign",
+      "attachment_direction": "down",
+      "block": "bamboo_sign"
     },
     {
       "name": "crimson_sign",
       "class": "SignItem",
-      "block": "crimson_sign",
-      "wallBlock": "crimson_wall_sign"
+      "wall_block": "crimson_wall_sign",
+      "attachment_direction": "down",
+      "block": "crimson_sign"
     },
     {
       "name": "warped_sign",
       "class": "SignItem",
-      "block": "warped_sign",
-      "wallBlock": "warped_wall_sign"
+      "wall_block": "warped_wall_sign",
+      "attachment_direction": "down",
+      "block": "warped_sign"
     },
     {
       "name": "oak_hanging_sign",
       "class": "HangingSignItem",
-      "block": "oak_hanging_sign",
-      "wallBlock": "oak_wall_hanging_sign"
+      "wall_block": "oak_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "oak_hanging_sign"
     },
     {
       "name": "spruce_hanging_sign",
       "class": "HangingSignItem",
-      "block": "spruce_hanging_sign",
-      "wallBlock": "spruce_wall_hanging_sign"
+      "wall_block": "spruce_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "spruce_hanging_sign"
     },
     {
       "name": "birch_hanging_sign",
       "class": "HangingSignItem",
-      "block": "birch_hanging_sign",
-      "wallBlock": "birch_wall_hanging_sign"
+      "wall_block": "birch_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "birch_hanging_sign"
     },
     {
       "name": "jungle_hanging_sign",
       "class": "HangingSignItem",
-      "block": "jungle_hanging_sign",
-      "wallBlock": "jungle_wall_hanging_sign"
+      "wall_block": "jungle_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "jungle_hanging_sign"
     },
     {
       "name": "acacia_hanging_sign",
       "class": "HangingSignItem",
-      "block": "acacia_hanging_sign",
-      "wallBlock": "acacia_wall_hanging_sign"
+      "wall_block": "acacia_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "acacia_hanging_sign"
     },
     {
       "name": "cherry_hanging_sign",
       "class": "HangingSignItem",
-      "block": "cherry_hanging_sign",
-      "wallBlock": "cherry_wall_hanging_sign"
+      "wall_block": "cherry_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "cherry_hanging_sign"
     },
     {
       "name": "dark_oak_hanging_sign",
       "class": "HangingSignItem",
-      "block": "dark_oak_hanging_sign",
-      "wallBlock": "dark_oak_wall_hanging_sign"
+      "wall_block": "dark_oak_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "dark_oak_hanging_sign"
     },
     {
       "name": "pale_oak_hanging_sign",
       "class": "HangingSignItem",
-      "block": "pale_oak_hanging_sign",
-      "wallBlock": "pale_oak_wall_hanging_sign"
+      "wall_block": "pale_oak_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "pale_oak_hanging_sign"
     },
     {
       "name": "mangrove_hanging_sign",
       "class": "HangingSignItem",
-      "block": "mangrove_hanging_sign",
-      "wallBlock": "mangrove_wall_hanging_sign"
+      "wall_block": "mangrove_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "mangrove_hanging_sign"
     },
     {
       "name": "bamboo_hanging_sign",
       "class": "HangingSignItem",
-      "block": "bamboo_hanging_sign",
-      "wallBlock": "bamboo_wall_hanging_sign"
+      "wall_block": "bamboo_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "bamboo_hanging_sign"
     },
     {
       "name": "crimson_hanging_sign",
       "class": "HangingSignItem",
-      "block": "crimson_hanging_sign",
-      "wallBlock": "crimson_wall_hanging_sign"
+      "wall_block": "crimson_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "crimson_hanging_sign"
     },
     {
       "name": "warped_hanging_sign",
       "class": "HangingSignItem",
-      "block": "warped_hanging_sign",
-      "wallBlock": "warped_wall_hanging_sign"
+      "wall_block": "warped_wall_hanging_sign",
+      "attachment_direction": "up",
+      "block": "warped_hanging_sign"
     },
     {
       "name": "bucket",
       "class": "BucketItem",
-      "fluid": "empty"
+      "content": "empty"
     },
     {
       "name": "water_bucket",
       "class": "BucketItem",
-      "fluid": "water"
+      "content": "water"
     },
     {
       "name": "lava_bucket",
       "class": "BucketItem",
-      "fluid": "lava"
+      "content": "lava"
     },
     {
       "name": "powder_snow_bucket",
       "class": "SolidBucketItem",
+      "place_sound": "item.bucket.empty_powder_snow",
       "block": "powder_snow"
     },
     {
@@ -9697,32 +11627,98 @@
     {
       "name": "pufferfish_bucket",
       "class": "MobBucketItem",
-      "fluid": "water"
+      "type_category": "water_ambient",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": false,
+      "type_client_tracking_range": 4,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.pufferfish",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true,
+      "empty_sound": "item.bucket.empty_fish",
+      "content": "water"
     },
     {
       "name": "salmon_bucket",
       "class": "MobBucketItem",
-      "fluid": "water"
+      "type_category": "water_ambient",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": false,
+      "type_client_tracking_range": 4,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.salmon",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true,
+      "empty_sound": "item.bucket.empty_fish",
+      "content": "water"
     },
     {
       "name": "cod_bucket",
       "class": "MobBucketItem",
-      "fluid": "water"
+      "type_category": "water_ambient",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": false,
+      "type_client_tracking_range": 4,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.cod",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true,
+      "empty_sound": "item.bucket.empty_fish",
+      "content": "water"
     },
     {
       "name": "tropical_fish_bucket",
       "class": "MobBucketItem",
-      "fluid": "water"
+      "type_category": "water_ambient",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": false,
+      "type_client_tracking_range": 4,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.tropical_fish",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true,
+      "empty_sound": "item.bucket.empty_fish",
+      "content": "water"
     },
     {
       "name": "axolotl_bucket",
       "class": "MobBucketItem",
-      "fluid": "water"
+      "type_category": "axolotls",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": false,
+      "type_client_tracking_range": 10,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.axolotl",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true,
+      "empty_sound": "item.bucket.empty_axolotl",
+      "content": "water"
     },
     {
       "name": "tadpole_bucket",
       "class": "MobBucketItem",
-      "fluid": "water"
+      "type_category": "creature",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 10,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.tadpole",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true,
+      "empty_sound": "item.bucket.empty_tadpole",
+      "content": "water"
     },
     {
       "name": "brick",
@@ -9892,67 +11888,83 @@
     },
     {
       "name": "white_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "white"
     },
     {
       "name": "orange_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "orange"
     },
     {
       "name": "magenta_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "magenta"
     },
     {
       "name": "light_blue_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "light_blue"
     },
     {
       "name": "yellow_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "yellow"
     },
     {
       "name": "lime_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "lime"
     },
     {
       "name": "pink_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "pink"
     },
     {
       "name": "gray_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "gray"
     },
     {
       "name": "light_gray_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "light_gray"
     },
     {
       "name": "cyan_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "cyan"
     },
     {
       "name": "purple_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "purple"
     },
     {
       "name": "blue_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "blue"
     },
     {
       "name": "brown_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "brown"
     },
     {
       "name": "green_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "green"
     },
     {
       "name": "red_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "red"
     },
     {
       "name": "black_dye",
-      "class": "DyeItem"
+      "class": "DyeItem",
+      "dye_color": "black"
     },
     {
       "name": "bone_meal",
@@ -10547,11 +12559,31 @@
     },
     {
       "name": "item_frame",
-      "class": "ItemFrameItem"
+      "class": "ItemFrameItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 10,
+      "type_update_interval": 2147483647,
+      "type_description_id": "entity.minecraft.item_frame",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "glow_item_frame",
-      "class": "ItemFrameItem"
+      "class": "ItemFrameItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 10,
+      "type_update_interval": 2147483647,
+      "type_description_id": "entity.minecraft.glow_item_frame",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "flower_pot",
@@ -10587,44 +12619,51 @@
     {
       "name": "skeleton_skull",
       "class": "StandingAndWallBlockItem",
-      "block": "skeleton_skull",
-      "wallBlock": "skeleton_wall_skull"
+      "wall_block": "skeleton_wall_skull",
+      "attachment_direction": "down",
+      "block": "skeleton_skull"
     },
     {
       "name": "wither_skeleton_skull",
       "class": "StandingAndWallBlockItem",
-      "block": "wither_skeleton_skull",
-      "wallBlock": "wither_skeleton_wall_skull"
+      "wall_block": "wither_skeleton_wall_skull",
+      "attachment_direction": "down",
+      "block": "wither_skeleton_skull"
     },
     {
       "name": "player_head",
       "class": "PlayerHeadItem",
-      "block": "player_head",
-      "wallBlock": "player_wall_head"
+      "wall_block": "player_wall_head",
+      "attachment_direction": "down",
+      "block": "player_head"
     },
     {
       "name": "zombie_head",
       "class": "StandingAndWallBlockItem",
-      "block": "zombie_head",
-      "wallBlock": "zombie_wall_head"
+      "wall_block": "zombie_wall_head",
+      "attachment_direction": "down",
+      "block": "zombie_head"
     },
     {
       "name": "creeper_head",
       "class": "StandingAndWallBlockItem",
-      "block": "creeper_head",
-      "wallBlock": "creeper_wall_head"
+      "wall_block": "creeper_wall_head",
+      "attachment_direction": "down",
+      "block": "creeper_head"
     },
     {
       "name": "dragon_head",
       "class": "StandingAndWallBlockItem",
-      "block": "dragon_head",
-      "wallBlock": "dragon_wall_head"
+      "wall_block": "dragon_wall_head",
+      "attachment_direction": "down",
+      "block": "dragon_head"
     },
     {
       "name": "piglin_head",
       "class": "StandingAndWallBlockItem",
-      "block": "piglin_head",
-      "wallBlock": "piglin_wall_head"
+      "wall_block": "piglin_wall_head",
+      "attachment_direction": "down",
+      "block": "piglin_head"
     },
     {
       "name": "nether_star",
@@ -10720,7 +12759,17 @@
     },
     {
       "name": "command_block_minecart",
-      "class": "MinecartItem"
+      "class": "MinecartItem",
+      "type_category": "misc",
+      "type_serialize": true,
+      "type_summon": true,
+      "type_fire_immune": false,
+      "type_can_spawn_far_from_player": true,
+      "type_client_tracking_range": 8,
+      "type_update_interval": 3,
+      "type_description_id": "entity.minecraft.command_block_minecart",
+      "type_spawn_dimensions_scale": 1.0,
+      "type_allowed_in_peaceful": true
     },
     {
       "name": "mutton",
@@ -10733,98 +12782,114 @@
     {
       "name": "white_banner",
       "class": "BannerItem",
-      "block": "white_banner",
-      "wallBlock": "white_wall_banner"
+      "wall_block": "white_wall_banner",
+      "attachment_direction": "down",
+      "block": "white_banner"
     },
     {
       "name": "orange_banner",
       "class": "BannerItem",
-      "block": "orange_banner",
-      "wallBlock": "orange_wall_banner"
+      "wall_block": "orange_wall_banner",
+      "attachment_direction": "down",
+      "block": "orange_banner"
     },
     {
       "name": "magenta_banner",
       "class": "BannerItem",
-      "block": "magenta_banner",
-      "wallBlock": "magenta_wall_banner"
+      "wall_block": "magenta_wall_banner",
+      "attachment_direction": "down",
+      "block": "magenta_banner"
     },
     {
       "name": "light_blue_banner",
       "class": "BannerItem",
-      "block": "light_blue_banner",
-      "wallBlock": "light_blue_wall_banner"
+      "wall_block": "light_blue_wall_banner",
+      "attachment_direction": "down",
+      "block": "light_blue_banner"
     },
     {
       "name": "yellow_banner",
       "class": "BannerItem",
-      "block": "yellow_banner",
-      "wallBlock": "yellow_wall_banner"
+      "wall_block": "yellow_wall_banner",
+      "attachment_direction": "down",
+      "block": "yellow_banner"
     },
     {
       "name": "lime_banner",
       "class": "BannerItem",
-      "block": "lime_banner",
-      "wallBlock": "lime_wall_banner"
+      "wall_block": "lime_wall_banner",
+      "attachment_direction": "down",
+      "block": "lime_banner"
     },
     {
       "name": "pink_banner",
       "class": "BannerItem",
-      "block": "pink_banner",
-      "wallBlock": "pink_wall_banner"
+      "wall_block": "pink_wall_banner",
+      "attachment_direction": "down",
+      "block": "pink_banner"
     },
     {
       "name": "gray_banner",
       "class": "BannerItem",
-      "block": "gray_banner",
-      "wallBlock": "gray_wall_banner"
+      "wall_block": "gray_wall_banner",
+      "attachment_direction": "down",
+      "block": "gray_banner"
     },
     {
       "name": "light_gray_banner",
       "class": "BannerItem",
-      "block": "light_gray_banner",
-      "wallBlock": "light_gray_wall_banner"
+      "wall_block": "light_gray_wall_banner",
+      "attachment_direction": "down",
+      "block": "light_gray_banner"
     },
     {
       "name": "cyan_banner",
       "class": "BannerItem",
-      "block": "cyan_banner",
-      "wallBlock": "cyan_wall_banner"
+      "wall_block": "cyan_wall_banner",
+      "attachment_direction": "down",
+      "block": "cyan_banner"
     },
     {
       "name": "purple_banner",
       "class": "BannerItem",
-      "block": "purple_banner",
-      "wallBlock": "purple_wall_banner"
+      "wall_block": "purple_wall_banner",
+      "attachment_direction": "down",
+      "block": "purple_banner"
     },
     {
       "name": "blue_banner",
       "class": "BannerItem",
-      "block": "blue_banner",
-      "wallBlock": "blue_wall_banner"
+      "wall_block": "blue_wall_banner",
+      "attachment_direction": "down",
+      "block": "blue_banner"
     },
     {
       "name": "brown_banner",
       "class": "BannerItem",
-      "block": "brown_banner",
-      "wallBlock": "brown_wall_banner"
+      "wall_block": "brown_wall_banner",
+      "attachment_direction": "down",
+      "block": "brown_banner"
     },
     {
       "name": "green_banner",
       "class": "BannerItem",
-      "block": "green_banner",
-      "wallBlock": "green_wall_banner"
+      "wall_block": "green_wall_banner",
+      "attachment_direction": "down",
+      "block": "green_banner"
     },
     {
       "name": "red_banner",
       "class": "BannerItem",
-      "block": "red_banner",
-      "wallBlock": "red_wall_banner"
+      "wall_block": "red_wall_banner",
+      "attachment_direction": "down",
+      "block": "red_banner"
     },
     {
       "name": "black_banner",
       "class": "BannerItem",
-      "block": "black_banner",
-      "wallBlock": "black_wall_banner"
+      "wall_block": "black_wall_banner",
+      "attachment_direction": "down",
+      "block": "black_banner"
     },
     {
       "name": "end_crystal",
@@ -11059,7 +13124,9 @@
     },
     {
       "name": "crossbow",
-      "class": "CrossbowItem"
+      "class": "CrossbowItem",
+      "start_sound_played": false,
+      "mid_load_sound_played": false
     },
     {
       "name": "suspicious_stew",

@@ -2,7 +2,7 @@
 //!
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
-use crate::math::{floor, lerp3, smoothstep};
+use crate::math::{floor, lerp2, lerp3, smoothstep, smoothstep_derivative};
 use crate::noise::GRADIENT;
 use crate::random::Random;
 
@@ -11,9 +11,6 @@ use crate::random::Random;
 /// This implements the improved Perlin noise algorithm as used in Minecraft.
 /// Each instance has a permutation table and offset values initialized from
 /// a random source.
-///
-// TODO: Implement `noise_with_derivative()` returning `(value, dx, dy, dz)` for
-// full BlendedNoise support and density function derivatives.
 #[derive(Debug, Clone)]
 pub struct ImprovedNoise {
     /// Permutation table (256 bytes)
@@ -58,6 +55,34 @@ impl ImprovedNoise {
     #[must_use]
     pub fn noise(&self, x: f64, y: f64, z: f64) -> f64 {
         self.noise_with_y_scale(x, y, z, 0.0, 0.0)
+    }
+
+    /// Sample noise at the given coordinates, accumulating partial derivatives.
+    ///
+    /// Returns the noise value and adds the partial derivatives (dx, dy, dz)
+    /// into `derivative_out`. Used by `BlendedNoise` for terrain generation.
+    #[must_use]
+    #[allow(clippy::many_single_char_names, clippy::similar_names)]
+    pub fn noise_with_derivative(
+        &self,
+        x: f64,
+        y: f64,
+        z: f64,
+        derivative_out: &mut [f64; 3],
+    ) -> f64 {
+        let x = x + self.xo;
+        let y = y + self.yo;
+        let z = z + self.zo;
+
+        let xf = floor(x);
+        let yf = floor(y);
+        let zf = floor(z);
+
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+        let zr = z - f64::from(zf);
+
+        self.sample_with_derivative(xf, yf, zf, xr, yr, zr, derivative_out)
     }
 
     /// Sample noise with Y scale and fudge parameters.
@@ -146,13 +171,124 @@ impl ImprovedNoise {
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
+
+    /// Sample noise at grid point, interpolate, and accumulate derivatives.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::similar_names
+    )]
+    fn sample_with_derivative(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        xr: f64,
+        yr: f64,
+        zr: f64,
+        derivative_out: &mut [f64; 3],
+    ) -> f64 {
+        let x0 = self.p(x);
+        let x1 = self.p(x + 1);
+        let xy00 = self.p(x0 as i32 + y);
+        let xy01 = self.p(x0 as i32 + y + 1);
+        let xy10 = self.p(x1 as i32 + y);
+        let xy11 = self.p(x1 as i32 + y + 1);
+
+        // Get hashes and gradient vectors for all 8 corners
+        let h000 = self.p(xy00 as i32 + z);
+        let h100 = self.p(xy10 as i32 + z);
+        let h010 = self.p(xy01 as i32 + z);
+        let h110 = self.p(xy11 as i32 + z);
+        let h001 = self.p(xy00 as i32 + z + 1);
+        let h101 = self.p(xy10 as i32 + z + 1);
+        let h011 = self.p(xy01 as i32 + z + 1);
+        let h111 = self.p(xy11 as i32 + z + 1);
+
+        let g000 = &GRADIENT[h000 & 15];
+        let g100 = &GRADIENT[h100 & 15];
+        let g010 = &GRADIENT[h010 & 15];
+        let g110 = &GRADIENT[h110 & 15];
+        let g001 = &GRADIENT[h001 & 15];
+        let g101 = &GRADIENT[h101 & 15];
+        let g011 = &GRADIENT[h011 & 15];
+        let g111 = &GRADIENT[h111 & 15];
+
+        // Gradient dot products at each corner
+        let d000 = grad_dot(h000, xr, yr, zr);
+        let d100 = grad_dot(h100, xr - 1.0, yr, zr);
+        let d010 = grad_dot(h010, xr, yr - 1.0, zr);
+        let d110 = grad_dot(h110, xr - 1.0, yr - 1.0, zr);
+        let d001 = grad_dot(h001, xr, yr, zr - 1.0);
+        let d101 = grad_dot(h101, xr - 1.0, yr, zr - 1.0);
+        let d011 = grad_dot(h011, xr, yr - 1.0, zr - 1.0);
+        let d111 = grad_dot(h111, xr - 1.0, yr - 1.0, zr - 1.0);
+
+        let x_alpha = smoothstep(xr);
+        let y_alpha = smoothstep(yr);
+        let z_alpha = smoothstep(zr);
+
+        // Interpolate gradient components for direct derivative contribution
+        let d1x = lerp3(
+            x_alpha, y_alpha, z_alpha, g000[0], g100[0], g010[0], g110[0], g001[0], g101[0],
+            g011[0], g111[0],
+        );
+        let d1y = lerp3(
+            x_alpha, y_alpha, z_alpha, g000[1], g100[1], g010[1], g110[1], g001[1], g101[1],
+            g011[1], g111[1],
+        );
+        let d1z = lerp3(
+            x_alpha, y_alpha, z_alpha, g000[2], g100[2], g010[2], g110[2], g001[2], g101[2],
+            g011[2], g111[2],
+        );
+
+        // Smoothstep correction terms via differences
+        let d2x = lerp2(
+            y_alpha,
+            z_alpha,
+            d100 - d000,
+            d110 - d010,
+            d101 - d001,
+            d111 - d011,
+        );
+        let d2y = lerp2(
+            z_alpha,
+            x_alpha,
+            d010 - d000,
+            d011 - d001,
+            d110 - d100,
+            d111 - d101,
+        );
+        let d2z = lerp2(
+            x_alpha,
+            y_alpha,
+            d001 - d000,
+            d101 - d100,
+            d011 - d010,
+            d111 - d110,
+        );
+
+        let x_sd = smoothstep_derivative(xr);
+        let y_sd = smoothstep_derivative(yr);
+        let z_sd = smoothstep_derivative(zr);
+
+        // Accumulate derivatives (vanilla uses +=)
+        derivative_out[0] += d1x + x_sd * d2x;
+        derivative_out[1] += d1y + y_sd * d2y;
+        derivative_out[2] += d1z + z_sd * d2z;
+
+        lerp3(
+            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+        )
+    }
 }
 
 /// Calculate the dot product of a gradient vector and the position vector.
 #[inline]
 fn grad_dot(hash: usize, x: f64, y: f64, z: f64) -> f64 {
     let g = &GRADIENT[hash & 15];
-    f64::from(g[0]) * x + f64::from(g[1]) * y + f64::from(g[2]) * z
+    g[0] * x + g[1] * y + g[2] * z
 }
 
 #[cfg(test)]
@@ -216,5 +352,66 @@ mod tests {
         #[allow(clippy::float_cmp)]
         let all_same = v1 == v2 && v2 == v3 && v3 == v4;
         assert!(!all_same, "All noise values are the same - unexpected");
+    }
+
+    #[test]
+    fn test_noise_with_derivative_matches_noise() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        // noise_with_derivative should return the same value as noise()
+        // (when no y_scale/y_fudge is used)
+        for &(x, y, z) in &[
+            (0.0, 0.0, 0.0),
+            (1.5, 2.3, 3.7),
+            (-5.2, 64.0, 100.3),
+            (0.25, 0.25, 0.25),
+        ] {
+            let v1 = noise.noise(x, y, z);
+            let mut deriv = [0.0; 3];
+            let v2 = noise.noise_with_derivative(x, y, z, &mut deriv);
+            assert!(
+                (v1 - v2).abs() < 1e-12,
+                "Value mismatch at ({x}, {y}, {z}): {v1} vs {v2}",
+            );
+        }
+    }
+
+    #[test]
+    fn test_noise_with_derivative_produces_derivatives() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        let mut deriv = [0.0; 3];
+        let _ = noise.noise_with_derivative(1.5, 2.3, 3.7, &mut deriv);
+
+        // At a non-grid point, at least some derivatives should be nonzero
+        let any_nonzero = deriv.iter().any(|&d| d.abs() > 1e-15);
+        assert!(any_nonzero, "All derivatives are zero: {deriv:?}");
+    }
+
+    #[test]
+    fn test_noise_with_derivative_accumulates() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        // First call
+        let mut deriv = [0.0; 3];
+        let _ = noise.noise_with_derivative(1.5, 2.3, 3.7, &mut deriv);
+        let first = deriv;
+
+        // Second call should accumulate (+=)
+        let _ = noise.noise_with_derivative(4.1, 5.2, 6.3, &mut deriv);
+        let mut deriv2 = [0.0; 3];
+        let _ = noise.noise_with_derivative(4.1, 5.2, 6.3, &mut deriv2);
+
+        for i in 0..3 {
+            let expected = first[i] + deriv2[i];
+            assert!(
+                (deriv[i] - expected).abs() < 1e-12,
+                "Derivative[{i}] not accumulated: {0} vs expected {expected}",
+                deriv[i],
+            );
+        }
     }
 }

@@ -1,6 +1,6 @@
 use crate::random::{
     PositionalRandom, Random, RandomSource, RandomSplitter, gaussian::MarsagliaPolarGaussian,
-    get_seed,
+    get_seed, name_hash::NameHash,
 };
 
 // Ratios used in the mix functions
@@ -15,6 +15,7 @@ pub struct Xoroshiro {
 }
 
 /// A splitter for the Xoroshiro128++ random number generator.
+#[derive(Clone)]
 pub struct XoroshiroSplitter {
     seed_lo: u64,
     seed_hi: u64,
@@ -154,18 +155,8 @@ impl PositionalRandom for XoroshiroSplitter {
         RandomSource::Xoroshiro(Xoroshiro::new(m, self.seed_hi))
     }
 
-    fn with_hash_of(&self, name: &str) -> RandomSource {
-        let bytes = md5::compute(name.as_bytes());
-        let l = u64::from_be_bytes(
-            bytes[0..8]
-                .try_into()
-                .expect("slice with 8 elements to array"),
-        );
-        let m = u64::from_be_bytes(
-            bytes[8..16]
-                .try_into()
-                .expect("slice with 8 elements to array"),
-        );
+    fn with_hash_of(&self, hash: &NameHash) -> RandomSource {
+        let [l, m] = hash.md5;
         RandomSource::Xoroshiro(Xoroshiro::new(l ^ self.seed_lo, m ^ self.seed_hi))
     }
 
@@ -426,7 +417,9 @@ mod tests {
 
         let splitter = forked.next_positional();
 
-        let RandomSource::Xoroshiro(mut rand1) = splitter.with_hash_of("TEST STRING") else {
+        let RandomSource::Xoroshiro(mut rand1) =
+            splitter.with_hash_of(&NameHash::new("TEST STRING"))
+        else {
             panic!("Expected Xoroshiro variant");
         };
         assert_eq!(rand1.next_i32(), -641435713);

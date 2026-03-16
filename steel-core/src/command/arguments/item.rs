@@ -1,6 +1,6 @@
 //! An item argument
 use steel_protocol::packets::game::{ArgumentType, SuggestionEntry, SuggestionType};
-use steel_registry::{REGISTRY, items::ItemRef};
+use steel_registry::{REGISTRY, RegistryExt, items::ItemRef};
 use steel_utils::Identifier;
 
 use crate::command::{

@@ -4,7 +4,7 @@
 //! to create more natural-looking noise with detail at multiple scales.
 
 use crate::noise::ImprovedNoise;
-use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
+use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
@@ -45,7 +45,7 @@ impl PerlinNoise {
             if amplitudes[i] != 0.0 {
                 let octave = first_octave + i as i32;
                 let name = format!("octave_{octave}");
-                let mut octave_random = splitter.with_hash_of(&name);
+                let mut octave_random = splitter.with_hash_of(&NameHash::new(&name));
                 noise_levels[i] = Some(ImprovedNoise::new(&mut octave_random));
             }
         }
@@ -81,7 +81,7 @@ impl PerlinNoise {
             if amplitudes[i] != 0.0 {
                 let octave = first_octave + i as i32;
                 let name = format!("octave_{octave}");
-                let mut octave_random = splitter.with_hash_of(&name);
+                let mut octave_random = splitter.with_hash_of(&NameHash::new(&name));
                 noise_levels[i] = Some(ImprovedNoise::new(&mut octave_random));
             }
         }
@@ -234,6 +234,19 @@ impl PerlinNoise {
         self.max_value
     }
 
+    /// Calculate the maximum "broken" value for `BlendedNoise`.
+    ///
+    /// Used by `BlendedNoise` to determine the theoretical max output.
+    /// Java reference: `PerlinNoise.maxBrokenValue(double)`
+    #[must_use]
+    pub fn max_broken_value(&self, y_scale: f64) -> f64 {
+        Self::edge_value(
+            &self.amplitudes,
+            self.lowest_freq_value_factor,
+            y_scale + 2.0,
+        )
+    }
+
     /// Get the noise generator for a specific octave (by index from highest frequency).
     ///
     /// Index 0 is the highest frequency octave.
@@ -249,9 +262,11 @@ impl PerlinNoise {
 ///
 /// This wraps the coordinate to the range `[-ROUND_OFF/2, ROUND_OFF/2]` to
 /// maintain numerical precision for coordinates far from the origin.
+///
+/// Public because `BlendedNoise` calls this directly on per-octave coordinates.
 #[inline]
 #[must_use]
-fn wrap(x: f64) -> f64 {
+pub fn wrap(x: f64) -> f64 {
     x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
 }
 
@@ -296,7 +311,7 @@ mod tests {
     fn test_create_from_random_different_seeds() {
         let mut rng = Xoroshiro::from_seed(12345);
         let splitter = rng.next_positional();
-        let mut random = splitter.with_hash_of("test_noise");
+        let mut random = splitter.with_hash_of(&NameHash::new("test_noise"));
 
         let amplitudes = [1.0, 1.0, 1.0];
         let noise1 = PerlinNoise::create_from_random(&mut random, -3, &amplitudes);
