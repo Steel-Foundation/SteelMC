@@ -62,7 +62,7 @@ impl BlockEntityStorage {
         // Remove old entity if present
         if let Some(old) = entities.remove(&pos) {
             old.lock().set_removed();
-            self.remove_from_tickers(&pos);
+            self.remove_from_tickers(pos);
         }
 
         block_entity.lock().clear_removed();
@@ -78,7 +78,7 @@ impl BlockEntityStorage {
             entity.lock().set_removed();
         }
         drop(entities);
-        self.remove_from_tickers(&pos);
+        self.remove_from_tickers(pos);
     }
 
     /// Adds a block entity and registers it for ticking if needed.
@@ -145,10 +145,10 @@ impl BlockEntityStorage {
     }
 
     /// Removes a block entity from the ticking list by position.
-    fn remove_from_tickers(&self, pos: &BlockPos) {
+    fn remove_from_tickers(&self, pos: BlockPos) {
         self.tickers
             .lock()
-            .retain(|e| &e.lock().get_block_pos() != pos);
+            .retain(|e| e.lock().get_block_pos() != pos);
     }
 }
 

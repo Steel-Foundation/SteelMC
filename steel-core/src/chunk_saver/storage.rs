@@ -15,7 +15,7 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::{REGISTRY, Registry, vanilla_biomes};
+use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier};
 
 use crate::world::structure::{
@@ -1049,6 +1049,6 @@ impl ChunkStorage {
         {
             return id as u16;
         }
-        *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u16
+        vanilla_biomes::PLAINS.id() as u16
     }
 }

@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --verbose
+      - run: cargo build --release --features stand-alone,spawn_chunk_display --verbose
       - uses: actions/upload-artifact@v4
         with:
           name: steel-${{ matrix.os }}
@@ -36,10 +36,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Generate version
+      - uses: actions/checkout@v4
+
+      - name: Get version
         id: version
         run: |
-          echo "version=alpha-$(date +%Y%m%d)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v4
         with:
@@ -58,6 +61,6 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           name: ${{ steps.version.outputs.version }}
           draft: false
-          prerelease: true
+          prerelease: false
           files: release/*
           generate_release_notes: true

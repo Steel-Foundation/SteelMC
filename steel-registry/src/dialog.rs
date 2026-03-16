@@ -1,7 +1,5 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
-use steel_utils::registry::registry_vanilla_or_custom_tag;
 use text_components::TextComponent;
 
 /// Represents a dialog defined in data packs.
@@ -75,120 +73,22 @@ impl DialogRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<DialogRef> {
-        self.dialogs_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, dialog: DialogRef) -> &usize {
-        self.dialogs_by_key
-            .get(&dialog.key)
-            .expect("Dialog not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<DialogRef> {
-        self.dialogs_by_key.get(key).and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, DialogRef)> + '_ {
         self.dialogs_by_id
             .iter()
             .enumerate()
             .map(|(id, &dialog)| (id, dialog))
     }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.dialogs_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.dialogs_by_id.is_empty()
-    }
-
-    /// Registers a tag with a list of dialog keys.
-    /// Dialog keys that don't exist in the registry are silently skipped.
-    pub fn register_tag(&mut self, tag: Identifier, dialog_keys: &[&'static str]) {
-        assert!(
-            self.allows_registering,
-            "Cannot register tags after registry has been frozen"
-        );
-
-        let identifier: Vec<Identifier> = dialog_keys
-            .iter()
-            .filter_map(|key| {
-                let ident = registry_vanilla_or_custom_tag(key);
-                // Only include if the item actually exists
-                self.by_key(&ident).map(|_| ident)
-            })
-            .collect();
-
-        self.tags.insert(tag, identifier);
-    }
-
-    /// Gives the access to all blocks to delete and add new entries
-    pub fn modify_tag(
-        &mut self,
-        tag: &Identifier,
-        f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>,
-    ) {
-        let existing = self.tags.remove(tag).unwrap_or_default();
-        let dialogs = f(existing)
-            .into_iter()
-            .filter(|dialog| {
-                let exists = self.dialogs_by_key.contains_key(dialog);
-                if !exists {
-                    tracing::error!(
-                        "dialogs {dialog} not found in registry, skipping from tag {tag}"
-                    );
-                }
-                exists
-            })
-            .collect();
-        self.tags.insert(tag.clone(), dialogs);
-    }
-
-    /// Checks if a dialog is in a given tag.
-    #[must_use]
-    pub fn is_in_tag(&self, dialog: DialogRef, tag: &Identifier) -> bool {
-        self.tags
-            .get(tag)
-            .is_some_and(|dialogs| dialogs.contains(&dialog.key))
-    }
-
-    /// Gets all dialogs in a tag.
-    #[must_use]
-    pub fn get_tag(&self, tag: &Identifier) -> Option<Vec<DialogRef>> {
-        self.tags.get(tag).map(|idents| {
-            idents
-                .iter()
-                .filter_map(|ident| self.by_key(ident))
-                .collect()
-        })
-    }
-
-    /// Iterates over all dialogs in a tag.
-    pub fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = DialogRef> + '_ {
-        self.tags
-            .get(tag)
-            .into_iter()
-            .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
-    }
-
-    /// Gets all tag keys.
-    pub fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_ {
-        self.tags.keys()
-    }
 }
 
-impl RegistryExt for DialogRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
-    }
-}
+crate::impl_registry!(
+    DialogRegistry,
+    Dialog,
+    dialogs_by_id,
+    dialogs_by_key,
+    dialogs
+);
+crate::impl_tagged_registry!(DialogRegistry, dialogs_by_key, "dialog");
 
 impl Default for DialogRegistry {
     fn default() -> Self {

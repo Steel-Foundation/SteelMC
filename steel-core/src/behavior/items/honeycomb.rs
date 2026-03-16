@@ -13,10 +13,7 @@ pub struct HoneycombBehavior;
 
 impl ItemBehavior for HoneycombBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if let Some(block_entity) = context
-            .world
-            .get_block_entity(&context.hit_result.block_pos)
-        {
+        if let Some(block_entity) = context.world.get_block_entity(context.hit_result.block_pos) {
             let mut guard = block_entity.lock();
             let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() else {
                 return InteractionResult::Pass;
@@ -31,7 +28,7 @@ impl ItemBehavior for HoneycombBehavior {
             return InteractionResult::Success;
         }
 
-        let old_block_state = context.world.get_block_state(&context.hit_result.block_pos);
+        let old_block_state = context.world.get_block_state(context.hit_result.block_pos);
 
         let Some(waxed_block) = get_waxed_from_normal_variant(old_block_state.get_block()) else {
             return InteractionResult::Pass;

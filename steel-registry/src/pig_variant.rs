@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -74,46 +73,11 @@ impl PigVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<PigVariantRef> {
-        self.pig_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, pig_variant: PigVariantRef) -> &usize {
-        self.pig_variants_by_key
-            .get(&pig_variant.key)
-            .expect("Pig variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<PigVariantRef> {
-        self.pig_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, PigVariantRef)> + '_ {
         self.pig_variants_by_id
             .iter()
             .enumerate()
             .map(|(id, &variant)| (id, variant))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.pig_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.pig_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for PigVariantRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -122,3 +86,11 @@ impl Default for PigVariantRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    PigVariantRegistry,
+    PigVariant,
+    pig_variants_by_id,
+    pig_variants_by_key,
+    pig_variants
+);

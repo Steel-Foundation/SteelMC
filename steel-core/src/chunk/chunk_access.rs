@@ -240,6 +240,47 @@ impl ChunkAccess {
         }
     }
 
+    /// Returns a read guard on the proto heightmaps.
+    ///
+    /// # Panics
+    /// Panics if the chunk is not a proto chunk.
+    pub fn proto_heightmaps(
+        &self,
+    ) -> parking_lot::RwLockReadGuard<'_, super::heightmap::ProtoHeightmaps> {
+        match self {
+            Self::Proto(proto) => proto.heightmaps.read(),
+            Self::Full(_) => panic!("proto_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Ensure worldgen heightmaps (`WorldSurfaceWg`, `OceanFloorWg`) are primed.
+    ///
+    /// Must be called after `fill_from_noise` (which uses `set_relative_block`
+    /// and therefore does not update heightmaps) and before `build_surface`.
+    ///
+    /// # Lock ordering
+    /// Acquires heightmap write lock, then section read locks. Callers must not
+    /// hold a section write lock when calling this, or a deadlock will occur.
+    ///
+    /// # Panics
+    /// Panics if the chunk is not a proto chunk.
+    pub fn prime_worldgen_heightmaps(&self) {
+        match self {
+            Self::Proto(proto) => {
+                let mut heightmaps = proto.heightmaps.write();
+                heightmaps.prime_from_sections(
+                    HeightmapType::worldgen_types(),
+                    proto.min_y(),
+                    proto.height(),
+                    &proto.sections.sections,
+                );
+            }
+            Self::Full(_) => panic!("prime_worldgen_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns a reference to the sections.
     #[must_use]
     pub const fn sections(&self) -> &Sections {

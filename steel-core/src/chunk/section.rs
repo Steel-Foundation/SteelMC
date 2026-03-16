@@ -1,7 +1,7 @@
 //! This module contains the `Sections` and `ChunkSection` structs.
 use std::{fmt::Debug, io::Cursor};
 
-use steel_registry::REGISTRY;
+use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_biomes;
 use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
@@ -91,6 +91,84 @@ impl Sections {
         })
     }
 
+    /// Reads an entire column at `(x, z)` across all sections into a caller-owned buffer.
+    ///
+    /// Holds each section's read lock once for 16 Y reads instead of acquiring
+    /// a lock per block. Indexed by `relative_y` (0 = chunk min-y).
+    /// The buffer is resized if needed and reused across calls to avoid allocation.
+    pub fn read_column_into(&self, x: usize, z: usize, buf: &mut Vec<BlockStateId>) {
+        debug_assert!(x < BlockPalette::SIZE);
+        debug_assert!(z < BlockPalette::SIZE);
+
+        let total = self.sections.len() * 16;
+        buf.clear();
+        buf.resize(total, BlockStateId(0));
+        for (i, holder) in self.sections.iter().enumerate() {
+            let guard = holder.read();
+            let base = i * 16;
+            for ly in 0..16 {
+                buf[base + ly] = guard.states.get(x, ly, z);
+            }
+        }
+    }
+
+    /// Reads all biome palette values into a flat array.
+    ///
+    /// Indexed as `[section_idx * 64 + qy * 16 + qz * 4 + qx]`.
+    /// Holds each section's read lock once for all 64 biome reads.
+    #[must_use]
+    pub fn read_all_biomes(&self) -> Box<[u16]> {
+        let total = self.sections.len() * 64;
+        let mut biomes = vec![0u16; total];
+        for (i, holder) in self.sections.iter().enumerate() {
+            let guard = holder.read();
+            let base = i * 64;
+            for qy in 0..4 {
+                for qz in 0..4 {
+                    for qx in 0..4 {
+                        biomes[base + qy * 16 + qz * 4 + qx] = guard.biomes.get(qx, qy, qz);
+                    }
+                }
+            }
+        }
+        biomes.into_boxed_slice()
+    }
+
+    /// Writes multiple blocks in one column, holding each section's write guard
+    /// across all writes to that section. Most efficient when blocks are grouped
+    /// by section (e.g. descending `relative_y` from a top-to-bottom scan).
+    pub fn write_column_blocks(&self, x: usize, z: usize, blocks: &[(usize, BlockStateId)]) {
+        debug_assert!(x < BlockPalette::SIZE);
+        debug_assert!(z < BlockPalette::SIZE);
+
+        let mut i = 0;
+        while i < blocks.len() {
+            let section_idx = blocks[i].0 / BlockPalette::SIZE;
+            let mut guard = self.sections[section_idx].write();
+            while i < blocks.len() && blocks[i].0 / BlockPalette::SIZE == section_idx {
+                let (rel_y, value) = blocks[i];
+                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                i += 1;
+            }
+        }
+    }
+
+    /// Writes a batch of blocks at arbitrary positions, holding each section's
+    /// write guard across consecutive entries in the same section. Blocks should
+    /// be roughly grouped by section index for best performance.
+    pub fn write_block_batch(&self, blocks: &[(usize, usize, usize, BlockStateId)]) {
+        let mut i = 0;
+        while i < blocks.len() {
+            let section_idx = blocks[i].1 / BlockPalette::SIZE;
+            let mut guard = self.sections[section_idx].write();
+            while i < blocks.len() && blocks[i].1 / BlockPalette::SIZE == section_idx {
+                let (x, rel_y, z, value) = blocks[i];
+                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                i += 1;
+            }
+        }
+    }
+
     /// Sets a block at a relative position in the chunk.
     pub fn set_relative_block(
         &self,
@@ -104,10 +182,6 @@ impl Sections {
 
         let idx = relative_y / BlockPalette::SIZE;
         let relative_y = relative_y % BlockPalette::SIZE;
-        //println!(
-        //    "setting block at {}, {}, {} to {}",
-        //    relative_x, relative_y, relative_z, value.0
-        //);
         self.sections[idx]
             .write()
             .states
@@ -150,7 +224,7 @@ impl ChunkSection {
     /// Creates a new empty chunk section.
     #[must_use]
     pub fn new_empty() -> Self {
-        let plains_id = *REGISTRY.biomes.get_id(&vanilla_biomes::PLAINS) as u16;
+        let plains_id = vanilla_biomes::PLAINS.id() as u16;
         Self {
             states: BlockPalette::Homogeneous(BlockStateId(0)),
             biomes: BiomePalette::Homogeneous(plains_id),

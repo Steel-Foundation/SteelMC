@@ -256,6 +256,24 @@ pub struct BlendDensity {
     pub input: Arc<DensityFunction>,
 }
 
+/// Find the topmost Y where a density function is positive.
+///
+/// Iterates from an upper bound down to a lower bound in cell-height steps,
+/// evaluating the density function at each Y level. Returns the first Y
+/// where density > 0, or the lower bound if none found.
+/// Matches vanilla's `DensityFunctions.FindTopSurface`.
+#[derive(Debug, Clone)]
+pub struct FindTopSurface {
+    /// The density function to evaluate at each Y level.
+    pub density: Arc<DensityFunction>,
+    /// The upper bound density function (evaluated flat, gives max Y to search).
+    pub upper_bound: Arc<DensityFunction>,
+    /// The lower bound Y coordinate.
+    pub lower_bound: i32,
+    /// The cell height (step size for the Y iteration).
+    pub cell_height: i32,
+}
+
 /// The type of cache/marker wrapper.
 ///
 /// Matches vanilla's `DensityFunctions.Marker.Type`.
@@ -379,6 +397,9 @@ pub enum DensityFunction {
 
     /// Cache/marker wrapper (optimization hints).
     Marker(Marker),
+
+    /// Find the topmost Y where density is positive.
+    FindTopSurface(FindTopSurface),
 }
 
 // ── Convenience constructors ────────────────────────────────────────────────
@@ -515,6 +536,13 @@ impl DensityFunction {
             Self::Marker(m) => Self::Marker(Marker {
                 kind: m.kind,
                 wrapped: Arc::new(m.wrapped.resolve_inner(registry, noises)),
+            }),
+
+            Self::FindTopSurface(fts) => Self::FindTopSurface(FindTopSurface {
+                density: Arc::new(fts.density.resolve_inner(registry, noises)),
+                upper_bound: Arc::new(fts.upper_bound.resolve_inner(registry, noises)),
+                lower_bound: fts.lower_bound,
+                cell_height: fts.cell_height,
             }),
         }
     }

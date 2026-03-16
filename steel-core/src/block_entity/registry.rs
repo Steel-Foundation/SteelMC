@@ -4,9 +4,9 @@ use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
-use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -48,7 +48,7 @@ impl BlockEntityRegistry {
 
     /// Registers a factory function for a block entity type.
     pub fn register(&mut self, block_entity_type: BlockEntityTypeRef, factory: BlockEntityFactory) {
-        let id = *REGISTRY.block_entity_types.get_id(block_entity_type);
+        let id = block_entity_type.id();
         self.entries[id].factory = Some(factory);
     }
 
@@ -63,7 +63,7 @@ impl BlockEntityRegistry {
         pos: BlockPos,
         state: BlockStateId,
     ) -> Option<SharedBlockEntity> {
-        let id = *REGISTRY.block_entity_types.get_id(block_entity_type);
+        let id = block_entity_type.id();
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
@@ -87,7 +87,7 @@ impl BlockEntityRegistry {
     /// Returns whether a factory is registered for the given type.
     #[must_use]
     pub fn has_factory(&self, block_entity_type: BlockEntityTypeRef) -> bool {
-        let id = *REGISTRY.block_entity_types.get_id(block_entity_type);
+        let id = block_entity_type.id();
         self.entries.get(id).is_some_and(|e| e.factory.is_some())
     }
 }
