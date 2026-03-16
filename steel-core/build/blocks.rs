@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
 
-use crate::common::{self, JsonArgField, JsonArgKind};
+use crate::common::{self, JsonArgField, JsonArgKind, extract_class_name};
 
 #[derive(Debug, Deserialize)]
 pub struct BlockClass {
@@ -25,26 +25,8 @@ pub struct BlockClass {
 #[derive(Debug, Clone)]
 struct DiscoveredBlock {
     struct_name: String,
-    class_names: Vec<String>,
+    class_name: String,
     fields: Vec<JsonArgField>,
-}
-
-fn extract_class_name(attr: &syn::Attribute) -> Vec<String> {
-    let syn::Meta::List(meta) = &attr.meta else {
-        return vec![];
-    };
-
-    let mut class_names = vec![];
-    meta.parse_nested_meta(|meta| {
-        if meta.path.is_ident("class") {
-            let value = meta.value()?;
-            let lit: syn::LitStr = value.parse()?;
-            class_names.push(lit.value());
-        }
-        Ok(())
-    })
-    .unwrap_or_else(|e| panic!("Failed to parse block_behavior attribute: {e}"));
-    class_names
 }
 
 fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
@@ -52,10 +34,7 @@ fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
         .attrs
         .iter()
         .find(|a| common::path_ends_with(a.path(), "block_behavior"))?;
-    let mut class_names = extract_class_name(attr);
-    if class_names.is_empty() {
-        class_names.push(s.ident.to_string());
-    }
+    let class_name = extract_class_name(attr).unwrap_or(s.ident.to_string());
 
     let mut fields = Vec::new();
     if let syn::Fields::Named(ref named) = s.fields {
@@ -68,7 +47,7 @@ fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
 
     Some(DiscoveredBlock {
         struct_name: s.ident.to_string(),
-        class_names,
+        class_name,
         fields,
     })
 }
@@ -89,9 +68,7 @@ fn scan_block_behaviors() -> HashMap<String, DiscoveredBlock> {
             if let syn::Item::Struct(s) = item
                 && let Some(block) = parse_block_behavior(s)
             {
-                for class_name in &block.class_names {
-                    discovered.insert(class_name.clone(), block.clone());
-                }
+                discovered.insert(block.class_name.clone(), block.clone());
             }
         }
     }

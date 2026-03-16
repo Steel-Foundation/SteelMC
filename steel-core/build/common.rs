@@ -10,12 +10,12 @@ use quote::quote;
 /// Checks if an attribute path ends with the given identifier.
 ///
 /// Handles both `#[item_behavior]` and `#[steel_macros::item_behavior]`.
-pub fn path_ends_with(path: &syn::Path, name: &str) -> bool {
+pub(crate) fn path_ends_with(path: &syn::Path, name: &str) -> bool {
     path.segments.last().is_some_and(|s| s.ident == name)
 }
 
 /// Converts a name to a `SCREAMING_SNAKE_CASE` identifier.
-pub fn to_const_ident(name: &str) -> Ident {
+pub(crate) fn to_const_ident(name: &str) -> Ident {
     Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
@@ -23,7 +23,7 @@ pub fn to_const_ident(name: &str) -> Ident {
 
 /// How a `#[json_arg]` field maps JSON data to Rust tokens.
 #[derive(Debug, Clone)]
-pub enum JsonArgKind {
+pub(crate) enum JsonArgKind {
     /// Raw JSON value → token literal (handles numbers, strings, bools)
     Value,
     /// JSON string → `module::IDENT`. Stores the module name.
@@ -34,7 +34,7 @@ pub enum JsonArgKind {
 
 /// A parsed `#[json_arg(...)]` field.
 #[derive(Debug, Clone)]
-pub struct JsonArgField {
+pub(crate) struct JsonArgField {
     pub field_name: String,
     pub kind: JsonArgKind,
     pub json_name: Option<String>,
@@ -42,7 +42,7 @@ pub struct JsonArgField {
 }
 
 /// Parses a `#[json_arg(...)]` attribute from a `syn::Field`.
-pub fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
+pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     let attr = field.attrs.iter().find(|a| a.path().is_ident("json_arg"))?;
     let field_name = field.ident.as_ref()?.to_string();
 
@@ -87,7 +87,7 @@ pub fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
 // --- JSON helpers ---
 
 /// Gets a string value from a JSON extra map.
-pub fn get_json_str<'a>(
+pub(crate) fn get_json_str<'a>(
     extra: &'a serde_json::Map<String, serde_json::Value>,
     entry_name: &str,
     key: &str,
@@ -100,7 +100,7 @@ pub fn get_json_str<'a>(
 }
 
 /// Gets a raw JSON value from a JSON extra map.
-pub fn get_json_value<'a>(
+pub(crate) fn get_json_value<'a>(
     extra: &'a serde_json::Map<String, serde_json::Value>,
     entry_name: &str,
     key: &str,
@@ -111,7 +111,11 @@ pub fn get_json_value<'a>(
 }
 
 /// Converts a JSON value to a token literal.
-pub fn json_value_to_tokens(value: &serde_json::Value, entry_name: &str, key: &str) -> TokenStream {
+pub(crate) fn json_value_to_tokens(
+    value: &serde_json::Value,
+    entry_name: &str,
+    key: &str,
+) -> TokenStream {
     match value {
         serde_json::Value::Number(n) => {
             let n = n.as_i64().unwrap_or_else(|| {
@@ -133,7 +137,7 @@ pub fn json_value_to_tokens(value: &serde_json::Value, entry_name: &str, key: &s
 /// Registry access modes:
 /// - `vanilla_items` → `vanilla_items::ITEMS.lowercase_field` (struct field access)
 /// - Other registries → `module::SCREAMING_SNAKE` (module constant access)
-pub fn generate_arg(
+pub(crate) fn generate_arg(
     field: &JsonArgField,
     extra: &serde_json::Map<String, serde_json::Value>,
     entry_name: &str,
@@ -169,4 +173,21 @@ pub fn generate_arg(
     } else {
         tokens
     }
+}
+pub(crate) fn extract_class_name(attr: &syn::Attribute) -> Option<String> {
+    let syn::Meta::List(meta) = &attr.meta else {
+        return None;
+    };
+
+    let mut class_name = String::new();
+    meta.parse_nested_meta(|meta| {
+        if meta.path.is_ident("class") {
+            let value = meta.value()?;
+            let lit: syn::LitStr = value.parse()?;
+            class_name = lit.value();
+        }
+        Ok(())
+    })
+    .unwrap_or_else(|e| panic!("Failed to parse block_behavior attribute: {e}"));
+    Some(class_name)
 }

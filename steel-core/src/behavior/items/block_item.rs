@@ -1,5 +1,6 @@
 //! Block item behavior implementation.
 
+use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -10,7 +11,7 @@ use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContex
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 
 /// Behavior for items that place blocks.
-#[steel_macros::item_behavior(class = "BlockItem", class = "DoubleHighBlockItem")]
+#[item_behavior(class = "BlockItem")]
 pub struct BlockItemBehavior {
     /// The block this item places.
     #[json_arg(vanilla_blocks, json = "block")]

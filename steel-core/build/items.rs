@@ -3,14 +3,13 @@
 //! Scans `src/behavior/items/**/*.rs` for structs annotated with `#[item_behavior]`,
 //! cross-references with `classes.json`, and generates `register_item_behaviors()`.
 
+use crate::common::{self, JsonArgField, JsonArgKind};
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
-
-use crate::common::{self, JsonArgField, JsonArgKind};
 
 #[derive(Debug, Deserialize)]
 pub struct ItemClass {
@@ -49,7 +48,7 @@ impl WhenCondition {
 struct DiscoveredItem {
     struct_name: String,
     /// All class names this struct handles (can be multiple).
-    class_names: Vec<String>,
+    class_name: String,
     fields: Vec<JsonArgField>,
     when_conditions: Vec<WhenCondition>,
 }
@@ -62,19 +61,19 @@ struct DiscoveredItem {
 fn extract_item_behavior_attr(
     attr: &syn::Attribute,
     struct_name: &str,
-) -> (Vec<String>, Vec<WhenCondition>) {
+) -> (String, Vec<WhenCondition>) {
     let syn::Meta::List(meta) = &attr.meta else {
-        return (Vec::new(), Vec::new());
+        return (String::new(), Vec::new());
     };
 
-    let mut class_names = Vec::new();
+    let mut class_name = String::new();
     let mut when_conditions = Vec::new();
 
     meta.parse_nested_meta(|meta| {
         if meta.path.is_ident("class") {
             let value = meta.value()?;
             let lit: syn::LitStr = value.parse()?;
-            class_names.push(lit.value());
+            class_name = lit.value();
         } else if meta.path.is_ident("when") {
             let content;
             syn::parenthesized!(content in meta.input);
@@ -96,11 +95,11 @@ fn extract_item_behavior_attr(
         Ok(())
     })
     .unwrap_or_else(|e| panic!("Failed to parse item_behavior attribute on `{struct_name}`: {e}"));
-    if class_names.is_empty() {
-        class_names.push(struct_name.to_string());
+    if class_name.is_empty() {
+        class_name = struct_name.to_string();
     }
 
-    (class_names, when_conditions)
+    (class_name, when_conditions)
 }
 
 fn parse_item_behavior(s: &syn::ItemStruct) -> Option<DiscoveredItem> {
@@ -110,10 +109,10 @@ fn parse_item_behavior(s: &syn::ItemStruct) -> Option<DiscoveredItem> {
         .find(|a| common::path_ends_with(a.path(), "item_behavior"))?;
 
     let struct_name = s.ident.to_string();
-    let (class_names, when_conditions) = extract_item_behavior_attr(attr, &struct_name);
+    let (class_name, when_conditions) = extract_item_behavior_attr(attr, &struct_name);
 
     assert!(
-        !class_names.is_empty(),
+        !class_name.is_empty(),
         "item_behavior on `{struct_name}` must specify at least one `class = \"...\"`"
     );
 
@@ -128,7 +127,7 @@ fn parse_item_behavior(s: &syn::ItemStruct) -> Option<DiscoveredItem> {
 
     Some(DiscoveredItem {
         struct_name,
-        class_names,
+        class_name,
         fields,
         when_conditions,
     })
@@ -158,14 +157,10 @@ fn scan_item_behaviors() -> HashMap<String, Vec<DiscoveredItem>> {
                 continue;
             };
 
-            // For multi-class items (e.g., BlockItem + DoubleHighBlockItem),
-            // store a copy under each class name.
-            for class_name in &info.class_names {
-                discovered
-                    .entry(class_name.clone())
-                    .or_default()
-                    .push(info.clone());
-            }
+            discovered
+                .entry(info.class_name.clone())
+                .or_default()
+                .push(info.clone());
         }
     }
 
