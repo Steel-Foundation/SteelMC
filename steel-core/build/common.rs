@@ -236,7 +236,9 @@ pub(crate) fn scan_object_behaviors(
     let pattern = format!("{manifest_dir}/src/behavior/{folder}/**/*.rs");
     let mut discovered: HashMap<String, DiscoveredObject> = HashMap::new();
 
-    for entry in glob::glob(&pattern).expect(&format!("Failed to glob {folder} behavior sources")) {
+    for entry in
+        glob::glob(&pattern).unwrap_or_else(|_| panic!("Failed to glob {folder} behavior sources"))
+    {
         let path = entry.expect("Failed to read glob entry");
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
