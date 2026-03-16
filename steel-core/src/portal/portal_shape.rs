@@ -67,7 +67,7 @@ fn is_portal_or_empty_interior(
     config: &PortalFrameConfig,
 ) -> bool {
     let block = world.get_block_state(pos).get_block();
-    block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE || block == config.portal
+    block == config.portal
 }
 
 /// Interior validator function signature.
