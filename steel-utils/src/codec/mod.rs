@@ -1,6 +1,8 @@
 //! This module contains various codecs for reading and writing data.
 /// A module for a bit set.
 pub mod bit_set;
+/// A module for codec impl for glam crate.
+pub mod glam;
 /// A module for an Or type that can be one of two types.
 pub mod or;
 /// A module for a variable-length integer.

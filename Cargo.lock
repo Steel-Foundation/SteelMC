@@ -984,6 +984,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
+name = "glam"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2824,6 +2830,7 @@ dependencies = [
  "enum_dispatch",
  "flate2",
  "futures",
+ "glam",
  "glob",
  "heck",
  "log",
@@ -2914,6 +2921,7 @@ dependencies = [
  "aes",
  "cfb8",
  "flate2",
+ "glam",
  "log",
  "replace_with",
  "rustc-hash 2.1.1",
@@ -2933,6 +2941,7 @@ dependencies = [
 name = "steel-registry"
 version = "0.3.0+mc1.21.11"
 dependencies = [
+ "glam",
  "heck",
  "log",
  "proc-macro2",
@@ -2956,6 +2965,7 @@ dependencies = [
  "crc32c",
  "criterion",
  "enum_dispatch",
+ "glam",
  "heck",
  "md5",
  "num-traits",

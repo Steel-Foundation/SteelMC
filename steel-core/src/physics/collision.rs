@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use glam::{DVec3, IVec3};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
-use steel_utils::math::Vector3;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::physics::shapes::translate_shape;
@@ -33,7 +33,7 @@ pub trait CollisionWorld {
     ///
     /// Matches vanilla's logic in `ServerGamePacketListenerImpl.handleMovePlayer()` where
     /// it checks blocks at the old Y position to detect edge cases.
-    fn get_pre_move_collisions(&self, aabb: &AABBd, old_bottom_center: Vector3<f64>) -> Vec<AABBd>;
+    fn get_pre_move_collisions(&self, aabb: &AABBd, old_bottom_center: DVec3) -> Vec<AABBd>;
 }
 
 /// Implements `CollisionWorld` for the Steel World struct.
@@ -85,7 +85,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                     }
 
                     // Translate each AABB in the shape to world coordinates
-                    let block_pos_vec = Vector3::new(x, y, z);
+                    let block_pos_vec = IVec3::new(x, y, z);
                     for shape_aabb in collision_shape {
                         let world_aabb = translate_shape(shape_aabb, block_pos_vec);
 
@@ -101,7 +101,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         collisions
     }
 
-    fn get_pre_move_collisions(&self, aabb: &AABBd, old_bottom_center: Vector3<f64>) -> Vec<AABBd> {
+    fn get_pre_move_collisions(&self, aabb: &AABBd, old_bottom_center: DVec3) -> Vec<AABBd> {
         let mut collisions = Vec::new();
 
         // Check blocks at the old Y position (for sneak edge detection)
@@ -126,7 +126,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                     continue;
                 }
 
-                let block_pos_vec = Vector3::new(x, check_y - 1, z);
+                let block_pos_vec = IVec3::new(x, check_y - 1, z);
                 for shape_aabb in collision_shape {
                     let world_aabb = translate_shape(shape_aabb, block_pos_vec);
                     if intersects_aabb(aabb, &world_aabb) {

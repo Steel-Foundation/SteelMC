@@ -55,7 +55,7 @@ pub enum RaytraceAction {
     ImmediateHit,
 }
 
-use steel_utils::math::Vector3;
+use glam::DVec3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
 
@@ -1277,9 +1277,9 @@ impl World {
             let entity_id = next_entity_id();
             let entity = Arc::new(ItemEntity::with_item_and_velocity(
                 entity_id,
-                Vector3::new(x, y, z),
+                DVec3::new(x, y, z),
                 split_stack,
-                Vector3::new(vx, vy, vz),
+                DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
             ));
             entity.set_default_pickup_delay();
@@ -1291,8 +1291,8 @@ impl World {
     pub fn ray_outline_check(
         &self,
         block_pos: BlockPos,
-        from: Vector3<f64>,
-        to: Vector3<f64>,
+        from: DVec3,
+        to: DVec3,
     ) -> (bool, Option<Direction>) {
         let state = self.get_block_state(block_pos);
         let bounding_boxes = state.get_outline_shape();
@@ -1306,23 +1306,21 @@ impl World {
         let mut closest: Option<(f64, Direction)> = None;
 
         for shape in bounding_boxes {
-            let block_vec = Vector3::new(
+            let block_vec = DVec3::new(
                 f64::from(block_pos.x()),
                 f64::from(block_pos.y()),
                 f64::from(block_pos.z()),
             );
-            let world_min = Vector3::new(
+            let world_min = DVec3::new(
                 f64::from(shape.min_x),
                 f64::from(shape.min_y),
                 f64::from(shape.min_z),
-            )
-            .add(&block_vec);
-            let world_max = Vector3::new(
+            ) + block_vec;
+            let world_max = DVec3::new(
                 f64::from(shape.max_x),
                 f64::from(shape.max_y),
                 f64::from(shape.max_z),
-            )
-            .add(&block_vec);
+            ) + block_vec;
 
             if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
                 && closest.is_none_or(|(best_t, _)| hit.0 < best_t)
@@ -1346,10 +1344,10 @@ impl World {
     /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
     /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behavior.
     fn intersects_aabb_with_t(
-        start: Vector3<f64>,
-        end: Vector3<f64>,
-        min: Vector3<f64>,
-        max: Vector3<f64>,
+        start: DVec3,
+        end: DVec3,
+        min: DVec3,
+        max: DVec3,
     ) -> Option<(f64, Direction)> {
         let dir = end - start;
 
@@ -1418,8 +1416,8 @@ impl World {
     /// Adapted from Pumpkin project.
     pub fn raytrace<F>(
         &self,
-        start_pos: Vector3<f64>,
-        end_pos: Vector3<f64>,
+        start_pos: DVec3,
+        end_pos: DVec3,
         hit_check: F,
     ) -> (Option<BlockPos>, Option<Direction>)
     where
@@ -1430,8 +1428,8 @@ impl World {
         }
 
         let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(&start_pos, adjust);
-        let from = start_pos.lerp(&end_pos, adjust);
+        let to = end_pos.lerp(start_pos, adjust);
+        let from = start_pos.lerp(end_pos, adjust);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -1450,11 +1448,11 @@ impl World {
             RaytraceAction::Pass => {}
         }
 
-        let difference = to.sub(&from);
+        let difference = to - from;
 
-        let step = difference.sign();
+        let step = difference.signum().as_ivec3();
 
-        let delta = Vector3::new(
+        let delta = DVec3::new(
             if step.x == 0 {
                 f64::MAX
             } else {
@@ -1472,7 +1470,7 @@ impl World {
             },
         );
 
-        let mut next = Vector3::new(
+        let mut next = DVec3::new(
             delta.x
                 * (if step.x > 0 {
                     1.0 - (from.x - from.x.floor())
@@ -1865,16 +1863,12 @@ impl World {
     /// The item will have a default pickup delay.
     ///
     /// Returns `None` if the item stack is empty.
-    pub fn spawn_item(
-        self: &Arc<Self>,
-        pos: Vector3<f64>,
-        item: ItemStack,
-    ) -> Option<Arc<ItemEntity>> {
+    pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
         // Default ItemEntity velocity: random horizontal scatter + upward pop
         let vx = rand::random::<f64>() * 0.2 - 0.1;
         let vy = 0.2;
         let vz = rand::random::<f64>() * 0.2 - 0.1;
-        self.spawn_item_with_velocity(pos, item, Vector3::new(vx, vy, vz))
+        self.spawn_item_with_velocity(pos, item, DVec3::new(vx, vy, vz))
     }
 
     /// Spawns an item entity at the given position with initial velocity.
@@ -1882,9 +1876,9 @@ impl World {
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item_with_velocity(
         self: &Arc<Self>,
-        pos: Vector3<f64>,
+        pos: DVec3,
         item: ItemStack,
-        velocity: Vector3<f64>,
+        velocity: DVec3,
     ) -> Option<Arc<ItemEntity>> {
         use crate::entity::next_entity_id;
 
@@ -1935,7 +1929,7 @@ impl World {
         let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
         let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
 
-        self.spawn_item(Vector3::new(x, y, z), item)
+        self.spawn_item(DVec3::new(x, y, z), item)
     }
 
     /// Drops an item from a block face with directional velocity.
@@ -2001,9 +1995,9 @@ impl World {
         };
 
         self.spawn_item_with_velocity(
-            Vector3::new(x, y, z),
+            DVec3::new(x, y, z),
             item,
-            Vector3::new(delta_x, delta_y, delta_z),
+            DVec3::new(delta_x, delta_y, delta_z),
         )
     }
 

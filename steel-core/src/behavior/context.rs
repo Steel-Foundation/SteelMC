@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
-use steel_utils::math::Vector3;
 use steel_utils::types::InteractionHand;
 
 use crate::fluid::FluidStateExt;
@@ -43,7 +43,7 @@ pub struct BlockPlaceContext<'a> {
     /// The face of the block that was clicked.
     pub clicked_face: Direction,
     /// The exact location where the click occurred.
-    pub click_location: Vector3<f64>,
+    pub click_location: DVec3,
     /// Whether the click was inside the block.
     pub inside: bool,
     /// The position where the block will be placed.

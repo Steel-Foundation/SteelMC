@@ -1,6 +1,6 @@
 //! A vector2 argument.
+use glam::DVec2;
 use steel_protocol::packets::game::{ArgumentType, SuggestionType};
-use steel_utils::math::Vector2;
 
 use crate::command::arguments::{CommandArgument, Helper};
 use crate::command::context::CommandContext;
@@ -9,7 +9,7 @@ use crate::command::context::CommandContext;
 pub struct Vector2Argument;
 
 impl CommandArgument for Vector2Argument {
-    type Output = Vector2<f64>;
+    type Output = DVec2;
 
     fn parse<'a>(
         &self,
@@ -19,7 +19,7 @@ impl CommandArgument for Vector2Argument {
         let x = Helper::parse_relative_coordinate::<false>(arg.first()?, Some(context.position.x))?;
         let z = Helper::parse_relative_coordinate::<false>(arg.get(1)?, Some(context.position.z))?;
 
-        Some((&arg[2..], Vector2::new(x, z)))
+        Some((&arg[2..], DVec2::new(x, z)))
     }
 
     fn usage(&self) -> (ArgumentType, Option<SuggestionType>) {
