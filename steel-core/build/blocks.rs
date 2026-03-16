@@ -51,13 +51,11 @@ fn parse_block_behavior(s: &syn::ItemStruct) -> Option<DiscoveredBlock> {
     let attr = s
         .attrs
         .iter()
-        .find(|a| a.path().is_ident("block_behavior"))?;
+        .find(|a| common::path_ends_with(a.path(), "block_behavior"))?;
     let mut class_names = extract_class_name(attr);
-    class_names = if class_names.is_empty() {
-        vec![s.ident.to_string()]
-    } else {
-        class_names
-    };
+    if class_names.is_empty() {
+        class_names.push(s.ident.to_string());
+    }
 
     let mut fields = Vec::new();
     if let syn::Fields::Named(ref named) = s.fields {
@@ -114,9 +112,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         let Some(info) = discovered.get(&block.class) else {
             continue;
         };
-        for cn in &info.class_names {
-            matched_classes.insert(cn);
-        }
+        matched_classes.insert(&block.class);
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let const_ident = common::to_const_ident(&block.name);

@@ -23,7 +23,7 @@ pub struct ItemClass {
 // --- Source scanning ---
 
 /// A `when` condition parsed from `#[item_behavior(when(field = "value"))]`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct WhenCondition {
     field: String,
     value: String,
@@ -45,7 +45,7 @@ impl WhenCondition {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DiscoveredItem {
     struct_name: String,
     /// All class names this struct handles (can be multiple).
@@ -61,7 +61,7 @@ struct DiscoveredItem {
 /// - `when(field = "value")` or `when(field = "!value")` for conditional matching
 fn extract_item_behavior_attr(
     attr: &syn::Attribute,
-    struct_name: &String,
+    struct_name: &str,
 ) -> (Vec<String>, Vec<WhenCondition>) {
     let syn::Meta::List(meta) = &attr.meta else {
         return (Vec::new(), Vec::new());
@@ -96,27 +96,18 @@ fn extract_item_behavior_attr(
         Ok(())
     })
     .unwrap_or_else(|e| panic!("Failed to parse item_behavior attribute on `{struct_name}`: {e}"));
-    class_names = if class_names.is_empty() {
-        vec![struct_name.clone()]
-    } else {
-        class_names
-    };
+    if class_names.is_empty() {
+        class_names.push(struct_name.to_string());
+    }
 
     (class_names, when_conditions)
-}
-
-/// Checks if an attribute path ends with the given identifier.
-///
-/// Handles both `#[item_behavior]` and `#[steel_macros::item_behavior]`.
-fn path_ends_with(path: &syn::Path, name: &str) -> bool {
-    path.segments.last().is_some_and(|s| s.ident == name)
 }
 
 fn parse_item_behavior(s: &syn::ItemStruct) -> Option<DiscoveredItem> {
     let attr = s
         .attrs
         .iter()
-        .find(|a| path_ends_with(a.path(), "item_behavior"))?;
+        .find(|a| common::path_ends_with(a.path(), "item_behavior"))?;
 
     let struct_name = s.ident.to_string();
     let (class_names, when_conditions) = extract_item_behavior_attr(attr, &struct_name);
@@ -173,20 +164,7 @@ fn scan_item_behaviors() -> HashMap<String, Vec<DiscoveredItem>> {
                 discovered
                     .entry(class_name.clone())
                     .or_default()
-                    .push(DiscoveredItem {
-                        struct_name: info.struct_name.clone(),
-                        class_names: info.class_names.clone(),
-                        fields: info.fields.clone(),
-                        when_conditions: info
-                            .when_conditions
-                            .iter()
-                            .map(|w| WhenCondition {
-                                field: w.field.clone(),
-                                value: w.value.clone(),
-                                negated: w.negated,
-                            })
-                            .collect(),
-                    });
+                    .push(info.clone());
             }
         }
     }
@@ -202,7 +180,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut type_imports = BTreeSet::new();
     let mut enum_imports = BTreeSet::new();
     let mut registrations = Vec::new();
-    let mut matched_classes: BTreeSet<String> = BTreeSet::new();
+    let mut matched_classes = BTreeSet::new();
 
     for item in items {
         let Some(candidates) = discovered.get(&item.class) else {
@@ -217,7 +195,7 @@ pub fn build(items: &[ItemClass]) -> String {
             continue;
         };
 
-        matched_classes.insert(item.class.clone());
+        matched_classes.insert(&item.class);
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
         let item_field = Ident::new(&item.name, Span::call_site());
