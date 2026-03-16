@@ -401,8 +401,8 @@ pub fn assemble(
     let bottom_y = if let Some(ref _heightmap) = config.project_start_to_heightmap {
         let center_bx = (center_bb.min_x + center_bb.max_x) / 2;
         let center_bz = (center_bb.min_z + center_bb.max_z) / 2;
-        // Vanilla: start_y + getFirstFreeHeight(...) - 1
-        let surface = get_height(center_bx, center_bz) - 1;
+        // Vanilla: start_y + getFirstFreeHeight(...)
+        let surface = get_height(center_bx, center_bz);
         start_y + surface
     } else {
         adjusted_y
@@ -420,7 +420,8 @@ pub fn assemble(
 
     // Dimension padding check
     let padding = &config.dimension_padding;
-    if center_bb.min_y < min_y + padding.bottom || center_bb.max_y > max_y - padding.top {
+    // Vanilla uses getMaxY() = minY + height - 1 (inclusive), so max_y - 1 here
+    if center_bb.min_y < min_y + padding.bottom || center_bb.max_y > max_y - 1 - padding.top {
         return None;
     }
 
@@ -644,24 +645,44 @@ fn try_placing_children(
                     candidate_element, templates, candidate_rotation, rng,
                 );
 
-                let candidate_bb_at_origin = element_bounding_box(
+                let _candidate_bb_at_origin = element_bounding_box(
                     candidate_element, templates, 0, 0, 0, candidate_rotation,
                 );
 
                 // Expansion hack: compute max child pool size for Y expansion
                 let expand_to = if config.use_expansion_hack {
-                    if let Some(ref hack_box) = candidate_bb_at_origin {
+                    // Vanilla uses pivot (sizeX-1, sizeZ-1) for BOTH getBoundingBox
+                    // AND jigsaw position rotation. Compute both with vanilla's pivot.
+                    let hack_data = element_location(candidate_element)
+                        .and_then(|loc| templates.get(loc));
+                    if let Some(template_data) = hack_data {
+                        let pivot_x = template_data.size[0] - 1;
+                        let pivot_z = template_data.size[2] - 1;
+                        // Vanilla: rotatedPivot = transform(ZERO, rotation, size-1)
+                        // Then BB = fromCorners(rotatedPivot, rotatedPivot + transformedSize - 1)
+                        let (rpx, rpy, rpz) = candidate_rotation.transform_pos(0, 0, 0, pivot_x, pivot_z);
+                        let (tsx, tsy, tsz) = candidate_rotation.rotate_size(
+                            template_data.size[0], template_data.size[1], template_data.size[2],
+                        );
+                        let hack_box = BoundingBox::new(
+                            rpx, rpy, rpz,
+                            rpx + tsx - 1, rpy + tsy - 1, rpz + tsz - 1,
+                        );
                         if hack_box.max_y - hack_box.min_y + 1 <= 16 {
-                            candidate_jigsaws.iter().map(|cj| {
-                                let front = cj.orientation.front_direction();
+                            template_data.jigsaws.iter().map(|j| {
+                                // Transform jigsaw position with vanilla pivot
+                                let (rx, ry, rz) = candidate_rotation.transform_pos(
+                                    j.pos[0], j.pos[1], j.pos[2], pivot_x, pivot_z,
+                                );
+                                let front = j.orientation.rotate(candidate_rotation).front_direction();
                                 let (fdx2, fdy2, fdz2) = front.offset();
-                                let front_pos = (cj.pos.0 + fdx2, cj.pos.1 + fdy2, cj.pos.2 + fdz2);
+                                let front_pos = (rx + fdx2, ry + fdy2, rz + fdz2);
                                 if !hack_box.contains_xyz(front_pos.0, front_pos.1, front_pos.2) {
                                     return 0;
                                 }
                                 let child_pool_key = alias_map
-                                    .get(&cj.pool)
-                                    .unwrap_or(&cj.pool);
+                                    .get(&j.pool)
+                                    .unwrap_or(&j.pool);
                                 let child_pool_size = pools.get(child_pool_key)
                                     .map(|p| pool_max_y_size(p, templates))
                                     .unwrap_or(0);

@@ -221,9 +221,26 @@ impl<N: DimensionNoises> Aquifer<N> {
     /// `cache` should be a pre-initialized column cache for this chunk
     /// (avoids a redundant `init_grid` call).
     #[must_use]
+    /// Create an aquifer for a full 16x16 chunk.
     pub fn new(
         chunk_min_x: i32,
         chunk_min_z: i32,
+        min_block_y: i32,
+        y_block_size: i32,
+        splitter: &RandomSplitter,
+        noises: &N,
+        cache: N::ColumnCache,
+    ) -> Self {
+        Self::new_sized(chunk_min_x, chunk_min_z, 16, 16, min_block_y, y_block_size, splitter, noises, cache)
+    }
+
+    /// Create an aquifer with custom XZ extent (in blocks).
+    /// Vanilla's iterateNoiseColumn uses width=cellWidth (4) for single-column queries.
+    pub fn new_sized(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        width_x: i32,
+        width_z: i32,
         min_block_y: i32,
         y_block_size: i32,
         splitter: &RandomSplitter,
@@ -240,8 +257,6 @@ impl<N: DimensionNoises> Aquifer<N> {
         let mut aquifer_rng = splitter.with_hash_of(&AQUIFER_HASH);
         let splitter = aquifer_rng.next_positional();
 
-        // When aquifers are disabled (nether/end), compute_substance uses only
-        // the global fluid picker — skip grid allocation and surface sampling.
         if !N::Settings::AQUIFERS_ENABLED {
             return Self {
                 location_cache: Vec::new(),
@@ -261,8 +276,8 @@ impl<N: DimensionNoises> Aquifer<N> {
             };
         }
 
-        let chunk_max_x = chunk_min_x + 15;
-        let chunk_max_z = chunk_min_z + 15;
+        let chunk_max_x = chunk_min_x + width_x - 1;
+        let chunk_max_z = chunk_min_z + width_z - 1;
 
         let min_grid_x = grid_x(chunk_min_x + SAMPLE_OFFSET_X);
         let max_grid_x = grid_x(chunk_max_x + SAMPLE_OFFSET_X) + 1;

@@ -183,6 +183,87 @@ fn terrain_adapt_inflate(id: &Identifier) -> i32 {
     }
 }
 
+/// Matches vanilla's `iterateNoiseColumn` exactly: iterates by Y cells,
+/// computing density at 8 cell corners and interpolating within each cell.
+/// Returns getBaseHeight (= getFirstFreeHeight = first Y above surface).
+/// Matches vanilla's `iterateNoiseColumn` with an external aquifer.
+fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    aquifer: &mut Aquifer<N>,
+    block_x: i32,
+    block_z: i32,
+    ocean_floor: bool,
+) -> i32 {
+    let cell_w = N::Settings::CELL_WIDTH;
+    let cell_h = N::Settings::CELL_HEIGHT;
+    let min_y = N::Settings::MIN_Y;
+    let height = N::Settings::HEIGHT;
+    let cell_min_y = min_y.div_euclid(cell_h);
+    let cell_count_y = height.div_euclid(cell_h);
+
+    let cell_x = block_x.div_euclid(cell_w);
+    let cell_z = block_z.div_euclid(cell_w);
+    let factor_x = f64::from(block_x.rem_euclid(cell_w)) / f64::from(cell_w);
+    let factor_z = f64::from(block_z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let x0 = cell_x * cell_w;
+    let x1 = x0 + cell_w;
+    let z0 = cell_z * cell_w;
+    let z1 = z0 + cell_w;
+
+    macro_rules! eval {
+        ($ex:expr, $ey:expr, $ez:expr) => {{
+            cache.ensure($ex, $ez, noises);
+            noises.router_final_density(&mut *cache, $ex, $ey, $ez)
+        }};
+    }
+
+    // Iterate Y cells from top to bottom (matching vanilla's loop)
+    for cell_y_idx in (0..cell_count_y).rev() {
+        let y0 = (cell_min_y + cell_y_idx) * cell_h;
+        let y1 = y0 + cell_h;
+
+        // Evaluate 8 cell corners
+        let d000 = eval!(x0, y0, z0);
+        let d100 = eval!(x1, y0, z0);
+        let d010 = eval!(x0, y1, z0);
+        let d110 = eval!(x1, y1, z0);
+        let d001 = eval!(x0, y0, z1);
+        let d101 = eval!(x1, y0, z1);
+        let d011 = eval!(x0, y1, z1);
+        let d111 = eval!(x1, y1, z1);
+
+        use steel_utils::math::noise_math::lerp;
+
+        // Iterate Y within cell from top to bottom
+        for y_in_cell in (0..cell_h).rev() {
+            let pos_y = (cell_min_y + cell_y_idx) * cell_h + y_in_cell;
+            let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
+
+            // Trilinear interpolation (vanilla order: Y, X, Z)
+            let d00 = lerp(factor_y, d000, d010);
+            let d10 = lerp(factor_y, d100, d110);
+            let d01 = lerp(factor_y, d001, d011);
+            let d11 = lerp(factor_y, d101, d111);
+            let d0 = lerp(factor_x, d00, d10);
+            let d1 = lerp(factor_x, d01, d11);
+            let density = lerp(factor_z, d0, d1);
+
+            // Use aquifer to determine block state (matches vanilla's getInterpolatedState)
+            let opaque = match aquifer.compute_substance(noises, block_x, pos_y, block_z, density) {
+                crate::chunk::aquifer::AquiferResult::Solid => true,
+                crate::chunk::aquifer::AquiferResult::Fluid(_) => !ocean_floor,
+                crate::chunk::aquifer::AquiferResult::Air => false,
+            };
+
+            if opaque {
+                return pos_y + 1;
+            }
+        }
+    }
+    min_y
+}
+
 fn interpolated_density<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
     noises: &N,
@@ -990,7 +1071,29 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         assembly_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
 
                         let mut get_height_fn = |x: i32, z: i32| -> i32 {
-                            base_height(&mut height_cache, &self.noises, &mut aquifer, x, z, false)
+                            // Vanilla creates a fresh NoiseChunk(1) per query. The aquifer
+                            // is created at the CHUNK position (16-block aligned), not the
+                            // cell position — see NoiseChunk line 137-139:
+                            //   chunkX = SectionPos.blockToSectionCoord(chunkMinBlockX)
+                            //   Aquifer.create(this, new ChunkPos(chunkX, chunkZ), ...)
+                            // Vanilla: NoiseChunk at cell-aligned (r, s), aquifer at ChunkPos
+                            let cw = N::Settings::CELL_WIDTH;
+                            let cell_x = x.div_euclid(cw) * cw; // firstBlockX
+                            let cell_z = z.div_euclid(cw) * cw; // firstBlockZ
+                            let aq_chunk_x = (cell_x >> 4) * 16; // ChunkPos from cell pos
+                            let aq_chunk_z = (cell_z >> 4) * 16;
+                            let aq_cache = N::ColumnCache::default();
+                            let mut fresh_aq = Aquifer::<N>::new(
+                                aq_chunk_x, aq_chunk_z,
+                                N::Settings::MIN_Y, N::Settings::HEIGHT,
+                                &self.splitter, &self.noises, aq_cache,
+                            );
+                            // No init_grid — use on-the-fly computation like vanilla's
+                            // per-column NoiseChunk FlatCache evaluation
+                            let mut fresh_cache = N::ColumnCache::default();
+                            iterate_noise_column_with_aquifer::<N>(
+                                &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
+                            )
                         };
 
                         let result = crate::world::structure::jigsaw::assemble(
