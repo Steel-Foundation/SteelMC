@@ -11,15 +11,14 @@ use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContex
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 
 /// Behavior for items that place blocks.
-#[item_behavior(class = "BlockItem")]
 #[item_behavior(class = "DoubleHighBlockItem")]
-pub struct BlockItemBehavior {
+pub struct DoubleHighBlockItemBehavior {
     /// The block this item places.
     #[json_arg(vanilla_blocks, json = "block")]
     pub block: BlockRef,
 }
 
-impl BlockItemBehavior {
+impl DoubleHighBlockItemBehavior {
     /// Creates a new block item behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -27,7 +26,7 @@ impl BlockItemBehavior {
     }
 }
 
-impl ItemBehavior for BlockItemBehavior {
+impl ItemBehavior for DoubleHighBlockItemBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let clicked_pos = context.hit_result.block_pos;
         let clicked_state = context.world.get_block_state(clicked_pos);

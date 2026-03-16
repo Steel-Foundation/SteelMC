@@ -54,10 +54,7 @@ pub use context::{
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviors::register_item_behaviors;
-pub use items::{
-    BlockItemBehavior, DefaultItemBehavior, EmptyBucketBehavior, EnderEyeBehavior,
-    FilledBucketBehavior,
-};
+pub use items::{BlockItemBehavior, BucketItemBehavior, DefaultItemBehavior, EnderEyeBehavior};
 use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::block_state_ext::BlockStateExt;

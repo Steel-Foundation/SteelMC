@@ -41,6 +41,7 @@ pub(crate) struct JsonArgField {
     pub kind: JsonArgKind,
     pub json_name: Option<String>,
     pub is_ref: bool,
+    pub optional_sentinel: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +85,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     let mut kind = None;
     let mut json_name = None;
     let mut is_ref = false;
+    let mut optional_sentinel = None;
 
     if let syn::Meta::List(meta) = &attr.meta {
         meta.parse_nested_meta(|meta| {
@@ -99,6 +101,10 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
                 json_name = Some(lit.value());
+            } else if meta.path.is_ident("optional") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                optional_sentinel = Some(lit.value());
             } else if let Some(ident) = meta.path.get_ident() {
                 kind = Some(JsonArgKind::Registry(ident.to_string()));
             }
@@ -116,6 +122,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
         kind,
         json_name,
         is_ref,
+        optional_sentinel,
     })
 }
 
@@ -179,6 +186,14 @@ pub(crate) fn generate_arg(
 ) -> TokenStream {
     let json_key = field.json_name.as_deref().unwrap_or(&field.field_name);
 
+    // For optional fields, check the sentinel before computing the registry token.
+    if let Some(sentinel) = &field.optional_sentinel {
+        let raw = get_json_str(extra, entry_name, json_key);
+        if raw == sentinel {
+            return quote! { None };
+        }
+    }
+
     let tokens = match &field.kind {
         JsonArgKind::Value => {
             let value = get_json_value(extra, entry_name, json_key);
@@ -203,10 +218,16 @@ pub(crate) fn generate_arg(
         }
     };
 
-    if field.is_ref {
+    let result = if field.is_ref {
         quote! { &#tokens }
     } else {
         tokens
+    };
+
+    if field.optional_sentinel.is_some() {
+        quote! { Some(#result) }
+    } else {
+        result
     }
 }
 pub(crate) fn extract_class_name(attr: &syn::Attribute) -> Option<String> {
