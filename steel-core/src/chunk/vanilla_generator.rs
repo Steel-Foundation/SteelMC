@@ -1088,9 +1088,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 N::Settings::MIN_Y, N::Settings::HEIGHT,
                                 &self.splitter, &self.noises, aq_cache,
                             );
-                            // No init_grid — use on-the-fly computation like vanilla's
-                            // per-column NoiseChunk FlatCache evaluation
+                            // Init cache at the CHUNK containing the query (same grid
+                            // as chunk generation uses for this position)
                             let mut fresh_cache = N::ColumnCache::default();
+                            fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                             iterate_noise_column_with_aquifer::<N>(
                                 &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
                             )
