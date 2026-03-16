@@ -34,26 +34,26 @@ pub mod items;
 #[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/blocks.rs"]
-pub mod block_behaviours;
+pub mod block_behaviors;
 
 #[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/items.rs"]
-pub mod item_behaviours;
+pub mod item_behaviors;
 
 #[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/weathering.rs"]
 pub mod weathering;
 
-pub use block::{BlockBehaviorRegistry, BlockBehaviour, DefaultBlockBehaviour};
-use block_behaviours::register_block_behaviors;
+pub use block::{BlockBehavior, BlockBehaviorRegistry, DefaultBlockBehavior};
+use block_behaviors::register_block_behaviors;
 pub use context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
-use item_behaviours::register_item_behaviors;
+use item_behaviors::register_item_behaviors;
 pub use items::{
     BlockItemBehavior, DefaultItemBehavior, EmptyBucketBehavior, EnderEyeBehavior,
     FilledBucketBehavior,
@@ -96,7 +96,7 @@ impl Deref for ItemBehaviorLock {
 pub trait BlockStateBehaviorExt {
     /// Returns the fluid state for this block state.
     ///
-    /// Delegates to the block's `BlockBehaviour::get_fluid_state` implementation.
+    /// Delegates to the block's `BlockBehavior::get_fluid_state` implementation.
     fn get_fluid_state(&self) -> FluidState;
 }
 

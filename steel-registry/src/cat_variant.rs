@@ -1,4 +1,3 @@
-use crate::RegistryExt;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -66,46 +65,11 @@ impl CatVariantRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: usize) -> Option<CatVariantRef> {
-        self.cat_variants_by_id.get(id).copied()
-    }
-
-    #[must_use]
-    pub fn get_id(&self, cat_variant: CatVariantRef) -> &usize {
-        self.cat_variants_by_key
-            .get(&cat_variant.key)
-            .expect("Cat variant not found")
-    }
-
-    #[must_use]
-    pub fn by_key(&self, key: &Identifier) -> Option<CatVariantRef> {
-        self.cat_variants_by_key
-            .get(key)
-            .and_then(|id| self.by_id(*id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, CatVariantRef)> + '_ {
         self.cat_variants_by_id
             .iter()
             .enumerate()
             .map(|(id, &variant)| (id, variant))
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.cat_variants_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.cat_variants_by_id.is_empty()
-    }
-}
-
-impl RegistryExt for CatVariantRegistry {
-    fn freeze(&mut self) {
-        self.allows_registering = false;
     }
 }
 
@@ -114,3 +78,11 @@ impl Default for CatVariantRegistry {
         Self::new()
     }
 }
+
+crate::impl_registry!(
+    CatVariantRegistry,
+    CatVariant,
+    cat_variants_by_id,
+    cat_variants_by_key,
+    cat_variants
+);

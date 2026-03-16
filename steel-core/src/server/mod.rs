@@ -32,7 +32,7 @@ use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
-use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_blocks};
 use steel_utils::{Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
@@ -193,12 +193,11 @@ impl Server {
             show_death_screen: !immediate_respawn,
             do_limited_crafting,
             common_player_spawn_info: CommonPlayerSpawnInfo {
-                dimension_type: *(REGISTRY.dimension_types.get_id(
-                    REGISTRY
-                        .dimension_types
-                        .by_key(&dimension_key)
-                        .expect("Should be registered"),
-                )) as i32,
+                dimension_type: REGISTRY
+                    .dimension_types
+                    .by_key(&dimension_key)
+                    .expect("Should be registered")
+                    .id() as i32,
                 dimension: dimension_key,
                 seed: hashed_seed,
                 game_type: player.game_mode.load(),

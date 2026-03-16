@@ -28,7 +28,7 @@ impl HoeBehavior {
 
 impl ItemBehavior for HoeBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let state = context.world.get_block_state(&context.hit_result.block_pos);
+        let state = context.world.get_block_state(context.hit_result.block_pos);
         let Some(tilled_variant) = Self::get_tilled_variant(state.get_block()) else {
             return InteractionResult::Pass;
         };
@@ -36,7 +36,7 @@ impl ItemBehavior for HoeBehavior {
         if (context.hit_result.direction == Direction::Down
             || !context
                 .world
-                .get_block_state(&context.hit_result.block_pos.above())
+                .get_block_state(context.hit_result.block_pos.above())
                 .is_air())
             && state.get_block() != vanilla_blocks::ROOTED_DIRT
         {
@@ -45,7 +45,7 @@ impl ItemBehavior for HoeBehavior {
 
         if state.get_block() == vanilla_blocks::ROOTED_DIRT {
             context.world.pop_resource_from_face(
-                &context.hit_result.block_pos,
+                context.hit_result.block_pos,
                 context.hit_result.direction,
                 ItemStack::new(&vanilla_items::ITEMS.hanging_roots),
             );

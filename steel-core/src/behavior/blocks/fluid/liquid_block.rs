@@ -22,7 +22,7 @@ use steel_registry::vanilla_items;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
-use crate::behavior::block::{BlockBehaviour, PickupResult};
+use crate::behavior::block::{BlockBehavior, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
@@ -53,22 +53,22 @@ impl LiquidBlock {
     ///
     /// Returns `true` if the liquid should spread (schedule tick),
     /// Returns `false` if the liquid was converted to a block (obsidian/cobblestone/basalt).
-    fn should_spread_liquid(&self, world: &World, pos: BlockPos) -> bool {
+    fn should_spread_liquid(&self, world: &Arc<World>, pos: BlockPos) -> bool {
         // Only lava has special interactions with water and blue ice
         if !is_lava_fluid(self.fluid) {
             return true;
         }
         // Check if there's soul soil below (for basalt generation)
         let below_pos = pos.offset(0, -1, 0);
-        let below_state = world.get_block_state(&below_pos);
+        let below_state = world.get_block_state(below_pos);
         let has_soul_soil_below = below_state.get_block() == vanilla_blocks::SOUL_SOIL;
 
         // Get fluid state to check if this is a source
-        let fluid_state = world.get_block_state(&pos).get_fluid_state();
+        let fluid_state = world.get_block_state(pos).get_fluid_state();
 
         for direction in Direction::FLOW_NEIGHBOR_CHECK {
-            let neighbor_pos = direction.relative(&pos);
-            let neighbor_fluid = world.get_block_state(&neighbor_pos).get_fluid_state();
+            let neighbor_pos = direction.relative(pos);
+            let neighbor_fluid = world.get_block_state(neighbor_pos).get_fluid_state();
 
             // Check for water (including flowing_water and waterlogged blocks)
             // Using fluid tag check to support modded fluids registered in the water tag
@@ -88,7 +88,7 @@ impl LiquidBlock {
 
             // Check for basalt generation: soul soil below + blue ice adjacent
             if has_soul_soil_below {
-                let neighbor_state = world.get_block_state(&neighbor_pos);
+                let neighbor_state = world.get_block_state(neighbor_pos);
                 if neighbor_state.get_block() == vanilla_blocks::BLUE_ICE {
                     let new_state = REGISTRY.blocks.get_default_state_id(vanilla_blocks::BASALT);
                     world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
@@ -102,7 +102,7 @@ impl LiquidBlock {
     }
 }
 
-impl BlockBehaviour for LiquidBlock {
+impl BlockBehavior for LiquidBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -116,7 +116,7 @@ impl BlockBehaviour for LiquidBlock {
     fn on_place(
         &self,
         _state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _old_state: BlockStateId,
         _moved_by_piston: bool,
@@ -131,7 +131,7 @@ impl BlockBehaviour for LiquidBlock {
     fn handle_neighbor_changed(
         &self,
         _state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _source_block: BlockRef,
         _moved_by_piston: bool,
@@ -149,7 +149,7 @@ impl BlockBehaviour for LiquidBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -183,7 +183,7 @@ impl BlockBehaviour for LiquidBlock {
 
     fn pickup_block(
         &self,
-        world: &World,
+        world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
         _player: Option<&Player>,

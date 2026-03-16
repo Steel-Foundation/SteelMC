@@ -106,7 +106,7 @@ impl BlockPlaceContext<'_> {
     #[must_use]
     pub fn is_water_source(&self) -> bool {
         use crate::fluid::get_fluid_state;
-        let fluid_state = get_fluid_state(self.world, &self.relative_pos);
+        let fluid_state = get_fluid_state(self.world, self.relative_pos);
         fluid_state.is_source() && fluid_state.is_water()
     }
 }
@@ -134,7 +134,7 @@ pub struct UseItemContext<'a> {
     /// Which hand the item is in.
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
-    pub world: &'a World,
+    pub world: &'a Arc<World>,
     /// The item stack being used (mutable for consumption).
     pub item_stack: &'a mut ItemStack,
     /// Lock guard holding the player's inventory. Behaviors that need to add

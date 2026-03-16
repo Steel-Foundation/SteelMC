@@ -30,15 +30,15 @@ impl FluidBehavior for EmptyFluid {
         // Vanilla: nothing
     }
 
-    fn tick_delay(&self, _world: &World) -> i32 {
+    fn tick_delay(&self, _world: &Arc<World>) -> i32 {
         0
     }
 
-    fn drop_off(&self, _world: &World) -> u8 {
+    fn drop_off(&self, _world: &Arc<World>) -> u8 {
         0
     }
 
-    fn slope_find_distance(&self, _world: &World) -> u8 {
+    fn slope_find_distance(&self, _world: &Arc<World>) -> u8 {
         0
     }
 
@@ -48,7 +48,7 @@ impl FluidBehavior for EmptyFluid {
     fn can_be_replaced_with(
         &self,
         _fluid_state: FluidState,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         _other_fluid: FluidRef,
         _direction: Direction,
