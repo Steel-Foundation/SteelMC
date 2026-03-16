@@ -7,7 +7,7 @@
 //! overrides `updateCustomBlockEntityTag` to open the sign editor after placement.
 
 use std::sync::Arc;
-
+use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -24,11 +24,16 @@ use crate::world::World;
 /// Behavior for sign items that place sign blocks and open the editor.
 ///
 /// In vanilla, `SignItem` extends `StandingAndWallBlockItem` with `attachmentDirection = DOWN`.
-/// We use composition here - wrapping `StandingAndWallBlockItem` and adding sign-specific
-/// behavior (opening the sign editor after placement).
+/// We store the block refs directly and construct `StandingAndWallBlockItem` locally
+/// for placement logic, adding sign-specific behavior (opening the sign editor after placement).
+#[item_behavior(class = "SignItem")]
 pub struct SignItemBehavior {
-    /// The underlying standing and wall block item behavior.
-    inner: StandingAndWallBlockItem,
+    /// The standing sign block (e.g., `oak_sign`).
+    #[json_arg(vanilla_blocks, json = "block")]
+    standing_block: BlockRef,
+    /// The wall sign block (e.g., `oak_wall_sign`).
+    #[json_arg(vanilla_blocks, json = "wall_block")]
+    wall_block: BlockRef,
 }
 
 impl SignItemBehavior {
@@ -36,7 +41,8 @@ impl SignItemBehavior {
     #[must_use]
     pub const fn new(standing_block: BlockRef, wall_block: BlockRef) -> Self {
         Self {
-            inner: StandingAndWallBlockItem::new(standing_block, wall_block, Direction::Down),
+            standing_block,
+            wall_block,
         }
     }
 }
@@ -89,7 +95,9 @@ impl ItemBehavior for SignItemBehavior {
         };
 
         // Use StandingAndWallBlockItem's placement logic
-        let Some(new_state) = self.inner.get_placement_state(&place_context) else {
+        let inner =
+            StandingAndWallBlockItem::new(self.standing_block, self.wall_block, Direction::Down);
+        let Some(new_state) = inner.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
         };
 
@@ -102,7 +110,7 @@ impl ItemBehavior for SignItemBehavior {
         }
 
         // Play place sound
-        let block = self.inner.get_block_for_state(new_state);
+        let block = inner.get_block_for_state(new_state);
         let sound_type = &block.config.sound_type;
         context.world.play_block_sound(
             sound_type.place_sound,
@@ -125,10 +133,13 @@ impl ItemBehavior for SignItemBehavior {
 /// Behavior for hanging sign items that place hanging sign blocks.
 ///
 /// Hanging signs can be placed as ceiling hanging signs or wall hanging signs.
+#[steel_macros::item_behavior(class = "HangingSignItem")]
 pub struct HangingSignItemBehavior {
     /// The ceiling hanging sign block.
+    #[json_arg(vanilla_blocks, json = "block")]
     pub ceiling_block: BlockRef,
     /// The wall hanging sign block.
+    #[json_arg(vanilla_blocks, json = "wall_block")]
     pub wall_block: BlockRef,
 }
 

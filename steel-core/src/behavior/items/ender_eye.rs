@@ -1,5 +1,6 @@
 //! Ender eye item behavior implementation.
 
+use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -14,6 +15,7 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 ///
 /// When used on an end portal frame without an eye, places the eye
 /// and checks for portal completion.
+#[item_behavior(class = "EnderEyeItem")]
 pub struct EnderEyeBehavior;
 
 impl ItemBehavior for EnderEyeBehavior {

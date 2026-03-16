@@ -9,6 +9,7 @@
 //! direction (skipping the opposite of `attachmentDirection`), using the standing block
 //! when direction matches `attachmentDirection` and wall block otherwise.
 
+use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -27,13 +28,17 @@ use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 /// The `attachmentDirection` is typically `Direction::Down` for torches, meaning:
 /// - Looking down → place standing torch on top of block below
 /// - Looking horizontally → place wall torch on side of block
+#[item_behavior(class = "StandingAndWallBlockItem")]
 pub struct StandingAndWallBlockItem {
     /// The block to place when looking toward `attachmentDirection` (e.g., `torch`).
+    #[json_arg(vanilla_blocks, json = "block")]
     pub standing_block: BlockRef,
     /// The block to place otherwise (e.g., `wall_torch`).
+    #[json_arg(vanilla_blocks, json = "wall_block")]
     pub wall_block: BlockRef,
     /// The direction that triggers the standing block placement.
     /// For torches this is `Direction::Down` - when looking down, place standing torch.
+    #[json_arg(r#enum = "Direction", json = "attachment_direction")]
     pub attachment_direction: Direction,
 }
 

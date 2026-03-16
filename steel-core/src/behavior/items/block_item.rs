@@ -10,8 +10,10 @@ use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContex
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 
 /// Behavior for items that place blocks.
+#[steel_macros::item_behavior(class = "BlockItem", class = "DoubleHighBlockItem")]
 pub struct BlockItemBehavior {
     /// The block this item places.
+    #[json_arg(vanilla_blocks, json = "block")]
     pub block: BlockRef,
 }
 

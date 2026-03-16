@@ -12,6 +12,7 @@ use crate::behavior::{
 use crate::fluid::FluidStateExt;
 use crate::inventory::lock::ContainerId;
 use crate::world::RaytraceAction;
+use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::block_state_ext::FluidReplaceableExt;
@@ -61,19 +62,17 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
 /// Behavior for filled bucket items (water bucket, lava bucket)
 ///
 /// Places fluid and gives back empty bucket.
+#[item_behavior(class = "BucketItem", when(content = "!empty"))]
 pub struct FilledBucketBehavior {
+    #[json_arg(vanilla_blocks, json = "content")]
     fluid_block: BlockRef,
-    empty_bucket: ItemRef,
 }
 
 impl FilledBucketBehavior {
     /// Creates a new filled bucket behavior.
     #[must_use]
-    pub const fn new(fluid_block: BlockRef, empty_bucket: ItemRef) -> Self {
-        Self {
-            fluid_block,
-            empty_bucket,
-        }
+    pub const fn new(fluid_block: BlockRef) -> Self {
+        Self { fluid_block }
     }
 }
 
@@ -149,7 +148,7 @@ impl ItemBehavior for FilledBucketBehavior {
                         1.0,
                         None,
                     );
-                    consume_bucket(context, self.empty_bucket);
+                    consume_bucket(context, &vanilla_items::ITEMS.bucket);
                     return Some(InteractionResult::Success);
                 }
             }
@@ -164,7 +163,7 @@ impl ItemBehavior for FilledBucketBehavior {
                 };
 
                 if is_same_fluid && fluid_state.is_source() {
-                    consume_bucket(context, self.empty_bucket);
+                    consume_bucket(context, &vanilla_items::ITEMS.bucket);
                     return Some(InteractionResult::Success);
                 }
 
@@ -202,7 +201,7 @@ impl ItemBehavior for FilledBucketBehavior {
                         .world
                         .play_block_sound(sound_id, pos, 1.0, 1.0, None);
 
-                    consume_bucket(context, self.empty_bucket);
+                    consume_bucket(context, &vanilla_items::ITEMS.bucket);
                     return Some(InteractionResult::Success);
                 }
             }
@@ -243,6 +242,7 @@ impl ItemBehavior for FilledBucketBehavior {
 /// Behavior for empty bucket items.
 ///
 /// Picks up fluid from source blocks and gives filled bucket.
+#[item_behavior(class = "BucketItem", when(content = "empty"))]
 pub struct EmptyBucketBehavior;
 
 impl Default for EmptyBucketBehavior {

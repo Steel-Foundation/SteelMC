@@ -1,3 +1,4 @@
+use steel_macros::item_behavior;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{
@@ -24,6 +25,7 @@ const FLATTENABLES: [&Block; 6] = [
 const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
 
 /// Behavior for Shovels, extinguises campfires and turns grass blocks into paths
+#[item_behavior(class = "ShovelItem")]
 pub struct ShovelBehavior;
 
 impl ItemBehavior for ShovelBehavior {
