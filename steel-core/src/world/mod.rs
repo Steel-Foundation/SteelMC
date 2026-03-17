@@ -1671,6 +1671,7 @@ impl World {
 
         if drop_items {
             self.drop_resources(state, pos);
+            // TODO: block entity and entity drops
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
@@ -1687,6 +1688,7 @@ impl World {
     /// `block_breaking::drop_block_loot` which includes tool context for
     /// fortune/silk touch.
     // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
+    // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
