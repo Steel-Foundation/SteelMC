@@ -4,7 +4,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
     block_state_ext::BlockStateExt,
-    properties::{self, BlockStateProperties},
+    properties::{BlockStateProperties, Half},
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
@@ -57,6 +57,9 @@ impl BlockBehavior for DoublePlantBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
+        if state.get_value(&BlockStateProperties::HALF) == Half::Top {
+            return;
+        }
         // FIXME: dont know if this is correct
         let waterlogged_state = state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
@@ -65,7 +68,7 @@ impl BlockBehavior for DoublePlantBlock {
             });
         world.set_block(
             pos.above(),
-            waterlogged_state.set_value(&BlockStateProperties::HALF, properties::Half::Top),
+            waterlogged_state.set_value(&BlockStateProperties::HALF, Half::Top),
             UpdateFlags::UPDATE_ALL,
         );
     }
