@@ -1,5 +1,5 @@
+use glam::DVec3;
 use steel_macros::{ReadFrom, ServerPacket};
-use steel_utils::math::Vector3;
 
 fn unpack_on_ground(packed_byte: u8) -> bool {
     packed_byte & 0b0000_0001 != 0
@@ -12,7 +12,7 @@ fn unpack_horizontal_collision(packed_byte: u8) -> bool {
 /// Constructed packet by the server to more easily be able to handle movement.
 #[derive(Clone, Debug)]
 pub struct SMovePlayer {
-    pub position: Vector3<f64>,
+    pub position: DVec3,
     pub y_rot: f32,
     pub x_rot: f32,
     pub on_ground: bool,
@@ -62,7 +62,7 @@ impl SMovePlayer {
 
 #[derive(ReadFrom, Clone, Debug, ServerPacket)]
 pub struct SMovePlayerPos {
-    pub position: Vector3<f64>,
+    pub position: DVec3,
     pub packed_byte: u8,
 }
 
@@ -82,7 +82,7 @@ impl From<SMovePlayerPos> for SMovePlayer {
 
 #[derive(ReadFrom, Clone, Debug, ServerPacket)]
 pub struct SMovePlayerPosRot {
-    pub position: Vector3<f64>,
+    pub position: DVec3,
     pub y_rot: f32,
     pub x_rot: f32,
     pub packed_byte: u8,
@@ -112,7 +112,7 @@ pub struct SMovePlayerRot {
 impl From<SMovePlayerRot> for SMovePlayer {
     fn from(value: SMovePlayerRot) -> Self {
         Self {
-            position: Vector3::default(),
+            position: DVec3::ZERO,
             has_pos: false,
             has_rot: true,
             x_rot: value.x_rot,
@@ -134,7 +134,7 @@ pub struct SMovePlayerStatusOnly {
 impl From<SMovePlayerStatusOnly> for SMovePlayer {
     fn from(value: SMovePlayerStatusOnly) -> Self {
         Self {
-            position: Vector3::default(),
+            position: DVec3::ZERO,
             has_pos: false,
             has_rot: false,
             x_rot: 0.0,

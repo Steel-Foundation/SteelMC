@@ -1,6 +1,6 @@
 //! A vector3 argument.
+use glam::DVec3;
 use steel_protocol::packets::game::{ArgumentType, SuggestionType};
-use steel_utils::math::Vector3;
 
 use crate::command::arguments::{CommandArgument, Helper};
 use crate::command::context::CommandContext;
@@ -9,7 +9,7 @@ use crate::command::context::CommandContext;
 pub struct Vector3Argument;
 
 impl CommandArgument for Vector3Argument {
-    type Output = Vector3<f64>;
+    type Output = DVec3;
 
     fn parse<'a>(
         &self,
@@ -20,7 +20,7 @@ impl CommandArgument for Vector3Argument {
         let y = Helper::parse_relative_coordinate::<true>(arg.get(1)?, Some(context.position.y))?;
         let z = Helper::parse_relative_coordinate::<false>(arg.get(2)?, Some(context.position.z))?;
 
-        Some((&arg[3..], Vector3::new(x, y, z)))
+        Some((&arg[3..], DVec3::new(x, y, z)))
     }
 
     fn usage(&self) -> (ArgumentType, Option<SuggestionType>) {

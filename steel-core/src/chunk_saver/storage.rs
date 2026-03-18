@@ -621,12 +621,12 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
         chunk: &LevelChunk,
     ) -> Option<SharedEntity> {
-        use steel_utils::math::Vector3;
+        use glam::DVec3;
         use uuid::Uuid;
 
         // Reconstruct base fields
-        let pos = Vector3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
-        let mut velocity = Vector3::new(
+        let pos = DVec3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
+        let mut velocity = DVec3::new(
             persistent.motion[0],
             persistent.motion[1],
             persistent.motion[2],
