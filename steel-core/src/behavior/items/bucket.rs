@@ -29,6 +29,33 @@ use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
+/// Handles all bucket variants (empty, water, lava).
+///
+/// Mirrors vanilla's `BucketItem(Fluid fluid)`: `fluid_block = None` = empty bucket,
+/// `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
+#[item_behavior(class = "BucketItem")]
+pub struct BucketItemBehavior {
+    #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
+    fluid_block: Option<BlockRef>,
+}
+
+impl BucketItemBehavior {
+    /// Creates a new bucket behavior. `None` = empty bucket, `Some(block)` = filled.
+    #[must_use]
+    pub const fn new(fluid_block: Option<BlockRef>) -> Self {
+        Self { fluid_block }
+    }
+}
+
+impl ItemBehavior for BucketItemBehavior {
+    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
+        match self.fluid_block {
+            None => use_empty_bucket(context),
+            Some(fluid_block) => use_filled_bucket(fluid_block, context),
+        }
+    }
+}
+
 /// Consumes one bucket from the player's hand, replacing it with `result_item`.
 ///
 /// Vanilla parity: `ItemUtils.createFilledResult` with `limitCreativeStackSize = true`.
@@ -58,36 +85,6 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
             .add_item_or_drop_with_guard(context.inv_guard, result_stack);
     } else {
         context.item_stack.set_item(&result_item.key);
-    }
-}
-
-/// Handles all bucket variants (empty, water, lava).
-///
-/// Mirrors vanilla's `BucketItem(Fluid fluid)`: `fluid_block = None` = empty bucket,
-/// `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
-#[item_behavior(class = "BucketItem")]
-pub struct BucketItemBehavior {
-    #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
-    fluid_block: Option<BlockRef>,
-}
-
-impl BucketItemBehavior {
-    /// Creates a new bucket behavior. `None` = empty bucket, `Some(block)` = filled.
-    #[must_use]
-    pub const fn new(fluid_block: Option<BlockRef>) -> Self {
-        Self { fluid_block }
-    }
-}
-
-impl ItemBehavior for BucketItemBehavior {
-    // The closure + primary/secondary placement logic reads long but splitting it
-    // would obscure the vanilla flow. Readability justifies the extra lines.
-    #[allow(clippy::too_many_lines)]
-    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        match self.fluid_block {
-            None => use_empty_bucket(context),
-            Some(fluid_block) => use_filled_bucket(fluid_block, context),
-        }
     }
 }
 

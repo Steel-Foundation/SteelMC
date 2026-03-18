@@ -7,7 +7,7 @@ use crate::common::{self, JsonArgKind, scan_object_behaviors};
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Deserialize)]
 pub struct ItemClass {
@@ -23,7 +23,7 @@ pub fn build(items: &[ItemClass]) -> String {
     let discovered = scan_object_behaviors("items", "item_behavior");
 
     let mut type_imports = BTreeSet::new();
-    let mut enum_imports = BTreeSet::new();
+    let mut enum_imports: BTreeMap<String, String> = BTreeMap::new();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
 
@@ -40,8 +40,15 @@ pub fn build(items: &[ItemClass]) -> String {
         type_imports.insert(info.struct_name.clone());
 
         for field in &info.fields {
-            if let JsonArgKind::Enum(ref enum_type) = field.kind {
-                enum_imports.insert(enum_type.clone());
+            if let JsonArgKind::Enum {
+                ref type_name,
+                ref module_path,
+            } = field.kind
+            {
+                let path = module_path.as_ref().unwrap_or_else(|| {
+                    panic!("Enum type '{type_name}' on item behavior requires a `module` path in #[json_arg]")
+                });
+                enum_imports.insert(type_name.clone(), path.clone());
             }
         }
 
@@ -86,17 +93,14 @@ pub fn build(items: &[ItemClass]) -> String {
         .map(|name| Ident::new(name, Span::call_site()))
         .collect();
 
-    // Enum imports need to come from their actual module paths
     let enum_import_tokens: Vec<_> = enum_imports
         .iter()
-        .map(|name| {
-            // Direction lives in steel_registry::blocks::properties
-            match name.as_str() {
-                "Direction" => quote! { use steel_registry::blocks::properties::Direction; },
-                _ => panic!(
-                    "Unknown enum type '{name}' — add its import path to items.rs build script"
-                ),
-            }
+        .map(|(type_name, module_path)| {
+            let type_ident = Ident::new(type_name, Span::call_site());
+            let path: syn::Path = syn::parse_str(module_path).unwrap_or_else(|_| {
+                panic!("Invalid module path '{module_path}' for enum '{type_name}'")
+            });
+            quote! { use #path::#type_ident; }
         })
         .collect();
 

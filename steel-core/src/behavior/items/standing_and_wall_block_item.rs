@@ -38,7 +38,11 @@ pub struct StandingAndWallBlockItem {
     pub wall_block: BlockRef,
     /// The direction that triggers the standing block placement.
     /// For torches this is `Direction::Down` - when looking down, place standing torch.
-    #[json_arg(r#enum = "Direction", json = "attachment_direction")]
+    #[json_arg(
+        r#enum = "Direction",
+        module = "steel_registry::blocks::properties",
+        json = "attachment_direction"
+    )]
     pub attachment_direction: Direction,
 }
 

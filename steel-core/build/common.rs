@@ -30,8 +30,12 @@ pub(crate) enum JsonArgKind {
     Value,
     /// JSON string → `module::IDENT`. Stores the module name.
     Registry(String),
-    /// JSON string → `EnumType::Variant` (`PascalCase`). Stores the enum type name.
-    Enum(String),
+    /// JSON string → `EnumType::Variant` (`PascalCase`).
+    /// `module_path` is the full import path (e.g. `"steel_registry::blocks::properties"`).
+    Enum {
+        type_name: String,
+        module_path: Option<String>,
+    },
 }
 
 /// A parsed `#[json_arg(...)]` field.
@@ -59,7 +63,7 @@ pub(crate) fn parse_object_behavior(
         .attrs
         .iter()
         .find(|a| path_ends_with(a.path(), attribute_name))?;
-    let class_name = extract_class_name(attr).unwrap_or(s.ident.to_string());
+    let class_name = extract_class_name(attr, attribute_name).unwrap_or(s.ident.to_string());
 
     let mut fields = Vec::new();
     if let syn::Fields::Named(ref named) = s.fields {
@@ -86,6 +90,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     let mut json_name = None;
     let mut is_ref = false;
     let mut optional_sentinel = None;
+    let mut module_path = None;
 
     if let syn::Meta::List(meta) = &attr.meta {
         meta.parse_nested_meta(|meta| {
@@ -94,7 +99,14 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
             } else if meta.path.is_ident("r#enum") || meta.path.is_ident("enum") {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
-                kind = Some(JsonArgKind::Enum(lit.value()));
+                kind = Some(JsonArgKind::Enum {
+                    type_name: lit.value(),
+                    module_path: None,
+                });
+            } else if meta.path.is_ident("module") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                module_path = Some(lit.value());
             } else if meta.path.is_ident("r#ref") || meta.path.is_ident("ref") {
                 is_ref = true;
             } else if meta.path.is_ident("json") {
@@ -112,6 +124,15 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
         })
         .unwrap_or_else(|e| panic!("Failed to parse json_arg: {e}"));
     }
+
+    // Attach module_path to enum kind if both were specified
+    let kind = match kind {
+        Some(JsonArgKind::Enum { type_name, .. }) => Some(JsonArgKind::Enum {
+            type_name,
+            module_path,
+        }),
+        other => other,
+    };
 
     let kind = kind.unwrap_or_else(|| {
         panic!("json_arg on field '{field_name}' must specify a kind (value, enum, or a registry module name)")
@@ -210,8 +231,8 @@ pub(crate) fn generate_arg(
                 quote! { #module_ident::#const_ident }
             }
         }
-        JsonArgKind::Enum(enum_type) => {
-            let enum_ident = Ident::new(enum_type, Span::call_site());
+        JsonArgKind::Enum { type_name, .. } => {
+            let enum_ident = Ident::new(type_name, Span::call_site());
             let variant_str = get_json_str(extra, entry_name, json_key);
             let variant = Ident::new(&variant_str.to_pascal_case(), Span::call_site());
             quote! { #enum_ident::#variant }
@@ -230,22 +251,23 @@ pub(crate) fn generate_arg(
         result
     }
 }
-pub(crate) fn extract_class_name(attr: &syn::Attribute) -> Option<String> {
+
+pub(crate) fn extract_class_name(attr: &syn::Attribute, attribute_name: &str) -> Option<String> {
     let syn::Meta::List(meta) = &attr.meta else {
         return None;
     };
 
-    let mut class_name = String::new();
+    let mut class_name = None;
     meta.parse_nested_meta(|meta| {
         if meta.path.is_ident("class") {
             let value = meta.value()?;
             let lit: syn::LitStr = value.parse()?;
-            class_name = lit.value();
+            class_name = Some(lit.value());
         }
         Ok(())
     })
-    .unwrap_or_else(|e| panic!("Failed to parse block_behavior attribute: {e}"));
-    Some(class_name)
+    .unwrap_or_else(|e| panic!("Failed to parse {attribute_name} attribute: {e}"));
+    class_name
 }
 
 /// Scans item behavior source files for `#[item_behavior]` annotations.

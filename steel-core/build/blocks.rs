@@ -6,7 +6,7 @@
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::common::{self, JsonArgKind, scan_object_behaviors};
 
@@ -24,6 +24,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
     let discovered = scan_object_behaviors("blocks", "block_behavior");
 
     let mut block_type_imports = BTreeSet::new();
+    let mut explicit_enum_imports: BTreeMap<String, String> = BTreeMap::new();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
 
@@ -39,8 +40,16 @@ pub fn build(blocks: &[BlockClass]) -> String {
         block_type_imports.insert(info.struct_name.clone());
 
         for field in &info.fields {
-            if let JsonArgKind::Enum(ref enum_type) = field.kind {
-                block_type_imports.insert(enum_type.clone());
+            if let JsonArgKind::Enum {
+                ref type_name,
+                ref module_path,
+            } = field.kind
+            {
+                if let Some(path) = module_path {
+                    explicit_enum_imports.insert(type_name.clone(), path.clone());
+                } else {
+                    block_type_imports.insert(type_name.clone());
+                }
             }
         }
 
@@ -75,12 +84,23 @@ pub fn build(blocks: &[BlockClass]) -> String {
         .map(|name| Ident::new(name, Span::call_site()))
         .collect();
 
+    let enum_import_tokens: Vec<_> = explicit_enum_imports
+        .iter()
+        .map(|(type_name, path)| {
+            let type_ident = Ident::new(type_name, Span::call_site());
+            let path: syn::Path = syn::parse_str(path)
+                .unwrap_or_else(|_| panic!("Invalid module path '{path}' for enum '{type_name}'"));
+            quote! { use #path::#type_ident; }
+        })
+        .collect();
+
     let output = quote! {
         //! Generated block behavior assignments.
 
         use steel_registry::{sound_events, vanilla_fluids, vanilla_blocks};
         use crate::behavior::BlockBehaviorRegistry;
         use crate::behavior::blocks::{#(#block_imports),*};
+        #(#enum_import_tokens)*
 
         pub fn register_block_behaviors(registry: &mut BlockBehaviorRegistry) {
             #(#registrations)*
