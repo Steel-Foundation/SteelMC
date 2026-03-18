@@ -48,10 +48,10 @@ const fn direction_from_2d(value: i8) -> Option<Direction> {
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
-    BIOMES_PER_SECTION, BLOCKS_PER_SECTION, PersistentBiomeData, PersistentBlockEntity,
-    PersistentBlockState, PersistentChunk, PersistentEntity, PersistentHeightmap, PersistentPoi,
-    PersistentSection, PersistentStructurePiece, PersistentStructureReference,
-    PersistentStructureStart, PersistentTick, PreparedChunkSave,
+    PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
+    PersistentEntity, PersistentHeightmap, PersistentPoi, PersistentSection,
+    PersistentStructurePiece, PersistentStructureReference, PersistentStructureStart,
+    PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -956,7 +956,6 @@ impl ChunkStorage {
             } => {
                 let block_id = Self::resolve_block_state(chunk, *block_state);
                 let biome_data = Self::persistent_to_biomes(biomes, chunk);
-
                 ChunkSection::new_with_biomes(PalettedContainer::Homogeneous(block_id), biome_data)
             }
             PersistentSection::Heterogeneous {
@@ -965,30 +964,23 @@ impl ChunkStorage {
                 block_data,
                 biomes,
             } => {
-                // Unpack indices (into section-local palette)
-                let indices = unpack_indices(block_data, *bits_per_entry, BLOCKS_PER_SECTION);
-
-                // Build runtime palette by resolving section-local -> chunk -> runtime
+                let mut indices = unpack_indices(block_data, *bits_per_entry);
                 let runtime_palette: Vec<BlockStateId> = palette
                     .iter()
                     .map(|&idx| Self::resolve_block_state(chunk, idx))
                     .collect();
-
-                // Build cube
                 let mut cube = Box::new([[[BlockStateId(0); 16]; 16]; 16]);
-                for (i, &idx) in indices.iter().enumerate() {
-                    let y = i / 256;
-                    let z = (i / 16) % 16;
-                    let x = i % 16;
-                    cube[y][z][x] = runtime_palette
-                        .get(idx as usize)
-                        .copied()
-                        .unwrap_or(BlockStateId(0));
+                for plane in cube.iter_mut() {
+                    for row in plane {
+                        for cell in row {
+                            *cell = runtime_palette[indices.next().expect(
+                                "this should never fail, we know the iterator is long enough",
+                            ) as usize];
+                        }
+                    }
                 }
-
                 let states = PalettedContainer::from_cube(cube);
                 let biome_data = Self::persistent_to_biomes(biomes, chunk);
-
                 ChunkSection::new_with_biomes(states, biome_data)
             }
         }
@@ -1009,23 +1001,22 @@ impl ChunkStorage {
                 bits_per_entry,
                 biome_data,
             } => {
-                let indices = unpack_indices(biome_data, *bits_per_entry, BIOMES_PER_SECTION);
-
-                // Resolve section-local palette -> chunk palette -> runtime
+                let mut indices = unpack_indices(biome_data, *bits_per_entry);
                 let runtime_palette: Vec<u16> = palette
                     .iter()
                     .map(|&idx| Self::resolve_biome(chunk, idx))
                     .collect();
-
-                let mut cube = Box::new([[[0u16; 4]; 4]; 4]);
-                for (i, &idx) in indices.iter().enumerate() {
-                    let y = i / 16;
-                    let z = (i / 4) % 4;
-                    let x = i % 4;
-                    cube[y][z][x] = runtime_palette.get(idx as usize).copied().unwrap_or(0);
+                let mut cube = [[[0u16; 4]; 4]; 4];
+                for plane in &mut cube {
+                    for row in plane {
+                        for cell in row {
+                            *cell = runtime_palette[indices.next().expect(
+                                "this should never fail, we know the iterator is long enough",
+                            ) as usize];
+                        }
+                    }
                 }
-
-                PalettedContainer::from_cube(cube)
+                PalettedContainer::from_cube(Box::new(cube))
             }
         }
     }
