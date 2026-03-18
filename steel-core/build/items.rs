@@ -45,10 +45,11 @@ pub fn build(items: &[ItemClass]) -> String {
                 ref module_path,
             } = field.kind
             {
-                let path = module_path.as_ref().unwrap_or_else(|| {
-                    panic!("Enum type '{type_name}' on item behavior requires a `module` path in #[json_arg]")
-                });
-                enum_imports.insert(type_name.clone(), path.clone());
+                if let Some(path) = module_path {
+                    enum_imports.insert(type_name.clone(), path.clone());
+                } else {
+                    type_imports.insert(type_name.clone());
+                }
             }
         }
 

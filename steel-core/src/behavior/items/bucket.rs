@@ -30,9 +30,6 @@ use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
 /// Handles all bucket variants (empty, water, lava).
-///
-/// Mirrors vanilla's `BucketItem(Fluid fluid)`: `fluid_block = None` = empty bucket,
-/// `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
 #[item_behavior(class = "BucketItem")]
 pub struct BucketItemBehavior {
     #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
@@ -162,7 +159,8 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     InteractionResult::Fail
 }
 
-#[allow(clippy::too_many_lines)]
+// TODO: Refactor into smaller helpers
+#[allow(clippy::too_many_lines)] // Mirrors vanilla's single emptyContents method flow
 fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> InteractionResult {
     // Raytrace to find target block
     let (start, end) = context.player.get_ray_endpoints();
@@ -290,9 +288,11 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         None
     };
 
-    // Determine Primary Target
-    // If clicked block is waterloggable and we have water, try clicked_pos first.
-    // Otherwise default to relative pos.
+    // Vanilla parity (BucketItem.java line 75): position selection mirrors
+    // `instanceof LiquidBlockContainer && content == Fluids.WATER ? pos : directionOffsetPos`.
+    // WATERLOGGED property existence approximates the LiquidBlockContainer type check.
+    // If primary fails, secondary retries at the offset pos without sneak check,
+    // matching vanilla's recursive `emptyContents(hitResult=null)` fallback.
     let is_water_bucket = fluid_block == vanilla_blocks::WATER;
     let clicked_is_waterloggable = clicked_state
         .try_get_value(&BlockStateProperties::WATERLOGGED)

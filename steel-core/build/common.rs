@@ -222,6 +222,8 @@ pub(crate) fn generate_arg(
         }
         JsonArgKind::Registry(module) => {
             let name = get_json_str(extra, entry_name, json_key);
+            // vanilla_items uses a LazyLock<Items> struct with field access (ITEMS.stone),
+            // while other registries use module-level constants (vanilla_blocks::STONE).
             if module == "vanilla_items" {
                 let field_ident = Ident::new(name, Span::call_site());
                 quote! { vanilla_items::ITEMS.#field_ident }
@@ -270,7 +272,7 @@ pub(crate) fn extract_class_name(attr: &syn::Attribute, attribute_name: &str) ->
     class_name
 }
 
-/// Scans item behavior source files for `#[item_behavior]` annotations.
+/// Scans behavior source files for annotated structs (e.g. `#[block_behavior]`, `#[item_behavior]`).
 pub(crate) fn scan_object_behaviors(
     folder: &str,
     attribute_name: &str,
