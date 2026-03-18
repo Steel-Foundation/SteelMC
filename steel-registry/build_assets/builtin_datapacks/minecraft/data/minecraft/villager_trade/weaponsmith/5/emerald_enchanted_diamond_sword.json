@@ -5,7 +5,7 @@
       "include_additional_cost_component": true,
       "levels": {
         "type": "minecraft:uniform",
-        "max": 20.0,
+        "max": 19.0,
         "min": 5.0
       },
       "options": "#minecraft:on_traded_equipment"

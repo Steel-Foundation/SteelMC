@@ -47,7 +47,7 @@
       }
     }
   },
-  "reputation_discount": 0.05,
+  "reputation_discount": 0.2,
   "wants": {
     "count": 8.0,
     "id": "minecraft:emerald"
