@@ -183,10 +183,12 @@ fn terrain_adapt_inflate(id: &Identifier) -> i32 {
     }
 }
 
-/// Matches vanilla's `iterateNoiseColumn` exactly: iterates by Y cells,
-/// computing density at 8 cell corners and interpolating within each cell.
+/// Matches vanilla's `iterateNoiseColumn`: iterates by Y cells, evaluating
+/// inner density functions at 8 cell corners, trilinearly interpolating each
+/// channel independently, then applying outer operations (squeeze, min, etc.)
+/// per-block via `combine_interpolated`.
+///
 /// Returns getBaseHeight (= getFirstFreeHeight = first Y above surface).
-/// Matches vanilla's `iterateNoiseColumn` with an external aquifer.
 fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
     noises: &N,
@@ -211,43 +213,68 @@ fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
     let z0 = cell_z * cell_w;
     let z1 = z0 + cell_w;
 
-    macro_rules! eval {
-        ($ex:expr, $ey:expr, $ez:expr) => {{
+    let interp_count = N::interpolated_count();
+
+    // Corner channel buffers for 8 cell corners
+    const MAX_INTERP: usize = 16;
+    let mut c000 = [0.0f64; MAX_INTERP];
+    let mut c100 = [0.0f64; MAX_INTERP];
+    let mut c010 = [0.0f64; MAX_INTERP];
+    let mut c110 = [0.0f64; MAX_INTERP];
+    let mut c001 = [0.0f64; MAX_INTERP];
+    let mut c101 = [0.0f64; MAX_INTERP];
+    let mut c011 = [0.0f64; MAX_INTERP];
+    let mut c111 = [0.0f64; MAX_INTERP];
+    let mut interpolated = [0.0f64; MAX_INTERP];
+
+    macro_rules! fill {
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr) => {{
             cache.ensure($ex, $ez, noises);
-            noises.router_final_density(&mut *cache, $ex, $ey, $ez)
+            noises.fill_cell_corner_densities(&mut *cache, $ex, $ey, $ez, &mut $out[..interp_count]);
         }};
     }
+
+    use steel_utils::math::noise_math::lerp;
 
     // Iterate Y cells from top to bottom (matching vanilla's loop)
     for cell_y_idx in (0..cell_count_y).rev() {
         let y0 = (cell_min_y + cell_y_idx) * cell_h;
         let y1 = y0 + cell_h;
 
-        // Evaluate 8 cell corners
-        let d000 = eval!(x0, y0, z0);
-        let d100 = eval!(x1, y0, z0);
-        let d010 = eval!(x0, y1, z0);
-        let d110 = eval!(x1, y1, z0);
-        let d001 = eval!(x0, y0, z1);
-        let d101 = eval!(x1, y0, z1);
-        let d011 = eval!(x0, y1, z1);
-        let d111 = eval!(x1, y1, z1);
-
-        use steel_utils::math::noise_math::lerp;
+        // Evaluate inner functions at 8 cell corners (all channels)
+        fill!(c000, x0, y0, z0);
+        fill!(c100, x1, y0, z0);
+        fill!(c010, x0, y1, z0);
+        fill!(c110, x1, y1, z0);
+        fill!(c001, x0, y0, z1);
+        fill!(c101, x1, y0, z1);
+        fill!(c011, x0, y1, z1);
+        fill!(c111, x1, y1, z1);
 
         // Iterate Y within cell from top to bottom
         for y_in_cell in (0..cell_h).rev() {
             let pos_y = (cell_min_y + cell_y_idx) * cell_h + y_in_cell;
             let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
 
-            // Trilinear interpolation (vanilla order: Y, X, Z)
-            let d00 = lerp(factor_y, d000, d010);
-            let d10 = lerp(factor_y, d100, d110);
-            let d01 = lerp(factor_y, d001, d011);
-            let d11 = lerp(factor_y, d101, d111);
-            let d0 = lerp(factor_x, d00, d10);
-            let d1 = lerp(factor_x, d01, d11);
-            let density = lerp(factor_z, d0, d1);
+            // Trilinearly interpolate each channel independently
+            for ch in 0..interp_count {
+                let d00 = lerp(factor_y, c000[ch], c010[ch]);
+                let d10 = lerp(factor_y, c100[ch], c110[ch]);
+                let d01 = lerp(factor_y, c001[ch], c011[ch]);
+                let d11 = lerp(factor_y, c101[ch], c111[ch]);
+                let d0 = lerp(factor_x, d00, d10);
+                let d1 = lerp(factor_x, d01, d11);
+                interpolated[ch] = lerp(factor_z, d0, d1);
+            }
+
+            // Apply outer operations (squeeze, min, etc.) per-block
+            let density = noises.combine_interpolated(
+                &mut *cache,
+                &interpolated[..interp_count],
+                0,
+                pos_y,
+                0,
+            );
 
             // Use aquifer to determine block state (matches vanilla's getInterpolatedState)
             let opaque = match aquifer.compute_substance(noises, block_x, pos_y, block_z, density) {
@@ -264,6 +291,9 @@ fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
     min_y
 }
 
+/// Evaluate terrain density at a single block position using cell-based
+/// interpolation matching vanilla's NoiseChunk: inner functions at 8 cell
+/// corners, trilinear interpolation per channel, then outer operations.
 fn interpolated_density<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
     noises: &N,
@@ -287,27 +317,47 @@ fn interpolated_density<N: DimensionNoises>(
     let z0 = cz * cell_w;
     let z1 = z0 + cell_w;
 
-    let mut eval = |ex: i32, ey: i32, ez: i32| -> f64 {
-        cache.ensure(ex, ez, noises);
-        noises.router_final_density(cache, ex, ey, ez)
-    };
-    let d000 = eval(x0, y0, z0);
-    let d100 = eval(x1, y0, z0);
-    let d010 = eval(x0, y1, z0);
-    let d110 = eval(x1, y1, z0);
-    let d001 = eval(x0, y0, z1);
-    let d101 = eval(x1, y0, z1);
-    let d011 = eval(x0, y1, z1);
-    let d111 = eval(x1, y1, z1);
+    let interp_count = N::interpolated_count();
+
+    const MAX_INTERP: usize = 16;
+    let mut c000 = [0.0f64; MAX_INTERP];
+    let mut c100 = [0.0f64; MAX_INTERP];
+    let mut c010 = [0.0f64; MAX_INTERP];
+    let mut c110 = [0.0f64; MAX_INTERP];
+    let mut c001 = [0.0f64; MAX_INTERP];
+    let mut c101 = [0.0f64; MAX_INTERP];
+    let mut c011 = [0.0f64; MAX_INTERP];
+    let mut c111 = [0.0f64; MAX_INTERP];
+    let mut interpolated = [0.0f64; MAX_INTERP];
+
+    macro_rules! fill {
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr) => {{
+            cache.ensure($ex, $ez, noises);
+            noises.fill_cell_corner_densities(&mut *cache, $ex, $ey, $ez, &mut $out[..interp_count]);
+        }};
+    }
+
+    fill!(c000, x0, y0, z0);
+    fill!(c100, x1, y0, z0);
+    fill!(c010, x0, y1, z0);
+    fill!(c110, x1, y1, z0);
+    fill!(c001, x0, y0, z1);
+    fill!(c101, x1, y0, z1);
+    fill!(c011, x0, y1, z1);
+    fill!(c111, x1, y1, z1);
 
     use steel_utils::math::noise_math::lerp;
-    let d00 = lerp(fx, d000, d100);
-    let d10 = lerp(fx, d010, d110);
-    let d01 = lerp(fx, d001, d101);
-    let d11 = lerp(fx, d011, d111);
-    let d0 = lerp(fz, d00, d01);
-    let d1 = lerp(fz, d10, d11);
-    lerp(fy, d0, d1)
+    for ch in 0..interp_count {
+        let d00 = lerp(fy, c000[ch], c010[ch]);
+        let d10 = lerp(fy, c100[ch], c110[ch]);
+        let d01 = lerp(fy, c001[ch], c011[ch]);
+        let d11 = lerp(fy, c101[ch], c111[ch]);
+        let d0 = lerp(fx, d00, d10);
+        let d1 = lerp(fx, d01, d11);
+        interpolated[ch] = lerp(fz, d0, d1);
+    }
+
+    noises.combine_interpolated(&mut *cache, &interpolated[..interp_count], 0, y, 0)
 }
 
 impl<N: DimensionNoises> VanillaGenerator<N> {
@@ -507,18 +557,40 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // RuinedPortal: run vanilla's findGenerationPoint RNG to get
                 // the correct biome check Y (surface vs underground).
+                // Vanilla creates a fresh NoiseChunk (and aquifer) per column
+                // query, so we must do the same for corners that may span
+                // different chunks.
                 "minecraft:ruined_portal" => {
                     use crate::world::structure::ruined_portal::{TerrainQuery, TerrainResult};
                     let mut rp_rng = LegacyRandom::from_seed(0);
                     rp_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
                     let mut terrain = |q: TerrainQuery| -> TerrainResult {
+                        let (qx, qz) = match q {
+                            TerrainQuery::SurfaceHeight(x, z) => (x, z),
+                            TerrainQuery::IsOpaque(x, _, z) => (x, z),
+                        };
+                        let cw = N::Settings::CELL_WIDTH;
+                        let cell_x = qx.div_euclid(cw) * cw;
+                        let cell_z = qz.div_euclid(cw) * cw;
+                        let aq_chunk_x = (cell_x >> 4) * 16;
+                        let aq_chunk_z = (cell_z >> 4) * 16;
+                        let aq_cache = N::ColumnCache::default();
+                        let mut fresh_aq = Aquifer::<N>::new(
+                            aq_chunk_x, aq_chunk_z,
+                            N::Settings::MIN_Y, N::Settings::HEIGHT,
+                            &self.splitter, &self.noises, aq_cache,
+                        );
+                        let mut fresh_cache = N::ColumnCache::default();
+                        fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                         match q {
                             TerrainQuery::SurfaceHeight(x, z) => {
-                                TerrainResult::Height(base_height(&mut height_cache, &self.noises, &mut aquifer, x, z, false))
+                                TerrainResult::Height(iterate_noise_column_with_aquifer::<N>(
+                                    &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
+                                ))
                             }
                             TerrainQuery::IsOpaque(x, y, z) => {
-                                let density = interpolated_density::<N>(&mut height_cache, &self.noises, x, y, z, cell_w, cell_h);
-                                let opaque = match aquifer.compute_substance(&self.noises, x, y, z, density) {
+                                let density = interpolated_density::<N>(&mut fresh_cache, &self.noises, x, y, z, cell_w, cell_h);
+                                let opaque = match fresh_aq.compute_substance(&self.noises, x, y, z, density) {
                                     AquiferResult::Solid | AquiferResult::Fluid(_) => true,
                                     AquiferResult::Air => false,
                                 };
@@ -782,13 +854,32 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             let mut rp_rng = LegacyRandom::from_seed(0);
                             rp_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
                             let mut terrain = |q: TerrainQuery| -> TerrainResult {
+                                let (qx, qz) = match q {
+                                    TerrainQuery::SurfaceHeight(x, z) => (x, z),
+                                    TerrainQuery::IsOpaque(x, _, z) => (x, z),
+                                };
+                                let cw = N::Settings::CELL_WIDTH;
+                                let cell_x = qx.div_euclid(cw) * cw;
+                                let cell_z = qz.div_euclid(cw) * cw;
+                                let aq_chunk_x = (cell_x >> 4) * 16;
+                                let aq_chunk_z = (cell_z >> 4) * 16;
+                                let aq_cache = N::ColumnCache::default();
+                                let mut fresh_aq = Aquifer::<N>::new(
+                                    aq_chunk_x, aq_chunk_z,
+                                    N::Settings::MIN_Y, N::Settings::HEIGHT,
+                                    &self.splitter, &self.noises, aq_cache,
+                                );
+                                let mut fresh_cache = N::ColumnCache::default();
+                                fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                                 match q {
                                     TerrainQuery::SurfaceHeight(x, z) => {
-                                        TerrainResult::Height(base_height(&mut height_cache, &self.noises, &mut aquifer, x, z, false))
+                                        TerrainResult::Height(iterate_noise_column_with_aquifer::<N>(
+                                            &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
+                                        ))
                                     }
                                     TerrainQuery::IsOpaque(x, y, z) => {
-                                        let density = interpolated_density::<N>(&mut height_cache, &self.noises, x, y, z, cell_w, cell_h);
-                                        let opaque = match aquifer.compute_substance(&self.noises, x, y, z, density) {
+                                        let density = interpolated_density::<N>(&mut fresh_cache, &self.noises, x, y, z, cell_w, cell_h);
+                                        let opaque = match fresh_aq.compute_substance(&self.noises, x, y, z, density) {
                                             AquiferResult::Solid | AquiferResult::Fluid(_) => true,
                                             AquiferResult::Air => false,
                                         };

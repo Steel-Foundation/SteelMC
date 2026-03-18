@@ -174,8 +174,11 @@ pub fn find_generation_point(
     let bb_max_x = bb.max_x;
     let bb_min_z = bb.min_z;
     let bb_max_z = bb.max_z;
-    let bb_center_x = (bb_min_x + bb_max_x) / 2;
-    let bb_center_z = (bb_min_z + bb_max_z) / 2;
+    // Vanilla's BoundingBox.getCenter() uses minX + (maxX - minX + 1) / 2,
+    // which differs from (minX + maxX) / 2 for even-span BBs due to integer
+    // division rounding.
+    let bb_center_x = bb_min_x + (bb_max_x - bb_min_x + 1) / 2;
+    let bb_center_z = bb_min_z + (bb_max_z - bb_min_z + 1) / 2;
 
     // Surface height at BB center
     let surface_y = match terrain(TerrainQuery::SurfaceHeight(bb_center_x, bb_center_z)) {

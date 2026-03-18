@@ -26,8 +26,12 @@ pub struct PlacedPiece {
     pub position: (i32, i32, i32),
     /// Rotation applied to this piece.
     pub rotation: Rotation,
-    /// World-space bounding box.
+    /// World-space bounding box (template-sized, used for beardifier and world save).
     pub bounding_box: BoundingBox,
+    /// Assembly-time bounding box, potentially expanded vertically by the expansion
+    /// hack to reserve space for children. Used for `is_inside` and collision checks
+    /// during assembly only — not persisted.
+    pub assembly_bb: BoundingBox,
     /// Ground level delta for Beardifier terrain adaptation.
     pub ground_level_delta: i32,
     /// Projection mode (rigid or terrain matching).
@@ -235,6 +239,9 @@ fn can_attach(source: &TransformedJigsaw, target: &TransformedJigsaw) -> bool {
 }
 
 /// Gets the bounding box for a pool element at a position with rotation.
+///
+/// Feature elements return a 1×1×1 BB at the given position, matching
+/// vanilla's `FeaturePoolElement.getBoundingBox`.
 fn element_bounding_box(
     element: &PoolElement,
     templates: &FxHashMap<Identifier, TemplateData>,
@@ -243,12 +250,19 @@ fn element_bounding_box(
     pos_z: i32,
     rotation: Rotation,
 ) -> Option<BoundingBox> {
-    let location = element_location(element)?;
-    let template = templates.get(location)?;
-    Some(rotation.get_bounding_box(
-        pos_x, pos_y, pos_z,
-        template.size[0], template.size[1], template.size[2],
-    ))
+    match element {
+        PoolElement::Feature { .. } => {
+            Some(BoundingBox::new(pos_x, pos_y, pos_z, pos_x, pos_y, pos_z))
+        }
+        _ => {
+            let location = element_location(element)?;
+            let template = templates.get(location)?;
+            Some(rotation.get_bounding_box(
+                pos_x, pos_y, pos_z,
+                template.size[0], template.size[1], template.size[2],
+            ))
+        }
+    }
 }
 
 /// Builds the expanded weighted template list from a pool.
@@ -291,37 +305,41 @@ fn get_random_template<'a>(
     expanded[idx]
 }
 
-/// Checks if a bounding box fits within the constraint and doesn't collide
-/// with any placed pieces.
+/// Collision domain tracking available space for piece placement.
 ///
-/// Vanilla uses VoxelShape collision with AABB.of(bb).deflate(0.25). Since
-/// AABB.of adds +1 to each max coord, for integer BBs the 0.25 deflation
-/// still means adjacent pieces (sharing a face) collide — equivalent to
-/// standard `intersects` with `>=`.
-fn check_collision(
-    candidate_bb: &BoundingBox,
-    constraint_bb: &BoundingBox,
-    placed_bbs: &[BoundingBox],
-) -> bool {
-    // Must fit within constraint
-    if candidate_bb.min_x < constraint_bb.min_x
-        || candidate_bb.max_x > constraint_bb.max_x
-        || candidate_bb.min_y < constraint_bb.min_y
-        || candidate_bb.max_y > constraint_bb.max_y
-        || candidate_bb.min_z < constraint_bb.min_z
-        || candidate_bb.max_z > constraint_bb.max_z
-    {
-        return true; // collision
-    }
+/// Vanilla uses `MutableObject<VoxelShape>` to track free space hierarchically:
+/// each queued piece carries a reference to its parent's collision context.
+/// Internal children share the source piece's internal free space; external
+/// children share the parent's context. For integer-aligned bounding boxes,
+/// tracking a constraint + occupied list is equivalent to VoxelShape subtraction.
+struct FreeSpace {
+    /// The outer boundary of this domain.
+    constraint: BoundingBox,
+    /// Bounding boxes of pieces placed within this domain.
+    occupied: Vec<BoundingBox>,
+}
 
-    // Must not intersect any placed piece
-    for placed in placed_bbs {
-        if candidate_bb.intersects(placed) {
-            return true; // collision
+impl FreeSpace {
+    /// Checks if a bounding box fits within this domain without collisions.
+    fn collides(&self, candidate: &BoundingBox) -> bool {
+        // Must fit within constraint
+        if candidate.min_x < self.constraint.min_x
+            || candidate.max_x > self.constraint.max_x
+            || candidate.min_y < self.constraint.min_y
+            || candidate.max_y > self.constraint.max_y
+            || candidate.min_z < self.constraint.min_z
+            || candidate.max_z > self.constraint.max_z
+        {
+            return true;
         }
+        // Must not intersect any placed piece in this domain
+        for placed in &self.occupied {
+            if candidate.intersects(placed) {
+                return true;
+            }
+        }
+        false
     }
-
-    false // no collision
 }
 
 /// Result of a successful jigsaw assembly.
@@ -432,6 +450,7 @@ pub fn assemble(
         position: (adjusted_x, adjusted_y, adjusted_z),
         rotation: center_rotation,
         bounding_box: center_bb,
+        assembly_bb: center_bb,
         ground_level_delta,
         projection: center_element.projection(),
         depth: 0,
@@ -462,24 +481,27 @@ pub fn assemble(
         center_stub_z + max_dist,
     );
 
-    // Placed bounding boxes for collision detection
-    let mut placed_bbs: Vec<BoundingBox> = vec![center_bb];
+    // Collision domains — vanilla's hierarchical free space tracking.
+    // Index 0 is the global context (constraint minus placed pieces).
+    let mut free_spaces: Vec<FreeSpace> = vec![FreeSpace {
+        constraint: constraint_bb,
+        occupied: vec![center_bb],
+    }];
 
-    // BFS queue: (piece_index, depth, placement_priority)
-    // Process in insertion order, grouped by priority (higher = first)
-    let mut queue: Vec<(usize, i32, i32)> = Vec::new();
+    // BFS queue: (piece_index, depth, placement_priority, context_idx)
+    let mut queue: Vec<(usize, i32, i32, usize)> = Vec::new();
 
-    // Seed queue with center piece
+    // Seed queue with center piece (context 0 = global)
     try_placing_children(
         0, // center piece index
         0, // depth
+        0, // context_idx (global)
         config,
         pools,
         templates,
         alias_map,
         &mut pieces,
-        &mut placed_bbs,
-        &constraint_bb,
+        &mut free_spaces,
         &mut queue,
         rng,
         get_height,
@@ -489,18 +511,18 @@ pub fn assemble(
     while !queue.is_empty() {
         // Sort by priority (higher first), stable for insertion order
         queue.sort_by(|a, b| b.2.cmp(&a.2));
-        let (piece_idx, depth, _priority) = queue.remove(0);
+        let (piece_idx, depth, _priority, context_idx) = queue.remove(0);
 
         try_placing_children(
             piece_idx,
             depth,
+            context_idx,
             config,
             pools,
             templates,
             alias_map,
             &mut pieces,
-            &mut placed_bbs,
-            &constraint_bb,
+            &mut free_spaces,
             &mut queue,
             rng,
             get_height,
@@ -514,30 +536,35 @@ pub fn assemble(
 ///
 /// For each jigsaw on the source piece, attempts to find a matching target
 /// from the appropriate pool and place it.
+///
+/// `context_idx` is this piece's collision context in `free_spaces`:
+/// - If this piece was placed externally, it's the parent's context
+/// - If this piece was placed internally, it's the parent's internal free space
 #[allow(clippy::too_many_arguments)]
 fn try_placing_children(
     source_idx: usize,
     depth: i32,
+    context_idx: usize,
     config: &JigsawConfig,
     pools: &FxHashMap<Identifier, TemplatePoolData>,
     templates: &FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
     pieces: &mut Vec<PlacedPiece>,
-    placed_bbs: &mut Vec<BoundingBox>,
-    constraint_bb: &BoundingBox,
-    queue: &mut Vec<(usize, i32, i32)>,
+    free_spaces: &mut Vec<FreeSpace>,
+    queue: &mut Vec<(usize, i32, i32, usize)>,
     rng: &mut LegacyRandom,
     get_height: &mut dyn FnMut(i32, i32) -> i32,
 ) {
     let source_piece = pieces[source_idx].clone();
     let source_element_loc = source_piece.template_location.as_ref();
-    let source_bb = source_piece.bounding_box;
+    let source_bb = source_piece.assembly_bb;
     let source_box_y = source_bb.min_y;
     let source_rigid = source_piece.projection == Projection::Rigid;
 
-    // Vanilla's sourceFree: tracks free space inside source piece for internal placements.
-    // Only internal pieces are subtracted, not external ones.
-    let mut internal_bbs: Vec<BoundingBox> = Vec::new();
+    // Vanilla's sourceFree: tracks free space inside source piece for internal
+    // placements. Lazily initialized on first internal placement (matching
+    // vanilla's `MutableObject<VoxelShape>` that starts null).
+    let mut internal_ctx_idx: Option<usize> = None;
 
     // Get the pool element to retrieve jigsaws
     let source_pool_element = source_element_loc
@@ -649,30 +676,22 @@ fn try_placing_children(
                     candidate_element, templates, 0, 0, 0, candidate_rotation,
                 );
 
-                // Expansion hack: compute max child pool size for Y expansion
+                // Expansion hack: compute max child pool size for Y expansion.
+                // Vanilla: getBoundingBox(manager, ZERO, rotation) uses default
+                // StructurePlaceSettings with pivot=ZERO and mirror=NONE.
+                // Jigsaw positions are also transformed with pivot=ZERO.
                 let expand_to = if config.use_expansion_hack {
-                    // Vanilla uses pivot (sizeX-1, sizeZ-1) for BOTH getBoundingBox
-                    // AND jigsaw position rotation. Compute both with vanilla's pivot.
                     let hack_data = element_location(candidate_element)
                         .and_then(|loc| templates.get(loc));
                     if let Some(template_data) = hack_data {
-                        let pivot_x = template_data.size[0] - 1;
-                        let pivot_z = template_data.size[2] - 1;
-                        // Vanilla: rotatedPivot = transform(ZERO, rotation, size-1)
-                        // Then BB = fromCorners(rotatedPivot, rotatedPivot + transformedSize - 1)
-                        let (rpx, rpy, rpz) = candidate_rotation.transform_pos(0, 0, 0, pivot_x, pivot_z);
-                        let (tsx, tsy, tsz) = candidate_rotation.rotate_size(
+                        let hack_box = candidate_rotation.get_bounding_box(
+                            0, 0, 0,
                             template_data.size[0], template_data.size[1], template_data.size[2],
-                        );
-                        let hack_box = BoundingBox::new(
-                            rpx, rpy, rpz,
-                            rpx + tsx - 1, rpy + tsy - 1, rpz + tsz - 1,
                         );
                         if hack_box.max_y - hack_box.min_y + 1 <= 16 {
                             template_data.jigsaws.iter().map(|j| {
-                                // Transform jigsaw position with vanilla pivot
                                 let (rx, ry, rz) = candidate_rotation.transform_pos(
-                                    j.pos[0], j.pos[1], j.pos[2], pivot_x, pivot_z,
+                                    j.pos[0], j.pos[1], j.pos[2], 0, 0,
                                 );
                                 let front = j.orientation.rotate(candidate_rotation).front_direction();
                                 let (fdx2, fdy2, fdz2) = front.offset();
@@ -738,8 +757,11 @@ fn try_placing_children(
                     );
                     let target_position = (raw_target_x, raw_bb.min_y + y_offset, raw_target_z);
 
-                    // Apply expansion hack: expand BB vertically
-                    let candidate_bb = if expand_to > 0 {
+                    // Apply expansion hack: expand BB vertically to reserve space
+                    // for potential children during assembly. The expanded BB is used
+                    // for collision and is_inside checks; the original BB is stored
+                    // in the piece for beardifier and world save.
+                    let expanded_bb = if expand_to > 0 {
                         let new_size = (expand_to + 1).max(candidate_bb.max_y - candidate_bb.min_y);
                         BoundingBox::new(
                             candidate_bb.min_x, candidate_bb.min_y, candidate_bb.min_z,
@@ -749,27 +771,28 @@ fn try_placing_children(
                         candidate_bb
                     };
 
-                    // Collision check — vanilla uses separate free space for internal placements
-                    let (effective_constraint, collision_bbs) = if attach_inside {
-                        // Internal: must fit within source BB, only collides with other internal pieces
-                        (&source_bb, internal_bbs.as_slice())
+                    // Collision check — vanilla tracks free space hierarchically:
+                    // internal children use sourceFree (this piece's internal space),
+                    // external children use contextFree (parent's context).
+                    let effective_ctx = if attach_inside {
+                        let idx = *internal_ctx_idx.get_or_insert_with(|| {
+                            free_spaces.push(FreeSpace {
+                                constraint: source_bb,
+                                occupied: Vec::new(),
+                            });
+                            free_spaces.len() - 1
+                        });
+                        idx
                     } else {
-                        (constraint_bb, placed_bbs.as_slice())
+                        context_idx
                     };
 
-                    if check_collision(&candidate_bb, effective_constraint, collision_bbs) {
+                    if free_spaces[effective_ctx].collides(&expanded_bb) {
                         continue;
                     }
 
-                    // Success! Place this piece.
-                    if attach_inside {
-                        // Internal pieces go to source-local tracking only.
-                        // Vanilla: internal pieces are subtracted from sourceFree, NOT contextFree.
-                        // So external pieces from other sources can overlap internal pieces.
-                        internal_bbs.push(candidate_bb);
-                    } else {
-                        placed_bbs.push(candidate_bb);
-                    }
+                    // Success! Place this piece — subtract from the collision domain.
+                    free_spaces[effective_ctx].occupied.push(expanded_bb);
 
                     // Compute ground level delta
                     let target_ground_level_delta = if candidate_rigid {
@@ -809,6 +832,7 @@ fn try_placing_children(
                         position: target_position,
                         rotation: candidate_rotation,
                         bounding_box: candidate_bb,
+                        assembly_bb: expanded_bb,
                         ground_level_delta: target_ground_level_delta,
                         projection: candidate_projection,
                         depth: depth + 1,
@@ -827,9 +851,11 @@ fn try_placing_children(
 
                     pieces.push(target_piece);
 
-                    // Queue for further expansion if within depth limit
+                    // Queue for further expansion if within depth limit.
+                    // The child inherits the effective collision context:
+                    // internal children get sourceFree, external get contextFree.
                     if depth + 1 <= config.max_depth {
-                        queue.push((new_piece_idx, depth + 1, placement_priority));
+                        queue.push((new_piece_idx, depth + 1, placement_priority, effective_ctx));
                     }
 
                     // Break to next source jigsaw (one target per jigsaw)
