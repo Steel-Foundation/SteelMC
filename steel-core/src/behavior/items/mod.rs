@@ -17,7 +17,7 @@ pub use block_item::{BlockItemBehavior, DoubleHighBlockItemBehavior};
 pub use bucket::BucketItemBehavior;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeBehavior;
-pub use flint_and_steel::FlintAndSteelBehavior;
+pub use flint_and_steel::FlintAndSteelItem;
 pub use shovel::ShovelBehavior;
 pub use sign_item::{HangingSignItemBehavior, SignItemBehavior};
 pub use standing_and_wall_block_item::StandingAndWallBlockItem;

@@ -2,13 +2,15 @@
 
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
+use steel_macros::item_behavior;
 use steel_registry::vanilla_blocks::FIRE;
 use steel_utils::types::UpdateFlags;
 
 /// Behavior for flint and steel items.
-pub struct FlintAndSteelBehavior;
+#[item_behavior]
+pub struct FlintAndSteelItem;
 
-impl ItemBehavior for FlintAndSteelBehavior {
+impl ItemBehavior for FlintAndSteelItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let click_pos = context.hit_result.block_pos;
         let fire_pos = click_pos.relative(context.hit_result.direction);
