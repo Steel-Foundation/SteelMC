@@ -55,8 +55,9 @@ pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BlockItemBehavior, DefaultItemBehavior, EmptyBucketBehavior, EnderEyeBehavior,
-    FilledBucketBehavior,
+    BlockItemBehavior, BucketItemBehavior, DefaultItemBehavior, DoubleHighBlockItemBehavior,
+    EnderEyeBehavior, HangingSignItemBehavior, ShovelBehavior, SignItemBehavior,
+    StandingAndWallBlockItem,
 };
 use std::ops::Deref;
 use std::sync::OnceLock;
