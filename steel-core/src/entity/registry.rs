@@ -3,11 +3,11 @@
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
+use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
-use steel_utils::math::Vector3;
 use uuid::Uuid;
 
 use super::entities::{BlockDisplayEntity, ItemEntity};
@@ -19,7 +19,7 @@ use crate::world::World;
 /// Takes the entity ID, spawn position, and world reference.
 /// Returns a new entity instance. The entity ID should be obtained from
 /// `next_entity_id()`.
-pub type EntityFactory = fn(i32, Vector3<f64>, Weak<World>) -> SharedEntity;
+pub type EntityFactory = fn(i32, DVec3, Weak<World>) -> SharedEntity;
 
 /// Factory function type for loading entities from disk.
 ///
@@ -32,13 +32,13 @@ pub type EntityFactory = fn(i32, Vector3<f64>, Weak<World>) -> SharedEntity;
 /// - `on_ground`: Restored ground state
 /// - world: Reference to the world
 pub type EntityLoadFactory = fn(
-    i32,          // entity_id
-    Vector3<f64>, // position
-    Uuid,         // uuid
-    Vector3<f64>, // velocity
-    (f32, f32),   // rotation (yaw, pitch)
-    bool,         // on_ground
-    Weak<World>,  // world
+    i32,         // entity_id
+    DVec3,       // position
+    Uuid,        // uuid
+    DVec3,       // velocity
+    (f32, f32),  // rotation (yaw, pitch)
+    bool,        // on_ground
+    Weak<World>, // world
 ) -> SharedEntity;
 
 /// Registry entry for an entity type.
@@ -94,7 +94,7 @@ impl EntityRegistry {
         &self,
         entity_type: EntityTypeRef,
         entity_id: i32,
-        pos: Vector3<f64>,
+        pos: DVec3,
         world: Weak<World>,
     ) -> Option<SharedEntity> {
         let id = entity_type.id();
@@ -112,9 +112,9 @@ impl EntityRegistry {
     pub fn create_and_load(
         &self,
         entity_type: EntityTypeRef,
-        pos: Vector3<f64>,
+        pos: DVec3,
         uuid: Uuid,
-        velocity: Vector3<f64>,
+        velocity: DVec3,
         rotation: (f32, f32),
         on_ground: bool,
         world: Weak<World>,

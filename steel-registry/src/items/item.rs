@@ -6,10 +6,11 @@
 use std::io::{self, Cursor};
 
 use steel_utils::BlockPos;
-use steel_utils::math::Vector3;
 use steel_utils::serial::ReadFrom;
 
 use crate::blocks::properties::Direction;
+
+use glam::DVec3;
 
 /// Result of a ray cast hitting a block.
 ///
@@ -18,7 +19,7 @@ use crate::blocks::properties::Direction;
 #[derive(Debug, Clone)]
 pub struct BlockHitResult {
     /// The exact location where the ray hit the block.
-    pub location: Vector3<f64>,
+    pub location: DVec3,
     /// The face of the block that was hit.
     pub direction: Direction,
     /// The position of the block that was hit.
@@ -44,7 +45,7 @@ impl ReadFrom for BlockHitResult {
 
         // Convert to absolute world coordinates by adding block position
         // (matching Java's FriendlyByteBuf.readBlockHitResult)
-        let location = Vector3::new(
+        let location = DVec3::new(
             f64::from(block_pos.x()) + f64::from(click_x),
             f64::from(block_pos.y()) + f64::from(click_y),
             f64::from(block_pos.z()) + f64::from(click_z),

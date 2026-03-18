@@ -13,8 +13,8 @@ mod standing_and_wall_block_item;
 
 mod flint_and_steel;
 
-pub use block_item::BlockItemBehavior;
-pub use bucket::{EmptyBucketBehavior, FilledBucketBehavior};
+pub use block_item::{BlockItemBehavior, DoubleHighBlockItemBehavior};
+pub use bucket::BucketItemBehavior;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeBehavior;
 pub use flint_and_steel::FlintAndSteelBehavior;

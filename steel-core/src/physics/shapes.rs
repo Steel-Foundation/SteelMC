@@ -3,9 +3,10 @@
 //! Implements vanilla's `Shapes` class methods for AABB-list based collision.
 //! Uses the existing `VoxelShape` type (slice of AABBs) from steel-registry.
 
+use glam::IVec3;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABB, AABBd, VoxelShape, is_shape_full_block};
-use steel_utils::math::{Axis, Vector3};
+use steel_utils::math::Axis;
 
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
 ///
@@ -177,7 +178,7 @@ pub fn join_is_not_empty(aabb1: &AABBd, aabb2: &AABBd) -> bool {
 /// # Returns
 /// World-space AABB at the block position.
 #[must_use]
-pub fn translate_shape(shape: &AABB, block_pos: Vector3<i32>) -> AABBd {
+pub fn translate_shape(shape: &AABB, block_pos: IVec3) -> AABBd {
     let bx = f64::from(block_pos.x);
     let by = f64::from(block_pos.y);
     let bz = f64::from(block_pos.z);
@@ -414,7 +415,7 @@ mod tests {
     #[test]
     fn test_translate_shape() {
         let shape = AABB::new(0.0, 0.0, 0.0, 1.0, 0.5, 1.0); // Half slab
-        let block_pos = Vector3::new(10, 64, -5);
+        let block_pos = IVec3::new(10, 64, -5);
 
         let result = translate_shape(&shape, block_pos);
 
