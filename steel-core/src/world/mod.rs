@@ -546,9 +546,11 @@ impl World {
 
         let current_state = self.get_block_state(pos);
 
-        // TODO: Skip redstone wire if UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE is set
-        // if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
-        //     && current_state.is_redstone_wire() { return; }
+        if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
+            && current_state.get_block() == vanilla_blocks::REDSTONE_WIRE
+        {
+            return;
+        }
 
         let block_behaviors = &*BLOCK_BEHAVIORS;
         let behavior = block_behaviors.get_behavior(current_state.get_block());
@@ -561,13 +563,7 @@ impl World {
             neighbor_state,
         );
 
-        if new_state != current_state {
-            log::debug!(
-                "Shape update at {pos:?}: {current_state:?} -> {new_state:?} (neighbor {neighbor_pos:?} changed)"
-            );
-            // Use set_block_with_limit to prevent infinite recursion
-            self.set_block_with_limit(pos, new_state, flags, update_limit);
-        }
+        self.update_or_destroy(current_state, new_state, pos, flags, update_limit);
 
         // Vanilla parity: `SimpleWaterloggedBlock.updateShape` / `Level.neighborShapeChanged` —
         // always reschedule the fluid tick when a block with fluid has a neighbor shape change,
@@ -579,6 +575,25 @@ impl World {
                 .get_behavior(fluid_state.fluid_id)
                 .tick_delay(self);
             self.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        }
+    }
+
+    fn update_or_destroy(
+        self: &Arc<World>,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        recursion_left: i32,
+    ) {
+        if new_state == old_state {
+            return;
+        }
+
+        if new_state.is_air() {
+            self.destroy_block(pos, !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS));
+        } else {
+            self.set_block_with_limit(pos, new_state, flags, recursion_left);
         }
     }
 
@@ -1629,7 +1644,22 @@ impl World {
     ///
     /// Sends destruction particles (skipping fire blocks), optionally drops
     /// resources via loot table, then replaces with air.
+    ///
+    /// Defaults to recursion limit of 512
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
+        self.destroy_block_with_limit(pos, drop_items, 512)
+    }
+
+    /// Destroys a block at the given position, optionally dropping its loot.
+    ///
+    /// Sends destruction particles (skipping fire blocks), optionally drops
+    /// resources via loot table, then replaces with air.
+    pub fn destroy_block_with_limit(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        recursion_left: i32,
+    ) -> bool {
         let state = self.get_block_state(pos);
         if state.is_air() {
             return false;
@@ -1643,12 +1673,13 @@ impl World {
 
         if drop_items {
             self.drop_resources(state, pos);
+            // TODO: block entity and entity drops
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        self.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
+        self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
         // TODO: Fire GameEvent.BLOCK_DESTROY
         true
     }
@@ -1659,6 +1690,7 @@ impl World {
     /// `block_breaking::drop_block_loot` which includes tool context for
     /// fortune/silk touch.
     // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
+    // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
