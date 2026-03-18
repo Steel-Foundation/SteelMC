@@ -165,6 +165,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     InteractionResult::Fail
 }
 
+#[allow(clippy::too_many_lines)]
 fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> InteractionResult {
     // Raytrace to find target block
     let (start, end) = context.player.get_ray_endpoints();
