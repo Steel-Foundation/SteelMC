@@ -546,7 +546,9 @@ impl World {
 
         let current_state = self.get_block_state(pos);
 
-        if flags.bits() & 128 != 0 && current_state.get_block() == vanilla_blocks::REDSTONE_WIRE {
+        if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
+            && current_state.get_block() == vanilla_blocks::REDSTONE_WIRE
+        {
             return;
         }
 
@@ -589,7 +591,7 @@ impl World {
         }
 
         if new_state.is_air() {
-            self.destroy_block(pos, flags.bits() & 32 == 0);
+            self.destroy_block(pos, !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS));
         } else {
             self.set_block_with_limit(pos, new_state, flags, recursion_left);
         }
