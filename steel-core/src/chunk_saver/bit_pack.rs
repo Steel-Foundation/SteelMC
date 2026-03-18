@@ -55,7 +55,6 @@ pub fn pack_indices(indices: &[u32], bits: u8) -> Box<[u64]> {
 /// # Arguments
 /// * `data` - The packed bit array
 /// * `bits` - Bits per entry (must be 1, 2, 4, 8, or 16)
-/// * `count` - Number of indices to unpack
 ///
 /// # Panics
 /// Panics if `bits` is not a power of 2 or is greater than 16.
