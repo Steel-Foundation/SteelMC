@@ -56,16 +56,13 @@
             "tag": "minecraft:air"
           },
           {
-            "type": "minecraft:not",
-            "predicate": {
-              "type": "minecraft:matching_blocks",
-              "blocks": "minecraft:netherrack",
-              "offset": [
-                0,
-                -1,
-                0
-              ]
-            }
+            "type": "minecraft:matching_blocks",
+            "blocks": "minecraft:netherrack",
+            "offset": [
+              0,
+              -1,
+              0
+            ]
           }
         ]
       }

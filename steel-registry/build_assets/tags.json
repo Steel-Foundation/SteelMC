@@ -1,16 +1,86 @@
 {
   "block": {
-    "c:ores/emerald": [
+    "c:natural_logs": [
+      "minecraft:acacia_log",
+      "minecraft:bamboo_block",
+      "minecraft:birch_log",
+      "minecraft:cherry_log",
+      "minecraft:dark_oak_log",
+      "minecraft:jungle_log",
+      "minecraft:mangrove_log",
+      "minecraft:oak_log",
+      "minecraft:pale_oak_log",
+      "minecraft:spruce_log",
+      "minecraft:crimson_stem",
+      "minecraft:warped_stem"
+    ],
+    "c:chains": [
+      "minecraft:iron_chain",
+      "minecraft:copper_chain",
+      "minecraft:exposed_copper_chain",
+      "minecraft:weathered_copper_chain",
+      "minecraft:oxidized_copper_chain",
+      "minecraft:waxed_copper_chain",
+      "minecraft:waxed_exposed_copper_chain",
+      "minecraft:waxed_weathered_copper_chain",
+      "minecraft:waxed_oxidized_copper_chain"
+    ],
+    "c:dyed/pink": [
+      "minecraft:pink_banner",
+      "minecraft:pink_bed",
+      "minecraft:pink_candle",
+      "minecraft:pink_carpet",
+      "minecraft:pink_concrete",
+      "minecraft:pink_concrete_powder",
+      "minecraft:pink_glazed_terracotta",
+      "minecraft:pink_shulker_box",
+      "minecraft:pink_stained_glass",
+      "minecraft:pink_stained_glass_pane",
+      "minecraft:pink_terracotta",
+      "minecraft:pink_wool",
+      "minecraft:pink_bundle",
+      "minecraft:pink_harness"
+    ],
+    "c:bookshelves": [
+      "minecraft:bookshelf"
+    ],
+    "c:storage_blocks/netherite": [
+      "minecraft:netherite_block"
+    ],
+    "c:gravels": [
+      "minecraft:gravel"
+    ],
+    "c:ore_bearing_ground/deepslate": [
+      "minecraft:deepslate"
+    ],
+    "c:ores/copper": [
+      "minecraft:copper_ore",
+      "minecraft:deepslate_copper_ore"
+    ],
+    "c:ores_in_ground/stone": [
+      "minecraft:coal_ore",
+      "minecraft:copper_ore",
+      "minecraft:diamond_ore",
       "minecraft:emerald_ore",
-      "minecraft:deepslate_emerald_ore"
+      "minecraft:gold_ore",
+      "minecraft:iron_ore",
+      "minecraft:lapis_ore",
+      "minecraft:redstone_ore"
+    ],
+    "c:budding_blocks": [
+      "minecraft:budding_amethyst"
+    ],
+    "c:natural_logs/nether": [
+      "minecraft:crimson_stem",
+      "minecraft:warped_stem"
     ],
     "c:chests/wooden": [
       "minecraft:chest",
       "minecraft:trapped_chest"
     ],
-    "c:natural_logs/nether": [
-      "minecraft:crimson_stem",
-      "minecraft:warped_stem"
+    "c:ores/emerald": [
+      "minecraft:emerald_ore",
+      "minecraft:deepslate_emerald_ore"
     ],
     "c:storage_blocks/bone_meal": [
       "minecraft:bone_block"
@@ -30,6 +100,9 @@
       "minecraft:piglin_wall_head",
       "minecraft:dragon_head",
       "minecraft:dragon_wall_head"
+    ],
+    "c:barrels/wooden": [
+      "minecraft:barrel"
     ],
     "c:barrels": [
       "minecraft:barrel"
@@ -60,19 +133,6 @@
       "minecraft:pale_oak_log",
       "minecraft:spruce_log"
     ],
-    "c:natural_woods": [
-      "minecraft:acacia_wood",
-      "minecraft:birch_wood",
-      "minecraft:cherry_wood",
-      "minecraft:dark_oak_wood",
-      "minecraft:jungle_wood",
-      "minecraft:mangrove_wood",
-      "minecraft:oak_wood",
-      "minecraft:pale_oak_wood",
-      "minecraft:spruce_wood",
-      "minecraft:crimson_hyphae",
-      "minecraft:warped_hyphae"
-    ],
     "c:stripped_woods": [
       "minecraft:stripped_acacia_wood",
       "minecraft:stripped_birch_wood",
@@ -86,6 +146,22 @@
       "minecraft:stripped_crimson_hyphae",
       "minecraft:stripped_warped_hyphae"
     ],
+    "c:natural_woods": [
+      "minecraft:acacia_wood",
+      "minecraft:birch_wood",
+      "minecraft:cherry_wood",
+      "minecraft:dark_oak_wood",
+      "minecraft:jungle_wood",
+      "minecraft:mangrove_wood",
+      "minecraft:oak_wood",
+      "minecraft:pale_oak_wood",
+      "minecraft:spruce_wood",
+      "minecraft:crimson_hyphae",
+      "minecraft:warped_hyphae"
+    ],
+    "c:pumpkins/carved": [
+      "minecraft:carved_pumpkin"
+    ],
     "c:sandstone/slabs": [
       "minecraft:sandstone_slab",
       "minecraft:cut_sandstone_slab",
@@ -97,9 +173,6 @@
     "c:chests/trapped": [
       "minecraft:trapped_chest"
     ],
-    "c:storage_blocks/gold": [
-      "minecraft:gold_block"
-    ],
     "c:flowers/tall": [
       "minecraft:sunflower",
       "minecraft:lilac",
@@ -107,42 +180,27 @@
       "minecraft:rose_bush",
       "minecraft:pitcher_plant"
     ],
+    "c:storage_blocks/gold": [
+      "minecraft:gold_block"
+    ],
     "c:glass_blocks/tinted": [
       "minecraft:tinted_glass"
     ],
-    "c:storage_blocks": [
-      "minecraft:bone_block",
-      "minecraft:coal_block",
-      "minecraft:copper_block",
-      "minecraft:diamond_block",
-      "minecraft:dried_kelp_block",
-      "minecraft:emerald_block",
-      "minecraft:gold_block",
-      "minecraft:iron_block",
-      "minecraft:lapis_block",
-      "minecraft:netherite_block",
-      "minecraft:raw_copper_block",
-      "minecraft:raw_gold_block",
-      "minecraft:raw_iron_block",
-      "minecraft:redstone_block",
-      "minecraft:resin_block",
-      "minecraft:slime_block",
-      "minecraft:hay_block"
+    "c:end_stones": [
+      "minecraft:end_stone"
     ],
-    "c:fences": [
-      "minecraft:oak_fence",
-      "minecraft:spruce_fence",
-      "minecraft:birch_fence",
-      "minecraft:jungle_fence",
-      "minecraft:acacia_fence",
-      "minecraft:dark_oak_fence",
-      "minecraft:crimson_fence",
-      "minecraft:warped_fence",
-      "minecraft:mangrove_fence",
-      "minecraft:bamboo_fence",
-      "minecraft:cherry_fence",
-      "minecraft:pale_oak_fence",
-      "minecraft:nether_brick_fence"
+    "c:chests": [
+      "minecraft:chest",
+      "minecraft:trapped_chest",
+      "minecraft:ender_chest",
+      "minecraft:copper_chest",
+      "minecraft:exposed_copper_chest",
+      "minecraft:weathered_copper_chest",
+      "minecraft:oxidized_copper_chest",
+      "minecraft:waxed_copper_chest",
+      "minecraft:waxed_exposed_copper_chest",
+      "minecraft:waxed_weathered_copper_chest",
+      "minecraft:waxed_oxidized_copper_chest"
     ],
     "c:concretes": [
       "minecraft:white_concrete",
@@ -162,17 +220,17 @@
       "minecraft:black_concrete",
       "minecraft:red_concrete"
     ],
-    "c:end_stones": [
-      "minecraft:end_stone"
-    ],
-    "c:storage_blocks/raw_copper": [
-      "minecraft:raw_copper_block"
+    "c:storage_blocks/coal": [
+      "minecraft:coal_block"
     ],
     "c:pumpkins/jack_o_lanterns": [
       "minecraft:jack_o_lantern"
     ],
-    "c:storage_blocks/coal": [
-      "minecraft:coal_block"
+    "c:storage_blocks/raw_iron": [
+      "minecraft:raw_iron_block"
+    ],
+    "c:storage_blocks/raw_copper": [
+      "minecraft:raw_copper_block"
     ],
     "c:dyed/gray": [
       "minecraft:gray_banner",
@@ -189,15 +247,6 @@
       "minecraft:gray_wool",
       "minecraft:gray_bundle",
       "minecraft:gray_harness"
-    ],
-    "c:storage_blocks/raw_iron": [
-      "minecraft:raw_iron_block"
-    ],
-    "c:sandstone/stairs": [
-      "minecraft:sandstone_stairs",
-      "minecraft:smooth_sandstone_stairs",
-      "minecraft:red_sandstone_stairs",
-      "minecraft:smooth_red_sandstone_stairs"
     ],
     "c:cobblestones/mossy": [
       "minecraft:mossy_cobblestone"
@@ -490,21 +539,6 @@
       "minecraft:black_bundle",
       "minecraft:black_harness"
     ],
-    "c:villager_job_sites": [
-      "minecraft:barrel",
-      "minecraft:blast_furnace",
-      "minecraft:brewing_stand",
-      "minecraft:cartography_table",
-      "minecraft:cauldron",
-      "minecraft:composter",
-      "minecraft:fletching_table",
-      "minecraft:grindstone",
-      "minecraft:lectern",
-      "minecraft:loom",
-      "minecraft:smithing_table",
-      "minecraft:smoker",
-      "minecraft:stonecutter"
-    ],
     "c:storage_blocks/emerald": [
       "minecraft:emerald_block"
     ],
@@ -530,17 +564,6 @@
       "minecraft:black_stained_glass",
       "minecraft:red_stained_glass"
     ],
-    "c:chains": [
-      "minecraft:iron_chain",
-      "minecraft:copper_chain",
-      "minecraft:exposed_copper_chain",
-      "minecraft:weathered_copper_chain",
-      "minecraft:oxidized_copper_chain",
-      "minecraft:waxed_copper_chain",
-      "minecraft:waxed_exposed_copper_chain",
-      "minecraft:waxed_weathered_copper_chain",
-      "minecraft:waxed_oxidized_copper_chain"
-    ],
     "c:pumpkins": [
       "minecraft:pumpkin",
       "minecraft:carved_pumpkin",
@@ -552,19 +575,6 @@
     "c:ores/lapis": [
       "minecraft:lapis_ore",
       "minecraft:deepslate_lapis_ore"
-    ],
-    "c:ores_in_ground/stone": [
-      "minecraft:coal_ore",
-      "minecraft:copper_ore",
-      "minecraft:diamond_ore",
-      "minecraft:emerald_ore",
-      "minecraft:gold_ore",
-      "minecraft:iron_ore",
-      "minecraft:lapis_ore",
-      "minecraft:redstone_ore"
-    ],
-    "c:budding_blocks": [
-      "minecraft:budding_amethyst"
     ],
     "c:fences/wooden": [
       "minecraft:oak_fence",
@@ -605,6 +615,9 @@
     "c:player_workstations/furnaces": [
       "minecraft:furnace"
     ],
+    "c:sands/colorless": [
+      "minecraft:sand"
+    ],
     "c:storage_blocks/dried_kelp": [
       "minecraft:dried_kelp_block"
     ],
@@ -624,9 +637,6 @@
       "minecraft:white_bundle",
       "minecraft:white_harness"
     ],
-    "c:barrels/wooden": [
-      "minecraft:barrel"
-    ],
     "c:ores/iron": [
       "minecraft:iron_ore",
       "minecraft:deepslate_iron_ore"
@@ -634,19 +644,16 @@
     "c:sands/red": [
       "minecraft:red_sand"
     ],
+    "c:sandstone/uncolored_slabs": [
+      "minecraft:sandstone_slab",
+      "minecraft:cut_sandstone_slab",
+      "minecraft:smooth_sandstone_slab"
+    ],
     "c:cobblestones": [
       "minecraft:cobblestone",
       "minecraft:mossy_cobblestone",
       "minecraft:infested_cobblestone",
       "minecraft:cobbled_deepslate"
-    ],
-    "c:pumpkins/carved": [
-      "minecraft:carved_pumpkin"
-    ],
-    "c:sandstone/uncolored_slabs": [
-      "minecraft:sandstone_slab",
-      "minecraft:cut_sandstone_slab",
-      "minecraft:smooth_sandstone_slab"
     ],
     "c:storage_blocks/raw_gold": [
       "minecraft:raw_gold_block"
@@ -656,19 +663,6 @@
     ],
     "c:storage_blocks/slime": [
       "minecraft:slime_block"
-    ],
-    "c:chests": [
-      "minecraft:chest",
-      "minecraft:trapped_chest",
-      "minecraft:ender_chest",
-      "minecraft:copper_chest",
-      "minecraft:exposed_copper_chest",
-      "minecraft:weathered_copper_chest",
-      "minecraft:oxidized_copper_chest",
-      "minecraft:waxed_copper_chest",
-      "minecraft:waxed_exposed_copper_chest",
-      "minecraft:waxed_weathered_copper_chest",
-      "minecraft:waxed_oxidized_copper_chest"
     ],
     "c:fences/nether_brick": [
       "minecraft:nether_brick_fence"
@@ -708,6 +702,9 @@
       "minecraft:red_stained_glass_pane",
       "minecraft:glass_pane"
     ],
+    "c:glass_blocks/colorless": [
+      "minecraft:glass"
+    ],
     "c:sandstone/red_stairs": [
       "minecraft:red_sandstone_stairs",
       "minecraft:smooth_red_sandstone_stairs"
@@ -745,6 +742,9 @@
     "c:chests/ender": [
       "minecraft:ender_chest"
     ],
+    "c:pumpkins/normal": [
+      "minecraft:pumpkin"
+    ],
     "c:ores": [
       "minecraft:coal_ore",
       "minecraft:deepslate_coal_ore",
@@ -766,8 +766,8 @@
       "minecraft:deepslate_redstone_ore",
       "minecraft:nether_quartz_ore"
     ],
-    "c:pumpkins/normal": [
-      "minecraft:pumpkin"
+    "c:ore_rates/sparse": [
+      "minecraft:nether_gold_ore"
     ],
     "c:sands": [
       "minecraft:sand",
@@ -794,6 +794,14 @@
     ],
     "c:cobblestones/deepslate": [
       "minecraft:cobbled_deepslate"
+    ],
+    "c:ore_rates/dense": [
+      "minecraft:copper_ore",
+      "minecraft:deepslate_copper_ore",
+      "minecraft:deepslate_lapis_ore",
+      "minecraft:deepslate_redstone_ore",
+      "minecraft:lapis_ore",
+      "minecraft:redstone_ore"
     ],
     "c:fence_gates": [
       "minecraft:oak_fence_gate",
@@ -941,6 +949,25 @@
     "c:storage_blocks/redstone": [
       "minecraft:redstone_block"
     ],
+    "c:storage_blocks": [
+      "minecraft:bone_block",
+      "minecraft:coal_block",
+      "minecraft:copper_block",
+      "minecraft:diamond_block",
+      "minecraft:dried_kelp_block",
+      "minecraft:emerald_block",
+      "minecraft:gold_block",
+      "minecraft:iron_block",
+      "minecraft:lapis_block",
+      "minecraft:netherite_block",
+      "minecraft:raw_copper_block",
+      "minecraft:raw_gold_block",
+      "minecraft:raw_iron_block",
+      "minecraft:redstone_block",
+      "minecraft:resin_block",
+      "minecraft:slime_block",
+      "minecraft:hay_block"
+    ],
     "c:ores/gold": [
       "minecraft:gold_ore",
       "minecraft:nether_gold_ore",
@@ -970,14 +997,32 @@
       "minecraft:diamond_ore",
       "minecraft:deepslate_diamond_ore"
     ],
-    "c:sands/colorless": [
-      "minecraft:sand"
+    "c:fences": [
+      "minecraft:oak_fence",
+      "minecraft:spruce_fence",
+      "minecraft:birch_fence",
+      "minecraft:jungle_fence",
+      "minecraft:acacia_fence",
+      "minecraft:dark_oak_fence",
+      "minecraft:crimson_fence",
+      "minecraft:warped_fence",
+      "minecraft:mangrove_fence",
+      "minecraft:bamboo_fence",
+      "minecraft:cherry_fence",
+      "minecraft:pale_oak_fence",
+      "minecraft:nether_brick_fence"
     ],
     "c:cobblestones/infested": [
       "minecraft:infested_cobblestone"
     ],
     "c:storage_blocks/iron": [
       "minecraft:iron_block"
+    ],
+    "c:sandstone/stairs": [
+      "minecraft:sandstone_stairs",
+      "minecraft:smooth_sandstone_stairs",
+      "minecraft:red_sandstone_stairs",
+      "minecraft:smooth_red_sandstone_stairs"
     ],
     "c:ores/coal": [
       "minecraft:coal_ore",
@@ -1051,21 +1096,8 @@
       "minecraft:nether_gold_ore",
       "minecraft:nether_quartz_ore"
     ],
-    "c:dyed/yellow": [
-      "minecraft:yellow_banner",
-      "minecraft:yellow_bed",
-      "minecraft:yellow_candle",
-      "minecraft:yellow_carpet",
-      "minecraft:yellow_concrete",
-      "minecraft:yellow_concrete_powder",
-      "minecraft:yellow_glazed_terracotta",
-      "minecraft:yellow_shulker_box",
-      "minecraft:yellow_stained_glass",
-      "minecraft:yellow_stained_glass_pane",
-      "minecraft:yellow_terracotta",
-      "minecraft:yellow_wool",
-      "minecraft:yellow_bundle",
-      "minecraft:yellow_harness"
+    "c:cobblestones/normal": [
+      "minecraft:cobblestone"
     ],
     "c:fence_gates/wooden": [
       "minecraft:oak_fence_gate",
@@ -1084,11 +1116,36 @@
     "c:ore_bearing_ground/stone": [
       "minecraft:stone"
     ],
-    "c:cobblestones/normal": [
-      "minecraft:cobblestone"
+    "c:dyed/yellow": [
+      "minecraft:yellow_banner",
+      "minecraft:yellow_bed",
+      "minecraft:yellow_candle",
+      "minecraft:yellow_carpet",
+      "minecraft:yellow_concrete",
+      "minecraft:yellow_concrete_powder",
+      "minecraft:yellow_glazed_terracotta",
+      "minecraft:yellow_shulker_box",
+      "minecraft:yellow_stained_glass",
+      "minecraft:yellow_stained_glass_pane",
+      "minecraft:yellow_terracotta",
+      "minecraft:yellow_wool",
+      "minecraft:yellow_bundle",
+      "minecraft:yellow_harness"
     ],
-    "c:glass_blocks/colorless": [
-      "minecraft:glass"
+    "c:villager_job_sites": [
+      "minecraft:barrel",
+      "minecraft:blast_furnace",
+      "minecraft:brewing_stand",
+      "minecraft:cartography_table",
+      "minecraft:cauldron",
+      "minecraft:composter",
+      "minecraft:fletching_table",
+      "minecraft:grindstone",
+      "minecraft:lectern",
+      "minecraft:loom",
+      "minecraft:smithing_table",
+      "minecraft:smoker",
+      "minecraft:stonecutter"
     ],
     "c:clusters": [
       "minecraft:amethyst_cluster"
@@ -1117,85 +1174,175 @@
       "minecraft:green_bundle",
       "minecraft:green_harness"
     ],
-    "c:natural_logs": [
-      "minecraft:acacia_log",
-      "minecraft:bamboo_block",
-      "minecraft:birch_log",
-      "minecraft:cherry_log",
-      "minecraft:dark_oak_log",
-      "minecraft:jungle_log",
-      "minecraft:mangrove_log",
-      "minecraft:oak_log",
-      "minecraft:pale_oak_log",
-      "minecraft:spruce_log",
-      "minecraft:crimson_stem",
-      "minecraft:warped_stem"
+    "c:drinks/ominous": [
+      "minecraft:ominous_bottle"
     ],
-    "c:dyed/pink": [
-      "minecraft:pink_banner",
-      "minecraft:pink_bed",
-      "minecraft:pink_candle",
-      "minecraft:pink_carpet",
-      "minecraft:pink_concrete",
-      "minecraft:pink_concrete_powder",
-      "minecraft:pink_glazed_terracotta",
+    "c:drinks/milk": [
+      "minecraft:milk_bucket"
+    ],
+    "c:dyes/brown": [
+      "minecraft:brown_dye"
+    ],
+    "c:seeds": [
+      "minecraft:beetroot_seeds",
+      "minecraft:melon_seeds",
+      "minecraft:pumpkin_seeds",
+      "minecraft:torchflower_seeds",
+      "minecraft:pitcher_pod",
+      "minecraft:wheat_seeds"
+    ],
+    "c:bones": [
+      "minecraft:bone"
+    ],
+    "c:ingots/netherite": [
+      "minecraft:netherite_ingot"
+    ],
+    "c:buckets/entity_water": [
+      "minecraft:axolotl_bucket",
+      "minecraft:cod_bucket",
+      "minecraft:pufferfish_bucket",
+      "minecraft:tadpole_bucket",
+      "minecraft:tropical_fish_bucket",
+      "minecraft:salmon_bucket"
+    ],
+    "c:foods/pie": [
+      "minecraft:pumpkin_pie"
+    ],
+    "c:dyes": [
+      "minecraft:white_dye",
+      "minecraft:orange_dye",
+      "minecraft:magenta_dye",
+      "minecraft:light_blue_dye",
+      "minecraft:yellow_dye",
+      "minecraft:lime_dye",
+      "minecraft:pink_dye",
+      "minecraft:gray_dye",
+      "minecraft:light_gray_dye",
+      "minecraft:cyan_dye",
+      "minecraft:purple_dye",
+      "minecraft:blue_dye",
+      "minecraft:brown_dye",
+      "minecraft:green_dye",
+      "minecraft:red_dye",
+      "minecraft:black_dye"
+    ],
+    "c:foods/food_poisoning": [
+      "minecraft:poisonous_potato",
+      "minecraft:pufferfish",
+      "minecraft:spider_eye",
+      "minecraft:chicken",
+      "minecraft:rotten_flesh"
+    ],
+    "c:gems/amethyst": [
+      "minecraft:amethyst_shard"
+    ],
+    "c:bricks/normal": [
+      "minecraft:brick"
+    ],
+    "c:gems/prismarine": [
+      "minecraft:prismarine_crystals"
+    ],
+    "c:clumps": [
+      "minecraft:resin_clump"
+    ],
+    "c:bricks/nether": [
+      "minecraft:nether_brick"
+    ],
+    "c:drinks": [
+      "minecraft:potion",
+      "minecraft:milk_bucket",
+      "minecraft:honey_bottle",
+      "minecraft:ominous_bottle"
+    ],
+    "c:armors/horse": [
+      "minecraft:leather_horse_armor",
+      "minecraft:copper_horse_armor",
+      "minecraft:iron_horse_armor",
+      "minecraft:golden_horse_armor",
+      "minecraft:diamond_horse_armor",
+      "minecraft:netherite_horse_armor"
+    ],
+    "c:dyes/pink": [
+      "minecraft:pink_dye"
+    ],
+    "c:crops/cocoa_bean": [
+      "minecraft:cocoa_beans"
+    ],
+    "c:shulker_boxes": [
+      "minecraft:shulker_box",
+      "minecraft:white_shulker_box",
+      "minecraft:orange_shulker_box",
+      "minecraft:magenta_shulker_box",
+      "minecraft:light_blue_shulker_box",
+      "minecraft:yellow_shulker_box",
+      "minecraft:lime_shulker_box",
       "minecraft:pink_shulker_box",
-      "minecraft:pink_stained_glass",
-      "minecraft:pink_stained_glass_pane",
-      "minecraft:pink_terracotta",
-      "minecraft:pink_wool",
-      "minecraft:pink_bundle",
-      "minecraft:pink_harness"
+      "minecraft:gray_shulker_box",
+      "minecraft:light_gray_shulker_box",
+      "minecraft:cyan_shulker_box",
+      "minecraft:purple_shulker_box",
+      "minecraft:blue_shulker_box",
+      "minecraft:brown_shulker_box",
+      "minecraft:green_shulker_box",
+      "minecraft:red_shulker_box",
+      "minecraft:black_shulker_box"
     ],
-    "c:bookshelves": [
-      "minecraft:bookshelf"
+    "c:crops/melon": [
+      "minecraft:melon"
     ],
-    "c:storage_blocks/netherite": [
-      "minecraft:netherite_block"
+    "c:foods/cookie": [
+      "minecraft:cookie"
     ],
-    "c:ore_bearing_ground/deepslate": [
-      "minecraft:deepslate"
+    "c:dusts/glowstone": [
+      "minecraft:glowstone_dust"
     ],
-    "c:gravels": [
-      "minecraft:gravel"
+    "c:raw_materials/gold": [
+      "minecraft:raw_gold"
     ],
-    "c:ores/copper": [
-      "minecraft:copper_ore",
-      "minecraft:deepslate_copper_ore"
+    "c:seeds/pitcher_plant": [
+      "minecraft:pitcher_pod"
     ],
-    "c:ore_rates/sparse": [
-      "minecraft:nether_gold_ore"
+    "c:crops": [
+      "minecraft:beetroot",
+      "minecraft:cactus",
+      "minecraft:carrot",
+      "minecraft:cocoa_beans",
+      "minecraft:melon",
+      "minecraft:nether_wart",
+      "minecraft:potato",
+      "minecraft:pumpkin",
+      "minecraft:sugar_cane",
+      "minecraft:wheat"
     ],
-    "c:ore_rates/dense": [
-      "minecraft:copper_ore",
-      "minecraft:deepslate_copper_ore",
-      "minecraft:deepslate_lapis_ore",
-      "minecraft:deepslate_redstone_ore",
-      "minecraft:lapis_ore",
-      "minecraft:redstone_ore"
+    "c:raw_materials/iron": [
+      "minecraft:raw_iron"
     ],
-    "c:ender_pearls": [
-      "minecraft:ender_pearl"
+    "c:mushrooms": [
+      "minecraft:red_mushroom",
+      "minecraft:brown_mushroom"
     ],
-    "c:slime_balls": [
-      "minecraft:slime_ball"
+    "c:foods/cooked_fish": [
+      "minecraft:cooked_cod",
+      "minecraft:cooked_salmon"
+    ],
+    "c:tools/igniter": [
+      "minecraft:flint_and_steel"
     ],
     "c:foods/edible_when_placed": [
       "minecraft:cake"
     ],
-    "c:foods/vegetable": [
-      "minecraft:carrot",
-      "minecraft:golden_carrot",
-      "minecraft:potato",
-      "minecraft:beetroot"
+    "c:ender_pearls": [
+      "minecraft:ender_pearl"
     ],
-    "c:crops/wheat": [
-      "minecraft:wheat"
+    "c:ingots/copper": [
+      "minecraft:copper_ingot"
     ],
-    "c:raw_materials": [
-      "minecraft:raw_copper",
-      "minecraft:raw_gold",
-      "minecraft:raw_iron"
+    "c:slime_balls": [
+      "minecraft:slime_ball"
+    ],
+    "c:foods/berry": [
+      "minecraft:sweet_berries",
+      "minecraft:glow_berries"
     ],
     "c:enchantables": [
       "minecraft:leather_boots",
@@ -1291,11 +1438,6 @@
       "minecraft:warped_fungus_on_a_stick",
       "minecraft:compass"
     ],
-    "c:potions": [
-      "minecraft:potion",
-      "minecraft:splash_potion",
-      "minecraft:lingering_potion"
-    ],
     "c:tools/mining_tool": [
       "minecraft:wooden_pickaxe",
       "minecraft:stone_pickaxe",
@@ -1305,76 +1447,50 @@
       "minecraft:diamond_pickaxe",
       "minecraft:netherite_pickaxe"
     ],
+    "c:nuggets/copper": [
+      "minecraft:copper_nugget"
+    ],
+    "c:foods/vegetable": [
+      "minecraft:carrot",
+      "minecraft:golden_carrot",
+      "minecraft:potato",
+      "minecraft:beetroot"
+    ],
     "c:nuggets": [
       "minecraft:copper_nugget",
       "minecraft:iron_nugget",
       "minecraft:gold_nugget"
     ],
-    "c:nuggets/copper": [
-      "minecraft:copper_nugget"
+    "c:crops/wheat": [
+      "minecraft:wheat"
     ],
-    "c:buckets/lava": [
-      "minecraft:lava_bucket"
-    ],
-    "c:armors/humanoid": [
-      "minecraft:leather_helmet",
-      "minecraft:copper_helmet",
-      "minecraft:chainmail_helmet",
-      "minecraft:golden_helmet",
-      "minecraft:iron_helmet",
-      "minecraft:diamond_helmet",
-      "minecraft:netherite_helmet",
-      "minecraft:turtle_helmet",
-      "minecraft:leather_chestplate",
-      "minecraft:copper_chestplate",
-      "minecraft:chainmail_chestplate",
-      "minecraft:golden_chestplate",
-      "minecraft:iron_chestplate",
-      "minecraft:diamond_chestplate",
-      "minecraft:netherite_chestplate",
-      "minecraft:leather_leggings",
-      "minecraft:copper_leggings",
-      "minecraft:chainmail_leggings",
-      "minecraft:golden_leggings",
-      "minecraft:iron_leggings",
-      "minecraft:diamond_leggings",
-      "minecraft:netherite_leggings",
-      "minecraft:leather_boots",
-      "minecraft:copper_boots",
-      "minecraft:chainmail_boots",
-      "minecraft:golden_boots",
-      "minecraft:iron_boots",
-      "minecraft:diamond_boots",
-      "minecraft:netherite_boots"
+    "c:raw_materials": [
+      "minecraft:raw_copper",
+      "minecraft:raw_gold",
+      "minecraft:raw_iron"
     ],
     "c:gunpowders": [
       "minecraft:gunpowder"
     ],
-    "c:drink_containing/bottle": [
-      "minecraft:potion",
-      "minecraft:honey_bottle",
-      "minecraft:ominous_bottle"
-    ],
     "c:fertilizers": [
       "minecraft:bone_meal"
     ],
-    "c:dyes/gray": [
-      "minecraft:gray_dye"
+    "c:potions": [
+      "minecraft:potion",
+      "minecraft:splash_potion",
+      "minecraft:lingering_potion"
     ],
     "c:dyes/red": [
       "minecraft:red_dye"
     ],
+    "c:dyes/gray": [
+      "minecraft:gray_dye"
+    ],
     "c:seeds/melon": [
       "minecraft:melon_seeds"
     ],
-    "c:drink_containing/bucket": [
-      "minecraft:milk_bucket"
-    ],
     "c:dyes/blue": [
       "minecraft:blue_dye"
-    ],
-    "c:buckets/empty": [
-      "minecraft:bucket"
     ],
     "c:animal_foods": [
       "minecraft:spider_eye",
@@ -1451,8 +1567,42 @@
       "minecraft:pufferfish",
       "minecraft:rabbit_stew"
     ],
+    "c:buckets/lava": [
+      "minecraft:lava_bucket"
+    ],
     "c:crops/nether_wart": [
       "minecraft:nether_wart"
+    ],
+    "c:armors/humanoid": [
+      "minecraft:leather_helmet",
+      "minecraft:copper_helmet",
+      "minecraft:chainmail_helmet",
+      "minecraft:golden_helmet",
+      "minecraft:iron_helmet",
+      "minecraft:diamond_helmet",
+      "minecraft:netherite_helmet",
+      "minecraft:turtle_helmet",
+      "minecraft:leather_chestplate",
+      "minecraft:copper_chestplate",
+      "minecraft:chainmail_chestplate",
+      "minecraft:golden_chestplate",
+      "minecraft:iron_chestplate",
+      "minecraft:diamond_chestplate",
+      "minecraft:netherite_chestplate",
+      "minecraft:leather_leggings",
+      "minecraft:copper_leggings",
+      "minecraft:chainmail_leggings",
+      "minecraft:golden_leggings",
+      "minecraft:iron_leggings",
+      "minecraft:diamond_leggings",
+      "minecraft:netherite_leggings",
+      "minecraft:leather_boots",
+      "minecraft:copper_boots",
+      "minecraft:chainmail_boots",
+      "minecraft:golden_boots",
+      "minecraft:iron_boots",
+      "minecraft:diamond_boots",
+      "minecraft:netherite_boots"
     ],
     "c:foods/golden": [
       "minecraft:golden_apple",
@@ -1461,6 +1611,26 @@
     ],
     "c:dyes/orange": [
       "minecraft:orange_dye"
+    ],
+    "c:dyes/purple": [
+      "minecraft:purple_dye"
+    ],
+    "c:drink_containing/bottle": [
+      "minecraft:potion",
+      "minecraft:honey_bottle",
+      "minecraft:ominous_bottle"
+    ],
+    "c:crops/sugar_cane": [
+      "minecraft:sugar_cane"
+    ],
+    "c:drink_containing/bucket": [
+      "minecraft:milk_bucket"
+    ],
+    "c:buckets/empty": [
+      "minecraft:bucket"
+    ],
+    "c:armors/wolf": [
+      "minecraft:wolf_armor"
     ],
     "c:tools/melee_weapon": [
       "minecraft:mace",
@@ -1487,15 +1657,15 @@
       "minecraft:diamond_spear",
       "minecraft:netherite_spear"
     ],
-    "c:dyes/purple": [
-      "minecraft:purple_dye"
-    ],
     "c:dusts": [
       "minecraft:glowstone_dust",
       "minecraft:redstone"
     ],
-    "c:crops/sugar_cane": [
-      "minecraft:sugar_cane"
+    "c:dyes/black": [
+      "minecraft:black_dye"
+    ],
+    "c:clumps/resin": [
+      "minecraft:resin_clump"
     ],
     "c:foods/raw_fish": [
       "minecraft:cod",
@@ -1503,11 +1673,8 @@
       "minecraft:tropical_fish",
       "minecraft:pufferfish"
     ],
-    "c:clumps/resin": [
-      "minecraft:resin_clump"
-    ],
-    "c:armors/wolf": [
-      "minecraft:wolf_armor"
+    "c:dyes/yellow": [
+      "minecraft:yellow_dye"
     ],
     "c:foods/soup": [
       "minecraft:beetroot_soup",
@@ -1515,29 +1682,11 @@
       "minecraft:rabbit_stew",
       "minecraft:suspicious_stew"
     ],
-    "c:buckets/water": [
-      "minecraft:water_bucket"
-    ],
-    "c:dyes/black": [
-      "minecraft:black_dye"
-    ],
-    "c:dusts/redstone": [
-      "minecraft:redstone"
-    ],
-    "c:dyes/yellow": [
-      "minecraft:yellow_dye"
-    ],
     "c:tools/shear": [
       "minecraft:shears"
     ],
-    "c:tools/bow": [
-      "minecraft:bow"
-    ],
-    "c:buckets/milk": [
-      "minecraft:milk_bucket"
-    ],
-    "c:foods/bread": [
-      "minecraft:bread"
+    "c:buckets/water": [
+      "minecraft:water_bucket"
     ],
     "c:music_discs": [
       "minecraft:music_disc_13",
@@ -1568,6 +1717,24 @@
     "c:raw_materials/copper": [
       "minecraft:raw_copper"
     ],
+    "c:dusts/redstone": [
+      "minecraft:redstone"
+    ],
+    "c:rods/blaze": [
+      "minecraft:blaze_rod"
+    ],
+    "c:tools/bow": [
+      "minecraft:bow"
+    ],
+    "c:buckets/milk": [
+      "minecraft:milk_bucket"
+    ],
+    "c:foods/bread": [
+      "minecraft:bread"
+    ],
+    "c:bricks/resin": [
+      "minecraft:resin_brick"
+    ],
     "c:feathers": [
       "minecraft:feather"
     ],
@@ -1587,8 +1754,15 @@
     "c:crops/carrot": [
       "minecraft:carrot"
     ],
-    "c:rods/blaze": [
-      "minecraft:blaze_rod"
+    "c:foods/cooked_meat": [
+      "minecraft:cooked_beef",
+      "minecraft:cooked_porkchop",
+      "minecraft:cooked_chicken",
+      "minecraft:cooked_rabbit",
+      "minecraft:cooked_mutton"
+    ],
+    "c:tools/crossbow": [
+      "minecraft:crossbow"
     ],
     "c:eggs": [
       "minecraft:egg",
@@ -1597,30 +1771,6 @@
     ],
     "c:tools/fishing_rod": [
       "minecraft:fishing_rod"
-    ],
-    "c:bricks/resin": [
-      "minecraft:resin_brick"
-    ],
-    "c:foods/cooked_meat": [
-      "minecraft:cooked_beef",
-      "minecraft:cooked_porkchop",
-      "minecraft:cooked_chicken",
-      "minecraft:cooked_rabbit",
-      "minecraft:cooked_mutton"
-    ],
-    "c:crops/potato": [
-      "minecraft:potato"
-    ],
-    "c:tools/crossbow": [
-      "minecraft:crossbow"
-    ],
-    "c:gems": [
-      "minecraft:amethyst_shard",
-      "minecraft:diamond",
-      "minecraft:emerald",
-      "minecraft:lapis_lazuli",
-      "minecraft:prismarine_crystals",
-      "minecraft:quartz"
     ],
     "c:concrete_powders": [
       "minecraft:white_concrete_powder",
@@ -1640,6 +1790,33 @@
       "minecraft:red_concrete_powder",
       "minecraft:black_concrete_powder"
     ],
+    "c:crops/beetroot": [
+      "minecraft:beetroot"
+    ],
+    "c:crops/potato": [
+      "minecraft:potato"
+    ],
+    "c:gems": [
+      "minecraft:amethyst_shard",
+      "minecraft:diamond",
+      "minecraft:emerald",
+      "minecraft:lapis_lazuli",
+      "minecraft:prismarine_crystals",
+      "minecraft:quartz"
+    ],
+    "c:drinks/magic": [
+      "minecraft:potion",
+      "minecraft:ominous_bottle"
+    ],
+    "c:rods/wooden": [
+      "minecraft:stick"
+    ],
+    "c:tools/shield": [
+      "minecraft:shield"
+    ],
+    "c:dyes/light_gray": [
+      "minecraft:light_gray_dye"
+    ],
     "c:nether_stars": [
       "minecraft:nether_star"
     ],
@@ -1652,6 +1829,12 @@
     ],
     "c:rods/breeze": [
       "minecraft:breeze_rod"
+    ],
+    "c:buckets/powder_snow": [
+      "minecraft:powder_snow_bucket"
+    ],
+    "c:dyes/light_blue": [
+      "minecraft:light_blue_dye"
     ],
     "c:tools": [
       "minecraft:diamond_axe",
@@ -1706,48 +1889,11 @@
       "minecraft:trident",
       "minecraft:mace"
     ],
-    "c:crops/beetroot": [
-      "minecraft:beetroot"
-    ],
-    "c:drinks/magic": [
-      "minecraft:potion",
-      "minecraft:ominous_bottle"
-    ],
-    "c:rods/wooden": [
-      "minecraft:stick"
-    ],
-    "c:tools/shield": [
-      "minecraft:shield"
-    ],
-    "c:dyes/light_gray": [
-      "minecraft:light_gray_dye"
-    ],
-    "c:buckets/powder_snow": [
-      "minecraft:powder_snow_bucket"
-    ],
-    "c:dyes/light_blue": [
-      "minecraft:light_blue_dye"
-    ],
-    "c:seeds/beetroot": [
-      "minecraft:beetroot_seeds"
-    ],
-    "c:seeds/pumpkin": [
-      "minecraft:pumpkin_seeds"
-    ],
     "c:ingots": [
       "minecraft:copper_ingot",
       "minecraft:iron_ingot",
       "minecraft:gold_ingot",
       "minecraft:netherite_ingot"
-    ],
-    "c:nuggets/gold": [
-      "minecraft:gold_nugget"
-    ],
-    "c:crops/cactus": [
-      "minecraft:cactus"
-    ],
-    "c:nuggets/iron": [
-      "minecraft:iron_nugget"
     ],
     "c:dyes/cyan": [
       "minecraft:cyan_dye"
@@ -1770,10 +1916,85 @@
     "c:tools/brush": [
       "minecraft:brush"
     ],
+    "c:seeds/beetroot": [
+      "minecraft:beetroot_seeds"
+    ],
+    "c:seeds/pumpkin": [
+      "minecraft:pumpkin_seeds"
+    ],
+    "c:nuggets/gold": [
+      "minecraft:gold_nugget"
+    ],
+    "c:crops/cactus": [
+      "minecraft:cactus"
+    ],
+    "c:nuggets/iron": [
+      "minecraft:iron_nugget"
+    ],
+    "c:bricks": [
+      "minecraft:brick",
+      "minecraft:nether_brick",
+      "minecraft:resin_brick"
+    ],
     "c:rods": [
       "minecraft:stick",
       "minecraft:blaze_rod",
       "minecraft:breeze_rod"
+    ],
+    "c:ingots/gold": [
+      "minecraft:gold_ingot"
+    ],
+    "c:tools/trident": [
+      "minecraft:trident"
+    ],
+    "c:ingots/iron": [
+      "minecraft:iron_ingot"
+    ],
+    "c:dyes/white": [
+      "minecraft:white_dye"
+    ],
+    "c:armors": [
+      "minecraft:leather_helmet",
+      "minecraft:copper_helmet",
+      "minecraft:chainmail_helmet",
+      "minecraft:golden_helmet",
+      "minecraft:iron_helmet",
+      "minecraft:diamond_helmet",
+      "minecraft:netherite_helmet",
+      "minecraft:turtle_helmet",
+      "minecraft:leather_chestplate",
+      "minecraft:copper_chestplate",
+      "minecraft:chainmail_chestplate",
+      "minecraft:golden_chestplate",
+      "minecraft:iron_chestplate",
+      "minecraft:diamond_chestplate",
+      "minecraft:netherite_chestplate",
+      "minecraft:leather_leggings",
+      "minecraft:copper_leggings",
+      "minecraft:chainmail_leggings",
+      "minecraft:golden_leggings",
+      "minecraft:iron_leggings",
+      "minecraft:diamond_leggings",
+      "minecraft:netherite_leggings",
+      "minecraft:leather_boots",
+      "minecraft:copper_boots",
+      "minecraft:chainmail_boots",
+      "minecraft:golden_boots",
+      "minecraft:iron_boots",
+      "minecraft:diamond_boots",
+      "minecraft:netherite_boots",
+      "minecraft:leather_horse_armor",
+      "minecraft:copper_horse_armor",
+      "minecraft:iron_horse_armor",
+      "minecraft:golden_horse_armor",
+      "minecraft:diamond_horse_armor",
+      "minecraft:netherite_horse_armor",
+      "minecraft:copper_nautilus_armor",
+      "minecraft:iron_nautilus_armor",
+      "minecraft:golden_nautilus_armor",
+      "minecraft:diamond_nautilus_armor",
+      "minecraft:netherite_nautilus_armor",
+      "minecraft:wolf_armor"
     ],
     "c:gems/diamond": [
       "minecraft:diamond"
@@ -1781,19 +2002,11 @@
     "c:gems/emerald": [
       "minecraft:emerald"
     ],
-    "c:bricks": [
-      "minecraft:brick",
-      "minecraft:nether_brick",
-      "minecraft:resin_brick"
-    ],
     "c:gems/lapis": [
       "minecraft:lapis_lazuli"
     ],
-    "c:tools/trident": [
-      "minecraft:trident"
-    ],
-    "c:ingots/gold": [
-      "minecraft:gold_ingot"
+    "c:seeds/torchflower": [
+      "minecraft:torchflower_seeds"
     ],
     "c:foods/raw_meat": [
       "minecraft:beef",
@@ -1846,66 +2059,14 @@
       "minecraft:spider_eye",
       "minecraft:rotten_flesh"
     ],
-    "c:ingots/iron": [
-      "minecraft:iron_ingot"
-    ],
-    "c:dyes/white": [
-      "minecraft:white_dye"
-    ],
-    "c:armors": [
-      "minecraft:leather_helmet",
-      "minecraft:copper_helmet",
-      "minecraft:chainmail_helmet",
-      "minecraft:golden_helmet",
-      "minecraft:iron_helmet",
-      "minecraft:diamond_helmet",
-      "minecraft:netherite_helmet",
-      "minecraft:turtle_helmet",
-      "minecraft:leather_chestplate",
-      "minecraft:copper_chestplate",
-      "minecraft:chainmail_chestplate",
-      "minecraft:golden_chestplate",
-      "minecraft:iron_chestplate",
-      "minecraft:diamond_chestplate",
-      "minecraft:netherite_chestplate",
-      "minecraft:leather_leggings",
-      "minecraft:copper_leggings",
-      "minecraft:chainmail_leggings",
-      "minecraft:golden_leggings",
-      "minecraft:iron_leggings",
-      "minecraft:diamond_leggings",
-      "minecraft:netherite_leggings",
-      "minecraft:leather_boots",
-      "minecraft:copper_boots",
-      "minecraft:chainmail_boots",
-      "minecraft:golden_boots",
-      "minecraft:iron_boots",
-      "minecraft:diamond_boots",
-      "minecraft:netherite_boots",
-      "minecraft:leather_horse_armor",
-      "minecraft:copper_horse_armor",
-      "minecraft:iron_horse_armor",
-      "minecraft:golden_horse_armor",
-      "minecraft:diamond_horse_armor",
-      "minecraft:netherite_horse_armor",
-      "minecraft:copper_nautilus_armor",
-      "minecraft:iron_nautilus_armor",
-      "minecraft:golden_nautilus_armor",
-      "minecraft:diamond_nautilus_armor",
-      "minecraft:netherite_nautilus_armor",
-      "minecraft:wolf_armor"
-    ],
-    "c:tools/mace": [
-      "minecraft:mace"
-    ],
-    "c:seeds/torchflower": [
-      "minecraft:torchflower_seeds"
-    ],
     "c:drinks/watery": [
       "minecraft:potion"
     ],
     "c:dyes/magenta": [
       "minecraft:magenta_dye"
+    ],
+    "c:tools/mace": [
+      "minecraft:mace"
     ],
     "c:gems/quartz": [
       "minecraft:quartz"
@@ -1918,192 +2079,101 @@
     "c:drinks/honey": [
       "minecraft:honey_bottle"
     ],
-    "c:drinks/ominous": [
-      "minecraft:ominous_bottle"
-    ],
-    "c:seeds": [
-      "minecraft:beetroot_seeds",
-      "minecraft:melon_seeds",
-      "minecraft:pumpkin_seeds",
-      "minecraft:torchflower_seeds",
-      "minecraft:pitcher_pod",
-      "minecraft:wheat_seeds"
-    ],
     "c:strings": [
       "minecraft:string"
     ],
     "c:leathers": [
       "minecraft:leather"
     ],
-    "c:bones": [
-      "minecraft:bone"
-    ],
-    "c:ingots/netherite": [
-      "minecraft:netherite_ingot"
-    ],
     "c:dyes/green": [
       "minecraft:green_dye"
     ],
     "c:crops/pumpkin": [
       "minecraft:pumpkin"
-    ],
-    "c:dyes": [
-      "minecraft:white_dye",
-      "minecraft:orange_dye",
-      "minecraft:magenta_dye",
-      "minecraft:light_blue_dye",
-      "minecraft:yellow_dye",
-      "minecraft:lime_dye",
-      "minecraft:pink_dye",
-      "minecraft:gray_dye",
-      "minecraft:light_gray_dye",
-      "minecraft:cyan_dye",
-      "minecraft:purple_dye",
-      "minecraft:blue_dye",
-      "minecraft:brown_dye",
-      "minecraft:green_dye",
-      "minecraft:red_dye",
-      "minecraft:black_dye"
-    ],
-    "c:gems/amethyst": [
-      "minecraft:amethyst_shard"
-    ],
-    "c:foods/food_poisoning": [
-      "minecraft:poisonous_potato",
-      "minecraft:pufferfish",
-      "minecraft:spider_eye",
-      "minecraft:chicken",
-      "minecraft:rotten_flesh"
-    ],
-    "c:drinks/milk": [
-      "minecraft:milk_bucket"
-    ],
-    "c:dyes/brown": [
-      "minecraft:brown_dye"
-    ],
-    "c:buckets/entity_water": [
-      "minecraft:axolotl_bucket",
-      "minecraft:cod_bucket",
-      "minecraft:pufferfish_bucket",
-      "minecraft:tadpole_bucket",
-      "minecraft:tropical_fish_bucket",
-      "minecraft:salmon_bucket"
-    ],
-    "c:foods/pie": [
-      "minecraft:pumpkin_pie"
-    ],
-    "c:crops/cocoa_bean": [
-      "minecraft:cocoa_beans"
-    ],
-    "c:armors/horse": [
-      "minecraft:leather_horse_armor",
-      "minecraft:copper_horse_armor",
-      "minecraft:iron_horse_armor",
-      "minecraft:golden_horse_armor",
-      "minecraft:diamond_horse_armor",
-      "minecraft:netherite_horse_armor"
-    ],
-    "c:crops/melon": [
-      "minecraft:melon"
-    ],
-    "c:bricks/normal": [
-      "minecraft:brick"
-    ],
-    "c:dusts/glowstone": [
-      "minecraft:glowstone_dust"
-    ],
-    "c:raw_materials/gold": [
-      "minecraft:raw_gold"
-    ],
-    "c:crops": [
-      "minecraft:beetroot",
-      "minecraft:cactus",
-      "minecraft:carrot",
-      "minecraft:cocoa_beans",
-      "minecraft:melon",
-      "minecraft:nether_wart",
-      "minecraft:potato",
-      "minecraft:pumpkin",
-      "minecraft:sugar_cane",
-      "minecraft:wheat"
-    ],
-    "c:gems/prismarine": [
-      "minecraft:prismarine_crystals"
-    ],
-    "c:clumps": [
-      "minecraft:resin_clump"
-    ],
-    "c:bricks/nether": [
-      "minecraft:nether_brick"
-    ],
-    "c:raw_materials/iron": [
-      "minecraft:raw_iron"
-    ],
-    "c:mushrooms": [
-      "minecraft:red_mushroom",
-      "minecraft:brown_mushroom"
-    ],
-    "c:drinks": [
-      "minecraft:potion",
-      "minecraft:milk_bucket",
-      "minecraft:honey_bottle",
-      "minecraft:ominous_bottle"
-    ],
-    "c:dyes/pink": [
-      "minecraft:pink_dye"
-    ],
-    "c:shulker_boxes": [
-      "minecraft:shulker_box",
-      "minecraft:white_shulker_box",
-      "minecraft:orange_shulker_box",
-      "minecraft:magenta_shulker_box",
-      "minecraft:light_blue_shulker_box",
-      "minecraft:yellow_shulker_box",
-      "minecraft:lime_shulker_box",
-      "minecraft:pink_shulker_box",
-      "minecraft:gray_shulker_box",
-      "minecraft:light_gray_shulker_box",
-      "minecraft:cyan_shulker_box",
-      "minecraft:purple_shulker_box",
-      "minecraft:blue_shulker_box",
-      "minecraft:brown_shulker_box",
-      "minecraft:green_shulker_box",
-      "minecraft:red_shulker_box",
-      "minecraft:black_shulker_box"
-    ],
-    "c:tools/igniter": [
-      "minecraft:flint_and_steel"
-    ],
-    "c:foods/cookie": [
-      "minecraft:cookie"
-    ],
-    "c:ingots/copper": [
-      "minecraft:copper_ingot"
-    ],
-    "c:seeds/pitcher_plant": [
-      "minecraft:pitcher_pod"
-    ],
-    "c:foods/cooked_fish": [
-      "minecraft:cooked_cod",
-      "minecraft:cooked_salmon"
-    ],
-    "c:foods/berry": [
-      "minecraft:sweet_berries",
-      "minecraft:glow_berries"
     ]
   },
   "item": {
-    "c:ores/emerald": [
+    "c:natural_logs": [
+      "minecraft:acacia_log",
+      "minecraft:bamboo_block",
+      "minecraft:birch_log",
+      "minecraft:cherry_log",
+      "minecraft:dark_oak_log",
+      "minecraft:jungle_log",
+      "minecraft:mangrove_log",
+      "minecraft:oak_log",
+      "minecraft:pale_oak_log",
+      "minecraft:spruce_log",
+      "minecraft:crimson_stem",
+      "minecraft:warped_stem"
+    ],
+    "c:chains": [
+      "minecraft:iron_chain",
+      "minecraft:copper_chain",
+      "minecraft:exposed_copper_chain",
+      "minecraft:weathered_copper_chain",
+      "minecraft:oxidized_copper_chain",
+      "minecraft:waxed_copper_chain",
+      "minecraft:waxed_exposed_copper_chain",
+      "minecraft:waxed_weathered_copper_chain",
+      "minecraft:waxed_oxidized_copper_chain"
+    ],
+    "c:dyed/pink": [
+      "minecraft:pink_banner",
+      "minecraft:pink_bed",
+      "minecraft:pink_candle",
+      "minecraft:pink_carpet",
+      "minecraft:pink_concrete",
+      "minecraft:pink_concrete_powder",
+      "minecraft:pink_glazed_terracotta",
+      "minecraft:pink_shulker_box",
+      "minecraft:pink_stained_glass",
+      "minecraft:pink_stained_glass_pane",
+      "minecraft:pink_terracotta",
+      "minecraft:pink_wool",
+      "minecraft:pink_bundle",
+      "minecraft:pink_harness"
+    ],
+    "c:bookshelves": [
+      "minecraft:bookshelf"
+    ],
+    "c:storage_blocks/netherite": [
+      "minecraft:netherite_block"
+    ],
+    "c:gravels": [
+      "minecraft:gravel"
+    ],
+    "c:ore_bearing_ground/deepslate": [
+      "minecraft:deepslate"
+    ],
+    "c:ores/copper": [
+      "minecraft:copper_ore",
+      "minecraft:deepslate_copper_ore"
+    ],
+    "c:ores_in_ground/stone": [
+      "minecraft:coal_ore",
+      "minecraft:copper_ore",
+      "minecraft:diamond_ore",
       "minecraft:emerald_ore",
-      "minecraft:deepslate_emerald_ore"
+      "minecraft:gold_ore",
+      "minecraft:iron_ore",
+      "minecraft:lapis_ore",
+      "minecraft:redstone_ore"
+    ],
+    "c:budding_blocks": [
+      "minecraft:budding_amethyst"
+    ],
+    "c:natural_logs/nether": [
+      "minecraft:crimson_stem",
+      "minecraft:warped_stem"
     ],
     "c:chests/wooden": [
       "minecraft:chest",
       "minecraft:trapped_chest"
     ],
-    "c:natural_logs/nether": [
-      "minecraft:crimson_stem",
-      "minecraft:warped_stem"
+    "c:ores/emerald": [
+      "minecraft:emerald_ore",
+      "minecraft:deepslate_emerald_ore"
     ],
     "c:storage_blocks/bone_meal": [
       "minecraft:bone_block"
@@ -2123,6 +2193,9 @@
       "minecraft:piglin_wall_head",
       "minecraft:dragon_head",
       "minecraft:dragon_wall_head"
+    ],
+    "c:barrels/wooden": [
+      "minecraft:barrel"
     ],
     "c:barrels": [
       "minecraft:barrel"
@@ -2153,19 +2226,6 @@
       "minecraft:pale_oak_log",
       "minecraft:spruce_log"
     ],
-    "c:natural_woods": [
-      "minecraft:acacia_wood",
-      "minecraft:birch_wood",
-      "minecraft:cherry_wood",
-      "minecraft:dark_oak_wood",
-      "minecraft:jungle_wood",
-      "minecraft:mangrove_wood",
-      "minecraft:oak_wood",
-      "minecraft:pale_oak_wood",
-      "minecraft:spruce_wood",
-      "minecraft:crimson_hyphae",
-      "minecraft:warped_hyphae"
-    ],
     "c:stripped_woods": [
       "minecraft:stripped_acacia_wood",
       "minecraft:stripped_birch_wood",
@@ -2179,6 +2239,22 @@
       "minecraft:stripped_crimson_hyphae",
       "minecraft:stripped_warped_hyphae"
     ],
+    "c:natural_woods": [
+      "minecraft:acacia_wood",
+      "minecraft:birch_wood",
+      "minecraft:cherry_wood",
+      "minecraft:dark_oak_wood",
+      "minecraft:jungle_wood",
+      "minecraft:mangrove_wood",
+      "minecraft:oak_wood",
+      "minecraft:pale_oak_wood",
+      "minecraft:spruce_wood",
+      "minecraft:crimson_hyphae",
+      "minecraft:warped_hyphae"
+    ],
+    "c:pumpkins/carved": [
+      "minecraft:carved_pumpkin"
+    ],
     "c:sandstone/slabs": [
       "minecraft:sandstone_slab",
       "minecraft:cut_sandstone_slab",
@@ -2190,9 +2266,6 @@
     "c:chests/trapped": [
       "minecraft:trapped_chest"
     ],
-    "c:storage_blocks/gold": [
-      "minecraft:gold_block"
-    ],
     "c:flowers/tall": [
       "minecraft:sunflower",
       "minecraft:lilac",
@@ -2200,42 +2273,27 @@
       "minecraft:rose_bush",
       "minecraft:pitcher_plant"
     ],
+    "c:storage_blocks/gold": [
+      "minecraft:gold_block"
+    ],
     "c:glass_blocks/tinted": [
       "minecraft:tinted_glass"
     ],
-    "c:storage_blocks": [
-      "minecraft:bone_block",
-      "minecraft:coal_block",
-      "minecraft:copper_block",
-      "minecraft:diamond_block",
-      "minecraft:dried_kelp_block",
-      "minecraft:emerald_block",
-      "minecraft:gold_block",
-      "minecraft:iron_block",
-      "minecraft:lapis_block",
-      "minecraft:netherite_block",
-      "minecraft:raw_copper_block",
-      "minecraft:raw_gold_block",
-      "minecraft:raw_iron_block",
-      "minecraft:redstone_block",
-      "minecraft:resin_block",
-      "minecraft:slime_block",
-      "minecraft:hay_block"
+    "c:end_stones": [
+      "minecraft:end_stone"
     ],
-    "c:fences": [
-      "minecraft:oak_fence",
-      "minecraft:spruce_fence",
-      "minecraft:birch_fence",
-      "minecraft:jungle_fence",
-      "minecraft:acacia_fence",
-      "minecraft:dark_oak_fence",
-      "minecraft:crimson_fence",
-      "minecraft:warped_fence",
-      "minecraft:mangrove_fence",
-      "minecraft:bamboo_fence",
-      "minecraft:cherry_fence",
-      "minecraft:pale_oak_fence",
-      "minecraft:nether_brick_fence"
+    "c:chests": [
+      "minecraft:chest",
+      "minecraft:trapped_chest",
+      "minecraft:ender_chest",
+      "minecraft:copper_chest",
+      "minecraft:exposed_copper_chest",
+      "minecraft:weathered_copper_chest",
+      "minecraft:oxidized_copper_chest",
+      "minecraft:waxed_copper_chest",
+      "minecraft:waxed_exposed_copper_chest",
+      "minecraft:waxed_weathered_copper_chest",
+      "minecraft:waxed_oxidized_copper_chest"
     ],
     "c:concretes": [
       "minecraft:white_concrete",
@@ -2255,17 +2313,17 @@
       "minecraft:black_concrete",
       "minecraft:red_concrete"
     ],
-    "c:end_stones": [
-      "minecraft:end_stone"
-    ],
-    "c:storage_blocks/raw_copper": [
-      "minecraft:raw_copper_block"
+    "c:storage_blocks/coal": [
+      "minecraft:coal_block"
     ],
     "c:pumpkins/jack_o_lanterns": [
       "minecraft:jack_o_lantern"
     ],
-    "c:storage_blocks/coal": [
-      "minecraft:coal_block"
+    "c:storage_blocks/raw_iron": [
+      "minecraft:raw_iron_block"
+    ],
+    "c:storage_blocks/raw_copper": [
+      "minecraft:raw_copper_block"
     ],
     "c:dyed/gray": [
       "minecraft:gray_banner",
@@ -2282,15 +2340,6 @@
       "minecraft:gray_wool",
       "minecraft:gray_bundle",
       "minecraft:gray_harness"
-    ],
-    "c:storage_blocks/raw_iron": [
-      "minecraft:raw_iron_block"
-    ],
-    "c:sandstone/stairs": [
-      "minecraft:sandstone_stairs",
-      "minecraft:smooth_sandstone_stairs",
-      "minecraft:red_sandstone_stairs",
-      "minecraft:smooth_red_sandstone_stairs"
     ],
     "c:cobblestones/mossy": [
       "minecraft:mossy_cobblestone"
@@ -2583,21 +2632,6 @@
       "minecraft:black_bundle",
       "minecraft:black_harness"
     ],
-    "c:villager_job_sites": [
-      "minecraft:barrel",
-      "minecraft:blast_furnace",
-      "minecraft:brewing_stand",
-      "minecraft:cartography_table",
-      "minecraft:cauldron",
-      "minecraft:composter",
-      "minecraft:fletching_table",
-      "minecraft:grindstone",
-      "minecraft:lectern",
-      "minecraft:loom",
-      "minecraft:smithing_table",
-      "minecraft:smoker",
-      "minecraft:stonecutter"
-    ],
     "c:storage_blocks/emerald": [
       "minecraft:emerald_block"
     ],
@@ -2623,17 +2657,6 @@
       "minecraft:black_stained_glass",
       "minecraft:red_stained_glass"
     ],
-    "c:chains": [
-      "minecraft:iron_chain",
-      "minecraft:copper_chain",
-      "minecraft:exposed_copper_chain",
-      "minecraft:weathered_copper_chain",
-      "minecraft:oxidized_copper_chain",
-      "minecraft:waxed_copper_chain",
-      "minecraft:waxed_exposed_copper_chain",
-      "minecraft:waxed_weathered_copper_chain",
-      "minecraft:waxed_oxidized_copper_chain"
-    ],
     "c:pumpkins": [
       "minecraft:pumpkin",
       "minecraft:carved_pumpkin",
@@ -2645,19 +2668,6 @@
     "c:ores/lapis": [
       "minecraft:lapis_ore",
       "minecraft:deepslate_lapis_ore"
-    ],
-    "c:ores_in_ground/stone": [
-      "minecraft:coal_ore",
-      "minecraft:copper_ore",
-      "minecraft:diamond_ore",
-      "minecraft:emerald_ore",
-      "minecraft:gold_ore",
-      "minecraft:iron_ore",
-      "minecraft:lapis_ore",
-      "minecraft:redstone_ore"
-    ],
-    "c:budding_blocks": [
-      "minecraft:budding_amethyst"
     ],
     "c:fences/wooden": [
       "minecraft:oak_fence",
@@ -2698,6 +2708,9 @@
     "c:player_workstations/furnaces": [
       "minecraft:furnace"
     ],
+    "c:sands/colorless": [
+      "minecraft:sand"
+    ],
     "c:storage_blocks/dried_kelp": [
       "minecraft:dried_kelp_block"
     ],
@@ -2717,9 +2730,6 @@
       "minecraft:white_bundle",
       "minecraft:white_harness"
     ],
-    "c:barrels/wooden": [
-      "minecraft:barrel"
-    ],
     "c:ores/iron": [
       "minecraft:iron_ore",
       "minecraft:deepslate_iron_ore"
@@ -2727,19 +2737,16 @@
     "c:sands/red": [
       "minecraft:red_sand"
     ],
+    "c:sandstone/uncolored_slabs": [
+      "minecraft:sandstone_slab",
+      "minecraft:cut_sandstone_slab",
+      "minecraft:smooth_sandstone_slab"
+    ],
     "c:cobblestones": [
       "minecraft:cobblestone",
       "minecraft:mossy_cobblestone",
       "minecraft:infested_cobblestone",
       "minecraft:cobbled_deepslate"
-    ],
-    "c:pumpkins/carved": [
-      "minecraft:carved_pumpkin"
-    ],
-    "c:sandstone/uncolored_slabs": [
-      "minecraft:sandstone_slab",
-      "minecraft:cut_sandstone_slab",
-      "minecraft:smooth_sandstone_slab"
     ],
     "c:storage_blocks/raw_gold": [
       "minecraft:raw_gold_block"
@@ -2749,19 +2756,6 @@
     ],
     "c:storage_blocks/slime": [
       "minecraft:slime_block"
-    ],
-    "c:chests": [
-      "minecraft:chest",
-      "minecraft:trapped_chest",
-      "minecraft:ender_chest",
-      "minecraft:copper_chest",
-      "minecraft:exposed_copper_chest",
-      "minecraft:weathered_copper_chest",
-      "minecraft:oxidized_copper_chest",
-      "minecraft:waxed_copper_chest",
-      "minecraft:waxed_exposed_copper_chest",
-      "minecraft:waxed_weathered_copper_chest",
-      "minecraft:waxed_oxidized_copper_chest"
     ],
     "c:fences/nether_brick": [
       "minecraft:nether_brick_fence"
@@ -2801,6 +2795,9 @@
       "minecraft:red_stained_glass_pane",
       "minecraft:glass_pane"
     ],
+    "c:glass_blocks/colorless": [
+      "minecraft:glass"
+    ],
     "c:sandstone/red_stairs": [
       "minecraft:red_sandstone_stairs",
       "minecraft:smooth_red_sandstone_stairs"
@@ -2838,6 +2835,9 @@
     "c:chests/ender": [
       "minecraft:ender_chest"
     ],
+    "c:pumpkins/normal": [
+      "minecraft:pumpkin"
+    ],
     "c:ores": [
       "minecraft:coal_ore",
       "minecraft:deepslate_coal_ore",
@@ -2859,8 +2859,8 @@
       "minecraft:deepslate_redstone_ore",
       "minecraft:nether_quartz_ore"
     ],
-    "c:pumpkins/normal": [
-      "minecraft:pumpkin"
+    "c:ore_rates/sparse": [
+      "minecraft:nether_gold_ore"
     ],
     "c:sands": [
       "minecraft:sand",
@@ -2887,6 +2887,14 @@
     ],
     "c:cobblestones/deepslate": [
       "minecraft:cobbled_deepslate"
+    ],
+    "c:ore_rates/dense": [
+      "minecraft:copper_ore",
+      "minecraft:deepslate_copper_ore",
+      "minecraft:deepslate_lapis_ore",
+      "minecraft:deepslate_redstone_ore",
+      "minecraft:lapis_ore",
+      "minecraft:redstone_ore"
     ],
     "c:fence_gates": [
       "minecraft:oak_fence_gate",
@@ -3034,6 +3042,25 @@
     "c:storage_blocks/redstone": [
       "minecraft:redstone_block"
     ],
+    "c:storage_blocks": [
+      "minecraft:bone_block",
+      "minecraft:coal_block",
+      "minecraft:copper_block",
+      "minecraft:diamond_block",
+      "minecraft:dried_kelp_block",
+      "minecraft:emerald_block",
+      "minecraft:gold_block",
+      "minecraft:iron_block",
+      "minecraft:lapis_block",
+      "minecraft:netherite_block",
+      "minecraft:raw_copper_block",
+      "minecraft:raw_gold_block",
+      "minecraft:raw_iron_block",
+      "minecraft:redstone_block",
+      "minecraft:resin_block",
+      "minecraft:slime_block",
+      "minecraft:hay_block"
+    ],
     "c:ores/gold": [
       "minecraft:gold_ore",
       "minecraft:nether_gold_ore",
@@ -3063,14 +3090,32 @@
       "minecraft:diamond_ore",
       "minecraft:deepslate_diamond_ore"
     ],
-    "c:sands/colorless": [
-      "minecraft:sand"
+    "c:fences": [
+      "minecraft:oak_fence",
+      "minecraft:spruce_fence",
+      "minecraft:birch_fence",
+      "minecraft:jungle_fence",
+      "minecraft:acacia_fence",
+      "minecraft:dark_oak_fence",
+      "minecraft:crimson_fence",
+      "minecraft:warped_fence",
+      "minecraft:mangrove_fence",
+      "minecraft:bamboo_fence",
+      "minecraft:cherry_fence",
+      "minecraft:pale_oak_fence",
+      "minecraft:nether_brick_fence"
     ],
     "c:cobblestones/infested": [
       "minecraft:infested_cobblestone"
     ],
     "c:storage_blocks/iron": [
       "minecraft:iron_block"
+    ],
+    "c:sandstone/stairs": [
+      "minecraft:sandstone_stairs",
+      "minecraft:smooth_sandstone_stairs",
+      "minecraft:red_sandstone_stairs",
+      "minecraft:smooth_red_sandstone_stairs"
     ],
     "c:ores/coal": [
       "minecraft:coal_ore",
@@ -3144,21 +3189,8 @@
       "minecraft:nether_gold_ore",
       "minecraft:nether_quartz_ore"
     ],
-    "c:dyed/yellow": [
-      "minecraft:yellow_banner",
-      "minecraft:yellow_bed",
-      "minecraft:yellow_candle",
-      "minecraft:yellow_carpet",
-      "minecraft:yellow_concrete",
-      "minecraft:yellow_concrete_powder",
-      "minecraft:yellow_glazed_terracotta",
-      "minecraft:yellow_shulker_box",
-      "minecraft:yellow_stained_glass",
-      "minecraft:yellow_stained_glass_pane",
-      "minecraft:yellow_terracotta",
-      "minecraft:yellow_wool",
-      "minecraft:yellow_bundle",
-      "minecraft:yellow_harness"
+    "c:cobblestones/normal": [
+      "minecraft:cobblestone"
     ],
     "c:fence_gates/wooden": [
       "minecraft:oak_fence_gate",
@@ -3177,11 +3209,36 @@
     "c:ore_bearing_ground/stone": [
       "minecraft:stone"
     ],
-    "c:cobblestones/normal": [
-      "minecraft:cobblestone"
+    "c:dyed/yellow": [
+      "minecraft:yellow_banner",
+      "minecraft:yellow_bed",
+      "minecraft:yellow_candle",
+      "minecraft:yellow_carpet",
+      "minecraft:yellow_concrete",
+      "minecraft:yellow_concrete_powder",
+      "minecraft:yellow_glazed_terracotta",
+      "minecraft:yellow_shulker_box",
+      "minecraft:yellow_stained_glass",
+      "minecraft:yellow_stained_glass_pane",
+      "minecraft:yellow_terracotta",
+      "minecraft:yellow_wool",
+      "minecraft:yellow_bundle",
+      "minecraft:yellow_harness"
     ],
-    "c:glass_blocks/colorless": [
-      "minecraft:glass"
+    "c:villager_job_sites": [
+      "minecraft:barrel",
+      "minecraft:blast_furnace",
+      "minecraft:brewing_stand",
+      "minecraft:cartography_table",
+      "minecraft:cauldron",
+      "minecraft:composter",
+      "minecraft:fletching_table",
+      "minecraft:grindstone",
+      "minecraft:lectern",
+      "minecraft:loom",
+      "minecraft:smithing_table",
+      "minecraft:smoker",
+      "minecraft:stonecutter"
     ],
     "c:clusters": [
       "minecraft:amethyst_cluster"
@@ -3210,85 +3267,175 @@
       "minecraft:green_bundle",
       "minecraft:green_harness"
     ],
-    "c:natural_logs": [
-      "minecraft:acacia_log",
-      "minecraft:bamboo_block",
-      "minecraft:birch_log",
-      "minecraft:cherry_log",
-      "minecraft:dark_oak_log",
-      "minecraft:jungle_log",
-      "minecraft:mangrove_log",
-      "minecraft:oak_log",
-      "minecraft:pale_oak_log",
-      "minecraft:spruce_log",
-      "minecraft:crimson_stem",
-      "minecraft:warped_stem"
+    "c:drinks/ominous": [
+      "minecraft:ominous_bottle"
     ],
-    "c:dyed/pink": [
-      "minecraft:pink_banner",
-      "minecraft:pink_bed",
-      "minecraft:pink_candle",
-      "minecraft:pink_carpet",
-      "minecraft:pink_concrete",
-      "minecraft:pink_concrete_powder",
-      "minecraft:pink_glazed_terracotta",
+    "c:drinks/milk": [
+      "minecraft:milk_bucket"
+    ],
+    "c:dyes/brown": [
+      "minecraft:brown_dye"
+    ],
+    "c:seeds": [
+      "minecraft:beetroot_seeds",
+      "minecraft:melon_seeds",
+      "minecraft:pumpkin_seeds",
+      "minecraft:torchflower_seeds",
+      "minecraft:pitcher_pod",
+      "minecraft:wheat_seeds"
+    ],
+    "c:bones": [
+      "minecraft:bone"
+    ],
+    "c:ingots/netherite": [
+      "minecraft:netherite_ingot"
+    ],
+    "c:buckets/entity_water": [
+      "minecraft:axolotl_bucket",
+      "minecraft:cod_bucket",
+      "minecraft:pufferfish_bucket",
+      "minecraft:tadpole_bucket",
+      "minecraft:tropical_fish_bucket",
+      "minecraft:salmon_bucket"
+    ],
+    "c:foods/pie": [
+      "minecraft:pumpkin_pie"
+    ],
+    "c:dyes": [
+      "minecraft:white_dye",
+      "minecraft:orange_dye",
+      "minecraft:magenta_dye",
+      "minecraft:light_blue_dye",
+      "minecraft:yellow_dye",
+      "minecraft:lime_dye",
+      "minecraft:pink_dye",
+      "minecraft:gray_dye",
+      "minecraft:light_gray_dye",
+      "minecraft:cyan_dye",
+      "minecraft:purple_dye",
+      "minecraft:blue_dye",
+      "minecraft:brown_dye",
+      "minecraft:green_dye",
+      "minecraft:red_dye",
+      "minecraft:black_dye"
+    ],
+    "c:foods/food_poisoning": [
+      "minecraft:poisonous_potato",
+      "minecraft:pufferfish",
+      "minecraft:spider_eye",
+      "minecraft:chicken",
+      "minecraft:rotten_flesh"
+    ],
+    "c:gems/amethyst": [
+      "minecraft:amethyst_shard"
+    ],
+    "c:bricks/normal": [
+      "minecraft:brick"
+    ],
+    "c:gems/prismarine": [
+      "minecraft:prismarine_crystals"
+    ],
+    "c:clumps": [
+      "minecraft:resin_clump"
+    ],
+    "c:bricks/nether": [
+      "minecraft:nether_brick"
+    ],
+    "c:drinks": [
+      "minecraft:potion",
+      "minecraft:milk_bucket",
+      "minecraft:honey_bottle",
+      "minecraft:ominous_bottle"
+    ],
+    "c:armors/horse": [
+      "minecraft:leather_horse_armor",
+      "minecraft:copper_horse_armor",
+      "minecraft:iron_horse_armor",
+      "minecraft:golden_horse_armor",
+      "minecraft:diamond_horse_armor",
+      "minecraft:netherite_horse_armor"
+    ],
+    "c:dyes/pink": [
+      "minecraft:pink_dye"
+    ],
+    "c:crops/cocoa_bean": [
+      "minecraft:cocoa_beans"
+    ],
+    "c:shulker_boxes": [
+      "minecraft:shulker_box",
+      "minecraft:white_shulker_box",
+      "minecraft:orange_shulker_box",
+      "minecraft:magenta_shulker_box",
+      "minecraft:light_blue_shulker_box",
+      "minecraft:yellow_shulker_box",
+      "minecraft:lime_shulker_box",
       "minecraft:pink_shulker_box",
-      "minecraft:pink_stained_glass",
-      "minecraft:pink_stained_glass_pane",
-      "minecraft:pink_terracotta",
-      "minecraft:pink_wool",
-      "minecraft:pink_bundle",
-      "minecraft:pink_harness"
+      "minecraft:gray_shulker_box",
+      "minecraft:light_gray_shulker_box",
+      "minecraft:cyan_shulker_box",
+      "minecraft:purple_shulker_box",
+      "minecraft:blue_shulker_box",
+      "minecraft:brown_shulker_box",
+      "minecraft:green_shulker_box",
+      "minecraft:red_shulker_box",
+      "minecraft:black_shulker_box"
     ],
-    "c:bookshelves": [
-      "minecraft:bookshelf"
+    "c:crops/melon": [
+      "minecraft:melon"
     ],
-    "c:storage_blocks/netherite": [
-      "minecraft:netherite_block"
+    "c:foods/cookie": [
+      "minecraft:cookie"
     ],
-    "c:ore_bearing_ground/deepslate": [
-      "minecraft:deepslate"
+    "c:dusts/glowstone": [
+      "minecraft:glowstone_dust"
     ],
-    "c:gravels": [
-      "minecraft:gravel"
+    "c:raw_materials/gold": [
+      "minecraft:raw_gold"
     ],
-    "c:ores/copper": [
-      "minecraft:copper_ore",
-      "minecraft:deepslate_copper_ore"
+    "c:seeds/pitcher_plant": [
+      "minecraft:pitcher_pod"
     ],
-    "c:ore_rates/sparse": [
-      "minecraft:nether_gold_ore"
+    "c:crops": [
+      "minecraft:beetroot",
+      "minecraft:cactus",
+      "minecraft:carrot",
+      "minecraft:cocoa_beans",
+      "minecraft:melon",
+      "minecraft:nether_wart",
+      "minecraft:potato",
+      "minecraft:pumpkin",
+      "minecraft:sugar_cane",
+      "minecraft:wheat"
     ],
-    "c:ore_rates/dense": [
-      "minecraft:copper_ore",
-      "minecraft:deepslate_copper_ore",
-      "minecraft:deepslate_lapis_ore",
-      "minecraft:deepslate_redstone_ore",
-      "minecraft:lapis_ore",
-      "minecraft:redstone_ore"
+    "c:raw_materials/iron": [
+      "minecraft:raw_iron"
     ],
-    "c:ender_pearls": [
-      "minecraft:ender_pearl"
+    "c:mushrooms": [
+      "minecraft:red_mushroom",
+      "minecraft:brown_mushroom"
     ],
-    "c:slime_balls": [
-      "minecraft:slime_ball"
+    "c:foods/cooked_fish": [
+      "minecraft:cooked_cod",
+      "minecraft:cooked_salmon"
+    ],
+    "c:tools/igniter": [
+      "minecraft:flint_and_steel"
     ],
     "c:foods/edible_when_placed": [
       "minecraft:cake"
     ],
-    "c:foods/vegetable": [
-      "minecraft:carrot",
-      "minecraft:golden_carrot",
-      "minecraft:potato",
-      "minecraft:beetroot"
+    "c:ender_pearls": [
+      "minecraft:ender_pearl"
     ],
-    "c:crops/wheat": [
-      "minecraft:wheat"
+    "c:ingots/copper": [
+      "minecraft:copper_ingot"
     ],
-    "c:raw_materials": [
-      "minecraft:raw_copper",
-      "minecraft:raw_gold",
-      "minecraft:raw_iron"
+    "c:slime_balls": [
+      "minecraft:slime_ball"
+    ],
+    "c:foods/berry": [
+      "minecraft:sweet_berries",
+      "minecraft:glow_berries"
     ],
     "c:enchantables": [
       "minecraft:leather_boots",
@@ -3384,11 +3531,6 @@
       "minecraft:warped_fungus_on_a_stick",
       "minecraft:compass"
     ],
-    "c:potions": [
-      "minecraft:potion",
-      "minecraft:splash_potion",
-      "minecraft:lingering_potion"
-    ],
     "c:tools/mining_tool": [
       "minecraft:wooden_pickaxe",
       "minecraft:stone_pickaxe",
@@ -3398,76 +3540,50 @@
       "minecraft:diamond_pickaxe",
       "minecraft:netherite_pickaxe"
     ],
+    "c:nuggets/copper": [
+      "minecraft:copper_nugget"
+    ],
+    "c:foods/vegetable": [
+      "minecraft:carrot",
+      "minecraft:golden_carrot",
+      "minecraft:potato",
+      "minecraft:beetroot"
+    ],
     "c:nuggets": [
       "minecraft:copper_nugget",
       "minecraft:iron_nugget",
       "minecraft:gold_nugget"
     ],
-    "c:nuggets/copper": [
-      "minecraft:copper_nugget"
+    "c:crops/wheat": [
+      "minecraft:wheat"
     ],
-    "c:buckets/lava": [
-      "minecraft:lava_bucket"
-    ],
-    "c:armors/humanoid": [
-      "minecraft:leather_helmet",
-      "minecraft:copper_helmet",
-      "minecraft:chainmail_helmet",
-      "minecraft:golden_helmet",
-      "minecraft:iron_helmet",
-      "minecraft:diamond_helmet",
-      "minecraft:netherite_helmet",
-      "minecraft:turtle_helmet",
-      "minecraft:leather_chestplate",
-      "minecraft:copper_chestplate",
-      "minecraft:chainmail_chestplate",
-      "minecraft:golden_chestplate",
-      "minecraft:iron_chestplate",
-      "minecraft:diamond_chestplate",
-      "minecraft:netherite_chestplate",
-      "minecraft:leather_leggings",
-      "minecraft:copper_leggings",
-      "minecraft:chainmail_leggings",
-      "minecraft:golden_leggings",
-      "minecraft:iron_leggings",
-      "minecraft:diamond_leggings",
-      "minecraft:netherite_leggings",
-      "minecraft:leather_boots",
-      "minecraft:copper_boots",
-      "minecraft:chainmail_boots",
-      "minecraft:golden_boots",
-      "minecraft:iron_boots",
-      "minecraft:diamond_boots",
-      "minecraft:netherite_boots"
+    "c:raw_materials": [
+      "minecraft:raw_copper",
+      "minecraft:raw_gold",
+      "minecraft:raw_iron"
     ],
     "c:gunpowders": [
       "minecraft:gunpowder"
     ],
-    "c:drink_containing/bottle": [
-      "minecraft:potion",
-      "minecraft:honey_bottle",
-      "minecraft:ominous_bottle"
-    ],
     "c:fertilizers": [
       "minecraft:bone_meal"
     ],
-    "c:dyes/gray": [
-      "minecraft:gray_dye"
+    "c:potions": [
+      "minecraft:potion",
+      "minecraft:splash_potion",
+      "minecraft:lingering_potion"
     ],
     "c:dyes/red": [
       "minecraft:red_dye"
     ],
+    "c:dyes/gray": [
+      "minecraft:gray_dye"
+    ],
     "c:seeds/melon": [
       "minecraft:melon_seeds"
     ],
-    "c:drink_containing/bucket": [
-      "minecraft:milk_bucket"
-    ],
     "c:dyes/blue": [
       "minecraft:blue_dye"
-    ],
-    "c:buckets/empty": [
-      "minecraft:bucket"
     ],
     "c:animal_foods": [
       "minecraft:spider_eye",
@@ -3544,8 +3660,42 @@
       "minecraft:pufferfish",
       "minecraft:rabbit_stew"
     ],
+    "c:buckets/lava": [
+      "minecraft:lava_bucket"
+    ],
     "c:crops/nether_wart": [
       "minecraft:nether_wart"
+    ],
+    "c:armors/humanoid": [
+      "minecraft:leather_helmet",
+      "minecraft:copper_helmet",
+      "minecraft:chainmail_helmet",
+      "minecraft:golden_helmet",
+      "minecraft:iron_helmet",
+      "minecraft:diamond_helmet",
+      "minecraft:netherite_helmet",
+      "minecraft:turtle_helmet",
+      "minecraft:leather_chestplate",
+      "minecraft:copper_chestplate",
+      "minecraft:chainmail_chestplate",
+      "minecraft:golden_chestplate",
+      "minecraft:iron_chestplate",
+      "minecraft:diamond_chestplate",
+      "minecraft:netherite_chestplate",
+      "minecraft:leather_leggings",
+      "minecraft:copper_leggings",
+      "minecraft:chainmail_leggings",
+      "minecraft:golden_leggings",
+      "minecraft:iron_leggings",
+      "minecraft:diamond_leggings",
+      "minecraft:netherite_leggings",
+      "minecraft:leather_boots",
+      "minecraft:copper_boots",
+      "minecraft:chainmail_boots",
+      "minecraft:golden_boots",
+      "minecraft:iron_boots",
+      "minecraft:diamond_boots",
+      "minecraft:netherite_boots"
     ],
     "c:foods/golden": [
       "minecraft:golden_apple",
@@ -3554,6 +3704,26 @@
     ],
     "c:dyes/orange": [
       "minecraft:orange_dye"
+    ],
+    "c:dyes/purple": [
+      "minecraft:purple_dye"
+    ],
+    "c:drink_containing/bottle": [
+      "minecraft:potion",
+      "minecraft:honey_bottle",
+      "minecraft:ominous_bottle"
+    ],
+    "c:crops/sugar_cane": [
+      "minecraft:sugar_cane"
+    ],
+    "c:drink_containing/bucket": [
+      "minecraft:milk_bucket"
+    ],
+    "c:buckets/empty": [
+      "minecraft:bucket"
+    ],
+    "c:armors/wolf": [
+      "minecraft:wolf_armor"
     ],
     "c:tools/melee_weapon": [
       "minecraft:mace",
@@ -3580,15 +3750,15 @@
       "minecraft:diamond_spear",
       "minecraft:netherite_spear"
     ],
-    "c:dyes/purple": [
-      "minecraft:purple_dye"
-    ],
     "c:dusts": [
       "minecraft:glowstone_dust",
       "minecraft:redstone"
     ],
-    "c:crops/sugar_cane": [
-      "minecraft:sugar_cane"
+    "c:dyes/black": [
+      "minecraft:black_dye"
+    ],
+    "c:clumps/resin": [
+      "minecraft:resin_clump"
     ],
     "c:foods/raw_fish": [
       "minecraft:cod",
@@ -3596,11 +3766,8 @@
       "minecraft:tropical_fish",
       "minecraft:pufferfish"
     ],
-    "c:clumps/resin": [
-      "minecraft:resin_clump"
-    ],
-    "c:armors/wolf": [
-      "minecraft:wolf_armor"
+    "c:dyes/yellow": [
+      "minecraft:yellow_dye"
     ],
     "c:foods/soup": [
       "minecraft:beetroot_soup",
@@ -3608,29 +3775,11 @@
       "minecraft:rabbit_stew",
       "minecraft:suspicious_stew"
     ],
-    "c:buckets/water": [
-      "minecraft:water_bucket"
-    ],
-    "c:dyes/black": [
-      "minecraft:black_dye"
-    ],
-    "c:dusts/redstone": [
-      "minecraft:redstone"
-    ],
-    "c:dyes/yellow": [
-      "minecraft:yellow_dye"
-    ],
     "c:tools/shear": [
       "minecraft:shears"
     ],
-    "c:tools/bow": [
-      "minecraft:bow"
-    ],
-    "c:buckets/milk": [
-      "minecraft:milk_bucket"
-    ],
-    "c:foods/bread": [
-      "minecraft:bread"
+    "c:buckets/water": [
+      "minecraft:water_bucket"
     ],
     "c:music_discs": [
       "minecraft:music_disc_13",
@@ -3661,6 +3810,24 @@
     "c:raw_materials/copper": [
       "minecraft:raw_copper"
     ],
+    "c:dusts/redstone": [
+      "minecraft:redstone"
+    ],
+    "c:rods/blaze": [
+      "minecraft:blaze_rod"
+    ],
+    "c:tools/bow": [
+      "minecraft:bow"
+    ],
+    "c:buckets/milk": [
+      "minecraft:milk_bucket"
+    ],
+    "c:foods/bread": [
+      "minecraft:bread"
+    ],
+    "c:bricks/resin": [
+      "minecraft:resin_brick"
+    ],
     "c:feathers": [
       "minecraft:feather"
     ],
@@ -3680,8 +3847,15 @@
     "c:crops/carrot": [
       "minecraft:carrot"
     ],
-    "c:rods/blaze": [
-      "minecraft:blaze_rod"
+    "c:foods/cooked_meat": [
+      "minecraft:cooked_beef",
+      "minecraft:cooked_porkchop",
+      "minecraft:cooked_chicken",
+      "minecraft:cooked_rabbit",
+      "minecraft:cooked_mutton"
+    ],
+    "c:tools/crossbow": [
+      "minecraft:crossbow"
     ],
     "c:eggs": [
       "minecraft:egg",
@@ -3690,30 +3864,6 @@
     ],
     "c:tools/fishing_rod": [
       "minecraft:fishing_rod"
-    ],
-    "c:bricks/resin": [
-      "minecraft:resin_brick"
-    ],
-    "c:foods/cooked_meat": [
-      "minecraft:cooked_beef",
-      "minecraft:cooked_porkchop",
-      "minecraft:cooked_chicken",
-      "minecraft:cooked_rabbit",
-      "minecraft:cooked_mutton"
-    ],
-    "c:crops/potato": [
-      "minecraft:potato"
-    ],
-    "c:tools/crossbow": [
-      "minecraft:crossbow"
-    ],
-    "c:gems": [
-      "minecraft:amethyst_shard",
-      "minecraft:diamond",
-      "minecraft:emerald",
-      "minecraft:lapis_lazuli",
-      "minecraft:prismarine_crystals",
-      "minecraft:quartz"
     ],
     "c:concrete_powders": [
       "minecraft:white_concrete_powder",
@@ -3733,6 +3883,33 @@
       "minecraft:red_concrete_powder",
       "minecraft:black_concrete_powder"
     ],
+    "c:crops/beetroot": [
+      "minecraft:beetroot"
+    ],
+    "c:crops/potato": [
+      "minecraft:potato"
+    ],
+    "c:gems": [
+      "minecraft:amethyst_shard",
+      "minecraft:diamond",
+      "minecraft:emerald",
+      "minecraft:lapis_lazuli",
+      "minecraft:prismarine_crystals",
+      "minecraft:quartz"
+    ],
+    "c:drinks/magic": [
+      "minecraft:potion",
+      "minecraft:ominous_bottle"
+    ],
+    "c:rods/wooden": [
+      "minecraft:stick"
+    ],
+    "c:tools/shield": [
+      "minecraft:shield"
+    ],
+    "c:dyes/light_gray": [
+      "minecraft:light_gray_dye"
+    ],
     "c:nether_stars": [
       "minecraft:nether_star"
     ],
@@ -3745,6 +3922,12 @@
     ],
     "c:rods/breeze": [
       "minecraft:breeze_rod"
+    ],
+    "c:buckets/powder_snow": [
+      "minecraft:powder_snow_bucket"
+    ],
+    "c:dyes/light_blue": [
+      "minecraft:light_blue_dye"
     ],
     "c:tools": [
       "minecraft:diamond_axe",
@@ -3799,48 +3982,11 @@
       "minecraft:trident",
       "minecraft:mace"
     ],
-    "c:crops/beetroot": [
-      "minecraft:beetroot"
-    ],
-    "c:drinks/magic": [
-      "minecraft:potion",
-      "minecraft:ominous_bottle"
-    ],
-    "c:rods/wooden": [
-      "minecraft:stick"
-    ],
-    "c:tools/shield": [
-      "minecraft:shield"
-    ],
-    "c:dyes/light_gray": [
-      "minecraft:light_gray_dye"
-    ],
-    "c:buckets/powder_snow": [
-      "minecraft:powder_snow_bucket"
-    ],
-    "c:dyes/light_blue": [
-      "minecraft:light_blue_dye"
-    ],
-    "c:seeds/beetroot": [
-      "minecraft:beetroot_seeds"
-    ],
-    "c:seeds/pumpkin": [
-      "minecraft:pumpkin_seeds"
-    ],
     "c:ingots": [
       "minecraft:copper_ingot",
       "minecraft:iron_ingot",
       "minecraft:gold_ingot",
       "minecraft:netherite_ingot"
-    ],
-    "c:nuggets/gold": [
-      "minecraft:gold_nugget"
-    ],
-    "c:crops/cactus": [
-      "minecraft:cactus"
-    ],
-    "c:nuggets/iron": [
-      "minecraft:iron_nugget"
     ],
     "c:dyes/cyan": [
       "minecraft:cyan_dye"
@@ -3863,10 +4009,85 @@
     "c:tools/brush": [
       "minecraft:brush"
     ],
+    "c:seeds/beetroot": [
+      "minecraft:beetroot_seeds"
+    ],
+    "c:seeds/pumpkin": [
+      "minecraft:pumpkin_seeds"
+    ],
+    "c:nuggets/gold": [
+      "minecraft:gold_nugget"
+    ],
+    "c:crops/cactus": [
+      "minecraft:cactus"
+    ],
+    "c:nuggets/iron": [
+      "minecraft:iron_nugget"
+    ],
+    "c:bricks": [
+      "minecraft:brick",
+      "minecraft:nether_brick",
+      "minecraft:resin_brick"
+    ],
     "c:rods": [
       "minecraft:stick",
       "minecraft:blaze_rod",
       "minecraft:breeze_rod"
+    ],
+    "c:ingots/gold": [
+      "minecraft:gold_ingot"
+    ],
+    "c:tools/trident": [
+      "minecraft:trident"
+    ],
+    "c:ingots/iron": [
+      "minecraft:iron_ingot"
+    ],
+    "c:dyes/white": [
+      "minecraft:white_dye"
+    ],
+    "c:armors": [
+      "minecraft:leather_helmet",
+      "minecraft:copper_helmet",
+      "minecraft:chainmail_helmet",
+      "minecraft:golden_helmet",
+      "minecraft:iron_helmet",
+      "minecraft:diamond_helmet",
+      "minecraft:netherite_helmet",
+      "minecraft:turtle_helmet",
+      "minecraft:leather_chestplate",
+      "minecraft:copper_chestplate",
+      "minecraft:chainmail_chestplate",
+      "minecraft:golden_chestplate",
+      "minecraft:iron_chestplate",
+      "minecraft:diamond_chestplate",
+      "minecraft:netherite_chestplate",
+      "minecraft:leather_leggings",
+      "minecraft:copper_leggings",
+      "minecraft:chainmail_leggings",
+      "minecraft:golden_leggings",
+      "minecraft:iron_leggings",
+      "minecraft:diamond_leggings",
+      "minecraft:netherite_leggings",
+      "minecraft:leather_boots",
+      "minecraft:copper_boots",
+      "minecraft:chainmail_boots",
+      "minecraft:golden_boots",
+      "minecraft:iron_boots",
+      "minecraft:diamond_boots",
+      "minecraft:netherite_boots",
+      "minecraft:leather_horse_armor",
+      "minecraft:copper_horse_armor",
+      "minecraft:iron_horse_armor",
+      "minecraft:golden_horse_armor",
+      "minecraft:diamond_horse_armor",
+      "minecraft:netherite_horse_armor",
+      "minecraft:copper_nautilus_armor",
+      "minecraft:iron_nautilus_armor",
+      "minecraft:golden_nautilus_armor",
+      "minecraft:diamond_nautilus_armor",
+      "minecraft:netherite_nautilus_armor",
+      "minecraft:wolf_armor"
     ],
     "c:gems/diamond": [
       "minecraft:diamond"
@@ -3874,19 +4095,11 @@
     "c:gems/emerald": [
       "minecraft:emerald"
     ],
-    "c:bricks": [
-      "minecraft:brick",
-      "minecraft:nether_brick",
-      "minecraft:resin_brick"
-    ],
     "c:gems/lapis": [
       "minecraft:lapis_lazuli"
     ],
-    "c:tools/trident": [
-      "minecraft:trident"
-    ],
-    "c:ingots/gold": [
-      "minecraft:gold_ingot"
+    "c:seeds/torchflower": [
+      "minecraft:torchflower_seeds"
     ],
     "c:foods/raw_meat": [
       "minecraft:beef",
@@ -3939,66 +4152,14 @@
       "minecraft:spider_eye",
       "minecraft:rotten_flesh"
     ],
-    "c:ingots/iron": [
-      "minecraft:iron_ingot"
-    ],
-    "c:dyes/white": [
-      "minecraft:white_dye"
-    ],
-    "c:armors": [
-      "minecraft:leather_helmet",
-      "minecraft:copper_helmet",
-      "minecraft:chainmail_helmet",
-      "minecraft:golden_helmet",
-      "minecraft:iron_helmet",
-      "minecraft:diamond_helmet",
-      "minecraft:netherite_helmet",
-      "minecraft:turtle_helmet",
-      "minecraft:leather_chestplate",
-      "minecraft:copper_chestplate",
-      "minecraft:chainmail_chestplate",
-      "minecraft:golden_chestplate",
-      "minecraft:iron_chestplate",
-      "minecraft:diamond_chestplate",
-      "minecraft:netherite_chestplate",
-      "minecraft:leather_leggings",
-      "minecraft:copper_leggings",
-      "minecraft:chainmail_leggings",
-      "minecraft:golden_leggings",
-      "minecraft:iron_leggings",
-      "minecraft:diamond_leggings",
-      "minecraft:netherite_leggings",
-      "minecraft:leather_boots",
-      "minecraft:copper_boots",
-      "minecraft:chainmail_boots",
-      "minecraft:golden_boots",
-      "minecraft:iron_boots",
-      "minecraft:diamond_boots",
-      "minecraft:netherite_boots",
-      "minecraft:leather_horse_armor",
-      "minecraft:copper_horse_armor",
-      "minecraft:iron_horse_armor",
-      "minecraft:golden_horse_armor",
-      "minecraft:diamond_horse_armor",
-      "minecraft:netherite_horse_armor",
-      "minecraft:copper_nautilus_armor",
-      "minecraft:iron_nautilus_armor",
-      "minecraft:golden_nautilus_armor",
-      "minecraft:diamond_nautilus_armor",
-      "minecraft:netherite_nautilus_armor",
-      "minecraft:wolf_armor"
-    ],
-    "c:tools/mace": [
-      "minecraft:mace"
-    ],
-    "c:seeds/torchflower": [
-      "minecraft:torchflower_seeds"
-    ],
     "c:drinks/watery": [
       "minecraft:potion"
     ],
     "c:dyes/magenta": [
       "minecraft:magenta_dye"
+    ],
+    "c:tools/mace": [
+      "minecraft:mace"
     ],
     "c:gems/quartz": [
       "minecraft:quartz"
@@ -4011,178 +4172,17 @@
     "c:drinks/honey": [
       "minecraft:honey_bottle"
     ],
-    "c:drinks/ominous": [
-      "minecraft:ominous_bottle"
-    ],
-    "c:seeds": [
-      "minecraft:beetroot_seeds",
-      "minecraft:melon_seeds",
-      "minecraft:pumpkin_seeds",
-      "minecraft:torchflower_seeds",
-      "minecraft:pitcher_pod",
-      "minecraft:wheat_seeds"
-    ],
     "c:strings": [
       "minecraft:string"
     ],
     "c:leathers": [
       "minecraft:leather"
     ],
-    "c:bones": [
-      "minecraft:bone"
-    ],
-    "c:ingots/netherite": [
-      "minecraft:netherite_ingot"
-    ],
     "c:dyes/green": [
       "minecraft:green_dye"
     ],
     "c:crops/pumpkin": [
       "minecraft:pumpkin"
-    ],
-    "c:dyes": [
-      "minecraft:white_dye",
-      "minecraft:orange_dye",
-      "minecraft:magenta_dye",
-      "minecraft:light_blue_dye",
-      "minecraft:yellow_dye",
-      "minecraft:lime_dye",
-      "minecraft:pink_dye",
-      "minecraft:gray_dye",
-      "minecraft:light_gray_dye",
-      "minecraft:cyan_dye",
-      "minecraft:purple_dye",
-      "minecraft:blue_dye",
-      "minecraft:brown_dye",
-      "minecraft:green_dye",
-      "minecraft:red_dye",
-      "minecraft:black_dye"
-    ],
-    "c:gems/amethyst": [
-      "minecraft:amethyst_shard"
-    ],
-    "c:foods/food_poisoning": [
-      "minecraft:poisonous_potato",
-      "minecraft:pufferfish",
-      "minecraft:spider_eye",
-      "minecraft:chicken",
-      "minecraft:rotten_flesh"
-    ],
-    "c:drinks/milk": [
-      "minecraft:milk_bucket"
-    ],
-    "c:dyes/brown": [
-      "minecraft:brown_dye"
-    ],
-    "c:buckets/entity_water": [
-      "minecraft:axolotl_bucket",
-      "minecraft:cod_bucket",
-      "minecraft:pufferfish_bucket",
-      "minecraft:tadpole_bucket",
-      "minecraft:tropical_fish_bucket",
-      "minecraft:salmon_bucket"
-    ],
-    "c:foods/pie": [
-      "minecraft:pumpkin_pie"
-    ],
-    "c:crops/cocoa_bean": [
-      "minecraft:cocoa_beans"
-    ],
-    "c:armors/horse": [
-      "minecraft:leather_horse_armor",
-      "minecraft:copper_horse_armor",
-      "minecraft:iron_horse_armor",
-      "minecraft:golden_horse_armor",
-      "minecraft:diamond_horse_armor",
-      "minecraft:netherite_horse_armor"
-    ],
-    "c:crops/melon": [
-      "minecraft:melon"
-    ],
-    "c:bricks/normal": [
-      "minecraft:brick"
-    ],
-    "c:dusts/glowstone": [
-      "minecraft:glowstone_dust"
-    ],
-    "c:raw_materials/gold": [
-      "minecraft:raw_gold"
-    ],
-    "c:crops": [
-      "minecraft:beetroot",
-      "minecraft:cactus",
-      "minecraft:carrot",
-      "minecraft:cocoa_beans",
-      "minecraft:melon",
-      "minecraft:nether_wart",
-      "minecraft:potato",
-      "minecraft:pumpkin",
-      "minecraft:sugar_cane",
-      "minecraft:wheat"
-    ],
-    "c:gems/prismarine": [
-      "minecraft:prismarine_crystals"
-    ],
-    "c:clumps": [
-      "minecraft:resin_clump"
-    ],
-    "c:bricks/nether": [
-      "minecraft:nether_brick"
-    ],
-    "c:raw_materials/iron": [
-      "minecraft:raw_iron"
-    ],
-    "c:mushrooms": [
-      "minecraft:red_mushroom",
-      "minecraft:brown_mushroom"
-    ],
-    "c:drinks": [
-      "minecraft:potion",
-      "minecraft:milk_bucket",
-      "minecraft:honey_bottle",
-      "minecraft:ominous_bottle"
-    ],
-    "c:dyes/pink": [
-      "minecraft:pink_dye"
-    ],
-    "c:shulker_boxes": [
-      "minecraft:shulker_box",
-      "minecraft:white_shulker_box",
-      "minecraft:orange_shulker_box",
-      "minecraft:magenta_shulker_box",
-      "minecraft:light_blue_shulker_box",
-      "minecraft:yellow_shulker_box",
-      "minecraft:lime_shulker_box",
-      "minecraft:pink_shulker_box",
-      "minecraft:gray_shulker_box",
-      "minecraft:light_gray_shulker_box",
-      "minecraft:cyan_shulker_box",
-      "minecraft:purple_shulker_box",
-      "minecraft:blue_shulker_box",
-      "minecraft:brown_shulker_box",
-      "minecraft:green_shulker_box",
-      "minecraft:red_shulker_box",
-      "minecraft:black_shulker_box"
-    ],
-    "c:tools/igniter": [
-      "minecraft:flint_and_steel"
-    ],
-    "c:foods/cookie": [
-      "minecraft:cookie"
-    ],
-    "c:ingots/copper": [
-      "minecraft:copper_ingot"
-    ],
-    "c:seeds/pitcher_plant": [
-      "minecraft:pitcher_pod"
-    ],
-    "c:foods/cooked_fish": [
-      "minecraft:cooked_cod",
-      "minecraft:cooked_salmon"
-    ],
-    "c:foods/berry": [
-      "minecraft:sweet_berries",
-      "minecraft:glow_berries"
     ]
   }
 }
