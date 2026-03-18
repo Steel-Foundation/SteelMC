@@ -85,16 +85,9 @@ impl BlockPlaceContext<'_> {
         // If not replacing the clicked block, prioritize the opposite of clicked face
         if !self.replace_clicked {
             let clicked_opposite = self.clicked_face.opposite();
-            let mut index = 0;
-
-            // Find the index of the opposite direction
-            while index < directions.len() && directions[index] != clicked_opposite {
-                index += 1;
-            }
-
-            // Move it to the front by shifting elements
-            if index > 0 && index < directions.len() {
-                // Shift elements [0..index] to [1..index+1] and put opposite at [0]
+            if let Some(index) = directions.iter().position(|&d| d == clicked_opposite)
+                && index > 0
+            {
                 directions.copy_within(0..index, 1);
                 directions[0] = clicked_opposite;
             }

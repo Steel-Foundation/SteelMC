@@ -13,6 +13,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
+use steel_registry::{TaggedRegistryExt, vanilla_block_tags};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -135,9 +136,10 @@ fn can_attach_to(
     let attach_state = world.get_block_state(attach_pos);
     let attach_block = REGISTRY.blocks.by_state_id(attach_state);
 
-    // Check if it's another wall hanging sign (vanilla uses BlockTags.WALL_HANGING_SIGNS)
     if let Some(block) = attach_block
-        && block.key.path.contains("wall_hanging_sign")
+        && REGISTRY
+            .blocks
+            .is_in_tag(block, &vanilla_block_tags::WALL_HANGING_SIGNS_TAG)
     {
         // Wall hanging signs can chain if they're on the same axis
         if let Some(neighbor_facing) =
@@ -185,7 +187,9 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
 
     // If it's a wall hanging sign, we need the additional canPlace check
     if let Some(b) = block
-        && b.key.path.contains("wall_hanging_sign")
+        && REGISTRY
+            .blocks
+            .is_in_tag(b, &vanilla_block_tags::WALL_HANGING_SIGNS_TAG)
         && !can_wall_hanging_sign_place(world, state, pos)
     {
         return false;

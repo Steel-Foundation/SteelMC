@@ -133,7 +133,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         return InteractionResult::Success;
     }
 
-    // Fallback for waterloggable blocks until they properly implement pickup_block
+    // TODO: Remove fallback once all waterloggable blocks implement pickup_block
     if hit_state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
         let new_state = hit_state.set_value(&BlockStateProperties::WATERLOGGED, false);
         context
@@ -159,8 +159,8 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     InteractionResult::Fail
 }
 
-// TODO: Refactor into smaller helpers
-#[allow(clippy::too_many_lines)] // Mirrors vanilla's single emptyContents method flow
+// TODO: Refactor into smaller helpers once all bucket types are implemented
+#[allow(clippy::too_many_lines)] // Single method to match vanilla's emptyContents flow; will be refactored
 fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> InteractionResult {
     // Raytrace to find target block
     let (start, end) = context.player.get_ray_endpoints();

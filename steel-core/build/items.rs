@@ -24,6 +24,7 @@ pub fn build(items: &[ItemClass]) -> String {
 
     let mut type_imports = BTreeSet::new();
     let mut enum_imports: BTreeMap<String, String> = BTreeMap::new();
+    let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
 
@@ -40,16 +41,21 @@ pub fn build(items: &[ItemClass]) -> String {
         type_imports.insert(info.struct_name.clone());
 
         for field in &info.fields {
-            if let JsonArgKind::Enum {
-                ref type_name,
-                ref module_path,
-            } = field.kind
-            {
-                if let Some(path) = module_path {
-                    enum_imports.insert(type_name.clone(), path.clone());
-                } else {
-                    type_imports.insert(type_name.clone());
+            match &field.kind {
+                JsonArgKind::Enum {
+                    type_name,
+                    module_path,
+                } => {
+                    if let Some(path) = module_path {
+                        enum_imports.insert(type_name.clone(), path.clone());
+                    } else {
+                        type_imports.insert(type_name.clone());
+                    }
                 }
+                JsonArgKind::Registry(module) => {
+                    registry_modules_used.insert(module.clone());
+                }
+                JsonArgKind::Value => {}
             }
         }
 
@@ -105,10 +111,18 @@ pub fn build(items: &[ItemClass]) -> String {
         })
         .collect();
 
+    let registry_import_tokens: Vec<_> = registry_modules_used
+        .iter()
+        .map(|module| {
+            let module_ident = Ident::new(module, Span::call_site());
+            quote! { , #module_ident }
+        })
+        .collect();
+
     let output = quote! {
         //! Generated item behavior assignments.
 
-        use steel_registry::{vanilla_blocks, vanilla_items};
+        use steel_registry::{vanilla_items #(#registry_import_tokens)*};
         use crate::behavior::ItemBehaviorRegistry;
         use crate::behavior::items::{#(#item_type_imports),*};
         #(#enum_import_tokens)*

@@ -61,7 +61,7 @@ impl ItemBehavior for BlockItemBehavior {
 
         context.item_stack.shrink(1);
 
-        // TODO: Call behavior.on_place()
+        // TODO: Call behavior.on_place() — triggers neighbor updates (redstone, etc.)
         InteractionResult::Success
     }
 }

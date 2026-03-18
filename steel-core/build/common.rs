@@ -81,6 +81,13 @@ pub(crate) fn parse_object_behavior(
     })
 }
 
+const KNOWN_REGISTRIES: &[&str] = &[
+    "vanilla_blocks",
+    "vanilla_items",
+    "vanilla_fluids",
+    "sound_events",
+];
+
 /// Parses a `#[json_arg(...)]` attribute from a `syn::Field`.
 pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     let attr = field.attrs.iter().find(|a| a.path().is_ident("json_arg"))?;
@@ -118,7 +125,14 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
                 let lit: syn::LitStr = value.parse()?;
                 optional_sentinel = Some(lit.value());
             } else if let Some(ident) = meta.path.get_ident() {
-                kind = Some(JsonArgKind::Registry(ident.to_string()));
+                let name = ident.to_string();
+                assert!(
+                    KNOWN_REGISTRIES.contains(&name.as_str()),
+                    "Unknown json_arg attribute '{name}' on field '{field_name}'. \
+                     Expected: value, enum, ref, json, optional, or a registry module ({}).",
+                    KNOWN_REGISTRIES.join(", ")
+                );
+                kind = Some(JsonArgKind::Registry(name));
             }
             Ok(())
         })
@@ -184,7 +198,10 @@ pub(crate) fn json_value_to_tokens(
             let n = n.as_i64().unwrap_or_else(|| {
                 panic!("JSON field '{key}' for entry '{entry_name}' must be an integer")
             });
-            let lit = proc_macro2::Literal::i32_suffixed(n as i32);
+            let n = i32::try_from(n).unwrap_or_else(|_| {
+                panic!("JSON field '{key}' for entry '{entry_name}' overflows i32: {n}")
+            });
+            let lit = proc_macro2::Literal::i32_suffixed(n);
             quote! { #lit }
         }
         serde_json::Value::String(s) => quote! { #s },
@@ -294,7 +311,8 @@ pub(crate) fn scan_object_behaviors(
             if let syn::Item::Struct(s) = item
                 && let Some(info) = parse_object_behavior(s, attribute_name)
             {
-                discovered.insert(info.class_name.clone(), info.clone());
+                let class_name = info.class_name.clone();
+                discovered.insert(class_name, info);
             }
         }
     }
