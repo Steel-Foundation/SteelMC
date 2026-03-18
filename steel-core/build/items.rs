@@ -1,231 +1,134 @@
 //! Code generation for item behaviors.
+//!
+//! Scans `src/behavior/items/**/*.rs` for structs annotated with `#[item_behavior]`,
+//! cross-references with `classes.json`, and generates `register_item_behaviors()`.
 
-use heck::ToShoutySnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
+use crate::common::{self, JsonArgKind, scan_object_behaviors};
+use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Deserialize)]
 pub struct ItemClass {
     pub name: String,
     pub class: String,
-    #[serde(default)]
-    pub block: Option<String>,
-    #[serde(default)]
-    pub wall_block: Option<String>,
-    #[serde(default)]
-    #[serde(rename = "content")]
-    pub fluid: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-/// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
-fn to_item_field(name: &str) -> Ident {
-    Ident::new(name, Span::call_site())
-}
-
-/// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)
-pub fn to_block_const(name: &str) -> Ident {
-    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
-}
-
-fn generate_block_item_registrations<'a>(
-    items: impl Iterator<Item = &'a (Ident, Ident)>,
-) -> TokenStream {
-    let registrations = items.map(|(item_field, block_const)| {
-        quote! {
-            registry.set_behavior(
-                &vanilla_items::ITEMS.#item_field,
-                Box::new(BlockItemBehavior::new(vanilla_blocks::#block_const)),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
-
-fn generate_sign_item_registrations<'a>(
-    items: impl Iterator<Item = &'a (Ident, Ident, Ident)>,
-) -> TokenStream {
-    let registrations = items.map(|(item_field, standing_const, wall_const)| {
-        quote! {
-            registry.set_behavior(
-                &vanilla_items::ITEMS.#item_field,
-                Box::new(SignItemBehavior::new(vanilla_blocks::#standing_const, vanilla_blocks::#wall_const)),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
-
-fn generate_hanging_sign_item_registrations<'a>(
-    items: impl Iterator<Item = &'a (Ident, Ident, Ident)>,
-) -> TokenStream {
-    let registrations = items.map(|(item_field, ceiling_const, wall_const)| {
-        quote! {
-            registry.set_behavior(
-                &vanilla_items::ITEMS.#item_field,
-                Box::new(HangingSignItemBehavior::new(vanilla_blocks::#ceiling_const, vanilla_blocks::#wall_const)),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
-
-fn generate_standing_and_wall_item_registrations<'a>(
-    items: impl Iterator<Item = &'a (Ident, Ident, Ident)>,
-) -> TokenStream {
-    let registrations = items.map(|(item_field, standing_const, wall_const)| {
-        // All vanilla StandingAndWallBlockItem instances use Direction::Down
-        // (torches, coral fans, skulls/heads, redstone torch)
-        quote! {
-            registry.set_behavior(
-                &vanilla_items::ITEMS.#item_field,
-                Box::new(StandingAndWallBlockItem::new(
-                    vanilla_blocks::#standing_const,
-                    vanilla_blocks::#wall_const,
-                    steel_registry::blocks::properties::Direction::Down,
-                )),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
-fn generate_filled_bucket_item_registrations<'a>(
-    items: impl Iterator<Item = &'a (Ident, Ident)>,
-) -> TokenStream {
-    let registrations = items.map(|(item_field, fluid)| {
-        // All vanilla StandingAndWallBlockItem instances use Direction::Down
-        // (torches, coral fans, skulls/heads, redstone torch)
-        quote! {
-            registry.set_behavior(
-                &vanilla_items::ITEMS.#item_field,
-                Box::new(FilledBucketBehavior::new(
-                    vanilla_blocks::#fluid,
-                    &vanilla_items::ITEMS.bucket,
-                )),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
-
-fn generate_simple_registrations<'a>(
-    items: impl Iterator<Item = &'a Ident>,
-    behavior_type: &Ident,
-) -> TokenStream {
-    let registrations = items.map(|item_field| {
-        quote! {
-            registry.set_behavior(
-                &vanilla_items::ITEMS.#item_field,
-                Box::new(#behavior_type),
-            );
-        }
-    });
-    quote! { #(#registrations)* }
-}
+// --- Code generation ---
 
 pub fn build(items: &[ItemClass]) -> String {
-    let mut block_items: Vec<(Ident, Ident)> = Vec::new();
-    let mut sign_items: Vec<(Ident, Ident, Ident)> = Vec::new();
-    let mut hanging_sign_items: Vec<(Ident, Ident, Ident)> = Vec::new();
-    let mut standing_and_wall_items: Vec<(Ident, Ident, Ident)> = Vec::new();
-    let mut ender_eye_items: Vec<Ident> = Vec::new();
-    let mut shovel_items: Vec<Ident> = Vec::new();
-    let mut filled_bucket_items: Vec<(Ident, Ident)> = Vec::new();
-    let mut empty_bucket_items: Vec<Ident> = Vec::new();
+    let discovered = scan_object_behaviors("items", "item_behavior");
+
+    let mut type_imports = BTreeSet::new();
+    let mut enum_imports: BTreeMap<String, String> = BTreeMap::new();
+    let mut registry_modules_used: BTreeSet<String> = BTreeSet::new();
+    let mut registrations = Vec::new();
+    let mut matched_classes = BTreeSet::new();
 
     for item in items {
-        let item_field = to_item_field(&item.name);
+        let Some(info) = discovered.get(&item.class) else {
+            continue;
+        };
 
-        match item.class.as_str() {
-            "BlockItem" | "DoubleHighBlockItem" => {
-                if let Some(block) = &item.block {
-                    block_items.push((item_field, to_block_const(block)));
+        matched_classes.insert(&item.class);
+
+        let struct_ident = Ident::new(&info.struct_name, Span::call_site());
+        let item_field = Ident::new(&item.name, Span::call_site());
+
+        type_imports.insert(info.struct_name.clone());
+
+        for field in &info.fields {
+            match &field.kind {
+                JsonArgKind::Enum {
+                    type_name,
+                    module_path,
+                } => {
+                    if let Some(path) = module_path {
+                        enum_imports.insert(type_name.clone(), path.clone());
+                    } else {
+                        type_imports.insert(type_name.clone());
+                    }
                 }
-            }
-            "SignItem" => {
-                let block = item.block.as_ref().expect("SignItem missing `block`");
-                let wall_block = item
-                    .wall_block
-                    .as_ref()
-                    .expect("SignItem missing `standingAndWallBlockItem`");
-                let standing_const = to_block_const(block);
-                let wall_const = to_block_const(wall_block);
-                sign_items.push((item_field, standing_const, wall_const));
-            }
-            "HangingSignItem" => {
-                let block = item
-                    .block
-                    .as_ref()
-                    .expect("HangingSignItem missing `block`");
-                let wall_block = item
-                    .wall_block
-                    .as_ref()
-                    .expect("HangingSignItem missing `standingAndWallBlockItem`");
-                let ceiling_const = to_block_const(block);
-                let wall_const = to_block_const(wall_block);
-                hanging_sign_items.push((item_field, ceiling_const, wall_const));
-            }
-            "StandingAndWallBlockItem" => {
-                let block = item
-                    .block
-                    .as_ref()
-                    .expect("StandingAndWallBlockItem missing `block`");
-                let wall_block = item
-                    .wall_block
-                    .as_ref()
-                    .expect("StandingAndWallBlockItem missing `standingAndWallBlockItem`");
-                let standing_const = to_block_const(block);
-                let wall_const = to_block_const(wall_block);
-                standing_and_wall_items.push((item_field, standing_const, wall_const));
-            }
-            "EnderEyeItem" => ender_eye_items.push(item_field),
-            "ShovelItem" => shovel_items.push(item_field),
-            "BucketItem" => {
-                let fluid = item.fluid.as_ref().expect("BucketItem missing `fluid`");
-                if fluid == "empty" {
-                    empty_bucket_items.push(item_field);
-                } else {
-                    filled_bucket_items.push((item_field, to_block_const(fluid)));
+                JsonArgKind::Registry(module) => {
+                    registry_modules_used.insert(module.clone());
                 }
+                JsonArgKind::Value => {}
             }
-            _ => {}
         }
+
+        // Need to divide here into two cases because blocks always have a block property while items don't have that.
+        let registration = if info.fields.is_empty() {
+            // Unit struct or struct with no json_args — instantiate directly
+            quote! {
+                registry.set_behavior(
+                    &vanilla_items::ITEMS.#item_field,
+                    Box::new(#struct_ident),
+                );
+            }
+        } else {
+            let mut args = Vec::new();
+            for field in &info.fields {
+                args.push(common::generate_arg(field, &item.extra, &item.name));
+            }
+
+            quote! {
+                registry.set_behavior(
+                    &vanilla_items::ITEMS.#item_field,
+                    Box::new(#struct_ident::new(#(#args),*)),
+                );
+            }
+        };
+
+        registrations.push(registration);
     }
 
-    let block_item_registrations = generate_block_item_registrations(block_items.iter());
-    let sign_item_registrations = generate_sign_item_registrations(sign_items.iter());
-    let hanging_sign_item_registrations =
-        generate_hanging_sign_item_registrations(hanging_sign_items.iter());
-    let standing_and_wall_item_registrations =
-        generate_standing_and_wall_item_registrations(standing_and_wall_items.iter());
+    for (class_name, info) in &discovered {
+        assert!(
+            matched_classes.contains(class_name),
+            "Item behavior struct `{}` maps to class '{}' which doesn't exist in classes.json",
+            info.struct_name,
+            class_name
+        );
+    }
 
-    let ender_eye_type = Ident::new("EnderEyeBehavior", Span::call_site());
-    let ender_eye_registrations =
-        generate_simple_registrations(ender_eye_items.iter(), &ender_eye_type);
-    let shovel_type = Ident::new("ShovelBehavior", Span::call_site());
-    let shovel_registrations = generate_simple_registrations(shovel_items.iter(), &shovel_type);
-    let filled_bucket_registrations =
-        generate_filled_bucket_item_registrations(filled_bucket_items.iter());
-    let empty_bucket_type = Ident::new("EmptyBucketBehavior", Span::call_site());
-    let empty_bucket_registrations =
-        generate_simple_registrations(empty_bucket_items.iter(), &empty_bucket_type);
+    // Build imports
+    let item_type_imports: Vec<_> = type_imports
+        .iter()
+        .map(|name| Ident::new(name, Span::call_site()))
+        .collect();
+
+    let enum_import_tokens: Vec<_> = enum_imports
+        .iter()
+        .map(|(type_name, module_path)| {
+            let type_ident = Ident::new(type_name, Span::call_site());
+            let path: syn::Path = syn::parse_str(module_path).unwrap_or_else(|_| {
+                panic!("Invalid module path '{module_path}' for enum '{type_name}'")
+            });
+            quote! { use #path::#type_ident; }
+        })
+        .collect();
+
+    let registry_import_tokens: Vec<_> = registry_modules_used
+        .iter()
+        .map(|module| {
+            let module_ident = Ident::new(module, Span::call_site());
+            quote! { , #module_ident }
+        })
+        .collect();
 
     let output = quote! {
         //! Generated item behavior assignments.
 
-        use steel_registry::{vanilla_blocks, vanilla_items};
+        use steel_registry::{vanilla_items #(#registry_import_tokens)*};
         use crate::behavior::ItemBehaviorRegistry;
-        use crate::behavior::items::{BlockItemBehavior, EnderEyeBehavior, HangingSignItemBehavior, SignItemBehavior, StandingAndWallBlockItem, ShovelBehavior, FilledBucketBehavior, EmptyBucketBehavior};
+        use crate::behavior::items::{#(#item_type_imports),*};
+        #(#enum_import_tokens)*
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
-            #block_item_registrations
-            #sign_item_registrations
-            #hanging_sign_item_registrations
-            #standing_and_wall_item_registrations
-            #ender_eye_registrations
-            #shovel_registrations
-            #filled_bucket_registrations
-            #empty_bucket_registrations
+            #(#registrations)*
         }
     };
 

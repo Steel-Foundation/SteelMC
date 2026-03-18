@@ -5,8 +5,8 @@
 //! - Sneak-edge prevention for staying on blocks while crouching
 //! - Proper collision detection and resolution
 
+use glam::DVec3;
 use steel_registry::blocks::shapes::AABBd;
-use steel_utils::math::Vector3;
 
 use crate::physics::{
     collision::CollisionWorld, physics_state::EntityPhysicsState, shapes::collide,
@@ -37,10 +37,10 @@ pub enum MoverType {
 #[derive(Debug, Clone)]
 pub struct MoveResult {
     /// The entity's final position after movement and collision resolution.
-    pub final_position: Vector3<f64>,
+    pub final_position: DVec3,
 
     /// The actual movement delta applied (may differ from requested due to collisions).
-    pub actual_movement: Vector3<f64>,
+    pub actual_movement: DVec3,
 
     /// Whether the entity is on the ground after movement.
     pub on_ground: bool,
@@ -79,7 +79,7 @@ pub struct MoveResult {
 /// `net.minecraft.world.entity.Entity.move(MoverType, Vec3)`
 pub fn move_entity(
     state: &EntityPhysicsState,
-    delta: Vector3<f64>,
+    delta: DVec3,
     mover_type: MoverType,
     world: &dyn CollisionWorld,
 ) -> MoveResult {
@@ -87,7 +87,7 @@ pub fn move_entity(
     if delta.x.abs() < 1.0e-7 && delta.y.abs() < 1.0e-7 && delta.z.abs() < 1.0e-7 {
         return MoveResult {
             final_position: state.position,
-            actual_movement: Vector3::new(0.0, 0.0, 0.0),
+            actual_movement: DVec3::new(0.0, 0.0, 0.0),
             on_ground: state.on_ground,
             horizontal_collision: false,
             vertical_collision: false,
@@ -129,10 +129,10 @@ pub fn move_entity(
 /// Matches: `Player.maybeBackOffFromEdge(Vec3, MoverType)`
 fn apply_sneak_edge_prevention(
     _state: &EntityPhysicsState,
-    delta: Vector3<f64>,
+    delta: DVec3,
     aabb: &AABBd,
     world: &dyn CollisionWorld,
-) -> Vector3<f64> {
+) -> DVec3 {
     // Only prevent edge falling for horizontal movement
     if delta.x.abs() < 1.0e-7 && delta.z.abs() < 1.0e-7 {
         return delta;
@@ -163,7 +163,7 @@ fn apply_sneak_edge_prevention(
 
     // If no ground below, prevent the movement
     if ground_below.is_empty() {
-        return Vector3::new(0.0, delta.y, 0.0); // Allow Y movement but block X/Z
+        return DVec3::new(0.0, delta.y, 0.0); // Allow Y movement but block X/Z
     }
 
     // Could add more sophisticated edge detection here (checking if we're
@@ -180,7 +180,7 @@ fn apply_sneak_edge_prevention(
 /// - YXZ otherwise (move along X before Z)
 ///
 /// Y is always first because gravity/vertical movement should be resolved first.
-fn axis_step_order(movement: Vector3<f64>) -> [Axis; 3] {
+fn axis_step_order(movement: DVec3) -> [Axis; 3] {
     if movement.x.abs() < movement.z.abs() {
         [Axis::Y, Axis::Z, Axis::X]
     } else {
@@ -196,7 +196,7 @@ fn axis_step_order(movement: Vector3<f64>) -> [Axis; 3] {
 #[allow(clippy::float_cmp)] // Intentional: checking if collision clipped the movement value
 fn collide_with_world(
     state: &EntityPhysicsState,
-    movement: Vector3<f64>,
+    movement: DVec3,
     aabb: &AABBd,
     world: &dyn CollisionWorld,
 ) -> MoveResult {
@@ -208,7 +208,7 @@ fn collide_with_world(
     let axes = axis_step_order(movement);
 
     // Track resolved movement per axis and current AABB position
-    let mut resolved = Vector3::new(0.0, 0.0, 0.0);
+    let mut resolved = DVec3::new(0.0, 0.0, 0.0);
     let mut current_aabb = *aabb;
 
     for axis in axes {
@@ -326,7 +326,7 @@ fn should_try_step_up(
 #[allow(clippy::float_cmp)] // Intentional: checking if collision clipped the movement value
 fn try_step_up(
     state: &EntityPhysicsState,
-    movement: Vector3<f64>,
+    movement: DVec3,
     aabb: &AABBd,
     ground_result: &MoveResult,
     world: &dyn CollisionWorld,
@@ -346,10 +346,10 @@ fn try_step_up(
 
     // Vanilla: collideWithShapes(Vec3(movement.x, maxUpStep, movement.z), groundedAABB, colliders)
     // This uses the dynamic axis order based on movement.x vs movement.z
-    let step_movement = Vector3::new(movement.x, max_step, movement.z);
+    let step_movement = DVec3::new(movement.x, max_step, movement.z);
     let axes = axis_step_order(step_movement);
 
-    let mut resolved = Vector3::new(0.0, 0.0, 0.0);
+    let mut resolved = DVec3::new(0.0, 0.0, 0.0);
     let mut current_aabb = *aabb;
 
     for axis in axes {
@@ -408,7 +408,7 @@ fn try_step_up(
 }
 
 /// Creates an AABB that encompasses the start and end positions of a movement.
-fn sweep_aabb(aabb: &AABBd, movement: Vector3<f64>) -> AABBd {
+fn sweep_aabb(aabb: &AABBd, movement: DVec3) -> AABBd {
     AABBd {
         min_x: if movement.x < 0.0 {
             aabb.min_x + movement.x
@@ -485,7 +485,7 @@ mod tests {
             collisions
         }
 
-        fn get_pre_move_collisions(&self, _aabb: &AABBd, _old_pos: Vector3<f64>) -> Vec<AABBd> {
+        fn get_pre_move_collisions(&self, _aabb: &AABBd, _old_pos: DVec3) -> Vec<AABBd> {
             Vec::new()
         }
     }
@@ -493,11 +493,11 @@ mod tests {
     #[test]
     fn test_move_entity_free_fall() {
         let mut state =
-            EntityPhysicsState::new(Vector3::new(0.0, 10.0, 0.0), vanilla_entities::PLAYER);
+            EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), vanilla_entities::PLAYER);
         state.on_ground = false;
 
         let world = MockWorld { has_floor: true };
-        let gravity = Vector3::new(0.0, -0.08, 0.0); // Vanilla gravity per tick
+        let gravity = DVec3::new(0.0, -0.08, 0.0); // Vanilla gravity per tick
 
         let result = move_entity(&state, gravity, MoverType::SelfMovement, &world);
 
@@ -511,11 +511,11 @@ mod tests {
     #[test]
     fn test_move_entity_land_on_ground() {
         let mut state =
-            EntityPhysicsState::new(Vector3::new(0.0, 5.0, 0.0), vanilla_entities::PLAYER);
+            EntityPhysicsState::new(DVec3::new(0.0, 5.0, 0.0), vanilla_entities::PLAYER);
         state.on_ground = false;
 
         let world = MockWorld { has_floor: true };
-        let large_fall = Vector3::new(0.0, -10.0, 0.0);
+        let large_fall = DVec3::new(0.0, -10.0, 0.0);
 
         let result = move_entity(&state, large_fall, MoverType::SelfMovement, &world);
 
@@ -529,10 +529,10 @@ mod tests {
 
     #[test]
     fn test_move_entity_no_collision_in_air() {
-        let state = EntityPhysicsState::new(Vector3::new(0.0, 10.0, 0.0), vanilla_entities::PLAYER);
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), vanilla_entities::PLAYER);
 
         let world = MockWorld { has_floor: false };
-        let movement = Vector3::new(1.0, 0.0, 1.0);
+        let movement = DVec3::new(1.0, 0.0, 1.0);
 
         let result = move_entity(&state, movement, MoverType::SelfMovement, &world);
 
@@ -547,14 +547,13 @@ mod tests {
     fn test_item_on_ground_with_accumulated_velocity() {
         // Simulates an item that's on the ground (Y=1.0 on top of floor)
         // and has accumulated negative velocity from gravity
-        let mut state =
-            EntityPhysicsState::new(Vector3::new(0.0, 1.0, 0.0), vanilla_entities::ITEM);
+        let mut state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), vanilla_entities::ITEM);
         state.on_ground = true;
 
         let world = MockWorld { has_floor: true };
 
         // Simulate accumulated velocity from 25 ticks of gravity (0.04 per tick)
-        let accumulated_velocity = Vector3::new(0.0, -1.0, 0.0);
+        let accumulated_velocity = DVec3::new(0.0, -1.0, 0.0);
 
         let result = move_entity(
             &state,
@@ -577,13 +576,13 @@ mod tests {
         // Simulates an item that's slightly above the ground due to floating point
         // Floor at Y=1.0, item at Y=1.00001 (just above)
         let mut state =
-            EntityPhysicsState::new(Vector3::new(0.0, 1.00001, 0.0), vanilla_entities::ITEM);
+            EntityPhysicsState::new(DVec3::new(0.0, 1.00001, 0.0), vanilla_entities::ITEM);
         state.on_ground = false; // Not quite on ground yet
 
         let world = MockWorld { has_floor: true };
 
         // Small downward velocity
-        let velocity = Vector3::new(0.0, -0.04, 0.0);
+        let velocity = DVec3::new(0.0, -0.04, 0.0);
 
         let result = move_entity(&state, velocity, MoverType::SelfMovement, &world);
 

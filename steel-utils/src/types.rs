@@ -10,6 +10,7 @@ use std::{
 };
 
 use bitflags::bitflags;
+use glam::{DVec3, IVec2, IVec3};
 use serde::{Deserialize, Serialize, de::Error as _};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
@@ -18,7 +19,7 @@ use crate::{
     codec::VarInt,
     direction::Direction,
     hash::{ComponentHasher, HashComponent},
-    math::{Axis, Vector2, Vector3},
+    math::Axis,
     serial::{ReadFrom, WriteTo},
 };
 
@@ -101,8 +102,8 @@ impl ReadFrom for BlockStateId {
 }
 
 /// A chunk position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ChunkPos(pub Vector2<i32>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkPos(pub IVec2);
 
 impl Hash for ChunkPos {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -143,7 +144,7 @@ impl ChunkPos {
     #[inline]
     /// Creates a new `ChunkPos` with the given x and y coordinates.
     pub const fn new(x: i32, y: i32) -> Self {
-        Self(Vector2::new(x, y))
+        Self(IVec2::new(x, y))
     }
 
     /// Checks if the given chunk coordinates are within valid bounds.
@@ -165,7 +166,7 @@ impl ChunkPos {
     #[must_use]
     #[inline]
     pub const fn from_i64(value: i64) -> Self {
-        Self(Vector2::new(
+        Self(IVec2::new(
             (value & 0xFFFF_FFFF) as i32,
             (value >> 32) as i32,
         ))
@@ -182,17 +183,17 @@ impl WriteTo for ChunkPos {
 #[allow(missing_docs)]
 impl ReadFrom for ChunkPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
-        Ok(Self(Vector2::<i32>::read(data)?))
+        Ok(Self(IVec2::read(data)?))
     }
 }
 
 /// A block position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlockPos(pub Vector3<i32>);
+pub struct BlockPos(pub IVec3);
 
-impl From<Vector3<f64>> for BlockPos {
-    fn from(value: Vector3<f64>) -> Self {
-        BlockPos(Vector3 {
+impl From<DVec3> for BlockPos {
+    fn from(value: DVec3) -> Self {
+        BlockPos(IVec3 {
             x: value.x.floor() as i32,
             y: value.y.floor() as i32,
             z: value.z.floor() as i32,
@@ -209,7 +210,7 @@ impl BlockPos {
     const PACKED_X_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
     const PACKED_Y_MASK: i64 = (1i64 << Self::PACKED_Y_LEN) - 1;
     const PACKED_Z_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
-    pub const ZERO: BlockPos = BlockPos(Vector3::new(0, 0, 0));
+    pub const ZERO: BlockPos = BlockPos(IVec3::new(0, 0, 0));
 
     /// Maximum horizontal coordinate value: `(1 << 26) / 2 - 1 = 33554431`
     pub const MAX_HORIZONTAL_COORDINATE: i32 = (1 << Self::PACKED_HORIZONTAL_LEN) / 2 - 1;
@@ -217,7 +218,7 @@ impl BlockPos {
     /// Creates a new `BlockPos` from coordinates.
     #[must_use]
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
-        Self(Vector3::new(x, y, z))
+        Self(IVec3::new(x, y, z))
     }
 
     /// Converts the `BlockPos` to an `i64`.
@@ -245,13 +246,13 @@ impl BlockPos {
         let y = (y << (64 - Self::PACKED_Y_LEN)) >> (64 - Self::PACKED_Y_LEN);
         let z = (z << (64 - Self::PACKED_HORIZONTAL_LEN)) >> (64 - Self::PACKED_HORIZONTAL_LEN);
 
-        Self(Vector3::new(x as i32, y as i32, z as i32))
+        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 
     /// Returns a new `BlockPos` offset by the given amounts.
     #[must_use]
     pub const fn offset(&self, dx: i32, dy: i32, dz: i32) -> Self {
-        Self(Vector3::new(self.0.x + dx, self.0.y + dy, self.0.z + dz))
+        Self(IVec3::new(self.0.x + dx, self.0.y + dy, self.0.z + dz))
     }
 
     /// Returns the x coordinate.
@@ -442,7 +443,7 @@ impl ReadFrom for BlockPos {
 
 /// A chunk section position (16x16x16 region).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SectionPos(pub Vector3<i32>);
+pub struct SectionPos(pub IVec3);
 
 impl SectionPos {
     const SECTION_BITS: i32 = 4;
@@ -452,7 +453,7 @@ impl SectionPos {
     /// Creates a new `SectionPos` from section coordinates.
     #[must_use]
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
-        Self(Vector3::new(x, y, z))
+        Self(IVec3::new(x, y, z))
     }
 
     /// Converts a block coordinate to a section coordinate.
@@ -550,7 +551,7 @@ impl SectionPos {
         let y = (y << 44) >> 44;
         let z = (z << 42) >> 42;
 
-        Self(Vector3::new(x as i32, y as i32, z as i32))
+        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 
     /// Packs a block position into a section-relative short.
@@ -567,7 +568,7 @@ impl SectionPos {
     /// Converts a section-relative packed position back to a block position.
     #[must_use]
     pub const fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
-        BlockPos(Vector3::new(
+        BlockPos(IVec3::new(
             self.relative_to_block_x(relative),
             self.relative_to_block_y(relative),
             self.relative_to_block_z(relative),
@@ -665,7 +666,7 @@ impl BoundingBox {
     /// Returns the center of this bounding box.
     #[must_use]
     pub const fn get_center(&self) -> BlockPos {
-        BlockPos(Vector3::new(
+        BlockPos(IVec3::new(
             self.min_x + (self.max_x - self.min_x + 1) / 2,
             self.min_y + (self.max_y - self.min_y + 1) / 2,
             self.min_z + (self.max_z - self.min_z + 1) / 2,
@@ -1027,12 +1028,12 @@ mod tests {
     #[test]
     fn test_block_pos_roundtrip() {
         let positions = vec![
-            BlockPos(Vector3::new(0, -61, -2)),
-            BlockPos(Vector3::new(0, 0, 0)),
-            BlockPos(Vector3::new(100, 64, -100)),
-            BlockPos(Vector3::new(-1000, -64, 1000)),
-            BlockPos(Vector3::new(33_554_431, 2047, 33_554_431)), // Max positive values
-            BlockPos(Vector3::new(-33_554_432, -2048, -33_554_432)), // Max negative values
+            BlockPos(IVec3::new(0, -61, -2)),
+            BlockPos(IVec3::new(0, 0, 0)),
+            BlockPos(IVec3::new(100, 64, -100)),
+            BlockPos(IVec3::new(-1000, -64, 1000)),
+            BlockPos(IVec3::new(33_554_431, 2047, 33_554_431)), // Max positive values
+            BlockPos(IVec3::new(-33_554_432, -2048, -33_554_432)), // Max negative values
         ];
 
         for pos in positions {
@@ -1048,7 +1049,7 @@ mod tests {
     #[test]
     fn test_block_pos_specific_case() {
         // Test the specific case from the bug report
-        let pos = BlockPos(Vector3::new(0, -61, -2));
+        let pos = BlockPos(IVec3::new(0, -61, -2));
         let encoded = pos.as_i64();
         let decoded = BlockPos::from_i64(encoded);
         assert_eq!(pos, decoded, "Position 0, -61, -2 failed roundtrip");

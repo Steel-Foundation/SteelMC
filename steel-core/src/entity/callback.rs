@@ -5,7 +5,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicI64, Ordering},
 };
 
-use steel_utils::{ChunkPos, SectionPos, math::Vector3};
+use glam::DVec3;
+use steel_utils::{ChunkPos, SectionPos};
 
 use super::SharedEntity;
 use crate::world::World;
@@ -46,7 +47,7 @@ impl RemovalReason {
 /// Mirrors vanilla's `EntityInLevelCallback`.
 pub trait EntityLevelCallback: Send + Sync {
     /// Called when entity position changes - may trigger section/chunk migration.
-    fn on_move(&self, old_pos: Vector3<f64>, new_pos: Vector3<f64>);
+    fn on_move(&self, old_pos: DVec3, new_pos: DVec3);
 
     /// Called when entity is removed from the world.
     fn on_remove(&self, reason: RemovalReason);
@@ -56,7 +57,7 @@ pub trait EntityLevelCallback: Send + Sync {
 pub struct NullEntityCallback;
 
 impl EntityLevelCallback for NullEntityCallback {
-    fn on_move(&self, _old_pos: Vector3<f64>, _new_pos: Vector3<f64>) {}
+    fn on_move(&self, _old_pos: DVec3, _new_pos: DVec3) {}
     fn on_remove(&self, _reason: RemovalReason) {}
 }
 
@@ -74,7 +75,7 @@ pub struct PlayerEntityCallback {
 impl PlayerEntityCallback {
     /// Creates a new callback for a player.
     #[must_use]
-    pub fn new(entity_id: i32, position: Vector3<f64>, world: Weak<World>) -> Self {
+    pub fn new(entity_id: i32, position: DVec3, world: Weak<World>) -> Self {
         let section_pos = SectionPos::new(
             (position.x as i32) >> 4,
             (position.y as i32) >> 4,
@@ -90,7 +91,7 @@ impl PlayerEntityCallback {
 }
 
 impl EntityLevelCallback for PlayerEntityCallback {
-    fn on_move(&self, _old_pos: Vector3<f64>, new_pos: Vector3<f64>) {
+    fn on_move(&self, _old_pos: DVec3, new_pos: DVec3) {
         let Some(world) = self.world.upgrade() else {
             return;
         };
@@ -161,7 +162,7 @@ impl EntityChunkCallback {
 }
 
 impl EntityLevelCallback for EntityChunkCallback {
-    fn on_move(&self, old_pos: Vector3<f64>, new_pos: Vector3<f64>) {
+    fn on_move(&self, old_pos: DVec3, new_pos: DVec3) {
         let Some(world) = self.world.upgrade() else {
             return;
         };

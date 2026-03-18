@@ -5,6 +5,7 @@
 
 use std::sync::Weak;
 
+use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
@@ -14,7 +15,6 @@ use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
 use steel_utils::BlockStateId;
 use steel_utils::locks::SyncMutex;
-use steel_utils::math::Vector3;
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase};
@@ -37,7 +37,7 @@ impl BlockDisplayEntity {
     ///
     /// The `id` should be obtained from `next_entity_id()`.
     #[must_use]
-    pub fn new(id: i32, position: Vector3<f64>, world: Weak<World>) -> Self {
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
             base: EntityBase::new(id, position, world),
             entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
@@ -48,7 +48,7 @@ impl BlockDisplayEntity {
     ///
     /// The `id` should be obtained from `next_entity_id()`.
     #[must_use]
-    pub fn with_uuid(id: i32, position: Vector3<f64>, uuid: Uuid, world: Weak<World>) -> Self {
+    pub fn with_uuid(id: i32, position: DVec3, uuid: Uuid, world: Weak<World>) -> Self {
         Self {
             base: EntityBase::with_uuid(id, uuid, position, world),
             entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
@@ -61,7 +61,7 @@ impl BlockDisplayEntity {
     /// essentially an alias for `with_uuid`. Type-specific data is restored
     /// via `load_additional()` after construction.
     #[must_use]
-    pub fn from_saved(id: i32, position: Vector3<f64>, uuid: Uuid, world: Weak<World>) -> Self {
+    pub fn from_saved(id: i32, position: DVec3, uuid: Uuid, world: Weak<World>) -> Self {
         Self::with_uuid(id, position, uuid, world)
     }
 
