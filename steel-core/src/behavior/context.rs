@@ -1,7 +1,7 @@
 //! Context types and results for block and item interactions.
 
-use std::sync::Arc;
 use glam::DVec3;
+use std::sync::Arc;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
