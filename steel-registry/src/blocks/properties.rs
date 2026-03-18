@@ -521,6 +521,10 @@ pub enum NoteBlockInstrument {
     Bit,
     Banjo,
     Pling,
+    Trumpet,
+    TrumpetExposed,
+    TrumpetOxidized,
+    TrumpetWeathered,
     Zombie,
     Skeleton,
     Creeper,
@@ -528,10 +532,6 @@ pub enum NoteBlockInstrument {
     WitherSkeleton,
     Piglin,
     CustomHead,
-    Trumpet,
-    TrumpetExposed,
-    TrumpetWeathered,
-    TrumpetOxidized,
 }
 
 impl PropertyEnum for NoteBlockInstrument {
@@ -553,6 +553,10 @@ impl PropertyEnum for NoteBlockInstrument {
             NoteBlockInstrument::Bit => "bit",
             NoteBlockInstrument::Banjo => "banjo",
             NoteBlockInstrument::Pling => "pling",
+            NoteBlockInstrument::Trumpet => "trumpet",
+            NoteBlockInstrument::TrumpetExposed => "trumpet_exposed",
+            NoteBlockInstrument::TrumpetWeathered => "trumpet_weathered",
+            NoteBlockInstrument::TrumpetOxidized => "trumpet_oxidized",
             NoteBlockInstrument::Zombie => "zombie",
             NoteBlockInstrument::Skeleton => "skeleton",
             NoteBlockInstrument::Creeper => "creeper",
@@ -560,10 +564,6 @@ impl PropertyEnum for NoteBlockInstrument {
             NoteBlockInstrument::WitherSkeleton => "wither_skeleton",
             NoteBlockInstrument::Piglin => "piglin",
             NoteBlockInstrument::CustomHead => "custom_head",
-            NoteBlockInstrument::Trumpet => "trumpet",
-            NoteBlockInstrument::TrumpetExposed => "trumpet_exposed",
-            NoteBlockInstrument::TrumpetWeathered => "trumpet_weathered",
-            NoteBlockInstrument::TrumpetOxidized => "trumpet_oxidized",
         }
     }
 }
@@ -1068,6 +1068,10 @@ impl BlockStateProperties {
             NoteBlockInstrument::Bit,
             NoteBlockInstrument::Banjo,
             NoteBlockInstrument::Pling,
+            NoteBlockInstrument::Trumpet,
+            NoteBlockInstrument::TrumpetExposed,
+            NoteBlockInstrument::TrumpetOxidized,
+            NoteBlockInstrument::TrumpetWeathered,
             NoteBlockInstrument::Zombie,
             NoteBlockInstrument::Skeleton,
             NoteBlockInstrument::Creeper,
