@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
+use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehaviour;
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -16,6 +17,7 @@ use crate::world::World;
 ///
 /// Crops grow through random ticks when placed on farmland with sufficient light.
 /// Growth speed is affected by nearby farmland moisture and crop arrangement.
+#[block_behavior]
 pub struct CropBlock {
     block: BlockRef,
     age_property: IntProperty,
@@ -71,7 +73,7 @@ impl CropBlock {
     /// - Farmland below: +1.0 (dry) or +3.0 (hydrated)
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
-    fn get_growth_speed(&self, world: &World, pos: BlockPos) -> f32 {
+    fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
         let mut speed = 1.0f32;
         let below = pos.below();
 
@@ -79,7 +81,7 @@ impl CropBlock {
         for dx in -1..=1 {
             for dz in -1..=1 {
                 let check_pos = below.offset(dx, 0, dz);
-                let block_state = world.get_block_state(&check_pos);
+                let block_state = world.get_block_state(check_pos);
                 let mut block_speed = 0.0f32;
 
                 if block_state.get_block() == vanilla_blocks::FARMLAND {
@@ -101,10 +103,10 @@ impl CropBlock {
         }
 
         // Check for same crop in adjacent positions (reduces growth speed)
-        let north = world.get_block_state(&pos.north());
-        let south = world.get_block_state(&pos.south());
-        let west = world.get_block_state(&pos.west());
-        let east = world.get_block_state(&pos.east());
+        let north = world.get_block_state(pos.north());
+        let south = world.get_block_state(pos.south());
+        let west = world.get_block_state(pos.west());
+        let east = world.get_block_state(pos.east());
 
         let horizontal_row =
             self.is_same_block(west.get_block()) || self.is_same_block(east.get_block());
@@ -116,10 +118,10 @@ impl CropBlock {
             speed /= 2.0;
         } else {
             // Check diagonals
-            let nw = world.get_block_state(&pos.north().west());
-            let ne = world.get_block_state(&pos.north().east());
-            let sw = world.get_block_state(&pos.south().west());
-            let se = world.get_block_state(&pos.south().east());
+            let nw = world.get_block_state(pos.north().west());
+            let ne = world.get_block_state(pos.north().east());
+            let sw = world.get_block_state(pos.south().west());
+            let se = world.get_block_state(pos.south().east());
 
             let has_diagonal = self.is_same_block(nw.get_block())
                 || self.is_same_block(ne.get_block())
@@ -135,7 +137,7 @@ impl CropBlock {
     }
 }
 
-impl BlockBehaviour for CropBlock {
+impl BlockBehavior for CropBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Crops are placed at age 0
         Some(self.get_state_for_age(0))

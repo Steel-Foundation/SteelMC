@@ -110,7 +110,7 @@ fn vanilla_shuffle<T>(list: &mut [T], rng: &mut LegacyRandom) {
 }
 
 /// Gets the template location from a pool element.
-fn element_location(element: &PoolElement) -> Option<&Identifier> {
+const fn element_location(element: &PoolElement) -> Option<&Identifier> {
     match element {
         PoolElement::Single { location, .. } | PoolElement::LegacySingle { location, .. } => {
             Some(location)
@@ -122,7 +122,7 @@ fn element_location(element: &PoolElement) -> Option<&Identifier> {
 /// Gets shuffled jigsaws for a pool element at a given position and rotation.
 ///
 /// Returns the jigsaws with their positions transformed by rotation, sorted
-/// by selection_priority (descending), then shuffled within equal priorities.
+/// by `selection_priority` (descending), then shuffled within equal priorities.
 fn get_shuffled_jigsaws(
     element: &PoolElement,
     templates: &FxHashMap<Identifier, TemplateData>,
@@ -250,18 +250,19 @@ fn element_bounding_box(
     pos_z: i32,
     rotation: Rotation,
 ) -> Option<BoundingBox> {
-    match element {
-        PoolElement::Feature { .. } => {
-            Some(BoundingBox::new(pos_x, pos_y, pos_z, pos_x, pos_y, pos_z))
-        }
-        _ => {
-            let location = element_location(element)?;
-            let template = templates.get(location)?;
-            Some(rotation.get_bounding_box(
-                pos_x, pos_y, pos_z,
-                template.size[0], template.size[1], template.size[2],
-            ))
-        }
+    if let PoolElement::Feature { .. } = element {
+        Some(BoundingBox::new(pos_x, pos_y, pos_z, pos_x, pos_y, pos_z))
+    } else {
+        let location = element_location(element)?;
+        let template = templates.get(location)?;
+        Some(rotation.get_bounding_box(
+            pos_x,
+            pos_y,
+            pos_z,
+            template.size[0],
+            template.size[1],
+            template.size[2],
+        ))
     }
 }
 
@@ -286,10 +287,7 @@ fn get_shuffled_templates<'a>(
 /// Picks a random template from a pool (weighted).
 ///
 /// Vanilla's `StructureTemplatePool.getRandomTemplate`.
-fn get_random_template<'a>(
-    pool: &'a TemplatePoolData,
-    rng: &mut LegacyRandom,
-) -> &'a PoolElement {
+fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -> &'a PoolElement {
     let mut expanded: Vec<&PoolElement> = Vec::new();
     for (element, weight) in &pool.elements {
         for _ in 0..*weight {
@@ -311,7 +309,7 @@ fn get_random_template<'a>(
 /// each queued piece carries a reference to its parent's collision context.
 /// Internal children share the source piece's internal free space; external
 /// children share the parent's context. For integer-aligned bounding boxes,
-/// tracking a constraint + occupied list is equivalent to VoxelShape subtraction.
+/// tracking a constraint + occupied list is equivalent to `VoxelShape` subtraction.
 struct FreeSpace {
     /// The outer boundary of this domain.
     constraint: BoundingBox,
@@ -346,7 +344,7 @@ impl FreeSpace {
 pub struct AssemblyResult {
     /// The placed pieces.
     pub pieces: Vec<PlacedPiece>,
-    /// The biome check position (centerX, centerY, centerZ from the GenerationStub).
+    /// The biome check position (centerX, centerY, centerZ from the `GenerationStub`).
     pub biome_check_pos: (i32, i32, i32),
 }
 
@@ -391,17 +389,18 @@ pub fn assemble(
     }
 
     // Handle start_jigsaw_name anchor
-    let (anchor_offset_x, anchor_offset_y, anchor_offset_z) = if let Some(ref jigsaw_name) = config.start_jigsaw_name {
-        // Find the named jigsaw in the start piece
-        let jigsaws = get_shuffled_jigsaws(center_element, templates, center_rotation, rng);
-        let found = jigsaws.iter().find(|j| j.name == *jigsaw_name);
-        match found {
-            Some(j) => (j.pos.0, j.pos.1, j.pos.2),
-            None => return None, // Named jigsaw not found
-        }
-    } else {
-        (0, 0, 0)
-    };
+    let (anchor_offset_x, anchor_offset_y, anchor_offset_z) =
+        if let Some(ref jigsaw_name) = config.start_jigsaw_name {
+            // Find the named jigsaw in the start piece
+            let jigsaws = get_shuffled_jigsaws(center_element, templates, center_rotation, rng);
+            let found = jigsaws.iter().find(|j| j.name == *jigsaw_name);
+            match found {
+                Some(j) => (j.pos.0, j.pos.1, j.pos.2),
+                None => return None, // Named jigsaw not found
+            }
+        } else {
+            (0, 0, 0)
+        };
 
     // Adjusted position: move piece so anchor aligns with start position
     let adjusted_x = start_x - anchor_offset_x;
@@ -410,15 +409,18 @@ pub fn assemble(
 
     // Compute center piece bounding box
     let center_bb = element_bounding_box(
-        center_element, templates,
-        adjusted_x, adjusted_y, adjusted_z,
+        center_element,
+        templates,
+        adjusted_x,
+        adjusted_y,
+        adjusted_z,
         center_rotation,
     )?;
 
     // Height projection
     let bottom_y = if let Some(ref _heightmap) = config.project_start_to_heightmap {
-        let center_bx = (center_bb.min_x + center_bb.max_x) / 2;
-        let center_bz = (center_bb.min_z + center_bb.max_z) / 2;
+        let center_bx = i32::midpoint(center_bb.min_x, center_bb.max_x);
+        let center_bz = i32::midpoint(center_bb.min_z, center_bb.max_z);
         // Vanilla: start_y + getFirstFreeHeight(...)
         let surface = get_height(center_bx, center_bz);
         start_y + surface
@@ -431,8 +433,12 @@ pub fn assemble(
     let old_ground_y = center_bb.min_y + ground_level_delta;
     let dy = bottom_y - old_ground_y;
     let center_bb = BoundingBox::new(
-        center_bb.min_x, center_bb.min_y + dy, center_bb.min_z,
-        center_bb.max_x, center_bb.max_y + dy, center_bb.max_z,
+        center_bb.min_x,
+        center_bb.min_y + dy,
+        center_bb.min_z,
+        center_bb.max_x,
+        center_bb.max_y + dy,
+        center_bb.max_z,
     );
     let adjusted_y = adjusted_y + dy;
 
@@ -458,13 +464,16 @@ pub fn assemble(
     }];
 
     // Compute biome check position (vanilla's GenerationStub position)
-    let center_stub_x = (center_bb.min_x + center_bb.max_x) / 2;
-    let center_stub_z = (center_bb.min_z + center_bb.max_z) / 2;
+    let center_stub_x = i32::midpoint(center_bb.min_x, center_bb.max_x);
+    let center_stub_z = i32::midpoint(center_bb.min_z, center_bb.max_z);
     let center_stub_y = bottom_y + anchor_offset_y;
     let biome_check_pos = (center_stub_x, center_stub_y, center_stub_z);
 
     if config.max_depth <= 0 {
-        return Some(AssemblyResult { pieces, biome_check_pos });
+        return Some(AssemblyResult {
+            pieces,
+            biome_check_pos,
+        });
     }
 
     // Create constraint bounding box — vanilla centers on (centerX, centerY, centerZ),
@@ -529,7 +538,10 @@ pub fn assemble(
         );
     }
 
-    Some(AssemblyResult { pieces, biome_check_pos })
+    Some(AssemblyResult {
+        pieces,
+        biome_check_pos,
+    })
 }
 
 /// Tries to place children for a source piece.
@@ -567,11 +579,10 @@ fn try_placing_children(
     let mut internal_ctx_idx: Option<usize> = None;
 
     // Get the pool element to retrieve jigsaws
-    let source_pool_element = source_element_loc
-        .and_then(|loc| {
-            // Reconstruct element type — for jigsaw we only need Single/LegacySingle
-            templates.get(loc).map(|_| loc)
-        });
+    let source_pool_element = source_element_loc.and_then(|loc| {
+        // Reconstruct element type — for jigsaw we only need Single/LegacySingle
+        templates.get(loc).map(|_| loc)
+    });
 
     let Some(source_loc) = source_pool_element else {
         return;
@@ -586,9 +597,9 @@ fn try_placing_children(
             .jigsaws
             .iter()
             .map(|j| {
-                let (tx, ty, tz) = source_piece.rotation.transform_pos(
-                    j.pos[0], j.pos[1], j.pos[2], 0, 0,
-                );
+                let (tx, ty, tz) = source_piece
+                    .rotation
+                    .transform_pos(j.pos[0], j.pos[1], j.pos[2], 0, 0);
                 let orientation = j.orientation.rotate(source_piece.rotation);
                 TransformedJigsaw {
                     pos: (
@@ -637,16 +648,17 @@ fn try_placing_children(
 
         // Determine whether target attaches inside source
         let attach_inside = source_bb.contains_xyz(
-            target_jigsaw_world.0, target_jigsaw_world.1, target_jigsaw_world.2,
+            target_jigsaw_world.0,
+            target_jigsaw_world.1,
+            target_jigsaw_world.2,
         );
 
         // Build candidate list
         let mut candidates: Vec<&PoolElement> = Vec::new();
-        if depth != config.max_depth {
-            if let Some(pool) = target_pool {
+        if depth != config.max_depth
+            && let Some(pool) = target_pool {
                 candidates.extend(get_shuffled_templates(pool, rng));
             }
-        }
         if let Some(fallback) = fallback_pool {
             candidates.extend(get_shuffled_templates(fallback, rng));
         }
@@ -657,7 +669,7 @@ fn try_placing_children(
         let mut source_jigsaw_base_height: Option<i32> = None;
 
         // Try each candidate
-        for candidate_element in candidates.iter() {
+        for candidate_element in &candidates {
             if candidate_element.is_empty() {
                 break;
             }
@@ -668,52 +680,64 @@ fn try_placing_children(
             // Try each rotation
             let rotations = Rotation::get_shuffled(rng);
             for candidate_rotation in rotations {
-                let candidate_jigsaws = get_shuffled_jigsaws(
-                    candidate_element, templates, candidate_rotation, rng,
-                );
+                let candidate_jigsaws =
+                    get_shuffled_jigsaws(candidate_element, templates, candidate_rotation, rng);
 
-                let _candidate_bb_at_origin = element_bounding_box(
-                    candidate_element, templates, 0, 0, 0, candidate_rotation,
-                );
+                let _candidate_bb_at_origin =
+                    element_bounding_box(candidate_element, templates, 0, 0, 0, candidate_rotation);
 
                 // Expansion hack: compute max child pool size for Y expansion.
                 // Vanilla: getBoundingBox(manager, ZERO, rotation) uses default
                 // StructurePlaceSettings with pivot=ZERO and mirror=NONE.
                 // Jigsaw positions are also transformed with pivot=ZERO.
                 let expand_to = if config.use_expansion_hack {
-                    let hack_data = element_location(candidate_element)
-                        .and_then(|loc| templates.get(loc));
+                    let hack_data =
+                        element_location(candidate_element).and_then(|loc| templates.get(loc));
                     if let Some(template_data) = hack_data {
                         let hack_box = candidate_rotation.get_bounding_box(
-                            0, 0, 0,
-                            template_data.size[0], template_data.size[1], template_data.size[2],
+                            0,
+                            0,
+                            0,
+                            template_data.size[0],
+                            template_data.size[1],
+                            template_data.size[2],
                         );
-                        if hack_box.max_y - hack_box.min_y + 1 <= 16 {
-                            template_data.jigsaws.iter().map(|j| {
-                                let (rx, ry, rz) = candidate_rotation.transform_pos(
-                                    j.pos[0], j.pos[1], j.pos[2], 0, 0,
-                                );
-                                let front = j.orientation.rotate(candidate_rotation).front_direction();
-                                let (fdx2, fdy2, fdz2) = front.offset();
-                                let front_pos = (rx + fdx2, ry + fdy2, rz + fdz2);
-                                if !hack_box.contains_xyz(front_pos.0, front_pos.1, front_pos.2) {
-                                    return 0;
-                                }
-                                let child_pool_key = alias_map
-                                    .get(&j.pool)
-                                    .unwrap_or(&j.pool);
-                                let child_pool_size = pools.get(child_pool_key)
-                                    .map(|p| pool_max_y_size(p, templates))
-                                    .unwrap_or(0);
-                                let child_fallback_size = pools.get(child_pool_key)
-                                    .and_then(|p| pools.get(&p.fallback))
-                                    .map(|p| pool_max_y_size(p, templates))
-                                    .unwrap_or(0);
-                                child_pool_size.max(child_fallback_size)
-                            }).max().unwrap_or(0)
-                        } else { 0 }
-                    } else { 0 }
-                } else { 0 };
+                        if hack_box.max_y - hack_box.min_y < 16 {
+                            template_data
+                                .jigsaws
+                                .iter()
+                                .map(|j| {
+                                    let (rx, ry, rz) = candidate_rotation
+                                        .transform_pos(j.pos[0], j.pos[1], j.pos[2], 0, 0);
+                                    let front =
+                                        j.orientation.rotate(candidate_rotation).front_direction();
+                                    let (fdx2, fdy2, fdz2) = front.offset();
+                                    let front_pos = (rx + fdx2, ry + fdy2, rz + fdz2);
+                                    if !hack_box.contains_xyz(front_pos.0, front_pos.1, front_pos.2)
+                                    {
+                                        return 0;
+                                    }
+                                    let child_pool_key = alias_map.get(&j.pool).unwrap_or(&j.pool);
+                                    let child_pool_size = pools
+                                        .get(child_pool_key)
+                                        .map_or(0, |p| pool_max_y_size(p, templates));
+                                    let child_fallback_size = pools
+                                        .get(child_pool_key)
+                                        .and_then(|p| pools.get(&p.fallback))
+                                        .map_or(0, |p| pool_max_y_size(p, templates));
+                                    child_pool_size.max(child_fallback_size)
+                                })
+                                .max()
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
 
                 // Try each target jigsaw
                 for target_jigsaw in &candidate_jigsaws {
@@ -729,8 +753,11 @@ fn try_placing_children(
 
                     // Compute raw bounding box at that position
                     let Some(raw_bb) = element_bounding_box(
-                        candidate_element, templates,
-                        raw_target_x, 0, raw_target_z,
+                        candidate_element,
+                        templates,
+                        raw_target_x,
+                        0,
+                        raw_target_z,
                         candidate_rotation,
                     ) else {
                         continue;
@@ -752,8 +779,12 @@ fn try_placing_children(
 
                     let y_offset = target_box_y - raw_bb.min_y;
                     let candidate_bb = BoundingBox::new(
-                        raw_bb.min_x, raw_bb.min_y + y_offset, raw_bb.min_z,
-                        raw_bb.max_x, raw_bb.max_y + y_offset, raw_bb.max_z,
+                        raw_bb.min_x,
+                        raw_bb.min_y + y_offset,
+                        raw_bb.min_z,
+                        raw_bb.max_x,
+                        raw_bb.max_y + y_offset,
+                        raw_bb.max_z,
                     );
                     let target_position = (raw_target_x, raw_bb.min_y + y_offset, raw_target_z);
 
@@ -764,8 +795,12 @@ fn try_placing_children(
                     let expanded_bb = if expand_to > 0 {
                         let new_size = (expand_to + 1).max(candidate_bb.max_y - candidate_bb.min_y);
                         BoundingBox::new(
-                            candidate_bb.min_x, candidate_bb.min_y, candidate_bb.min_z,
-                            candidate_bb.max_x, candidate_bb.min_y + new_size, candidate_bb.max_z,
+                            candidate_bb.min_x,
+                            candidate_bb.min_y,
+                            candidate_bb.min_z,
+                            candidate_bb.max_x,
+                            candidate_bb.min_y + new_size,
+                            candidate_bb.max_z,
                         )
                     } else {
                         candidate_bb
@@ -775,14 +810,14 @@ fn try_placing_children(
                     // internal children use sourceFree (this piece's internal space),
                     // external children use contextFree (parent's context).
                     let effective_ctx = if attach_inside {
-                        let idx = *internal_ctx_idx.get_or_insert_with(|| {
+                        
+                        *internal_ctx_idx.get_or_insert_with(|| {
                             free_spaces.push(FreeSpace {
                                 constraint: source_bb,
                                 occupied: Vec::new(),
                             });
                             free_spaces.len() - 1
-                        });
-                        idx
+                        })
                     } else {
                         context_idx
                     };
@@ -854,7 +889,7 @@ fn try_placing_children(
                     // Queue for further expansion if within depth limit.
                     // The child inherits the effective collision context:
                     // internal children get sourceFree, external get contextFree.
-                    if depth + 1 <= config.max_depth {
+                    if depth < config.max_depth {
                         queue.push((new_piece_idx, depth + 1, placement_priority, effective_ctx));
                     }
 

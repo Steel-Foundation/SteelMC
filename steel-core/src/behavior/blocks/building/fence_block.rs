@@ -2,10 +2,14 @@
 //!
 //! Fences connect to adjacent fences, fence gates, and solid blocks.
 
-use crate::behavior::block::BlockBehaviour;
+use std::sync::Arc;
+
+use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
+use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
+use steel_registry::TaggedRegistryExt;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
@@ -19,6 +23,7 @@ use steel_utils::{BlockPos, BlockStateId};
 /// - Other fences of the same type
 /// - Fence gates facing the appropriate direction
 /// - Blocks with a sturdy face on the connecting side
+#[block_behavior]
 pub struct FenceBlock {
     block: BlockRef,
 }
@@ -87,30 +92,30 @@ impl FenceBlock {
     }
 
     /// Gets the connection state for a position by checking all 4 horizontal neighbors.
-    fn get_connection_state(&self, world: &World, pos: &BlockPos) -> BlockStateId {
+    fn get_connection_state(&self, world: &Arc<World>, pos: BlockPos) -> BlockStateId {
         let mut state = self.block.default_state();
 
         // Check north
         let north_pos = Direction::North.relative(pos);
-        let north_state = world.get_block_state(&north_pos);
+        let north_state = world.get_block_state(north_pos);
         let connects_north = Self::connects_to(north_state, Direction::North);
         state = state.set_value(&Self::NORTH, connects_north);
 
         // Check east
         let east_pos = Direction::East.relative(pos);
-        let east_state = world.get_block_state(&east_pos);
+        let east_state = world.get_block_state(east_pos);
         let connects_east = Self::connects_to(east_state, Direction::East);
         state = state.set_value(&Self::EAST, connects_east);
 
         // Check south
         let south_pos = Direction::South.relative(pos);
-        let south_state = world.get_block_state(&south_pos);
+        let south_state = world.get_block_state(south_pos);
         let connects_south = Self::connects_to(south_state, Direction::South);
         state = state.set_value(&Self::SOUTH, connects_south);
 
         // Check west
         let west_pos = Direction::West.relative(pos);
-        let west_state = world.get_block_state(&west_pos);
+        let west_state = world.get_block_state(west_pos);
         let connects_west = Self::connects_to(west_state, Direction::West);
         state = state.set_value(&Self::WEST, connects_west);
 
@@ -118,7 +123,7 @@ impl FenceBlock {
     }
 }
 
-impl BlockBehaviour for FenceBlock {
+impl BlockBehavior for FenceBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         log::debug!(
             "FenceBlock::get_state_for_placement called for {:?} at {:?}",
@@ -126,7 +131,7 @@ impl BlockBehaviour for FenceBlock {
             context.relative_pos
         );
         Some(
-            self.get_connection_state(context.world, &context.relative_pos)
+            self.get_connection_state(context.world, context.relative_pos)
                 .set_value(&Self::WATERLOGGED, context.is_water_source()),
         )
     }
@@ -134,7 +139,7 @@ impl BlockBehaviour for FenceBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &World,
+        _world: &Arc<World>,
         _pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

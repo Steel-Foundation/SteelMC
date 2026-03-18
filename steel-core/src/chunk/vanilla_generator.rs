@@ -1,26 +1,19 @@
 use std::marker::PhantomData;
 
 use sha2::{Digest, Sha256};
-use steel_registry::REGISTRY;
+use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::noise_parameters::get_noise_parameters;
 use steel_registry::vanilla_biomes;
-use steel_utils::{BlockStateId, BoundingBox, Identifier, Rotation};
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
 use steel_utils::random::{
     Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
 use steel_utils::surface::SurfaceRuleContext;
+use steel_utils::{BlockStateId, BoundingBox, Identifier, Rotation};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
-use crate::world::structure::{StructurePiece, StructureStart};
-use crate::world::structure::mineshaft::{self, MineshaftType};
-use crate::world::structure::ruined_portal;
-use crate::world::structure::placement::{
-    PlacementKind, StructureSelectionEntry, StructureSet, generate_ring_positions,
-    load_vanilla_structure_sets,
-};
 use crate::chunk::beardifier::Beardifier;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
@@ -28,6 +21,13 @@ use crate::chunk::heightmap::HeightmapType;
 use crate::chunk::noise_chunk::NoiseChunk;
 use crate::chunk::ore_veinifier::OreVeinifier;
 use crate::chunk::surface_system::SurfaceSystem;
+use crate::world::structure::mineshaft::{self, MineshaftType};
+use crate::world::structure::placement::{
+    PlacementKind, StructureSelectionEntry, StructureSet, generate_ring_positions,
+    load_vanilla_structure_sets,
+};
+use crate::world::structure::ruined_portal;
+use crate::world::structure::{StructurePiece, StructureStart};
 use crate::worldgen::BiomeSourceKind;
 
 /// A chunk generator for vanilla (normal) world generation.
@@ -61,7 +61,8 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     /// Pre-computed ring positions for `ConcentricRings` placements, keyed by set identifier.
     ring_positions: Vec<(Identifier, Vec<steel_utils::ChunkPos>)>,
     /// Template pool registry for jigsaw assembly.
-    template_pools: rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplatePoolData>,
+    template_pools:
+        rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplatePoolData>,
     /// Structure template data (size + jigsaw blocks) for jigsaw assembly.
     templates: rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplateData>,
     _phantom: PhantomData<N>,
@@ -143,13 +144,15 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         }
 
         // Load template pools and structure templates for jigsaw assembly.
-        let template_pools: rustc_hash::FxHashMap<_, _> = steel_registry::vanilla_template_pools::vanilla_template_pools()
-            .into_iter()
-            .map(|p| (p.key.clone(), p))
-            .collect();
-        let templates: rustc_hash::FxHashMap<_, _> = steel_registry::vanilla_template_pools::vanilla_templates()
-            .into_iter()
-            .collect();
+        let template_pools: rustc_hash::FxHashMap<_, _> =
+            steel_registry::vanilla_template_pools::vanilla_template_pools()
+                .into_iter()
+                .map(|p| (p.key.clone(), p))
+                .collect();
+        let templates: rustc_hash::FxHashMap<_, _> =
+            steel_registry::vanilla_template_pools::vanilla_templates()
+                .into_iter()
+                .collect();
 
         Self {
             biome_source,
@@ -170,14 +173,13 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
 }
 
 /// Evaluates density using trilinear interpolation from cell corners,
-/// matching vanilla's NoiseChunk behavior.
+/// matching vanilla's `NoiseChunk` behavior.
 /// Vanilla inflates the structure BB by 12 when `terrain_adaptation != NONE`.
 /// Returns the inflate value for reference intersection checks.
 fn terrain_adapt_inflate(id: &Identifier) -> i32 {
     match id.path.as_ref() {
-        "stronghold" | "trail_ruins" | "ancient_city" | "nether_fossil"
-        | "pillager_outpost" | "trial_chambers"
-        | "village_desert" | "village_plains" | "village_savanna"
+        "stronghold" | "trail_ruins" | "ancient_city" | "nether_fossil" | "pillager_outpost"
+        | "trial_chambers" | "village_desert" | "village_plains" | "village_savanna"
         | "village_snowy" | "village_taiga" => 12,
         _ => 0,
     }
@@ -230,7 +232,13 @@ fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr) => {{
             cache.ensure($ex, $ez, noises);
-            noises.fill_cell_corner_densities(&mut *cache, $ex, $ey, $ez, &mut $out[..interp_count]);
+            noises.fill_cell_corner_densities(
+                &mut *cache,
+                $ex,
+                $ey,
+                $ez,
+                &mut $out[..interp_count],
+            );
         }};
     }
 
@@ -292,7 +300,7 @@ fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
 }
 
 /// Evaluate terrain density at a single block position using cell-based
-/// interpolation matching vanilla's NoiseChunk: inner functions at 8 cell
+/// interpolation matching vanilla's `NoiseChunk`: inner functions at 8 cell
 /// corners, trilinear interpolation per channel, then outer operations.
 fn interpolated_density<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
@@ -333,7 +341,13 @@ fn interpolated_density<N: DimensionNoises>(
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr) => {{
             cache.ensure($ex, $ez, noises);
-            noises.fill_cell_corner_densities(&mut *cache, $ex, $ey, $ez, &mut $out[..interp_count]);
+            noises.fill_cell_corner_densities(
+                &mut *cache,
+                $ex,
+                $ey,
+                $ez,
+                &mut $out[..interp_count],
+            );
         }};
     }
 
@@ -424,7 +438,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // then checks against the heightmap predicate.
         // WORLD_SURFACE_WG (ocean_floor=false): opaque = Solid or Fluid
         // OCEAN_FLOOR_WG (ocean_floor=true): opaque = Solid only
-        let base_height = |cache: &mut N::ColumnCache, noises: &N, aquifer: &mut Aquifer<N>, x: i32, z: i32, ocean_floor: bool| -> i32 {
+        let base_height = |cache: &mut N::ColumnCache,
+                           noises: &N,
+                           aquifer: &mut Aquifer<N>,
+                           x: i32,
+                           z: i32,
+                           ocean_floor: bool|
+         -> i32 {
             let estimate = preliminary_surface_level::<N>(noises, cache, x, z);
             let start_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
             let min_y = N::Settings::MIN_Y;
@@ -443,7 +463,14 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         };
 
         // onTopOfChunkCenter uses getFirstOccupiedHeight = getBaseHeight - 1
-        let surface_y = base_height(&mut height_cache, &self.noises, &mut aquifer, center_block_x, center_block_z, false) - 1;
+        let surface_y = base_height(
+            &mut height_cache,
+            &self.noises,
+            &mut aquifer,
+            center_block_x,
+            center_block_z,
+            false,
+        ) - 1;
 
         // Collect selected structures first (while can_generate borrows height_cache),
         // then run jigsaw assembly afterward (which also needs height_cache).
@@ -452,7 +479,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // weighted selection + assembly + biome check with retry (matching vanilla).
         // For non-jigsaw sets: store just the selected entry.
         enum SelectedSet {
-            /// Non-jigsaw: already selected by can_generate + weighted pick.
+            /// Non-jigsaw: already selected by `can_generate` + weighted pick.
             Single {
                 structure: Identifier,
                 structure_type: String,
@@ -479,9 +506,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     // setLargeFeatureSeed(seed, chunkX, chunkZ)
                     let mut ms_rng = LegacyRandom::from_seed(0);
                     ms_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
-                    let mut get_height = |x: i32, z: i32| -> i32 {
-                        self.get_base_height(x, z, &mut height_cache)
-                    };
+                    let mut get_height =
+                        |x: i32, z: i32| -> i32 { self.get_base_height(x, z, &mut height_cache) };
                     let result = mineshaft::find_generation_point(
                         &mut ms_rng,
                         chunk_x,
@@ -504,10 +530,38 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     };
                     // Vanilla uses getFirstOccupiedHeight(WORLD_SURFACE_WG) = getBaseHeight - 1.
                     // interp_base_height returns getBaseHeight (posY + 1), so subtract 1.
-                    let h0 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x, chunk_min_z, false) - 1;
-                    let h1 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x, chunk_min_z + depth, false) - 1;
-                    let h2 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x + width, chunk_min_z, false) - 1;
-                    let h3 = base_height(&mut height_cache, &self.noises, &mut aquifer, chunk_min_x + width, chunk_min_z + depth, false) - 1;
+                    let h0 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        chunk_min_x,
+                        chunk_min_z,
+                        false,
+                    ) - 1;
+                    let h1 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        chunk_min_x,
+                        chunk_min_z + depth,
+                        false,
+                    ) - 1;
+                    let h2 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        chunk_min_x + width,
+                        chunk_min_z,
+                        false,
+                    ) - 1;
+                    let h3 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        chunk_min_x + width,
+                        chunk_min_z + depth,
+                        false,
+                    ) - 1;
                     let lowest = h0.min(h1).min(h2).min(h3);
                     if lowest < sea_level {
                         return false;
@@ -521,10 +575,17 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 "minecraft:ocean_monument" => {
                     use steel_utils::Identifier;
                     const OCEAN_MONUMENT_SURROUNDING: &[&str] = &[
-                        "deep_frozen_ocean", "deep_cold_ocean", "deep_ocean",
-                        "deep_lukewarm_ocean", "frozen_ocean", "cold_ocean",
-                        "ocean", "lukewarm_ocean", "warm_ocean",
-                        "river", "frozen_river",
+                        "deep_frozen_ocean",
+                        "deep_cold_ocean",
+                        "deep_ocean",
+                        "deep_lukewarm_ocean",
+                        "frozen_ocean",
+                        "cold_ocean",
+                        "ocean",
+                        "lukewarm_ocean",
+                        "warm_ocean",
+                        "river",
+                        "frozen_river",
                     ];
 
                     let check_x = chunk_min_x + 9;
@@ -576,21 +637,44 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         let aq_chunk_z = (cell_z >> 4) * 16;
                         let aq_cache = N::ColumnCache::default();
                         let mut fresh_aq = Aquifer::<N>::new(
-                            aq_chunk_x, aq_chunk_z,
-                            N::Settings::MIN_Y, N::Settings::HEIGHT,
-                            &self.splitter, &self.noises, aq_cache,
+                            aq_chunk_x,
+                            aq_chunk_z,
+                            N::Settings::MIN_Y,
+                            N::Settings::HEIGHT,
+                            &self.splitter,
+                            &self.noises,
+                            aq_cache,
                         );
                         let mut fresh_cache = N::ColumnCache::default();
                         fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                         match q {
                             TerrainQuery::SurfaceHeight(x, z) => {
                                 TerrainResult::Height(iterate_noise_column_with_aquifer::<N>(
-                                    &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
+                                    &mut fresh_cache,
+                                    &self.noises,
+                                    &mut fresh_aq,
+                                    x,
+                                    z,
+                                    false,
                                 ))
                             }
                             TerrainQuery::IsOpaque(x, y, z) => {
-                                let density = interpolated_density::<N>(&mut fresh_cache, &self.noises, x, y, z, cell_w, cell_h);
-                                let opaque = match fresh_aq.compute_substance(&self.noises, x, y, z, density) {
+                                let density = interpolated_density::<N>(
+                                    &mut fresh_cache,
+                                    &self.noises,
+                                    x,
+                                    y,
+                                    z,
+                                    cell_w,
+                                    cell_h,
+                                );
+                                let opaque = match fresh_aq.compute_substance(
+                                    &self.noises,
+                                    x,
+                                    y,
+                                    z,
+                                    density,
+                                ) {
                                     AquiferResult::Solid | AquiferResult::Fluid(_) => true,
                                     AquiferResult::Air => false,
                                 };
@@ -616,7 +700,14 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // onTopOfChunkCenter with OCEAN_FLOOR_WG heightmap
                 "minecraft:ocean_ruin" | "minecraft:buried_treasure" => {
-                    let ocean_floor_y = base_height(&mut height_cache, &self.noises, &mut aquifer, center_block_x, center_block_z, true);
+                    let ocean_floor_y = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        center_block_x,
+                        center_block_z,
+                        true,
+                    );
                     (center_block_x, ocean_floor_y, center_block_z)
                 }
 
@@ -626,10 +717,33 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 "minecraft:woodland_mansion" | "minecraft:end_city" => {
                     let bx = chunk_min_x + 7;
                     let bz = chunk_min_z + 7;
-                    let h0 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx, bz, false) - 1;
-                    let h1 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx, bz + 5, false) - 1;
-                    let h2 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx + 5, bz, false) - 1;
-                    let h3 = base_height(&mut height_cache, &self.noises, &mut aquifer, bx + 5, bz + 5, false) - 1;
+                    let h0 =
+                        base_height(&mut height_cache, &self.noises, &mut aquifer, bx, bz, false)
+                            - 1;
+                    let h1 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        bx,
+                        bz + 5,
+                        false,
+                    ) - 1;
+                    let h2 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        bx + 5,
+                        bz,
+                        false,
+                    ) - 1;
+                    let h3 = base_height(
+                        &mut height_cache,
+                        &self.noises,
+                        &mut aquifer,
+                        bx + 5,
+                        bz + 5,
+                        false,
+                    ) - 1;
                     let lowest = h0.min(h1).min(h2).min(h3);
                     if lowest < 60 {
                         return false;
@@ -638,9 +752,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 }
 
                 // Nether fortress: fixed Y=64 at chunk origin
-                "minecraft:fortress" => {
-                    (chunk_min_x, 64, chunk_min_z)
-                }
+                "minecraft:fortress" => (chunk_min_x, 64, chunk_min_z),
 
                 // Nether fossil: complex Y with RNG, nether only
                 "minecraft:nether_fossil" => {
@@ -657,12 +769,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                 // Stronghold: uses ConcentricRings placement with biome snapping.
                 // Biome check at center, surface Y.
-                "minecraft:stronghold" => {
-                    (center_block_x, surface_y, center_block_z)
-                }
+                "minecraft:stronghold" => (center_block_x, surface_y, center_block_z),
 
                 other => {
-                    tracing::warn!("Unknown structure type {other:?} for {}, using center position", entry.structure);
+                    tracing::warn!(
+                        "Unknown structure type {other:?} for {}, using center position",
+                        entry.structure
+                    );
                     (center_block_x, surface_y, center_block_z)
                 }
             };
@@ -672,21 +785,25 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         };
 
         for (set_key, set) in &self.structure_sets {
-            let is_jigsaw_set = set.structures.iter().any(|e| e.structure_type == "minecraft:jigsaw");
+            let is_jigsaw_set = set
+                .structures
+                .iter()
+                .any(|e| e.structure_type == "minecraft:jigsaw");
 
             // For jigsaw sets: skip biome pre-check (biome is checked post-assembly).
             // For non-jigsaw sets: require at least one entry to pass biome check.
-            if !is_jigsaw_set && !set.structures.iter().any(|e| can_generate(e)) {
+            if !is_jigsaw_set && !set.structures.iter().any(&mut can_generate) {
                 continue;
             }
 
             // Skip if any structure in this set already has a valid start
             {
                 let starts = chunk.structure_starts();
-                let already_has = set
-                    .structures
-                    .iter()
-                    .any(|entry| starts.get(&entry.structure).is_some_and(|s| !s.pieces.is_empty()));
+                let already_has = set.structures.iter().any(|entry| {
+                    starts
+                        .get(&entry.structure)
+                        .is_some_and(|s| !s.pieces.is_empty())
+                });
                 if already_has {
                     continue;
                 }
@@ -777,7 +894,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // Now process selected sets — run jigsaw assembly with retry for jigsaw structures.
         for selected in selected_sets {
             match selected {
-                SelectedSet::Single { structure: structure_id, structure_type } => {
+                SelectedSet::Single {
+                    structure: structure_id,
+                    structure_type,
+                } => {
                     // Non-jigsaw: generate pieces based on structure type.
                     let pieces = match structure_type.as_str() {
                         "minecraft:mineshaft" => {
@@ -792,24 +912,35 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 self.get_base_height(x, z, &mut height_cache)
                             };
                             let result = mineshaft::find_generation_point(
-                                &mut ms_rng, chunk_x, chunk_z, mtype,
-                                sea_level, N::Settings::MIN_Y, &mut get_height,
+                                &mut ms_rng,
+                                chunk_x,
+                                chunk_z,
+                                mtype,
+                                sea_level,
+                                N::Settings::MIN_Y,
+                                &mut get_height,
                             );
-                            result.piece_bbs.into_iter().map(|bb| StructurePiece {
-                                piece_type: Identifier::new_static("minecraft", "mineshaft"),
-                                bounding_box: bb,
-                                gen_depth: 0,
-                                orientation: None,
-                                nbt_data: Vec::new(),
-                                ground_level_delta: 0,
-                                junctions: Vec::new(),
-                            }).collect()
+                            result
+                                .piece_bbs
+                                .into_iter()
+                                .map(|bb| StructurePiece {
+                                    piece_type: Identifier::new_static("minecraft", "mineshaft"),
+                                    bounding_box: bb,
+                                    gen_depth: 0,
+                                    orientation: None,
+                                    nbt_data: Vec::new(),
+                                    ground_level_delta: 0,
+                                    junctions: Vec::new(),
+                                })
+                                .collect()
                         }
                         // SinglePieceStructure pattern (desert_pyramid, jungle_temple, swamp_hut):
                         // Piece BB from makeBoundingBox(west, 64, north, randomDir, width, height, depth).
                         // Direction axis Z (N/S): (x..x+w-1, y..y+h-1, z..z+d-1)
                         // Direction axis X (E/W): (x..x+d-1, y..y+h-1, z..z+w-1)
-                        "minecraft:desert_pyramid" | "minecraft:jungle_temple" | "minecraft:swamp_hut" => {
+                        "minecraft:desert_pyramid"
+                        | "minecraft:jungle_temple"
+                        | "minecraft:swamp_hut" => {
                             let (w, h, d, piece_type_name) = match structure_type.as_str() {
                                 "minecraft:desert_pyramid" => (21, 15, 21, "desert_pyramid"),
                                 "minecraft:jungle_temple" => (12, 10, 15, "jungle_pyramid"),
@@ -825,8 +956,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             vec![StructurePiece {
                                 piece_type: Identifier::new_static("minecraft", piece_type_name),
                                 bounding_box: BoundingBox::new(
-                                    chunk_min_x, 64, chunk_min_z,
-                                    chunk_min_x + bw - 1, 64 + h - 1, chunk_min_z + bd - 1,
+                                    chunk_min_x,
+                                    64,
+                                    chunk_min_z,
+                                    chunk_min_x + bw - 1,
+                                    64 + h - 1,
+                                    chunk_min_z + bd - 1,
                                 ),
                                 gen_depth: 0,
                                 orientation: None,
@@ -839,8 +974,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             vec![StructurePiece {
                                 piece_type: Identifier::new_static("minecraft", "buried_treasure"),
                                 bounding_box: BoundingBox::new(
-                                    chunk_min_x + 9, 90, chunk_min_z + 9,
-                                    chunk_min_x + 9, 90, chunk_min_z + 9,
+                                    chunk_min_x + 9,
+                                    90,
+                                    chunk_min_z + 9,
+                                    chunk_min_x + 9,
+                                    90,
+                                    chunk_min_z + 9,
                                 ),
                                 gen_depth: 0,
                                 orientation: None,
@@ -850,7 +989,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             }]
                         }
                         "minecraft:ruined_portal" => {
-                            use crate::world::structure::ruined_portal::{TerrainQuery, TerrainResult};
+                            use crate::world::structure::ruined_portal::{
+                                TerrainQuery, TerrainResult,
+                            };
                             let mut rp_rng = LegacyRandom::from_seed(0);
                             rp_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
                             let mut terrain = |q: TerrainQuery| -> TerrainResult {
@@ -865,21 +1006,44 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 let aq_chunk_z = (cell_z >> 4) * 16;
                                 let aq_cache = N::ColumnCache::default();
                                 let mut fresh_aq = Aquifer::<N>::new(
-                                    aq_chunk_x, aq_chunk_z,
-                                    N::Settings::MIN_Y, N::Settings::HEIGHT,
-                                    &self.splitter, &self.noises, aq_cache,
+                                    aq_chunk_x,
+                                    aq_chunk_z,
+                                    N::Settings::MIN_Y,
+                                    N::Settings::HEIGHT,
+                                    &self.splitter,
+                                    &self.noises,
+                                    aq_cache,
                                 );
                                 let mut fresh_cache = N::ColumnCache::default();
                                 fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                                 match q {
-                                    TerrainQuery::SurfaceHeight(x, z) => {
-                                        TerrainResult::Height(iterate_noise_column_with_aquifer::<N>(
-                                            &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
-                                        ))
-                                    }
+                                    TerrainQuery::SurfaceHeight(x, z) => TerrainResult::Height(
+                                        iterate_noise_column_with_aquifer::<N>(
+                                            &mut fresh_cache,
+                                            &self.noises,
+                                            &mut fresh_aq,
+                                            x,
+                                            z,
+                                            false,
+                                        ),
+                                    ),
                                     TerrainQuery::IsOpaque(x, y, z) => {
-                                        let density = interpolated_density::<N>(&mut fresh_cache, &self.noises, x, y, z, cell_w, cell_h);
-                                        let opaque = match fresh_aq.compute_substance(&self.noises, x, y, z, density) {
+                                        let density = interpolated_density::<N>(
+                                            &mut fresh_cache,
+                                            &self.noises,
+                                            x,
+                                            y,
+                                            z,
+                                            cell_w,
+                                            cell_h,
+                                        );
+                                        let opaque = match fresh_aq.compute_substance(
+                                            &self.noises,
+                                            x,
+                                            y,
+                                            z,
+                                            density,
+                                        ) {
                                             AquiferResult::Solid | AquiferResult::Fluid(_) => true,
                                             AquiferResult::Air => false,
                                         };
@@ -888,8 +1052,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 }
                             };
                             let result = ruined_portal::find_generation_point(
-                                &mut rp_rng, chunk_x, chunk_z,
-                                &structure_id.path, N::Settings::MIN_Y, &mut terrain,
+                                &mut rp_rng,
+                                chunk_x,
+                                chunk_z,
+                                &structure_id.path,
+                                N::Settings::MIN_Y,
+                                &mut terrain,
                             );
                             vec![StructurePiece {
                                 piece_type: Identifier::new_static("minecraft", "ruined_portal"),
@@ -910,23 +1078,46 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             let is_beached = structure_id.path == "shipwreck_beached";
                             let beached_count = 11i32;
                             let ocean_count = 20i32;
-                            let template_count = if is_beached { beached_count } else { ocean_count };
+                            let template_count = if is_beached {
+                                beached_count
+                            } else {
+                                ocean_count
+                            };
 
                             static BEACHED: &[&str] = &[
-                                "shipwreck/with_mast", "shipwreck/sideways_full", "shipwreck/sideways_fronthalf",
-                                "shipwreck/sideways_backhalf", "shipwreck/rightsideup_full", "shipwreck/rightsideup_fronthalf",
-                                "shipwreck/rightsideup_backhalf", "shipwreck/with_mast_degraded", "shipwreck/rightsideup_full_degraded",
-                                "shipwreck/rightsideup_fronthalf_degraded", "shipwreck/rightsideup_backhalf_degraded",
+                                "shipwreck/with_mast",
+                                "shipwreck/sideways_full",
+                                "shipwreck/sideways_fronthalf",
+                                "shipwreck/sideways_backhalf",
+                                "shipwreck/rightsideup_full",
+                                "shipwreck/rightsideup_fronthalf",
+                                "shipwreck/rightsideup_backhalf",
+                                "shipwreck/with_mast_degraded",
+                                "shipwreck/rightsideup_full_degraded",
+                                "shipwreck/rightsideup_fronthalf_degraded",
+                                "shipwreck/rightsideup_backhalf_degraded",
                             ];
                             static OCEAN: &[&str] = &[
-                                "shipwreck/with_mast", "shipwreck/upsidedown_full", "shipwreck/upsidedown_fronthalf",
-                                "shipwreck/upsidedown_backhalf", "shipwreck/sideways_full", "shipwreck/sideways_fronthalf",
-                                "shipwreck/sideways_backhalf", "shipwreck/rightsideup_full", "shipwreck/rightsideup_fronthalf",
-                                "shipwreck/rightsideup_backhalf", "shipwreck/with_mast_degraded", "shipwreck/upsidedown_full_degraded",
-                                "shipwreck/upsidedown_fronthalf_degraded", "shipwreck/upsidedown_backhalf_degraded",
-                                "shipwreck/sideways_full_degraded", "shipwreck/sideways_fronthalf_degraded",
-                                "shipwreck/sideways_backhalf_degraded", "shipwreck/rightsideup_full_degraded",
-                                "shipwreck/rightsideup_fronthalf_degraded", "shipwreck/rightsideup_backhalf_degraded",
+                                "shipwreck/with_mast",
+                                "shipwreck/upsidedown_full",
+                                "shipwreck/upsidedown_fronthalf",
+                                "shipwreck/upsidedown_backhalf",
+                                "shipwreck/sideways_full",
+                                "shipwreck/sideways_fronthalf",
+                                "shipwreck/sideways_backhalf",
+                                "shipwreck/rightsideup_full",
+                                "shipwreck/rightsideup_fronthalf",
+                                "shipwreck/rightsideup_backhalf",
+                                "shipwreck/with_mast_degraded",
+                                "shipwreck/upsidedown_full_degraded",
+                                "shipwreck/upsidedown_fronthalf_degraded",
+                                "shipwreck/upsidedown_backhalf_degraded",
+                                "shipwreck/sideways_full_degraded",
+                                "shipwreck/sideways_fronthalf_degraded",
+                                "shipwreck/sideways_backhalf_degraded",
+                                "shipwreck/rightsideup_full_degraded",
+                                "shipwreck/rightsideup_fronthalf_degraded",
+                                "shipwreck/rightsideup_backhalf_degraded",
                             ];
 
                             // Rotation.getRandom
@@ -934,13 +1125,19 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             // Util.getRandom picks template
                             let templates_arr = if is_beached { BEACHED } else { OCEAN };
                             let template_idx = sw_rng.next_i32_bounded(template_count) as usize;
-                            let template_name = Identifier::new("minecraft", templates_arr[template_idx]);
+                            let template_name =
+                                Identifier::new("minecraft", templates_arr[template_idx]);
 
                             if let Some(tmpl) = self.templates.get(&template_name) {
                                 let bb = rotation.get_bounding_box_with_pivot(
-                                    chunk_min_x, 90, chunk_min_z,
-                                    tmpl.size[0], tmpl.size[1], tmpl.size[2],
-                                    4, 15, // Shipwreck pivot
+                                    chunk_min_x,
+                                    90,
+                                    chunk_min_z,
+                                    tmpl.size[0],
+                                    tmpl.size[1],
+                                    tmpl.size[2],
+                                    4,
+                                    15, // Shipwreck pivot
                                 );
                                 vec![StructurePiece {
                                     piece_type: Identifier::new_static("minecraft", "shipwreck"),
@@ -971,70 +1168,133 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                             // Template arrays
                             static WARM_SMALL: &[&str] = &[
-                                "underwater_ruin/warm_1", "underwater_ruin/warm_2", "underwater_ruin/warm_3",
-                                "underwater_ruin/warm_4", "underwater_ruin/warm_5", "underwater_ruin/warm_6",
-                                "underwater_ruin/warm_7", "underwater_ruin/warm_8",
+                                "underwater_ruin/warm_1",
+                                "underwater_ruin/warm_2",
+                                "underwater_ruin/warm_3",
+                                "underwater_ruin/warm_4",
+                                "underwater_ruin/warm_5",
+                                "underwater_ruin/warm_6",
+                                "underwater_ruin/warm_7",
+                                "underwater_ruin/warm_8",
                             ];
                             static WARM_LARGE: &[&str] = &[
-                                "underwater_ruin/big_warm_4", "underwater_ruin/big_warm_5",
-                                "underwater_ruin/big_warm_6", "underwater_ruin/big_warm_7",
+                                "underwater_ruin/big_warm_4",
+                                "underwater_ruin/big_warm_5",
+                                "underwater_ruin/big_warm_6",
+                                "underwater_ruin/big_warm_7",
                             ];
                             static COLD_BRICK: &[&str] = &[
-                                "underwater_ruin/brick_1", "underwater_ruin/brick_2", "underwater_ruin/brick_3",
-                                "underwater_ruin/brick_4", "underwater_ruin/brick_5", "underwater_ruin/brick_6",
-                                "underwater_ruin/brick_7", "underwater_ruin/brick_8",
+                                "underwater_ruin/brick_1",
+                                "underwater_ruin/brick_2",
+                                "underwater_ruin/brick_3",
+                                "underwater_ruin/brick_4",
+                                "underwater_ruin/brick_5",
+                                "underwater_ruin/brick_6",
+                                "underwater_ruin/brick_7",
+                                "underwater_ruin/brick_8",
                             ];
                             static COLD_CRACKED: &[&str] = &[
-                                "underwater_ruin/cracked_1", "underwater_ruin/cracked_2", "underwater_ruin/cracked_3",
-                                "underwater_ruin/cracked_4", "underwater_ruin/cracked_5", "underwater_ruin/cracked_6",
-                                "underwater_ruin/cracked_7", "underwater_ruin/cracked_8",
+                                "underwater_ruin/cracked_1",
+                                "underwater_ruin/cracked_2",
+                                "underwater_ruin/cracked_3",
+                                "underwater_ruin/cracked_4",
+                                "underwater_ruin/cracked_5",
+                                "underwater_ruin/cracked_6",
+                                "underwater_ruin/cracked_7",
+                                "underwater_ruin/cracked_8",
                             ];
                             static COLD_MOSSY: &[&str] = &[
-                                "underwater_ruin/mossy_1", "underwater_ruin/mossy_2", "underwater_ruin/mossy_3",
-                                "underwater_ruin/mossy_4", "underwater_ruin/mossy_5", "underwater_ruin/mossy_6",
-                                "underwater_ruin/mossy_7", "underwater_ruin/mossy_8",
+                                "underwater_ruin/mossy_1",
+                                "underwater_ruin/mossy_2",
+                                "underwater_ruin/mossy_3",
+                                "underwater_ruin/mossy_4",
+                                "underwater_ruin/mossy_5",
+                                "underwater_ruin/mossy_6",
+                                "underwater_ruin/mossy_7",
+                                "underwater_ruin/mossy_8",
                             ];
                             static COLD_BIG_BRICK: &[&str] = &[
-                                "underwater_ruin/big_brick_1", "underwater_ruin/big_brick_2",
-                                "underwater_ruin/big_brick_3", "underwater_ruin/big_brick_8",
+                                "underwater_ruin/big_brick_1",
+                                "underwater_ruin/big_brick_2",
+                                "underwater_ruin/big_brick_3",
+                                "underwater_ruin/big_brick_8",
                             ];
                             static COLD_BIG_CRACKED: &[&str] = &[
-                                "underwater_ruin/big_cracked_1", "underwater_ruin/big_cracked_2",
-                                "underwater_ruin/big_cracked_3", "underwater_ruin/big_cracked_8",
+                                "underwater_ruin/big_cracked_1",
+                                "underwater_ruin/big_cracked_2",
+                                "underwater_ruin/big_cracked_3",
+                                "underwater_ruin/big_cracked_8",
                             ];
                             static COLD_BIG_MOSSY: &[&str] = &[
-                                "underwater_ruin/big_mossy_1", "underwater_ruin/big_mossy_2",
-                                "underwater_ruin/big_mossy_3", "underwater_ruin/big_mossy_8",
+                                "underwater_ruin/big_mossy_1",
+                                "underwater_ruin/big_mossy_2",
+                                "underwater_ruin/big_mossy_3",
+                                "underwater_ruin/big_mossy_8",
                             ];
 
                             let mut pieces = Vec::new();
                             let pos = (chunk_min_x, 90, chunk_min_z);
 
                             // Add base piece(s)
-                            let add_piece_bb = |templates: &rustc_hash::FxHashMap<Identifier, steel_registry::template_pool::TemplateData>,
-                                                name: &str, px: i32, pz: i32, rot: Rotation| -> Option<BoundingBox> {
+                            let add_piece_bb = |templates: &rustc_hash::FxHashMap<
+                                Identifier,
+                                steel_registry::template_pool::TemplateData,
+                            >,
+                                                name: &str,
+                                                px: i32,
+                                                pz: i32,
+                                                rot: Rotation|
+                             -> Option<BoundingBox> {
                                 let key = Identifier::new("minecraft", name.to_string());
-                                templates.get(&key).map(|t| rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2]))
+                                templates.get(&key).map(|t| {
+                                    rot.get_bounding_box(
+                                        px, 90, pz, t.size[0], t.size[1], t.size[2],
+                                    )
+                                })
                             };
 
                             if is_warm {
                                 let arr = if is_large { WARM_LARGE } else { WARM_SMALL };
                                 let idx = or_rng.next_i32_bounded(arr.len() as i32) as usize;
-                                if let Some(bb) = add_piece_bb(&self.templates, arr[idx], pos.0, pos.2, rotation) {
+                                if let Some(bb) =
+                                    add_piece_bb(&self.templates, arr[idx], pos.0, pos.2, rotation)
+                                {
                                     pieces.push(bb);
                                 }
                             } else {
                                 let bricks = if is_large { COLD_BIG_BRICK } else { COLD_BRICK };
-                                let cracked = if is_large { COLD_BIG_CRACKED } else { COLD_CRACKED };
+                                let cracked = if is_large {
+                                    COLD_BIG_CRACKED
+                                } else {
+                                    COLD_CRACKED
+                                };
                                 let mossy = if is_large { COLD_BIG_MOSSY } else { COLD_MOSSY };
                                 let idx = or_rng.next_i32_bounded(bricks.len() as i32) as usize;
-                                if let Some(bb) = add_piece_bb(&self.templates, bricks[idx], pos.0, pos.2, rotation) {
+                                if let Some(bb) = add_piece_bb(
+                                    &self.templates,
+                                    bricks[idx],
+                                    pos.0,
+                                    pos.2,
+                                    rotation,
+                                ) {
                                     pieces.push(bb);
                                 }
-                                if let Some(bb) = add_piece_bb(&self.templates, cracked[idx], pos.0, pos.2, rotation) {
+                                if let Some(bb) = add_piece_bb(
+                                    &self.templates,
+                                    cracked[idx],
+                                    pos.0,
+                                    pos.2,
+                                    rotation,
+                                ) {
                                     pieces.push(bb);
                                 }
-                                if let Some(bb) = add_piece_bb(&self.templates, mossy[idx], pos.0, pos.2, rotation) {
+                                if let Some(bb) = add_piece_bb(
+                                    &self.templates,
+                                    mossy[idx],
+                                    pos.0,
+                                    pos.2,
+                                    rotation,
+                                ) {
                                     pieces.push(bb);
                                 }
                             }
@@ -1046,68 +1306,118 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 let parent_corner_x = pos.0 + pc_x;
                                 let parent_corner_z = pos.2 + pc_z;
                                 let parent_bb = BoundingBox::new(
-                                    pos.0.min(parent_corner_x), 0, pos.2.min(parent_corner_z),
-                                    pos.0.max(parent_corner_x), 255, pos.2.max(parent_corner_z),
+                                    pos.0.min(parent_corner_x),
+                                    0,
+                                    pos.2.min(parent_corner_z),
+                                    pos.0.max(parent_corner_x),
+                                    255,
+                                    pos.2.max(parent_corner_z),
                                 );
                                 let bottom_left_x = pos.0.min(parent_corner_x);
                                 let bottom_left_z = pos.2.min(parent_corner_z);
 
                                 // Generate 8 candidate positions
                                 let mut candidates = Vec::with_capacity(8);
-                                candidates.push((bottom_left_x - 16 + or_rng.next_i32_between(1, 8), bottom_left_z + 16 + or_rng.next_i32_between(1, 7)));
-                                candidates.push((bottom_left_x - 16 + or_rng.next_i32_between(1, 8), bottom_left_z + or_rng.next_i32_between(1, 7)));
-                                candidates.push((bottom_left_x - 16 + or_rng.next_i32_between(1, 8), bottom_left_z - 16 + or_rng.next_i32_between(4, 8)));
-                                candidates.push((bottom_left_x + or_rng.next_i32_between(1, 7), bottom_left_z + 16 + or_rng.next_i32_between(1, 7)));
-                                candidates.push((bottom_left_x + or_rng.next_i32_between(1, 7), bottom_left_z - 16 + or_rng.next_i32_between(4, 6)));
-                                candidates.push((bottom_left_x + 16 + or_rng.next_i32_between(1, 7), bottom_left_z + 16 + or_rng.next_i32_between(3, 8)));
-                                candidates.push((bottom_left_x + 16 + or_rng.next_i32_between(1, 7), bottom_left_z + or_rng.next_i32_between(1, 7)));
-                                candidates.push((bottom_left_x + 16 + or_rng.next_i32_between(1, 7), bottom_left_z - 16 + or_rng.next_i32_between(4, 8)));
+                                candidates.push((
+                                    bottom_left_x - 16 + or_rng.next_i32_between(1, 8),
+                                    bottom_left_z + 16 + or_rng.next_i32_between(1, 7),
+                                ));
+                                candidates.push((
+                                    bottom_left_x - 16 + or_rng.next_i32_between(1, 8),
+                                    bottom_left_z + or_rng.next_i32_between(1, 7),
+                                ));
+                                candidates.push((
+                                    bottom_left_x - 16 + or_rng.next_i32_between(1, 8),
+                                    bottom_left_z - 16 + or_rng.next_i32_between(4, 8),
+                                ));
+                                candidates.push((
+                                    bottom_left_x + or_rng.next_i32_between(1, 7),
+                                    bottom_left_z + 16 + or_rng.next_i32_between(1, 7),
+                                ));
+                                candidates.push((
+                                    bottom_left_x + or_rng.next_i32_between(1, 7),
+                                    bottom_left_z - 16 + or_rng.next_i32_between(4, 6),
+                                ));
+                                candidates.push((
+                                    bottom_left_x + 16 + or_rng.next_i32_between(1, 7),
+                                    bottom_left_z + 16 + or_rng.next_i32_between(3, 8),
+                                ));
+                                candidates.push((
+                                    bottom_left_x + 16 + or_rng.next_i32_between(1, 7),
+                                    bottom_left_z + or_rng.next_i32_between(1, 7),
+                                ));
+                                candidates.push((
+                                    bottom_left_x + 16 + or_rng.next_i32_between(1, 7),
+                                    bottom_left_z - 16 + or_rng.next_i32_between(4, 8),
+                                ));
 
                                 let ruins_count = or_rng.next_i32_between(4, 8);
                                 for _ in 0..ruins_count {
-                                    if candidates.is_empty() { break; }
-                                    let idx = or_rng.next_i32_bounded(candidates.len() as i32) as usize;
+                                    if candidates.is_empty() {
+                                        break;
+                                    }
+                                    let idx =
+                                        or_rng.next_i32_bounded(candidates.len() as i32) as usize;
                                     let (cx, cz) = candidates.remove(idx);
                                     let cluster_rot = Rotation::get_random(&mut or_rng);
                                     // Check collision with parent
                                     let (nc_x, _, nc_z) = cluster_rot.transform_pos(5, 0, 6, 0, 0);
                                     let cluster_bb = BoundingBox::new(
-                                        cx.min(cx + nc_x), 0, cz.min(cz + nc_z),
-                                        cx.max(cx + nc_x), 255, cz.max(cz + nc_z),
+                                        cx.min(cx + nc_x),
+                                        0,
+                                        cz.min(cz + nc_z),
+                                        cx.max(cx + nc_x),
+                                        255,
+                                        cz.max(cz + nc_z),
                                     );
                                     if !cluster_bb.intersects(&parent_bb) {
                                         // Pick small template for cluster piece
-                                        let cluster_arr = if is_warm { WARM_SMALL } else { COLD_BRICK };
-                                        let tidx = or_rng.next_i32_bounded(cluster_arr.len() as i32) as usize;
-                                        if let Some(bb) = add_piece_bb(&self.templates, cluster_arr[tidx], cx, cz, cluster_rot) {
+                                        let cluster_arr =
+                                            if is_warm { WARM_SMALL } else { COLD_BRICK };
+                                        let tidx = or_rng.next_i32_bounded(cluster_arr.len() as i32)
+                                            as usize;
+                                        if let Some(bb) = add_piece_bb(
+                                            &self.templates,
+                                            cluster_arr[tidx],
+                                            cx,
+                                            cz,
+                                            cluster_rot,
+                                        ) {
                                             pieces.push(bb);
                                         }
                                     }
                                 }
                             }
 
-                            pieces.into_iter().map(|bb| StructurePiece {
-                                piece_type: Identifier::new_static("minecraft", "ocean_ruin"),
-                                bounding_box: bb,
-                                gen_depth: 0,
-                                orientation: None,
-                                nbt_data: Vec::new(),
-                                ground_level_delta: 0,
-                                junctions: Vec::new(),
-                            }).collect()
+                            pieces
+                                .into_iter()
+                                .map(|bb| StructurePiece {
+                                    piece_type: Identifier::new_static("minecraft", "ocean_ruin"),
+                                    bounding_box: bb,
+                                    gen_depth: 0,
+                                    orientation: None,
+                                    nbt_data: Vec::new(),
+                                    ground_level_delta: 0,
+                                    junctions: Vec::new(),
+                                })
+                                .collect()
                         }
                         "minecraft:stronghold" => {
                             use crate::world::structure::stronghold;
-                            let piece_bbs = stronghold::generate_pieces(self.seed, chunk_x, chunk_z);
-                            piece_bbs.into_iter().map(|(bb, piece_id)| StructurePiece {
-                                piece_type: Identifier::new_static("minecraft", piece_id),
-                                bounding_box: bb,
-                                gen_depth: 0,
-                                orientation: None,
-                                nbt_data: Vec::new(),
-                                ground_level_delta: 0,
-                                junctions: Vec::new(),
-                            }).collect()
+                            let piece_bbs =
+                                stronghold::generate_pieces(self.seed, chunk_x, chunk_z);
+                            piece_bbs
+                                .into_iter()
+                                .map(|(bb, piece_id)| StructurePiece {
+                                    piece_type: Identifier::new_static("minecraft", piece_id),
+                                    bounding_box: bb,
+                                    gen_depth: 0,
+                                    orientation: None,
+                                    nbt_data: Vec::new(),
+                                    ground_level_delta: 0,
+                                    junctions: Vec::new(),
+                                })
+                                .collect()
                         }
                         // TODO: ocean_monument
                         _ => vec![],
@@ -1175,16 +1485,25 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             let aq_chunk_z = (cell_z >> 4) * 16;
                             let aq_cache = N::ColumnCache::default();
                             let mut fresh_aq = Aquifer::<N>::new(
-                                aq_chunk_x, aq_chunk_z,
-                                N::Settings::MIN_Y, N::Settings::HEIGHT,
-                                &self.splitter, &self.noises, aq_cache,
+                                aq_chunk_x,
+                                aq_chunk_z,
+                                N::Settings::MIN_Y,
+                                N::Settings::HEIGHT,
+                                &self.splitter,
+                                &self.noises,
+                                aq_cache,
                             );
                             // Init cache at the CHUNK containing the query (same grid
                             // as chunk generation uses for this position)
                             let mut fresh_cache = N::ColumnCache::default();
                             fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                             iterate_noise_column_with_aquifer::<N>(
-                                &mut fresh_cache, &self.noises, &mut fresh_aq, x, z, false,
+                                &mut fresh_cache,
+                                &self.noises,
+                                &mut fresh_aq,
+                                x,
+                                z,
+                                false,
                             )
                         };
 
@@ -1201,17 +1520,21 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             N::Settings::MIN_Y + N::Settings::HEIGHT,
                         );
 
-                        if let Some(assembly) = result {
-                            if !assembly.pieces.is_empty() {
+                        if let Some(assembly) = result
+                            && !assembly.pieces.is_empty() {
                                 // Biome check at the stub position
                                 let (bx, by, bz) = assembly.biome_check_pos;
                                 let biome = sampler.sample(bx >> 2, by >> 2, bz >> 2);
                                 if candidate.allowed_biomes.contains(&biome.key) {
                                     // Success — create the structure start
-                                    let pieces = assembly.pieces
+                                    let pieces = assembly
+                                        .pieces
                                         .into_iter()
                                         .map(|pp| StructurePiece {
-                                            piece_type: Identifier::new_static("minecraft", "jigsaw"),
+                                            piece_type: Identifier::new_static(
+                                                "minecraft",
+                                                "jigsaw",
+                                            ),
                                             bounding_box: pp.bounding_box,
                                             gen_depth: pp.depth,
                                             orientation: None,
@@ -1227,11 +1550,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         pieces,
                                         bb_inflate: terrain_adapt_inflate(&candidate.structure),
                                     };
-                                    chunk.structure_starts_mut().insert(candidate.structure.clone(), start);
+                                    chunk
+                                        .structure_starts_mut()
+                                        .insert(candidate.structure.clone(), start);
                                     break; // Done with this set
                                 }
                             }
-                        }
 
                         // Assembly failed or biome mismatch — retry with next candidate
                         total_weight -= candidate.weight;
@@ -1271,7 +1595,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         let quart_z = chunk_z * 4 + local_quart_z;
 
                         let biome = sampler.sample(quart_x, quart_y, quart_z);
-                        let biome_id = *REGISTRY.biomes.get_id(biome) as u16;
+                        let biome_id = biome.id() as u16;
 
                         section_guard.biomes.set(
                             local_quart_x as usize,
@@ -1415,10 +1739,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             .get(HeightmapType::WorldSurfaceWg)
             .expect("WorldSurfaceWg heightmap not initialized");
 
-        let eroded_badlands_id = *REGISTRY.biomes.get_id(&vanilla_biomes::ERODED_BADLANDS) as u16;
-        let frozen_ocean_id = *REGISTRY.biomes.get_id(&vanilla_biomes::FROZEN_OCEAN) as u16;
-        let deep_frozen_ocean_id =
-            *REGISTRY.biomes.get_id(&vanilla_biomes::DEEP_FROZEN_OCEAN) as u16;
+        let eroded_badlands_id = (*vanilla_biomes::ERODED_BADLANDS).id() as u16;
+        let frozen_ocean_id = (*vanilla_biomes::FROZEN_OCEAN).id() as u16;
+        let deep_frozen_ocean_id = (*vanilla_biomes::DEEP_FROZEN_OCEAN).id() as u16;
 
         // Pre-extract all biome palette values to avoid per-read section locking.
         let biome_data = chunk.sections().read_all_biomes();

@@ -9,7 +9,7 @@ use steel_utils::{
     serial::{ReadFrom, WriteTo},
 };
 
-use crate::REGISTRY;
+use crate::{REGISTRY, TaggedRegistryExt};
 
 /// A single rule within a Tool component.
 /// Rules are evaluated in order; the first matching rule determines the speed/drop behavior.

@@ -27,7 +27,10 @@
 mod serializer;
 mod vanilla_serializers;
 
-pub use serializer::{EntityDataSerializerEntry, EntityDataSerializerRegistry, EntityDataWriter};
+pub use serializer::{
+    EntityDataSerializerEntry, EntityDataSerializerEntryRef, EntityDataSerializerRegistry,
+    EntityDataWriter,
+};
 pub use vanilla_serializers::register_vanilla_entity_data_serializers;
 
 use std::{io, str::FromStr};

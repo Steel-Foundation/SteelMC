@@ -82,7 +82,8 @@ impl ChunkStatusTasks {
         for source_x in (target_x - 8)..=(target_x + 8) {
             for source_z in (target_z - 8)..=(target_z + 8) {
                 let source_holder = cache.get(source_x, source_z);
-                let Some(source_chunk) = source_holder.try_chunk(ChunkStatus::StructureStarts) else {
+                let Some(source_chunk) = source_holder.try_chunk(ChunkStatus::StructureStarts)
+                else {
                     continue;
                 };
 

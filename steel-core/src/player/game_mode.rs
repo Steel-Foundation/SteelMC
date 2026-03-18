@@ -3,6 +3,8 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode`, particularly
 //! the `useItemOn` method that handles block placement and block interactions.
 
+use std::sync::Arc;
+
 use steel_registry::REGISTRY;
 use steel_utils::types::{GameType, InteractionHand};
 
@@ -26,11 +28,11 @@ use crate::world::World;
 /// 6. Handle creative mode infinite materials
 pub fn use_item_on(
     player: &Player,
-    world: &World,
+    world: &Arc<World>,
     hand: InteractionHand,
     hit_result: &BlockHitResult,
 ) -> InteractionResult {
-    let pos = &hit_result.block_pos;
+    let pos = hit_result.block_pos;
     let state = world.get_block_state(pos);
 
     // Spectator mode: can only open menus
@@ -64,7 +66,7 @@ pub fn use_item_on(
         let item_snapshot = player.inventory.lock().get_item_in_hand(hand).clone();
 
         let block_result =
-            behavior.use_item_on(&item_snapshot, state, world, *pos, player, hand, hit_result);
+            behavior.use_item_on(&item_snapshot, state, world, pos, player, hand, hit_result);
 
         if block_result.consumes_action() {
             return block_result;
@@ -73,7 +75,7 @@ pub fn use_item_on(
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
-            let empty_result = behavior.use_without_item(state, world, *pos, player, hit_result);
+            let empty_result = behavior.use_without_item(state, world, pos, player, hit_result);
 
             if empty_result.consumes_action() {
                 return empty_result;
@@ -134,7 +136,7 @@ pub fn use_item_on(
 /// Handles using an item (general usage like right-clicking air).
 ///
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
-pub fn use_item(player: &Player, world: &World, hand: InteractionHand) -> InteractionResult {
+pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> InteractionResult {
     // Spectator mode: can only open menus
     if player.game_mode.load() == GameType::Spectator {
         return InteractionResult::Pass;

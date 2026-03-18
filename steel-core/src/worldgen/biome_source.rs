@@ -17,8 +17,8 @@
 //! alongside the column cache. The only cost is one cold start per chunk (1/1536 lookups).
 
 use steel_registry::biome::BiomeRef;
-use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::density_functions::nether::NetherColumnCache;
+use steel_registry::density_functions::overworld::OverworldColumnCache;
 use steel_registry::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
 use steel_registry::vanilla_biomes;
 use steel_utils::random::Random as _;
@@ -292,20 +292,21 @@ impl EndBiomeSource {
 
 pub struct EndChunkBiomeSampler<'a> {
     source: &'a EndBiomeSource,
-    /// Cached erosion value keyed by (chunk_x, chunk_z).
+    /// Cached erosion value keyed by (`chunk_x`, `chunk_z`).
     ///
     /// All quart positions within a chunk produce the same chunk coordinates,
-    /// and `EndIslands::sample` ignores block_y, so the erosion is constant
+    /// and `EndIslands::sample` ignores `block_y`, so the erosion is constant
     /// per chunk. This avoids redundant 25×25 simplex neighborhood scans.
     cached_erosion: Option<(i32, i32, f64)>,
 }
 
 impl EndChunkBiomeSampler<'_> {
     fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> f64 {
-        if let Some((cx, cz, erosion)) = self.cached_erosion {
-            if cx == chunk_x && cz == chunk_z {
-                return erosion;
-            }
+        if let Some((cx, cz, erosion)) = self.cached_erosion
+            && cx == chunk_x
+            && cz == chunk_z
+        {
+            return erosion;
         }
         let weird_block_x = (chunk_x * 2 + 1) * 8;
         let weird_block_z = (chunk_z * 2 + 1) * 8;

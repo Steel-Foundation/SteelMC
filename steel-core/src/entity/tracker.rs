@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{CAddEntity, CRemoveEntities, CSetEntityData, to_angle_byte};
-use steel_registry::REGISTRY;
+use steel_registry::RegistryEntry;
 use steel_utils::ChunkPos;
 use steel_utils::locks::SyncRwLock;
 
@@ -363,7 +363,7 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
     let pos = entity.position();
     let vel = entity.velocity();
     let (yaw, pitch) = entity.rotation();
-    let entity_type_id = *REGISTRY.entity_types.get_id(entity.entity_type()) as i32;
+    let entity_type_id = entity.entity_type().id() as i32;
 
     // Convert rotation from degrees to protocol byte format (256th of a full rotation)
     // Uses to_angle_byte which matches vanilla's Mth.packDegrees

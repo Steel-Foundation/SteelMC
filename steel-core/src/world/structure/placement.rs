@@ -26,9 +26,7 @@ impl SpreadType {
             Self::Linear => rng.next_i32_bounded(limit),
             // Matches vanilla: `(nextInt(limit) + nextInt(limit)) / 2`
             #[allow(clippy::manual_midpoint)]
-            Self::Triangular => {
-                (rng.next_i32_bounded(limit) + rng.next_i32_bounded(limit)) / 2
-            }
+            Self::Triangular => (rng.next_i32_bounded(limit) + rng.next_i32_bounded(limit)) / 2,
         }
     }
 }
@@ -118,6 +116,7 @@ fn java_round(v: f64) -> i32 {
 ///
 /// `snap_biome` receives `(block_x, block_z, &mut LegacyRandom)` and returns
 /// `Some((snapped_block_x, snapped_block_z))` or `None` to keep the raw position.
+#[must_use]
 pub fn generate_ring_positions<F>(
     seed: i64,
     distance: i32,
@@ -421,7 +420,6 @@ impl From<FrequencyMethodData> for FrequencyReductionMethod {
 }
 
 fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
-
     let structures = data
         .structures
         .into_iter()
@@ -480,7 +478,13 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
         },
     };
 
-    (data.key, StructureSet { structures, placement })
+    (
+        data.key,
+        StructureSet {
+            structures,
+            placement,
+        },
+    )
 }
 
 /// Loads all vanilla structure sets from the generated registry data.
@@ -532,8 +536,15 @@ mod tests {
         // For seed=0, chunk (0,0): grid cell is (0,0)
         // setLargeFeatureWithSalt(0, 0, 0, 10387312)
         // result = 0 + 0 + 0 + 10387312 = 10387312
-        let potential =
-            StructurePlacement::get_potential_structure_chunk(0, 10_387_312, 0, 0, 34, 8, SpreadType::Linear);
+        let potential = StructurePlacement::get_potential_structure_chunk(
+            0,
+            10_387_312,
+            0,
+            0,
+            34,
+            8,
+            SpreadType::Linear,
+        );
 
         // Verify the potential chunk by computing manually
         let mut rng = LegacyRandom::from_seed(0);
@@ -586,8 +597,15 @@ mod tests {
         };
 
         // Find the potential chunk
-        let potential =
-            StructurePlacement::get_potential_structure_chunk(0, 12345, 0, 0, 32, 8, SpreadType::Linear);
+        let potential = StructurePlacement::get_potential_structure_chunk(
+            0,
+            12345,
+            0,
+            0,
+            32,
+            8,
+            SpreadType::Linear,
+        );
         // With frequency=1.0, should always pass
         assert!(placement.is_structure_chunk(0, potential.0.x, potential.0.y, None));
     }
@@ -663,13 +681,15 @@ mod tests {
     #[test]
     fn test_generate_ring_positions_strongholds() {
         // Strongholds: distance=32, spread=3, count=128
-        let positions = generate_ring_positions::<fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>>(0, 32, 3, 128, None);
+        let positions = generate_ring_positions::<
+            fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
+        >(0, 32, 3, 128, None);
         assert_eq!(positions.len(), 128);
 
         // First ring should be roughly 4*32 = 128 chunks from origin
         // (with some jitter)
         let first = positions[0];
-        let dist = ((first.0.x as f64).powi(2) + (first.0.y as f64).powi(2)).sqrt();
+        let dist = (f64::from(first.0.x).powi(2) + f64::from(first.0.y).powi(2)).sqrt();
         assert!(
             dist > 80.0 && dist < 200.0,
             "First stronghold at distance {dist}, expected ~128"
@@ -679,16 +699,24 @@ mod tests {
         let mut unique = positions.clone();
         unique.sort();
         unique.dedup();
-        assert_eq!(unique.len(), positions.len(), "Ring positions should be unique");
+        assert_eq!(
+            unique.len(),
+            positions.len(),
+            "Ring positions should be unique"
+        );
 
         // Deterministic: same seed produces same positions
-        let positions2 = generate_ring_positions::<fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>>(0, 32, 3, 128, None);
+        let positions2 = generate_ring_positions::<
+            fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
+        >(0, 32, 3, 128, None);
         assert_eq!(positions, positions2);
     }
 
     #[test]
     fn test_generate_ring_positions_zero_count() {
-        let positions = generate_ring_positions::<fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>>(0, 32, 3, 0, None);
+        let positions = generate_ring_positions::<
+            fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
+        >(0, 32, 3, 0, None);
         assert!(positions.is_empty());
     }
 
@@ -765,7 +793,10 @@ mod tests {
             &all_sets,
             &ring_positions,
         );
-        assert!(excluded, "Outpost should be excluded at village chunk position");
+        assert!(
+            excluded,
+            "Outpost should be excluded at village chunk position"
+        );
 
         // A chunk far from any village should not be excluded
         let not_excluded =

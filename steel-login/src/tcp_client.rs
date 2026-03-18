@@ -152,7 +152,7 @@ impl JavaTcpClient {
         self.cancel_token.cancel();
     }
 
-    /// Sends a packet immediately, without queueing.
+    /// Sends a packet immediately, without queuing.
     ///
     /// # Panics
     /// This function will panic if the packet cannot be encoded. Should never happen.
@@ -170,7 +170,7 @@ impl JavaTcpClient {
         }
     }
 
-    /// Sends an already encoded packet immediately, without queueing.
+    /// Sends an already encoded packet immediately, without queuing.
     pub async fn send_packet_now(&self, packet: &EncodedPacket) {
         if let Err(err) = self.network_writer.lock().await.write_packet(packet).await
             && !self.cancel_token.is_cancelled()

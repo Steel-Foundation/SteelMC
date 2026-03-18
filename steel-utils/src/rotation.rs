@@ -2,9 +2,9 @@
 //!
 //! Vanilla's `Rotation` — horizontal rotations around the Y axis.
 
-use crate::{BoundingBox, Direction};
 use crate::random::Random;
 use crate::random::legacy_random::LegacyRandom;
+use crate::{BoundingBox, Direction};
 
 /// Horizontal rotation around the Y axis.
 ///
@@ -75,7 +75,14 @@ impl Rotation {
     ///
     /// Matches vanilla's `StructureTemplate.transform(pos, Mirror.NONE, rotation, pivot)`.
     #[must_use]
-    pub const fn transform_pos(self, x: i32, y: i32, z: i32, pivot_x: i32, pivot_z: i32) -> (i32, i32, i32) {
+    pub const fn transform_pos(
+        self,
+        x: i32,
+        y: i32,
+        z: i32,
+        pivot_x: i32,
+        pivot_z: i32,
+    ) -> (i32, i32, i32) {
         match self {
             Self::None => (x, y, z),
             Self::Clockwise90 => (pivot_x + pivot_z - z, y, pivot_z - pivot_x + x),
@@ -95,12 +102,18 @@ impl Rotation {
         }
     }
 
-    /// Transforms a position with mirror (FRONT_BACK) then rotation around a pivot.
+    /// Transforms a position with mirror (`FRONT_BACK`) then rotation around a pivot.
     ///
     /// Matches vanilla's `StructureTemplate.transform(pos, Mirror.FRONT_BACK, rotation, pivot)`.
     #[must_use]
     pub const fn transform_pos_mirrored(
-        self, x: i32, y: i32, z: i32, pivot_x: i32, pivot_z: i32, mirror_front_back: bool,
+        self,
+        x: i32,
+        y: i32,
+        z: i32,
+        pivot_x: i32,
+        pivot_z: i32,
+        mirror_front_back: bool,
     ) -> (i32, i32, i32) {
         let mx = if mirror_front_back { -x } else { x };
         self.transform_pos(mx, y, z, pivot_x, pivot_z)
@@ -110,22 +123,34 @@ impl Rotation {
     ///
     /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror, size)`.
     #[must_use]
-    pub fn get_bounding_box_full(
-        self, pos_x: i32, pos_y: i32, pos_z: i32,
-        size_x: i32, size_y: i32, size_z: i32,
-        pivot_x: i32, pivot_z: i32,
+    pub const fn get_bounding_box_full(
+        self,
+        pos_x: i32,
+        pos_y: i32,
+        pos_z: i32,
+        size_x: i32,
+        size_y: i32,
+        size_z: i32,
+        pivot_x: i32,
+        pivot_z: i32,
         mirror_front_back: bool,
     ) -> BoundingBox {
         let dx = size_x - 1;
         let dy = size_y - 1;
         let dz = size_z - 1;
 
-        let (c1x, c1y, c1z) = self.transform_pos_mirrored(0, 0, 0, pivot_x, pivot_z, mirror_front_back);
-        let (c2x, c2y, c2z) = self.transform_pos_mirrored(dx, dy, dz, pivot_x, pivot_z, mirror_front_back);
+        let (c1x, c1y, c1z) =
+            self.transform_pos_mirrored(0, 0, 0, pivot_x, pivot_z, mirror_front_back);
+        let (c2x, c2y, c2z) =
+            self.transform_pos_mirrored(dx, dy, dz, pivot_x, pivot_z, mirror_front_back);
 
         BoundingBox::new(
-            c1x.min(c2x) + pos_x, c1y.min(c2y) + pos_y, c1z.min(c2z) + pos_z,
-            c1x.max(c2x) + pos_x, c1y.max(c2y) + pos_y, c1z.max(c2z) + pos_z,
+            c1x.min(c2x) + pos_x,
+            c1y.min(c2y) + pos_y,
+            c1z.min(c2z) + pos_z,
+            c1x.max(c2x) + pos_x,
+            c1y.max(c2y) + pos_y,
+            c1z.max(c2z) + pos_z,
         )
     }
 
@@ -134,10 +159,16 @@ impl Rotation {
     ///
     /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror=NONE, size)`.
     #[must_use]
-    pub fn get_bounding_box_with_pivot(
-        self, pos_x: i32, pos_y: i32, pos_z: i32,
-        size_x: i32, size_y: i32, size_z: i32,
-        pivot_x: i32, pivot_z: i32,
+    pub const fn get_bounding_box_with_pivot(
+        self,
+        pos_x: i32,
+        pos_y: i32,
+        pos_z: i32,
+        size_x: i32,
+        size_y: i32,
+        size_z: i32,
+        pivot_x: i32,
+        pivot_z: i32,
     ) -> BoundingBox {
         let dx = size_x - 1;
         let dy = size_y - 1;
@@ -147,8 +178,12 @@ impl Rotation {
         let (c2x, c2y, c2z) = self.transform_pos(dx, dy, dz, pivot_x, pivot_z);
 
         BoundingBox::new(
-            c1x.min(c2x) + pos_x, c1y.min(c2y) + pos_y, c1z.min(c2z) + pos_z,
-            c1x.max(c2x) + pos_x, c1y.max(c2y) + pos_y, c1z.max(c2z) + pos_z,
+            c1x.min(c2x) + pos_x,
+            c1y.min(c2y) + pos_y,
+            c1z.min(c2z) + pos_z,
+            c1x.max(c2x) + pos_x,
+            c1y.max(c2y) + pos_y,
+            c1z.max(c2z) + pos_z,
         )
     }
 
@@ -157,7 +192,15 @@ impl Rotation {
     /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot=ZERO, mirror=NONE, size)`.
     /// Jigsaw pool elements always use pivot=ZERO and mirror=NONE.
     #[must_use]
-    pub fn get_bounding_box(self, pos_x: i32, pos_y: i32, pos_z: i32, size_x: i32, size_y: i32, size_z: i32) -> BoundingBox {
+    pub const fn get_bounding_box(
+        self,
+        pos_x: i32,
+        pos_y: i32,
+        pos_z: i32,
+        size_x: i32,
+        size_y: i32,
+        size_z: i32,
+    ) -> BoundingBox {
         let dx = size_x - 1;
         let dy = size_y - 1;
         let dz = size_z - 1;
@@ -185,22 +228,43 @@ mod tests {
     #[test]
     fn rotate_direction() {
         assert_eq!(Rotation::None.rotate(Direction::North), Direction::North);
-        assert_eq!(Rotation::Clockwise90.rotate(Direction::North), Direction::East);
-        assert_eq!(Rotation::Clockwise180.rotate(Direction::North), Direction::South);
-        assert_eq!(Rotation::CounterClockwise90.rotate(Direction::North), Direction::West);
+        assert_eq!(
+            Rotation::Clockwise90.rotate(Direction::North),
+            Direction::East
+        );
+        assert_eq!(
+            Rotation::Clockwise180.rotate(Direction::North),
+            Direction::South
+        );
+        assert_eq!(
+            Rotation::CounterClockwise90.rotate(Direction::North),
+            Direction::West
+        );
     }
 
     #[test]
     fn compose_rotations() {
-        assert_eq!(Rotation::Clockwise90.then(Rotation::Clockwise90), Rotation::Clockwise180);
-        assert_eq!(Rotation::Clockwise90.then(Rotation::CounterClockwise90), Rotation::None);
-        assert_eq!(Rotation::Clockwise180.then(Rotation::Clockwise180), Rotation::None);
+        assert_eq!(
+            Rotation::Clockwise90.then(Rotation::Clockwise90),
+            Rotation::Clockwise180
+        );
+        assert_eq!(
+            Rotation::Clockwise90.then(Rotation::CounterClockwise90),
+            Rotation::None
+        );
+        assert_eq!(
+            Rotation::Clockwise180.then(Rotation::Clockwise180),
+            Rotation::None
+        );
     }
 
     #[test]
     fn vertical_unchanged() {
         assert_eq!(Rotation::Clockwise90.rotate(Direction::Up), Direction::Up);
-        assert_eq!(Rotation::Clockwise180.rotate(Direction::Down), Direction::Down);
+        assert_eq!(
+            Rotation::Clockwise180.rotate(Direction::Down),
+            Direction::Down
+        );
     }
 
     #[test]
@@ -208,11 +272,20 @@ mod tests {
         // NONE: identity
         assert_eq!(Rotation::None.transform_pos(3, 5, 7, 0, 0), (3, 5, 7));
         // CW_90: (px + pz - z, y, pz - px + x) = (0+0-7, 5, 0-0+3) = (-7, 5, 3)
-        assert_eq!(Rotation::Clockwise90.transform_pos(3, 5, 7, 0, 0), (-7, 5, 3));
+        assert_eq!(
+            Rotation::Clockwise90.transform_pos(3, 5, 7, 0, 0),
+            (-7, 5, 3)
+        );
         // CW_180: (2px - x, y, 2pz - z) = (-3, 5, -7)
-        assert_eq!(Rotation::Clockwise180.transform_pos(3, 5, 7, 0, 0), (-3, 5, -7));
+        assert_eq!(
+            Rotation::Clockwise180.transform_pos(3, 5, 7, 0, 0),
+            (-3, 5, -7)
+        );
         // CCW_90: (px - pz + z, y, px + pz - x) = (7, 5, -3)
-        assert_eq!(Rotation::CounterClockwise90.transform_pos(3, 5, 7, 0, 0), (7, 5, -3));
+        assert_eq!(
+            Rotation::CounterClockwise90.transform_pos(3, 5, 7, 0, 0),
+            (7, 5, -3)
+        );
     }
 
     #[test]
@@ -251,6 +324,9 @@ mod tests {
         assert_eq!(Rotation::None.rotate_size(6, 10, 8), (6, 10, 8));
         assert_eq!(Rotation::Clockwise90.rotate_size(6, 10, 8), (8, 10, 6));
         assert_eq!(Rotation::Clockwise180.rotate_size(6, 10, 8), (6, 10, 8));
-        assert_eq!(Rotation::CounterClockwise90.rotate_size(6, 10, 8), (8, 10, 6));
+        assert_eq!(
+            Rotation::CounterClockwise90.rotate_size(6, 10, 8),
+            (8, 10, 6)
+        );
     }
 }

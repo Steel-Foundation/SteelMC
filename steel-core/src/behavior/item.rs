@@ -1,7 +1,7 @@
 //! Item behavior trait and registry.
 
-use steel_registry::REGISTRY;
 use steel_registry::items::ItemRef;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 
 use crate::behavior::items::DefaultItemBehavior;
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
@@ -48,14 +48,14 @@ impl ItemBehaviorRegistry {
 
     /// Sets a custom behavior for an item.
     pub fn set_behavior(&mut self, item: ItemRef, behavior: Box<dyn ItemBehavior>) {
-        let id = *REGISTRY.items.get_id(item);
+        let id = item.id();
         self.behaviors[id] = behavior;
     }
 
     /// Gets the behavior for an item.
     #[must_use]
     pub fn get_behavior(&self, item: ItemRef) -> &dyn ItemBehavior {
-        let id = *REGISTRY.items.get_id(item);
+        let id = item.id();
         self.behaviors[id].as_ref()
     }
 

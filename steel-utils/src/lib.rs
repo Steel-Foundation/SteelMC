@@ -50,8 +50,8 @@ pub mod translations_registry;
 pub mod entity_events;
 
 pub use direction::Direction;
-pub use rotation::Rotation;
 pub use front_vec::FrontVec;
+pub use rotation::Rotation;
 pub use types::BlockPos;
 pub use types::BlockStateId;
 pub use types::BoundingBox;

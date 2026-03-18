@@ -35,7 +35,7 @@ impl LegacyRandom {
     }
 
     /// Re-seeds this generator, matching Java's `Random.setSeed`.
-    pub fn set_seed(&mut self, seed: i64) {
+    pub const fn set_seed(&mut self, seed: i64) {
         self.seed = (seed ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF;
         self.next_gaussian = None;
     }
@@ -47,9 +47,8 @@ impl LegacyRandom {
         self.set_seed(seed);
         let x_mul = self.next_i64();
         let z_mul = self.next_i64();
-        let result = i64::from(chunk_x).wrapping_mul(x_mul)
-            ^ i64::from(chunk_z).wrapping_mul(z_mul)
-            ^ seed;
+        let result =
+            i64::from(chunk_x).wrapping_mul(x_mul) ^ i64::from(chunk_z).wrapping_mul(z_mul) ^ seed;
         self.set_seed(result);
     }
 
@@ -437,10 +436,8 @@ mod test {
         //        = 1709365643560 - 398693962623 + 133844101
         //        = 1310805525038
         // Verify the computation is deterministic by checking first output
-        let expected_seed: i64 = 5_i64 * 341_873_128_712
-            + (-3_i64) * 132_897_987_541
-            + 123_456_789
-            + 10_387_312;
+        let expected_seed: i64 =
+            5_i64 * 341_873_128_712 + (-3_i64) * 132_897_987_541 + 123_456_789 + 10_387_312;
         let mut expected = LegacyRandom::from_seed(0);
         expected.set_seed(expected_seed);
         for _ in 0..5 {
@@ -456,8 +453,7 @@ mod test {
         //   result = 3 * x_mul ^ 5 * z_mul ^ 0
         let x_mul = -4_962_768_465_676_381_896_i64;
         let z_mul = 4_437_113_781_045_784_766_i64;
-        let expected_seed =
-            3_i64.wrapping_mul(x_mul) ^ 5_i64.wrapping_mul(z_mul) ^ 0_i64;
+        let expected_seed = 3_i64.wrapping_mul(x_mul) ^ 5_i64.wrapping_mul(z_mul);
 
         let mut rng = LegacyRandom::from_seed(0);
         rng.set_large_feature_seed(0, 3, 5);

@@ -231,7 +231,17 @@ impl<N: DimensionNoises> Aquifer<N> {
         noises: &N,
         cache: N::ColumnCache,
     ) -> Self {
-        Self::new_sized(chunk_min_x, chunk_min_z, 16, 16, min_block_y, y_block_size, splitter, noises, cache)
+        Self::new_sized(
+            chunk_min_x,
+            chunk_min_z,
+            16,
+            16,
+            min_block_y,
+            y_block_size,
+            splitter,
+            noises,
+            cache,
+        )
     }
 
     /// Create an aquifer with custom XZ extent (in blocks).
@@ -257,6 +267,8 @@ impl<N: DimensionNoises> Aquifer<N> {
         let mut aquifer_rng = splitter.with_hash_of(&AQUIFER_HASH);
         let splitter = aquifer_rng.next_positional();
 
+        // When aquifers are disabled (nether/end), compute_substance uses only
+        // the global fluid picker — skip grid allocation and surface sampling.
         if !N::Settings::AQUIFERS_ENABLED {
             return Self {
                 location_cache: Vec::new(),

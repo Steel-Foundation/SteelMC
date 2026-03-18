@@ -85,12 +85,25 @@ fn extract_template(path: &str) -> Option<ExtractedTemplate> {
         match iter.next() {
             Some(first_palette) => match first_palette.compounds() {
                 Some(c) => c,
-                None => return Some(ExtractedTemplate { size, jigsaws: Vec::new() }),
+                None => {
+                    return Some(ExtractedTemplate {
+                        size,
+                        jigsaws: Vec::new(),
+                    });
+                }
             },
-            None => return Some(ExtractedTemplate { size, jigsaws: Vec::new() }),
+            None => {
+                return Some(ExtractedTemplate {
+                    size,
+                    jigsaws: Vec::new(),
+                });
+            }
         }
     } else {
-        return Some(ExtractedTemplate { size, jigsaws: Vec::new() });
+        return Some(ExtractedTemplate {
+            size,
+            jigsaws: Vec::new(),
+        });
     };
     let mut jigsaw_indices: Vec<(usize, String)> = Vec::new();
     for (i, entry) in palette.into_iter().enumerate() {
@@ -135,8 +148,12 @@ fn extract_template(path: &str) -> Option<ExtractedTemplate> {
             None => continue,
         };
 
-        let get_str =
-            |key: &str| -> String { nbt_data.string(key).map(|s| s.to_str().to_string()).unwrap_or_default() };
+        let get_str = |key: &str| -> String {
+            nbt_data
+                .string(key)
+                .map(|s| s.to_str().to_string())
+                .unwrap_or_default()
+        };
 
         jigsaws.push(ExtractedJigsaw {
             pos: [pos_list[0], pos_list[1], pos_list[2]],
@@ -232,13 +249,15 @@ fn gen_joint(s: &str) -> TokenStream {
 // ── Main build function ──
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/template_pool/");
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/structure/");
+    println!(
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/template_pool/"
+    );
+    println!(
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/structure/"
+    );
 
-    let pool_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/template_pool";
-    let structure_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/structure";
+    let pool_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/template_pool";
+    let structure_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/structure";
 
     // ── Parse template pools ──
 

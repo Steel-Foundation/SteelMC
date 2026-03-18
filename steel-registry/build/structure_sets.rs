@@ -215,11 +215,13 @@ fn parse_start_height_full(value: &serde_json::Value) -> StartHeightData {
     }
     // {"type": "minecraft:uniform", ...}
     if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:uniform") {
-        let min = value.get("min_inclusive")
+        let min = value
+            .get("min_inclusive")
             .and_then(|v| v.get("absolute"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as i32;
-        let max = value.get("max_inclusive")
+        let max = value
+            .get("max_inclusive")
             .and_then(|v| v.get("absolute"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as i32;
@@ -259,8 +261,8 @@ fn parse_start_height(value: &serde_json::Value) -> Option<i32> {
         return Some((min + max) / 2);
     }
     // {"type": "minecraft:constant", "value": N} or {"type": "minecraft:constant", "value": {"absolute": N}}
-    if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:constant") {
-        if let Some(v) = value.get("value") {
+    if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:constant")
+        && let Some(v) = value.get("value") {
             if let Some(n) = v.as_i64() {
                 return Some(n as i32);
             }
@@ -268,7 +270,6 @@ fn parse_start_height(value: &serde_json::Value) -> Option<i32> {
                 return Some(n as i32);
             }
         }
-    }
     None
 }
 
@@ -324,13 +325,19 @@ fn load_structure_data(
             let start_pool = structure.start_pool.clone().unwrap_or_default();
             let max_depth = structure.max_depth.unwrap_or(0);
             let use_expansion_hack = structure.use_expansion_hack.unwrap_or(false);
-            let start_height = structure.start_height.as_ref()
+            let start_height = structure
+                .start_height
+                .as_ref()
                 .map(parse_start_height_full)
                 .unwrap_or(StartHeightData::Constant(0));
-            let max_distance_from_center = structure.max_distance_from_center.as_ref()
+            let max_distance_from_center = structure
+                .max_distance_from_center
+                .as_ref()
                 .and_then(|v| v.as_i64())
                 .unwrap_or(80) as i32;
-            let dim_pad = structure.dimension_padding.as_ref()
+            let dim_pad = structure
+                .dimension_padding
+                .as_ref()
                 .and_then(|v| v.as_i64().map(|n| (n as i32, n as i32)))
                 .or_else(|| {
                     structure.dimension_padding.as_ref().map(|v| {
@@ -350,19 +357,25 @@ fn load_structure_data(
                 max_distance_from_center,
                 start_jigsaw_name: structure.start_jigsaw_name.clone(),
                 dimension_padding: dim_pad,
-                terrain_adaptation: structure.terrain_adaptation.clone().unwrap_or_else(|| "none".to_string()),
+                terrain_adaptation: structure
+                    .terrain_adaptation
+                    .clone()
+                    .unwrap_or_else(|| "none".to_string()),
                 pool_aliases: structure.pool_aliases.clone().unwrap_or_default(),
             })
         } else {
             None
         };
 
-        result.insert(full_name, StructureData {
-            allowed_biomes,
-            biome_check_y,
-            structure_type: structure.structure_type.clone(),
-            jigsaw_config,
-        });
+        result.insert(
+            full_name,
+            StructureData {
+                allowed_biomes,
+                biome_check_y,
+                structure_type: structure.structure_type.clone(),
+                jigsaw_config,
+            },
+        );
     }
 
     result
@@ -409,8 +422,7 @@ pub(crate) fn build() -> TokenStream {
     let biome_tags = load_biome_tags();
     let structure_data = load_structure_data(&biome_tags);
 
-    let set_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/structure_set";
+    let set_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/structure_set";
     let mut sets = Vec::new();
 
     for entry in fs::read_dir(set_dir).unwrap() {
@@ -592,17 +604,21 @@ pub(crate) fn build() -> TokenStream {
                 let salt = set.placement.salt;
 
                 // Resolve preferred biomes from tag reference (e.g., "#minecraft:stronghold_biased_to")
-                let preferred_biomes: Vec<String> = if let Some(ref tag_ref) = set.placement.preferred_biomes {
-                    if let Some(tag_name) = tag_ref.strip_prefix('#') {
-                        biome_tags.get(tag_name).cloned().unwrap_or_default()
+                let preferred_biomes: Vec<String> =
+                    if let Some(ref tag_ref) = set.placement.preferred_biomes {
+                        if let Some(tag_name) = tag_ref.strip_prefix('#') {
+                            biome_tags.get(tag_name).cloned().unwrap_or_default()
+                        } else {
+                            // Direct biome identifier
+                            vec![tag_ref.clone()]
+                        }
                     } else {
-                        // Direct biome identifier
-                        vec![tag_ref.clone()]
-                    }
-                } else {
-                    vec![]
-                };
-                let biome_tokens: Vec<TokenStream> = preferred_biomes.iter().map(|b| generate_identifier(b)).collect();
+                        vec![]
+                    };
+                let biome_tokens: Vec<TokenStream> = preferred_biomes
+                    .iter()
+                    .map(|b| generate_identifier(b))
+                    .collect();
 
                 quote! {
                     PlacementData::ConcentricRings {

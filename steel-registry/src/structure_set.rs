@@ -121,11 +121,19 @@ pub struct DimensionPadding {
 #[derive(Debug, Clone)]
 pub enum PoolAlias {
     /// Direct remapping: alias -> target.
-    Direct { alias: Identifier, target: Identifier },
+    Direct {
+        alias: Identifier,
+        target: Identifier,
+    },
     /// Random selection from weighted targets.
-    Random { alias: Identifier, targets: Vec<(Identifier, i32)> },
+    Random {
+        alias: Identifier,
+        targets: Vec<(Identifier, i32)>,
+    },
     /// Random group: pick one group, apply all bindings in it.
-    RandomGroup { groups: Vec<(Vec<(Identifier, Identifier)>, i32)> },
+    RandomGroup {
+        groups: Vec<(Vec<(Identifier, Identifier)>, i32)>,
+    },
 }
 
 /// Spread type for random spread placement.

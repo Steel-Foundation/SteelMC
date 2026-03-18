@@ -7,7 +7,7 @@ use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Rotation};
 
-/// Template sizes (x, y, z) for regular portals (portal_1 through portal_10).
+/// Template sizes (x, y, z) for regular portals (`portal_1` through `portal_10`).
 const PORTAL_SIZES: [(i32, i32, i32); 10] = [
     (6, 10, 6),  // portal_1
     (9, 12, 9),  // portal_2
@@ -21,7 +21,7 @@ const PORTAL_SIZES: [(i32, i32, i32); 10] = [
     (12, 8, 10), // portal_10
 ];
 
-/// Template sizes (x, y, z) for giant portals (giant_portal_1 through giant_portal_3).
+/// Template sizes (x, y, z) for giant portals (`giant_portal_1` through `giant_portal_3`).
 const GIANT_PORTAL_SIZES: [(i32, i32, i32); 3] = [
     (11, 17, 16), // giant_portal_1
     (11, 16, 16), // giant_portal_2
@@ -50,40 +50,67 @@ struct Setup {
 fn get_setups(structure_path: &str) -> Vec<Setup> {
     match structure_path {
         "ruined_portal" => vec![
-            Setup { placement: Placement::Underground, weight: 0.5, air_pocket_prob: 1.0 },
-            Setup { placement: Placement::OnLandSurface, weight: 0.5, air_pocket_prob: 0.5 },
+            Setup {
+                placement: Placement::Underground,
+                weight: 0.5,
+                air_pocket_prob: 1.0,
+            },
+            Setup {
+                placement: Placement::OnLandSurface,
+                weight: 0.5,
+                air_pocket_prob: 0.5,
+            },
         ],
-        "ruined_portal_desert" => vec![
-            Setup { placement: Placement::PartlyBuried, weight: 1.0, air_pocket_prob: 0.0 },
-        ],
-        "ruined_portal_jungle" => vec![
-            Setup { placement: Placement::OnLandSurface, weight: 1.0, air_pocket_prob: 0.5 },
-        ],
+        "ruined_portal_desert" => vec![Setup {
+            placement: Placement::PartlyBuried,
+            weight: 1.0,
+            air_pocket_prob: 0.0,
+        }],
+        "ruined_portal_jungle" => vec![Setup {
+            placement: Placement::OnLandSurface,
+            weight: 1.0,
+            air_pocket_prob: 0.5,
+        }],
         "ruined_portal_mountain" => vec![
-            Setup { placement: Placement::InMountain, weight: 0.5, air_pocket_prob: 1.0 },
-            Setup { placement: Placement::OnLandSurface, weight: 0.5, air_pocket_prob: 0.5 },
+            Setup {
+                placement: Placement::InMountain,
+                weight: 0.5,
+                air_pocket_prob: 1.0,
+            },
+            Setup {
+                placement: Placement::OnLandSurface,
+                weight: 0.5,
+                air_pocket_prob: 0.5,
+            },
         ],
-        "ruined_portal_ocean" => vec![
-            Setup { placement: Placement::OnOceanFloor, weight: 1.0, air_pocket_prob: 0.0 },
-        ],
-        "ruined_portal_swamp" => vec![
-            Setup { placement: Placement::OnOceanFloor, weight: 1.0, air_pocket_prob: 0.0 },
-        ],
-        "ruined_portal_nether" => vec![
-            Setup { placement: Placement::InNether, weight: 1.0, air_pocket_prob: 0.5 },
-        ],
-        _ => vec![
-            Setup { placement: Placement::OnLandSurface, weight: 1.0, air_pocket_prob: 0.0 },
-        ],
+        "ruined_portal_ocean" => vec![Setup {
+            placement: Placement::OnOceanFloor,
+            weight: 1.0,
+            air_pocket_prob: 0.0,
+        }],
+        "ruined_portal_swamp" => vec![Setup {
+            placement: Placement::OnOceanFloor,
+            weight: 1.0,
+            air_pocket_prob: 0.0,
+        }],
+        "ruined_portal_nether" => vec![Setup {
+            placement: Placement::InNether,
+            weight: 1.0,
+            air_pocket_prob: 0.5,
+        }],
+        _ => vec![Setup {
+            placement: Placement::OnLandSurface,
+            weight: 1.0,
+            air_pocket_prob: 0.0,
+        }],
     }
 }
-
 
 /// Terrain query operations needed by the ruined portal generation.
 pub enum TerrainQuery {
     /// Get surface height at (x, z). Returns first solid Y from top.
     SurfaceHeight(i32, i32),
-    /// Check if block at (x, y, z) is opaque for WORLD_SURFACE_WG heightmap.
+    /// Check if block at (x, y, z) is opaque for `WORLD_SURFACE_WG` heightmap.
     IsOpaque(i32, i32, i32),
 }
 
@@ -168,7 +195,15 @@ pub fn find_generation_point(
     let pivot_x = sx / 2;
     let pivot_z = sz / 2;
     let bb = rotation.get_bounding_box_full(
-        base_x, 0, base_z, sx, sy, sz, pivot_x, pivot_z, mirror_front_back,
+        base_x,
+        0,
+        base_z,
+        sx,
+        sy,
+        sz,
+        pivot_x,
+        pivot_z,
+        mirror_front_back,
     );
     let bb_min_x = bb.min_x;
     let bb_max_x = bb.max_x;
@@ -207,9 +242,7 @@ pub fn find_generation_point(
                 max_y
             }
         }
-        Placement::PartlyBuried => {
-            surface_y - y_span + rng.next_i32_between(2, 8)
-        }
+        Placement::PartlyBuried => surface_y - y_span + rng.next_i32_between(2, 8),
         Placement::InNether => {
             if air_pocket {
                 rng.next_i32_between(32, 100)
@@ -236,7 +269,10 @@ pub fn find_generation_point(
     'scan: while projected_y > min_y_scan {
         let mut solid_count = 0;
         for &(cx, cz) in &corners {
-            let solid = matches!(terrain(TerrainQuery::IsOpaque(cx, projected_y, cz)), TerrainResult::Opaque(true));
+            let solid = matches!(
+                terrain(TerrainQuery::IsOpaque(cx, projected_y, cz)),
+                TerrainResult::Opaque(true)
+            );
             if solid {
                 solid_count += 1;
                 if solid_count == 3 {
@@ -250,7 +286,15 @@ pub fn find_generation_point(
     // Vanilla's piece BB: template.getBoundingBox(placeSettings, templatePosition)
     // where templatePosition = (base_x, projected_y, base_z).
     let piece_bb = rotation.get_bounding_box_full(
-        base_x, projected_y, base_z, sx, sy, sz, pivot_x, pivot_z, mirror_front_back,
+        base_x,
+        projected_y,
+        base_z,
+        sx,
+        sy,
+        sz,
+        pivot_x,
+        pivot_z,
+        mirror_front_back,
     );
 
     PortalResult {

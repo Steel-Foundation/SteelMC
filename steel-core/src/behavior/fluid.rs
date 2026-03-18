@@ -3,8 +3,8 @@
 use std::ops::Deref;
 use std::sync::OnceLock;
 
-use steel_registry::REGISTRY;
 use steel_registry::fluid::FluidRef;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 
 use crate::fluid::{EmptyFluid, FluidBehavior};
 
@@ -52,10 +52,7 @@ impl FluidBehaviorRegistry {
     /// # Panics
     /// Panics if `fluid` is not registered in the global registry.
     pub fn set_behavior(&mut self, fluid: FluidRef, behavior: Box<dyn FluidBehavior>) {
-        let id = *REGISTRY
-            .fluids
-            .get_id(fluid)
-            .expect("fluid not found in registry");
+        let id = fluid.id();
         self.behaviors[id] = behavior;
     }
 
@@ -65,10 +62,7 @@ impl FluidBehaviorRegistry {
     /// Panics if `fluid` is not registered in the global registry.
     #[must_use]
     pub fn get_behavior(&self, fluid: FluidRef) -> &dyn FluidBehavior {
-        let id = *REGISTRY
-            .fluids
-            .get_id(fluid)
-            .expect("fluid not found in registry");
+        let id = fluid.id();
         self.behaviors[id].as_ref()
     }
 }
