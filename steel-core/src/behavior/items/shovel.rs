@@ -6,9 +6,9 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    entity_data::Direction,
     vanilla_block_tags, vanilla_blocks,
 };
+use steel_utils::Direction;
 use steel_utils::types::UpdateFlags;
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};

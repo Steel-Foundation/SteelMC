@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
@@ -125,6 +126,51 @@ pub struct UseOnContext<'a> {
     pub item_stack: &'a mut ItemStack,
     /// Lock guard holding the player's inventory.
     pub inv_guard: &'a mut ContainerLockGuard,
+}
+
+impl<'a> UseOnContext<'a> {
+    /// Builds a [`BlockPlaceContext`] from this interaction context.
+    ///
+    /// Returns `None` if placement is invalid (out of bounds or non-replaceable target).
+    /// This is the common prefix of vanilla's `BlockItem.useOn`.
+    #[must_use]
+    pub fn build_place_context(&self) -> Option<BlockPlaceContext<'a>> {
+        let clicked_pos = self.hit_result.block_pos;
+        let clicked_state = self.world.get_block_state(clicked_pos);
+        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
+        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
+
+        let (place_pos, replace_clicked) = if clicked_replaceable {
+            (clicked_pos, true)
+        } else {
+            (self.hit_result.direction.relative(clicked_pos), false)
+        };
+
+        if !self.world.is_in_valid_bounds(place_pos) {
+            return None;
+        }
+
+        let existing_state = self.world.get_block_state(place_pos);
+        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
+        if !existing_block.is_some_and(|b| b.config.replaceable) {
+            return None;
+        }
+
+        let (yaw, pitch) = self.player.rotation.load();
+
+        Some(BlockPlaceContext {
+            clicked_pos,
+            clicked_face: self.hit_result.direction,
+            click_location: self.hit_result.location,
+            inside: self.hit_result.inside,
+            relative_pos: place_pos,
+            replace_clicked,
+            horizontal_direction: Direction::from_yaw(yaw),
+            rotation: yaw,
+            pitch,
+            world: self.world,
+        })
+    }
 }
 
 /// Context for using an item (general usage).
