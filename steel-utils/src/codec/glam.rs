@@ -1,8 +1,6 @@
-use std::io::{Cursor, Result, Write};
-
 use crate::serial::{ReadFrom, WriteTo};
-
 use glam::{DVec3, IVec2, IVec3, Vec3};
+use std::io::{Cursor, Result, Write};
 
 #[allow(missing_docs)]
 impl WriteTo for IVec2 {
@@ -59,6 +57,15 @@ impl ReadFrom for DVec3 {
             y: f64::read(data)?,
             z: f64::read(data)?,
         })
+    }
+}
+
+#[allow(missing_docs)]
+impl WriteTo for Vec3 {
+    fn write(&self, writer: &mut impl Write) -> Result<()> {
+        self.x.write(writer)?;
+        self.y.write(writer)?;
+        self.z.write(writer)
     }
 }
 

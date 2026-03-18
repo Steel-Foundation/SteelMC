@@ -112,7 +112,7 @@ pub struct SMovePlayerRot {
 impl From<SMovePlayerRot> for SMovePlayer {
     fn from(value: SMovePlayerRot) -> Self {
         Self {
-            position: DVec3::default(),
+            position: DVec3::ZERO,
             has_pos: false,
             has_rot: true,
             x_rot: value.x_rot,
@@ -134,7 +134,7 @@ pub struct SMovePlayerStatusOnly {
 impl From<SMovePlayerStatusOnly> for SMovePlayer {
     fn from(value: SMovePlayerStatusOnly) -> Self {
         Self {
-            position: DVec3::default(),
+            position: DVec3::ZERO,
             has_pos: false,
             has_rot: false,
             x_rot: 0.0,
