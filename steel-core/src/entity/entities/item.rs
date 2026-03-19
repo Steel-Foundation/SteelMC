@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
 use crossbeam::atomic::AtomicCell;
+use glam::DVec3;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
@@ -16,7 +17,6 @@ use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
-use steel_utils::math::Vector3;
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
@@ -71,7 +71,7 @@ pub struct ItemEntity {
 
     // === Position & Physics ===
     /// Velocity in blocks per tick.
-    velocity: SyncMutex<Vector3<f64>>,
+    velocity: SyncMutex<DVec3>,
     /// Rotation as (yaw, pitch) in degrees. Items have random yaw on spawn.
     rotation: AtomicCell<(f32, f32)>,
     /// Whether the entity is on the ground.
@@ -106,10 +106,10 @@ pub struct ItemEntity {
     // === Network Sync ===
     /// Last velocity sent to clients (for delta detection).
     /// Mirrors vanilla's `ServerEntity.lastSentMovement`.
-    last_sent_velocity: SyncMutex<Vector3<f64>>,
+    last_sent_velocity: SyncMutex<DVec3>,
     /// Last position sent to clients (for delta detection).
     /// Mirrors vanilla's `ServerEntity.lastSentXyz` fields.
-    last_sent_position: SyncMutex<Vector3<f64>>,
+    last_sent_position: SyncMutex<DVec3>,
     /// Last `on_ground` state sent to clients.
     last_sent_on_ground: AtomicBool,
     /// Whether position/velocity needs to be synced to clients.
@@ -122,14 +122,14 @@ impl ItemEntity {
     ///
     /// Use `set_item()` to set the actual item after creation, or use `with_item()`.
     #[must_use]
-    pub fn new(id: i32, position: Vector3<f64>, world: Weak<World>) -> Self {
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::with_item(id, position, ItemStack::empty(), world)
     }
 
     /// Creates a new item entity with the specified item.
     #[must_use]
-    pub fn with_item(id: i32, position: Vector3<f64>, item: ItemStack, world: Weak<World>) -> Self {
-        Self::with_item_and_velocity(id, position, item, Vector3::new(0.0, 0.0, 0.0), world)
+    pub fn with_item(id: i32, position: DVec3, item: ItemStack, world: Weak<World>) -> Self {
+        Self::with_item_and_velocity(id, position, item, DVec3::new(0.0, 0.0, 0.0), world)
     }
 
     /// Creates a new item entity with the specified item and initial velocity.
@@ -138,9 +138,9 @@ impl ItemEntity {
     #[must_use]
     pub fn with_item_and_velocity(
         id: i32,
-        position: Vector3<f64>,
+        position: DVec3,
         item: ItemStack,
-        velocity: Vector3<f64>,
+        velocity: DVec3,
         world: Weak<World>,
     ) -> Self {
         // Random yaw rotation for visual variety
@@ -175,9 +175,9 @@ impl ItemEntity {
     #[must_use]
     pub fn from_saved(
         id: i32,
-        position: Vector3<f64>,
+        position: DVec3,
         uuid: Uuid,
-        velocity: Vector3<f64>,
+        velocity: DVec3,
         rotation: (f32, f32),
         on_ground: bool,
         world: Weak<World>,
@@ -830,7 +830,7 @@ impl Entity for ItemEntity {
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)
         // Vanilla: if (getDeltaMovement().subtract(oldMovement).lengthSqr() > 0.01) needsSync = true
         let new_movement = self.velocity();
-        let diff = Vector3::new(
+        let diff = DVec3::new(
             new_movement.x - old_movement.x,
             new_movement.y - old_movement.y,
             new_movement.z - old_movement.z,
@@ -918,11 +918,11 @@ impl Entity for ItemEntity {
         self.rotation.load()
     }
 
-    fn velocity(&self) -> Vector3<f64> {
+    fn velocity(&self) -> DVec3 {
         *self.velocity.lock()
     }
 
-    fn set_velocity(&self, velocity: Vector3<f64>) {
+    fn set_velocity(&self, velocity: DVec3) {
         *self.velocity.lock() = velocity;
     }
 

@@ -1,16 +1,26 @@
+# Build/Generated
 /target
 /steel-registry/src/generated
 /steel-utils/src/generated
 /steel-core/src/behavior/generated
+
+# Config
 /config
 /.tmp
-/minecraft-src
-profile.json.gz
 /world
-AGENTS.md
-.idea/
-.env
-steel-flint/.cache
 /players
+
+# Misc
+AGENTS.md
+.env
+/minecraft-src
+
+# Package
+profile.json.gz
 *.gz
 *.class
+
+# IDE
+.vscode/settings.json
+.idea
+

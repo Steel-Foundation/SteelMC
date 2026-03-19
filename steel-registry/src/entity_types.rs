@@ -142,33 +142,6 @@ impl EntityTypeRegistry {
         true
     }
 
-    #[must_use]
-    pub fn by_id(&self, id: i32) -> Option<EntityTypeRef> {
-        if id >= 0 {
-            self.types_by_id.get(id as usize).copied()
-        } else {
-            None
-        }
-    }
-
-    /// Gets the registry ID for an entity type.
-    #[must_use]
-    pub fn get_id(&self, entity_type: EntityTypeRef) -> &usize {
-        self.types_by_key
-            .get(&entity_type.key)
-            .expect("Entity type not found")
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.types_by_id.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.types_by_id.is_empty()
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, EntityTypeRef)> + '_ {
         self.types_by_id
             .iter()

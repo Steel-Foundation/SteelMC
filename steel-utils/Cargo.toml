@@ -25,6 +25,7 @@ parking_lot.workspace = true
 bitflags.workspace = true
 phf.workspace = true
 rustc-hash.workspace = true
+glam.workspace = true
 
 # UUID
 uuid.workspace = true
