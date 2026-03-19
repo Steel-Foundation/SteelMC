@@ -1,3 +1,4 @@
+use steel_macros::item_behavior;
 use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt};
 use steel_utils::types::UpdateFlags;
 
@@ -9,6 +10,7 @@ use crate::{
 };
 
 /// Behavior for the Honey Comb Item
+#[item_behavior(class = "HoneycombItem")]
 pub struct HoneycombBehavior;
 
 impl ItemBehavior for HoneycombBehavior {
