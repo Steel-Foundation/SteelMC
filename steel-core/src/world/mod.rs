@@ -55,7 +55,7 @@ pub enum RaytraceAction {
     ImmediateHit,
 }
 
-use steel_utils::math::Vector3;
+use glam::DVec3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
 
@@ -546,9 +546,11 @@ impl World {
 
         let current_state = self.get_block_state(pos);
 
-        // TODO: Skip redstone wire if UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE is set
-        // if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
-        //     && current_state.is_redstone_wire() { return; }
+        if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
+            && current_state.get_block() == vanilla_blocks::REDSTONE_WIRE
+        {
+            return;
+        }
 
         let block_behaviors = &*BLOCK_BEHAVIORS;
         let behavior = block_behaviors.get_behavior(current_state.get_block());
@@ -561,13 +563,7 @@ impl World {
             neighbor_state,
         );
 
-        if new_state != current_state {
-            log::debug!(
-                "Shape update at {pos:?}: {current_state:?} -> {new_state:?} (neighbor {neighbor_pos:?} changed)"
-            );
-            // Use set_block_with_limit to prevent infinite recursion
-            self.set_block_with_limit(pos, new_state, flags, update_limit);
-        }
+        self.update_or_destroy(current_state, new_state, pos, flags, update_limit);
 
         // Vanilla parity: `SimpleWaterloggedBlock.updateShape` / `Level.neighborShapeChanged` —
         // always reschedule the fluid tick when a block with fluid has a neighbor shape change,
@@ -579,6 +575,25 @@ impl World {
                 .get_behavior(fluid_state.fluid_id)
                 .tick_delay(self);
             self.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        }
+    }
+
+    fn update_or_destroy(
+        self: &Arc<World>,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        recursion_left: i32,
+    ) {
+        if new_state == old_state {
+            return;
+        }
+
+        if new_state.is_air() {
+            self.destroy_block(pos, !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS));
+        } else {
+            self.set_block_with_limit(pos, new_state, flags, recursion_left);
         }
     }
 
@@ -1277,9 +1292,9 @@ impl World {
             let entity_id = next_entity_id();
             let entity = Arc::new(ItemEntity::with_item_and_velocity(
                 entity_id,
-                Vector3::new(x, y, z),
+                DVec3::new(x, y, z),
                 split_stack,
-                Vector3::new(vx, vy, vz),
+                DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
             ));
             entity.set_default_pickup_delay();
@@ -1291,8 +1306,8 @@ impl World {
     pub fn ray_outline_check(
         &self,
         block_pos: BlockPos,
-        from: Vector3<f64>,
-        to: Vector3<f64>,
+        from: DVec3,
+        to: DVec3,
     ) -> (bool, Option<Direction>) {
         let state = self.get_block_state(block_pos);
         let bounding_boxes = state.get_outline_shape();
@@ -1306,23 +1321,21 @@ impl World {
         let mut closest: Option<(f64, Direction)> = None;
 
         for shape in bounding_boxes {
-            let block_vec = Vector3::new(
+            let block_vec = DVec3::new(
                 f64::from(block_pos.x()),
                 f64::from(block_pos.y()),
                 f64::from(block_pos.z()),
             );
-            let world_min = Vector3::new(
+            let world_min = DVec3::new(
                 f64::from(shape.min_x),
                 f64::from(shape.min_y),
                 f64::from(shape.min_z),
-            )
-            .add(&block_vec);
-            let world_max = Vector3::new(
+            ) + block_vec;
+            let world_max = DVec3::new(
                 f64::from(shape.max_x),
                 f64::from(shape.max_y),
                 f64::from(shape.max_z),
-            )
-            .add(&block_vec);
+            ) + block_vec;
 
             if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
                 && closest.is_none_or(|(best_t, _)| hit.0 < best_t)
@@ -1346,10 +1359,10 @@ impl World {
     /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
     /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behavior.
     fn intersects_aabb_with_t(
-        start: Vector3<f64>,
-        end: Vector3<f64>,
-        min: Vector3<f64>,
-        max: Vector3<f64>,
+        start: DVec3,
+        end: DVec3,
+        min: DVec3,
+        max: DVec3,
     ) -> Option<(f64, Direction)> {
         let dir = end - start;
 
@@ -1418,8 +1431,8 @@ impl World {
     /// Adapted from Pumpkin project.
     pub fn raytrace<F>(
         &self,
-        start_pos: Vector3<f64>,
-        end_pos: Vector3<f64>,
+        start_pos: DVec3,
+        end_pos: DVec3,
         hit_check: F,
     ) -> (Option<BlockPos>, Option<Direction>)
     where
@@ -1430,8 +1443,8 @@ impl World {
         }
 
         let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(&start_pos, adjust);
-        let from = start_pos.lerp(&end_pos, adjust);
+        let to = end_pos.lerp(start_pos, adjust);
+        let from = start_pos.lerp(end_pos, adjust);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -1450,11 +1463,11 @@ impl World {
             RaytraceAction::Pass => {}
         }
 
-        let difference = to.sub(&from);
+        let difference = to - from;
 
-        let step = difference.sign();
+        let step = difference.signum().as_ivec3();
 
-        let delta = Vector3::new(
+        let delta = DVec3::new(
             if step.x == 0 {
                 f64::MAX
             } else {
@@ -1472,7 +1485,7 @@ impl World {
             },
         );
 
-        let mut next = Vector3::new(
+        let mut next = DVec3::new(
             delta.x
                 * (if step.x > 0 {
                     1.0 - (from.x - from.x.floor())
@@ -1629,7 +1642,22 @@ impl World {
     ///
     /// Sends destruction particles (skipping fire blocks), optionally drops
     /// resources via loot table, then replaces with air.
+    ///
+    /// Defaults to recursion limit of 512
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
+        self.destroy_block_with_limit(pos, drop_items, 512)
+    }
+
+    /// Destroys a block at the given position, optionally dropping its loot.
+    ///
+    /// Sends destruction particles (skipping fire blocks), optionally drops
+    /// resources via loot table, then replaces with air.
+    pub fn destroy_block_with_limit(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        recursion_left: i32,
+    ) -> bool {
         let state = self.get_block_state(pos);
         if state.is_air() {
             return false;
@@ -1643,12 +1671,13 @@ impl World {
 
         if drop_items {
             self.drop_resources(state, pos);
+            // TODO: block entity and entity drops
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        self.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
+        self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
         // TODO: Fire GameEvent.BLOCK_DESTROY
         true
     }
@@ -1659,6 +1688,7 @@ impl World {
     /// `block_breaking::drop_block_loot` which includes tool context for
     /// fortune/silk touch.
     // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
+    // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
@@ -1865,16 +1895,12 @@ impl World {
     /// The item will have a default pickup delay.
     ///
     /// Returns `None` if the item stack is empty.
-    pub fn spawn_item(
-        self: &Arc<Self>,
-        pos: Vector3<f64>,
-        item: ItemStack,
-    ) -> Option<Arc<ItemEntity>> {
+    pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
         // Default ItemEntity velocity: random horizontal scatter + upward pop
         let vx = rand::random::<f64>() * 0.2 - 0.1;
         let vy = 0.2;
         let vz = rand::random::<f64>() * 0.2 - 0.1;
-        self.spawn_item_with_velocity(pos, item, Vector3::new(vx, vy, vz))
+        self.spawn_item_with_velocity(pos, item, DVec3::new(vx, vy, vz))
     }
 
     /// Spawns an item entity at the given position with initial velocity.
@@ -1882,9 +1908,9 @@ impl World {
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item_with_velocity(
         self: &Arc<Self>,
-        pos: Vector3<f64>,
+        pos: DVec3,
         item: ItemStack,
-        velocity: Vector3<f64>,
+        velocity: DVec3,
     ) -> Option<Arc<ItemEntity>> {
         use crate::entity::next_entity_id;
 
@@ -1935,7 +1961,7 @@ impl World {
         let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
         let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
 
-        self.spawn_item(Vector3::new(x, y, z), item)
+        self.spawn_item(DVec3::new(x, y, z), item)
     }
 
     /// Drops an item from a block face with directional velocity.
@@ -2001,9 +2027,9 @@ impl World {
         };
 
         self.spawn_item_with_velocity(
-            Vector3::new(x, y, z),
+            DVec3::new(x, y, z),
             item,
-            Vector3::new(delta_x, delta_y, delta_z),
+            DVec3::new(delta_x, delta_y, delta_z),
         )
     }
 

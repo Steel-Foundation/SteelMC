@@ -1,17 +1,18 @@
 //! Block item behavior implementation.
 
-use steel_registry::REGISTRY;
+use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
 use steel_utils::types::UpdateFlags;
 
-use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
+use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 
 /// Behavior for items that place blocks.
+#[item_behavior(class = "BlockItem")]
 pub struct BlockItemBehavior {
     /// The block this item places.
+    #[json_arg(vanilla_blocks, json = "block")]
     pub block: BlockRef,
 }
 
@@ -25,54 +26,12 @@ impl BlockItemBehavior {
 
 impl ItemBehavior for BlockItemBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let clicked_pos = context.hit_result.block_pos;
-        let clicked_state = context.world.get_block_state(clicked_pos);
-
-        // Get the clicked block to check if it's replaceable
-        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
-        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
-
-        // Determine placement position: replace clicked block if replaceable,
-        // otherwise place adjacent to the clicked face
-        let (place_pos, replace_clicked) = if clicked_replaceable {
-            (clicked_pos, true)
-        } else {
-            (context.hit_result.direction.relative(clicked_pos), false)
-        };
-
-        // Check if placement position is within world bounds
-        if !context.world.is_in_valid_bounds(place_pos) {
+        let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
-        }
-
-        // Check if the placement position already has a non-replaceable block
-        let existing_state = context.world.get_block_state(place_pos);
-        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
-        let existing_replaceable = existing_block.is_some_and(|b| b.config.replaceable);
-
-        if !existing_replaceable {
-            return InteractionResult::Fail;
-        }
-
-        // Get player rotation for placement context
-        let (yaw, pitch) = context.player.rotation.load();
-
-        let place_context = BlockPlaceContext {
-            clicked_pos,
-            clicked_face: context.hit_result.direction,
-            click_location: context.hit_result.location,
-            inside: context.hit_result.inside,
-            relative_pos: place_pos,
-            replace_clicked,
-            horizontal_direction: Direction::from_yaw(yaw),
-            rotation: yaw,
-            pitch,
-            world: context.world,
         };
+        let place_pos = place_context.relative_pos;
 
-        // Get block state for placement from the block behavior
-        let block_behaviors = &*BLOCK_BEHAVIORS;
-        let behavior = block_behaviors.get_behavior(self.block);
+        let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
         let Some(new_state) = behavior.get_state_for_placement(&place_context) else {
             return InteractionResult::Fail;
         };
@@ -83,7 +42,6 @@ impl ItemBehavior for BlockItemBehavior {
             return InteractionResult::Fail;
         }
 
-        // Place the block
         if !context
             .world
             .set_block(place_pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE)
@@ -101,11 +59,41 @@ impl ItemBehavior for BlockItemBehavior {
             Some(context.player.id),
         );
 
-        // Consume one item from the stack
         context.item_stack.shrink(1);
 
-        // TODO: Call behavior.on_place()
-
+        // TODO: Call behavior.on_place() — triggers neighbor updates (redstone, etc.)
         InteractionResult::Success
+    }
+}
+
+/// Behavior for double-high block items (doors, tall flowers, etc.).
+///
+/// Vanilla's `DoubleHighBlockItem` extends `BlockItem` and overrides `placeBlock`
+/// to place the upper half block above the lower half.
+///
+/// The `_block` field is read by the build script via `#[json_arg]` to generate constructor
+/// calls from `classes.json`. The actual value is forwarded into `base`.
+#[item_behavior(class = "DoubleHighBlockItem")]
+pub struct DoubleHighBlockItemBehavior {
+    #[json_arg(vanilla_blocks, json = "block")]
+    _block: BlockRef,
+    base: BlockItemBehavior,
+}
+
+impl DoubleHighBlockItemBehavior {
+    /// Creates a new double-high block item behavior for the given block.
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self {
+            _block: block,
+            base: BlockItemBehavior::new(block),
+        }
+    }
+}
+
+impl ItemBehavior for DoubleHighBlockItemBehavior {
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        // TODO: Implement vanilla's double-high placement (place upper half block above)
+        self.base.use_on(context)
     }
 }

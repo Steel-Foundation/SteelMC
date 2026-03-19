@@ -33,22 +33,20 @@ pub fn pack_indices(indices: &[u32], bits: u8) -> Box<[u64]> {
         bits.is_power_of_two() && bits <= 16,
         "bits must be 1, 2, 4, 8, or 16"
     );
-
     if indices.is_empty() {
         return Box::new([]);
     }
-
     let bits = bits as usize;
     let values_per_u64 = 64 / bits;
     let num_u64s = indices.len().div_ceil(values_per_u64);
     let mut data = vec![0u64; num_u64s];
-
-    for (i, &index) in indices.iter().enumerate() {
-        let array_index = i / values_per_u64;
-        let offset = (i % values_per_u64) * bits;
-        data[array_index] |= u64::from(index) << offset;
+    for (i, chunk) in indices.chunks(values_per_u64).enumerate() {
+        let mut word = 0u64;
+        for (j, &index) in chunk.iter().enumerate() {
+            word |= u64::from(index) << (j * bits);
+        }
+        data[i] = word;
     }
-
     data.into_boxed_slice()
 }
 
@@ -57,34 +55,17 @@ pub fn pack_indices(indices: &[u32], bits: u8) -> Box<[u64]> {
 /// # Arguments
 /// * `data` - The packed bit array
 /// * `bits` - Bits per entry (must be 1, 2, 4, 8, or 16)
-/// * `count` - Number of indices to unpack
 ///
 /// # Panics
 /// Panics if `bits` is not a power of 2 or is greater than 16.
-#[must_use]
-pub fn unpack_indices(data: &[u64], bits: u8, count: usize) -> Vec<u32> {
-    debug_assert!(
-        bits.is_power_of_two() && bits <= 16,
-        "bits must be 1, 2, 4, 8, or 16"
-    );
-
-    if count == 0 {
-        return Vec::new();
-    }
-
+#[inline]
+pub fn unpack_indices(data: &[u64], bits: u8) -> impl Iterator<Item = u32> {
     let bits = bits as usize;
-    let values_per_u64 = 64 / bits;
     let mask = (1u64 << bits) - 1;
-    let mut indices = Vec::with_capacity(count);
-
-    for i in 0..count {
-        let array_index = i / values_per_u64;
-        let offset = (i % values_per_u64) * bits;
-        let value = (data[array_index] >> offset) & mask;
-        indices.push(value as u32);
-    }
-
-    indices
+    let values_per_u64 = 64 / bits;
+    data.iter().flat_map(move |&word| {
+        (0..values_per_u64).map(move |j| ((word >> (j * bits)) & mask) as u32)
+    })
 }
 
 #[cfg(test)]
@@ -112,7 +93,7 @@ mod tests {
             let indices: Vec<u32> = (0..100).map(|i| i % (max_value + 1)).collect();
 
             let packed = pack_indices(&indices, bits);
-            let unpacked = unpack_indices(&packed, bits, indices.len());
+            let unpacked: Vec<u32> = unpack_indices(&packed, bits).take(indices.len()).collect();
 
             assert_eq!(indices, unpacked, "Failed for bits={bits}");
         }
@@ -126,7 +107,7 @@ mod tests {
         let packed = pack_indices(&indices, 4);
         assert_eq!(packed.len(), 4096 / 16); // 16 values per u64 with 4 bits
 
-        let unpacked = unpack_indices(&packed, 4, 4096);
+        let unpacked: Vec<u32> = unpack_indices(&packed, 4).take(4096).collect();
         assert_eq!(indices, unpacked);
     }
 }
