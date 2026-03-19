@@ -108,15 +108,16 @@ pub fn find_generation_point(
 
     // Apply vertical adjustment
     let y_offset = if mtype == MineshaftType::Mesa {
-        let center_x = i32::midpoint(overall.min_x, overall.max_x);
-        let center_z = i32::midpoint(overall.min_z, overall.max_z);
+        // Vanilla's BoundingBox.getCenter(): min + (max - min + 1) / 2
+        let center_x = overall.min_x + (overall.max_x - overall.min_x + 1) / 2;
+        let center_z = overall.min_z + (overall.max_z - overall.min_z + 1) / 2;
         let surface_height = get_surface_height(center_x, center_z);
         let target = if surface_height <= sea_level {
             sea_level
         } else {
             rng.next_i32_between(sea_level, surface_height)
         };
-        let center_y = i32::midpoint(overall.min_y, overall.max_y);
+        let center_y = overall.min_y + (overall.max_y - overall.min_y + 1) / 2;
         target - center_y
     } else {
         // moveBelowSeaLevel(seaLevel=63, minY=-64, random, offset=10)

@@ -187,8 +187,8 @@ pub fn find_generation_point(
     // Rotation: Util.getRandom(Rotation.values(), random) = nextInt(4)
     let rotation = Rotation::get_random(rng);
 
-    // Mirror: nextFloat() < 0.5 → FRONT_BACK, else NONE
-    let mirror_front_back = rng.next_f32() < 0.5;
+    // Mirror: nextFloat() < 0.5 → NONE, else FRONT_BACK
+    let mirror_front_back = rng.next_f32() >= 0.5;
 
     // Compute bounding box via transform with pivot, mirror, and rotation
     // Matches vanilla's template.getBoundingBox(basePosition, rotation, pivot, mirror)

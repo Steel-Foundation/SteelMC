@@ -506,8 +506,35 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     // setLargeFeatureSeed(seed, chunkX, chunkZ)
                     let mut ms_rng = LegacyRandom::from_seed(0);
                     ms_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
-                    let mut get_height =
-                        |x: i32, z: i32| -> i32 { self.get_base_height(x, z, &mut height_cache) };
+                    let mut get_height = |x: i32, z: i32| -> i32 {
+                        // Match vanilla's getBaseHeight which uses iterateNoiseColumn
+                        // (cell-based interpolation + aquifer)
+                        let cw = N::Settings::CELL_WIDTH;
+                        let cell_x = x.div_euclid(cw) * cw;
+                        let cell_z = z.div_euclid(cw) * cw;
+                        let aq_chunk_x = (cell_x >> 4) * 16;
+                        let aq_chunk_z = (cell_z >> 4) * 16;
+                        let aq_cache = N::ColumnCache::default();
+                        let mut fresh_aq = Aquifer::<N>::new(
+                            aq_chunk_x,
+                            aq_chunk_z,
+                            N::Settings::MIN_Y,
+                            N::Settings::HEIGHT,
+                            &self.splitter,
+                            &self.noises,
+                            aq_cache,
+                        );
+                        let mut fresh_cache = N::ColumnCache::default();
+                        fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
+                        iterate_noise_column_with_aquifer::<N>(
+                            &mut fresh_cache,
+                            &self.noises,
+                            &mut fresh_aq,
+                            x,
+                            z,
+                            false,
+                        )
+                    };
                     let result = mineshaft::find_generation_point(
                         &mut ms_rng,
                         chunk_x,
@@ -909,7 +936,31 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             let mut ms_rng = LegacyRandom::from_seed(0);
                             ms_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
                             let mut get_height = |x: i32, z: i32| -> i32 {
-                                self.get_base_height(x, z, &mut height_cache)
+                                let cw = N::Settings::CELL_WIDTH;
+                                let cell_x = x.div_euclid(cw) * cw;
+                                let cell_z = z.div_euclid(cw) * cw;
+                                let aq_chunk_x = (cell_x >> 4) * 16;
+                                let aq_chunk_z = (cell_z >> 4) * 16;
+                                let aq_cache = N::ColumnCache::default();
+                                let mut fresh_aq = Aquifer::<N>::new(
+                                    aq_chunk_x,
+                                    aq_chunk_z,
+                                    N::Settings::MIN_Y,
+                                    N::Settings::HEIGHT,
+                                    &self.splitter,
+                                    &self.noises,
+                                    aq_cache,
+                                );
+                                let mut fresh_cache = N::ColumnCache::default();
+                                fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
+                                iterate_noise_column_with_aquifer::<N>(
+                                    &mut fresh_cache,
+                                    &self.noises,
+                                    &mut fresh_aq,
+                                    x,
+                                    z,
+                                    false,
+                                )
                             };
                             let result = mineshaft::find_generation_point(
                                 &mut ms_rng,
