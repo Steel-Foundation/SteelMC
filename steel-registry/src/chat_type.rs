@@ -28,7 +28,6 @@ pub struct ChatStyle {
     pub obfuscated: Option<bool>,
 }
 
-
 impl ChatType {
     pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
