@@ -30,6 +30,33 @@ pub struct ExitAction {
     pub width: i32,
 }
 
+impl Dialog {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::ToNbtTag;
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        compound.insert(
+            "type",
+            match &self.variant {
+                DialogVariant::DialogList { .. } => "minecraft:dialog_list",
+                DialogVariant::ServerLinks => "minecraft:server_links",
+            },
+        );
+        compound.insert("title", (&self.title).to_nbt_tag());
+        compound.insert("external_title", (&self.external_title).to_nbt_tag());
+        compound.insert("button_width", self.button_width);
+        compound.insert("columns", self.columns);
+        let mut exit_action = NbtCompound::new();
+        exit_action.insert("label", (&self.exit_action.label).to_nbt_tag());
+        exit_action.insert("width", self.exit_action.width);
+        compound.insert("exit_action", NbtTag::Compound(exit_action));
+        if let DialogVariant::DialogList { dialogs } = &self.variant {
+            compound.insert("dialogs", *dialogs);
+        }
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type DialogRef = &'static Dialog;
 
 pub struct DialogRegistry {

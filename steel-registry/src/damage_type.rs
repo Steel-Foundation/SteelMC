@@ -39,6 +39,43 @@ pub enum DeathMessageType {
     IntentionalGameDesign,
 }
 
+impl DamageType {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        compound.insert("message_id", self.message_id);
+        compound.insert(
+            "scaling",
+            match self.scaling {
+                DamageScaling::Always => "always",
+                DamageScaling::WhenCausedByLivingNonPlayer => "when_caused_by_living_non_player",
+                DamageScaling::Never => "never",
+            },
+        );
+        compound.insert("exhaustion", self.exhaustion);
+        compound.insert(
+            "effects",
+            match self.effects {
+                DamageEffects::Hurt => "hurt",
+                DamageEffects::Thorns => "thorns",
+                DamageEffects::Drowning => "drowning",
+                DamageEffects::Burning => "burning",
+                DamageEffects::Poking => "poking",
+                DamageEffects::Freezing => "freezing",
+            },
+        );
+        compound.insert(
+            "death_message_type",
+            match self.death_message_type {
+                DeathMessageType::Default => "default",
+                DeathMessageType::FallVariants => "fall_variants",
+                DeathMessageType::IntentionalGameDesign => "intentional_game_design",
+            },
+        );
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type DamageTypeRef = &'static DamageType;
 
 pub struct DamageTypeRegistry {

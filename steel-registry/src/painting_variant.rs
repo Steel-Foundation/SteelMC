@@ -13,6 +13,31 @@ pub struct PaintingVariant {
     pub author: Option<TextComponent>,
 }
 
+impl PaintingVariant {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::ToNbtTag;
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        let asset_id = self.asset_id.to_string();
+        compound.insert("asset_id", asset_id.as_str());
+        compound.insert("width", self.width);
+        compound.insert("height", self.height);
+        if let Some(title) = &self.title {
+            compound.insert(
+                "title",
+                NbtTag::Compound(title.to_nbt_tag().into_compound().unwrap()),
+            );
+        }
+        if let Some(author) = &self.author {
+            compound.insert(
+                "author",
+                NbtTag::Compound(author.to_nbt_tag().into_compound().unwrap()),
+            );
+        }
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type PaintingVariantRef = &'static PaintingVariant;
 
 pub struct PaintingVariantRegistry {

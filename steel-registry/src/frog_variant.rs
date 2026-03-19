@@ -23,6 +23,36 @@ pub struct BiomeCondition {
     pub biomes: &'static str,
 }
 
+impl FrogVariant {
+    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+        let mut compound = NbtCompound::new();
+        let asset_id = self.asset_id.to_string();
+        compound.insert("asset_id", asset_id.as_str());
+        compound.insert("baby_asset_id", asset_id.as_str());
+        let conditions: Vec<NbtCompound> = self
+            .spawn_conditions
+            .iter()
+            .map(|entry| {
+                let mut e = NbtCompound::new();
+                e.insert("priority", entry.priority);
+                if let Some(cond) = &entry.condition {
+                    let mut c = NbtCompound::new();
+                    c.insert("type", cond.condition_type);
+                    c.insert("biomes", cond.biomes);
+                    e.insert("condition", NbtTag::Compound(c));
+                }
+                e
+            })
+            .collect();
+        compound.insert(
+            "spawn_conditions",
+            NbtTag::List(NbtList::Compound(conditions)),
+        );
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type FrogVariantRef = &'static FrogVariant;
 
 pub struct FrogVariantRegistry {
