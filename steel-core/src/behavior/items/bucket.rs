@@ -1,7 +1,9 @@
-//! Bucket item behavior implementations.
+//! Bucket item behavior implementation.
 //!
 //! Handles water buckets, lava buckets, and empty buckets.
-//! Based on vanilla Minecraft's `BucketItem`.
+//!
+//! Mirrors vanilla's `BucketItem(Fluid fluid)`: `fluid_block = None` = empty bucket,
+//! `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
 //!
 // TODO: Spawn particles
 
@@ -12,6 +14,7 @@ use crate::behavior::{
 use crate::fluid::FluidStateExt;
 use crate::inventory::lock::ContainerId;
 use crate::world::RaytraceAction;
+use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::block_state_ext::FluidReplaceableExt;
@@ -25,6 +28,30 @@ use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
+
+/// Handles all bucket variants (empty, water, lava).
+#[item_behavior(class = "BucketItem")]
+pub struct BucketItemBehavior {
+    #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
+    fluid_block: Option<BlockRef>,
+}
+
+impl BucketItemBehavior {
+    /// Creates a new bucket behavior. `None` = empty bucket, `Some(block)` = filled.
+    #[must_use]
+    pub const fn new(fluid_block: Option<BlockRef>) -> Self {
+        Self { fluid_block }
+    }
+}
+
+impl ItemBehavior for BucketItemBehavior {
+    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
+        match self.fluid_block {
+            None => use_empty_bucket(context),
+            Some(fluid_block) => use_filled_bucket(fluid_block, context),
+        }
+    }
+}
 
 /// Consumes one bucket from the player's hand, replacing it with `result_item`.
 ///
@@ -58,279 +85,237 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
     }
 }
 
-/// Behavior for filled bucket items (water bucket, lava bucket)
-///
-/// Places fluid and gives back empty bucket.
-pub struct FilledBucketBehavior {
-    fluid_block: BlockRef,
-    empty_bucket: ItemRef,
-}
+fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
+    let (start, end) = context.player.get_ray_endpoints();
 
-impl FilledBucketBehavior {
-    /// Creates a new filled bucket behavior.
-    #[must_use]
-    pub const fn new(fluid_block: BlockRef, empty_bucket: ItemRef) -> Self {
-        Self {
-            fluid_block,
-            empty_bucket,
+    // Raytrace: stop on source fluids
+    let (hit_block, _) = context.world.raytrace(start, end, |pos, world| {
+        let state = world.get_block_state(pos);
+        let block = state.get_block();
+
+        if block == vanilla_blocks::AIR {
+            return RaytraceAction::Pass;
         }
+
+        let fluid_state = state.get_fluid_state();
+        if fluid_state.is_source() {
+            return RaytraceAction::ImmediateHit;
+        }
+        // Vanilla parity: ClipContext.Fluid.SOURCE_ONLY — flowing fluid is transparent.
+        if !fluid_state.is_empty() {
+            return RaytraceAction::Pass;
+        }
+
+        RaytraceAction::CheckShape
+    });
+
+    // Vanilla returns PASS when raytrace misses (allows other handlers to try)
+    let Some(hit_pos) = hit_block else {
+        return InteractionResult::Pass;
+    };
+
+    let hit_state = context.world.get_block_state(hit_pos);
+    let block_behavior = BLOCK_BEHAVIORS.get_behavior(hit_state.get_block());
+
+    if let Some(result) =
+        block_behavior.pickup_block(context.world, hit_pos, hit_state, Some(context.player))
+    {
+        // Apply sound
+        if let Some(sound) = result.sound {
+            context
+                .world
+                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+        }
+
+        // Give filled bucket
+        consume_bucket(context, result.filled_bucket);
+
+        return InteractionResult::Success;
     }
-}
 
-impl ItemBehavior for FilledBucketBehavior {
-    // The closure + primary/secondary placement logic reads long but splitting it
-    // would obscure the vanilla flow. Readability justifies the extra lines.
-    #[allow(clippy::too_many_lines)]
-    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // Raytrace to find target block
-        let (start, end) = context.player.get_ray_endpoints();
-        let (ray_block, ray_dir) = context.world.raytrace(start, end, |pos, world| {
-            let state = world.get_block_state(pos);
-            let block = state.get_block();
-            // Pass through air and all fluids
-            if block == vanilla_blocks::AIR {
-                return RaytraceAction::Pass;
-            }
-            // Check fluid state for pass-through
-            let fluid_state = state.get_fluid_state();
-            if !fluid_state.is_empty() {
-                return RaytraceAction::Pass;
-            }
-            RaytraceAction::CheckShape
-        });
+    // TODO: Remove fallback once all waterloggable blocks implement pickup_block
+    if hit_state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
+        let new_state = hit_state.set_value(&BlockStateProperties::WATERLOGGED, false);
+        context
+            .world
+            .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL);
 
-        // Vanilla returns PASS when raytrace misses (allows other handlers to try)
-        let (Some(clicked_pos), Some(direction)) = (ray_block, ray_dir) else {
-            return InteractionResult::Pass;
-        };
-
-        // If the block is out of bounds, return fail
-        if !context.world.is_in_valid_bounds(clicked_pos) {
-            return InteractionResult::Fail;
+        // Vanilla parity: destroy blocks that can't survive without water.
+        if !block_behavior.can_survive(new_state, context.world, hit_pos) {
+            context.player.world.destroy_block(hit_pos, true);
         }
 
-        let clicked_state = context.world.get_block_state(clicked_pos);
-        let is_sneaking = context.player.is_crouching();
+        context
+            .world
+            .play_block_sound(sound_events::ITEM_BUCKET_FILL, hit_pos, 1.0, 1.0, None);
 
-        // Define fluid placement logic as a closure to reuse for primary/secondary targets.
-        // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:
-        // recursive emptyContents passes hitResult=null for fallback, bypassing sneak check).
-        let mut try_place_fluid = |pos: BlockPos, check_sneak: bool| -> Option<InteractionResult> {
-            if !context.world.is_in_valid_bounds(pos) {
-                return None;
-            }
+        consume_bucket(context, &vanilla_items::ITEMS.water_bucket);
 
-            let state = context.world.get_block_state(pos);
-            let fluid_state = state.get_fluid_state();
+        return InteractionResult::Success;
+    }
 
-            // TODO: Nether water evaporation (vanilla uses EnvironmentAttributes.WATER_EVAPORATES)
-            // If the dimension evaporates water and we are placing WATER, play FIRE_EXTINGUISH
-            // sound, spawn LARGE_SMOKE particles, and consume the bucket without placing.
+    // Nothing was picked up — no fluid source block and no waterlogged block found.
+    // Vanilla returns FAIL here so the client knows no item change occurred.
+    InteractionResult::Fail
+}
 
-            // Vanilla parity (bl4): when sneaking, only air allows placement at this position.
-            // Non-air blocks redirect to the neighbor — handled by the secondary call.
-            // The secondary call bypasses this check (hitResult == null in vanilla).
-            if check_sneak && is_sneaking && !state.get_block().config.is_air {
-                return None;
-            }
+// TODO: Refactor into smaller helpers once all bucket types are implemented
+#[allow(clippy::too_many_lines)] // Single method to match vanilla's emptyContents flow; will be refactored
+fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> InteractionResult {
+    // Raytrace to find target block
+    let (start, end) = context.player.get_ray_endpoints();
+    let (ray_block, ray_dir) = context.world.raytrace(start, end, |pos, world| {
+        let state = world.get_block_state(pos);
+        let block = state.get_block();
+        // Pass through air and all fluids
+        if block == vanilla_blocks::AIR {
+            return RaytraceAction::Pass;
+        }
+        // Check fluid state for pass-through
+        let fluid_state = state.get_fluid_state();
+        if !fluid_state.is_empty() {
+            return RaytraceAction::Pass;
+        }
+        RaytraceAction::CheckShape
+    });
 
-            // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
-            let is_water_bucket = self.fluid_block == vanilla_blocks::WATER;
+    // Vanilla returns PASS when raytrace misses (allows other handlers to try)
+    let (Some(clicked_pos), Some(direction)) = (ray_block, ray_dir) else {
+        return InteractionResult::Pass;
+    };
 
-            if is_water_bucket {
-                let source_water = FluidState::source(&vanilla_fluids::WATER);
-                let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-                if behavior.can_place_liquid(state, source_water.fluid_id) {
-                    behavior.place_liquid(context.world, pos, state, source_water);
-                    context.world.play_block_sound(
-                        sound_events::ITEM_BUCKET_EMPTY,
-                        pos,
-                        1.0,
-                        1.0,
-                        None,
-                    );
-                    consume_bucket(context, self.empty_bucket);
-                    return Some(InteractionResult::Success);
-                }
-            }
+    // If the block is out of bounds, return fail
+    if !context.world.is_in_valid_bounds(clicked_pos) {
+        return InteractionResult::Fail;
+    }
 
-            // 2. Try Standard Placement (Replaceable block)
-            if state.can_be_replaced_by_fluid(self.fluid_block) {
-                // If same fluid already exists and is source, just consume bucket (parity)
-                let is_same_fluid = if is_water_bucket {
-                    fluid_state.is_water()
-                } else {
-                    fluid_state.is_lava()
-                };
+    let clicked_state = context.world.get_block_state(clicked_pos);
+    let is_sneaking = context.player.is_crouching();
 
-                if is_same_fluid && fluid_state.is_source() {
-                    consume_bucket(context, self.empty_bucket);
-                    return Some(InteractionResult::Success);
-                }
+    // Define fluid placement logic as a closure to reuse for primary/secondary targets.
+    // `check_sneak`: true for primary attempt, false for secondary (vanilla parity:
+    // recursive emptyContents passes hitResult=null for fallback, bypassing sneak check).
+    let mut try_place_fluid = |pos: BlockPos, check_sneak: bool| -> Option<InteractionResult> {
+        if !context.world.is_in_valid_bounds(pos) {
+            return None;
+        }
 
-                // Vanilla parity: destroy non-liquid replaceable blocks first so they
-                // drop their items (e.g. tall grass, flowers, snow layers).
-                if !state.get_block().config.liquid && !state.get_block().config.is_air {
-                    context.player.world.destroy_block(pos, true);
-                }
+        let state = context.world.get_block_state(pos);
+        let fluid_state = state.get_fluid_state();
 
-                // Place fluid block
-                let fluid_state_to_place = self.fluid_block.default_state();
-                if context.world.set_block(
+        // TODO: Nether water evaporation (vanilla uses EnvironmentAttributes.WATER_EVAPORATES)
+        // If the dimension evaporates water and we are placing WATER, play FIRE_EXTINGUISH
+        // sound, spawn LARGE_SMOKE particles, and consume the bucket without placing.
+
+        // Vanilla parity (bl4): when sneaking, only air allows placement at this position.
+        // Non-air blocks redirect to the neighbor — handled by the secondary call.
+        // The secondary call bypasses this check (hitResult == null in vanilla).
+        if check_sneak && is_sneaking && !state.get_block().config.is_air {
+            return None;
+        }
+
+        // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
+        let is_water_bucket = fluid_block == vanilla_blocks::WATER;
+
+        if is_water_bucket {
+            let source_water = FluidState::source(&vanilla_fluids::WATER);
+            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            if behavior.can_place_liquid(state, source_water.fluid_id) {
+                behavior.place_liquid(context.world, pos, state, source_water);
+                context.world.play_block_sound(
+                    sound_events::ITEM_BUCKET_EMPTY,
                     pos,
-                    fluid_state_to_place,
-                    UpdateFlags::UPDATE_ALL_IMMEDIATE,
-                ) {
-                    let fluid_ref = if is_water_bucket {
-                        &vanilla_fluids::WATER
-                    } else {
-                        &vanilla_fluids::LAVA
-                    };
-                    let tick_delay = FLUID_BEHAVIORS
-                        .get_behavior(fluid_ref)
-                        .tick_delay(context.world);
-                    context
-                        .world
-                        .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
-
-                    let sound_id = if is_water_bucket {
-                        sound_events::ITEM_BUCKET_EMPTY
-                    } else {
-                        sound_events::ITEM_BUCKET_EMPTY_LAVA
-                    };
-                    context
-                        .world
-                        .play_block_sound(sound_id, pos, 1.0, 1.0, None);
-
-                    consume_bucket(context, self.empty_bucket);
-                    return Some(InteractionResult::Success);
-                }
+                    1.0,
+                    1.0,
+                    None,
+                );
+                consume_bucket(context, &vanilla_items::ITEMS.bucket);
+                return Some(InteractionResult::Success);
             }
-            None
-        };
-
-        // Determine Primary Target
-        // If clicked block is waterloggable and we have water, try clicked_pos first.
-        // Otherwise default to relative pos.
-        let is_water_bucket = self.fluid_block == vanilla_blocks::WATER;
-        let clicked_is_waterloggable = clicked_state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some();
-
-        let primary_pos = if is_water_bucket && clicked_is_waterloggable {
-            clicked_pos
-        } else {
-            direction.relative(clicked_pos)
-        };
-
-        // Attempt Primary (with sneak check)
-        if let Some(result) = try_place_fluid(primary_pos, true) {
-            return result;
         }
 
-        // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null).
-        // Vanilla's emptyContents always recurses with hitResult=null at the offset position
-        // when the primary attempt fails, regardless of bucket type.
-        let secondary_pos = direction.relative(clicked_pos);
-        if let Some(result) = try_place_fluid(secondary_pos, false) {
-            return result;
-        }
+        // 2. Try Standard Placement (Replaceable block)
+        if state.can_be_replaced_by_fluid(fluid_block) {
+            // If same fluid already exists and is source, just consume bucket (parity)
+            let is_same_fluid = if is_water_bucket {
+                fluid_state.is_water()
+            } else {
+                fluid_state.is_lava()
+            };
 
-        InteractionResult::Fail
-    }
-}
-
-/// Behavior for empty bucket items.
-///
-/// Picks up fluid from source blocks and gives filled bucket.
-pub struct EmptyBucketBehavior;
-
-impl Default for EmptyBucketBehavior {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl EmptyBucketBehavior {
-    /// Creates a new empty bucket behavior.
-    #[must_use]
-    pub const fn new() -> Self {
-        Self
-    }
-}
-
-impl ItemBehavior for EmptyBucketBehavior {
-    fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        let (start, end) = context.player.get_ray_endpoints();
-
-        // Raytrace: stop on source fluids
-        let (hit_block, _) = context.world.raytrace(start, end, |pos, world| {
-            let state = world.get_block_state(pos);
-            let block = state.get_block();
-
-            if block == vanilla_blocks::AIR {
-                return RaytraceAction::Pass;
+            if is_same_fluid && fluid_state.is_source() {
+                consume_bucket(context, &vanilla_items::ITEMS.bucket);
+                return Some(InteractionResult::Success);
             }
 
-            let fluid_state = state.get_fluid_state();
-            if fluid_state.is_source() {
-                return RaytraceAction::ImmediateHit;
-            }
-            // Vanilla parity: ClipContext.Fluid.SOURCE_ONLY — flowing fluid is transparent.
-            if !fluid_state.is_empty() {
-                return RaytraceAction::Pass;
+            // Vanilla parity: destroy non-liquid replaceable blocks first so they
+            // drop their items (e.g. tall grass, flowers, snow layers).
+            if !state.get_block().config.liquid && !state.get_block().config.is_air {
+                context.player.world.destroy_block(pos, true);
             }
 
-            RaytraceAction::CheckShape
-        });
-
-        // Vanilla returns PASS when raytrace misses (allows other handlers to try)
-        let Some(hit_pos) = hit_block else {
-            return InteractionResult::Pass;
-        };
-
-        let hit_state = context.world.get_block_state(hit_pos);
-        let block_behavior = BLOCK_BEHAVIORS.get_behavior(hit_state.get_block());
-
-        if let Some(result) =
-            block_behavior.pickup_block(context.world, hit_pos, hit_state, Some(context.player))
-        {
-            // Apply sound
-            if let Some(sound) = result.sound {
+            // Place fluid block
+            let fluid_state_to_place = fluid_block.default_state();
+            if context
+                .world
+                .set_block(pos, fluid_state_to_place, UpdateFlags::UPDATE_ALL_IMMEDIATE)
+            {
+                let fluid_ref = if is_water_bucket {
+                    &vanilla_fluids::WATER
+                } else {
+                    &vanilla_fluids::LAVA
+                };
+                let tick_delay = FLUID_BEHAVIORS
+                    .get_behavior(fluid_ref)
+                    .tick_delay(context.world);
                 context
                     .world
-                    .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+                    .schedule_fluid_tick_default(pos, fluid_ref, tick_delay);
+
+                let sound_id = if is_water_bucket {
+                    sound_events::ITEM_BUCKET_EMPTY
+                } else {
+                    sound_events::ITEM_BUCKET_EMPTY_LAVA
+                };
+                context
+                    .world
+                    .play_block_sound(sound_id, pos, 1.0, 1.0, None);
+
+                consume_bucket(context, &vanilla_items::ITEMS.bucket);
+                return Some(InteractionResult::Success);
             }
-
-            // Give filled bucket
-            consume_bucket(context, result.filled_bucket);
-
-            return InteractionResult::Success;
         }
+        None
+    };
 
-        // Fallback for waterloggable blocks until they properly implement pickup_block
-        if hit_state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
-            let new_state = hit_state.set_value(&BlockStateProperties::WATERLOGGED, false);
-            context
-                .world
-                .set_block(hit_pos, new_state, UpdateFlags::UPDATE_ALL);
+    // Vanilla parity (BucketItem.java line 75): position selection mirrors
+    // `instanceof LiquidBlockContainer && content == Fluids.WATER ? pos : directionOffsetPos`.
+    // WATERLOGGED property existence approximates the LiquidBlockContainer type check.
+    // If primary fails, secondary retries at the offset pos without sneak check,
+    // matching vanilla's recursive `emptyContents(hitResult=null)` fallback.
+    let is_water_bucket = fluid_block == vanilla_blocks::WATER;
+    let clicked_is_waterloggable = clicked_state
+        .try_get_value(&BlockStateProperties::WATERLOGGED)
+        .is_some();
 
-            // Vanilla parity: destroy blocks that can't survive without water.
-            if !block_behavior.can_survive(new_state, context.world, hit_pos) {
-                context.player.world.destroy_block(hit_pos, true);
-            }
+    let primary_pos = if is_water_bucket && clicked_is_waterloggable {
+        clicked_pos
+    } else {
+        direction.relative(clicked_pos)
+    };
 
-            context
-                .world
-                .play_block_sound(sound_events::ITEM_BUCKET_FILL, hit_pos, 1.0, 1.0, None);
-
-            consume_bucket(context, &vanilla_items::ITEMS.water_bucket);
-
-            return InteractionResult::Success;
-        }
-
-        // Nothing was picked up — no fluid source block and no waterlogged block found.
-        // Vanilla returns FAIL here so the client knows no item change occurred.
-        InteractionResult::Fail
+    // Attempt Primary (with sneak check)
+    if let Some(result) = try_place_fluid(primary_pos, true) {
+        return result;
     }
+
+    // Attempt Secondary (Fallback — no sneak check, matching vanilla hitResult=null).
+    // Vanilla's emptyContents always recurses with hitResult=null at the offset position
+    // when the primary attempt fails, regardless of bucket type.
+    let secondary_pos = direction.relative(clicked_pos);
+    if let Some(result) = try_place_fluid(secondary_pos, false) {
+        return result;
+    }
+
+    InteractionResult::Fail
 }

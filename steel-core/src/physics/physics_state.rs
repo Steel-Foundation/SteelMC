@@ -1,8 +1,8 @@
 //! Entity physics state representation.
 
+use glam::DVec3;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_types::{EntityDimensions, EntityTypeRef};
-use steel_utils::math::Vector3;
 
 /// Physics state for an entity, tracking position, velocity, and movement properties.
 ///
@@ -11,10 +11,10 @@ use steel_utils::math::Vector3;
 #[derive(Debug, Clone)]
 pub struct EntityPhysicsState {
     /// Current position (center of bounding box at feet level).
-    pub position: Vector3<f64>,
+    pub position: DVec3,
 
     /// Current velocity (delta movement per tick).
-    pub velocity: Vector3<f64>,
+    pub velocity: DVec3,
 
     /// Entity's axis-aligned bounding box in world coordinates.
     pub bounding_box: AABBd,
@@ -53,14 +53,14 @@ const DEFAULT_MAX_UP_STEP: f32 = 0.6;
 impl EntityPhysicsState {
     /// Creates a new physics state for an entity at the given position.
     #[must_use]
-    pub fn new(position: Vector3<f64>, entity_type: EntityTypeRef) -> Self {
+    pub fn new(position: DVec3, entity_type: EntityTypeRef) -> Self {
         Self::with_dimensions(position, entity_type.dimensions, DEFAULT_MAX_UP_STEP)
     }
 
     /// Creates a new physics state with custom dimensions.
     #[must_use]
     pub fn with_dimensions(
-        position: Vector3<f64>,
+        position: DVec3,
         dimensions: EntityDimensions,
         max_up_step: f32,
     ) -> Self {
@@ -68,7 +68,7 @@ impl EntityPhysicsState {
 
         Self {
             position,
-            velocity: Vector3::new(0.0, 0.0, 0.0),
+            velocity: DVec3::new(0.0, 0.0, 0.0),
             bounding_box,
             dimensions,
             max_up_step,
@@ -85,7 +85,7 @@ impl EntityPhysicsState {
     /// Creates a bounding box from position and dimensions.
     /// Box is centered on X/Z with Y at entity feet (vanilla behavior).
     #[must_use]
-    fn make_bounding_box(position: Vector3<f64>, dimensions: &EntityDimensions) -> AABBd {
+    fn make_bounding_box(position: DVec3, dimensions: &EntityDimensions) -> AABBd {
         let half_width = f64::from(dimensions.width) / 2.0;
         let height = f64::from(dimensions.height);
 
@@ -105,7 +105,7 @@ impl EntityPhysicsState {
     }
 
     /// Sets the position and updates the bounding box accordingly.
-    pub fn set_position(&mut self, position: Vector3<f64>) {
+    pub fn set_position(&mut self, position: DVec3) {
         self.position = position;
         self.update_bounding_box();
     }
@@ -125,8 +125,8 @@ impl EntityPhysicsState {
 
     /// Returns the eye position in world coordinates.
     #[must_use]
-    pub fn eye_position(&self) -> Vector3<f64> {
-        Vector3::new(
+    pub fn eye_position(&self) -> DVec3 {
+        DVec3::new(
             self.position.x,
             self.position.y + f64::from(self.dimensions.eye_height),
             self.position.z,

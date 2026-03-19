@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.0+mc1.21.11"
+version = "0.3.1+mc1.21.11"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -67,6 +67,7 @@ scc = "3.5"
 arc-swap = "1.8.1"
 
 # Data structures
+glam = "0.32.1"
 rustc-hash = "2.1.1"
 small-map = "0.1.5"
 smallvec = "1.15.1"

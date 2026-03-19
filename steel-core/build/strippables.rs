@@ -1,7 +1,8 @@
 use std::{collections::BTreeMap, fs};
 
-use crate::items::to_block_const;
 use quote::quote;
+
+use crate::to_block_ident;
 
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/strippables.json");
@@ -13,7 +14,7 @@ pub fn build() -> String {
 
     let strippables: Vec<proc_macro2::TokenStream> = strippables_entries
         .iter()
-        .map(|(normal, stripped)| (to_block_const(normal), to_block_const(stripped)))
+        .map(|(normal, stripped)| (to_block_ident(normal), to_block_ident(stripped)))
         .map(|(from, to)| quote! { b if ptr::eq(b, vanilla_blocks::#from) => Some(vanilla_blocks::#to) , })
         .collect();
 

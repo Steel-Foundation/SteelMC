@@ -1,7 +1,8 @@
 //! Handler for the "teleport" command.
 use std::sync::Arc;
 
-use steel_utils::{BlockPos, math::Vector3, translations};
+use glam::DVec3;
+use steel_utils::{BlockPos, translations};
 use text_components::TextComponent;
 
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
     player::Player,
 };
 
-type MultipleRotationArgs = ((((), Vec<Arc<Player>>), Vector3<f64>), (f32, f32));
+type MultipleRotationArgs = ((((), Vec<Arc<Player>>), DVec3), (f32, f32));
 type MultipleEntityArgs = (((), Vec<Arc<Player>>), Vec<Arc<Player>>);
 
 /// Handler for the "teleport" command.
@@ -31,7 +32,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
             .then(
                 argument("position", Vector3Argument)
                     .executes(
-                        |(((), targets), pos): (((), Vec<Arc<Player>>), Vector3<f64>),
+                        |(((), targets), pos): (((), Vec<Arc<Player>>), DVec3),
                          context: &mut CommandContext| {
                             let player = context
                                 .sender
@@ -89,7 +90,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
 
 fn teleport_to_pos(
     targets: &[Arc<Player>],
-    pos: Vector3<f64>,
+    pos: DVec3,
     rotation: (f32, f32),
     ctx: &mut CommandContext,
 ) {

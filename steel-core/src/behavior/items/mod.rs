@@ -14,8 +14,8 @@ mod sign_item;
 mod standing_and_wall_block_item;
 
 pub use axe::AxeBehavior;
-pub use block_item::BlockItemBehavior;
-pub use bucket::{EmptyBucketBehavior, FilledBucketBehavior};
+pub use block_item::{BlockItemBehavior, DoubleHighBlockItemBehavior};
+pub use bucket::BucketItemBehavior;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeBehavior;
 pub use honeycomb::HoneycombBehavior;
