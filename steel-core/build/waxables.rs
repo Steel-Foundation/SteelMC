@@ -1,7 +1,7 @@
 use quote::quote;
 use std::{collections::BTreeMap, fs};
 
-use crate::to_block_ident;
+use crate::common::to_const_ident;
 
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/waxables.json");
@@ -12,25 +12,24 @@ pub fn build() -> String {
         serde_json::from_str(&waxables_json).expect("Failed to parse waxables.json");
 
     let waxables: Vec<proc_macro2::TokenStream> = waxables_raw
-            .iter()
-            .map(|(normal, stripped)| (to_block_ident(normal), to_block_ident(stripped)))
-            .map(|(from, to)| quote! { b if ptr::eq(b, vanilla_blocks::#from) => Some(vanilla_blocks::#to) , })
-            .collect();
+        .iter()
+        .map(|(normal, waxed)| (to_const_ident(normal), to_const_ident(waxed)))
+        .map(|(from, to)| quote! { b if b == vanilla_blocks::#from => Some(vanilla_blocks::#to) , })
+        .collect();
 
     let waxables_reverse: Vec<proc_macro2::TokenStream> = waxables_raw
-            .iter()
-            .map(|(normal, stripped)| (to_block_ident(normal), to_block_ident(stripped)))
-            .map(|(from, to)| quote! { b if ptr::eq(b, vanilla_blocks::#to) => Some(vanilla_blocks::#from) , })
-            .collect();
+        .iter()
+        .map(|(normal, waxed)| (to_const_ident(normal), to_const_ident(waxed)))
+        .map(|(from, to)| quote! { b if b == vanilla_blocks::#to => Some(vanilla_blocks::#from) , })
+        .collect();
 
     let output = quote! {
-        //! Generated Mapping of Blocks made of Copper and their Waxed Variants
+        //! Generated mapping of copper blocks to their waxed variants.
 
-        use std::ptr;
         use steel_registry::vanilla_blocks;
         use steel_registry::blocks::BlockRef;
 
-        /// Returns the `BlockRef` to the waxed Variant of Blocks made of Copper
+        /// Returns the waxed variant of a copper block, or `None` if not waxable.
         #[must_use]
         #[inline]
         pub fn get_waxed_from_normal_variant(block: BlockRef) -> Option<BlockRef> {
@@ -40,7 +39,7 @@ pub fn build() -> String {
             }
         }
 
-        /// Returns the `BlockRef` unwaxed Variant of waxed Blocks made of Copper
+        /// Returns the unwaxed variant of a waxed copper block, or `None` if not a waxed block.
         #[must_use]
         #[inline]
         pub fn get_normal_from_waxed_variant(block: BlockRef) -> Option<BlockRef> {

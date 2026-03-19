@@ -1,12 +1,9 @@
 #![allow(missing_docs)]
 #![allow(clippy::disallowed_types)] // Build scripts don't have access to FxHashMap
 
-use heck::ToShoutySnakeCase;
-use proc_macro2::Span;
 use serde::Deserialize;
 use std::env;
 use std::fs;
-use syn::Ident;
 
 mod blocks;
 mod common;
@@ -46,17 +43,4 @@ pub fn main() {
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/items");
-}
-
-/// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
-#[expect(unused)]
-#[must_use]
-fn to_item_ident(name: &str) -> Ident {
-    Ident::new(name, Span::call_site())
-}
-
-/// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)
-#[must_use]
-pub fn to_block_ident(name: &str) -> Ident {
-    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
