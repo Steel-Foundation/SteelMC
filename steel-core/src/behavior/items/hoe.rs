@@ -15,14 +15,14 @@ pub struct HoeItem;
 impl HoeItem {
     fn get_tilled_variant(block: BlockRef) -> Option<BlockRef> {
         match block {
-            b if b == vanilla_blocks::GRASS_BLOCK
-                || b == vanilla_blocks::DIRT_PATH
-                || b == vanilla_blocks::DIRT =>
+            _ if block == vanilla_blocks::GRASS_BLOCK
+                || block == vanilla_blocks::DIRT_PATH
+                || block == vanilla_blocks::DIRT =>
             {
                 Some(vanilla_blocks::FARMLAND)
             }
-            b if b == vanilla_blocks::COARSE_DIRT => Some(vanilla_blocks::DIRT),
-            b if b == vanilla_blocks::ROOTED_DIRT => Some(vanilla_blocks::DIRT),
+            _ if block == vanilla_blocks::COARSE_DIRT => Some(vanilla_blocks::DIRT),
+            _ if block == vanilla_blocks::ROOTED_DIRT => Some(vanilla_blocks::DIRT),
             _ => None,
         }
     }
@@ -45,6 +45,13 @@ impl ItemBehavior for HoeItem {
             return InteractionResult::Pass;
         }
 
+        context.world.set_block(
+            context.hit_result.block_pos,
+            tilled_variant.default_state(),
+            UpdateFlags::UPDATE_ALL_IMMEDIATE,
+        );
+        // TODO: Emit GameEvent::BLOCK_CHANGE
+
         if state.get_block() == vanilla_blocks::ROOTED_DIRT {
             context.world.pop_resource_from_face(
                 context.hit_result.block_pos,
@@ -52,12 +59,6 @@ impl ItemBehavior for HoeItem {
                 ItemStack::new(&vanilla_items::ITEMS.hanging_roots),
             );
         }
-
-        context.world.set_block(
-            context.hit_result.block_pos,
-            tilled_variant.default_state(),
-            UpdateFlags::UPDATE_ALL_IMMEDIATE,
-        );
 
         context.world.play_block_sound(
             sound_events::ITEM_HOE_TILL,
@@ -68,7 +69,7 @@ impl ItemBehavior for HoeItem {
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
-        context.item().hurt_and_break(1, has_infinite_materials);
+        context.inv.item().hurt_and_break(1, has_infinite_materials);
 
         InteractionResult::Success
     }
