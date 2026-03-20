@@ -110,11 +110,15 @@ fn vanilla_shuffle<T>(list: &mut [T], rng: &mut LegacyRandom) {
 }
 
 /// Gets the template location from a pool element.
-const fn element_location(element: &PoolElement) -> Option<&Identifier> {
+///
+/// For `List` elements, delegates to the first sub-element matching vanilla's
+/// `ListPoolElement` which uses `elements.get(0)` for jigsaws and BB.
+fn element_location(element: &PoolElement) -> Option<&Identifier> {
     match element {
         PoolElement::Single { location, .. } | PoolElement::LegacySingle { location, .. } => {
             Some(location)
         }
+        PoolElement::List { elements, .. } => elements.first().and_then(element_location),
         _ => None,
     }
 }
@@ -242,6 +246,8 @@ fn can_attach(source: &TransformedJigsaw, target: &TransformedJigsaw) -> bool {
 ///
 /// Feature elements return a 1×1×1 BB at the given position, matching
 /// vanilla's `FeaturePoolElement.getBoundingBox`.
+/// List elements return the encapsulating BB of all sub-elements, matching
+/// vanilla's `ListPoolElement.getBoundingBox`.
 fn element_bounding_box(
     element: &PoolElement,
     templates: &FxHashMap<Identifier, TemplateData>,
@@ -250,19 +256,44 @@ fn element_bounding_box(
     pos_z: i32,
     rotation: Rotation,
 ) -> Option<BoundingBox> {
-    if let PoolElement::Feature { .. } = element {
-        Some(BoundingBox::new(pos_x, pos_y, pos_z, pos_x, pos_y, pos_z))
-    } else {
-        let location = element_location(element)?;
-        let template = templates.get(location)?;
-        Some(rotation.get_bounding_box(
-            pos_x,
-            pos_y,
-            pos_z,
-            template.size[0],
-            template.size[1],
-            template.size[2],
-        ))
+    match element {
+        PoolElement::Feature { .. } => {
+            Some(BoundingBox::new(pos_x, pos_y, pos_z, pos_x, pos_y, pos_z))
+        }
+        PoolElement::List { elements, .. } => {
+            // Vanilla: encapsulating BB of all non-empty sub-elements
+            let mut result: Option<BoundingBox> = None;
+            for sub in elements {
+                if let Some(sub_bb) =
+                    element_bounding_box(sub, templates, pos_x, pos_y, pos_z, rotation)
+                {
+                    result = Some(match result {
+                        Some(prev) => BoundingBox::new(
+                            prev.min_x.min(sub_bb.min_x),
+                            prev.min_y.min(sub_bb.min_y),
+                            prev.min_z.min(sub_bb.min_z),
+                            prev.max_x.max(sub_bb.max_x),
+                            prev.max_y.max(sub_bb.max_y),
+                            prev.max_z.max(sub_bb.max_z),
+                        ),
+                        None => sub_bb,
+                    });
+                }
+            }
+            result
+        }
+        _ => {
+            let location = element_location(element)?;
+            let template = templates.get(location)?;
+            Some(rotation.get_bounding_box(
+                pos_x,
+                pos_y,
+                pos_z,
+                template.size[0],
+                template.size[1],
+                template.size[2],
+            ))
+        }
     }
 }
 

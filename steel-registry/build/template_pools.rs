@@ -168,6 +168,16 @@ fn extract_template(path: &str) -> Option<ExtractedTemplate> {
         });
     }
 
+    // Sort jigsaws by (Y, X, Z) to match vanilla's `buildInfoList` order.
+    // Vanilla re-sorts template blocks on load: full blocks, then non-full,
+    // then block entities (jigsaws) — each group sorted by Y→X→Z.
+    jigsaws.sort_by(|a, b| {
+        a.pos[1]
+            .cmp(&b.pos[1])
+            .then(a.pos[0].cmp(&b.pos[0]))
+            .then(a.pos[2].cmp(&b.pos[2]))
+    });
+
     Some(ExtractedTemplate { size, jigsaws })
 }
 
