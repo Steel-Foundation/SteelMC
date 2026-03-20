@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -12,10 +14,9 @@ pub struct JukeboxSong {
     pub comparator_output: i32,
 }
 
-impl JukeboxSong {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::ToNbtTag;
-        use simdnbt::owned::{NbtCompound, NbtTag};
+impl ToNbtTag for JukeboxSong {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         let sound_event = self.sound_event.to_string();
         compound.insert("sound_event", sound_event.as_str());

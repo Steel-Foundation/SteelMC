@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents an armor trim material definition from the data packs.
@@ -17,9 +19,9 @@ pub struct StyledTextComponent {
     pub color: Option<String>,
 }
 
-impl TrimMaterial {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtTag};
+impl ToNbtTag for TrimMaterial {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         compound.insert("asset_name", self.asset_name.as_str());
         let mut desc = NbtCompound::new();

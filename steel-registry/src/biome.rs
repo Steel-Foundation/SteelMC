@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 #[derive(Debug)]
@@ -100,9 +102,9 @@ pub struct ParticleOptions {
     pub particle_type: Identifier,
 }
 
-impl Biome {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+impl ToNbtTag for Biome {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtList};
         let mut compound = NbtCompound::new();
         compound.insert("has_precipitation", self.has_precipitation);
         compound.insert("temperature", self.temperature);

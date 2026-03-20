@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -11,10 +13,9 @@ pub struct TrimPattern {
     pub decal: bool,
 }
 
-impl TrimPattern {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::ToNbtTag;
-        use simdnbt::owned::{NbtCompound, NbtTag};
+impl ToNbtTag for TrimPattern {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         let asset_id = self.asset_id.to_string();
         compound.insert("asset_id", asset_id.as_str());
