@@ -103,14 +103,14 @@ pub fn use_item_on(
         let mut context =
             UseOnContext::new(player, hand, hit_result.clone(), world, &mut guard, inv_id);
 
-        let original_count = context.item().count;
-        let item_ref = context.item().item;
+        let original_count = context.inv.item().count;
+        let item_ref = context.inv.item().item;
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
 
         // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() && context.item().count < original_count {
-            context.item().count = original_count;
+        if player.has_infinite_materials() && context.inv.item().count < original_count {
+            context.inv.item().count = original_count;
         }
 
         return result;
@@ -146,18 +146,18 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         let mut context =
             crate::behavior::UseItemContext::new(player, hand, world, &mut guard, inv_id);
 
-        let original_count = context.item().count;
+        let original_count = context.inv.item().count;
 
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
-        let item_ref = context.item().item;
+        let item_ref = context.inv.item().item;
         let item_behavior = item_behaviors.get_behavior(item_ref);
 
         let result = item_behavior.use_item(&mut context);
 
         // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() && context.item().count < original_count {
-            context.item().count = original_count;
+        if player.has_infinite_materials() && context.inv.item().count < original_count {
+            context.inv.item().count = original_count;
         }
 
         return result;

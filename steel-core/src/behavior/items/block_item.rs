@@ -59,7 +59,7 @@ impl ItemBehavior for BlockItemBehavior {
             Some(context.player.id),
         );
 
-        context.item().shrink(1);
+        context.inv.item().shrink(1);
 
         // TODO: Call behavior.on_place() — triggers neighbor updates (redstone, etc.)
         InteractionResult::Success

@@ -67,7 +67,7 @@ pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
     #[cfg_attr(
         not(feature = "spawn_chunk_display"),
-        allow(
+        expect(
             unused,
             reason = "logger only used with `spawn_chunk_display` feature enabled"
         )

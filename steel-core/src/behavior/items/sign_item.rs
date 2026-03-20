@@ -91,7 +91,7 @@ impl ItemBehavior for SignItemBehavior {
             Some(context.player.id),
         );
 
-        context.item().shrink(1);
+        context.inv.item().shrink(1);
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
@@ -258,7 +258,7 @@ impl ItemBehavior for HangingSignItemBehavior {
             );
         }
 
-        context.item().shrink(1);
+        context.inv.item().shrink(1);
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);

@@ -48,7 +48,7 @@ impl ItemBehavior for ShovelBehavior {
             }
             // TODO: Play SoundEvents.SHOVEL_FLATTEN
             let infinite_materials = context.player.has_infinite_materials();
-            context.item().hurt_and_break(1, infinite_materials);
+            context.inv.item().hurt_and_break(1, infinite_materials);
             context.world.set_block(
                 context.hit_result.block_pos,
                 vanilla_blocks::DIRT_PATH.default_state(),
