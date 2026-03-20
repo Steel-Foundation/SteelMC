@@ -103,7 +103,11 @@ impl ChunkMap {
     ///
     /// This allows using different storage implementations (disk, RAM, etc.).
     #[must_use]
-    #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
+    #[expect(
+        clippy::missing_panics_doc,
+        clippy::unwrap_used,
+        reason = "ThreadPoolBuilder::build() only fails on OS thread errors, which are fatal"
+    )]
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
@@ -136,7 +140,6 @@ impl ChunkMap {
 
     /// Executes a function with access to a fully loaded chunk.
     /// Returns `None` if the chunk is not loaded or not at Full status.
-    #[allow(clippy::missing_panics_doc)]
     pub fn with_full_chunk<F, R>(&self, pos: &ChunkPos, f: F) -> Option<R>
     where
         F: FnOnce(&ChunkAccess) -> R,
@@ -315,7 +318,11 @@ impl ChunkMap {
     /// Updates scheduling for a chunk based on its new level.
     /// Returns the chunk holder if it is active.
     #[inline]
-    #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
+    #[expect(
+        clippy::missing_panics_doc,
+        clippy::unwrap_used,
+        reason = "unwrap is on new_level which was already checked non-None via new_level?"
+    )]
     pub fn update_chunk_level(
         self: &Arc<Self>,
         pos: &ChunkPos,
@@ -376,7 +383,10 @@ impl ChunkMap {
     /// * `runs_normally` - Whether game elements should run (false when frozen)
     ///
     /// Returns timing information for each phase of the tick.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting would hurt readability of the tick pipeline"
+    )]
     #[instrument(level = "trace", skip(self, world), name = "chunk_map_tick")]
     pub fn tick_b(
         self: &Arc<Self>,
@@ -565,7 +575,6 @@ impl ChunkMap {
     }
 
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
-    #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
     #[instrument(level = "trace", skip(self, chunk_holder), fields(chunk = ?chunk_holder.get_pos()))]
     async fn save_chunk(&self, chunk_holder: &Arc<ChunkHolder>) {
         // Prepare chunk data while holding the lock, then release before async I/O

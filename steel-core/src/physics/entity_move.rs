@@ -20,16 +20,12 @@ use steel_utils::math::Axis;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoverType {
     /// Normal entity movement (walking, jumping, gravity).
-    #[allow(dead_code)]
     SelfMovement,
     /// Movement caused by external forces (pistons, etc).
-    #[allow(dead_code)]
     Piston,
     /// Movement from shulker box opening/closing.
-    #[allow(dead_code)]
     ShulkerBox,
     /// Movement from shulker entity teleportation.
-    #[allow(dead_code)]
     Shulker,
 }
 
@@ -193,7 +189,10 @@ fn axis_step_order(movement: DVec3) -> [Axis; 3] {
 /// Matches vanilla's `Entity.collideWithShapes()` behavior exactly:
 /// - Uses dynamic axis order based on movement direction (Y first, then X/Z based on magnitude)
 /// - Accumulates resolved movement and moves AABB after each axis
-#[allow(clippy::float_cmp)] // Intentional: checking if collision clipped the movement value
+#[expect(
+    clippy::float_cmp,
+    reason = "intentional: checking if collision clipped the movement value"
+)]
 fn collide_with_world(
     state: &EntityPhysicsState,
     movement: DVec3,
@@ -323,7 +322,10 @@ fn should_try_step_up(
 /// which uses the dynamic axis order. If step-up gives more horizontal progress, use it.
 ///
 /// Matches: `Entity.collide()` lines 1077-1095
-#[allow(clippy::float_cmp)] // Intentional: checking if collision clipped the movement value
+#[expect(
+    clippy::float_cmp,
+    reason = "intentional: checking if collision clipped the movement value"
+)]
 fn try_step_up(
     state: &EntityPhysicsState,
     movement: DVec3,

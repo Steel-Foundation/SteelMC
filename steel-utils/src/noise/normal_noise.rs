@@ -11,7 +11,10 @@ use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::N
 /// This is the exact value from vanilla `NormalNoise.java`.
 /// The second sampler's coordinates are multiplied by this factor to create
 /// variation between the two samplers.
-#[allow(clippy::unreadable_literal)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "exact vanilla constant; underscores would obscure precision"
+)]
 pub const INPUT_FACTOR: f64 = 1.0181268882175227;
 
 /// Value factor numerator matching vanilla's inline literal `0.16666666666666666` (1/6).
@@ -20,7 +23,10 @@ pub const INPUT_FACTOR: f64 = 1.0181268882175227;
 /// uses it — the constructor hardcodes `0.16666666666666666` (1/6) as the numerator in
 /// `valueFactor = 0.16666... / expectedDeviation(span)`. We name this differently to
 /// avoid confusion with vanilla's dead `TARGET_DEVIATION` constant.
-#[allow(clippy::unreadable_literal)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "exact vanilla constant; underscores would obscure precision"
+)]
 const VALUE_FACTOR_NUMERATOR: f64 = 0.16666666666666666;
 
 /// Normal (Double Perlin) noise generator.
@@ -161,7 +167,10 @@ fn expected_deviation(octave_span: i32) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unreadable_literal)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "test vectors from vanilla; underscores would obscure precision"
+)]
 mod tests {
     use super::*;
     use crate::random::{Random, xoroshiro::Xoroshiro};

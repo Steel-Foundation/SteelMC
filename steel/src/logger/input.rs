@@ -72,7 +72,10 @@ impl CommandLogger {
         });
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting the key-dispatch match would hurt readability"
+    )]
     async fn input_key(self: Arc<Self>, mut rx: UnboundedReceiver<ExtendedKey>) -> Result<()> {
         loop {
             tokio::select! {

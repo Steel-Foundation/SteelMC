@@ -288,7 +288,7 @@ fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool;
 }
 
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
+#[expect(clippy::float_cmp)]
 mod tests {
     use super::*;
 

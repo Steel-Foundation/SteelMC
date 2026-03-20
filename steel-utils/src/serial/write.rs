@@ -1,4 +1,7 @@
-#![allow(missing_docs, clippy::disallowed_types)]
+#![expect(
+    clippy::disallowed_types,
+    reason = "HashMap is used directly to implement WriteTo; project types are not available here"
+)]
 use std::{
     collections::HashMap,
     hash::BuildHasher,
@@ -112,7 +115,6 @@ impl<T: WriteTo, Z: WriteTo> WriteTo for (T, Z) {
     }
 }
 
-#[allow(missing_docs)]
 impl<K: WriteTo, V: WriteTo, S: BuildHasher> WriteTo for HashMap<K, V, S> {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         VarInt(self.len() as i32).write(writer)?;

@@ -106,7 +106,10 @@ pub trait BlockEntity: Send + Sync {
     /// # Arguments
     /// * `pos` - The position of the block entity
     /// * `state` - The block state being removed
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameters used by overrides"
+    )]
     fn pre_remove_side_effects(&mut self, pos: BlockPos, state: BlockStateId) {
         // Default: no side effects
     }
@@ -147,7 +150,10 @@ pub trait BlockEntity: Send + Sync {
     /// Called every game tick for ticking block entities.
     ///
     /// Only called if `is_ticking()` returns `true`.
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
     fn tick(&mut self, world: &Arc<World>) {
         // Default: no-op
     }

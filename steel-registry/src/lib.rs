@@ -1,5 +1,4 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
-#![allow(internal_features)]
 
 use crate::{
     banner_pattern::BannerPatternRegistry,
@@ -72,250 +71,250 @@ pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod zombie_nautilus_variant;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_blocks.rs"]
 pub mod vanilla_blocks;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_block_tags.rs"]
 pub mod vanilla_block_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_banner_patterns.rs"]
 pub mod vanilla_banner_patterns;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_items.rs"]
 pub mod vanilla_items;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_item_tags.rs"]
 pub mod vanilla_item_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_biomes.rs"]
 pub mod vanilla_biomes;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_chat_types.rs"]
 pub mod vanilla_chat_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_trim_patterns.rs"]
 pub mod vanilla_trim_patterns;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_trim_materials.rs"]
 pub mod vanilla_trim_materials;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_wolf_variants.rs"]
 pub mod vanilla_wolf_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_wolf_sound_variants.rs"]
 pub mod vanilla_wolf_sound_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_pig_variants.rs"]
 pub mod vanilla_pig_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_frog_variants.rs"]
 pub mod vanilla_frog_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_cat_variants.rs"]
 pub mod vanilla_cat_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_cow_variants.rs"]
 pub mod vanilla_cow_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_chicken_variants.rs"]
 pub mod vanilla_chicken_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_painting_variants.rs"]
 pub mod vanilla_painting_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_dimension_types.rs"]
 pub mod vanilla_dimension_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_types.rs"]
 pub mod vanilla_damage_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_type_tags.rs"]
 pub mod vanilla_damage_type_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_jukebox_songs.rs"]
 pub mod vanilla_jukebox_songs;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_instruments.rs"]
 pub mod vanilla_instruments;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_dialogs.rs"]
 pub mod vanilla_dialogs;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_dialog_tags.rs"]
 pub mod vanilla_dialog_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_menu_types.rs"]
 pub mod vanilla_menu_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_zombie_nautilus_variants.rs"]
 pub mod vanilla_zombie_nautilus_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_timelines.rs"]
 pub mod vanilla_timelines;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_timeline_tags.rs"]
 pub mod vanilla_timeline_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_recipes.rs"]
 pub mod vanilla_recipes;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_entities.rs"]
 pub mod vanilla_entities;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_entity_data.rs"]
 pub mod vanilla_entity_data;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_fluids.rs"]
 pub mod vanilla_fluids;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_poi_types.rs"]
 pub mod vanilla_poi_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_banner_pattern_tags.rs"]
 pub mod vanilla_banner_pattern_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_entity_type_tags.rs"]
 pub mod vanilla_entity_type_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_instrument_tags.rs"]
 pub mod vanilla_instrument_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_painting_variant_tags.rs"]
 pub mod vanilla_painting_variant_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_poi_type_tags.rs"]
 pub mod vanilla_poi_type_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_fluid_tags.rs"]
 pub mod vanilla_fluid_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_loot_tables.rs"]
 pub mod vanilla_loot_tables;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_block_entity_types.rs"]
 pub mod vanilla_block_entity_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_game_rules.rs"]
 pub mod vanilla_game_rules;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_level_events.rs"]
 pub mod level_events;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_sound_events.rs"]
 pub mod sound_events;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_sound_types.rs"]
 pub mod sound_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_packets.rs"]
 pub mod packets;
 
 /// Multi-noise biome parameters for climate-based biome selection.
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_multi_noise.rs"]
 pub mod multi_noise;
 
 /// Noise parameters for world generation.
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_noise_parameters.rs"]
 pub mod noise_parameters;
 
 /// Density functions and noise router for terrain generation.
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_density_functions/mod.rs"]
 pub mod density_functions;
@@ -323,7 +322,7 @@ pub mod density_functions;
 pub struct RegistryLock(OnceLock<Registry>);
 
 impl RegistryLock {
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     pub fn init(&self, value: Registry) -> Result<(), Registry> {
         self.0.set(value)
     }

@@ -1,5 +1,5 @@
 //! Chunk ticket management for tracking chunk levels and propagation.
-#![allow(missing_docs)]
+#![expect(missing_docs, reason = "internal module; items are self-explanatory")]
 
 use std::mem;
 
@@ -221,13 +221,13 @@ impl ChunkTicketManager {
         self.levels.get(&pos).copied()
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "used in tests via module-level access")]
     #[must_use]
     const fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "utility method for tests and future use")]
     fn clear(&mut self) {
         self.tickets.clear();
         self.levels.clear();

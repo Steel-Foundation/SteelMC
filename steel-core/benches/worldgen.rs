@@ -1,4 +1,4 @@
-#![allow(missing_docs, clippy::similar_names)]
+#![expect(missing_docs, clippy::similar_names)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;

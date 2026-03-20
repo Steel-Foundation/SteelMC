@@ -26,13 +26,13 @@ pub struct DimensionTypeJson {
     monster_spawn_block_light_limit: i32,
 
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     skybox: Option<String>,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     timelines: Option<String>,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     cardinal_light: Option<String>,
 }
 

@@ -471,7 +471,7 @@ impl TranspileContext {
     /// all flat-cached values are pre-computed for the chunk's quart grid.
     /// `ensure()` then does O(1) grid lookups for in-bounds positions and
     /// falls back to on-the-fly computation for out-of-bounds positions.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn gen_column_cache(&mut self, input: &TranspilerInput) -> TokenStream {
         // Grid dimensions: (16 / cell_width + 1)² entries, known at compile time.
         let grid_side = 16 / input.cell_width + 1;
@@ -905,7 +905,7 @@ impl TranspileContext {
     /// All entries share a single contiguous channel array. Channel indices are
     /// assigned in order: `final_density` channels first, then `vein_toggle`, then
     /// `vein_ridged`.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn gen_all_interpolation_functions(&mut self, input: &TranspilerInput) -> TokenStream {
         let noises = self.noises_ident.clone();
         let cache = self.cache_ident.clone();
@@ -915,7 +915,10 @@ impl TranspileContext {
         let entry_names = ["final_density", "vein_toggle", "vein_ridged"];
 
         // Phase 1: Collect ALL interpolated inners across all entries
-        #[allow(clippy::items_after_statements)]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "struct is local to this code path and defined inline for clarity"
+        )]
         struct EntryInfo {
             start: usize,
             df: DensityFunction,
@@ -1023,7 +1026,7 @@ impl TranspileContext {
             }
 
             /// Combine interpolated values for `final_density`.
-            #[allow(unused_variables)]
+            #[expect(unused_variables, reason = "generated function has a fixed signature; not all parameters are used in every dimension")]
             pub fn combine_interpolated(
                 noises: &#noises,
                 cache: &#cache,
@@ -1038,7 +1041,7 @@ impl TranspileContext {
             }
 
             /// Combine interpolated values for `vein_toggle`.
-            #[allow(unused_variables)]
+            #[expect(unused_variables, reason = "generated function has a fixed signature; not all parameters are used in every dimension")]
             pub fn combine_vein_toggle(
                 noises: &#noises,
                 cache: &#cache,
@@ -1053,7 +1056,7 @@ impl TranspileContext {
             }
 
             /// Combine interpolated values for `vein_ridged`.
-            #[allow(unused_variables)]
+            #[expect(unused_variables, reason = "generated function has a fixed signature; not all parameters are used in every dimension")]
             pub fn combine_vein_ridged(
                 noises: &#noises,
                 cache: &#cache,
@@ -1079,7 +1082,7 @@ impl TranspileContext {
     /// Generate a `TokenStream` expression that computes a density function value.
     ///
     /// `is_flat` indicates this expression tree is xz-only (no y available).
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn gen_expr(
         &mut self,
         df: &DensityFunction,

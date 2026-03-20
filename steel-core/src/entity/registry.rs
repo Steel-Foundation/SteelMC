@@ -108,7 +108,10 @@ impl EntityRegistry {
     ///
     /// Returns `None` if no load factory is registered for the entity type.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all fields are required to reconstruct a persisted entity"
+    )]
     pub fn create_and_load(
         &self,
         entity_type: EntityTypeRef,

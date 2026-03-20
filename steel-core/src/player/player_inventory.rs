@@ -44,7 +44,10 @@ pub struct PlayerInventory {
     /// Entity equipment (armor, hands).
     equipment: EntityEquipment,
     /// Weak reference to the player.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "held for future use; player reference needed for inventory change notifications"
+    )]
     player: Weak<Player>,
     /// Currently selected hotbar slot (0-8).
     selected: u8,

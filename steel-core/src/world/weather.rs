@@ -1,4 +1,7 @@
-#[allow(clippy::struct_field_names)] // thats just how they are called
+#[expect(
+    clippy::struct_field_names,
+    reason = "field names match vanilla weather state naming"
+)]
 #[derive(Debug, Default)]
 pub struct Weather {
     pub rain_level: f32,

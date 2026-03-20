@@ -17,7 +17,10 @@ use super::{SharedEntity, WeakEntity};
 ///
 /// Stores `Weak` references to entities owned by chunks.
 /// When a chunk unloads, its entities' weak refs become invalid.
-#[allow(clippy::struct_field_names)] // `by_` prefix is intentional for clarity
+#[expect(
+    clippy::struct_field_names,
+    reason = "`by_` prefix is intentional for lookup clarity"
+)]
 pub struct EntityCache {
     /// Fast lookup by entity ID (network identifier).
     by_id: scc::HashMap<i32, WeakEntity>,
