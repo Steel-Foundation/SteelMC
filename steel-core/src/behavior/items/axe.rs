@@ -13,13 +13,9 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
-use crate::{
-    behavior::{
-        InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
-        waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
-    },
-    entity::LivingEntity,
-    inventory::equipment::EquipmentSlot,
+use crate::behavior::{
+    InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
+    waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
 };
 
 const AXIS_PROPERTY: EnumProperty<Axis> = BlockStateProperties::AXIS;
@@ -31,7 +27,7 @@ pub struct AxeBehavior;
 impl ItemBehavior for AxeBehavior {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let has_block_item_intent = context.hand == InteractionHand::MainHand
-            && context.player.get_off_hand_item().has(BLOCKS_ATTACKS)
+            && context.inventory().get_offhand_item().has(BLOCKS_ATTACKS)
             && !context.player.is_secondary_use_active();
 
         if has_block_item_intent {
@@ -79,13 +75,8 @@ impl ItemBehavior for AxeBehavior {
             Some(context.player.id),
         );
 
-        context
-            .player
-            .get_item_by_slot(match context.hand {
-                InteractionHand::MainHand => EquipmentSlot::MainHand,
-                InteractionHand::OffHand => EquipmentSlot::OffHand,
-            })
-            .hurt_and_break(1, context.player.has_infinite_materials());
+        let has_infinite_materials = context.player.has_infinite_materials();
+        context.item().hurt_and_break(1, has_infinite_materials);
 
         InteractionResult::Success
     }

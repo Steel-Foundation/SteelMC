@@ -17,7 +17,7 @@ use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
 use crate::world::World;
-use crate::{entity::damage::DamageSource, inventory::equipment::EquipmentSlot, player::Player};
+use crate::{entity::damage::DamageSource, player::Player};
 
 use entities::ItemEntity;
 
@@ -477,33 +477,4 @@ pub trait LivingEntity: Entity {
 
     /// Sets the entity's speed.
     fn set_speed(&self, speed: f32);
-
-    // Equipment methods
-
-    /// Gets a clone of the item in the specified equipment slot.
-    ///
-    /// Default implementation returns an empty stack.
-    fn get_item_by_slot(&self, _slot: EquipmentSlot) -> ItemStack {
-        ItemStack::empty()
-    }
-
-    /// Gets the main hand item.
-    fn get_main_hand_item(&self) -> ItemStack {
-        self.get_item_by_slot(EquipmentSlot::MainHand)
-    }
-
-    /// Gets the off hand item.
-    fn get_off_hand_item(&self) -> ItemStack {
-        self.get_item_by_slot(EquipmentSlot::OffHand)
-    }
-
-    /// Checks if the main hand slot is empty.
-    fn is_main_hand_empty(&self) -> bool {
-        self.get_item_by_slot(EquipmentSlot::MainHand).is_empty()
-    }
-
-    /// Checks if the off hand slot is empty.
-    fn is_off_hand_empty(&self) -> bool {
-        self.get_item_by_slot(EquipmentSlot::OffHand).is_empty()
-    }
 }

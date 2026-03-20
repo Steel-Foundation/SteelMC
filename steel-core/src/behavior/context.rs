@@ -9,8 +9,9 @@ use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
 
 use crate::fluid::FluidStateExt;
-use crate::inventory::lock::ContainerLockGuard;
+use crate::inventory::lock::{ContainerId, ContainerLockGuard};
 use crate::player::Player;
+use crate::player::player_inventory::PlayerInventory;
 use crate::world::World;
 pub use steel_registry::items::item::BlockHitResult;
 
@@ -105,6 +106,9 @@ impl BlockPlaceContext<'_> {
 }
 
 /// Context for using an item on a block.
+///
+/// Access the hand item via `item()` and the player inventory via `inventory()`.
+/// The compiler prevents holding both simultaneously, avoiding aliased mutation.
 pub struct UseOnContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -114,13 +118,55 @@ pub struct UseOnContext<'a> {
     pub hit_result: BlockHitResult,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    /// The item stack being used (mutable for consumption).
-    pub item_stack: &'a mut ItemStack,
-    /// Lock guard holding the player's inventory.
-    pub inv_guard: &'a mut ContainerLockGuard,
+    inv_guard: &'a mut ContainerLockGuard,
+    inv_id: ContainerId,
 }
 
 impl<'a> UseOnContext<'a> {
+    /// Creates a new `UseOnContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            hit_result,
+            world,
+            inv_guard,
+            inv_id,
+        }
+    }
+
+    /// Returns a mutable reference to the item in the player's hand.
+    ///
+    /// Cannot be held simultaneously with `inventory()` or `guard()`.
+    #[allow(clippy::missing_panics_doc)] // Panic is unreachable when context is correctly constructed
+    pub fn item(&mut self) -> &mut ItemStack {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+            .get_item_in_hand_mut(self.hand)
+    }
+
+    /// Returns a mutable reference to the player's inventory.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn inventory(&mut self) -> &mut PlayerInventory {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+    }
+
+    /// Returns a mutable reference to the container lock guard.
+    pub const fn guard(&mut self) -> &mut ContainerLockGuard {
+        self.inv_guard
+    }
+
     /// Builds a [`BlockPlaceContext`] from this interaction context.
     ///
     /// Returns `None` if placement is invalid (out of bounds or non-replaceable target).
@@ -166,6 +212,9 @@ impl<'a> UseOnContext<'a> {
 }
 
 /// Context for using an item (general usage).
+///
+/// Same mediated-access pattern as `UseOnContext`. Call `item()` for the hand item,
+/// `inventory()` for the player inventory, or `guard()` for the full lock guard.
 pub struct UseItemContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -173,10 +222,50 @@ pub struct UseItemContext<'a> {
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    /// The item stack being used (mutable for consumption).
-    pub item_stack: &'a mut ItemStack,
-    /// Lock guard holding the player's inventory. Behaviors that need to add
-    /// items (e.g. bucket swap) must use this instead of `player.add_item_or_drop`
-    /// to avoid deadlocking on the inventory mutex.
-    pub inv_guard: &'a mut ContainerLockGuard,
+    inv_guard: &'a mut ContainerLockGuard,
+    inv_id: ContainerId,
+}
+
+impl<'a> UseItemContext<'a> {
+    /// Creates a new `UseItemContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            world,
+            inv_guard,
+            inv_id,
+        }
+    }
+
+    /// Returns a mutable reference to the item in the player's hand.
+    ///
+    /// Cannot be held simultaneously with `inventory()` or `guard()`.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn item(&mut self) -> &mut ItemStack {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+            .get_item_in_hand_mut(self.hand)
+    }
+
+    /// Returns a mutable reference to the player's inventory.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn inventory(&mut self) -> &mut PlayerInventory {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+    }
+
+    /// Returns a mutable reference to the container lock guard.
+    pub const fn guard(&mut self) -> &mut ContainerLockGuard {
+        self.inv_guard
+    }
 }

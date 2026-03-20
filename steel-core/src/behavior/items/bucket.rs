@@ -59,29 +59,26 @@ impl ItemBehavior for BucketItemBehavior {
 /// In creative mode the held stack is untouched, but the result item is added to the
 /// inventory if the player doesn't already have one.
 fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
-    if context.player.has_infinite_materials() {
+    let player = context.player;
+    if player.has_infinite_materials() {
         // Creative: give the result item only if the player doesn't already have one.
-        let inv_id = ContainerId::from_arc(&context.player.inventory);
-        let already_has = context.inv_guard.get(inv_id).is_some_and(|inv| {
+        let inv_id = ContainerId::from_arc(&player.inventory);
+        let already_has = context.guard().get(inv_id).is_some_and(|inv| {
             (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
         });
         if !already_has {
             let result_stack = ItemStack::new(result_item);
-            context
-                .player
-                .add_item_or_drop_with_guard(context.inv_guard, result_stack);
+            player.add_item_or_drop_with_guard(context.guard(), result_stack);
         }
         return;
     }
 
     let result_stack = ItemStack::new(result_item);
-    if context.item_stack.count() > 1 {
-        context.item_stack.shrink(1);
-        context
-            .player
-            .add_item_or_drop_with_guard(context.inv_guard, result_stack);
+    if context.item().count() > 1 {
+        context.item().shrink(1);
+        player.add_item_or_drop_with_guard(context.guard(), result_stack);
     } else {
-        context.item_stack.set_item(&result_item.key);
+        context.item().set_item(&result_item.key);
     }
 }
 
