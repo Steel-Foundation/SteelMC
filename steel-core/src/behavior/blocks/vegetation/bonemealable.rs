@@ -42,7 +42,7 @@ pub enum BonemealAction {
 
 impl BonemealAction {
     /// Returns the particle position for this bonemeal action.
-    #[expect(unused)]
+    #[expect(dead_code, reason = "used later for spawning the particles")]
     const fn particle_pos(&self, pos: BlockPos) -> BlockPos {
         match self {
             BonemealAction::NeighborSpreader => pos.above(),

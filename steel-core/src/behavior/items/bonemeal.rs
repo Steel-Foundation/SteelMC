@@ -104,17 +104,26 @@ impl BoneMealItem {
 
 impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let world = context.world;
-        let pos = context.hit_result.block_pos;
-        let direction = context.hit_result.direction;
-        if Self::grow(context.item(), world, pos) {
+        if Self::grow(
+            context.inv.item(),
+            context.world,
+            context.hit_result.block_pos,
+        ) {
             // TODO: particles
             return InteractionResult::Success;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
         let is_clicked_face_sturdy = state.is_face_sturdy(context.hit_result.direction);
         if is_clicked_face_sturdy
-            && Self::grow_water_plant(context.item(), world, pos.relative(direction), direction)
+            && Self::grow_water_plant(
+                context.inv.item(),
+                context.world,
+                context
+                    .hit_result
+                    .block_pos
+                    .relative(context.hit_result.direction),
+                context.hit_result.direction,
+            )
         {
             return InteractionResult::Success;
         }
