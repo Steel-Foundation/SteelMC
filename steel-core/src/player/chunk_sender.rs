@@ -91,7 +91,10 @@ impl ChunkSender {
                     // Pre-compute compression info for encoding inside the blocking task
                     let compression = connection.compression();
 
-                    #[allow(clippy::let_underscore_future)]
+                    #[expect(
+                        clippy::let_underscore_future,
+                        reason = "chunk sending is fire-and-forget; we don't need to await or track the task"
+                    )]
                     let _ = spawn_blocking(move || {
                         let mut chunks_to_send = Vec::new();
                         for holder in chunks_to_process {

@@ -27,7 +27,10 @@ impl HealthSyncState {
     }
 
     /// Returns true if the given values differ from what was last sent.
-    #[allow(clippy::float_cmp)]
+    #[expect(
+        clippy::float_cmp,
+        reason = "intentional exact comparison: we only want to send updates when the value changes from what we last sent"
+    )]
     #[must_use]
     pub fn needs_update(&self, health: f32, food: i32, saturation_zero: bool) -> bool {
         self.last_health != health

@@ -35,7 +35,6 @@ impl<L, R> Or<L, R> {
     }
 }
 
-#[allow(missing_docs)]
 impl<L: WriteTo, R: WriteTo> WriteTo for Or<L, R> {
     fn write(&self, writer: &mut impl Write) -> Result<(), Error> {
         match self {
@@ -48,7 +47,6 @@ impl<L: WriteTo, R: WriteTo> WriteTo for Or<L, R> {
 // Note: ReadFrom cannot be implemented without external context about which variant to read.
 // The discriminant must be read separately before calling this.
 
-#[allow(missing_docs)]
 impl<L, R> From<L> for Or<L, R> {
     fn from(value: L) -> Self {
         Self::Left(value)

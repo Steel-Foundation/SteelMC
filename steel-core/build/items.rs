@@ -19,7 +19,6 @@ pub struct ItemClass {
 
 // --- Code generation ---
 
-#[expect(clippy::too_many_lines)]
 pub fn build(items: &[ItemClass]) -> String {
     let discovered = scan_object_behaviors("items", "item_behavior");
 

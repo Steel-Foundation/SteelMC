@@ -1,3 +1,4 @@
+use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     item_stack::ItemStack,
@@ -8,9 +9,10 @@ use steel_utils::{Direction, types::UpdateFlags};
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
 
 /// Behavior for Hoes
-pub struct HoeBehavior;
+#[item_behavior]
+pub struct HoeItem;
 
-impl HoeBehavior {
+impl HoeItem {
     fn get_tilled_variant(block: BlockRef) -> Option<BlockRef> {
         match block {
             b if b == vanilla_blocks::GRASS_BLOCK
@@ -26,7 +28,7 @@ impl HoeBehavior {
     }
 }
 
-impl ItemBehavior for HoeBehavior {
+impl ItemBehavior for HoeItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let state = context.world.get_block_state(context.hit_result.block_pos);
         let Some(tilled_variant) = Self::get_tilled_variant(state.get_block()) else {
@@ -65,9 +67,8 @@ impl ItemBehavior for HoeBehavior {
             Some(context.player.id),
         );
 
-        context
-            .item_stack
-            .hurt_and_break(1, context.player.has_infinite_materials());
+        let has_infinite_materials = context.player.has_infinite_materials();
+        context.item().hurt_and_break(1, has_infinite_materials);
 
         InteractionResult::Success
     }

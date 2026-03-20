@@ -165,7 +165,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             Some(context.player.id),
         );
 
-        context.item_stack.shrink(1);
+        context.item().shrink(1);
 
         InteractionResult::Success
     }

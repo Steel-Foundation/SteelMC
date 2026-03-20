@@ -1,4 +1,3 @@
-#![allow(missing_docs)]
 use std::io::{Error, Result, Write};
 
 use crate::serial::{PrefixedWrite, WriteTo};

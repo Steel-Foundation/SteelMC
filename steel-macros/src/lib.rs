@@ -545,7 +545,10 @@ fn parse_write_attributes(f: &syn::Field) -> FieldWriteAttributes {
 /// - `strategy`: The write strategy to apply
 /// - `value`: Token stream representing the value to write (e.g., `self.field` or `item`)
 /// - `bound`: Optional bound for prefixed writes
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "2 lines over; splitting would hurt readability"
+)]
 fn generate_write_code(
     strategy: &Strategy,
     value: proc_macro2::TokenStream,
@@ -693,7 +696,6 @@ fn parse_struct_write_attributes(attrs: &[syn::Attribute]) -> FieldWriteAttribut
     FieldWriteAttributes { strategy, bound }
 }
 
-#[allow(clippy::too_many_lines)]
 fn write_to_struct(
     s: syn::DataStruct,
     name: Ident,

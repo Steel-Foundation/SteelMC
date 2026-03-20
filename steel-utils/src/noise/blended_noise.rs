@@ -70,7 +70,6 @@ impl BlendedNoise {
     /// 2. Conditionally samples min/max limit noises (16 octaves each)
     /// 3. Interpolates between min and max based on the blend factor
     #[must_use]
-    #[allow(clippy::cast_precision_loss)]
     pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
         let limit_x = f64::from(block_x) * self.xz_multiplier;
         let limit_y = f64::from(block_y) * self.y_multiplier;

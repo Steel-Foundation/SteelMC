@@ -1,4 +1,7 @@
-#![allow(clippy::disallowed_types)]
+#![expect(
+    clippy::disallowed_types,
+    reason = "this module is the canonical definition of the allowed lock types"
+)]
 //! Lock wrappers for debug checks and deadlock prevention.
 
 use tokio::sync::{Mutex, RwLock};
