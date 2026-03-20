@@ -9,14 +9,14 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 
 /// Behavior for items that place blocks.
-#[item_behavior(class = "BlockItem")]
-pub struct BlockItemBehavior {
+#[item_behavior]
+pub struct BlockItem {
     /// The block this item places.
     #[json_arg(vanilla_blocks, json = "block")]
     pub block: BlockRef,
 }
 
-impl BlockItemBehavior {
+impl BlockItem {
     /// Creates a new block item behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -24,7 +24,7 @@ impl BlockItemBehavior {
     }
 }
 
-impl ItemBehavior for BlockItemBehavior {
+impl ItemBehavior for BlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
@@ -73,25 +73,25 @@ impl ItemBehavior for BlockItemBehavior {
 ///
 /// The `_block` field is read by the build script via `#[json_arg]` to generate constructor
 /// calls from `classes.json`. The actual value is forwarded into `base`.
-#[item_behavior(class = "DoubleHighBlockItem")]
-pub struct DoubleHighBlockItemBehavior {
+#[item_behavior]
+pub struct DoubleHighBlockItem {
     #[json_arg(vanilla_blocks, json = "block")]
     _block: BlockRef,
-    base: BlockItemBehavior,
+    base: BlockItem,
 }
 
-impl DoubleHighBlockItemBehavior {
+impl DoubleHighBlockItem {
     /// Creates a new double-high block item behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
             _block: block,
-            base: BlockItemBehavior::new(block),
+            base: BlockItem::new(block),
         }
     }
 }
 
-impl ItemBehavior for DoubleHighBlockItemBehavior {
+impl ItemBehavior for DoubleHighBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         // TODO: Implement vanilla's double-high placement (place upper half block above)
         self.base.use_on(context)
