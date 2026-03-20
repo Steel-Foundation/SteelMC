@@ -85,7 +85,11 @@ impl TickRateManager {
     /// Sets the tick rate.
     pub fn set_tick_rate(&mut self, rate: f32) {
         self.tick_rate = rate.max(1.0);
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "result is always a positive sub-second nanosecond count, fits in u64"
+        )]
         {
             self.nanoseconds_per_tick = (NANOS_PER_SEC / f64::from(self.tick_rate)) as u64;
         }
@@ -231,7 +235,10 @@ impl TickRateManager {
         let completed_ticks = self.scheduled_current_sprint_ticks - self.remaining_sprint_ticks;
         let time_spent_ms = (self.sprint_time_spent.max(1) as f64) / NANOS_PER_MS;
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "TPS fits well within i32 range"
+        )]
         let ticks_per_second = (MS_PER_SEC * completed_ticks as f64 / time_spent_ms) as i32;
         let ms_per_tick = if completed_ticks == 0 {
             f64::from(self.milliseconds_per_tick())

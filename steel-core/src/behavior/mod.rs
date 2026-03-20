@@ -31,17 +31,22 @@ pub mod fluid;
 mod item;
 pub mod items;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/blocks.rs"]
 pub mod block_behaviors;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/items.rs"]
 pub mod item_behaviors;
 
-#[allow(warnings)]
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/waxables.rs"]
+pub mod waxables;
+
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/weathering.rs"]
 pub mod weathering;
@@ -55,8 +60,9 @@ pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BlockItemBehavior, DefaultItemBehavior, EmptyBucketBehavior, EnderEyeBehavior,
-    FilledBucketBehavior,
+    BlockItemBehavior, BucketItemBehavior, DefaultItemBehavior, DoubleHighBlockItemBehavior,
+    EnderEyeBehavior, HangingSignItemBehavior, ShovelBehavior, SignItemBehavior,
+    StandingAndWallBlockItem,
 };
 use std::ops::Deref;
 use std::sync::OnceLock;

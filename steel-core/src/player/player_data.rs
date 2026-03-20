@@ -391,17 +391,17 @@ impl PersistentPlayerData {
     ///
     /// This restores position, rotation, inventory, abilities, etc.
     pub fn apply_to_player(&self, player: &Player) {
-        use steel_utils::math::Vector3;
+        use glam::DVec3;
 
         // Position
-        *player.position.lock() = Vector3::new(self.pos[0], self.pos[1], self.pos[2]);
+        *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
 
         // Rotation
         player.rotation.store((self.rotation[0], self.rotation[1]));
 
         // Motion/velocity
         player.movement.lock().delta_movement =
-            Vector3::new(self.motion[0], self.motion[1], self.motion[2]);
+            DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
 
         // Ground state
         {

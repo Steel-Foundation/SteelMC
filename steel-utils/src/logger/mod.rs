@@ -15,10 +15,8 @@ pub enum Level {
     /// Console input level
     Console,
     /// Chat message level
-    #[allow(unused)]
     Chat(String),
     /// Command level: Should contain the executor name
-    #[allow(unused)]
     Command(String),
 }
 impl Display for Level {
@@ -61,7 +59,6 @@ macro_rules! chat {
         ));
 }
 /// A log macro for commands, provide first the player name, and then the format.
-#[allow(unused)]
 #[macro_export]
 macro_rules! command {
     ($player:expr,$($arg:tt)+) =>

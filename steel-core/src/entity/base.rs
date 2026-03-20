@@ -6,8 +6,8 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_utils::locks::SyncMutex;
-use steel_utils::math::Vector3;
 use uuid::Uuid;
 
 use crate::entity::{EntityLevelCallback, NullEntityCallback, RemovalReason};
@@ -30,7 +30,7 @@ use crate::world::World;
 /// impl Entity for MyEntity {
 ///     fn id(&self) -> i32 { self.base.id() }
 ///     fn uuid(&self) -> Uuid { self.base.uuid() }
-///     fn position(&self) -> Vector3<f64> { self.base.position() }
+///     fn position(&self) -> DVec3 { self.base.position() }
 ///     // ... delegate other common methods ...
 ///
 ///     // Entity-specific implementations:
@@ -46,7 +46,7 @@ pub struct EntityBase {
     /// The world this entity is in.
     world: Weak<World>,
     /// Current position in the world.
-    position: SyncMutex<Vector3<f64>>,
+    position: SyncMutex<DVec3>,
     /// Whether this entity has been removed.
     removed: AtomicBool,
     /// Callback for entity lifecycle events.
@@ -59,7 +59,7 @@ pub struct EntityBase {
 impl EntityBase {
     /// Creates a new `EntityBase` with a randomly generated UUID.
     #[must_use]
-    pub fn new(id: i32, position: Vector3<f64>, world: Weak<World>) -> Self {
+    pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::with_uuid(id, Uuid::new_v4(), position, world)
     }
 
@@ -67,7 +67,7 @@ impl EntityBase {
     ///
     /// Use this when loading entities from disk or when the UUID is known.
     #[must_use]
-    pub fn with_uuid(id: i32, uuid: Uuid, position: Vector3<f64>, world: Weak<World>) -> Self {
+    pub fn with_uuid(id: i32, uuid: Uuid, position: DVec3, world: Weak<World>) -> Self {
         Self {
             id,
             uuid,
@@ -95,7 +95,7 @@ impl EntityBase {
 
     /// Gets the entity's current position.
     #[inline]
-    pub fn position(&self) -> Vector3<f64> {
+    pub fn position(&self) -> DVec3 {
         *self.position.lock()
     }
 
@@ -128,7 +128,7 @@ impl EntityBase {
     }
 
     /// Sets the entity's position and notifies the callback.
-    pub fn set_position(&self, pos: Vector3<f64>) {
+    pub fn set_position(&self, pos: DVec3) {
         let old_pos = {
             let mut position = self.position.lock();
             let old = *position;

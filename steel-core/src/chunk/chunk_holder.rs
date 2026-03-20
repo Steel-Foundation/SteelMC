@@ -208,7 +208,6 @@ impl ChunkHolder {
     ///
     /// Returns `true` if a new task was actually scheduled, `false` if the chunk
     /// already has a suitable task or is already at the target status.
-    #[allow(clippy::missing_panics_doc)]
     #[inline]
     pub(crate) fn schedule_chunk_generation_task_b(
         &self,
@@ -225,7 +224,10 @@ impl ChunkHolder {
 
         let task = self.generation_task.lock();
 
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "unwrap is safe: guarded by is_none() check on the line above"
+        )]
         if task.is_none() || status > task.as_ref().unwrap().target_status {
             drop(task);
             self.reschedule_chunk_task_b(status, chunk_map);
@@ -303,7 +305,6 @@ impl ChunkHolder {
     ///
     /// # Panics
     /// Panics if the target status is not Empty and has no parent, or if the chunk status is invalid during generation.
-    #[allow(clippy::too_many_lines)]
     pub fn apply_step(
         self: &Arc<Self>,
         step: &'static ChunkStep,

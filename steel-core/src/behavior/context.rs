@@ -1,16 +1,17 @@
 //! Context types and results for block and item interactions.
 
+use glam::DVec3;
 use std::sync::Arc;
-
+use steel_registry::REGISTRY;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
-use steel_utils::math::Vector3;
 use steel_utils::types::InteractionHand;
 
 use crate::fluid::FluidStateExt;
-use crate::inventory::lock::ContainerLockGuard;
+use crate::inventory::lock::{ContainerId, ContainerLockGuard};
 use crate::player::Player;
+use crate::player::player_inventory::PlayerInventory;
 use crate::world::World;
 pub use steel_registry::items::item::BlockHitResult;
 
@@ -43,7 +44,7 @@ pub struct BlockPlaceContext<'a> {
     /// The face of the block that was clicked.
     pub clicked_face: Direction,
     /// The exact location where the click occurred.
-    pub click_location: Vector3<f64>,
+    pub click_location: DVec3,
     /// Whether the click was inside the block.
     pub inside: bool,
     /// The position where the block will be placed.
@@ -84,16 +85,9 @@ impl BlockPlaceContext<'_> {
         // If not replacing the clicked block, prioritize the opposite of clicked face
         if !self.replace_clicked {
             let clicked_opposite = self.clicked_face.opposite();
-            let mut index = 0;
-
-            // Find the index of the opposite direction
-            while index < directions.len() && directions[index] != clicked_opposite {
-                index += 1;
-            }
-
-            // Move it to the front by shifting elements
-            if index > 0 && index < directions.len() {
-                // Shift elements [0..index] to [1..index+1] and put opposite at [0]
+            if let Some(index) = directions.iter().position(|&d| d == clicked_opposite)
+                && index > 0
+            {
                 directions.copy_within(0..index, 1);
                 directions[0] = clicked_opposite;
             }
@@ -112,6 +106,9 @@ impl BlockPlaceContext<'_> {
 }
 
 /// Context for using an item on a block.
+///
+/// Access the hand item via `item()` and the player inventory via `inventory()`.
+/// The compiler prevents holding both simultaneously, avoiding aliased mutation.
 pub struct UseOnContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -121,13 +118,109 @@ pub struct UseOnContext<'a> {
     pub hit_result: BlockHitResult,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    /// The item stack being used (mutable for consumption).
-    pub item_stack: &'a mut ItemStack,
-    /// Lock guard holding the player's inventory.
-    pub inv_guard: &'a mut ContainerLockGuard,
+    inv_guard: &'a mut ContainerLockGuard,
+    inv_id: ContainerId,
+}
+
+impl<'a> UseOnContext<'a> {
+    /// Creates a new `UseOnContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            hit_result,
+            world,
+            inv_guard,
+            inv_id,
+        }
+    }
+
+    /// Returns a mutable reference to the item in the player's hand.
+    ///
+    /// Cannot be held simultaneously with `inventory()` or `guard()`.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
+    pub fn item(&mut self) -> &mut ItemStack {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+            .get_item_in_hand_mut(self.hand)
+    }
+
+    /// Returns a mutable reference to the player's inventory.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
+    pub fn inventory(&mut self) -> &mut PlayerInventory {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+    }
+
+    /// Returns a mutable reference to the container lock guard.
+    pub const fn guard(&mut self) -> &mut ContainerLockGuard {
+        self.inv_guard
+    }
+
+    /// Builds a [`BlockPlaceContext`] from this interaction context.
+    ///
+    /// Returns `None` if placement is invalid (out of bounds or non-replaceable target).
+    /// This is the common prefix of vanilla's `BlockItem.useOn`.
+    #[must_use]
+    pub fn build_place_context(&self) -> Option<BlockPlaceContext<'a>> {
+        let clicked_pos = self.hit_result.block_pos;
+        let clicked_state = self.world.get_block_state(clicked_pos);
+        let clicked_block = REGISTRY.blocks.by_state_id(clicked_state);
+        let clicked_replaceable = clicked_block.is_some_and(|b| b.config.replaceable);
+
+        let (place_pos, replace_clicked) = if clicked_replaceable {
+            (clicked_pos, true)
+        } else {
+            (self.hit_result.direction.relative(clicked_pos), false)
+        };
+
+        if !self.world.is_in_valid_bounds(place_pos) {
+            return None;
+        }
+
+        let existing_state = self.world.get_block_state(place_pos);
+        let existing_block = REGISTRY.blocks.by_state_id(existing_state);
+        if !existing_block.is_some_and(|b| b.config.replaceable) {
+            return None;
+        }
+
+        let (yaw, pitch) = self.player.rotation.load();
+
+        Some(BlockPlaceContext {
+            clicked_pos,
+            clicked_face: self.hit_result.direction,
+            click_location: self.hit_result.location,
+            inside: self.hit_result.inside,
+            relative_pos: place_pos,
+            replace_clicked,
+            horizontal_direction: Direction::from_yaw(yaw),
+            rotation: yaw,
+            pitch,
+            world: self.world,
+        })
+    }
 }
 
 /// Context for using an item (general usage).
+///
+/// Same mediated-access pattern as `UseOnContext`. Call `item()` for the hand item,
+/// `inventory()` for the player inventory, or `guard()` for the full lock guard.
 pub struct UseItemContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -135,10 +228,56 @@ pub struct UseItemContext<'a> {
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    /// The item stack being used (mutable for consumption).
-    pub item_stack: &'a mut ItemStack,
-    /// Lock guard holding the player's inventory. Behaviors that need to add
-    /// items (e.g. bucket swap) must use this instead of `player.add_item_or_drop`
-    /// to avoid deadlocking on the inventory mutex.
-    pub inv_guard: &'a mut ContainerLockGuard,
+    inv_guard: &'a mut ContainerLockGuard,
+    inv_id: ContainerId,
+}
+
+impl<'a> UseItemContext<'a> {
+    /// Creates a new `UseItemContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            world,
+            inv_guard,
+            inv_id,
+        }
+    }
+
+    /// Returns a mutable reference to the item in the player's hand.
+    ///
+    /// Cannot be held simultaneously with `inventory()` or `guard()`.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
+    pub fn item(&mut self) -> &mut ItemStack {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+            .get_item_in_hand_mut(self.hand)
+    }
+
+    /// Returns a mutable reference to the player's inventory.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
+    pub fn inventory(&mut self) -> &mut PlayerInventory {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+    }
+
+    /// Returns a mutable reference to the container lock guard.
+    pub const fn guard(&mut self) -> &mut ContainerLockGuard {
+        self.inv_guard
+    }
 }

@@ -74,7 +74,6 @@ impl Xoroshiro {
     }
 }
 
-#[allow(missing_docs)]
 impl MarsagliaPolarGaussian for Xoroshiro {
     fn stored_next_gaussian(&self) -> Option<f64> {
         self.next_gaussian
@@ -91,7 +90,6 @@ const fn mix_stafford_13(z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-#[allow(missing_docs)]
 impl Random for Xoroshiro {
     fn fork(&mut self) -> Self {
         Self::new(self.next_random(), self.next_random())
@@ -145,9 +143,11 @@ impl Random for Xoroshiro {
     }
 }
 
-#[allow(missing_docs)]
 impl PositionalRandom for XoroshiroSplitter {
-    #[allow(clippy::many_single_char_names)]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "matches vanilla's positional seeding math notation"
+    )]
     fn at(&self, x: i32, y: i32, z: i32) -> RandomSource {
         let l = get_seed(x, y, z) as u64;
         let m = l ^ self.seed_lo;
@@ -166,11 +166,12 @@ impl PositionalRandom for XoroshiroSplitter {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unreadable_literal,
     clippy::cast_sign_loss,
     clippy::items_after_statements,
-    clippy::float_cmp
+    clippy::float_cmp,
+    reason = "test vectors from vanilla Java; raw literals and casts are intentional"
 )]
 mod tests {
     use super::*;

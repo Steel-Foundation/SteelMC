@@ -74,7 +74,7 @@ impl Item {
 pub type ItemRef = &'static Item;
 
 impl PartialEq for ItemRef {
-    #[allow(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(*self, *other)
     }

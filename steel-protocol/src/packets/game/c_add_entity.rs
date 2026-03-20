@@ -167,7 +167,7 @@ fn pack_component(value: f64) -> i64 {
 impl CAddEntity {
     /// Creates a new CAddEntity packet for spawning a player.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn player(
         id: i32,
         uuid: Uuid,

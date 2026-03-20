@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
@@ -10,14 +11,13 @@ use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::SyncMutex;
-use steel_utils::math::Vector3;
 use uuid::Uuid;
 
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
 use crate::world::World;
-use crate::{entity::damage::DamageSource, inventory::equipment::EquipmentSlot, player::Player};
+use crate::{entity::damage::DamageSource, player::Player};
 
 use entities::ItemEntity;
 
@@ -104,9 +104,9 @@ pub trait Entity: Send + Sync {
     }
 
     /// Gets the entity's current position.
-    fn position(&self) -> Vector3<f64> {
+    fn position(&self) -> DVec3 {
         self.base()
-            .map_or(Vector3::new(0.0, 0.0, 0.0), EntityBase::position)
+            .map_or(DVec3::new(0.0, 0.0, 0.0), EntityBase::position)
     }
 
     /// Gets the entity's bounding box for collision queries.
@@ -203,12 +203,12 @@ pub trait Entity: Send + Sync {
     }
 
     /// Gets the entity's velocity in blocks per tick.
-    fn velocity(&self) -> Vector3<f64> {
-        Vector3::new(0.0, 0.0, 0.0)
+    fn velocity(&self) -> DVec3 {
+        DVec3::new(0.0, 0.0, 0.0)
     }
 
     /// Sets the entity's velocity.
-    fn set_velocity(&self, _velocity: Vector3<f64>) {}
+    fn set_velocity(&self, _velocity: DVec3) {}
 
     /// Returns true if the entity is on the ground.
     fn on_ground(&self) -> bool {
@@ -219,7 +219,7 @@ pub trait Entity: Send + Sync {
     fn set_on_ground(&self, _on_ground: bool) {}
 
     /// Sets the entity's position.
-    fn set_position(&self, pos: Vector3<f64>) {
+    fn set_position(&self, pos: DVec3) {
         if let Some(base) = self.base() {
             base.set_position(pos);
         }
@@ -297,7 +297,7 @@ pub trait Entity: Send + Sync {
         // TODO: Support block-specific behavior (slime bounce, etc.)
         if result.horizontal_collision {
             let vel = self.velocity();
-            self.set_velocity(Vector3::new(
+            self.set_velocity(DVec3::new(
                 if result.x_collision { 0.0 } else { vel.x },
                 vel.y,
                 if result.z_collision { 0.0 } else { vel.z },
@@ -306,7 +306,7 @@ pub trait Entity: Send + Sync {
         if result.vertical_collision {
             // Default Block.updateEntityMovementAfterFallOn behavior: zero Y velocity
             let vel = self.velocity();
-            self.set_velocity(Vector3::new(vel.x, 0.0, vel.z));
+            self.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
         }
 
         Some(result)
@@ -325,7 +325,7 @@ pub trait Entity: Send + Sync {
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         let pos = self.position();
-        world.spawn_item(Vector3::new(pos.x, pos.y + y_offset, pos.z), item)
+        world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
     }
 
     // === Persistence Methods ===
@@ -377,7 +377,10 @@ pub trait Entity: Send + Sync {
     /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
     /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
     /// and discard). Default returns `false` (entity ignores damage).
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameters used by overrides"
+    )]
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
         false
     }
@@ -477,33 +480,4 @@ pub trait LivingEntity: Entity {
 
     /// Sets the entity's speed.
     fn set_speed(&self, speed: f32);
-
-    // Equipment methods
-
-    /// Gets a clone of the item in the specified equipment slot.
-    ///
-    /// Default implementation returns an empty stack.
-    fn get_item_by_slot(&self, _slot: EquipmentSlot) -> ItemStack {
-        ItemStack::empty()
-    }
-
-    /// Gets the main hand item.
-    fn get_main_hand_item(&self) -> ItemStack {
-        self.get_item_by_slot(EquipmentSlot::MainHand)
-    }
-
-    /// Gets the off hand item.
-    fn get_off_hand_item(&self) -> ItemStack {
-        self.get_item_by_slot(EquipmentSlot::OffHand)
-    }
-
-    /// Checks if the main hand slot is empty.
-    fn is_main_hand_empty(&self) -> bool {
-        self.get_item_by_slot(EquipmentSlot::MainHand).is_empty()
-    }
-
-    /// Checks if the off hand slot is empty.
-    fn is_off_hand_empty(&self) -> bool {
-        self.get_item_by_slot(EquipmentSlot::OffHand).is_empty()
-    }
 }

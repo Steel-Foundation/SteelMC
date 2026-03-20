@@ -9,9 +9,8 @@ use crate::{behavior::blocks::vegetation::crop_block::CropLike, world::World};
 
 /// Blocks that react to bonemeal.
 pub trait Bonemealable {
-    #[expect(unused_variables)]
     /// Returns the age increase from bonemeal.
-    fn get_age_increase(&self, world: &Arc<World>) -> u8 {
+    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
         0
     }
 

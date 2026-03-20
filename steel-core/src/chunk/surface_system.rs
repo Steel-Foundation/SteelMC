@@ -331,7 +331,10 @@ impl SurfaceSystem {
     ///
     /// Matches vanilla's `SurfaceSystem.erodedBadlandsExtension()`.
     /// Returns the new `start_height` if blocks were added above the original surface.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla SurfaceSystem.erodedBadlandsExtension signature"
+    )]
     pub fn eroded_badlands_extension(
         &self,
         chunk: &super::chunk_access::ChunkAccess,
@@ -411,7 +414,10 @@ impl SurfaceSystem {
     ///
     /// Matches vanilla's `SurfaceSystem.frozenOceanExtension()`.
     /// Called after surface rules for frozen ocean / deep frozen ocean biomes.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla SurfaceSystem.frozenOceanExtension signature"
+    )]
     pub fn frozen_ocean_extension(
         &self,
         chunk: &super::chunk_access::ChunkAccess,

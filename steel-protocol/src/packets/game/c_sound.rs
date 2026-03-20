@@ -65,7 +65,7 @@ impl CSound {
     /// * `pitch` - Pitch multiplier (1.0 = normal)
     /// * `seed` - Random seed for sound variations
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         sound_id: i32,
         source: SoundSource,

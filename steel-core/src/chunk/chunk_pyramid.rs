@@ -255,7 +255,10 @@ impl ChunkStep {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "signature must match ChunkStatusTask fn pointer type"
+)]
 fn noop_task(
     _context: Arc<WorldGenContext>,
     _step: &ChunkStep,
@@ -367,7 +370,7 @@ macro_rules! define_pyramid {
             }),* $(,)?
         };
     ) => {
-        #[allow(missing_docs)]
+        #[expect(missing_docs, reason = "generated pyramid constant; name is self-documenting")]
         $vis const $name: &'static ChunkPyramid = &{
             ConstPyramidBuilder::new()
             $(

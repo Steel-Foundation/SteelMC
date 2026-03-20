@@ -2,7 +2,7 @@
 use std::{
     cmp::max,
     future::Future,
-    mem::{self, MaybeUninit},
+    mem,
     pin::Pin,
     sync::{
         Arc,
@@ -32,7 +32,6 @@ pub struct StaticCache2D<T> {
 
 impl<T> StaticCache2D<T> {
     /// Creates a `StaticCache2D` by populating it via a factory.
-    #[allow(clippy::missing_panics_doc)]
     pub fn create<F>(center_x: i32, center_z: i32, radius: i32, factory: F) -> Self
     where
         F: Fn(i32, i32) -> T + Send + Sync + 'static,
@@ -42,24 +41,21 @@ impl<T> StaticCache2D<T> {
         let min_x = center_x - radius;
         let min_z = center_z - radius;
         let cap = (size * size) as usize;
-        let mut cache = Vec::with_capacity(cap);
-        cache.resize_with(cap, MaybeUninit::uninit);
-
         let size_usize = size as usize;
-        let factory_ref = &factory;
 
-        cache.iter_mut().enumerate().for_each(|(index, slot)| {
-            let x_offset = (index % size_usize) as i32;
-            let z_offset = (index / size_usize) as i32;
-            slot.write(factory_ref(min_x + x_offset, min_z + z_offset));
-        });
+        let cache: Vec<T> = (0..cap)
+            .map(|index| {
+                let x_offset = (index % size_usize) as i32;
+                let z_offset = (index / size_usize) as i32;
+                factory(min_x + x_offset, min_z + z_offset)
+            })
+            .collect();
 
         Self {
             min_x,
             min_z,
             size,
-            // SAFETY: We know that T is Send + Sync, and that the whole cache is initialized, so we can transmute it to a Vec<T>.
-            cache: unsafe { mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(cache) },
+            cache,
         }
     }
 
@@ -122,8 +118,11 @@ pub struct ChunkGenerationTask {
 impl ChunkGenerationTask {
     /// Creates a new generation task.
     #[must_use]
-    #[allow(clippy::unwrap_used, clippy::missing_panics_doc)]
     #[inline]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable: ThreadPoolBuilder::build only fails on OS thread errors"
+    )]
     pub fn new(
         pos: ChunkPos,
         target_status: ChunkStatus,

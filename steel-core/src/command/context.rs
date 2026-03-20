@@ -1,7 +1,7 @@
 //! This module contains the command context.
 use std::sync::Arc;
 
-use steel_utils::math::Vector3;
+use glam::DVec3;
 
 use crate::command::sender::CommandSender;
 use crate::player::Player;
@@ -20,7 +20,7 @@ pub struct CommandContext {
     /// The server where the command has been run.
     pub server: Arc<Server>,
     /// The position of the command.
-    pub position: Vector3<f64>,
+    pub position: DVec3,
     /// The rotation of the command.
     pub rotation: Option<(f32, f32)>,
     /// The anchor of the command.
@@ -51,7 +51,7 @@ impl CommandContext {
             // TODO: Check this. The default position is the surface of the world center
             // (Where the compass should point to)
             .map_or(
-                Vector3::new(
+                DVec3::new(
                     f64::from(world_spawn.x),
                     f64::from(world_spawn.y),
                     f64::from(world_spawn.z),

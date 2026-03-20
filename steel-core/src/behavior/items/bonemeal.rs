@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use rand::RngExt;
+use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_shape_full_block},
     item_stack::ItemStack,
@@ -16,9 +17,10 @@ use crate::{
 };
 
 /// Behavior for the Bonemeal item.
-pub struct BonemealBehavior;
+#[item_behavior]
+pub struct BoneMealItem;
 
-impl BonemealBehavior {
+impl BoneMealItem {
     fn grow(item_stack: &mut ItemStack, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {
@@ -100,32 +102,22 @@ impl BonemealBehavior {
     }
 }
 
-impl ItemBehavior for BonemealBehavior {
+impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if Self::grow(
-            context.item_stack,
-            context.world,
-            context.hit_result.block_pos,
-        ) {
+        let world = context.world;
+        let pos = context.hit_result.block_pos;
+        let direction = context.hit_result.direction;
+        if Self::grow(context.item(), world, pos) {
             // TODO: particles
             return InteractionResult::Success;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
         let is_clicked_face_sturdy = state.is_face_sturdy(context.hit_result.direction);
         if is_clicked_face_sturdy
-            && Self::grow_water_plant(
-                context.item_stack,
-                context.world,
-                context
-                    .hit_result
-                    .block_pos
-                    .relative(context.hit_result.direction),
-                context.hit_result.direction,
-            )
+            && Self::grow_water_plant(context.item(), world, pos.relative(direction), direction)
         {
             return InteractionResult::Success;
         }
         InteractionResult::Pass
-        // TODO: growing water plants
     }
 }

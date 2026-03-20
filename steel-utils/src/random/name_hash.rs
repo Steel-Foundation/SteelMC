@@ -59,7 +59,10 @@ const S: [u32; 64] = [
 ];
 
 // RFC 1321 precomputed table: T[i] = floor(2^32 * abs(sin(i+1)))
-#[allow(clippy::unreadable_literal)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "RFC 1321 precomputed table; separators would obscure the standard values"
+)]
 const T: [u32; 64] = [
     0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
     0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
@@ -73,9 +76,15 @@ const T: [u32; 64] = [
 
 /// MD5 digest for messages shorter than 56 bytes (single 64-byte block).
 // RFC 1321 uses single-letter variable names (a, b, c, d, f, g) — conventional for MD5.
-#[allow(clippy::many_single_char_names)]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "matches RFC 1321 algorithm notation"
+)]
 // RFC 1321 initial hash values and round constants are unseparated by convention.
-#[allow(clippy::unreadable_literal)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "RFC 1321 initial hash values; underscores would obscure the standard constants"
+)]
 const fn const_md5(data: &[u8]) -> [u8; 16] {
     assert!(
         data.len() < 56,

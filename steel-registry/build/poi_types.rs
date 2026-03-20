@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
 struct BlockStateEntry {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     block: String,
     state_id: u32,
 }

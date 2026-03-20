@@ -1,8 +1,8 @@
 //! Clientbound damage event packet - tells the client an entity took damage.
 
+use glam::DVec3;
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_DAMAGE_EVENT;
-use steel_utils::math::Vector3;
 
 /// Sent when an entity takes damage. Used for hit animations and damage direction indicator.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
@@ -21,5 +21,5 @@ pub struct CDamageEvent {
     pub source_direct_id: i32,
     /// Optional source position (e.g. for explosions).
     /// Encoded as bool-prefixed via the `Option<T: WriteTo>` impl.
-    pub source_position: Option<Vector3<f64>>,
+    pub source_position: Option<DVec3>,
 }

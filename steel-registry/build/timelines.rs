@@ -6,7 +6,7 @@ use quote::quote;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct TimelineJson {
     #[serde(default)]
     period_ticks: Option<u32>,
