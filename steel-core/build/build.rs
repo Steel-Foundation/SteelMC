@@ -55,7 +55,6 @@ pub fn main() {
 }
 
 /// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
-#[expect(unused)]
 #[must_use]
 fn to_item_ident(name: &str) -> Ident {
     Ident::new(name, Span::call_site())
