@@ -508,7 +508,7 @@ pub struct PropertyCheck {
 
 /// A condition that must be met for a loot entry or pool to apply.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum LootCondition {
     /// The loot survives explosion damage (random chance based on explosion radius).
     /// Vanilla: 1/radius chance to pass. If no explosion, always passes.

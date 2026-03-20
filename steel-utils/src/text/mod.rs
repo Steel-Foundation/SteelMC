@@ -138,7 +138,10 @@ fn hash_component_as_map(component: &TextComponent, hasher: &mut ComponentHasher
     hasher.end_map();
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each Content variant requires distinct hashing logic; splitting would hurt readability"
+)]
 fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
     match content {
         Content::Text { text } => {
@@ -595,7 +598,10 @@ fn hash_hover_fields(event: &HoverEvent, hasher: &mut ComponentHasher) {
     hasher.end_map();
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "each ClickEvent variant requires distinct hashing logic; splitting would hurt readability"
+)]
 fn hash_click_fields(event: &ClickEvent, hasher: &mut ComponentHasher) {
     let mut entries: Vec<HashEntry> = Vec::new();
 

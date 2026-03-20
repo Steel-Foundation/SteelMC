@@ -7,7 +7,10 @@
 
 // Vanilla uses `(a + b) / 2` (integer division, truncates toward zero) for midpoints.
 // `i64::midpoint` rounds differently for negative odd sums, so we can't use it.
-#![allow(clippy::manual_midpoint)]
+#![expect(
+    clippy::manual_midpoint,
+    reason = "must match vanilla's truncate-toward-zero behavior"
+)]
 
 use std::cmp::Ordering;
 
@@ -79,7 +82,6 @@ fn cost(parameter_space: &[Parameter; PARAMETER_COUNT]) -> i64 {
 }
 
 /// Build an R-Tree from a list of entries, matching vanilla's algorithm.
-#[allow(clippy::needless_range_loop, clippy::too_many_lines)]
 fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
     assert!(!entries.is_empty());
 
@@ -143,6 +145,7 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
         .map(|bucket_entries| {
             let mut bounds: [Option<Parameter>; PARAMETER_COUNT] = [None; PARAMETER_COUNT];
             for e in &bucket_entries {
+                #[expect(clippy::needless_range_loop, reason = "dim indexes parallel arrays")]
                 for dim in 0..PARAMETER_COUNT {
                     bounds[dim] = Some(e.parameter_space[dim].span_with(bounds[dim].as_ref()));
                 }
@@ -215,7 +218,10 @@ fn expected_children_count(total: usize) -> usize {
 /// This matches vanilla's `bucketize()` which creates `SubTree` objects that
 /// capture the children's current sorted order. We return cloned entries so
 /// that later sorts of the original slice don't affect the saved buckets.
-#[allow(clippy::needless_range_loop)]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "indexing into PARAMETER_COUNT parallel arrays; iterator would be less clear"
+)]
 fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
     let expected = expected_children_count(entries.len());
     let mut buckets = Vec::new();
@@ -269,7 +275,10 @@ impl FlatNode {
     /// Uses branchless `max` operations (compiles to `cmov`) to avoid branch
     /// mispredictions in the hot inner loop.
     #[inline]
-    #[allow(clippy::needless_range_loop)] // Indexing into 3 parallel arrays; iterator would be less clear
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "indexing into parallel min/max arrays; iterator zip would be less clear"
+    )]
     fn distance(&self, target: &[i64; PARAMETER_COUNT]) -> i64 {
         let mut d = 0i64;
         for i in 0..PARAMETER_COUNT {

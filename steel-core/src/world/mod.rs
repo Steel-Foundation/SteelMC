@@ -221,8 +221,10 @@ impl World {
     }
 
     /// Cleans up the world by saving all chunks.
-    /// `await_holding_lock` is safe here cause it's only done on shutdown
-    #[allow(clippy::await_holding_lock)]
+    #[expect(
+        clippy::await_holding_lock,
+        reason = "holding the write lock across await is safe here because it only happens during shutdown"
+    )]
     pub async fn cleanup(&self, total_saved: &mut usize) {
         match self.level_data.write().save().await {
             Ok(()) => log::info!(
@@ -402,7 +404,10 @@ impl World {
     /// This uses SHA-256 hashing to prevent clients from easily extracting
     /// the actual world seed, matching vanilla's `BiomeManager.obfuscateSeed()`.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)] // SHA-256 always produces 32 bytes
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable: SHA-256 always produces 32 bytes"
+    )]
     pub fn obfuscated_seed(&self) -> i64 {
         let seed = self.seed();
         let mut hasher = Sha256::new();
@@ -705,7 +710,10 @@ impl World {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting would hurt readability of the weather state machine"
+    )]
     fn tick_weather(&self) {
         if !self.can_have_weather() {
             return;
@@ -791,7 +799,10 @@ impl World {
         // Broadcast weather changes to clients
         let raining_now = self.is_raining_with_guard(&weather);
         if raining_before == raining_now {
-            #[expect(clippy::float_cmp)]
+            #[expect(
+                clippy::float_cmp,
+                reason = "comparing against the exact previously-assigned value to detect any change"
+            )]
             if weather.previous_rain_level != weather.rain_level {
                 self.broadcast_to_all(CGameEvent {
                     event: GameEventType::RainLevelChange,
@@ -799,7 +810,10 @@ impl World {
                 });
             }
 
-            #[expect(clippy::float_cmp)]
+            #[expect(
+                clippy::float_cmp,
+                reason = "comparing against the exact previously-assigned value to detect any change"
+            )]
             if weather.previous_thunder_level != weather.thunder_level {
                 self.broadcast_to_all(CGameEvent {
                     event: GameEventType::ThunderLevelChange,
@@ -1194,7 +1208,10 @@ impl World {
     /// * `entity_id` - The entity ID of the player breaking the block
     /// * `pos` - The position of the block being broken
     /// * `progress` - The destruction progress (0-9), or -1 to clear
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "value is clamped to -1..=9 before cast; -1 wraps intentionally to 255 as sentinel"
+    )]
     pub fn broadcast_block_destruction(&self, entity_id: i32, pos: BlockPos, progress: i32) {
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x()),

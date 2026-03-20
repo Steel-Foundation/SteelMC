@@ -377,7 +377,10 @@ pub trait Entity: Send + Sync {
     /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
     /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
     /// and discard). Default returns `false` (entity ignores damage).
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameters used by overrides"
+    )]
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
         false
     }

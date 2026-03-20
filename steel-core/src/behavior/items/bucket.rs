@@ -157,7 +157,10 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 }
 
 // TODO: Refactor into smaller helpers once all bucket types are implemented
-#[allow(clippy::too_many_lines)] // Single method to match vanilla's emptyContents flow; will be refactored
+#[expect(
+    clippy::too_many_lines,
+    reason = "mirrors vanilla's emptyContents flow; splitting would obscure the sequential placement logic"
+)]
 fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> InteractionResult {
     // Raytrace to find target block
     let (start, end) = context.player.get_ray_endpoints();

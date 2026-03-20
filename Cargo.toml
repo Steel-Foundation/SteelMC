@@ -175,6 +175,9 @@ cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 absolute_paths = "warn"
 missing_const_for_fn = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
 
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -2 }

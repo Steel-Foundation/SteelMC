@@ -146,7 +146,10 @@ impl<'a> UseOnContext<'a> {
     /// Returns a mutable reference to the item in the player's hand.
     ///
     /// Cannot be held simultaneously with `inventory()` or `guard()`.
-    #[allow(clippy::missing_panics_doc)] // Panic is unreachable when context is correctly constructed
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
     pub fn item(&mut self) -> &mut ItemStack {
         self.inv_guard
             .get_player_inventory_mut(self.inv_id)
@@ -155,7 +158,10 @@ impl<'a> UseOnContext<'a> {
     }
 
     /// Returns a mutable reference to the player's inventory.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
     pub fn inventory(&mut self) -> &mut PlayerInventory {
         self.inv_guard
             .get_player_inventory_mut(self.inv_id)
@@ -248,7 +254,10 @@ impl<'a> UseItemContext<'a> {
     /// Returns a mutable reference to the item in the player's hand.
     ///
     /// Cannot be held simultaneously with `inventory()` or `guard()`.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
     pub fn item(&mut self) -> &mut ItemStack {
         self.inv_guard
             .get_player_inventory_mut(self.inv_id)
@@ -257,7 +266,10 @@ impl<'a> UseItemContext<'a> {
     }
 
     /// Returns a mutable reference to the player's inventory.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
     pub fn inventory(&mut self) -> &mut PlayerInventory {
         self.inv_guard
             .get_player_inventory_mut(self.inv_id)

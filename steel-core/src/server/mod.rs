@@ -66,7 +66,6 @@ impl Server {
     /// # Panics
     ///
     /// Panics if the global registry has already been initialized.
-    #[allow(clippy::too_many_lines)]
     pub async fn new(chunk_runtime: Arc<Runtime>, cancel_token: CancellationToken) -> Self {
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();

@@ -59,7 +59,10 @@ pub trait FluidBehavior: Send + Sync {
     }
 
     /// Called at tick time to play ambient animations (sounds, particles).
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {}
 
     /// Checks if this fluid can convert to a source block at the given position.
@@ -83,12 +86,18 @@ pub trait FluidBehavior: Send + Sync {
 
     /// Called on random tick for this fluid's block.
     /// Used for lava fire spread.
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
     fn random_tick(&self, world: &Arc<World>, pos: BlockPos) {}
 
     /// Returns the tick delay to use when scheduling a newly-spread block,
     /// taking into account the old and new fluid states.
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default implementation only uses world and tick_delay; old/new states are available for overrides"
+    )]
     fn get_spread_delay(
         &self,
         world: &Arc<World>,
@@ -103,14 +112,12 @@ pub trait FluidBehavior: Send + Sync {
     ///
     /// Determines how strongly entities/items are pushed horizontally.
     // TODO: implement flow velocity for entity interactions (pushing, drowning).
-    #[allow(unused_variables)]
     fn get_flow_x(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
         0.0
     }
 
     /// Returns the z component of the flow velocity at a position (used for entity physics).
     // TODO: implement flow velocity for entity interactions (pushing, drowning).
-    #[allow(unused_variables)]
     fn get_flow_z(&self, _world: &Arc<World>, _pos: BlockPos) -> f64 {
         0.0
     }

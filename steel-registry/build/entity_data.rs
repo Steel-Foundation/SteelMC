@@ -13,7 +13,7 @@ use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
 struct EntityEntry {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     id: i32,
     name: String,
     synched_data: Vec<SynchedDataEntry>,

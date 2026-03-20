@@ -201,7 +201,6 @@ pub struct Player {
     pub world: Arc<World>,
 
     /// Reference to the server (for entity ID generation, etc.).
-    #[allow(dead_code)]
     pub(crate) server: Weak<Server>,
 
     /// The entity ID assigned to this player.
@@ -414,7 +413,10 @@ impl Player {
     }
 
     /// Ticks the player.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "world coordinates are always within i32 range in a valid Minecraft world"
+    )]
     pub fn tick(&self) {
         // Increment local tick counter
         self.tick_count.fetch_add(1, Ordering::Relaxed);
@@ -669,7 +671,10 @@ impl Player {
     }
 
     /// Handles a chat message from the player.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "chat verification, signing, and broadcast form a single logical flow; splitting would hurt readability"
+    )]
     pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
         let chat_message = packet.message.clone();
 
@@ -872,7 +877,10 @@ impl Player {
     /// Handles a move player packet.
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.handleMovePlayer()`.
-    #[allow(clippy::cast_lossless, clippy::too_many_lines, clippy::similar_names)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "matches vanilla handleMovePlayer; splitting would hurt readability"
+    )]
     pub fn handle_move_player(&self, packet: SMovePlayer) {
         if Self::is_invalid_position(
             packet.get_x(0.0),
@@ -2668,7 +2676,10 @@ impl Player {
     ///
     /// # Panics
     /// If the player dies in a dimension that doesn't exist.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "respawn logic is a single sequential operation matching vanilla ServerPlayer.respawn; splitting would hurt readability"
+    )]
     pub fn respawn(&self) {
         {
             let mut living_base = self.living_base.lock();

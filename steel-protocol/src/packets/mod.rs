@@ -1,7 +1,7 @@
 //! # Steel Protocol Packets
 //!
 //! This module contains all the packet definitions.
-#![allow(missing_docs)]
+#![expect(missing_docs)]
 pub mod common;
 pub mod config;
 pub mod game;

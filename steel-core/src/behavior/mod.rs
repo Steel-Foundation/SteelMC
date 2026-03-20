@@ -31,17 +31,17 @@ pub mod fluid;
 mod item;
 pub mod items;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/blocks.rs"]
 pub mod block_behaviors;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/items.rs"]
 pub mod item_behaviors;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/strippables.rs"]
 pub mod strippables;
@@ -51,7 +51,7 @@ pub mod strippables;
 #[path = "generated/waxables.rs"]
 pub mod waxables;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/weathering.rs"]
 pub mod weathering;

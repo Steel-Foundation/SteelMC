@@ -1,4 +1,7 @@
-#![allow(missing_docs)]
+#![expect(
+    missing_docs,
+    reason = "task functions are named after their vanilla counterparts"
+)]
 
 use std::sync::Arc;
 
@@ -91,7 +94,10 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable given correct status ordering"
+    )]
     pub fn generate_noise(
         context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -107,7 +113,10 @@ impl ChunkStatusTasks {
 
     /// # Panics
     /// Panics if the chunk has not reached `ChunkStatus::Noise`.
-    #[allow(clippy::similar_names)]
+    #[expect(
+        clippy::similar_names,
+        reason = "chunk_x/chunk_z and local_qx/local_qz are intentionally similar"
+    )]
     pub fn generate_surface(
         context: Arc<WorldGenContext>,
         _step: &ChunkStep,

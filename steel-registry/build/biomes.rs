@@ -225,7 +225,7 @@ struct BackgroundMusicEntry {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 struct BackgroundMusic {
     #[serde(default)]
     default: Option<BackgroundMusicEntry>,

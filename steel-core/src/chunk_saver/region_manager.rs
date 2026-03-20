@@ -225,7 +225,10 @@ impl RegionManager {
 
     /// Saves prepared chunk data to disk. This is the async part that doesn't
     /// need to hold the chunk lock.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic on `just inserted` is unreachable"
+    )]
     pub async fn save_chunk_data(
         &self,
         prepared: PreparedChunkSave,
@@ -325,7 +328,6 @@ impl RegionManager {
     /// * `level` - Weak reference to the world for `LevelChunk`
     ///
     /// The region must already be acquired via `acquire_chunk` before calling this.
-    #[allow(clippy::missing_panics_doc)]
     pub async fn load_chunk(
         &self,
         pos: ChunkPos,
@@ -376,7 +378,10 @@ impl RegionManager {
     /// generating a chunk, and call `release_chunk` when done with the chunk.
     ///
     /// Returns `Ok(true)` if the chunk exists on disk, `Ok(false)` if it doesn't.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic on `just inserted` is unreachable"
+    )]
     pub async fn acquire_chunk(&self, pos: ChunkPos) -> io::Result<bool> {
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);

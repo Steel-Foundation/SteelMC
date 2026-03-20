@@ -206,13 +206,13 @@ pub fn with_indices<const N: usize>(
         }
     }
 
-    // SAFETY: All indices are verified unique and in-bounds above. Each call to
-    // `get_item_mut` returns a pointer to a distinct slot, so the resulting
-    // mutable references do not alias.
     let mut ptrs = [ptr::null_mut::<ItemStack>(); N];
     for i in 0..N {
         ptrs[i] = ptr::from_mut(container.get_item_mut(indices[i]));
     }
+    // SAFETY: All indices are verified unique and in-bounds above. Each call to
+    // `get_item_mut` returns a pointer to a distinct slot, so the resulting
+    // mutable references do not alias.
     ptrs.map(|ptr| unsafe { &mut *ptr })
 }
 

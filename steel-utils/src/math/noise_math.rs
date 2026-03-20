@@ -77,7 +77,10 @@ pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
 /// Java reference: `Mth.lerp3(...)`
 #[inline]
 #[must_use]
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "matches vanilla's Mth.lerp3 signature with 8 grid corner values"
+)]
 pub fn lerp3(
     a1: f64,
     a2: f64,

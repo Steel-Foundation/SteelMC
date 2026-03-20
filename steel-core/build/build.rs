@@ -1,5 +1,8 @@
-#![allow(missing_docs)]
-#![allow(clippy::disallowed_types)] // Build scripts don't have access to FxHashMap
+#![expect(missing_docs, reason = "internal build script")]
+#![expect(
+    clippy::disallowed_types,
+    reason = "build script lacks project type aliases"
+)]
 
 use heck::ToShoutySnakeCase;
 use proc_macro2::Span;

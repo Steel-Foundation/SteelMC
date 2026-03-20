@@ -219,7 +219,7 @@ struct LootConditionJson {
 /// entity predicate (entity_properties), or damage source predicate. We parse these specifically.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 enum PredicateJson {
     Tool(ToolPredicateJson),
     Location(LocationPredicateJson),
@@ -483,7 +483,7 @@ fn generate_loot_context_entity(entity: &str) -> TokenStream {
 }
 
 /// Generate the EquipmentSlotGroup enum variant at build time.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn generate_equipment_slot_group(slot: &str) -> TokenStream {
     match slot {
         "any" => quote! { EquipmentSlotGroup::Any },
@@ -501,7 +501,7 @@ fn generate_equipment_slot_group(slot: &str) -> TokenStream {
 }
 
 /// Generate the DyeColor enum variant at build time.
-#[allow(dead_code)]
+#[expect(dead_code)]
 fn generate_dye_color(color: &str) -> TokenStream {
     match color {
         "white" => quote! { DyeColor::White },
