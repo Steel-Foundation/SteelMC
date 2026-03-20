@@ -288,7 +288,7 @@ fn project_shape_onto_grid(shape: VoxelShape, face: Direction, grid: &mut [bool;
 }
 
 #[cfg(test)]
-#[expect(clippy::float_cmp)]
+#[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
 mod tests {
     use super::*;
 

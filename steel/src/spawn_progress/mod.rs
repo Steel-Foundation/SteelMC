@@ -65,9 +65,12 @@ const TOTAL_SPAWN_CHUNKS: usize = ((SPAWN_RADIUS * 2 + 1) * (SPAWN_RADIUS * 2 + 
 /// Set `PREGEN_RADIUS` environment variable to generate a larger area.
 pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
-    #[expect(
-        unused,
-        reason = "logger only used with `spawn_chunk_display` feature enabled"
+    #[cfg_attr(
+        not(feature = "spawn_chunk_display"),
+        allow(
+            unused,
+            reason = "logger only used with `spawn_chunk_display` feature enabled"
+        )
     )]
     logger: &Arc<CommandLogger>,
 ) {

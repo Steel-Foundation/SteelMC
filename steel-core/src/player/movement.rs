@@ -367,7 +367,7 @@ pub fn validate_movement(world: &Arc<World>, input: &MovementInput) -> MovementV
 }
 
 #[cfg(test)]
-#[expect(clippy::float_cmp)]
+#[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
 mod tests {
     use super::*;
 

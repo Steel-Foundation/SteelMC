@@ -333,7 +333,11 @@ const DIMENSION_ORDER: &[&str] = &[
     "minecraft:the_end",
 ];
 
-#[expect(clippy::too_many_lines, clippy::similar_names)]
+#[expect(
+    clippy::too_many_lines,
+    clippy::similar_names,
+    reason = "large test with many hash assertions"
+)]
 fn chunk_stage_hashes_inner() {
     use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::chunk_generator::ChunkGenerator;

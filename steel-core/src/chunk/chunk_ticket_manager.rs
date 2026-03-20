@@ -221,7 +221,7 @@ impl ChunkTicketManager {
         self.levels.get(&pos).copied()
     }
 
-    #[expect(dead_code, reason = "used in tests via module-level access")]
+    #[cfg(test)]
     #[must_use]
     const fn is_dirty(&self) -> bool {
         self.dirty

@@ -1,4 +1,4 @@
-#![expect(missing_docs)]
+#![expect(missing_docs, reason = "benchmarks")]
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use steel_utils::random::{

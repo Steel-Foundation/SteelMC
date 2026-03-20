@@ -169,7 +169,6 @@ impl PositionalRandom for XoroshiroSplitter {
 #[expect(
     clippy::unreadable_literal,
     clippy::cast_sign_loss,
-    clippy::items_after_statements,
     clippy::float_cmp,
     reason = "test vectors from vanilla Java; raw literals and casts are intentional"
 )]
