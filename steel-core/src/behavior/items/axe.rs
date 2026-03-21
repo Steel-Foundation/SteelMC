@@ -21,7 +21,7 @@ use crate::behavior::{
 const AXIS_PROPERTY: EnumProperty<Axis> = BlockStateProperties::AXIS;
 
 /// Behavior for Axes, when used on wood or logs it turns them into their stripped variants
-#[item_behavior(class = "AxeItem")]
+#[item_behavior]
 pub struct AxeItem;
 
 impl ItemBehavior for AxeItem {
