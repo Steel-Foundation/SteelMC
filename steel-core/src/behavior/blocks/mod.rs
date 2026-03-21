@@ -8,7 +8,7 @@ mod container;
 mod decoration;
 mod farming;
 mod fluid;
-mod portal;
+pub(crate) mod portal;
 mod redstone;
 
 pub use building::{

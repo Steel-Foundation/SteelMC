@@ -4,7 +4,7 @@ use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::vanilla_blocks;
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_blocks};
 use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, Direction};
@@ -59,24 +59,48 @@ pub fn nether_portal_config() -> PortalFrameConfig {
     }
 }
 
-/// Matches vanilla's `PortalShape.isEmpty`: air, fire, or nether portal.
+/// Matches vanilla's `PortalShape.isEmpty`: any air variant, any block in the `fire` tag,
+/// or the portal block itself.
 fn is_empty(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
-    let block = world.get_block_state(pos).get_block();
-    block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE || block == config.portal
+    let state = world.get_block_state(pos);
+    if state.is_air() {
+        return true;
+    }
+    let block = state.get_block();
+    REGISTRY
+        .blocks
+        .is_in_tag(block, &vanilla_block_tags::FIRE_TAG)
+        || block == config.portal
 }
 
 impl PortalShape {
-    /// Finds an empty portal frame suitable for creating a new portal.
-    /// Matches vanilla's `findEmptyPortalShape`: valid shape with no existing portal blocks.
+    /// Finds an empty portal frame starting with X axis preferred.
+    /// Matches vanilla's `findEmptyPortalShape` as called from `BaseFireBlock.onPlace`.
     pub fn find_empty_portal_shape(
         world: &Arc<World>,
         fire_pos: BlockPos,
         config: &PortalFrameConfig,
     ) -> Option<Self> {
-        Self::try_axis(world, fire_pos, Axis::X, config)
+        Self::find_empty_portal_shape_with_axis(world, fire_pos, Axis::X, config)
+    }
+
+    /// Finds an empty portal frame trying `preferred_axis` first, then the other.
+    /// Matches vanilla's `findPortalShape` with the empty-portal predicate.
+    pub fn find_empty_portal_shape_with_axis(
+        world: &Arc<World>,
+        fire_pos: BlockPos,
+        preferred_axis: Axis,
+        config: &PortalFrameConfig,
+    ) -> Option<Self> {
+        let other_axis = if preferred_axis == Axis::X {
+            Axis::Z
+        } else {
+            Axis::X
+        };
+        Self::try_axis(world, fire_pos, preferred_axis, config)
             .filter(|s| s.num_portal_blocks == 0)
             .or_else(|| {
-                Self::try_axis(world, fire_pos, Axis::Z, config)
+                Self::try_axis(world, fire_pos, other_axis, config)
                     .filter(|s| s.num_portal_blocks == 0)
             })
     }
@@ -106,8 +130,7 @@ impl PortalShape {
             Axis::Y => return None,
         };
 
-        let bottom_left =
-            Self::calculate_bottom_left(world, pos, right_dir, config)?;
+        let bottom_left = Self::calculate_bottom_left(world, pos, right_dir, config)?;
 
         let width = Self::calculate_width(world, bottom_left, right_dir, config);
         if width == 0 {
@@ -116,7 +139,12 @@ impl PortalShape {
 
         let mut num_portal_blocks = 0;
         let height = Self::calculate_height(
-            world, bottom_left, width, right_dir, config, &mut num_portal_blocks,
+            world,
+            bottom_left,
+            width,
+            right_dir,
+            config,
+            &mut num_portal_blocks,
         );
         if height < config.min_height {
             return None;
@@ -150,7 +178,11 @@ impl PortalShape {
             let next = pos.relative_n(direction, i as i32);
             if !is_empty(world, next, config) {
                 // Edge must be a frame block, otherwise the interior is unbounded
-                return if Self::is_frame_block(world, next, config) { i } else { 0 };
+                return if Self::is_frame_block(world, next, config) {
+                    i
+                } else {
+                    0
+                };
             }
             if !Self::is_frame_block(world, next.below(), config) {
                 return 0;
@@ -168,7 +200,7 @@ impl PortalShape {
     ) -> Option<BlockPos> {
         // Scan down to find the lowest empty block above frame
         let mut cur = pos;
-        for _ in 0..=config.max_height {
+        for _ in 0..config.max_height {
             let next = cur.below();
             if !is_empty(world, next, config) {
                 break;
