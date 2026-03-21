@@ -1,6 +1,6 @@
 //! Flint and steel item behavior with portal ignition.
 
-use crate::behavior::blocks::portal::fire::can_fire_be_placed_at;
+use crate::behavior::blocks::FireBlock;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use steel_macros::item_behavior;
@@ -22,7 +22,7 @@ impl ItemBehavior for FlintAndSteelItem {
         let (yaw, _) = context.player.rotation.load();
         let forward_dir = Direction::from_yaw(yaw);
 
-        if !can_fire_be_placed_at(context.world, fire_pos, forward_dir) {
+        if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
         }
 

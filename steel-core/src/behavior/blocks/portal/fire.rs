@@ -30,61 +30,61 @@ impl FireBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
-}
 
-/// Returns true if the dimension supports nether portal creation (Overworld or Nether).
-pub(crate) fn in_portal_dimension(world: &World) -> bool {
-    let key = &world.dimension.key;
-    *key == vanilla_dimension_types::OVERWORLD.key
-        || *key == vanilla_dimension_types::THE_NETHER.key
-}
-
-/// Checks if fire can be placed at `pos`, matching vanilla's `BaseFireBlock.canBePlacedAt`.
-/// Position must be air AND (fire can survive there OR it's a valid portal location).
-pub(crate) fn can_fire_be_placed_at(
-    world: &Arc<World>,
-    pos: BlockPos,
-    forward_dir: Direction,
-) -> bool {
-    if !world.get_block_state(pos).is_air() {
-        return false;
-    }
-    fire_can_survive(world, pos) || is_portal(world, pos, forward_dir)
-}
-
-/// Matches vanilla's `FireBlock.canSurvive`: block below has a sturdy top face,
-/// or an adjacent block is flammable.
-fn fire_can_survive(world: &Arc<World>, pos: BlockPos) -> bool {
-    world
-        .get_block_state(pos.below())
-        .is_face_sturdy(Direction::Up)
-    // TODO: || is_valid_fire_location (check adjacent flammable blocks once flammability exists)
-}
-
-/// Matches vanilla's `BaseFireBlock.isPortal`: checks if placing fire here could form a portal.
-/// Requires portal dimension, adjacent obsidian, and a valid empty portal shape.
-fn is_portal(world: &Arc<World>, pos: BlockPos, forward_dir: Direction) -> bool {
-    if !in_portal_dimension(world) {
-        return false;
+    /// Returns true if the dimension supports nether portal creation (Overworld or Nether).
+    pub(crate) fn in_portal_dimension(world: &World) -> bool {
+        world.dimension == vanilla_dimension_types::OVERWORLD
+            || world.dimension == vanilla_dimension_types::THE_NETHER
     }
 
-    let has_obsidian = Direction::ALL.iter().any(|&dir| {
-        world.get_block_state(pos.relative(dir)).get_block() == vanilla_blocks::OBSIDIAN
-    });
-    if !has_obsidian {
-        return false;
+    /// Checks if fire can be placed at `pos`, matching vanilla's `BaseFireBlock.canBePlacedAt`.
+    /// Position must be air AND (fire can survive there OR it's a valid portal location).
+    pub(crate) fn can_be_placed_at(
+        world: &Arc<World>,
+        pos: BlockPos,
+        forward_dir: Direction,
+    ) -> bool {
+        if !world.get_block_state(pos).is_air() {
+            return false;
+        }
+        Self::can_survive_at(world, pos) || Self::is_portal(world, pos, forward_dir)
     }
 
-    let preferred_axis = if forward_dir.get_axis().is_horizontal() {
-        forward_dir.rotate_y_counter_clockwise().get_axis()
-    } else if rand::random::<bool>() {
-        Axis::X
-    } else {
-        Axis::Z
-    };
+    /// Matches vanilla's `FireBlock.canSurvive`: block below has a sturdy top face,
+    /// or an adjacent block is flammable.
+    fn can_survive_at(world: &Arc<World>, pos: BlockPos) -> bool {
+        world
+            .get_block_state(pos.below())
+            .is_face_sturdy(Direction::Up)
+        // TODO: || is_valid_fire_location (check adjacent flammable blocks once flammability exists)
+    }
 
-    let config = nether_portal_config();
-    PortalShape::find_empty_portal_shape_with_axis(world, pos, preferred_axis, &config).is_some()
+    /// Matches vanilla's `BaseFireBlock.isPortal`: checks if placing fire here could form a portal.
+    /// Requires portal dimension, adjacent obsidian, and a valid empty portal shape.
+    fn is_portal(world: &Arc<World>, pos: BlockPos, forward_dir: Direction) -> bool {
+        if !Self::in_portal_dimension(world) {
+            return false;
+        }
+
+        let has_obsidian = Direction::ALL.iter().any(|&dir| {
+            world.get_block_state(pos.relative(dir)).get_block() == vanilla_blocks::OBSIDIAN
+        });
+        if !has_obsidian {
+            return false;
+        }
+
+        let preferred_axis = if forward_dir.get_axis().is_horizontal() {
+            forward_dir.rotate_y_counter_clockwise().get_axis()
+        } else if rand::random::<bool>() {
+            Axis::X
+        } else {
+            Axis::Z
+        };
+
+        let config = nether_portal_config();
+        PortalShape::find_empty_portal_shape_with_axis(world, pos, preferred_axis, &config)
+            .is_some()
+    }
 }
 
 impl BlockBehavior for FireBlock {
@@ -93,7 +93,7 @@ impl BlockBehavior for FireBlock {
     }
 
     fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        fire_can_survive(world, pos)
+        Self::can_survive_at(world, pos)
     }
 
     fn on_place(
@@ -109,7 +109,7 @@ impl BlockBehavior for FireBlock {
             return;
         }
 
-        if in_portal_dimension(world)
+        if Self::in_portal_dimension(world)
             && let Some(shape) =
                 PortalShape::find_empty_portal_shape(world, pos, &nether_portal_config())
         {
