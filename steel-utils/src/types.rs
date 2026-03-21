@@ -139,7 +139,7 @@ impl ChunkPos {
 
     /// Returns all 8 neighbors of this chunk position.
     #[must_use]
-    pub fn neighbors(&self) -> [ChunkPos; 8] {
+    pub fn neighbors(self) -> [ChunkPos; 8] {
         Self::OFFSETS.map(|(dx, dy)| ChunkPos::new(self.0.x + dx, self.0.y + dy))
     }
 
@@ -161,7 +161,7 @@ impl ChunkPos {
     /// Converts the `ChunkPos` to an `i64`.
     #[must_use]
     #[inline]
-    pub fn as_i64(&self) -> i64 {
+    pub fn as_i64(self) -> i64 {
         (i64::from(self.0.x) & 0xFFFF_FFFF) | ((i64::from(self.0.y) & 0xFFFF_FFFF) << 32)
     }
 
@@ -745,7 +745,7 @@ pub enum GameType {
 impl GameType {
     /// Returns the name of the game type.
     #[must_use]
-    pub const fn name(&self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             GameType::Survival => "survival",
             GameType::Creative => "creative",

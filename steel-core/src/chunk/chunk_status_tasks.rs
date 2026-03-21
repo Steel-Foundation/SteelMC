@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
+
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
     chunk_generation_task::StaticCache2D,
@@ -19,6 +21,10 @@ use crate::chunk::{
 pub struct ChunkStatusTasks;
 
 /// All these functions are blocking.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "uniform callback signature, stubs will gain real error paths"
+)]
 impl ChunkStatusTasks {
     pub fn empty(
         context: Arc<WorldGenContext>,
@@ -87,7 +93,7 @@ impl ChunkStatusTasks {
     ) -> Result<(), anyhow::Error> {
         let chunk = holder
             .try_chunk(ChunkStatus::StructureReferences)
-            .expect("Chunk not found at status StructureReferences");
+            .context("Failed to get the chunk")?;
 
         context.generator.create_biomes(&chunk);
 

@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -11,6 +13,30 @@ pub struct PaintingVariant {
     pub asset_id: Identifier,
     pub title: Option<TextComponent>,
     pub author: Option<TextComponent>,
+}
+
+impl ToNbtTag for PaintingVariant {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        let asset_id = self.asset_id.to_string();
+        compound.insert("asset_id", asset_id.as_str());
+        compound.insert("width", self.width);
+        compound.insert("height", self.height);
+        if let Some(title) = &self.title {
+            compound.insert(
+                "title",
+                NbtTag::Compound(title.to_nbt_tag().into_compound().unwrap()),
+            );
+        }
+        if let Some(author) = &self.author {
+            compound.insert(
+                "author",
+                NbtTag::Compound(author.to_nbt_tag().into_compound().unwrap()),
+            );
+        }
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type PaintingVariantRef = &'static PaintingVariant;

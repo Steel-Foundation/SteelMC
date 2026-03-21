@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a chat type definition from the data packs.
@@ -26,6 +28,55 @@ pub struct ChatStyle {
     pub underlined: Option<bool>,
     pub strikethrough: Option<bool>,
     pub obfuscated: Option<bool>,
+}
+
+impl ToNbtTag for ChatType {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        compound.insert(
+            "chat",
+            NbtTag::Compound(ChatType::decoration_to_nbt(&self.chat)),
+        );
+        compound.insert(
+            "narration",
+            NbtTag::Compound(ChatType::decoration_to_nbt(&self.narration)),
+        );
+        NbtTag::Compound(compound)
+    }
+}
+
+impl ChatType {
+    fn decoration_to_nbt(dec: &ChatTypeDecoration) -> simdnbt::owned::NbtCompound {
+        use simdnbt::owned::{NbtCompound, NbtTag};
+        let mut compound = NbtCompound::new();
+        compound.insert("translation_key", dec.translation_key);
+        let params: Vec<String> = dec.parameters.iter().map(|s| s.to_string()).collect();
+        compound.insert("parameters", params);
+        if let Some(style) = &dec.style {
+            let mut style_compound = NbtCompound::new();
+            if let Some(color) = style.color {
+                style_compound.insert("color", color);
+            }
+            if let Some(bold) = style.bold {
+                style_compound.insert("bold", bold);
+            }
+            if let Some(italic) = style.italic {
+                style_compound.insert("italic", italic);
+            }
+            if let Some(underlined) = style.underlined {
+                style_compound.insert("underlined", underlined);
+            }
+            if let Some(strikethrough) = style.strikethrough {
+                style_compound.insert("strikethrough", strikethrough);
+            }
+            if let Some(obfuscated) = style.obfuscated {
+                style_compound.insert("obfuscated", obfuscated);
+            }
+            compound.insert("style", NbtTag::Compound(style_compound));
+        }
+        compound
+    }
 }
 
 pub type ChatTypeRef = &'static ChatType;

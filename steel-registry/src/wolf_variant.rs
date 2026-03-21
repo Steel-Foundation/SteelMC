@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a full wolf variant definition from a data pack JSON file.
@@ -29,6 +31,49 @@ pub struct SpawnConditionEntry {
 pub struct BiomeCondition {
     pub condition_type: &'static str,
     pub biomes: &'static str,
+}
+
+impl ToNbtTag for WolfVariant {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtList};
+        let mut compound = NbtCompound::new();
+        let mut assets = NbtCompound::new();
+        let wild = self.assets.wild.to_string();
+        assets.insert("wild", wild.as_str());
+        let tame = self.assets.tame.to_string();
+        assets.insert("tame", tame.as_str());
+        let angry = self.assets.angry.to_string();
+        assets.insert("angry", angry.as_str());
+        compound.insert("assets", NbtTag::Compound(assets));
+        let mut baby_assets = NbtCompound::new();
+        let wild = self.assets.wild.to_string();
+        baby_assets.insert("wild", wild.as_str());
+        let tame = self.assets.tame.to_string();
+        baby_assets.insert("tame", tame.as_str());
+        let angry = self.assets.angry.to_string();
+        baby_assets.insert("angry", angry.as_str());
+        compound.insert("baby_assets", NbtTag::Compound(baby_assets));
+        let conditions: Vec<NbtCompound> = self
+            .spawn_conditions
+            .iter()
+            .map(|entry| {
+                let mut e = NbtCompound::new();
+                e.insert("priority", entry.priority);
+                if let Some(cond) = &entry.condition {
+                    let mut c = NbtCompound::new();
+                    c.insert("type", cond.condition_type);
+                    c.insert("biomes", cond.biomes);
+                    e.insert("condition", NbtTag::Compound(c));
+                }
+                e
+            })
+            .collect();
+        compound.insert(
+            "spawn_conditions",
+            NbtTag::List(NbtList::Compound(conditions)),
+        );
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type WolfVariantRef = &'static WolfVariant;

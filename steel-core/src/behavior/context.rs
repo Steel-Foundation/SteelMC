@@ -32,7 +32,7 @@ impl InteractionResult {
     /// Returns true if this result consumes the action (Success or Fail).
     /// Pass and `TryEmptyHandInteraction` do not consume the action.
     #[must_use]
-    pub const fn consumes_action(&self) -> bool {
+    pub const fn consumes_action(self) -> bool {
         matches!(self, InteractionResult::Success | InteractionResult::Fail)
     }
 }
