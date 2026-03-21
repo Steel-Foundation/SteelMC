@@ -21,7 +21,9 @@ pub struct PortalShape {
     pub width: u32,
     /// Height of the interior (3-21).
     pub height: u32,
-    /// The block type of the frame.
+    /// The horizontal direction along which width is measured.
+    pub right_dir: Direction,
+    /// The block type of the portal.
     pub portal: BlockRef,
 }
 
@@ -67,7 +69,7 @@ fn is_portal_or_empty_interior(
     config: &PortalFrameConfig,
 ) -> bool {
     let block = world.get_block_state(pos).get_block();
-    block == config.portal
+    block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE || block == config.portal
 }
 
 /// Interior validator function signature.
@@ -95,8 +97,7 @@ impl PortalShape {
         Self::try_axis(world, pos, axis, config, is_portal_or_empty_interior)
     }
 
-    /// Tries to find a valid portal on a single axis.
-    /// It loops over the interior (not frame blocks) to determine the portal dimensions.
+    /// Tries to find a valid portal on a single axis, matching vanilla's detection algorithm.
     fn try_axis(
         world: &Arc<World>,
         pos: BlockPos,
@@ -104,159 +105,179 @@ impl PortalShape {
         config: &PortalFrameConfig,
         interior_check: InteriorCheck,
     ) -> Option<Self> {
-        // Width direction: portal axis=X means width along Z, axis=Z means width along X
-        let dir: Direction = match axis {
-            Axis::X => Direction::East,
-            Axis::Z => Direction::North,
+        // Vanilla: rightDir is WEST for X-axis, SOUTH for Z-axis
+        let right_dir: Direction = match axis {
+            Axis::X => Direction::West,
+            Axis::Z => Direction::South,
             Axis::Y => return None,
         };
 
-        // searches the bottom obsidian
-        let mut cur = pos;
-        for _ in 0..=config.max_height as i32 {
-            let next = BlockPos::new(cur.x(), cur.y() - 1, cur.z());
-            if Self::is_frame_block(world, next, config) {
-                break;
-            }
-            cur = next;
-        }
+        let bottom_left =
+            Self::calculate_bottom_left(world, pos, right_dir, config, interior_check)?;
 
-        // searches for the left obsidian (-1) because we don't want to be at the obsidian block
-        let to_left = Self::get_width(world, cur, dir, config, interior_check);
-        cur = cur.relative_n(dir, to_left as i32);
-
-        let width = Self::get_width(world, cur, dir.opposite(), config, interior_check) + 1;
-        if width < config.min_width {
+        let width = Self::calculate_width(world, bottom_left, right_dir, config, interior_check);
+        if width == 0 {
             return None;
         }
-        let height = Self::get_height(world, cur, dir, config, interior_check);
+
+        let height = Self::calculate_height(
+            world, bottom_left, width, right_dir, config, interior_check,
+        );
         if height < config.min_height {
             return None;
         }
 
-        // Validate entire frame
-        if !Self::validate_frame(
-            world,
-            cur,
-            width,
-            height,
-            dir.opposite(),
-            config,
-            interior_check,
-        ) {
+        if !Self::has_top_frame(world, bottom_left, height, width, right_dir, config) {
             return None;
         }
 
         Some(Self {
             axis,
-            bottom_left: cur,
+            bottom_left,
             width,
             height,
+            right_dir,
             portal: config.portal,
         })
     }
 
-    /// Returns the width - 1 of the portal interior starting from the given position.
-    fn get_width(
+    /// Returns the number of valid interior blocks in `direction` from `pos`, matching vanilla's
+    /// `getDistanceUntilEdgeAboveFrame`. Each position must pass `interior_check` and have a
+    /// frame block below it.
+    fn get_distance_until_edge(
         world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         config: &PortalFrameConfig,
         interior_check: InteriorCheck,
     ) -> u32 {
-        for i in 1..config.max_width {
+        for i in 0..config.max_width {
             let next = pos.relative_n(direction, i as i32);
-            if !interior_check(world, next, config) && Self::is_frame_block(world, next, config) {
-                return i - 1;
-            }
-            if !Self::is_frame_block(world, next.below(), config) {
-                return 0;
-            }
-        }
-        0
-    }
-
-    fn get_height(
-        world: &Arc<World>,
-        pos: BlockPos,
-        direction: Direction,
-        config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
-    ) -> u32 {
-        let mut cur = pos;
-        for i in 1..config.max_height {
-            let next = cur.above();
-            if !interior_check(world, next, config) && Self::is_frame_block(world, next, config) {
+            if !interior_check(world, next, config)
+                || !Self::is_frame_block(world, next.below(), config)
+            {
                 return i;
             }
-            if !Self::is_frame_block(world, next.relative(direction), config) {
-                return 0;
+        }
+        config.max_width
+    }
+
+    /// Finds the bottom-left corner of the portal interior.
+    fn calculate_bottom_left(
+        world: &Arc<World>,
+        pos: BlockPos,
+        right_dir: Direction,
+        config: &PortalFrameConfig,
+        interior_check: InteriorCheck,
+    ) -> Option<BlockPos> {
+        // Scan down to find the floor
+        let mut cur = pos;
+        for _ in 0..=config.max_height {
+            let next = cur.below();
+            if Self::is_frame_block(world, next, config) {
+                break;
+            }
+            if !interior_check(world, next, config) {
+                return None;
             }
             cur = next;
         }
-        0
+
+        // Scan in opposite of right_dir to find the left edge
+        let left_dir = right_dir.opposite();
+        let dist = Self::get_distance_until_edge(world, cur, left_dir, config, interior_check);
+        if dist == 0 {
+            return None;
+        }
+        Some(cur.relative_n(left_dir, (dist - 1) as i32))
+    }
+
+    /// Calculates the width of the portal interior from the bottom-left corner.
+    fn calculate_width(
+        world: &Arc<World>,
+        bottom_left: BlockPos,
+        right_dir: Direction,
+        config: &PortalFrameConfig,
+        interior_check: InteriorCheck,
+    ) -> u32 {
+        let dist = Self::get_distance_until_edge(world, bottom_left, right_dir, config, interior_check);
+        if dist < config.min_width || dist > config.max_width {
+            return 0;
+        }
+        dist
+    }
+
+    /// Calculates the height while validating side columns and interior.
+    fn calculate_height(
+        world: &Arc<World>,
+        bottom_left: BlockPos,
+        width: u32,
+        right_dir: Direction,
+        config: &PortalFrameConfig,
+        interior_check: InteriorCheck,
+    ) -> u32 {
+        let mut height = 0;
+        'outer: for h in 0..config.max_height {
+            let row_start = bottom_left.above_n(h as i32);
+
+            // Check left frame column (one block left of bottom_left)
+            if !Self::is_frame_block(world, row_start.relative(right_dir.opposite()), config) {
+                break;
+            }
+            // Check right frame column (one block past the width)
+            if !Self::is_frame_block(world, row_start.relative_n(right_dir, width as i32), config) {
+                break;
+            }
+
+            // Check interior
+            for w in 0..width {
+                let interior_pos = row_start.relative_n(right_dir, w as i32);
+                if !interior_check(world, interior_pos, config) {
+                    break 'outer;
+                }
+            }
+            height = h + 1;
+        }
+        height
+    }
+
+    /// Checks that the top frame row is complete.
+    fn has_top_frame(
+        world: &Arc<World>,
+        bottom_left: BlockPos,
+        height: u32,
+        width: u32,
+        right_dir: Direction,
+        config: &PortalFrameConfig,
+    ) -> bool {
+        let top_row = bottom_left.above_n(height as i32);
+        for w in 0..width {
+            if !Self::is_frame_block(world, top_row.relative_n(right_dir, w as i32), config) {
+                return false;
+            }
+        }
+        true
     }
 
     fn is_frame_block(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
         world.get_block_state(pos).get_block() == config.frame
     }
 
-    fn validate_frame(
-        world: &Arc<World>,
-        bottom_left: BlockPos,
-        width: u32,
-        height: u32,
-        direction: Direction,
-        config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
-    ) -> bool {
-        // Check top frame row
-        let top_row = bottom_left.above_n(height as i32);
-        for w in 0..width as i32 {
-            if !Self::is_frame_block(world, top_row.relative_n(direction, w), config) {
-                return false;
-            }
-        }
-
-        // Check right columns + interior
-        for h in 0..height as i32 {
-            // Right column
-            let height_pos = bottom_left.above_n(h);
-            if !Self::is_frame_block(
-                world,
-                height_pos.relative_n(direction, width as i32),
-                config,
-            ) {
-                return false;
-            }
-
-            // Interior blocks
-            for w in 0..width as i32 {
-                if !interior_check(world, height_pos.relative_n(direction, w), config) {
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-
     /// Fills the interior with nether portal blocks.
+    /// Vanilla uses flag 18 (`UPDATE_CLIENTS` | `UPDATE_KNOWN_SHAPE`) to avoid redundant neighbor
+    /// updates during bulk placement.
     pub fn place_portal_blocks(&self, world: &Arc<World>) {
         let portal_state = self
             .portal
             .default_state()
             .set_value(&BlockStateProperties::HORIZONTAL_AXIS, self.axis);
-        let dir = match self.axis {
-            Axis::X => Direction::West,
-            Axis::Z => Direction::South,
-            Axis::Y => return,
-        };
-        let flags = UpdateFlags::UPDATE_ALL;
+        let flags = UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_KNOWN_SHAPE);
         for w in 0..self.width {
             for h in 0..self.height {
                 world.set_block(
-                    self.bottom_left.above_n(h as i32).relative_n(dir, w as i32),
+                    self.bottom_left
+                        .above_n(h as i32)
+                        .relative_n(self.right_dir, w as i32),
                     portal_state,
                     flags,
                 );
