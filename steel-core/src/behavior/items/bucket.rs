@@ -63,22 +63,22 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
     if player.has_infinite_materials() {
         // Creative: give the result item only if the player doesn't already have one.
         let inv_id = ContainerId::from_arc(&player.inventory);
-        let already_has = context.guard().get(inv_id).is_some_and(|inv| {
+        let already_has = context.inv.guard().get(inv_id).is_some_and(|inv| {
             (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
         });
         if !already_has {
             let result_stack = ItemStack::new(result_item);
-            player.add_item_or_drop_with_guard(context.guard(), result_stack);
+            player.add_item_or_drop_with_guard(context.inv.guard(), result_stack);
         }
         return;
     }
 
     let result_stack = ItemStack::new(result_item);
-    if context.item().count() > 1 {
-        context.item().shrink(1);
-        player.add_item_or_drop_with_guard(context.guard(), result_stack);
+    if context.inv.item().count() > 1 {
+        context.inv.item().shrink(1);
+        player.add_item_or_drop_with_guard(context.inv.guard(), result_stack);
     } else {
-        context.item().set_item(&result_item.key);
+        context.inv.item().set_item(&result_item.key);
     }
 }
 

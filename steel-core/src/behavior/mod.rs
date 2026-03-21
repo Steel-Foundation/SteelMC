@@ -54,7 +54,8 @@ pub mod weathering;
 pub use block::{BlockBehavior, BlockBehaviorRegistry, DefaultBlockBehavior};
 use block_behaviors::register_block_behaviors;
 pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, UseItemContext, UseOnContext,
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, UseItemContext,
+    UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};

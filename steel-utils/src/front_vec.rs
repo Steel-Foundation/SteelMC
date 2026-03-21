@@ -21,8 +21,8 @@ impl FrontVec {
     /// Creates a new `FrontVec` with the given reserved front space and capacity.
     #[must_use]
     pub fn capacity(reserve: usize, capacity: usize) -> Self {
-        let mut buf = vec![0u8; reserve];
-        buf.reserve(capacity);
+        let mut buf = Vec::with_capacity(reserve + capacity);
+        buf.resize(reserve, 0);
 
         Self {
             buf,
@@ -33,12 +33,7 @@ impl FrontVec {
     /// Creates a new `FrontVec` with the given reserved front space.
     #[must_use]
     pub fn new(reserve: usize) -> Self {
-        let buf = vec![0u8; reserve];
-
-        Self {
-            buf,
-            front_space: reserve,
-        }
+        Self::capacity(reserve, 0)
     }
 
     /// Returns the length of the `FrontVec`.
