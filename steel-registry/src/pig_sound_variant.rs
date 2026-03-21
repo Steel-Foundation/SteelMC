@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
-use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::ToNbtTag;
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_utils::Identifier;
 
 /// Represents a set of sounds for a pig variant from a data pack JSON file.
@@ -18,7 +18,7 @@ pub struct PigAge {
     pub eat_sound: Identifier,
     pub step_sound: Identifier,
 }
-impl ToNbtTag for PigAge {
+impl ToNbtTag for &PigAge {
     fn to_nbt_tag(self) -> NbtTag {
         let mut component = NbtCompound::new();
         let s = self.ambient_sound.to_string();
@@ -35,7 +35,7 @@ impl ToNbtTag for PigAge {
     }
 }
 
-impl ToNbtTag for PigSoundVariant {
+impl ToNbtTag for &PigSoundVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();

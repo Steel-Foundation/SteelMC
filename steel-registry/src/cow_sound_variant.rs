@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
-use simdnbt::owned::NbtTag;
 use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a set of sounds for a cow variant from a data pack JSON file.
@@ -13,7 +13,7 @@ pub struct CowSoundVariant {
     pub step_sound: Identifier,
 }
 
-impl ToNbtTag for CowSoundVariant {
+impl ToNbtTag for &CowSoundVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();

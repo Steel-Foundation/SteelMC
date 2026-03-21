@@ -14,7 +14,7 @@ pub struct JukeboxSong {
     pub comparator_output: i32,
 }
 
-impl ToNbtTag for JukeboxSong {
+impl ToNbtTag for &JukeboxSong {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

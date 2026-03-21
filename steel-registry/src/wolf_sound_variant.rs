@@ -22,7 +22,7 @@ pub struct WolfAge {
     pub whine_sound: Identifier,
 }
 
-impl ToNbtTag for WolfAge {
+impl ToNbtTag for &WolfAge {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
@@ -44,7 +44,7 @@ impl ToNbtTag for WolfAge {
     }
 }
 
-impl ToNbtTag for WolfSoundVariant {
+impl ToNbtTag for &WolfSoundVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();

@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
-use simdnbt::owned::NbtTag;
 use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a full chicken variant definition from a data pack JSON file.
@@ -35,7 +35,7 @@ pub struct BiomeCondition {
     pub biomes: &'static str,
 }
 
-impl ToNbtTag for ChickenVariant {
+impl ToNbtTag for &ChickenVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         let mut compound = NbtCompound::new();

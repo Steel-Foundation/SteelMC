@@ -15,7 +15,7 @@ pub struct Instrument {
     pub description: TextComponent,
 }
 
-impl ToNbtTag for Instrument {
+impl ToNbtTag for &Instrument {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

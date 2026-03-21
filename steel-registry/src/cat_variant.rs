@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
-use simdnbt::owned::NbtTag;
 use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a full cat variant definition from a data pack JSON file.
@@ -27,7 +27,7 @@ pub enum SpawnCondition {
     Biome { biomes: &'static str },
 }
 
-impl ToNbtTag for CatVariant {
+impl ToNbtTag for &CatVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         let mut compound = NbtCompound::new();
