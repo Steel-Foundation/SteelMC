@@ -46,9 +46,9 @@ pub fn command_handler() -> impl CommandHandlerDyn {
     )
 }
 
-/// Converts nanoseconds to a formatted millisecond string.
-fn nanos_to_ms_string(nanos: u64) -> String {
-    format!("{:.1}", nanos as f64 / 1_000_000.0)
+/// Converts nanoseconds to a formatted microsecond string.
+fn nanos_to_us_string(nanos: u64) -> String {
+    format!("{:.1}", nanos as f64 / 1_000.0)
 }
 
 // /tick query
@@ -59,7 +59,7 @@ impl CommandExecutor<()> for TickQueryExecutor {
 
         let tick_rate = tick_manager.tick_rate();
         let busy_time_nanos = tick_manager.get_average_tick_time_nanos();
-        let busy_time = nanos_to_ms_string(busy_time_nanos);
+        let busy_time = nanos_to_us_string(busy_time_nanos);
         let tick_rate_string = format!("{tick_rate:.1}");
 
         // Send status and rate info based on current state
@@ -91,7 +91,7 @@ impl CommandExecutor<()> for TickQueryExecutor {
                     .send_message(&translations::COMMANDS_TICK_STATUS_RUNNING.msg().into());
             }
 
-            let target_mspt = nanos_to_ms_string(tick_manager.nanoseconds_per_tick);
+            let target_mspt = nanos_to_us_string(tick_manager.nanoseconds_per_tick);
             context.sender.send_message(
                 &translations::COMMANDS_TICK_QUERY_RATE_RUNNING
                     .message([
@@ -111,17 +111,17 @@ impl CommandExecutor<()> for TickQueryExecutor {
         samples[..sample_count].sort_unstable();
 
         let p50 = if sample_count > 0 {
-            nanos_to_ms_string(samples[sample_count / 2])
+            nanos_to_us_string(samples[sample_count / 2])
         } else {
             "0.0".to_string()
         };
         let p95 = if sample_count > 0 {
-            nanos_to_ms_string(samples[(sample_count as f64 * 0.95) as usize])
+            nanos_to_us_string(samples[(sample_count as f64 * 0.95) as usize])
         } else {
             "0.0".to_string()
         };
         let p99 = if sample_count > 0 {
-            nanos_to_ms_string(samples[(sample_count as f64 * 0.99) as usize])
+            nanos_to_us_string(samples[(sample_count as f64 * 0.99) as usize])
         } else {
             "0.0".to_string()
         };
