@@ -3,9 +3,9 @@ use steel_macros::{ReadFrom, ServerPacket};
 #[derive(Clone, Copy, PartialEq, Eq, ReadFrom, Debug)]
 #[read(as = VarInt)]
 pub enum ClientIntent {
-    STATUS = 1,
-    LOGIN = 2,
-    TRANSFER = 3,
+    Status = 1,
+    Login = 2,
+    Transfer = 3,
 }
 
 #[derive(ReadFrom, ServerPacket, Clone, Debug)]

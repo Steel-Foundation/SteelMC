@@ -3,6 +3,7 @@
 //! The actual behavior registration is auto-generated from classes.json.
 //! See `src/behavior/generated/items.rs` for the generated registration code.
 
+mod axe;
 mod block_item;
 mod bucket;
 mod default;
@@ -15,13 +16,14 @@ mod standing_and_wall_block_item;
 
 mod flint_and_steel;
 
-pub use block_item::{BlockItemBehavior, DoubleHighBlockItemBehavior};
-pub use bucket::BucketItemBehavior;
+pub use axe::AxeItem;
+pub use block_item::{BlockItem, DoubleHighBlockItem};
+pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;
-pub use ender_eye::EnderEyeBehavior;
+pub use ender_eye::EnderEyeItem;
 pub use flint_and_steel::FlintAndSteelItem;
 pub use hoe::HoeItem;
-pub use honeycomb::HoneycombBehavior;
-pub use shovel::ShovelBehavior;
-pub use sign_item::{HangingSignItemBehavior, SignItemBehavior};
+pub use honeycomb::HoneycombItem;
+pub use shovel::ShovelItem;
+pub use sign_item::{HangingSignItem, SignItem};
 pub use standing_and_wall_block_item::StandingAndWallBlockItem;

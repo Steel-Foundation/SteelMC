@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a damage type definition from a data pack JSON file.
@@ -37,6 +39,43 @@ pub enum DeathMessageType {
     Default,
     FallVariants,
     IntentionalGameDesign,
+}
+
+impl ToNbtTag for DamageType {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        compound.insert("message_id", self.message_id);
+        compound.insert(
+            "scaling",
+            match self.scaling {
+                DamageScaling::Always => "always",
+                DamageScaling::WhenCausedByLivingNonPlayer => "when_caused_by_living_non_player",
+                DamageScaling::Never => "never",
+            },
+        );
+        compound.insert("exhaustion", self.exhaustion);
+        compound.insert(
+            "effects",
+            match self.effects {
+                DamageEffects::Hurt => "hurt",
+                DamageEffects::Thorns => "thorns",
+                DamageEffects::Drowning => "drowning",
+                DamageEffects::Burning => "burning",
+                DamageEffects::Poking => "poking",
+                DamageEffects::Freezing => "freezing",
+            },
+        );
+        compound.insert(
+            "death_message_type",
+            match self.death_message_type {
+                DeathMessageType::Default => "default",
+                DeathMessageType::FallVariants => "fall_variants",
+                DeathMessageType::IntentionalGameDesign => "intentional_game_design",
+            },
+        );
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type DamageTypeRef = &'static DamageType;

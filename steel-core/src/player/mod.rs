@@ -579,11 +579,13 @@ impl Player {
     }
 
     /// Handles a custom payload packet.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn handle_custom_payload(&self, packet: SCustomPayload) {
         log::info!("Hello from the other side! {packet:?}");
     }
 
     /// Handles the end of a client tick.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn handle_client_tick_end(&self) {
         //log::info!("Hello from the other side!");
     }
@@ -774,7 +776,7 @@ impl Player {
                             chat_packet.clone(),
                             Arc::clone(&player),
                             last_seen.clone(),
-                            Some(sig_array),
+                            Some(&sig_array),
                         );
                     }
                 }
@@ -2866,6 +2868,7 @@ impl Player {
     }
 
     /// Cleans up player resources.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn cleanup(&self) {}
 }
 

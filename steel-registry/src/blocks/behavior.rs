@@ -89,7 +89,7 @@ impl BlockConfig {
     }
 
     #[must_use]
-    pub const fn is_randomly_ticking(mut self, ticking: bool) -> Self {
+    pub const fn set_is_randomly_ticking(mut self, ticking: bool) -> Self {
         self.is_randomly_ticking = ticking;
         self
     }
@@ -155,7 +155,7 @@ impl BlockConfig {
     }
 
     #[must_use]
-    pub const fn is_air(mut self, is_air: bool) -> Self {
+    pub const fn set_is_air(mut self, is_air: bool) -> Self {
         self.is_air = is_air;
         self
     }

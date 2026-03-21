@@ -22,6 +22,7 @@ const BRAND_PAYLOAD: [u8; 5] = *b"Steel";
 
 impl JavaTcpClient {
     /// Handles a custom payload packet during the configuration state.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn handle_config_custom_payload(&self, packet: SCustomPayload) {
         log::debug!("Custom payload packet: {packet:?}");
     }

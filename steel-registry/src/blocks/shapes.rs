@@ -3,6 +3,7 @@
 /// Coordinates are in block-local space (0.0 to 1.0 for a standard block).
 /// Values can extend beyond 0.0-1.0 for blocks like fences (collision height 1.5).
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[expect(clippy::upper_case_acronyms)]
 pub struct AABB {
     pub min_x: f32,
     pub min_y: f32,

@@ -69,7 +69,7 @@ impl VarInt {
     ///
     /// # Panics
     /// - If the `VarInt` fails to write to the buffer.
-    pub fn set_in_front(&self, vec: &mut FrontVec, varint_size: usize) {
+    pub fn set_in_front(self, vec: &mut FrontVec, varint_size: usize) {
         // No heap allocation :)
         let mut buf = [0; Self::MAX_SIZE];
         self.write(&mut Cursor::new(&mut buf[..]))

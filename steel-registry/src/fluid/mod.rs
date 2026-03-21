@@ -137,7 +137,7 @@ impl FluidState {
 
     /// Encodes this fluid state to a liquid block's LEVEL property (0-15).
     #[must_use]
-    pub const fn to_block_level(&self) -> u8 {
+    pub const fn to_block_level(self) -> u8 {
         if self.is_source() {
             0
         } else if self.falling {

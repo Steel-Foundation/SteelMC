@@ -10,10 +10,10 @@ use crate::{
 };
 
 /// Behavior for the honeycomb item. Waxes copper blocks and signs.
-#[item_behavior(class = "HoneycombItem")]
-pub struct HoneycombBehavior;
+#[item_behavior]
+pub struct HoneycombItem;
 
-impl ItemBehavior for HoneycombBehavior {
+impl ItemBehavior for HoneycombItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let pos = context.hit_result.block_pos;
 

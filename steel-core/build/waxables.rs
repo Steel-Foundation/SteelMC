@@ -1,7 +1,7 @@
 use quote::quote;
 use std::{collections::BTreeMap, fs};
 
-use crate::common::to_const_ident;
+use crate::to_block_ident;
 
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/waxables.json");
@@ -13,13 +13,13 @@ pub fn build() -> String {
 
     let waxables: Vec<proc_macro2::TokenStream> = waxables_raw
         .iter()
-        .map(|(normal, waxed)| (to_const_ident(normal), to_const_ident(waxed)))
+        .map(|(normal, waxed)| (to_block_ident(normal), to_block_ident(waxed)))
         .map(|(from, to)| quote! { b if b == vanilla_blocks::#from => Some(vanilla_blocks::#to) , })
         .collect();
 
     let waxables_reverse: Vec<proc_macro2::TokenStream> = waxables_raw
         .iter()
-        .map(|(normal, waxed)| (to_const_ident(normal), to_const_ident(waxed)))
+        .map(|(normal, waxed)| (to_block_ident(normal), to_block_ident(waxed)))
         .map(|(from, to)| quote! { b if b == vanilla_blocks::#to => Some(vanilla_blocks::#from) , })
         .collect();
 

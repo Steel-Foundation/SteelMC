@@ -30,13 +30,13 @@ use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
 /// Handles all bucket variants (empty, water, lava).
-#[item_behavior(class = "BucketItem")]
-pub struct BucketItemBehavior {
+#[item_behavior]
+pub struct BucketItem {
     #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
     fluid_block: Option<BlockRef>,
 }
 
-impl BucketItemBehavior {
+impl BucketItem {
     /// Creates a new bucket behavior. `None` = empty bucket, `Some(block)` = filled.
     #[must_use]
     pub const fn new(fluid_block: Option<BlockRef>) -> Self {
@@ -44,7 +44,7 @@ impl BucketItemBehavior {
     }
 }
 
-impl ItemBehavior for BucketItemBehavior {
+impl ItemBehavior for BucketItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         match self.fluid_block {
             None => use_empty_bucket(context),

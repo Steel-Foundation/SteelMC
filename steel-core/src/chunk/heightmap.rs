@@ -56,7 +56,7 @@ impl HeightmapType {
     /// # Panics
     /// Panics if the block state ID is invalid.
     #[must_use]
-    pub fn is_opaque(&self, state: BlockStateId) -> bool {
+    pub fn is_opaque(self, state: BlockStateId) -> bool {
         let block = REGISTRY
             .blocks
             .by_state_id(state)

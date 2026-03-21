@@ -137,7 +137,7 @@ impl ChunkEntry {
 
     /// Serializes to 8 bytes: [offset: 4][size: 3][flags: 1]
     #[must_use]
-    pub const fn to_bytes(&self) -> [u8; 8] {
+    pub const fn to_bytes(self) -> [u8; 8] {
         let offset_bytes = self.sector_offset.to_le_bytes();
         let size_bytes = self.size_bytes.to_le_bytes();
         let flags = self.status.get_index() as u8;
@@ -524,7 +524,7 @@ impl RegionPos {
 
     /// Returns the filename for this region (e.g., "r.0.-1.srg").
     #[must_use]
-    pub fn filename(&self) -> String {
+    pub fn filename(self) -> String {
         format!("r.{}.{}.srg", self.x, self.z)
     }
 }

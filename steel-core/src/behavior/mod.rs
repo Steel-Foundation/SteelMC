@@ -43,6 +43,11 @@ pub mod item_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/strippables.rs"]
+pub mod strippables;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/waxables.rs"]
 pub mod waxables;
 
@@ -61,9 +66,8 @@ pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BlockItemBehavior, BucketItemBehavior, DefaultItemBehavior, DoubleHighBlockItemBehavior,
-    EnderEyeBehavior, HangingSignItemBehavior, ShovelBehavior, SignItemBehavior,
-    StandingAndWallBlockItem,
+    BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
+    ShovelItem, SignItem, StandingAndWallBlockItem,
 };
 use std::ops::Deref;
 use std::sync::OnceLock;

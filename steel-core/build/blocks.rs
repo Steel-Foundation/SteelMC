@@ -8,7 +8,10 @@ use quote::quote;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::common::{self, JsonArgKind, scan_object_behaviors};
+use crate::{
+    common::{self, JsonArgKind, scan_object_behaviors},
+    to_block_ident,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct BlockClass {
@@ -36,7 +39,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
         matched_classes.insert(&block.class);
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
-        let const_ident = common::to_const_ident(&block.name);
+        let const_ident = to_block_ident(&block.name);
 
         block_type_imports.insert(info.struct_name.clone());
 
