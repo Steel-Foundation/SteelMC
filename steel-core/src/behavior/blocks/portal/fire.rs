@@ -56,9 +56,11 @@ impl BlockBehavior for FireBlock {
 
         if in_portal_dimension(world)
             && let Some(shape) =
-                PortalShape::find_portal_shape(world, pos, &nether_portal_config())
+                PortalShape::find_empty_portal_shape(world, pos, &nether_portal_config())
         {
             shape.place_portal_blocks(world);
+            #[expect(clippy::needless_return, reason = "needed once canSurvive TODO is implemented")]
+            return;
         }
 
         // TODO: Remove fire if it can't survive at this position (canSurvive check)

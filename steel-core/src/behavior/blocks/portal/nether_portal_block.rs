@@ -42,7 +42,8 @@ impl BlockBehavior for NetherPortalBlock {
 
         if !wrong_axis
             && neighbor_state.get_block() != self.block
-            && PortalShape::find_any_shape(world, pos, axis, &nether_portal_config()).is_none()
+            && !PortalShape::find_any_shape(world, pos, axis, &nether_portal_config())
+                .is_some_and(|s| s.is_complete())
         {
             return AIR.default_state();
         }

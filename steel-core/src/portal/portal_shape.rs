@@ -25,6 +25,9 @@ pub struct PortalShape {
     pub right_dir: Direction,
     /// The block type of the portal.
     pub portal: BlockRef,
+    /// Number of portal blocks found in the interior.
+    /// Used by `is_complete` to verify the portal is fully filled.
+    num_portal_blocks: u32,
 }
 
 /// Definition of a portal shape in rectangular form, like the nether portal frame.
@@ -56,45 +59,37 @@ pub fn nether_portal_config() -> PortalFrameConfig {
     }
 }
 
-/// Interior check: air or fire only (used when creating a new portal).
-fn is_empty_interior(world: &Arc<World>, pos: BlockPos, _config: &PortalFrameConfig) -> bool {
-    let block = world.get_block_state(pos).get_block();
-    block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE
-}
-
-/// Interior check: air, fire, or existing portal blocks (used when validating an existing portal).
-fn is_portal_or_empty_interior(
-    world: &Arc<World>,
-    pos: BlockPos,
-    config: &PortalFrameConfig,
-) -> bool {
+/// Matches vanilla's `PortalShape.isEmpty`: air, fire, or nether portal.
+fn is_empty(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
     let block = world.get_block_state(pos).get_block();
     block == vanilla_blocks::AIR || block == vanilla_blocks::FIRE || block == config.portal
 }
 
-/// Interior validator function signature.
-type InteriorCheck = fn(&Arc<World>, BlockPos, &PortalFrameConfig) -> bool;
-
 impl PortalShape {
-    /// Tries to find a valid portal shape from a position inside or adjacent to a frame.
-    pub fn find_portal_shape(
+    /// Finds an empty portal frame suitable for creating a new portal.
+    /// Matches vanilla's `findEmptyPortalShape`: valid shape with no existing portal blocks.
+    pub fn find_empty_portal_shape(
         world: &Arc<World>,
         fire_pos: BlockPos,
         config: &PortalFrameConfig,
     ) -> Option<Self> {
-        Self::try_axis(world, fire_pos, Axis::X, config, is_empty_interior)
-            .or_else(|| Self::try_axis(world, fire_pos, Axis::Z, config, is_empty_interior))
+        Self::try_axis(world, fire_pos, Axis::X, config)
+            .filter(|s| s.num_portal_blocks == 0)
+            .or_else(|| {
+                Self::try_axis(world, fire_pos, Axis::Z, config)
+                    .filter(|s| s.num_portal_blocks == 0)
+            })
     }
 
-    /// Finds a portal shape on a specific axis, treating existing portal blocks as valid interior.
-    /// Used by `update_shape` to check if the portal frame is still complete.
+    /// Finds a portal shape on a specific axis.
+    /// Used by `update_shape` to check if the portal is still complete.
     pub fn find_any_shape(
         world: &Arc<World>,
         pos: BlockPos,
         axis: Axis,
         config: &PortalFrameConfig,
     ) -> Option<Self> {
-        Self::try_axis(world, pos, axis, config, is_portal_or_empty_interior)
+        Self::try_axis(world, pos, axis, config)
     }
 
     /// Tries to find a valid portal on a single axis, matching vanilla's detection algorithm.
@@ -103,7 +98,6 @@ impl PortalShape {
         pos: BlockPos,
         axis: Axis,
         config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
     ) -> Option<Self> {
         // Vanilla: rightDir is WEST for X-axis, SOUTH for Z-axis
         let right_dir: Direction = match axis {
@@ -113,15 +107,16 @@ impl PortalShape {
         };
 
         let bottom_left =
-            Self::calculate_bottom_left(world, pos, right_dir, config, interior_check)?;
+            Self::calculate_bottom_left(world, pos, right_dir, config)?;
 
-        let width = Self::calculate_width(world, bottom_left, right_dir, config, interior_check);
+        let width = Self::calculate_width(world, bottom_left, right_dir, config);
         if width == 0 {
             return None;
         }
 
+        let mut num_portal_blocks = 0;
         let height = Self::calculate_height(
-            world, bottom_left, width, right_dir, config, interior_check,
+            world, bottom_left, width, right_dir, config, &mut num_portal_blocks,
         );
         if height < config.min_height {
             return None;
@@ -138,28 +133,30 @@ impl PortalShape {
             height,
             right_dir,
             portal: config.portal,
+            num_portal_blocks,
         })
     }
 
     /// Returns the number of valid interior blocks in `direction` from `pos`, matching vanilla's
-    /// `getDistanceUntilEdgeAboveFrame`. Each position must pass `interior_check` and have a
-    /// frame block below it.
+    /// `getDistanceUntilEdgeAboveFrame`. Each position must be empty and have a frame block
+    /// below it. Returns 0 if the terminating block is not a frame block.
     fn get_distance_until_edge(
         world: &Arc<World>,
         pos: BlockPos,
         direction: Direction,
         config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
     ) -> u32 {
-        for i in 0..config.max_width {
+        for i in 0..=config.max_width {
             let next = pos.relative_n(direction, i as i32);
-            if !interior_check(world, next, config)
-                || !Self::is_frame_block(world, next.below(), config)
-            {
-                return i;
+            if !is_empty(world, next, config) {
+                // Edge must be a frame block, otherwise the interior is unbounded
+                return if Self::is_frame_block(world, next, config) { i } else { 0 };
+            }
+            if !Self::is_frame_block(world, next.below(), config) {
+                return 0;
             }
         }
-        config.max_width
+        0
     }
 
     /// Finds the bottom-left corner of the portal interior.
@@ -168,24 +165,20 @@ impl PortalShape {
         pos: BlockPos,
         right_dir: Direction,
         config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
     ) -> Option<BlockPos> {
-        // Scan down to find the floor
+        // Scan down to find the lowest empty block above frame
         let mut cur = pos;
         for _ in 0..=config.max_height {
             let next = cur.below();
-            if Self::is_frame_block(world, next, config) {
+            if !is_empty(world, next, config) {
                 break;
-            }
-            if !interior_check(world, next, config) {
-                return None;
             }
             cur = next;
         }
 
         // Scan in opposite of right_dir to find the left edge
         let left_dir = right_dir.opposite();
-        let dist = Self::get_distance_until_edge(world, cur, left_dir, config, interior_check);
+        let dist = Self::get_distance_until_edge(world, cur, left_dir, config);
         if dist == 0 {
             return None;
         }
@@ -198,9 +191,8 @@ impl PortalShape {
         bottom_left: BlockPos,
         right_dir: Direction,
         config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
     ) -> u32 {
-        let dist = Self::get_distance_until_edge(world, bottom_left, right_dir, config, interior_check);
+        let dist = Self::get_distance_until_edge(world, bottom_left, right_dir, config);
         if dist < config.min_width || dist > config.max_width {
             return 0;
         }
@@ -208,13 +200,17 @@ impl PortalShape {
     }
 
     /// Calculates the height while validating side columns and interior.
+    /// Also counts portal blocks in the interior via `portal_block_count`.
+    ///
+    /// Matches vanilla's `getDistanceUntilTop`: always uses `isEmpty` (air/fire/portal)
+    /// for interior validation regardless of the outer interior check strategy.
     fn calculate_height(
         world: &Arc<World>,
         bottom_left: BlockPos,
         width: u32,
         right_dir: Direction,
         config: &PortalFrameConfig,
-        interior_check: InteriorCheck,
+        portal_block_count: &mut u32,
     ) -> u32 {
         let mut height = 0;
         'outer: for h in 0..config.max_height {
@@ -229,10 +225,13 @@ impl PortalShape {
                 break;
             }
 
-            // Check interior
+            // Check interior and count portal blocks
             for w in 0..width {
                 let interior_pos = row_start.relative_n(right_dir, w as i32);
-                if !interior_check(world, interior_pos, config) {
+                let block = world.get_block_state(interior_pos).get_block();
+                if block == config.portal {
+                    *portal_block_count += 1;
+                } else if block != vanilla_blocks::AIR && block != vanilla_blocks::FIRE {
                     break 'outer;
                 }
             }
@@ -261,6 +260,13 @@ impl PortalShape {
 
     fn is_frame_block(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
         world.get_block_state(pos).get_block() == config.frame
+    }
+
+    /// Returns `true` if the portal interior is entirely filled with portal blocks.
+    /// Matches vanilla's `PortalShape.isComplete()`.
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
+        self.num_portal_blocks == self.width * self.height
     }
 
     /// Fills the interior with nether portal blocks.
