@@ -367,8 +367,8 @@ impl JavaTcpClient {
         match packet.id {
             handshake::S_INTENTION => {
                 let intent = match SClientIntention::read_packet(data)?.intention {
-                    ClientIntent::STATUS => ConnectionProtocol::Status,
-                    ClientIntent::LOGIN | ClientIntent::TRANSFER => ConnectionProtocol::Login,
+                    ClientIntent::Status => ConnectionProtocol::Status,
+                    ClientIntent::Login | ClientIntent::Transfer => ConnectionProtocol::Login,
                 };
                 self.protocol.store(intent);
 

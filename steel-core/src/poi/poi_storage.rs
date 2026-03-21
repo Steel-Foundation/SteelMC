@@ -27,7 +27,7 @@ pub enum OccupationStatus {
 impl OccupationStatus {
     /// Returns `true` if the given POI matches this status filter.
     #[must_use]
-    pub const fn matches(&self, poi: &PointOfInterest, max_tickets: u32) -> bool {
+    pub const fn matches(self, poi: &PointOfInterest, max_tickets: u32) -> bool {
         match self {
             Self::Any => true,
             Self::Free => poi.has_space(),

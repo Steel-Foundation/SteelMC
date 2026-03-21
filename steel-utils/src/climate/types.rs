@@ -66,7 +66,7 @@ impl TargetPoint {
     /// Convert to a 7-element array for tree lookups.
     /// The 7th element is always 0 (offset position).
     #[must_use]
-    pub const fn to_parameter_array(&self) -> [i64; PARAMETER_COUNT] {
+    pub const fn to_parameter_array(self) -> [i64; PARAMETER_COUNT] {
         [
             self.temperature,
             self.humidity,

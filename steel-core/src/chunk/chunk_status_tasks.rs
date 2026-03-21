@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
+
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
     chunk_generation_task::StaticCache2D,
@@ -87,7 +89,7 @@ impl ChunkStatusTasks {
     ) -> Result<(), anyhow::Error> {
         let chunk = holder
             .try_chunk(ChunkStatus::StructureReferences)
-            .expect("Chunk not found at status StructureReferences");
+            .context("Failed to get the chunk")?;
 
         context.generator.create_biomes(&chunk);
 

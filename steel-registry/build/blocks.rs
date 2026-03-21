@@ -164,7 +164,7 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     }
     if bp.is_randomly_ticking != default_props.is_randomly_ticking {
         let val = bp.is_randomly_ticking;
-        builder_calls.push(quote! { .is_randomly_ticking(#val) });
+        builder_calls.push(quote! { .set_is_randomly_ticking(#val) });
     }
     if bp.force_solid_off != default_props.force_solid_off {
         let val = bp.force_solid_off;
@@ -208,7 +208,7 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     }
     if bp.is_air != default_props.is_air {
         let val = bp.is_air;
-        builder_calls.push(quote! { .is_air(#val) });
+        builder_calls.push(quote! { .set_is_air(#val) });
     }
     if bp.requires_correct_tool_for_drops != default_props.requires_correct_tool_for_drops {
         let val = bp.requires_correct_tool_for_drops;

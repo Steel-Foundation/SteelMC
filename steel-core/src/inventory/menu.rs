@@ -403,6 +403,7 @@ impl MenuBehavior {
 
     /// Returns true if a slot can be dragged to during quickcraft.
     /// Menus can override this via the Menu trait.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
     pub const fn can_drag_to(&self, _slot_index: usize) -> bool {
         true
