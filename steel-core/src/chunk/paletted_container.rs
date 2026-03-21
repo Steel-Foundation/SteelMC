@@ -171,7 +171,11 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     ///
     /// # Errors
     /// - If the writer fails to write.
-    #[allow(clippy::missing_panics_doc, clippy::unwrap_used)]
+    #[expect(
+        clippy::missing_panics_doc,
+        clippy::unwrap_used,
+        reason = "position() is guaranteed to exist: palette was built from the cube's own values"
+    )]
     pub fn write(&self, writer: &mut impl Write) -> Result<()>
     where
         V: ToGlobalId,
@@ -280,7 +284,10 @@ impl BlockPalette {
                 if v.0 == 0 {
                     0
                 } else {
-                    #[allow(clippy::cast_possible_truncation)]
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "VOLUME = 16^3 = 4096, fits in u16"
+                    )]
                     {
                         Self::VOLUME as u16
                     }

@@ -6,19 +6,20 @@ use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
 
-#[derive(Deserialize)]
-struct TimelineJson {
+#[derive(Deserialize, Debug)]
+#[expect(dead_code)]
+pub struct TimelineJson {
     clock: Option<String>,
     period_ticks: Option<i64>,
     #[serde(default)]
-    tracks: serde_json::Map<String, serde_json::Value>,
+    tracks: serde_json::Map<String, Value>,
     #[serde(default)]
-    time_markers: serde_json::Map<String, serde_json::Value>,
+    time_markers: serde_json::Map<String, Value>,
 }
 
 #[derive(Deserialize)]
 struct TrackJson {
-    ease: Option<serde_json::Value>,
+    ease: Option<Value>,
     modifier: Option<String>,
     keyframes: Vec<KeyframeJson>,
 }
@@ -26,7 +27,7 @@ struct TrackJson {
 #[derive(Deserialize)]
 struct KeyframeJson {
     ticks: i64,
-    value: serde_json::Value,
+    value: Value,
 }
 
 fn quote_opt_identifier(s: &str) -> TokenStream {
@@ -39,7 +40,7 @@ fn quote_opt_identifier(s: &str) -> TokenStream {
     quote! { Some(Identifier::vanilla_static(#path)) }
 }
 
-fn quote_ease(v: &serde_json::Value) -> TokenStream {
+fn quote_ease(v: &Value) -> TokenStream {
     match v {
         Value::String(s) => {
             let s_str = s.as_str();
@@ -60,7 +61,7 @@ fn quote_ease(v: &serde_json::Value) -> TokenStream {
     }
 }
 
-fn quote_keyframe_value(v: &serde_json::Value) -> TokenStream {
+fn quote_keyframe_value(v: &Value) -> TokenStream {
     match v {
         Value::Bool(b) => {
             if *b {
@@ -93,7 +94,7 @@ fn quote_keyframe_value(v: &serde_json::Value) -> TokenStream {
     }
 }
 
-fn quote_time_marker(name: &str, v: &serde_json::Value) -> TokenStream {
+fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
     match v {
         Value::Number(n) => {
             let ticks = n.as_i64().unwrap_or_else(|| n.as_u64().unwrap() as i64);

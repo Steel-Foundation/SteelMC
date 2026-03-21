@@ -100,7 +100,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     }
 
     /// Fill all interpolation channel slices at the given cell X coordinate.
-    #[allow(clippy::needless_range_loop)]
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "index ch is used to index both values[] and channels[]"
+    )]
     fn fill_slice(
         &mut self,
         use_slice0: bool,
@@ -215,7 +218,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                     (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
 
                                 // Trilinearly interpolate each channel independently
-                                #[allow(clippy::needless_range_loop)]
+                                #[expect(
+                                    clippy::needless_range_loop,
+                                    reason = "index ch is used to index both channels[] slices and interpolated[]"
+                                )]
                                 for ch in 0..interp_count {
                                     let s0 = &self.channels[ch].slice0;
                                     let s1 = &self.channels[ch].slice1;

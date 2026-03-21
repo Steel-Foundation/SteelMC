@@ -1,5 +1,5 @@
 use steel_macros::{ReadFrom, ServerPacket};
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 use steel_registry::packets::play::S_COMMAND_SUGGESTION;
 
 /// Sent by the client when requesting command suggestions (tab completion).

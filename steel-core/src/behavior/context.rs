@@ -9,8 +9,9 @@ use steel_utils::BlockPos;
 use steel_utils::types::InteractionHand;
 
 use crate::fluid::FluidStateExt;
-use crate::inventory::lock::ContainerLockGuard;
+use crate::inventory::lock::{ContainerId, ContainerLockGuard};
 use crate::player::Player;
+use crate::player::player_inventory::PlayerInventory;
 use crate::world::World;
 pub use steel_registry::items::item::BlockHitResult;
 
@@ -104,7 +105,54 @@ impl BlockPlaceContext<'_> {
     }
 }
 
+/// Mutable access to the player's inventory through a lock guard.
+///
+/// Extracted from the context structs so that the borrow checker can track
+/// inventory mutation separately from immutable context fields like `player`
+/// and `world`.
+pub struct InventoryAccess<'a> {
+    inv_guard: &'a mut ContainerLockGuard,
+    hand: InteractionHand,
+    inv_id: ContainerId,
+}
+
+impl InventoryAccess<'_> {
+    /// Returns a mutable reference to the item in the player's hand.
+    ///
+    /// Cannot be held simultaneously with `inventory()` or `guard()`.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
+    pub fn item(&mut self) -> &mut ItemStack {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+            .get_item_in_hand_mut(self.hand)
+    }
+
+    /// Returns a mutable reference to the player's inventory.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable when context is correctly constructed"
+    )]
+    pub fn inventory(&mut self) -> &mut PlayerInventory {
+        self.inv_guard
+            .get_player_inventory_mut(self.inv_id)
+            .expect("player inventory must be locked")
+    }
+
+    /// Returns a mutable reference to the container lock guard.
+    pub const fn guard(&mut self) -> &mut ContainerLockGuard {
+        self.inv_guard
+    }
+}
+
 /// Context for using an item on a block.
+///
+/// Immutable fields (`player`, `hand`, `world`, `hit_result`) can be accessed
+/// freely while `inv` is mutably borrowed — the borrow checker tracks them as
+/// disjoint fields.
 pub struct UseOnContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -114,13 +162,34 @@ pub struct UseOnContext<'a> {
     pub hit_result: BlockHitResult,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    /// The item stack being used (mutable for consumption).
-    pub item_stack: &'a mut ItemStack,
-    /// Lock guard holding the player's inventory.
-    pub inv_guard: &'a mut ContainerLockGuard,
+    /// Mutable inventory access.
+    pub inv: InventoryAccess<'a>,
 }
 
 impl<'a> UseOnContext<'a> {
+    /// Creates a new `UseOnContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            hit_result,
+            world,
+            inv: InventoryAccess {
+                inv_guard,
+                hand,
+                inv_id,
+            },
+        }
+    }
+
     /// Builds a [`BlockPlaceContext`] from this interaction context.
     ///
     /// Returns `None` if placement is invalid (out of bounds or non-replaceable target).
@@ -166,6 +235,9 @@ impl<'a> UseOnContext<'a> {
 }
 
 /// Context for using an item (general usage).
+///
+/// Immutable fields (`player`, `hand`, `world`) can be accessed freely while
+/// `inv` is mutably borrowed.
 pub struct UseItemContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -173,10 +245,29 @@ pub struct UseItemContext<'a> {
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    /// The item stack being used (mutable for consumption).
-    pub item_stack: &'a mut ItemStack,
-    /// Lock guard holding the player's inventory. Behaviors that need to add
-    /// items (e.g. bucket swap) must use this instead of `player.add_item_or_drop`
-    /// to avoid deadlocking on the inventory mutex.
-    pub inv_guard: &'a mut ContainerLockGuard,
+    /// Mutable inventory access.
+    pub inv: InventoryAccess<'a>,
+}
+
+impl<'a> UseItemContext<'a> {
+    /// Creates a new `UseItemContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            world,
+            inv: InventoryAccess {
+                inv_guard,
+                hand,
+                inv_id,
+            },
+        }
+    }
 }

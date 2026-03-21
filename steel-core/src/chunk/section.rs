@@ -27,14 +27,15 @@ impl SectionHolder {
 
     /// Returns true if this section contains any randomly-ticking blocks.
     ///
-    /// # Safety
-    /// This performs an unsynchronized read of the ticking block count.
-    /// This is safe because:
-    /// - `ticking_block_count` is a `u16` which has atomic reads on all supported platforms
-    /// - A stale/torn read is acceptable here (worst case: we acquire an unnecessary lock)
+    /// Performs an unsynchronized read of the ticking block count to avoid
+    /// lock overhead on every section during random ticks. A stale read is
+    /// acceptable: worst case we acquire an unnecessary lock.
     #[inline]
     #[must_use]
     pub fn is_randomly_ticking(&self) -> bool {
+        // SAFETY: `ticking_block_count` is a `u16` — reads are atomic on all
+        // supported platforms. A torn/stale value only causes a harmless
+        // false-positive (we take the lock when we didn't need to).
         unsafe { (*self.section.data_ptr()).ticking_block_count > 0 }
     }
 

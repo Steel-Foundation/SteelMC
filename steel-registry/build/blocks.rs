@@ -1,4 +1,4 @@
-#![allow(unused)]
+#![expect(unused)]
 // Todo! Remove this^
 
 use core::panic;
@@ -77,7 +77,7 @@ pub struct ShapeData {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Block {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub id: u16,
     pub name: String,
     pub properties: Vec<String>,

@@ -27,12 +27,16 @@ pub struct DimensionTypeJson {
     has_ender_dragon_fight: bool,
 
     #[serde(default)]
+    #[expect(dead_code)]
     skybox: Option<String>,
     #[serde(default)]
+    #[expect(dead_code)]
     timelines: Option<String>,
     #[serde(default)]
+    #[expect(dead_code)]
     default_clock: Option<String>,
     #[serde(default)]
+    #[expect(dead_code)]
     cardinal_light: Option<String>,
 }
 
