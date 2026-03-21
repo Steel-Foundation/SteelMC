@@ -85,7 +85,7 @@ impl MessageCache {
     pub fn unpack_acknowledged(
         &self,
         _offset: i32,
-        acknowledged: &[u8; 3], // FixedBitSet(20) = 3 bytes
+        acknowledged: [u8; 3], // FixedBitSet(20) = 3 bytes
     ) -> Option<LastSeen> {
         // Parse the 20-bit BitSet from 3 bytes
         let mut bits = [false; MAX_PREVIOUS_MESSAGES];

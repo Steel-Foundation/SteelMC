@@ -1025,6 +1025,7 @@ pub struct AttributeModifier {
 }
 
 /// Attribute modifier operation type.
+#[expect(clippy::enum_variant_names, reason = "matches Vanilla naming")]
 #[derive(Debug, Clone, Copy)]
 pub enum AttributeOperation {
     AddValue,

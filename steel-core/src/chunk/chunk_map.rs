@@ -111,7 +111,7 @@ impl ChunkMap {
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
-        _dimension: &DimensionTypeRef,
+        _dimension: DimensionTypeRef,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
     ) -> Self {
@@ -140,11 +140,11 @@ impl ChunkMap {
 
     /// Executes a function with access to a fully loaded chunk.
     /// Returns `None` if the chunk is not loaded or not at Full status.
-    pub fn with_full_chunk<F, R>(&self, pos: &ChunkPos, f: F) -> Option<R>
+    pub fn with_full_chunk<F, R>(&self, pos: ChunkPos, f: F) -> Option<R>
     where
         F: FnOnce(&ChunkAccess) -> R,
     {
-        let chunk_holder = self.chunks.read_sync(pos, |_, chunk| chunk.clone())?;
+        let chunk_holder = self.chunks.read_sync(&pos, |_, chunk| chunk.clone())?;
         let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
         Some(f(&guard))
     }
@@ -325,27 +325,27 @@ impl ChunkMap {
     )]
     pub fn update_chunk_level(
         self: &Arc<Self>,
-        pos: &ChunkPos,
+        pos: ChunkPos,
         new_level: Option<u8>,
     ) -> Option<Arc<ChunkHolder>> {
         // Recover from unloading if possible, else create new holder.
         let chunk_holder =
-            if let Some(holder) = self.chunks.read_sync(pos, |_, holder| holder.clone()) {
+            if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
                 holder
             } else {
                 new_level?;
 
-                if let Some(entry) = self.unloading_chunks.remove_sync(pos) {
-                    let _ = self.chunks.insert_sync(*pos, entry.1.clone());
+                if let Some(entry) = self.unloading_chunks.remove_sync(&pos) {
+                    let _ = self.chunks.insert_sync(pos, entry.1.clone());
                     entry.1
                 } else {
                     let holder = Arc::new(ChunkHolder::new(
-                        *pos,
+                        pos,
                         new_level.unwrap(),
                         self.world_gen_context.min_y(),
                         self.world_gen_context.height(),
                     ));
-                    let _ = self.chunks.insert_sync(*pos, holder.clone());
+                    let _ = self.chunks.insert_sync(pos, holder.clone());
                     holder
                 }
             };
@@ -364,11 +364,11 @@ impl ChunkMap {
 
             // Clean up POI data for this chunk column
             let world = self.world_gen_context.world();
-            world.poi_storage.lock().remove_chunk(*pos);
+            world.poi_storage.lock().remove_chunk(pos);
 
             // Move to unloading_chunks for deferred unload
-            if let Some((_, holder)) = self.chunks.remove_sync(pos) {
-                let _ = self.unloading_chunks.insert_sync(*pos, holder);
+            if let Some((_, holder)) = self.chunks.remove_sync(&pos) {
+                let _ = self.unloading_chunks.insert_sync(pos, holder);
             }
             None
         }
@@ -417,7 +417,7 @@ impl ChunkMap {
                 let result = changes
                     .iter()
                     .filter_map(|change| {
-                        self.update_chunk_level(&change.pos, change.new_level)
+                        self.update_chunk_level(change.pos, change.new_level)
                             .map(|holder| (holder, change.new_level))
                     })
                     .collect();

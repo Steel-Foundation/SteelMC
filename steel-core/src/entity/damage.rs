@@ -39,6 +39,7 @@ impl DamageSource {
     /// No vanilla damage types currently use this, but the logic exists in
     /// `LivingEntity.hurtServer()`.
     /// TODO: use damage type tag query once supported
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
     pub const fn bypasses_cooldown(&self) -> bool {
         false
