@@ -21,6 +21,9 @@ impl ItemBehavior for FlintAndSteelItem {
             UpdateFlags::UPDATE_NEIGHBORS,
         );
 
+        let has_infinite_materials = context.player.has_infinite_materials();
+        context.inv.item().hurt_and_break(1, has_infinite_materials);
+
         // TODO: Place fire block at fire_pos if it's air on a solid block
         InteractionResult::Pass
     }
