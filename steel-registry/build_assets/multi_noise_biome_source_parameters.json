@@ -1,4 +1,156 @@
 {
+  "minecraft:nether": [
+    {
+      "biome": "minecraft:nether_wastes",
+      "parameters": {
+        "temperature": [
+          0.0,
+          0.0
+        ],
+        "humidity": [
+          0.0,
+          0.0
+        ],
+        "continentalness": [
+          0.0,
+          0.0
+        ],
+        "erosion": [
+          0.0,
+          0.0
+        ],
+        "depth": [
+          0.0,
+          0.0
+        ],
+        "weirdness": [
+          0.0,
+          0.0
+        ],
+        "offset": 0.0
+      }
+    },
+    {
+      "biome": "minecraft:soul_sand_valley",
+      "parameters": {
+        "temperature": [
+          0.0,
+          0.0
+        ],
+        "humidity": [
+          -0.5,
+          -0.5
+        ],
+        "continentalness": [
+          0.0,
+          0.0
+        ],
+        "erosion": [
+          0.0,
+          0.0
+        ],
+        "depth": [
+          0.0,
+          0.0
+        ],
+        "weirdness": [
+          0.0,
+          0.0
+        ],
+        "offset": 0.0
+      }
+    },
+    {
+      "biome": "minecraft:crimson_forest",
+      "parameters": {
+        "temperature": [
+          0.4,
+          0.4
+        ],
+        "humidity": [
+          0.0,
+          0.0
+        ],
+        "continentalness": [
+          0.0,
+          0.0
+        ],
+        "erosion": [
+          0.0,
+          0.0
+        ],
+        "depth": [
+          0.0,
+          0.0
+        ],
+        "weirdness": [
+          0.0,
+          0.0
+        ],
+        "offset": 0.0
+      }
+    },
+    {
+      "biome": "minecraft:warped_forest",
+      "parameters": {
+        "temperature": [
+          0.0,
+          0.0
+        ],
+        "humidity": [
+          0.5,
+          0.5
+        ],
+        "continentalness": [
+          0.0,
+          0.0
+        ],
+        "erosion": [
+          0.0,
+          0.0
+        ],
+        "depth": [
+          0.0,
+          0.0
+        ],
+        "weirdness": [
+          0.0,
+          0.0
+        ],
+        "offset": 0.375
+      }
+    },
+    {
+      "biome": "minecraft:basalt_deltas",
+      "parameters": {
+        "temperature": [
+          -0.5,
+          -0.5
+        ],
+        "humidity": [
+          0.0,
+          0.0
+        ],
+        "continentalness": [
+          0.0,
+          0.0
+        ],
+        "erosion": [
+          0.0,
+          0.0
+        ],
+        "depth": [
+          0.0,
+          0.0
+        ],
+        "weirdness": [
+          0.0,
+          0.0
+        ],
+        "offset": 0.175
+      }
+    }
+  ],
   "minecraft:overworld": [
     {
       "biome": "minecraft:mushroom_fields",
@@ -227788,158 +227940,6 @@
           1.0
         ],
         "offset": 0.0
-      }
-    }
-  ],
-  "minecraft:nether": [
-    {
-      "biome": "minecraft:nether_wastes",
-      "parameters": {
-        "temperature": [
-          0.0,
-          0.0
-        ],
-        "humidity": [
-          0.0,
-          0.0
-        ],
-        "continentalness": [
-          0.0,
-          0.0
-        ],
-        "erosion": [
-          0.0,
-          0.0
-        ],
-        "depth": [
-          0.0,
-          0.0
-        ],
-        "weirdness": [
-          0.0,
-          0.0
-        ],
-        "offset": 0.0
-      }
-    },
-    {
-      "biome": "minecraft:soul_sand_valley",
-      "parameters": {
-        "temperature": [
-          0.0,
-          0.0
-        ],
-        "humidity": [
-          -0.5,
-          -0.5
-        ],
-        "continentalness": [
-          0.0,
-          0.0
-        ],
-        "erosion": [
-          0.0,
-          0.0
-        ],
-        "depth": [
-          0.0,
-          0.0
-        ],
-        "weirdness": [
-          0.0,
-          0.0
-        ],
-        "offset": 0.0
-      }
-    },
-    {
-      "biome": "minecraft:crimson_forest",
-      "parameters": {
-        "temperature": [
-          0.4,
-          0.4
-        ],
-        "humidity": [
-          0.0,
-          0.0
-        ],
-        "continentalness": [
-          0.0,
-          0.0
-        ],
-        "erosion": [
-          0.0,
-          0.0
-        ],
-        "depth": [
-          0.0,
-          0.0
-        ],
-        "weirdness": [
-          0.0,
-          0.0
-        ],
-        "offset": 0.0
-      }
-    },
-    {
-      "biome": "minecraft:warped_forest",
-      "parameters": {
-        "temperature": [
-          0.0,
-          0.0
-        ],
-        "humidity": [
-          0.5,
-          0.5
-        ],
-        "continentalness": [
-          0.0,
-          0.0
-        ],
-        "erosion": [
-          0.0,
-          0.0
-        ],
-        "depth": [
-          0.0,
-          0.0
-        ],
-        "weirdness": [
-          0.0,
-          0.0
-        ],
-        "offset": 0.375
-      }
-    },
-    {
-      "biome": "minecraft:basalt_deltas",
-      "parameters": {
-        "temperature": [
-          -0.5,
-          -0.5
-        ],
-        "humidity": [
-          0.0,
-          0.0
-        ],
-        "continentalness": [
-          0.0,
-          0.0
-        ],
-        "erosion": [
-          0.0,
-          0.0
-        ],
-        "depth": [
-          0.0,
-          0.0
-        ],
-        "weirdness": [
-          0.0,
-          0.0
-        ],
-        "offset": 0.175
       }
     }
   ]
