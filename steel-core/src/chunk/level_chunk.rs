@@ -232,7 +232,10 @@ impl LevelChunk {
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all parameters are required to fully restore a chunk from disk"
+    )]
     pub fn from_disk(
         sections: Sections,
         pos: ChunkPos,

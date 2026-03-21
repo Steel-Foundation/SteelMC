@@ -78,7 +78,6 @@ impl VarInt {
     }
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for VarInt {
     fn read(read: &mut Cursor<&[u8]>) -> Result<Self, Error> {
         let mut val = 0;
@@ -93,7 +92,6 @@ impl ReadFrom for VarInt {
     }
 }
 
-#[allow(missing_docs)]
 impl WriteTo for VarInt {
     fn write(&self, writer: &mut impl Write) -> Result<(), Error> {
         let mut val = self.0 as u32;
@@ -110,29 +108,28 @@ impl WriteTo for VarInt {
     }
 }
 
-#[allow(missing_docs)]
 impl From<usize> for VarInt {
     fn from(value: usize) -> Self {
         Self(value as _)
     }
 }
 
-#[allow(missing_docs)]
-#[allow(clippy::cast_sign_loss)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "VarInt values used as lengths are always non-negative"
+)]
 impl From<VarInt> for usize {
     fn from(value: VarInt) -> usize {
         value.0 as _
     }
 }
 
-#[allow(missing_docs)]
 impl From<i32> for VarInt {
     fn from(value: i32) -> Self {
         Self(value as _)
     }
 }
 
-#[allow(missing_docs)]
 impl From<VarInt> for i32 {
     fn from(value: VarInt) -> i32 {
         value.0

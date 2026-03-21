@@ -7,7 +7,10 @@ use crate::math::floor;
 use crate::noise::GRADIENT;
 use crate::random::Random;
 
-#[allow(clippy::unreadable_literal)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "exact mathematical constant; underscores would obscure precision"
+)]
 const SQRT_3: f64 = 1.7320508075688772;
 /// Skewing factor for 2D simplex: `0.5 * (sqrt(3) - 1)`
 const F2: f64 = 0.5 * (SQRT_3 - 1.0);
@@ -125,7 +128,10 @@ impl SimplexNoise {
     ///
     /// Returns a value typically in the range `[-1, 1]` (scaled by 32).
     #[must_use]
-    #[allow(clippy::many_single_char_names)]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "matches vanilla simplex noise math notation"
+    )]
     pub fn get_value_3d(&self, xin: f64, yin: f64, zin: f64) -> f64 {
         let s = (xin + yin + zin) * Self::F3;
         let i = floor(xin + s);
@@ -196,7 +202,10 @@ mod tests {
         for i in 0..10 {
             let x = f64::from(i) * 13.7;
             let z = f64::from(i) * 7.3;
-            #[allow(clippy::float_cmp)]
+            #[expect(
+                clippy::float_cmp,
+                reason = "determinism test: identical inputs must produce bit-identical outputs"
+            )]
             // Determinism test: identical inputs must produce identical outputs
             {
                 assert_eq!(noise1.get_value_2d(x, z), noise2.get_value_2d(x, z));

@@ -345,7 +345,10 @@ impl<N: DimensionNoises> Aquifer<N> {
     }
 
     /// Compute what block to place at this position given the interpolated density.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting would hurt readability of the aquifer sampling logic"
+    )]
     pub fn compute_substance(
         &mut self,
         noises: &N,
@@ -608,7 +611,10 @@ impl<N: DimensionNoises> Aquifer<N> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla NoiseBasedAquifer.computeSurface signature"
+    )]
     fn compute_surface_level(
         &mut self,
         x: i32,
@@ -703,7 +709,10 @@ impl<N: DimensionNoises> Aquifer<N> {
     /// Calculate barrier pressure between two aquifer cells.
     ///
     /// Matches vanilla's check: if lava meets water at this Y, return max pressure.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla NoiseBasedAquifer.calculatePressure signature"
+    )]
     fn calculate_pressure(
         &mut self,
         noises: &N,

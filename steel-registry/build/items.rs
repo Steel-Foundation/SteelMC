@@ -8,7 +8,7 @@ use serde_json::Value;
 
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct Item {
     pub id: u16,
     pub name: String,

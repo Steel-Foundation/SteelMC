@@ -189,7 +189,6 @@ impl PerlinNoise {
     /// * `y_scale` - Y scaling factor for terrain
     /// * `y_fudge` - Y fudge factor for floor snapping
     /// * `y_flat_hack` - If true, use `-yo` instead of wrapped y (for legacy biomes)
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn get_value_with_y_params(
         &self,
