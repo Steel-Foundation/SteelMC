@@ -2,7 +2,6 @@ use crate::serial::{ReadFrom, WriteTo};
 use glam::{DVec3, IVec2, IVec3, Vec3};
 use std::io::{Cursor, Result, Write};
 
-#[allow(missing_docs)]
 impl WriteTo for IVec2 {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.x.write(writer)?;
@@ -10,7 +9,6 @@ impl WriteTo for IVec2 {
     }
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for IVec2 {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
@@ -20,7 +18,6 @@ impl ReadFrom for IVec2 {
     }
 }
 
-#[allow(missing_docs)]
 impl WriteTo for IVec3 {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.x.write(writer)?;
@@ -29,7 +26,6 @@ impl WriteTo for IVec3 {
     }
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for IVec3 {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
@@ -40,7 +36,6 @@ impl ReadFrom for IVec3 {
     }
 }
 
-#[allow(missing_docs)]
 impl WriteTo for DVec3 {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.x.write(writer)?;
@@ -49,7 +44,6 @@ impl WriteTo for DVec3 {
     }
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for DVec3 {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
@@ -60,7 +54,6 @@ impl ReadFrom for DVec3 {
     }
 }
 
-#[allow(missing_docs)]
 impl WriteTo for Vec3 {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.x.write(writer)?;
@@ -69,7 +62,6 @@ impl WriteTo for Vec3 {
     }
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for Vec3 {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {

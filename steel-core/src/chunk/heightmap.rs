@@ -369,7 +369,10 @@ impl ProtoHeightmaps {
     ///
     /// Instead of a per-block closure (which acquires a lock per call), this
     /// holds each section's read lock for all 16 Y values before moving on.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable: heightmap is inserted just above the expect call"
+    )]
     pub fn prime_from_sections(
         &mut self,
         types: &[HeightmapType],
@@ -427,7 +430,10 @@ impl ProtoHeightmaps {
     /// Only creates and primes heightmap types that don't already exist.
     /// For each column, scans downward and records the first opaque block
     /// for each heightmap type's predicate.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable: heightmap is inserted just above the expect call"
+    )]
     pub fn prime<F>(&mut self, types: &[HeightmapType], min_y: i32, height: i32, get_block: F)
     where
         F: Fn(usize, i32, usize) -> BlockStateId,

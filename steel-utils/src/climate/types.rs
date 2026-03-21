@@ -220,7 +220,10 @@ impl ParameterPoint {
     ///
     /// Lower fitness = better match. Uses squared distances.
     #[must_use]
-    #[allow(clippy::many_single_char_names)]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "single-letter abbreviations match vanilla's climate parameter names"
+    )]
     pub const fn fitness(&self, target: &TargetPoint) -> i64 {
         let t = self.temperature.distance(target.temperature);
         let h = self.humidity.distance(target.humidity);

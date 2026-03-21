@@ -35,7 +35,7 @@ pub enum MonsterSpawnLightLevel {
 pub type DimensionTypeRef = &'static DimensionType;
 
 impl PartialEq for DimensionTypeRef {
-    #[allow(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(*self, *other)
     }

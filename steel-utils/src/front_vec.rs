@@ -21,13 +21,8 @@ impl FrontVec {
     /// Creates a new `FrontVec` with the given reserved front space and capacity.
     #[must_use]
     pub fn capacity(reserve: usize, capacity: usize) -> Self {
-        let total = reserve + capacity;
-        let mut buf = Vec::with_capacity(total);
-
-        #[allow(clippy::uninit_vec)]
-        unsafe {
-            buf.set_len(reserve);
-        };
+        let mut buf = Vec::with_capacity(reserve + capacity);
+        buf.resize(reserve, 0);
 
         Self {
             buf,
@@ -38,17 +33,7 @@ impl FrontVec {
     /// Creates a new `FrontVec` with the given reserved front space.
     #[must_use]
     pub fn new(reserve: usize) -> Self {
-        let mut buf = Vec::with_capacity(reserve);
-
-        #[allow(clippy::uninit_vec)]
-        unsafe {
-            buf.set_len(reserve);
-        };
-
-        Self {
-            buf,
-            front_space: reserve,
-        }
+        Self::capacity(reserve, 0)
     }
 
     /// Returns the length of the `FrontVec`.
@@ -100,7 +85,6 @@ impl FrontVec {
     }
 }
 
-#[allow(missing_docs)]
 impl Write for FrontVec {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.extend_from_slice(buf);
@@ -111,7 +95,6 @@ impl Write for FrontVec {
     }
 }
 
-#[allow(missing_docs)]
 impl AsyncWrite for FrontVec {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -132,7 +115,6 @@ impl AsyncWrite for FrontVec {
     }
 }
 
-#[allow(missing_docs)]
 impl Deref for FrontVec {
     type Target = [u8];
 
@@ -141,7 +123,6 @@ impl Deref for FrontVec {
     }
 }
 
-#[allow(missing_docs)]
 impl DerefMut for FrontVec {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut_slice()

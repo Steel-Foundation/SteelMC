@@ -106,7 +106,7 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
     /// - If the packet is too long.
     /// - If the packet is not compressed when it should be.
     /// - If the packet fails to decompress.
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(clippy::cast_sign_loss)]
     pub async fn get_raw_packet(&mut self) -> Result<RawPacket, PacketError> {
         let packet_len = VarInt::read_async(&mut self.reader).await? as usize;
 

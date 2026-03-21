@@ -107,19 +107,7 @@ pub trait Slot {
         if item.is_empty() || amount <= 0 {
             return ItemStack::empty();
         }
-
-        let take_count = amount.min(item.count());
-        let mut taken = item.clone();
-        taken.set_count(take_count);
-
-        let remaining = item.count() - take_count;
-        if remaining <= 0 {
-            *item = ItemStack::empty();
-        } else {
-            item.set_count(remaining);
-        }
-
-        taken
+        item.split(amount)
     }
 
     /// Tries to remove items from this slot with validation.

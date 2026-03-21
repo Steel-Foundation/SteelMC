@@ -34,7 +34,10 @@ impl ImprovedNoise {
         let zo = random.next_f64() * 256.0;
 
         let mut p = [0u8; 256];
-        #[allow(clippy::needless_range_loop)]
+        #[expect(
+            clippy::needless_range_loop,
+            reason = "index is used as the initial permutation value"
+        )]
         for i in 0..256 {
             p[i] = i as u8;
         }
@@ -62,7 +65,6 @@ impl ImprovedNoise {
     /// Returns the noise value and adds the partial derivatives (dx, dy, dz)
     /// into `derivative_out`. Used by `BlendedNoise` for terrain generation.
     #[must_use]
-    #[allow(clippy::many_single_char_names, clippy::similar_names)]
     pub fn noise_with_derivative(
         &self,
         x: f64,
@@ -95,7 +97,10 @@ impl ImprovedNoise {
     /// * `y_scale` - Y scaling factor (0.0 to disable)
     /// * `y_fudge` - Y fudge factor for floor snapping
     #[must_use]
-    #[allow(clippy::many_single_char_names, clippy::similar_names)]
+    #[expect(
+        clippy::similar_names,
+        reason = "yr_fudge and y_fudge match vanilla naming"
+    )]
     pub fn noise_with_y_scale(&self, x: f64, y: f64, z: f64, y_scale: f64, y_fudge: f64) -> f64 {
         let x = x + self.xo;
         let y = y + self.yo;
@@ -110,7 +115,10 @@ impl ImprovedNoise {
         let zr = z - f64::from(zf);
 
         // Calculate Y fudge for terrain generation
-        #[allow(clippy::if_not_else)]
+        #[expect(
+            clippy::if_not_else,
+            reason = "matches vanilla's conditional structure"
+        )]
         let yr_fudge = if y_scale != 0.0 {
             let fudge_limit = if y_fudge >= 0.0 && y_fudge < yr {
                 y_fudge
@@ -133,7 +141,7 @@ impl ImprovedNoise {
     }
 
     /// Sample noise at grid point and interpolate.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
     fn sample_and_lerp(
         &self,
         x: i32,
@@ -173,12 +181,7 @@ impl ImprovedNoise {
     }
 
     /// Sample noise at grid point, interpolate, and accumulate derivatives.
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::too_many_lines,
-        clippy::many_single_char_names,
-        clippy::similar_names
-    )]
+    #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
     fn sample_with_derivative(
         &self,
         x: i32,
@@ -305,7 +308,10 @@ mod tests {
         let noise2 = ImprovedNoise::new(&mut rng2);
 
         // Same seed should produce same noise
-        #[allow(clippy::float_cmp)]
+        #[expect(
+            clippy::float_cmp,
+            reason = "determinism test: identical seeds must produce bit-identical offsets"
+        )]
         {
             assert_eq!(noise1.xo, noise2.xo);
             assert_eq!(noise1.yo, noise2.yo);
@@ -349,7 +355,10 @@ mod tests {
         let v4 = noise.noise(0.0, 0.0, 100.0);
 
         // At least some should be different (statistically almost certain)
-        #[allow(clippy::float_cmp)]
+        #[expect(
+            clippy::float_cmp,
+            reason = "intentional exact equality check to detect degenerate constant noise"
+        )]
         let all_same = v1 == v2 && v2 == v3 && v3 == v4;
         assert!(!all_same, "All noise values are the same - unexpected");
     }

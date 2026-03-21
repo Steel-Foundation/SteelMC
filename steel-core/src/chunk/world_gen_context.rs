@@ -23,7 +23,10 @@ pub type NetherGenerator = VanillaGenerator<NetherNoises>;
 /// Type alias for end generator.
 pub type EndGenerator = VanillaGenerator<EndNoises>;
 
-#[allow(missing_docs)]
+#[expect(
+    missing_docs,
+    reason = "variants are named after their dimension; self-explanatory"
+)]
 #[enum_dispatch(ChunkGenerator)]
 pub enum ChunkGeneratorType {
     Flat(FlatChunkGenerator),

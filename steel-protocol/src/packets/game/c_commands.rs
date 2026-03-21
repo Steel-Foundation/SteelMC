@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::io::{Result, Write};
 
 use steel_macros::{ClientPacket, WriteTo};
-#[allow(unused_imports)]
 use steel_registry::packets::play::C_COMMANDS;
 use steel_utils::{
     codec::VarInt,
@@ -205,7 +204,6 @@ impl CommandNodeInfo {
     }
 }
 
-#[repr(u32)]
 pub enum ArgumentType {
     Bool,
     Float {
@@ -300,12 +298,72 @@ pub enum ArgumentStringTypeBehavior {
     GreedyPhrase,
 }
 
+impl ArgumentType {
+    fn discriminant(&self) -> i32 {
+        match self {
+            Self::Bool => 0,
+            Self::Float { .. } => 1,
+            Self::Double { .. } => 2,
+            Self::Integer { .. } => 3,
+            Self::Long { .. } => 4,
+            Self::String { .. } => 5,
+            Self::Entity { .. } => 6,
+            Self::GameProfile => 7,
+            Self::BlockPos => 8,
+            Self::ColumnPos => 9,
+            Self::Vec3 => 10,
+            Self::Vec2 => 11,
+            Self::BlockState => 12,
+            Self::BlockPredicate => 13,
+            Self::ItemStack => 14,
+            Self::ItemPredicate => 15,
+            Self::Color => 16,
+            Self::HexColor => 17,
+            Self::Component => 18,
+            Self::Style => 19,
+            Self::Message => 20,
+            Self::Nbt => 21,
+            Self::NbtTag => 22,
+            Self::NbtPath => 23,
+            Self::Objective => 24,
+            Self::ObjectiveCriteria => 25,
+            Self::Operation => 26,
+            Self::Particle => 27,
+            Self::Angle => 28,
+            Self::Rotation => 29,
+            Self::ScoreboardSlot => 30,
+            Self::ScoreHolder { .. } => 31,
+            Self::Swizzle => 32,
+            Self::Team => 33,
+            Self::ItemSlot => 34,
+            Self::ItemSlots => 35,
+            Self::ResourceLocation => 36,
+            Self::Function => 37,
+            Self::EntityAnchor => 38,
+            Self::IntRange => 39,
+            Self::FloatRange => 40,
+            Self::Dimension => 41,
+            Self::Gamemode => 42,
+            Self::Time { .. } => 43,
+            Self::ResourceOrTag { .. } => 44,
+            Self::ResourceOrTagKey { .. } => 45,
+            Self::Resource { .. } => 46,
+            Self::ResourceKey { .. } => 47,
+            Self::TemplateMirror => 48,
+            Self::TemplateRotation => 49,
+            Self::Heightmap => 50,
+            Self::LootTable => 51,
+            Self::LootPredicate => 52,
+            Self::LootModifier => 53,
+            Self::Dialog => 54,
+            Self::Uuid => 55,
+        }
+    }
+}
+
 impl WriteTo for ArgumentType {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        // Safety: Since Self is repr(u32), it is guaranteed to hold the discriminant in the first 4 bytes
-        // See https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
-        let id = unsafe { *(self as *const Self as *const i32) };
-        VarInt(id).write(writer)?;
+        VarInt(self.discriminant()).write(writer)?;
 
         match self {
             Self::Float { min, max } => Self::write_min_max(*min, *max, writer),

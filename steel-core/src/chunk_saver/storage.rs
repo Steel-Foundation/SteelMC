@@ -215,7 +215,10 @@ impl ChunkStorage {
     /// Prepares chunk data for saving. Call this while holding the chunk lock,
     /// then pass the result to `save_chunk_data` after releasing the lock.
     #[must_use]
-    #[allow(clippy::similar_names)] // `pois` vs `pos` are distinct
+    #[expect(
+        clippy::similar_names,
+        reason = "`pois` vs `pos` are semantically distinct"
+    )]
     pub fn prepare_chunk_save(chunk: &ChunkAccess) -> Option<PreparedChunkSave> {
         if !chunk.is_dirty() {
             return None;
@@ -279,7 +282,11 @@ impl ChunkStorage {
     }
 
     /// Converts chunk data to persistent format.
-    #[allow(clippy::too_many_arguments, clippy::similar_names)]
+    #[expect(
+        clippy::too_many_arguments,
+        clippy::similar_names,
+        reason = "chunk serialization requires all fields; `block_ticks`/`fluid_ticks` are distinct"
+    )]
     fn to_persistent(
         sections: &Sections,
         block_entities: &[SharedBlockEntity],

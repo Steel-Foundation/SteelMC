@@ -1,7 +1,6 @@
-#![allow(missing_docs)]
 use std::{
+    array,
     io::{Cursor, Error, Read, Result},
-    mem::{self, MaybeUninit},
     str::FromStr,
 };
 
@@ -112,14 +111,7 @@ impl<T: ReadFrom> ReadFrom for Option<T> {
 
 impl<T: ReadFrom, const N: usize> ReadFrom for [T; N] {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        #[allow(clippy::uninit_assumed_init)]
-        let mut buf: [T; N] = unsafe { MaybeUninit::uninit().assume_init() };
-
-        for i in &mut buf {
-            mem::forget(mem::replace(i, T::read(data)?));
-        }
-
-        Ok(buf)
+        array::try_from_fn(|_| T::read(data))
     }
 }
 

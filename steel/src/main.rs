@@ -97,7 +97,10 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// If we only used one runtime this would lead to the tick task being blocked by the chunk tasks.
 ///
 /// We have to create the runtimes at this level cause tokio panics if you drop a runtime in a context where blocking is not allowed.
-#[allow(clippy::unwrap_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "runtime build failures are fatal and unrecoverable at startup"
+)]
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();

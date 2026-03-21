@@ -243,7 +243,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
         let min_y = N::Settings::MIN_Y;
         let pos = chunk.pos();
@@ -525,7 +525,10 @@ struct FuzzedBiomeColumn<'a> {
 }
 
 impl<'a> FuzzedBiomeColumn<'a> {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla BiomeManager.getBiome signature"
+    )]
     fn new(
         biome_data: &'a [u16],
         section_count: usize,
@@ -621,7 +624,10 @@ impl<'a> FuzzedBiomeColumn<'a> {
     }
 
     /// Fuzzed biome lookup for a given `block_y`.
-    #[allow(clippy::similar_names)]
+    #[expect(
+        clippy::similar_names,
+        reason = "matches vanilla variable names: fract_x/y/z, parent_x/y/z"
+    )]
     #[inline]
     fn get(&mut self, block_y: i32) -> u16 {
         let abs_y = block_y - 2;
