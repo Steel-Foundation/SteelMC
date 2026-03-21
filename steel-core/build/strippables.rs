@@ -15,13 +15,12 @@ pub fn build() -> String {
     let strippables: Vec<proc_macro2::TokenStream> = strippables_entries
         .iter()
         .map(|(normal, stripped)| (to_block_ident(normal), to_block_ident(stripped)))
-        .map(|(from, to)| quote! { b if ptr::eq(b, vanilla_blocks::#from) => Some(vanilla_blocks::#to) , })
+        .map(|(from, to)| quote! { b if b == vanilla_blocks::#from => Some(vanilla_blocks::#to) , })
         .collect();
 
     let output = quote! {
         //! Generated Mapping of Logs and Woods to their stripped Variant
 
-        use std::ptr;
         use steel_registry::vanilla_blocks;
         use steel_registry::blocks::BlockRef;
 
