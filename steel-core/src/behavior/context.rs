@@ -105,44 +105,18 @@ impl BlockPlaceContext<'_> {
     }
 }
 
-/// Context for using an item on a block.
+/// Mutable access to the player's inventory through a lock guard.
 ///
-/// Access the hand item via `item()` and the player inventory via `inventory()`.
-/// The compiler prevents holding both simultaneously, avoiding aliased mutation.
-pub struct UseOnContext<'a> {
-    /// The player using the item.
-    pub player: &'a Player,
-    /// Which hand the item is in.
-    pub hand: InteractionHand,
-    /// Information about where the block was hit.
-    pub hit_result: BlockHitResult,
-    /// The world where the interaction is happening.
-    pub world: &'a Arc<World>,
+/// Extracted from the context structs so that the borrow checker can track
+/// inventory mutation separately from immutable context fields like `player`
+/// and `world`.
+pub struct InventoryAccess<'a> {
     inv_guard: &'a mut ContainerLockGuard,
+    hand: InteractionHand,
     inv_id: ContainerId,
 }
 
-impl<'a> UseOnContext<'a> {
-    /// Creates a new `UseOnContext`.
-    #[must_use]
-    pub const fn new(
-        player: &'a Player,
-        hand: InteractionHand,
-        hit_result: BlockHitResult,
-        world: &'a Arc<World>,
-        inv_guard: &'a mut ContainerLockGuard,
-        inv_id: ContainerId,
-    ) -> Self {
-        Self {
-            player,
-            hand,
-            hit_result,
-            world,
-            inv_guard,
-            inv_id,
-        }
-    }
-
+impl InventoryAccess<'_> {
     /// Returns a mutable reference to the item in the player's hand.
     ///
     /// Cannot be held simultaneously with `inventory()` or `guard()`.
@@ -171,6 +145,49 @@ impl<'a> UseOnContext<'a> {
     /// Returns a mutable reference to the container lock guard.
     pub const fn guard(&mut self) -> &mut ContainerLockGuard {
         self.inv_guard
+    }
+}
+
+/// Context for using an item on a block.
+///
+/// Immutable fields (`player`, `hand`, `world`, `hit_result`) can be accessed
+/// freely while `inv` is mutably borrowed — the borrow checker tracks them as
+/// disjoint fields.
+pub struct UseOnContext<'a> {
+    /// The player using the item.
+    pub player: &'a Player,
+    /// Which hand the item is in.
+    pub hand: InteractionHand,
+    /// Information about where the block was hit.
+    pub hit_result: BlockHitResult,
+    /// The world where the interaction is happening.
+    pub world: &'a Arc<World>,
+    /// Mutable inventory access.
+    pub inv: InventoryAccess<'a>,
+}
+
+impl<'a> UseOnContext<'a> {
+    /// Creates a new `UseOnContext`.
+    #[must_use]
+    pub const fn new(
+        player: &'a Player,
+        hand: InteractionHand,
+        hit_result: BlockHitResult,
+        world: &'a Arc<World>,
+        inv_guard: &'a mut ContainerLockGuard,
+        inv_id: ContainerId,
+    ) -> Self {
+        Self {
+            player,
+            hand,
+            hit_result,
+            world,
+            inv: InventoryAccess {
+                inv_guard,
+                hand,
+                inv_id,
+            },
+        }
     }
 
     /// Builds a [`BlockPlaceContext`] from this interaction context.
@@ -219,8 +236,8 @@ impl<'a> UseOnContext<'a> {
 
 /// Context for using an item (general usage).
 ///
-/// Same mediated-access pattern as `UseOnContext`. Call `item()` for the hand item,
-/// `inventory()` for the player inventory, or `guard()` for the full lock guard.
+/// Immutable fields (`player`, `hand`, `world`) can be accessed freely while
+/// `inv` is mutably borrowed.
 pub struct UseItemContext<'a> {
     /// The player using the item.
     pub player: &'a Player,
@@ -228,8 +245,8 @@ pub struct UseItemContext<'a> {
     pub hand: InteractionHand,
     /// The world where the interaction is happening.
     pub world: &'a Arc<World>,
-    inv_guard: &'a mut ContainerLockGuard,
-    inv_id: ContainerId,
+    /// Mutable inventory access.
+    pub inv: InventoryAccess<'a>,
 }
 
 impl<'a> UseItemContext<'a> {
@@ -246,38 +263,11 @@ impl<'a> UseItemContext<'a> {
             player,
             hand,
             world,
-            inv_guard,
-            inv_id,
+            inv: InventoryAccess {
+                inv_guard,
+                hand,
+                inv_id,
+            },
         }
-    }
-
-    /// Returns a mutable reference to the item in the player's hand.
-    ///
-    /// Cannot be held simultaneously with `inventory()` or `guard()`.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "panic is unreachable when context is correctly constructed"
-    )]
-    pub fn item(&mut self) -> &mut ItemStack {
-        self.inv_guard
-            .get_player_inventory_mut(self.inv_id)
-            .expect("player inventory must be locked")
-            .get_item_in_hand_mut(self.hand)
-    }
-
-    /// Returns a mutable reference to the player's inventory.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "panic is unreachable when context is correctly constructed"
-    )]
-    pub fn inventory(&mut self) -> &mut PlayerInventory {
-        self.inv_guard
-            .get_player_inventory_mut(self.inv_id)
-            .expect("player inventory must be locked")
-    }
-
-    /// Returns a mutable reference to the container lock guard.
-    pub const fn guard(&mut self) -> &mut ContainerLockGuard {
-        self.inv_guard
     }
 }

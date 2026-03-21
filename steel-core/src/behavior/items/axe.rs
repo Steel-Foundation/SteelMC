@@ -22,12 +22,16 @@ const AXIS_PROPERTY: EnumProperty<Axis> = BlockStateProperties::AXIS;
 
 /// Behavior for Axes, when used on wood or logs it turns them into their stripped variants
 #[item_behavior(class = "AxeItem")]
-pub struct AxeBehavior;
+pub struct AxeItem;
 
-impl ItemBehavior for AxeBehavior {
+impl ItemBehavior for AxeItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let has_block_item_intent = context.hand == InteractionHand::MainHand
-            && context.inventory().get_offhand_item().has(BLOCKS_ATTACKS)
+            && context
+                .inv
+                .inventory()
+                .get_offhand_item()
+                .has(BLOCKS_ATTACKS)
             && !context.player.is_secondary_use_active();
 
         if has_block_item_intent {
@@ -76,7 +80,7 @@ impl ItemBehavior for AxeBehavior {
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
-        context.item().hurt_and_break(1, has_infinite_materials);
+        context.inv.item().hurt_and_break(1, has_infinite_materials);
 
         InteractionResult::Success
     }

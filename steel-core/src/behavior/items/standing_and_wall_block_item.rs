@@ -28,7 +28,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 /// The `attachmentDirection` is typically `Direction::Down` for torches, meaning:
 /// - Looking down → place standing torch on top of block below
 /// - Looking horizontally → place wall torch on side of block
-#[item_behavior(class = "StandingAndWallBlockItem")]
+#[item_behavior]
 pub struct StandingAndWallBlockItem {
     /// The block to place when looking toward `attachmentDirection` (e.g., `torch`).
     #[json_arg(vanilla_blocks, json = "block")]
@@ -165,7 +165,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             Some(context.player.id),
         );
 
-        context.item().shrink(1);
+        context.inv.item().shrink(1);
 
         InteractionResult::Success
     }

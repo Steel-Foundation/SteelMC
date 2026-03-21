@@ -30,13 +30,13 @@ use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
 
 /// Handles all bucket variants (empty, water, lava).
-#[item_behavior(class = "BucketItem")]
-pub struct BucketItemBehavior {
+#[item_behavior]
+pub struct BucketItem {
     #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
     fluid_block: Option<BlockRef>,
 }
 
-impl BucketItemBehavior {
+impl BucketItem {
     /// Creates a new bucket behavior. `None` = empty bucket, `Some(block)` = filled.
     #[must_use]
     pub const fn new(fluid_block: Option<BlockRef>) -> Self {
@@ -44,7 +44,7 @@ impl BucketItemBehavior {
     }
 }
 
-impl ItemBehavior for BucketItemBehavior {
+impl ItemBehavior for BucketItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         match self.fluid_block {
             None => use_empty_bucket(context),
@@ -63,22 +63,22 @@ fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
     if player.has_infinite_materials() {
         // Creative: give the result item only if the player doesn't already have one.
         let inv_id = ContainerId::from_arc(&player.inventory);
-        let already_has = context.guard().get(inv_id).is_some_and(|inv| {
+        let already_has = context.inv.guard().get(inv_id).is_some_and(|inv| {
             (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
         });
         if !already_has {
             let result_stack = ItemStack::new(result_item);
-            player.add_item_or_drop_with_guard(context.guard(), result_stack);
+            player.add_item_or_drop_with_guard(context.inv.guard(), result_stack);
         }
         return;
     }
 
     let result_stack = ItemStack::new(result_item);
-    if context.item().count() > 1 {
-        context.item().shrink(1);
-        player.add_item_or_drop_with_guard(context.guard(), result_stack);
+    if context.inv.item().count() > 1 {
+        context.inv.item().shrink(1);
+        player.add_item_or_drop_with_guard(context.inv.guard(), result_stack);
     } else {
-        context.item().set_item(&result_item.key);
+        context.inv.item().set_item(&result_item.key);
     }
 }
 

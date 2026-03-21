@@ -25,10 +25,10 @@ const FLATTENABLES: [&Block; 6] = [
 const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
 
 /// Behavior for Shovels, extinguishes campfires and turns grass blocks into paths
-#[item_behavior(class = "ShovelItem")]
-pub struct ShovelBehavior;
+#[item_behavior]
+pub struct ShovelItem;
 
-impl ItemBehavior for ShovelBehavior {
+impl ItemBehavior for ShovelItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         if context.hit_result.direction == Direction::Down {
             return InteractionResult::Pass;
@@ -48,7 +48,7 @@ impl ItemBehavior for ShovelBehavior {
             }
             // TODO: Play SoundEvents.SHOVEL_FLATTEN
             let infinite_materials = context.player.has_infinite_materials();
-            context.item().hurt_and_break(1, infinite_materials);
+            context.inv.item().hurt_and_break(1, infinite_materials);
             context.world.set_block(
                 context.hit_result.block_pos,
                 vanilla_blocks::DIRT_PATH.default_state(),
