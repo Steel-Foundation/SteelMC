@@ -1470,6 +1470,96 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 })
                                 .collect()
                         }
+                        "minecraft:igloo" => {
+                            // Vanilla: IglooStructure → IglooPieces.addPieces
+                            // Uses templates with per-template pivots and offsets.
+                            // 50% chance for basement with random depth.
+                            let mut ig_rng = LegacyRandom::from_seed(0);
+                            ig_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
+
+                            let rotation = Rotation::get_random(&mut ig_rng);
+
+                            // Template sizes (from extracted NBT)
+                            const TOP_SIZE: [i32; 3] = [7, 5, 8];
+                            const MID_SIZE: [i32; 3] = [3, 3, 3];
+                            const BOT_SIZE: [i32; 3] = [7, 6, 9];
+                            // Rotation pivots
+                            const TOP_PIVOT: (i32, i32) = (3, 5);
+                            const MID_PIVOT: (i32, i32) = (1, 1);
+                            const BOT_PIVOT: (i32, i32) = (3, 7);
+                            // Position offsets from start (chunkMinX, 90, chunkMinZ)
+                            const TOP_OFF: (i32, i32, i32) = (0, 0, 0);
+                            const MID_OFF: (i32, i32, i32) = (2, -3, 4);
+                            const BOT_OFF: (i32, i32, i32) = (0, -3, -2);
+
+                            let start_x = chunk_min_x;
+                            let start_z = chunk_min_z;
+                            const GEN_Y: i32 = 90;
+
+                            let make_piece =
+                                |off: (i32, i32, i32),
+                                 depth: i32,
+                                 size: [i32; 3],
+                                 pivot: (i32, i32)| {
+                                    let pos_x = start_x + off.0;
+                                    let pos_y = GEN_Y + off.1 - depth;
+                                    let pos_z = start_z + off.2;
+                                    rotation.get_bounding_box_with_pivot(
+                                        pos_x, pos_y, pos_z, size[0], size[1], size[2],
+                                        pivot.0, pivot.1,
+                                    )
+                                };
+
+                            let mut pieces = Vec::new();
+
+                            // 50% chance for basement
+                            if ig_rng.next_f64() < 0.5_f64 {
+                                let depth = ig_rng.next_i32_bounded(8) + 4; // 4..11
+                                // Laboratory at the bottom
+                                pieces.push(StructurePiece {
+                                    piece_type: Identifier::new_static("minecraft", "igloo"),
+                                    bounding_box: make_piece(
+                                        BOT_OFF, depth * 3, BOT_SIZE, BOT_PIVOT,
+                                    ),
+                                    gen_depth: 0,
+                                    orientation: None,
+                                    nbt_data: Vec::new(),
+                                    ground_level_delta: 0,
+                                    junctions: Vec::new(),
+                                });
+                                // Ladder segments
+                                for i in 0..depth - 1 {
+                                    pieces.push(StructurePiece {
+                                        piece_type: Identifier::new_static(
+                                            "minecraft", "igloo",
+                                        ),
+                                        bounding_box: make_piece(
+                                            MID_OFF, i * 3, MID_SIZE, MID_PIVOT,
+                                        ),
+                                        gen_depth: 0,
+                                        orientation: None,
+                                        nbt_data: Vec::new(),
+                                        ground_level_delta: 0,
+                                        junctions: Vec::new(),
+                                    });
+                                }
+                            }
+
+                            // Top piece (always)
+                            pieces.push(StructurePiece {
+                                piece_type: Identifier::new_static("minecraft", "igloo"),
+                                bounding_box: make_piece(
+                                    TOP_OFF, 0, TOP_SIZE, TOP_PIVOT,
+                                ),
+                                gen_depth: 0,
+                                orientation: None,
+                                nbt_data: Vec::new(),
+                                ground_level_delta: 0,
+                                junctions: Vec::new(),
+                            });
+
+                            pieces
+                        }
                         // TODO: ocean_monument
                         _ => vec![],
                     };
