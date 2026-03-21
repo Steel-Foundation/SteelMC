@@ -15,6 +15,8 @@ pub struct FlintAndSteelItem;
 
 impl ItemBehavior for FlintAndSteelItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        // TODO: light campfires, candles, and candle cakes (set LIT=true) before fire placement
+
         let click_pos = context.hit_result.block_pos;
         let fire_pos = click_pos.relative(context.hit_result.direction);
         let (yaw, _) = context.player.rotation.load();
@@ -32,6 +34,7 @@ impl ItemBehavior for FlintAndSteelItem {
             Some(context.player.id),
         );
 
+        // TODO: use BaseFireBlock.getState() equivalent to select soul fire vs regular fire
         context
             .world
             .set_block(fire_pos, FIRE.default_state(), UpdateFlags::UPDATE_ALL);

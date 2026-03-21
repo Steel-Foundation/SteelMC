@@ -260,11 +260,11 @@ impl PortalShape {
             // Check interior and count portal blocks
             for w in 0..width {
                 let interior_pos = row_start.relative_n(right_dir, w as i32);
-                let block = world.get_block_state(interior_pos).get_block();
-                if block == config.portal {
-                    *portal_block_count += 1;
-                } else if block != vanilla_blocks::AIR && block != vanilla_blocks::FIRE {
+                if !is_empty(world, interior_pos, config) {
                     break 'outer;
+                }
+                if world.get_block_state(interior_pos).get_block() == config.portal {
+                    *portal_block_count += 1;
                 }
             }
             height = h + 1;
