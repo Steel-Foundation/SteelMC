@@ -7,7 +7,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
-#[expect(dead_code)]
 pub struct TimelineJson {
     clock: Option<String>,
     period_ticks: Option<i64>,
