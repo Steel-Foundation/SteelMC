@@ -30,8 +30,8 @@ use crate::world::World;
 /// The `_standing_block`, `_wall_block`, and `_attachment_direction` fields are read by the
 /// build script via `#[json_arg]` to generate constructor calls from `classes.json`.
 /// The actual values are forwarded into `inner` — the fields themselves are not used at runtime.
-#[item_behavior(class = "SignItem")]
-pub struct SignItemBehavior {
+#[item_behavior]
+pub struct SignItem {
     #[json_arg(vanilla_blocks, json = "block")]
     _standing_block: BlockRef,
     #[json_arg(vanilla_blocks, json = "wall_block")]
@@ -46,7 +46,7 @@ pub struct SignItemBehavior {
     inner: StandingAndWallBlockItem,
 }
 
-impl SignItemBehavior {
+impl SignItem {
     /// Creates a new sign item behavior for the given sign blocks.
     #[must_use]
     pub const fn new(
@@ -63,7 +63,7 @@ impl SignItemBehavior {
     }
 }
 
-impl ItemBehavior for SignItemBehavior {
+impl ItemBehavior for SignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
@@ -103,8 +103,8 @@ impl ItemBehavior for SignItemBehavior {
 /// Behavior for hanging sign items that place hanging sign blocks.
 ///
 /// Hanging signs can be placed as ceiling hanging signs or wall hanging signs.
-#[item_behavior(class = "HangingSignItem")]
-pub struct HangingSignItemBehavior {
+#[item_behavior]
+pub struct HangingSignItem {
     /// The ceiling hanging sign block.
     #[json_arg(vanilla_blocks, json = "block")]
     pub ceiling_block: BlockRef,
@@ -113,7 +113,7 @@ pub struct HangingSignItemBehavior {
     pub wall_block: BlockRef,
 }
 
-impl HangingSignItemBehavior {
+impl HangingSignItem {
     /// Creates a new hanging sign item behavior.
     #[must_use]
     pub const fn new(ceiling_block: BlockRef, wall_block: BlockRef) -> Self {
@@ -199,7 +199,7 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
     true
 }
 
-impl ItemBehavior for HangingSignItemBehavior {
+impl ItemBehavior for HangingSignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let Some(place_context) = context.build_place_context() else {
             return InteractionResult::Fail;
