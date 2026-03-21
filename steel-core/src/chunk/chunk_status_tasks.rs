@@ -21,6 +21,10 @@ use crate::chunk::{
 pub struct ChunkStatusTasks;
 
 /// All these functions are blocking.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "uniform callback signature, stubs will gain real error paths"
+)]
 impl ChunkStatusTasks {
     pub fn empty(
         context: Arc<WorldGenContext>,
