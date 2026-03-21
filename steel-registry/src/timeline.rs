@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::owned::NbtTag;
+use simdnbt::ToNbtTag;
 use steel_utils::Identifier;
 
 #[derive(Debug, Clone)]
@@ -48,8 +50,8 @@ pub struct Timeline {
     pub time_markers: &'static [TimeMarker],
 }
 
-impl Timeline {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for Timeline {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         let mut compound = NbtCompound::new();
 

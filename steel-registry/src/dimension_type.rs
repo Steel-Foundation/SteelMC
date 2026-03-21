@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::owned::NbtTag;
+use simdnbt::ToNbtTag;
 use steel_utils::Identifier;
 
 #[derive(Debug)]
@@ -93,8 +95,8 @@ pub enum MonsterSpawnLightLevel {
     },
 }
 
-impl DimensionType {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for DimensionType {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
 

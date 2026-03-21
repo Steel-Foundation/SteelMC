@@ -13,12 +13,12 @@ mod shovel;
 mod sign_item;
 mod standing_and_wall_block_item;
 
-pub use block_item::{BlockItemBehavior, DoubleHighBlockItemBehavior};
-pub use bucket::BucketItemBehavior;
+pub use block_item::{BlockItem, DoubleHighBlockItem};
+pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;
-pub use ender_eye::EnderEyeBehavior;
+pub use ender_eye::EnderEyeItem;
 pub use hoe::HoeItem;
-pub use honeycomb::HoneycombBehavior;
-pub use shovel::ShovelBehavior;
-pub use sign_item::{HangingSignItemBehavior, SignItemBehavior};
+pub use honeycomb::HoneycombItem;
+pub use shovel::ShovelItem;
+pub use sign_item::{HangingSignItem, SignItem};
 pub use standing_and_wall_block_item::StandingAndWallBlockItem;

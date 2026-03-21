@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::owned::NbtTag;
+use simdnbt::ToNbtTag;
 use steel_utils::Identifier;
 
 /// Represents a set of sounds for a chicken variant from a data pack JSON file.
@@ -16,8 +18,8 @@ pub struct ChickenAge {
     pub step_sound: Identifier,
 }
 
-impl ChickenAge {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for ChickenAge {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut adult = NbtCompound::new();
         let s = self.ambient_sound.to_string();
@@ -32,12 +34,12 @@ impl ChickenAge {
     }
 }
 
-impl ChickenSoundVariant {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for ChickenSoundVariant {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
-        compound.insert("adult_sounds", self.adult_sounds.to_nbt());
-        compound.insert("baby_sounds", self.baby_sounds.to_nbt());
+        compound.insert("adult_sounds", self.adult_sounds.to_nbt_tag());
+        compound.insert("baby_sounds", self.baby_sounds.to_nbt_tag());
         NbtTag::Compound(compound)
     }
 }

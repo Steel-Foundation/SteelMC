@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a full wolf variant definition from a data pack JSON file.
@@ -32,9 +34,9 @@ pub struct BiomeCondition {
     pub biomes: &'static str,
 }
 
-impl WolfVariant {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+impl ToNbtTag for WolfVariant {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::{NbtCompound, NbtList};
         let mut compound = NbtCompound::new();
         let mut assets = NbtCompound::new();
         let wild = self.assets.wild.to_string();

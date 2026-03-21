@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::owned::NbtTag;
+use simdnbt::ToNbtTag;
 use steel_utils::Identifier;
 
 /// Represents a full zombie nautilus variant definition from a data pack JSON file.
@@ -24,8 +26,8 @@ pub struct BiomeCondition {
     pub biomes: &'static str,
 }
 
-impl ZombieNautilusVariant {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for ZombieNautilusVariant {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         let mut compound = NbtCompound::new();
         let asset_id = self.asset_id.to_string();

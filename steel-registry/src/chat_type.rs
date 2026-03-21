@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a chat type definition from the data packs.
@@ -28,21 +30,23 @@ pub struct ChatStyle {
     pub obfuscated: Option<bool>,
 }
 
-impl ChatType {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtTag};
+impl ToNbtTag for ChatType {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         compound.insert(
             "chat",
-            NbtTag::Compound(Self::decoration_to_nbt(&self.chat)),
+            NbtTag::Compound(ChatType::decoration_to_nbt(&self.chat)),
         );
         compound.insert(
             "narration",
-            NbtTag::Compound(Self::decoration_to_nbt(&self.narration)),
+            NbtTag::Compound(ChatType::decoration_to_nbt(&self.narration)),
         );
         NbtTag::Compound(compound)
     }
+}
 
+impl ChatType {
     fn decoration_to_nbt(dec: &ChatTypeDecoration) -> simdnbt::owned::NbtCompound {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();

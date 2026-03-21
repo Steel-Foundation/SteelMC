@@ -1,5 +1,7 @@
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a set of sounds for a wolf variant from a data pack JSON file.
@@ -20,8 +22,8 @@ pub struct WolfAge {
     pub whine_sound: Identifier,
 }
 
-impl WolfAge {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for WolfAge {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
         let s = self.ambient_sound.to_string();
@@ -42,12 +44,12 @@ impl WolfAge {
     }
 }
 
-impl WolfSoundVariant {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for WolfSoundVariant {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
-        compound.insert("adult_sounds", self.adult_sounds.to_nbt());
-        compound.insert("baby_sounds", self.baby_sounds.to_nbt());
+        compound.insert("adult_sounds", self.adult_sounds.to_nbt_tag());
+        compound.insert("baby_sounds", self.baby_sounds.to_nbt_tag());
         NbtTag::Compound(compound)
     }
 }

@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::owned::NbtTag;
+use simdnbt::ToNbtTag;
 use steel_utils::Identifier;
 
 /// Represents a set of sounds for a cat variant from a data pack JSON file.
@@ -21,8 +23,8 @@ pub struct CatAge {
     pub stray_ambient_sound: Identifier,
 }
 
-impl CatAge {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for CatAge {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut component = NbtCompound::new();
         let s = self.ambient_sound.to_string();
@@ -47,12 +49,12 @@ impl CatAge {
     }
 }
 
-impl CatSoundVariant {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
+impl ToNbtTag for CatSoundVariant {
+    fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
-        compound.insert("adult_sounds", self.adult_sounds.to_nbt());
-        compound.insert("baby_sounds", self.baby_sounds.to_nbt());
+        compound.insert("adult_sounds", self.adult_sounds.to_nbt_tag());
+        compound.insert("baby_sounds", self.baby_sounds.to_nbt_tag());
         NbtTag::Compound(compound)
     }
 }

@@ -15,10 +15,10 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 ///
 /// When used on an end portal frame without an eye, places the eye
 /// and checks for portal completion.
-#[item_behavior(class = "EnderEyeItem")]
-pub struct EnderEyeBehavior;
+#[item_behavior]
+pub struct EnderEyeItem;
 
-impl ItemBehavior for EnderEyeBehavior {
+impl ItemBehavior for EnderEyeItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         // TODO: updateNeighborForOutputSignal, portal completion check
 

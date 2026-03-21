@@ -1,3 +1,4 @@
+use simdnbt::ToNbtTag;
 use std::sync::Arc;
 
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
@@ -67,7 +68,7 @@ impl RegistryCache {
                         .$field
                         .iter()
                         .map(|(_, entry)| {
-                            RegistryEntry::new(entry.key.clone(), Some(entry.to_nbt()))
+                            RegistryEntry::new(entry.key.clone(), Some(entry.to_nbt_tag()))
                         })
                         .collect(),
                 ));

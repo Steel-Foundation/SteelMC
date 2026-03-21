@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a damage type definition from a data pack JSON file.
@@ -39,9 +41,9 @@ pub enum DeathMessageType {
     IntentionalGameDesign,
 }
 
-impl DamageType {
-    pub fn to_nbt(&self) -> simdnbt::owned::NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtTag};
+impl ToNbtTag for DamageType {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         compound.insert("message_id", self.message_id);
         compound.insert(
