@@ -1,5 +1,5 @@
 use rayon::{
-    ThreadPool, ThreadPoolBuilder,
+    ThreadPool,
     iter::{IntoParallelIterator, ParallelIterator},
 };
 use rustc_hash::FxBuildHasher;
@@ -20,6 +20,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::runtime::Runtime;
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
@@ -96,6 +97,9 @@ pub struct ChunkMap {
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
     last_tickable_len: AtomicUsize,
+    /// Parent cancellation token for all generation tasks.
+    /// Child tokens are created per-task; cancelling this cancels everything.
+    pub cancel_token: CancellationToken,
 }
 
 impl ChunkMap {
@@ -103,17 +107,13 @@ impl ChunkMap {
     ///
     /// This allows using different storage implementations (disk, RAM, etc.).
     #[must_use]
-    #[expect(
-        clippy::missing_panics_doc,
-        clippy::unwrap_used,
-        reason = "ThreadPoolBuilder::build() only fails on OS thread errors, which are fatal"
-    )]
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
         _dimension: DimensionTypeRef,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
+        generation_pool: Arc<ThreadPool>,
     ) -> Self {
         Self {
             chunks: scc::HashMap::default(),
@@ -122,19 +122,12 @@ impl ChunkMap {
             task_tracker: TaskTracker::new(),
             chunk_tickets: SyncMutex::new(ChunkTicketManager::new()),
             world_gen_context: Arc::new(WorldGenContext::new(generator, world)),
-            generation_pool: Arc::new({
-                let mut builder = ThreadPoolBuilder::new();
-                // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
-                if cfg!(debug_assertions) {
-                    builder = builder.stack_size(8 * 1024 * 1024);
-                }
-                builder.build().unwrap()
-            }),
-            //tick_pool: Arc::new(ThreadPoolBuilder::new().build().unwrap()),
+            generation_pool,
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
             last_tickable_len: AtomicUsize::new(0),
+            cancel_token: CancellationToken::new(),
         }
     }
 
@@ -292,6 +285,7 @@ impl ChunkMap {
             target_status,
             self.clone(),
             self.generation_pool.clone(),
+            self.cancel_token.child_token(),
         ));
         self.pending_generation_tasks.lock().push(task.clone());
         task
@@ -361,6 +355,9 @@ impl ChunkMap {
             chunk_holder.cancel_generation_task();
             chunk_holder.ticket_level.store(u8::MAX, Ordering::Relaxed);
             chunk_holder.update_highest_allowed_status(u8::MAX);
+            // Wake any await_chunk futures so generation tasks holding refs to
+            // this chunk can detect the status is disallowed and exit.
+            chunk_holder.wake_all_watchers();
 
             // Clean up POI data for this chunk column
             let world = self.world_gen_context.world();
@@ -428,13 +425,29 @@ impl ChunkMap {
             {
                 let _span = tracing::trace_span!("schedule_generation").entered();
                 let start = Instant::now();
-                let scheduled_count: usize = holders_to_schedule
-                    .into_par_iter()
-                    .filter(|(holder, level)| {
-                        level.is_some_and(is_full)
-                            && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
+                let scheduled_count = if holders_to_schedule.len() < 100 {
+                    holders_to_schedule
+                        .iter()
+                        .filter(|(holder, level)| {
+                            level.is_some_and(is_full)
+                                && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
+                        })
+                        .count()
+                } else {
+                    let self_ref = self;
+                    self.generation_pool.install(|| {
+                        holders_to_schedule
+                            .into_par_iter()
+                            .filter(|(holder, level)| {
+                                level.is_some_and(is_full)
+                                    && holder.schedule_chunk_generation_task_b(
+                                        ChunkStatus::Full,
+                                        self_ref,
+                                    )
+                            })
+                            .count()
                     })
-                    .count();
+                };
                 timings.schedule_generation = start.elapsed();
                 timings.scheduled_count = scheduled_count;
             }

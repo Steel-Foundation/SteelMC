@@ -163,6 +163,7 @@ impl World {
         dimension: DimensionTypeRef,
         seed: i64,
         config: WorldConfig,
+        generation_pool: Arc<rayon::ThreadPool>,
     ) -> io::Result<Arc<Self>> {
         // Create storage backend based on config
         let storage: Arc<ChunkStorage> = match &config.storage {
@@ -206,6 +207,7 @@ impl World {
                 dimension,
                 storage,
                 config.generator,
+                generation_pool,
             )),
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),

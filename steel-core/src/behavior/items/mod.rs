@@ -14,11 +14,14 @@ mod shovel;
 mod sign_item;
 mod standing_and_wall_block_item;
 
+mod flint_and_steel;
+
 pub use axe::AxeItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeItem;
+pub use flint_and_steel::FlintAndSteelItem;
 pub use hoe::HoeItem;
 pub use honeycomb::HoneycombItem;
 pub use shovel::ShovelItem;

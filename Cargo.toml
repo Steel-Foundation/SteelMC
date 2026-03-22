@@ -188,3 +188,7 @@ unwrap_used = { level = "warn", priority = -3 }
 [profile.samply]
 inherits = "release"
 debug = true
+
+[profile.samplydev]
+inherits = "dev"
+debug = true

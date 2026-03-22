@@ -23,6 +23,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - When working on foundation we must be extra sure we aren't taking any shortcuts or leaving stuff out, this can cause issues later down the line where a foundational system has to be completely redesigned. Foundational code is code like a system or interface other code depends on, an example being the block behavior trait, if that's badly designed from the start and we have 100 block implementations building off it good luck getting it changed.
  - No workarounds. Don't be lazy and skip creating a helper function just cause you only needed it once for your use case.
  - Don't add trivial wrapper methods that just alias an existing method. If `height()` already exists, don't add `get_y_size()` that returns `self.height()`. Use the existing method directly.
+ - Prefer associated functions on the relevant type over standalone free functions when there's a clear owner.
  - Try to not go deep in indentation, guard clauses are useful for this and rust has some really nice `if let` and `let Some() = x else {return}`
  - Don't use panics unless the case never happens or is fatal to the program. Otherwise use Results
  - Don't multithread something unless you can explain why it needs multithreading.

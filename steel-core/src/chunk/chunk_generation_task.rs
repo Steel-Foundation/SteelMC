@@ -13,6 +13,7 @@ use std::{
 use futures::future::join_all;
 use rayon::ThreadPool;
 use steel_utils::{ChunkPos, locks::SyncMutex};
+use tokio_util::sync::CancellationToken;
 
 use crate::chunk::{
     chunk_access::ChunkStatus,
@@ -103,8 +104,8 @@ pub struct ChunkGenerationTask {
     pub target_status: ChunkStatus,
     /// The status scheduled for generation. Protected by a mutex for safe concurrent access.
     pub scheduled_status: SyncMutex<Option<ChunkStatus>>,
-    /// Flag indicating if the task is cancelled.
-    pub marked_for_cancel: AtomicBool,
+    /// Cancellation token — cancelled when this task should stop.
+    pub cancel_token: CancellationToken,
     /// Futures for neighbors. Protected by a mutex.
     pub neighbor_ready: SyncMutex<Vec<NeighborReady>>,
     /// Cache of required chunks.
@@ -128,6 +129,7 @@ impl ChunkGenerationTask {
         target_status: ChunkStatus,
         chunk_map: Arc<ChunkMap>,
         thread_pool: Arc<ThreadPool>,
+        cancel_token: CancellationToken,
     ) -> Self {
         let worst_case_radius = GENERATION_PYRAMID
             .get_step_to(target_status)
@@ -147,7 +149,7 @@ impl ChunkGenerationTask {
             pos,
             target_status,
             scheduled_status: SyncMutex::new(None),
-            marked_for_cancel: AtomicBool::new(false),
+            cancel_token,
             neighbor_ready: SyncMutex::new(Vec::new()),
             cache: Arc::new(cache),
             needs_generation: AtomicBool::new(true),
@@ -155,9 +157,9 @@ impl ChunkGenerationTask {
         }
     }
 
-    /// Marks the task for cancellation.
-    pub fn mark_for_cancel(&self) {
-        self.marked_for_cancel.store(true, Ordering::Relaxed);
+    /// Cancels this task by triggering the cancellation token.
+    pub fn cancel(&self) {
+        self.cancel_token.cancel();
     }
 
     /// Schedules a chunk for a specific layer.
@@ -195,10 +197,11 @@ impl ChunkGenerationTask {
             &self.chunk_map,
             &self.cache,
             self.thread_pool.clone(),
+            self.cancel_token.clone(),
         ) {
             self.neighbor_ready.lock().push(future);
         } else {
-            self.mark_for_cancel();
+            self.cancel();
         }
 
         true
@@ -211,7 +214,7 @@ impl ChunkGenerationTask {
         for x in (self.pos.0.x - radius)..=(self.pos.0.x + radius) {
             for y in (self.pos.0.y - radius)..=(self.pos.0.y + radius) {
                 let chunk_holder = self.cache.get(x, y);
-                if self.marked_for_cancel.load(Ordering::Relaxed)
+                if self.cancel_token.is_cancelled()
                     || !self.schedule_chunk_in_layer(status, needs_generation, chunk_holder)
                 {
                     return;
@@ -259,7 +262,6 @@ impl ChunkGenerationTask {
             status_to_schedule,
             self.needs_generation.load(Ordering::Relaxed),
         );
-        //log::info!("Scheduled layer: {:?}", status_to_schedule);
         self.scheduled_status.lock().replace(status_to_schedule);
     }
 
@@ -300,24 +302,20 @@ impl ChunkGenerationTask {
 
     /// Runs the generation task loop.
     pub async fn run(self: Arc<Self>) {
-        //log::info!(
-        //    "Running generation task for {:?}, target status: {:?}",
-        //    self.pos,
-        //    self.target_status
-        //);
         loop {
-            self.wait_for_scheduled_layers().await;
+            tokio::select! {
+                () = self.cancel_token.cancelled() => break,
+                () = self.wait_for_scheduled_layers() => {}
+            }
 
-            if self.marked_for_cancel.load(Ordering::Relaxed)
-                || *self.scheduled_status.lock() == Some(self.target_status)
-            {
-                let center_chunk = self.cache.get(self.pos.0.x, self.pos.0.y);
-                center_chunk.cancel_generation_task();
-                return;
+            if *self.scheduled_status.lock() == Some(self.target_status) {
+                break;
             }
 
             self.schedule_next_layer();
         }
+        let center_chunk = self.cache.get(self.pos.0.x, self.pos.0.y);
+        center_chunk.cancel_generation_task();
     }
 
     /// Waits for all scheduled neighbor tasks to complete.
@@ -336,8 +334,7 @@ impl ChunkGenerationTask {
 
         for result in results {
             if result.is_none() {
-                //log::error!("Neighbor ready is none for chunk {:?}", self.pos);
-                self.mark_for_cancel();
+                self.cancel();
                 break;
             }
         }
