@@ -880,7 +880,7 @@ impl ChunkStorage {
         refs.iter()
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
-                references: positions.iter().map(ChunkPos::as_i64).collect(),
+                references: positions.iter().map(|pos| pos.as_i64()).collect(),
             })
             .collect()
     }

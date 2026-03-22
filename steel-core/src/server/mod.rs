@@ -18,6 +18,7 @@ use crate::player::player_data_storage::PlayerDataStorage;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use crate::worldgen::BiomeSourceKind;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use small_map::FxSmallMap;
 use std::{
     sync::Arc,
@@ -96,11 +97,23 @@ impl Server {
             })
         };
 
+        let generation_pool: Arc<ThreadPool> = Arc::new({
+            let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
+            // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
+            if cfg!(debug_assertions) {
+                builder = builder.stack_size(8 * 1024 * 1024);
+            }
+            builder
+                .build()
+                .expect("Failed to create generation thread pool")
+        });
+
         let overworld = World::new_with_config(
             chunk_runtime.clone(),
             OVERWORLD,
             seed,
             Self::make_world_config(OVERWORLD, seed),
+            generation_pool.clone(),
         )
         .await
         .expect("Failed to create overworld");
@@ -110,6 +123,7 @@ impl Server {
             THE_NETHER,
             seed,
             Self::make_world_config(THE_NETHER, seed),
+            generation_pool.clone(),
         )
         .await
         .expect("Failed to create nether");
@@ -119,6 +133,7 @@ impl Server {
             THE_END,
             seed,
             Self::make_world_config(THE_END, seed),
+            generation_pool,
         )
         .await
         .expect("Failed to create end");

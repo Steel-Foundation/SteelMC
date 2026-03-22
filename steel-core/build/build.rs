@@ -4,13 +4,17 @@
     reason = "build script lacks project type aliases"
 )]
 
+use heck::ToShoutySnakeCase;
+use proc_macro2::Span;
 use serde::Deserialize;
 use std::env;
 use std::fs;
+use syn::Ident;
 
 mod blocks;
 mod common;
 mod items;
+mod strippables;
 mod waxables;
 mod weathering;
 
@@ -42,8 +46,22 @@ pub fn main() {
         .expect("Failed to write waxables.rs");
     fs::write(format!("{out_dir}/weathering.rs"), weathering::build())
         .expect("Failed to write weathering.rs");
+    fs::write(format!("{out_dir}/strippables.rs"), strippables::build())
+        .expect("Failed to write strippables.rs");
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/items");
+}
+
+/// Items use lowercase field names (`vanilla_items::ITEMS.stone`)
+#[must_use]
+fn to_item_ident(name: &str) -> Ident {
+    Ident::new(name, Span::call_site())
+}
+
+/// Blocks use `SCREAMING_SNAKE_CASE` constants (`vanilla_blocks::STONE`)
+#[must_use]
+pub fn to_block_ident(name: &str) -> Ident {
+    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }

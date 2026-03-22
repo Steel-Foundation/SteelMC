@@ -3,22 +3,19 @@
 //! Used by both `blocks.rs` and `items.rs` build scripts to parse `#[json_arg]`
 //! attributes and generate constructor arguments from `classes.json`.
 
-use heck::{ToPascalCase, ToShoutySnakeCase};
+use heck::ToPascalCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use std::collections::HashMap;
 use std::{env, fs};
+
+use crate::{to_block_ident, to_item_ident};
 
 /// Checks if an attribute path ends with the given identifier.
 ///
 /// Handles both `#[item_behavior]` and `#[steel_macros::item_behavior]`.
 pub(crate) fn path_ends_with(path: &syn::Path, name: &str) -> bool {
     path.segments.last().is_some_and(|s| s.ident == name)
-}
-
-/// Converts a name to a `SCREAMING_SNAKE_CASE` identifier.
-pub(crate) fn to_const_ident(name: &str) -> Ident {
-    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
 }
 
 // --- JSON arg parsing ---
@@ -242,11 +239,11 @@ pub(crate) fn generate_arg(
             // vanilla_items uses a LazyLock<Items> struct with field access (ITEMS.stone),
             // while other registries use module-level constants (vanilla_blocks::STONE).
             if module == "vanilla_items" {
-                let field_ident = Ident::new(name, Span::call_site());
+                let field_ident = to_item_ident(name);
                 quote! { vanilla_items::ITEMS.#field_ident }
             } else {
                 let module_ident = Ident::new(module, Span::call_site());
-                let const_ident = to_const_ident(name);
+                let const_ident = to_block_ident(name);
                 quote! { #module_ident::#const_ident }
             }
         }

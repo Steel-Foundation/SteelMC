@@ -11,6 +11,7 @@ use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
 use tokio::sync::{oneshot, watch};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "slow_chunk_gen")]
 use std::time::Duration;
@@ -39,8 +40,6 @@ const STATUS_NONE: u8 = u8::MAX;
 pub enum ChunkResult {
     /// The chunk is not loaded.
     Unloaded,
-    /// The chunk operation failed.
-    Failed,
     /// The chunk operation succeeded.
     Ok(ChunkStatus),
 }
@@ -70,8 +69,6 @@ impl ChunkGuard {
 /// NOTICE: It is very important to keep data and `chunk_result` in sync.
 ///
 /// `ChunkResult::Unloaded` -> data is None
-///
-/// `ChunkResult::Failed` -> data is Anything and should not be used anymore
 ///
 /// `ChunkResult::Ok(status except Full)` -> data is `Some(ChunkAccess::Proto(ProtoChunk))`
 ///
@@ -247,7 +244,7 @@ impl ChunkHolder {
         drop(old_task_guard);
 
         if let Some(old_task) = old_task {
-            old_task.mark_for_cancel();
+            old_task.cancel();
         }
     }
 
@@ -260,7 +257,7 @@ impl ChunkHolder {
         }
     }
 
-    /// Waits until the chunk has reached the given status, then calls the function.
+    /// Waits until the chunk has reached the given status.
     pub fn await_chunk(
         &self,
         status: ChunkStatus,
@@ -268,17 +265,10 @@ impl ChunkHolder {
         let mut subscriber = self.sender.subscribe();
         async move {
             loop {
+                if let ChunkResult::Ok(s) = &*subscriber.borrow_and_update()
+                    && status <= *s
                 {
-                    let chunk_result = subscriber.borrow_and_update();
-                    match &*chunk_result {
-                        ChunkResult::Ok(s) if status <= *s => {
-                            return Some(self.data.read());
-                        }
-                        ChunkResult::Failed => {
-                            return None;
-                        }
-                        _ => {}
-                    }
+                    return Some(self.data.read());
                 }
 
                 if self.is_status_disallowed(status) {
@@ -297,20 +287,25 @@ impl ChunkHolder {
     pub fn persisted_status(&self) -> Option<ChunkStatus> {
         match &*self.chunk_result.borrow() {
             ChunkResult::Ok(s) => Some(*s),
-            _ => None,
+            ChunkResult::Unloaded => None,
         }
     }
 
     /// Applies a step to the chunk.
     ///
+    /// The `cancel_token` is from the owning generation task — `await_chunk`
+    /// futures are raced against it so they bail out when the task is cancelled.
+    ///
     /// # Panics
-    /// Panics if the target status is not Empty and has no parent, or if the chunk status is invalid during generation.
+    /// Panics if the target status is not Empty and has no parent, or if the
+    /// chunk status is invalid during generation.
     pub fn apply_step(
         self: &Arc<Self>,
         step: &'static ChunkStep,
         chunk_map: &Arc<ChunkMap>,
         cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         thread_pool: Arc<rayon::ThreadPool>,
+        cancel_token: CancellationToken,
     ) -> Option<NeighborReady> {
         let target_status = step.target_status;
 
@@ -321,14 +316,16 @@ impl ChunkHolder {
         if !self.acquire_status_bump(target_status) {
             let self_clone = self.clone();
             return Some(Box::pin(async move {
-                self_clone.await_chunk(target_status).await.map(|_| ())
+                tokio::select! {
+                    () = cancel_token.cancelled() => None,
+                    result = self_clone.await_chunk(target_status) => result.map(|_| ()),
+                }
             }));
         }
 
         let sender = self.sender.clone();
         let cache = cache.clone();
         let context = chunk_map.world_gen_context.clone();
-        // This is one of the `crate::chunk::chunk_status_tasks` functions.
         let task = step.task;
         let self_clone = self.clone();
         let storage = chunk_map.storage.clone();
@@ -354,20 +351,18 @@ impl ChunkHolder {
                         // Chunk existed but failed to load - generate fresh
                         let holder_for_notify = self_clone.clone();
                         rayon_spawn(&thread_pool, move || {
-                            task(context, step, &cache, self_clone)
+                            task(context, step, &cache, self_clone);
                         })
-                        .await
-                        .expect("Should never fail creating an empty chunk");
+                        .await;
                         holder_for_notify.notify_status(target_status);
                     }
                 } else {
                     // Chunk doesn't exist - generate fresh
                     let holder_for_notify = self_clone.clone();
                     rayon_spawn(&thread_pool, move || {
-                        task(context, step, &cache, self_clone)
+                        task(context, step, &cache, self_clone);
                     })
-                    .await
-                    .expect("Should never fail creating an empty chunk");
+                    .await;
                     holder_for_notify.notify_status(target_status);
                 }
                 #[cfg(feature = "slow_chunk_gen")]
@@ -380,48 +375,31 @@ impl ChunkHolder {
                     .parent()
                     .expect("Target status must have parent if not Empty");
 
-                //log::info!(
-                //    "Parent status: {:?}, target status: {:?}",
-                //    parent_status,
-                //    target_status
-                //);
-
                 let has_parent = self_clone.try_chunk(parent_status).is_some();
                 let self_clone2 = self_clone.clone();
 
                 assert!(has_parent, "Parent chunk missing");
 
-                match rayon_spawn(&thread_pool, move || {
-                    task(context, step, &cache, self_clone)
+                rayon_spawn(&thread_pool, move || {
+                    task(context, step, &cache, self_clone);
                 })
-                .await
-                {
-                    Ok(()) => {
-                        sender.send_modify(|chunk| {
-                            // Update inner status
-                            if let ChunkAccess::Proto(chunk) = &*self_clone2.data.read() {
-                                chunk.set_status(target_status);
-                            }
-                            if let ChunkResult::Ok(s) = chunk {
-                                if *s < target_status {
-                                    *s = target_status;
-                                } else if *s != ChunkStatus::Full {
-                                    // Means it advanced a loaded chunk
-                                }
-                            }
-                        });
-                        #[cfg(feature = "slow_chunk_gen")]
-                        if SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
-                            sleep(Duration::from_millis(200)).await;
-                        }
-                        Some(())
+                .await;
+
+                sender.send_modify(|chunk| {
+                    if let ChunkAccess::Proto(chunk) = &*self_clone2.data.read() {
+                        chunk.set_status(target_status);
                     }
-                    Err(e) => {
-                        log::error!("Chunk generation task failed: {e}");
-                        sender.send_replace(ChunkResult::Failed);
-                        None
+                    if let ChunkResult::Ok(s) = chunk
+                        && *s < target_status
+                    {
+                        *s = target_status;
                     }
+                });
+                #[cfg(feature = "slow_chunk_gen")]
+                if SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
+                    sleep(Duration::from_millis(200)).await;
                 }
+                Some(())
             }
         });
 
@@ -429,7 +407,7 @@ impl ChunkHolder {
             match future.await {
                 Ok(result) => result,
                 Err(e) => {
-                    log::error!("Chunk generation task failed: {e}");
+                    log::error!("Chunk generation task panicked: {e}");
                     None
                 }
             }
@@ -441,12 +419,6 @@ impl ChunkHolder {
         let parent_index = status
             .parent()
             .map_or(usize::MAX, super::chunk_access::ChunkStatus::get_index);
-
-        //log::info!(
-        //    "Parent index: {:?}, Status index: {:?}",
-        //    parent_index,
-        //    status_index
-        //);
 
         let previous_started = self.started_work.compare_exchange(
             parent_index,
@@ -515,11 +487,18 @@ impl ChunkHolder {
         self.sender.send_replace(ChunkResult::Ok(status));
     }
 
+    /// Wakes all `await_chunk` watchers without changing the chunk result.
+    /// This allows futures stuck in `subscriber.changed().await` to re-check
+    /// `is_status_disallowed` and bail out during chunk unload.
+    pub fn wake_all_watchers(&self) {
+        self.sender.send_modify(|_| {});
+    }
+
     /// Cancels the current generation task.
     pub fn cancel_generation_task(&self) {
         let mut task_guard = self.generation_task.lock();
         if let Some(task) = task_guard.take() {
-            task.mark_for_cancel();
+            task.cancel();
         }
     }
 }

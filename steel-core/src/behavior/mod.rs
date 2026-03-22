@@ -43,6 +43,11 @@ pub mod item_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/strippables.rs"]
+pub mod strippables;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/waxables.rs"]
 pub mod waxables;
 

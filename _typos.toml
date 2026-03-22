@@ -8,6 +8,7 @@ check-file = false
 [default.extend-words]
 flate = "flate"
 strat = "strat"
+axe = "axe"
 
 [default]
 locale = "en-us"

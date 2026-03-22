@@ -21,7 +21,7 @@ pub use decoration::{
     WallSignBlock, WallTorchBlock,
 };
 pub use fluid::LiquidBlock;
-pub use portal::EndPortalFrameBlock;
+pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::FarmlandBlock;
 pub use vegetation::{

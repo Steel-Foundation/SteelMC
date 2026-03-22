@@ -38,3 +38,5 @@ disallowed-methods = [
     # Only use ptr::eq where required, for blocks use the PartialEq compare
     { path = "std::ptr::eq", reason = "For blocks use the PartialEq compare instead." },
 ]
+
+avoid-breaking-exported-api = false
