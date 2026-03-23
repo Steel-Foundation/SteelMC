@@ -71,7 +71,8 @@ use steel_registry::{REGISTRY, RegistryExt, vanilla_entities};
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::entity_events::EntityStatus;
 
-use steel_utils::locks::{SyncMutex, SyncRwLock};
+use arc_swap::ArcSwap;
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::GameType;
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
@@ -199,7 +200,7 @@ pub struct Player {
     pub connection: Arc<PlayerConnection>,
 
     /// The world the player is in.
-    pub world: SyncRwLock<Arc<World>>,
+    pub world: ArcSwap<World>,
 
     /// Reference to the server (for entity ID generation, etc.).
     pub(crate) server: Weak<Server>,
@@ -336,7 +337,7 @@ impl Player {
             gameprofile,
             connection,
 
-            world: SyncRwLock::new(world),
+            world: ArcSwap::new(world),
             server,
             id: entity_id,
             client_loaded: AtomicBool::new(false),
@@ -2880,7 +2881,7 @@ impl Player {
 
     /// Returns the world the player is currently in.
     pub fn world(&self) -> Arc<World> {
-        self.world.read().clone()
+        self.world.load_full()
     }
 
     /// Sets the world the player is in.
@@ -2888,7 +2889,7 @@ impl Player {
     /// This is used when the correct world isn't known at construction time
     /// (e.g., when loading saved player data determines the actual world).
     pub fn set_world(&self, world: Arc<World>) {
-        *self.world.write() = world;
+        self.world.store(world);
     }
 }
 
@@ -2931,7 +2932,7 @@ impl Entity for Player {
     }
 
     fn level(&self) -> Option<Arc<World>> {
-        Some(self.world.read().clone())
+        Some(self.world.load_full())
     }
 
     fn is_removed(&self) -> bool {
@@ -2996,13 +2997,7 @@ impl Entity for Player {
         // Close any open container menu
         self.do_close_container();
         self.send_packet(CContainerClose { container_id: 0 });
-        {
-            let old_world = old_world.clone();
-            let player = self.clone();
-            tokio::spawn(async move {
-                old_world.remove_player(player).await;
-            });
-        }
+        old_world.remove_player_for_dimension_change(&self);
 
         // === Phase 2: Reset player state ===
 
@@ -3044,7 +3039,7 @@ impl Entity for Player {
             dimension_name: new_world.dimension.key.clone(),
             hashed_seed: new_world.obfuscated_seed(),
             gamemode: self.game_mode.load() as u8,
-            previous_gamemode: -1i8,
+            previous_gamemode: self.prev_game_mode.load() as i8,
             is_debug: false,
             is_flat: true,
             has_death_location: false,
@@ -3052,7 +3047,8 @@ impl Entity for Player {
             death_location: None,
             portal_cooldown_ticks: _teleport_transition.portal_cooldown,
             sea_level: 63,
-            data_kept: 0,
+            // Preserve entity attributes and metadata across dimension changes
+            data_kept: 0x03,
         });
 
         // Reset chunk sender state
@@ -3082,13 +3078,13 @@ impl Entity for Player {
         //     .store(transition.portal_cooldown, Ordering::Relaxed);
 
         // === Phase 5: Add to new world ===
-        // TODO: add_player_for_dimension_change (send level data, etc.)
+        // TODO: send level data (time, weather, border, etc.) for new dimension
         log::info!(
             "Player {} changed dimension to {}",
             self.gameprofile.name,
             new_world.dimension.key
         );
-        new_world.add_player(self);
+        new_world.add_player_for_dimension_change(self);
     }
 }
 

@@ -468,8 +468,8 @@ impl Server {
                     entity.change_world(&transition);
                 }
                 DimensionChangeRequest::Portal {
-                    source_world,
-                    portal_pos,
+                    source_world: _,
+                    portal_pos: _,
                 } => {
                     // // Run portal search/creation on a blocking thread
                     // // to avoid stalling the tick loop.
