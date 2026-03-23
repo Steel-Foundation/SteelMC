@@ -449,11 +449,11 @@ impl Player {
 
         *self.last_chunk_pos.lock() = chunk_pos;
 
-        self.world().chunk_map.update_player_status(self);
+        self.get_world().chunk_map.update_player_status(self);
 
         self.chunk_sender.lock().send_next_chunks(
             self.connection.clone(),
-            &self.world(),
+            &self.get_world(),
             chunk_pos,
         );
 
@@ -468,7 +468,7 @@ impl Player {
             self.tick_death();
         } else {
             self.touch_nearby_items();
-            self.block_breaking.lock().tick(self, &self.world());
+            self.block_breaking.lock().tick(self, &self.get_world());
             self.check_inside_blocks();
             self.check_below_world();
 
@@ -516,7 +516,7 @@ impl Player {
 
         if death_time >= DEATH_DURATION && !self.is_removed() {
             let chunk_pos = *self.last_chunk_pos.lock();
-            self.world().broadcast_to_nearby(
+            self.get_world().broadcast_to_nearby(
                 chunk_pos,
                 CEntityEvent {
                     entity_id: self.id,
@@ -525,7 +525,7 @@ impl Player {
                 None,
             );
 
-            self.world()
+            self.get_world()
                 .broadcast_to_all(CRemoveEntities::single(self.id));
             self.set_removed(RemovalReason::Killed);
         }
@@ -536,7 +536,8 @@ impl Player {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
             let packet = CSetEntityData::new(self.id, dirty_values);
             let chunk_pos = *self.last_chunk_pos.lock();
-            self.world().broadcast_to_nearby(chunk_pos, packet, None);
+            self.get_world()
+                .broadcast_to_nearby(chunk_pos, packet, None);
         }
     }
 
@@ -555,10 +556,10 @@ impl Player {
         let pickup_area = self.bounding_box().inflate_xyz(1.0, 0.5, 1.0);
 
         // Get all entities in the pickup area
-        let entities = self.world().get_entities_in_aabb(&pickup_area);
+        let entities = self.get_world().get_entities_in_aabb(&pickup_area);
 
         // Get player Arc for try_pickup (needed because try_pickup takes &Arc<Player>)
-        let Some(player_arc) = self.world().players.get_by_entity_id(self.id) else {
+        let Some(player_arc) = self.get_world().players.get_by_entity_id(self.id) else {
             return;
         };
 
@@ -866,14 +867,14 @@ impl Player {
     /// Returns `true` if movement should be validated, `false` to skip validation.
     fn should_validate_movement(&self, is_fall_flying: bool) -> bool {
         // Check playerMovementCheck gamerule
-        let player_check = self.world().get_game_rule(PLAYER_MOVEMENT_CHECK);
+        let player_check = self.get_world().get_game_rule(PLAYER_MOVEMENT_CHECK);
         if player_check != GameRuleValue::Bool(true) {
             return false;
         }
 
         // If fall flying, also check elytraMovementCheck gamerule
         if is_fall_flying {
-            let elytra_check = self.world().get_game_rule(ELYTRA_MOVEMENT_CHECK);
+            let elytra_check = self.get_world().get_game_rule(ELYTRA_MOVEMENT_CHECK);
             return elytra_check == GameRuleValue::Bool(true);
         }
 
@@ -925,7 +926,7 @@ impl Player {
             (es.sleeping, es.fall_flying, es.on_ground, es.crouching)
         };
         // Skip movement checks when tick rate is frozen (vanilla: tickRateManager().runsNormally())
-        let tick_frozen = !self.world().tick_runs_normally();
+        let tick_frozen = !self.get_world().tick_runs_normally();
 
         // Handle position updates
         if packet.has_pos {
@@ -983,7 +984,7 @@ impl Player {
 
                 // Validate movement using physics simulation
                 let mut validation = movement::validate_movement(
-                    &self.world(),
+                    &self.get_world(),
                     &movement::MovementInput {
                         target_pos,
                         first_good_pos: first_good,
@@ -1095,7 +1096,7 @@ impl Player {
                             pitch,
                             on_ground: packet.on_ground,
                         };
-                        self.world()
+                        self.get_world()
                             .broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
                     } else {
                         let move_packet = CMoveEntityPosRot {
@@ -1107,7 +1108,7 @@ impl Player {
                             x_rot: to_angle_byte(pitch),
                             on_ground: packet.on_ground,
                         };
-                        self.world()
+                        self.get_world()
                             .broadcast_to_nearby(new_chunk, move_packet, Some(self.id));
                     }
                 } else {
@@ -1131,7 +1132,7 @@ impl Player {
                         pitch,
                         on_ground: packet.on_ground,
                     };
-                    self.world()
+                    self.get_world()
                         .broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
                 }
             } else {
@@ -1141,7 +1142,7 @@ impl Player {
                     x_rot: to_angle_byte(pitch),
                     on_ground: packet.on_ground,
                 };
-                self.world()
+                self.get_world()
                     .broadcast_to_nearby(new_chunk, rot_packet, Some(self.id));
             }
 
@@ -1150,7 +1151,7 @@ impl Player {
                     entity_id: self.id,
                     head_y_rot: to_angle_byte(yaw),
                 };
-                self.world()
+                self.get_world()
                     .broadcast_to_nearby(new_chunk, head_packet, Some(self.id));
             }
 
@@ -1198,7 +1199,7 @@ impl Player {
         // Broadcast the chat session to all players so they can verify this player's signatures
         let update_packet =
             CPlayerInfoUpdate::update_chat_session(self.gameprofile.id, protocol_data);
-        self.world().broadcast_to_all(update_packet);
+        self.get_world().broadcast_to_all(update_packet);
     }
 
     /// Gets a reference to the player's chat session if present
@@ -1333,7 +1334,7 @@ impl Player {
         // This updates PlayerInfo on clients, which is used for isSpectator() checks
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.world().broadcast_to_all(update_packet);
+        self.get_world().broadcast_to_all(update_packet);
 
         self.send_message(
             &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
@@ -1838,14 +1839,14 @@ impl Player {
     /// Optionally also sends an update for an additional placement position
     /// (useful for items like buckets that place blocks at different positions).
     fn send_block_updates(&self, pos: BlockPos, direction: Direction) {
-        let state = self.world().get_block_state(pos);
+        let state = self.get_world().get_block_state(pos);
         self.send_packet(CBlockUpdate {
             pos,
             block_state: state,
         });
 
         let neighbor_pos = direction.relative(pos);
-        let neighbor_state = self.world().get_block_state(neighbor_pos);
+        let neighbor_state = self.get_world().get_block_state(neighbor_pos);
         self.send_packet(CBlockUpdate {
             pos: neighbor_pos,
             block_state: neighbor_state,
@@ -1862,7 +1863,7 @@ impl Player {
 
         let chunk = *self.last_chunk_pos.lock();
         let exclude = if update_self { None } else { Some(self.id) };
-        self.world().broadcast_to_nearby(chunk, packet, exclude);
+        self.get_world().broadcast_to_nearby(chunk, packet, exclude);
     }
 
     /// Handles a player input packet (movement keys, sneaking, sprinting).
@@ -1914,7 +1915,7 @@ impl Player {
         }
 
         // 5. Validate Y height
-        if pos.y() >= self.world().max_build_height() {
+        if pos.y() >= self.get_world().max_build_height() {
             // TODO: Send "build.tooHigh" message to player
             self.send_block_updates(pos, direction);
             return;
@@ -1927,13 +1928,13 @@ impl Player {
         }
 
         // 7. Check may_interact permission
-        if !self.world().may_interact(self, pos) {
+        if !self.get_world().may_interact(self, pos) {
             self.send_block_updates(pos, direction);
             return;
         }
 
         // 8. Call use_item_on
-        let world = self.world();
+        let world = self.get_world();
         let result = game_mode::use_item_on(self, &world, packet.hand, &packet.block_hit);
 
         // 9. Handle result
@@ -1953,7 +1954,7 @@ impl Player {
     pub fn handle_player_action(&self, packet: SPlayerAction) {
         use block_breaking::BlockBreakAction;
 
-        let world = self.world();
+        let world = self.get_world();
         match packet.action {
             PlayerAction::StartDestroyBlock => {
                 self.block_breaking.lock().handle_block_break_action(
@@ -2027,7 +2028,7 @@ impl Player {
         self.ack_block_changes_up_to(packet.sequence);
 
         // Call use_item
-        let world = self.world();
+        let world = self.get_world();
         let result = game_mode::use_item(self, &world, packet.hand);
 
         // Handle result
@@ -2052,7 +2053,7 @@ impl Player {
         }
 
         // Get block state at position
-        let state = self.world().get_block_state(packet.pos);
+        let state = self.get_world().get_block_state(packet.pos);
         if state.is_air() {
             return;
         }
@@ -2126,7 +2127,7 @@ impl Player {
         }
 
         // Get the block entity at the position
-        let Some(block_entity) = self.world().get_block_entity(packet.pos) else {
+        let Some(block_entity) = self.get_world().get_block_entity(packet.pos) else {
             return;
         };
 
@@ -2178,7 +2179,7 @@ impl Player {
 
         // Broadcast block entity update to nearby players
         if let Some(nbt) = update_tag {
-            self.world()
+            self.get_world()
                 .broadcast_block_entity_update(pos, block_entity_type, nbt);
         }
     }
@@ -2190,7 +2191,7 @@ impl Player {
     /// * `is_front_text` - Whether to edit front (true) or back (false) text
     pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
         // Set this player as the one who may edit the sign
-        if let Some(block_entity) = self.world().get_block_entity(pos) {
+        if let Some(block_entity) = self.get_world().get_block_entity(pos) {
             let mut guard = block_entity.lock();
             if let Some(sign) = guard.as_any_mut().downcast_mut::<SignBlockEntity>() {
                 sign.set_player_who_may_edit(Some(self.gameprofile.id));
@@ -2198,7 +2199,7 @@ impl Player {
         }
 
         // Send the block update first to ensure client has latest state
-        let state = self.world().get_block_state(pos);
+        let state = self.get_world().get_block_state(pos);
         self.send_packet(CBlockUpdate {
             pos,
             block_state: state,
@@ -2398,7 +2399,7 @@ impl Player {
         let spawn_pos = DVec3::new(pos.x, spawn_y, pos.z);
 
         if let Some(entity) = self
-            .world()
+            .get_world()
             .spawn_item_with_velocity(spawn_pos, item, velocity)
         {
             // Set pickup delay: 40 ticks (2 seconds) when thrown from hand
@@ -2477,13 +2478,13 @@ impl Player {
             for y in min_y..=max_y {
                 for z in min_z..=max_z {
                     let pos = BlockPos::new(x, y, z);
-                    let state = self.world().get_block_state(pos);
+                    let state = self.get_world().get_block_state(pos);
                     if state.is_air() {
                         continue;
                     }
                     let block = state.get_block();
                     let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-                    let world = self.world();
+                    let world = self.get_world();
                     behavior.entity_inside(state, &world, pos, self as &dyn Entity);
                 }
             }
@@ -2492,7 +2493,7 @@ impl Player {
 
     fn check_below_world(&self) {
         let pos = *self.position.lock();
-        if pos.y < f64::from(self.world().get_min_y() - 64) {
+        if pos.y < f64::from(self.get_world().get_min_y() - 64) {
             self.hurt(
                 &DamageSource::environment(vanilla_damage_types::OUT_OF_WORLD),
                 4.0,
@@ -2553,7 +2554,7 @@ impl Player {
             let type_id = source.damage_type.id() as i32;
             let chunk_pos = *self.last_chunk_pos.lock();
 
-            self.world().broadcast_to_nearby(
+            self.get_world().broadcast_to_nearby(
                 chunk_pos,
                 CDamageEvent {
                     entity_id: self.id,
@@ -2566,7 +2567,7 @@ impl Player {
             );
 
             let (yaw, _) = self.rotation.load();
-            self.world().broadcast_to_nearby(
+            self.get_world().broadcast_to_nearby(
                 chunk_pos,
                 CHurtAnimation {
                     entity_id: self.id,
@@ -2617,7 +2618,7 @@ impl Player {
 
         // Broadcast entity event 3 (death sound) to all nearby players.
         let chunk_pos = *self.last_chunk_pos.lock();
-        self.world().broadcast_to_nearby(
+        self.get_world().broadcast_to_nearby(
             chunk_pos,
             CEntityEvent {
                 entity_id: self.id,
@@ -2627,7 +2628,7 @@ impl Player {
         );
 
         let show_death_messages =
-            self.world().get_game_rule(SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
+            self.get_world().get_game_rule(SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
 
         // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
         let death_key = format!("death.attack.{}", source.damage_type.message_id);
@@ -2651,13 +2652,13 @@ impl Player {
 
         // TODO: team death message visibility (ALWAYS / HIDE_FOR_OTHER_TEAMS / HIDE_FOR_OWN_TEAM)
         if show_death_messages {
-            self.world().broadcast_system_chat(CSystemChat {
+            self.get_world().broadcast_system_chat(CSystemChat {
                 content: death_message,
                 overlay: false,
             });
         }
 
-        if self.world().get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true) {
+        if self.get_world().get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true) {
             let items: Vec<ItemStack> = {
                 let mut inventory = self.inventory.lock();
                 (0..inventory.get_container_size())
@@ -2677,7 +2678,7 @@ impl Player {
             }
         }
 
-        if self.world().get_game_rule(IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true) {
+        if self.get_world().get_game_rule(IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true) {
             self.respawn();
         }
     }
@@ -2701,7 +2702,7 @@ impl Player {
 
         let was_removed = self.removed.swap(false, Ordering::AcqRel);
 
-        let world = self.world();
+        let world = self.get_world();
 
         // Only send CRemoveEntities if tick_death() hasn't already removed us
         // (tick_death sends CRemoveEntities + set_removed at DEATH_DURATION).
@@ -2880,7 +2881,7 @@ impl Player {
     pub const fn cleanup(&self) {}
 
     /// Returns the world the player is currently in.
-    pub fn world(&self) -> Arc<World> {
+    pub fn get_world(&self) -> Arc<World> {
         self.world.load_full()
     }
 
@@ -2989,7 +2990,7 @@ impl Entity for Player {
     }
 
     fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
-        let old_world = self.world();
+        let old_world = self.get_world();
         let new_world = _teleport_transition.target_world.clone();
 
         // === Phase 1: Cleanup old world ===

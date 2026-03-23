@@ -43,7 +43,7 @@ impl CommandExecutor<()> for SummonAtSelfExecutor {
         };
 
         let pos = player.position();
-        let world = player.world();
+        let world = player.get_world();
 
         // Create the block display entity
         let entity = Arc::new(BlockDisplayEntity::new(
@@ -78,7 +78,7 @@ impl CommandExecutor<((), DVec3)> for SummonAtPosExecutor {
             ))));
         };
 
-        let world = player.world();
+        let world = player.get_world();
 
         // Create the block display entity
         let entity = Arc::new(BlockDisplayEntity::new(
