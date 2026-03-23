@@ -14,6 +14,7 @@ pub mod tick;
 pub mod time;
 pub mod tp;
 pub mod weather;
+pub mod xp;
 
 pub mod steel;
 
