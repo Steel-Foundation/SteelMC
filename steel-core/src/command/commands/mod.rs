@@ -15,6 +15,8 @@ pub mod time;
 pub mod tp;
 pub mod weather;
 
+pub mod world;
+
 use std::marker::PhantomData;
 use std::ops::Not;
 use std::sync::Arc;

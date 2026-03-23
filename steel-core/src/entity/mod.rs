@@ -46,6 +46,7 @@ mod registry;
 mod storage;
 mod tracker;
 
+use crate::portal::TeleportTransition;
 pub use base::EntityBase;
 pub use cache::EntityCache;
 pub use callback::{
@@ -384,6 +385,9 @@ pub trait Entity: Send + Sync {
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
         false
     }
+
+    /// This teleports an entity from one dimension to another dimension
+    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {}
 }
 
 /// A trait for living entities that can take damage, heal, and die.

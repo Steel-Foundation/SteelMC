@@ -12,15 +12,21 @@ use crate::chunk::vanilla_generator::VanillaGenerator;
 use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WorldGeneratorTypes, WorldStorageConfig};
-use crate::entity::init_entities;
+use crate::entity::{SharedEntity, init_entities};
+
+/// Temporary stub for DimensionChangeRequest until the actual implementation is made available.
+/// Replace or update this with the correct implementation.
 use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
+use crate::portal::DimensionChangeRequest;
 use crate::server::registry_cache::RegistryCache;
 use crate::world::{World, WorldConfig, WorldTickTimings};
 use crate::worldgen::BiomeSourceKind;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use small_map::FxSmallMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
+    mem,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -34,6 +40,7 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_blocks};
+use steel_utils::locks::SyncMutex;
 use steel_utils::{Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
@@ -59,6 +66,10 @@ pub struct Server {
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
+    /// Queued dimension changes to process after the tick.
+    pub pending_dimension_changes: SyncMutex<Vec<(SharedEntity, DimensionChangeRequest)>>,
+    /// Fast-path flag to skip locking when no dimension changes are queued.
+    pub has_dimension_changes: AtomicBool,
 }
 
 impl Server {
@@ -154,6 +165,8 @@ impl Server {
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             player_data_storage,
+            pending_dimension_changes: SyncMutex::new(vec![]),
+            has_dimension_changes: AtomicBool::new(false),
         }
     }
 
@@ -420,6 +433,8 @@ impl Server {
             // so game elements like random ticks only run when not frozen
             self.tick_worlds(tick_count, runs_normally).await;
 
+            self.process_world_teleporting();
+
             // Record tick duration for TPS/MSPT tracking
             let (tps, mspt) = {
                 let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
@@ -440,6 +455,39 @@ impl Server {
         }
     }
 
+    fn process_world_teleporting(&self) {
+        let changes = mem::take(&mut *self.pending_dimension_changes.lock());
+        self.has_dimension_changes.store(false, Ordering::Relaxed);
+
+        for (entity, request) in changes {
+            if entity.is_removed() {
+                continue;
+            }
+            match request {
+                DimensionChangeRequest::Computed(transition) => {
+                    entity.change_world(&transition);
+                }
+                DimensionChangeRequest::Portal {
+                    source_world,
+                    portal_pos,
+                } => {
+                    // // Run portal search/creation on a blocking thread
+                    // // to avoid stalling the tick loop.
+                    // let server = self.clone();
+                    // spawn_blocking(move || {
+                    //     if entity.is_removed() {
+                    //         return;
+                    //     }
+                    //     if let Some(transition) =
+                    //         nether_portal::calculate_destination(&server, &source_world, &portal_pos)
+                    //     {
+                    //         entity.change_dimension(&transition);
+                    //     }
+                    // });
+                }
+            }
+        }
+    }
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
@@ -638,5 +686,12 @@ impl Server {
             },
             generator: Arc::new(Self::make_generator_for_dimension(dimension, seed)),
         }
+    }
+    /// Queues a dimension change to be processed after the current tick.
+    pub fn queue_dimension_change(&self, entity: SharedEntity, request: DimensionChangeRequest) {
+        self.pending_dimension_changes
+            .lock()
+            .push((entity, request));
+        self.has_dimension_changes.store(true, Ordering::Relaxed);
     }
 }
