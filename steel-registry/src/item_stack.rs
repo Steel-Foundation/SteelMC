@@ -399,7 +399,7 @@ impl ItemStack {
     }
 
     #[must_use]
-    fn get_enchantments(&self) -> Option<&ItemEnchantments> {
+    pub fn get_enchantments(&self) -> Option<&ItemEnchantments> {
         self.get(ENCHANTMENTS)
     }
 

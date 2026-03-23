@@ -43,6 +43,16 @@ impl ItemEnchantments {
     pub fn len(&self) -> usize {
         self.levels.len()
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &u32)> {
+        self.levels.iter()
+    }
+}
+
+impl Default for ItemEnchantments {
+    fn default() -> Self {
+        Self::empty()
+    }
 }
 
 impl HashComponent for ItemEnchantments {
