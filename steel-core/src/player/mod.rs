@@ -2795,7 +2795,7 @@ impl Player {
 
         {
             let mut experience = self.experience.lock();
-            if self.world.get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true)
+            if self.get_world().get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true)
                 && self.game_mode.load() != GameType::Spectator
             {
                 // TODO: drop XP orbs (min(level * 7, 100))
