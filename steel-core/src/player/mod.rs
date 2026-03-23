@@ -2989,9 +2989,9 @@ impl Entity for Player {
         Player::hurt(self, source, amount)
     }
 
-    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
+    fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let old_world = self.get_world();
-        let new_world = _teleport_transition.target_world.clone();
+        let new_world = teleport_transition.target_world.clone();
 
         // === Phase 1: Cleanup old world ===
 
@@ -3006,8 +3006,8 @@ impl Entity for Player {
         self.set_world(new_world.clone());
 
         // Update position + rotation
-        *self.position.lock() = _teleport_transition.position;
-        self.rotation.store(_teleport_transition.rotation);
+        *self.position.lock() = teleport_transition.position;
+        self.rotation.store(teleport_transition.rotation);
 
         // Reset movement/physics state
         let mut state = self.entity_state.lock();
@@ -3020,8 +3020,8 @@ impl Entity for Player {
 
         // Reset movement validation state
         let mut movement = self.movement.lock();
-        movement.first_good_position = _teleport_transition.position;
-        movement.last_good_position = _teleport_transition.position;
+        movement.first_good_position = teleport_transition.position;
+        movement.last_good_position = teleport_transition.position;
         movement.received_move_packet_count = 0;
         movement.known_move_packet_count = 0;
         drop(movement);
@@ -3046,7 +3046,7 @@ impl Entity for Player {
             has_death_location: false,
             death_dimension_name: None,
             death_location: None,
-            portal_cooldown_ticks: _teleport_transition.portal_cooldown,
+            portal_cooldown_ticks: teleport_transition.portal_cooldown,
             sea_level: 63,
             // Preserve entity attributes and metadata across dimension changes
             data_kept: 0x03,
@@ -3059,11 +3059,11 @@ impl Entity for Player {
 
         // Teleport (sends CPlayerPosition, sets awaiting_teleport for ack)
         self.teleport(
-            _teleport_transition.position.x,
-            _teleport_transition.position.y,
-            _teleport_transition.position.z,
-            _teleport_transition.rotation.0,
-            _teleport_transition.rotation.1,
+            teleport_transition.position.x,
+            teleport_transition.position.y,
+            teleport_transition.position.z,
+            teleport_transition.rotation.0,
+            teleport_transition.rotation.1,
         );
 
         // Re-send abilities

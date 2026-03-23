@@ -14,8 +14,6 @@ use crate::command::CommandDispatcher;
 use crate::config::{STEEL_CONFIG, WorldGeneratorTypes, WorldStorageConfig};
 use crate::entity::{SharedEntity, init_entities};
 
-/// Temporary stub for DimensionChangeRequest until the actual implementation is made available.
-/// Replace or update this with the correct implementation.
 use crate::player::Player;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::portal::DimensionChangeRequest;
