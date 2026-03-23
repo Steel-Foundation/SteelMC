@@ -1,12 +1,16 @@
-//! Steel server commands: /steel tp overworld, /steel tp nether, /steel tp end
+//! Steel server commands: /steel tp <targets> <dimension>
 
-use crate::command::commands::{
-    CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn, literal,
-};
+use std::sync::Arc;
+
+use crate::command::arguments::dimension::DimensionArgument;
+use crate::command::arguments::player::PlayerArgument;
+use crate::command::commands::{CommandHandlerBuilder, CommandHandlerDyn, argument, literal};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
 use crate::entity::SharedEntity;
+use crate::player::Player;
 use crate::portal::{DimensionChangeRequest, TeleportTransition};
+use crate::world::World;
 
 /// Handler for the "steel" command group.
 #[must_use]
@@ -17,60 +21,27 @@ pub fn command_handler() -> impl CommandHandlerDyn {
         "minecraft:command.steel",
     )
     .then(
-        literal("tp")
-            .then(literal("overworld").executes(DimensionExecutor::Overworld))
-            .then(literal("nether").executes(DimensionExecutor::Nether))
-            .then(literal("end").executes(DimensionExecutor::End)),
+        literal("tp").then(argument("targets", PlayerArgument::multiple()).then(
+            argument("dimension", DimensionArgument).executes(
+                |(((), targets), world): (((), Vec<Arc<Player>>), Arc<World>),
+                 context: &mut CommandContext|
+                 -> Result<(), CommandError> {
+                    for target in targets {
+                        let pos = *target.position.lock();
+                        let rot = target.rotation.load();
+                        context.server.queue_dimension_change(
+                            target as SharedEntity,
+                            DimensionChangeRequest::Computed(TeleportTransition {
+                                target_world: world.clone(),
+                                position: pos,
+                                rotation: rot,
+                                portal_cooldown: 0,
+                            }),
+                        );
+                    }
+                    Ok(())
+                },
+            ),
+        )),
     )
-}
-
-enum DimensionExecutor {
-    Overworld,
-    Nether,
-    End,
-}
-
-impl CommandExecutor<()> for DimensionExecutor {
-    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        let player = context
-            .player
-            .as_ref()
-            .ok_or_else(|| {
-                CommandError::CommandFailed(Box::new(
-                    "This command can only be used by players".into(),
-                ))
-            })?
-            .clone();
-
-        let mut pos = *player.position.lock();
-        let rot = player.rotation.load();
-
-        let target = match self {
-            DimensionExecutor::Overworld => context.server.overworld().clone(),
-            DimensionExecutor::Nether => {
-                pos.y = 10.0;
-                context.server.nether().cloned().ok_or_else(|| {
-                    CommandError::CommandFailed(Box::new("Nether is not available.".into()))
-                })?
-            }
-            DimensionExecutor::End => {
-                pos.y = 10.0;
-                context.server.the_end().cloned().ok_or_else(|| {
-                    CommandError::CommandFailed(Box::new("The End is not available.".into()))
-                })?
-            }
-        };
-
-        context.server.queue_dimension_change(
-            player as SharedEntity,
-            DimensionChangeRequest::Computed(TeleportTransition {
-                target_world: target,
-                position: pos,
-                rotation: rot,
-                portal_cooldown: 0,
-            }),
-        );
-
-        Ok(())
-    }
 }
