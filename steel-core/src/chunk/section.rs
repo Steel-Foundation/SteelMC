@@ -8,6 +8,7 @@ use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
+use crate::fluid::state::get_fluid_state_from_block;
 
 /// A wrapper around a chunk section.
 #[derive(Debug)]
@@ -203,6 +204,9 @@ pub struct ChunkSection {
     /// Number of non-air blocks in this section (0-4096).
     /// Used to quickly check if a section is empty.
     non_empty_block_count: u16,
+    /// Number of fluid-containing blocks in this section (0-4096).
+    /// Includes water, lava, and waterlogged blocks.
+    fluid_count: u16,
     /// Number of randomly-ticking blocks in this section (0-4096).
     pub ticking_block_count: u16,
 }
@@ -218,6 +222,7 @@ impl ChunkSection {
             states,
             biomes,
             non_empty_block_count: 0,
+            fluid_count: 0,
             ticking_block_count: 0,
         }
     }
@@ -230,6 +235,7 @@ impl ChunkSection {
             states: BlockPalette::Homogeneous(BlockStateId(0)),
             biomes: BiomePalette::Homogeneous(plains_id),
             non_empty_block_count: 0,
+            fluid_count: 0,
             ticking_block_count: 0,
         }
     }
@@ -252,6 +258,12 @@ impl ChunkSection {
         self.non_empty_block_count
     }
 
+    /// Returns the number of fluid-containing blocks in this section.
+    #[must_use]
+    pub const fn fluid_count(&self) -> u16 {
+        self.fluid_count
+    }
+
     /// Returns the number of randomly-ticking blocks in this section.
     #[must_use]
     pub const fn ticking_block_count(&self) -> u16 {
@@ -269,9 +281,10 @@ impl ChunkSection {
         self.recalculate_counts_with(&BLOCK_BEHAVIORS);
     }
 
-    /// Recalculates both cached counters using the provided behavior registry.
+    /// Recalculates all cached counters using the provided behavior registry.
     pub fn recalculate_counts_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
         let mut non_empty: u16 = 0;
+        let mut fluid: u16 = 0;
         let mut ticking: u16 = 0;
 
         for y in 0..16 {
@@ -286,11 +299,15 @@ impl ChunkSection {
                             ticking += 1;
                         }
                     }
+                    if !get_fluid_state_from_block(state).is_empty() {
+                        fluid += 1;
+                    }
                 }
             }
         }
 
         self.non_empty_block_count = non_empty;
+        self.fluid_count = fluid;
         self.ticking_block_count = ticking;
     }
 
@@ -334,6 +351,16 @@ impl ChunkSection {
                 self.non_empty_block_count += 1;
             }
 
+            // Update fluid count
+            let old_has_fluid = !get_fluid_state_from_block(old_state).is_empty();
+            let new_has_fluid = !get_fluid_state_from_block(new_state).is_empty();
+
+            if old_has_fluid && !new_has_fluid {
+                self.fluid_count -= 1;
+            } else if !old_has_fluid && new_has_fluid {
+                self.fluid_count += 1;
+            }
+
             // Update ticking count
             let old_block = old_state.get_block();
             let new_block = new_state.get_block();
@@ -362,8 +389,9 @@ impl ChunkSection {
         self.non_empty_block_count
             .write(writer)
             .expect("Failed to write block count");
-        // fluid count — steel doesn't track fluids separately, always 0
-        0u16.write(writer).expect("Failed to write fluid count");
+        self.fluid_count
+            .write(writer)
+            .expect("Failed to write fluid count");
 
         self.states
             .write(writer)
