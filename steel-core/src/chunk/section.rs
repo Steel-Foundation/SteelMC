@@ -264,6 +264,12 @@ impl ChunkSection {
         self.fluid_count
     }
 
+    /// Returns if the chunk has fluid.
+    #[must_use]
+    pub const fn has_fluid(&self) -> bool {
+        self.fluid_count > 0
+    }
+
     /// Returns the number of randomly-ticking blocks in this section.
     #[must_use]
     pub const fn ticking_block_count(&self) -> u16 {
