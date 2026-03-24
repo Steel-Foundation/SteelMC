@@ -3,7 +3,7 @@ use crate::config::LogTimeFormat;
 use chrono::Utc;
 use crossterm::{
     style::{Color::DarkGrey, ResetColor, SetForegroundColor},
-    terminal::{Clear, ClearType},
+    terminal::{self, Clear, ClearType},
 };
 #[cfg(feature = "spawn_chunk_display")]
 use std::io::Result;
@@ -28,6 +28,11 @@ mod selection;
 mod spawn_progress;
 mod state;
 mod suggestions;
+
+/// Returns the terminal width, falling back to 80 columns if unavailable.
+fn terminal_width() -> usize {
+    terminal::size().map_or(80, |(w, _)| (w as usize).max(1))
+}
 
 pub(crate) use state::LogState;
 
