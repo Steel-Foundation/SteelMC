@@ -26,7 +26,7 @@ pub const PLAYER_DATA_VERSION: i32 = 1;
 /// # TODO: Missing vanilla fields
 /// The following fields should be added once their systems are implemented:
 /// - Food data: `foodLevel`, `foodSaturationLevel`, `foodExhaustionLevel`, `foodTickTimer`
-/// - Experience: `XpP` (progress), `XpLevel`, `XpTotal`, `XpSeed`
+/// - Experience: `XpSeed`
 /// - Active potion effects: `active_effects` (List)
 /// - Score: `Score` (Int)
 /// - Ender chest inventory: `EnderItems` (List)
@@ -94,8 +94,8 @@ pub struct PersistentPlayerData {
     /// NBT tag: `XpP` (Float)
     pub experience_progress: f32,
 
-    // TODO: what exactly is experienceTotal
     /// The checked value of the Score, cannot decrease below 0 (???)
+    /// TODO: what exactly is experienceTotal
     /// NBT tag: `XpTotal` (Int)
     pub experience_total: i32,
 
@@ -258,7 +258,7 @@ impl PersistentPlayerData {
         // Experience
         compound.insert("XpLevel", self.experience_level);
         compound.insert("XpP", self.experience_progress);
-        compound.insert("XpTotal", self.experience_total); // TODO: what exactly is experienceTotal
+        compound.insert("XpTotal", self.experience_total);
         compound.insert("Score", self.score);
 
         compound
@@ -336,7 +336,7 @@ impl PersistentPlayerData {
 
         let experience_level = nbt.int("XpLevel").unwrap_or(0);
         let experience_progress = nbt.float("XpP").unwrap_or(0.0);
-        let experience_total = nbt.int("XpTotal").unwrap_or(0); // TODO: what exactly is experienceTotal
+        let experience_total = nbt.int("XpTotal").unwrap_or(0);
         let score = nbt.int("Score").unwrap_or(0);
 
         Some(Self {
@@ -355,7 +355,7 @@ impl PersistentPlayerData {
             data_version,
             experience_level,
             experience_progress,
-            experience_total, // TODO: what exactly is experienceTotal
+            experience_total,
             score,
         })
     }
@@ -494,7 +494,6 @@ impl PersistentPlayerData {
             let mut experience = player.experience.lock();
             experience.set_levels(self.experience_level);
             experience.set_progress(f64::from(self.experience_progress));
-            // TODO: what exactly is experienceTotal
             experience.set_score(self.score);
         }
     }
