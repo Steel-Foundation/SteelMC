@@ -85,6 +85,24 @@ pub struct PersistentPlayerData {
     /// Data version for format migrations.
     /// NBT tag: `DataVersion` (Int)
     pub data_version: i32,
+
+    /// Current experience level
+    /// NBT tag: `XpLevel` (Int)
+    pub experience_level: i32,
+
+    /// To progress to the next experience level
+    /// NBT tag: `XpP` (Float)
+    pub experience_progress: f32,
+
+    // TODO: what exactly is experienceTotal
+    /// The checked value of the Score, cannot decrease below 0 (???)
+    /// NBT tag: `XpTotal` (Int)
+    pub experience_total: i32,
+
+    /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
+    /// this value can be negative by using (/xp add ... -x)
+    /// NBT tag: `Score` (Int)
+    pub score: i32,
 }
 
 /// Persistent abilities data.
@@ -143,6 +161,16 @@ impl PersistentPlayerData {
             }
         }
 
+        let (experience_level, experience_progress, experience_total, score) = {
+            let lock = player.experience.lock();
+            (
+                lock.level(),
+                lock.progress() as f32,
+                lock.total_points(),
+                lock.score(),
+            )
+        };
+
         Self {
             pos: [pos.x, pos.y, pos.z],
             motion: [delta.x, delta.y, delta.z],
@@ -165,6 +193,10 @@ impl PersistentPlayerData {
             selected_slot: i32::from(inventory.get_selected_slot()),
             dimension: player.world.dimension.key.to_string(),
             data_version: PLAYER_DATA_VERSION,
+            experience_level,
+            experience_progress,
+            experience_total,
+            score,
         }
     }
 
@@ -222,6 +254,12 @@ impl PersistentPlayerData {
             })
             .collect();
         compound.insert("Inventory", NbtList::from(inventory_list));
+
+        // Experience
+        compound.insert("XpLevel", self.experience_level);
+        compound.insert("XpP", self.experience_progress);
+        compound.insert("XpTotal", self.experience_total); // TODO: what exactly is experienceTotal
+        compound.insert("Score", self.score);
 
         compound
     }
@@ -296,6 +334,11 @@ impl PersistentPlayerData {
             }
         }
 
+        let experience_level = nbt.int("XpLevel").unwrap_or(0);
+        let experience_progress = nbt.float("XpP").unwrap_or(0.0);
+        let experience_total = nbt.int("XpTotal").unwrap_or(0); // TODO: what exactly is experienceTotal
+        let score = nbt.int("Score").unwrap_or(0);
+
         Some(Self {
             pos,
             motion,
@@ -310,6 +353,10 @@ impl PersistentPlayerData {
             selected_slot,
             dimension,
             data_version,
+            experience_level,
+            experience_progress,
+            experience_total, // TODO: what exactly is experienceTotal
+            score,
         })
     }
 }
@@ -441,6 +488,14 @@ impl PersistentPlayerData {
             // Restore selected slot
             let selected = self.selected_slot.clamp(0, 8) as u8;
             inventory.set_selected_slot(selected);
+        }
+
+        {
+            let mut experience = player.experience.lock();
+            experience.set_levels(self.experience_level);
+            experience.set_progress(f64::from(self.experience_progress));
+            // TODO: what exactly is experienceTotal
+            experience.set_score(self.score);
         }
     }
 }
