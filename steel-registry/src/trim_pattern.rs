@@ -13,7 +13,7 @@ pub struct TrimPattern {
     pub decal: bool,
 }
 
-impl ToNbtTag for TrimPattern {
+impl ToNbtTag for &TrimPattern {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

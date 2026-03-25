@@ -36,7 +36,7 @@ It focuses on clean code, performance, extensibility, and ease of use.
 
 1. Identify a feature you'd like to add or an issue to work on.
    You should always create a post in the channel [feature-discussion](https://canary.discord.com/channels/1428487339759370322/1429074039015473272) when considering adding a major feature.
-2. Decompile Minecraft 1.21.11 by running the provided script:
+2. Decompile Minecraft 26.1 by running the provided script:
    ```bash
    ./update-minecraft-src.sh
    ```

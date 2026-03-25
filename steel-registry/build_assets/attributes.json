@@ -303,7 +303,7 @@
     "default_value": 0.0,
     "syncable": false,
     "min_value": 0.0,
-    "max_value": 6.0e7
+    "max_value": 6.0E7
   },
   {
     "id": 34,
@@ -312,6 +312,6 @@
     "default_value": 0.0,
     "syncable": false,
     "min_value": 0.0,
-    "max_value": 6.0e7
+    "max_value": 6.0E7
   }
 ]

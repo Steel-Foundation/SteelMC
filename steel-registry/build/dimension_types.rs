@@ -24,15 +24,15 @@ pub struct DimensionTypeJson {
     ambient_light: f32,
     monster_spawn_light_level: MonsterSpawnLightLevelJson,
     monster_spawn_block_light_limit: i32,
+    has_ender_dragon_fight: bool,
 
     #[serde(default)]
-    #[expect(dead_code)]
     skybox: Option<String>,
     #[serde(default)]
-    #[expect(dead_code)]
     timelines: Option<String>,
     #[serde(default)]
-    #[expect(dead_code)]
+    default_clock: Option<String>,
+    #[serde(default)]
     cardinal_light: Option<String>,
 }
 
@@ -45,6 +45,97 @@ struct DimensionAttributes {
     can_start_raid: Option<bool>,
     #[serde(rename = "minecraft:visual/cloud_height")]
     cloud_height: Option<f64>,
+    #[serde(rename = "minecraft:visual/sky_color")]
+    sky_color: Option<String>,
+    #[serde(rename = "minecraft:visual/fog_color")]
+    fog_color: Option<String>,
+    #[serde(rename = "minecraft:visual/cloud_color")]
+    cloud_color: Option<String>,
+
+    // New visual attributes
+    #[serde(rename = "minecraft:visual/ambient_light_color")]
+    ambient_light_color: Option<String>,
+    #[serde(rename = "minecraft:visual/sky_light_color")]
+    sky_light_color: Option<String>,
+    #[serde(rename = "minecraft:visual/sky_light_factor")]
+    sky_light_factor: Option<f32>,
+    #[serde(rename = "minecraft:visual/fog_start_distance")]
+    fog_start_distance: Option<f32>,
+    #[serde(rename = "minecraft:visual/fog_end_distance")]
+    fog_end_distance: Option<f32>,
+    #[serde(rename = "minecraft:visual/default_dripstone_particle")]
+    default_dripstone_particle: Option<DripstoneParticleJson>,
+
+    // New gameplay attributes
+    #[serde(rename = "minecraft:gameplay/fast_lava")]
+    fast_lava: Option<bool>,
+    #[serde(rename = "minecraft:gameplay/piglins_zombify")]
+    piglins_zombify: Option<bool>,
+    #[serde(rename = "minecraft:gameplay/sky_light_level")]
+    sky_light_level: Option<f32>,
+    #[serde(rename = "minecraft:gameplay/snow_golem_melts")]
+    snow_golem_melts: Option<bool>,
+    #[serde(rename = "minecraft:gameplay/water_evaporates")]
+    water_evaporates: Option<bool>,
+    #[serde(rename = "minecraft:gameplay/nether_portal_spawns_piglin")]
+    nether_portal_spawns_piglin: Option<bool>,
+    #[serde(rename = "minecraft:gameplay/bed_rule")]
+    bed_rule: Option<BedRuleJson>,
+
+    // Audio attributes
+    #[serde(rename = "minecraft:audio/ambient_sounds")]
+    ambient_sounds: Option<AmbientSoundsJson>,
+    #[serde(rename = "minecraft:audio/background_music")]
+    background_music: Option<BackgroundMusicJson>,
+}
+
+#[derive(Deserialize, Debug)]
+struct BedRuleJson {
+    can_set_spawn: String,
+    can_sleep: String,
+    #[serde(default)]
+    explodes: bool,
+    error_message: Option<ErrorMessageJson>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ErrorMessageJson {
+    translate: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct AmbientSoundsJson {
+    mood: MoodJson,
+}
+
+#[derive(Deserialize, Debug)]
+struct MoodJson {
+    sound: String,
+    tick_delay: i32,
+    block_search_extent: i32,
+    offset: f64,
+}
+
+#[derive(Deserialize, Debug)]
+struct BackgroundMusicJson {
+    default: MusicEntryJson,
+    #[serde(default)]
+    creative: Option<MusicEntryJson>,
+}
+
+#[derive(Deserialize, Debug)]
+struct MusicEntryJson {
+    sound: String,
+    min_delay: i32,
+    max_delay: i32,
+    #[serde(default)]
+    replace_current_music: bool,
+}
+
+#[derive(Deserialize, Debug)]
+struct DripstoneParticleJson {
+    #[serde(rename = "type")]
+    particle_type: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -94,6 +185,68 @@ fn generate_monster_spawn_light_level(level: &MonsterSpawnLightLevelJson) -> Tok
     }
 }
 
+fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
+    let can_set_spawn = bed_rule.can_set_spawn.as_str();
+    let can_sleep = bed_rule.can_sleep.as_str();
+    let explodes = bed_rule.explodes;
+    let error_message_key = generate_option(
+        &bed_rule.error_message.as_ref().map(|m| m.translate.clone()),
+        |s| {
+            let s = s.as_str();
+            quote! { #s }
+        },
+    );
+    quote! {
+        BedRule {
+            can_set_spawn: #can_set_spawn,
+            can_sleep: #can_sleep,
+            explodes: #explodes,
+            error_message_key: #error_message_key,
+        }
+    }
+}
+
+fn generate_mood_sound(mood: &MoodJson) -> TokenStream {
+    let sound = mood.sound.as_str();
+    let tick_delay = mood.tick_delay;
+    let block_search_extent = mood.block_search_extent;
+    let offset = mood.offset;
+    quote! {
+        MoodSound {
+            sound: #sound,
+            tick_delay: #tick_delay,
+            block_search_extent: #block_search_extent,
+            offset: #offset,
+        }
+    }
+}
+
+fn generate_music_entry(entry: &MusicEntryJson) -> TokenStream {
+    let sound = entry.sound.as_str();
+    let min_delay = entry.min_delay;
+    let max_delay = entry.max_delay;
+    let replace_current_music = entry.replace_current_music;
+    quote! {
+        MusicEntry {
+            sound: #sound,
+            min_delay: #min_delay,
+            max_delay: #max_delay,
+            replace_current_music: #replace_current_music,
+        }
+    }
+}
+
+fn generate_background_music(bg: &BackgroundMusicJson) -> TokenStream {
+    let default_entry = generate_music_entry(&bg.default);
+    let creative = generate_option(&bg.creative, generate_music_entry);
+    quote! {
+        BackgroundMusic {
+            default: #default_entry,
+            creative: #creative,
+        }
+    }
+}
+
 pub(crate) fn build() -> TokenStream {
     println!(
         "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/dimension_type/"
@@ -116,8 +269,6 @@ pub(crate) fn build() -> TokenStream {
 
             // Extract fixed_time from attributes if has_fixed_time is true but fixed_time is None
             if dimension_type.has_fixed_time && dimension_type.fixed_time.is_none() {
-                // Try to extract from attributes, or use a default
-                // For the_end, it's 6000, for nether it might be different
                 dimension_type.fixed_time = match dimension_type_name.as_str() {
                     "the_end" => Some(6000),
                     "the_nether" => Some(18000),
@@ -137,6 +288,7 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::dimension_type::{
             DimensionType, DimensionTypeRegistry, MonsterSpawnLightLevel,
+            BedRule, MoodSound, MusicEntry, BackgroundMusic,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
@@ -156,16 +308,151 @@ pub(crate) fn build() -> TokenStream {
         let has_skylight = dimension_type.has_skylight;
         let has_ceiling = dimension_type.has_ceiling;
 
-        // Extract values from attributes
+        // Top-level optional fields
+        let skybox = generate_option(&dimension_type.skybox.as_deref().map(str::to_owned), |s| {
+            let s = s.as_str();
+            quote! { #s }
+        });
+        let cardinal_light = generate_option(
+            &dimension_type.cardinal_light.as_deref().map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let default_clock = generate_option(
+            &dimension_type.default_clock.as_deref().map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let timelines = generate_option(
+            &dimension_type.timelines.as_deref().map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+
+        // Visual attributes
+        let sky_color = generate_option(
+            &dimension_type
+                .attributes
+                .sky_color
+                .as_deref()
+                .map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let fog_color = generate_option(
+            &dimension_type
+                .attributes
+                .fog_color
+                .as_deref()
+                .map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let cloud_color = generate_option(
+            &dimension_type
+                .attributes
+                .cloud_color
+                .as_deref()
+                .map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let cloud_height = generate_option(
+            &dimension_type.attributes.cloud_height.map(|h| h as f32),
+            |h| quote! { #h },
+        );
+        let ambient_light_color = generate_option(
+            &dimension_type
+                .attributes
+                .ambient_light_color
+                .as_deref()
+                .map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let sky_light_color = generate_option(
+            &dimension_type
+                .attributes
+                .sky_light_color
+                .as_deref()
+                .map(str::to_owned),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+        let sky_light_factor = generate_option(
+            &dimension_type.attributes.sky_light_factor,
+            |v| quote! { #v },
+        );
+        let fog_start_distance = generate_option(
+            &dimension_type.attributes.fog_start_distance,
+            |v| quote! { #v },
+        );
+        let fog_end_distance = generate_option(
+            &dimension_type.attributes.fog_end_distance,
+            |v| quote! { #v },
+        );
+        let default_dripstone_particle = generate_option(
+            &dimension_type
+                .attributes
+                .default_dripstone_particle
+                .as_ref()
+                .map(|p| p.particle_type.clone()),
+            |s| {
+                let s = s.as_str();
+                quote! { #s }
+            },
+        );
+
+        // Gameplay attributes
         let respawn_anchor_works = dimension_type
             .attributes
             .respawn_anchor_works
             .unwrap_or(false);
-        let has_raids = dimension_type.attributes.can_start_raid.unwrap_or(true);
-        let cloud_height = generate_option(
-            &dimension_type.attributes.cloud_height.map(|h| h as i32),
-            |h| quote! { #h },
+        let can_start_raid = dimension_type.attributes.can_start_raid.unwrap_or(true);
+        let fast_lava = dimension_type.attributes.fast_lava.unwrap_or(false);
+        let piglins_zombify = dimension_type.attributes.piglins_zombify.unwrap_or(true);
+        let sky_light_level = generate_option(
+            &dimension_type.attributes.sky_light_level,
+            |v| quote! { #v },
         );
+        let snow_golem_melts = dimension_type.attributes.snow_golem_melts.unwrap_or(false);
+        let water_evaporates = dimension_type.attributes.water_evaporates.unwrap_or(false);
+        let nether_portal_spawns_piglin = dimension_type
+            .attributes
+            .nether_portal_spawns_piglin
+            .unwrap_or(false);
+
+        let bed_rule = generate_bed_rule(
+            dimension_type
+                .attributes
+                .bed_rule
+                .as_ref()
+                .unwrap_or_else(|| panic!("Missing bed_rule in {}", dimension_type_name)),
+        );
+
+        // Audio attributes
+        let mood_sound = generate_option(&dimension_type.attributes.ambient_sounds, |s| {
+            generate_mood_sound(&s.mood)
+        });
+        let background_music = generate_option(&dimension_type.attributes.background_music, |bg| {
+            generate_background_music(bg)
+        });
 
         let coordinate_scale = dimension_type.coordinate_scale;
         let min_y = dimension_type.min_y;
@@ -176,6 +463,7 @@ pub(crate) fn build() -> TokenStream {
         let monster_spawn_light_level =
             generate_monster_spawn_light_level(&dimension_type.monster_spawn_light_level);
         let monster_spawn_block_light_limit = dimension_type.monster_spawn_block_light_limit;
+        let has_ender_dragon_fight = dimension_type.has_ender_dragon_fight;
 
         stream.extend(quote! {
             pub static #dimension_type_ident: &DimensionType = &DimensionType {
@@ -184,16 +472,39 @@ pub(crate) fn build() -> TokenStream {
                 has_skylight: #has_skylight,
                 has_ceiling: #has_ceiling,
                 coordinate_scale: #coordinate_scale,
-                respawn_anchor_works: #respawn_anchor_works,
                 min_y: #min_y,
                 height: #height,
                 logical_height: #logical_height,
                 infiniburn: #infiniburn,
                 ambient_light: #ambient_light,
-                cloud_height: #cloud_height,
-                has_raids: #has_raids,
+                default_clock: #default_clock,
+                timelines: #timelines,
+                has_ender_dragon_fight: #has_ender_dragon_fight,
                 monster_spawn_light_level: #monster_spawn_light_level,
                 monster_spawn_block_light_limit: #monster_spawn_block_light_limit,
+                skybox: #skybox,
+                cardinal_light: #cardinal_light,
+                sky_color: #sky_color,
+                fog_color: #fog_color,
+                cloud_color: #cloud_color,
+                cloud_height: #cloud_height,
+                ambient_light_color: #ambient_light_color,
+                sky_light_color: #sky_light_color,
+                sky_light_factor: #sky_light_factor,
+                fog_start_distance: #fog_start_distance,
+                fog_end_distance: #fog_end_distance,
+                default_dripstone_particle: #default_dripstone_particle,
+                respawn_anchor_works: #respawn_anchor_works,
+                can_start_raid: #can_start_raid,
+                fast_lava: #fast_lava,
+                piglins_zombify: #piglins_zombify,
+                sky_light_level: #sky_light_level,
+                snow_golem_melts: #snow_golem_melts,
+                water_evaporates: #water_evaporates,
+                nether_portal_spawns_piglin: #nether_portal_spawns_piglin,
+                bed_rule: #bed_rule,
+                mood_sound: #mood_sound,
+                background_music: #background_music,
             };
         });
 

@@ -2,6 +2,9 @@
   "values": [
     "#minecraft:base_stone_overworld",
     "#minecraft:cave_vines",
-    "#minecraft:dirt"
+    "#minecraft:dirt",
+    "#minecraft:mud",
+    "#minecraft:moss_blocks",
+    "#minecraft:grass_blocks"
   ]
 }

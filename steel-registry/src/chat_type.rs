@@ -30,7 +30,7 @@ pub struct ChatStyle {
     pub obfuscated: Option<bool>,
 }
 
-impl ToNbtTag for ChatType {
+impl ToNbtTag for &ChatType {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

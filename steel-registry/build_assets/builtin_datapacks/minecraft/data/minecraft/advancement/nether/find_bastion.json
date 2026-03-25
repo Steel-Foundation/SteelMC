@@ -23,7 +23,6 @@
       "translate": "advancements.nether.find_bastion.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:polished_blackstone_bricks"
     },
     "title": {

@@ -1,7 +1,4 @@
-use crossterm::{
-    cursor::{MoveDown, MoveLeft, MoveRight, MoveUp, SetCursorStyle::BlinkingBar},
-    terminal,
-};
+use crossterm::cursor::{MoveDown, MoveLeft, MoveRight, MoveUp, SetCursorStyle::BlinkingBar};
 use std::io::{Result, Stdout, Write, stdout};
 
 pub struct Output {
@@ -57,16 +54,10 @@ impl Output {
         (pos, char.len_utf8())
     }
     pub const START_POS: (usize, usize) = (2, 0);
-    // TODO: Change the order to (x, y)
     pub fn get_pos(pos: usize) -> (usize, usize) {
-        if let Ok((w, _)) = terminal::size() {
-            let w = w as usize;
-            let absolute_pos = pos + 2;
-            let x = absolute_pos % w;
-            let y = absolute_pos / w;
-            return (x, y);
-        }
-        (pos + 2, 0)
+        let w = super::terminal_width();
+        let absolute_pos = pos + 2;
+        (absolute_pos % w, absolute_pos / w)
     }
     pub fn get_current_pos(&self) -> (usize, usize) {
         Self::get_pos(self.pos)

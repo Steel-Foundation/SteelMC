@@ -1,5 +1,26 @@
 {
+  "clock": "minecraft:overworld",
   "period_ticks": 24000,
+  "time_markers": {
+    "minecraft:day": {
+      "show_in_commands": true,
+      "ticks": 1000
+    },
+    "minecraft:midnight": {
+      "show_in_commands": true,
+      "ticks": 18000
+    },
+    "minecraft:night": {
+      "show_in_commands": true,
+      "ticks": 13000
+    },
+    "minecraft:noon": {
+      "show_in_commands": true,
+      "ticks": 6000
+    },
+    "minecraft:roll_village_siege": 18000,
+    "minecraft:wake_up_from_sleep": 0
+  },
   "tracks": {
     "minecraft:audio/firefly_bush_sounds": {
       "keyframes": [

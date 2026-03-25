@@ -151,6 +151,8 @@ pub const ADDITIONAL_TRADE_COST: DataComponentType<()> =
 pub const STORED_ENCHANTMENTS: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("stored_enchantments"));
 
+pub const DYE: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("dye"));
+
 pub const DYED_COLOR: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("dyed_color"));
 
@@ -293,11 +295,20 @@ pub const RABBIT_VARIANT: DataComponentType<()> =
 pub const PIG_VARIANT: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("pig/variant"));
 
+pub const PIG_SOUND_VARIANT: DataComponentType<()> =
+    DataComponentType::new(Identifier::vanilla_static("pig/sound_variant"));
+
 pub const COW_VARIANT: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("cow/variant"));
 
+pub const COW_SOUND_VARIANT: DataComponentType<()> =
+    DataComponentType::new(Identifier::vanilla_static("cow/sound_variant"));
+
 pub const CHICKEN_VARIANT: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("chicken/variant"));
+
+pub const CHICKEN_SOUND_VARIANT: DataComponentType<()> =
+    DataComponentType::new(Identifier::vanilla_static("chicken/sound_variant"));
 
 pub const ZOMBIE_NAUTILUS_VARIANT: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("zombie_nautilus/variant"));
@@ -319,6 +330,9 @@ pub const AXOLOTL_VARIANT: DataComponentType<()> =
 
 pub const CAT_VARIANT: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("cat/variant"));
+
+pub const CAT_SOUND_VARIANT: DataComponentType<()> =
+    DataComponentType::new(Identifier::vanilla_static("cat/sound_variant"));
 
 pub const CAT_COLLAR: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("cat/collar"));
@@ -499,128 +513,138 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     register_stub!(registry, ADDITIONAL_TRADE_COST.key.clone());
     // 42: stored_enchantments
     register_stub!(registry, STORED_ENCHANTMENTS.key.clone());
-    // 43: dyed_color
+    // 43: dye
+    register_stub!(registry, DYE.key.clone());
+    // 44: dyed_color
     register_stub!(registry, DYED_COLOR.key.clone());
-    // 44: map_color
+    // 45: map_color
     register_stub!(registry, MAP_COLOR.key.clone());
-    // 45: map_id
+    // 46: map_id
     register_stub!(registry, MAP_ID.key.clone());
-    // 46: map_decorations
+    // 47: map_decorations
     register_stub!(registry, MAP_DECORATIONS.key.clone());
-    // 47: map_post_processing
+    // 48: map_post_processing
     register_stub!(registry, MAP_POST_PROCESSING.key.clone());
-    // 48: charged_projectiles
+    // 49: charged_projectiles
     register_stub!(registry, CHARGED_PROJECTILES.key.clone());
-    // 49: bundle_contents
+    // 50: bundle_contents
     register_stub!(registry, BUNDLE_CONTENTS.key.clone());
-    // 50: potion_contents
+    // 51: potion_contents
     register_stub!(registry, POTION_CONTENTS.key.clone());
-    // 51: potion_duration_scale
+    // 52: potion_duration_scale
     registry.register(POTION_DURATION_SCALE, ComponentDataDiscriminant::Float);
-    // 52: suspicious_stew_effects
+    // 53: suspicious_stew_effects
     register_stub!(registry, SUSPICIOUS_STEW_EFFECTS.key.clone());
-    // 53: writable_book_content
+    // 54: writable_book_content
     register_stub!(registry, WRITABLE_BOOK_CONTENT.key.clone());
-    // 54: written_book_content
+    // 55: written_book_content
     register_stub!(registry, WRITTEN_BOOK_CONTENT.key.clone());
-    // 55: trim
+    // 56: trim
     register_stub!(registry, TRIM.key.clone());
-    // 56: debug_stick_state
+    // 57: debug_stick_state
     register_stub!(registry, DEBUG_STICK_STATE.key.clone());
-    // 57: entity_data
+    // 58: entity_data
     register_stub!(registry, ENTITY_DATA.key.clone());
-    // 58: bucket_entity_data
+    // 59: bucket_entity_data
     register_stub!(registry, BUCKET_ENTITY_DATA.key.clone());
-    // 59: block_entity_data
+    // 60: block_entity_data
     register_stub!(registry, BLOCK_ENTITY_DATA.key.clone());
-    // 60: instrument
+    // 61: instrument
     register_stub!(registry, INSTRUMENT.key.clone());
-    // 61: provides_trim_material
+    // 62: provides_trim_material
     register_stub!(registry, PROVIDES_TRIM_MATERIAL.key.clone());
-    // 62: ominous_bottle_amplifier
+    // 63: ominous_bottle_amplifier
     register_stub!(registry, OMINOUS_BOTTLE_AMPLIFIER.key.clone());
-    // 63: jukebox_playable
+    // 64: jukebox_playable
     register_stub!(registry, JUKEBOX_PLAYABLE.key.clone());
-    // 64: provides_banner_patterns
+    // 65: provides_banner_patterns
     register_stub!(registry, PROVIDES_BANNER_PATTERNS.key.clone());
-    // 65: recipes
+    // 66: recipes
     register_stub!(registry, RECIPES.key.clone());
-    // 66: lodestone_tracker
+    // 67: lodestone_tracker
     register_stub!(registry, LODESTONE_TRACKER.key.clone());
-    // 67: firework_explosion
+    // 68: firework_explosion
     register_stub!(registry, FIREWORK_EXPLOSION.key.clone());
-    // 68: fireworks
+    // 69: fireworks
     register_stub!(registry, FIREWORKS.key.clone());
-    // 69: profile
+    // 70: profile
     register_stub!(registry, PROFILE.key.clone());
-    // 70: note_block_sound
+    // 71: note_block_sound
     register_stub!(registry, NOTE_BLOCK_SOUND.key.clone());
-    // 71: banner_patterns
+    // 72: banner_patterns
     register_stub!(registry, BANNER_PATTERNS.key.clone());
-    // 72: base_color
+    // 73: base_color
     register_stub!(registry, BASE_COLOR.key.clone());
-    // 73: pot_decorations
+    // 74: pot_decorations
     register_stub!(registry, POT_DECORATIONS.key.clone());
-    // 74: container
+    // 75: container
     register_stub!(registry, CONTAINER.key.clone());
-    // 75: block_state
+    // 76: block_state
     register_stub!(registry, BLOCK_STATE.key.clone());
-    // 76: bees
+    // 77: bees
     register_stub!(registry, BEES.key.clone());
-    // 77: lock
+    // 78: lock
     register_stub!(registry, LOCK.key.clone());
-    // 78: container_loot
+    // 79: container_loot
     register_stub!(registry, CONTAINER_LOOT.key.clone());
-    // 79: break_sound
+    // 80: break_sound
     register_stub!(registry, BREAK_SOUND.key.clone());
-    // 80: villager/variant
+    // 81: villager/variant
     register_stub!(registry, VILLAGER_VARIANT.key.clone());
-    // 81: wolf/variant
+    // 82: wolf/variant
     register_stub!(registry, WOLF_VARIANT.key.clone());
-    // 82: wolf/sound_variant
+    // 83: wolf/sound_variant
     register_stub!(registry, WOLF_SOUND_VARIANT.key.clone());
-    // 83: wolf/collar
+    // 84: wolf/collar
     register_stub!(registry, WOLF_COLLAR.key.clone());
-    // 84: fox/variant
+    // 85: fox/variant
     register_stub!(registry, FOX_VARIANT.key.clone());
-    // 85: salmon/size
+    // 86: salmon/size
     register_stub!(registry, SALMON_SIZE.key.clone());
-    // 86: parrot/variant
+    // 87: parrot/variant
     register_stub!(registry, PARROT_VARIANT.key.clone());
-    // 87: tropical_fish/pattern
+    // 88: tropical_fish/pattern
     register_stub!(registry, TROPICAL_FISH_PATTERN.key.clone());
-    // 88: tropical_fish/base_color
+    // 89: tropical_fish/base_color
     register_stub!(registry, TROPICAL_FISH_BASE_COLOR.key.clone());
-    // 89: tropical_fish/pattern_color
+    // 90: tropical_fish/pattern_color
     register_stub!(registry, TROPICAL_FISH_PATTERN_COLOR.key.clone());
-    // 90: mooshroom/variant
+    // 91: mooshroom/variant
     register_stub!(registry, MOOSHROOM_VARIANT.key.clone());
-    // 91: rabbit/variant
+    // 92: rabbit/variant
     register_stub!(registry, RABBIT_VARIANT.key.clone());
-    // 92: pig/variant
+    // 93: pig/variant
     register_stub!(registry, PIG_VARIANT.key.clone());
-    // 93: cow/variant
+    // 94: pig/sound_variant
+    register_stub!(registry, PIG_SOUND_VARIANT.key.clone());
+    // 95: cow/variant
     register_stub!(registry, COW_VARIANT.key.clone());
-    // 94: chicken/variant
+    // 96: cow/sound_variant
+    register_stub!(registry, COW_SOUND_VARIANT.key.clone());
+    // 97: chicken/variant
     register_stub!(registry, CHICKEN_VARIANT.key.clone());
-    // 95: zombie_nautilus/variant
+    // 98: chicken/sound_variant
+    register_stub!(registry, CHICKEN_SOUND_VARIANT.key.clone());
+    // 99: zombie_nautilus/variant
     register_stub!(registry, ZOMBIE_NAUTILUS_VARIANT.key.clone());
-    // 96: frog/variant
+    // 100: frog/variant
     register_stub!(registry, FROG_VARIANT.key.clone());
-    // 97: horse/variant
+    // 101: horse/variant
     register_stub!(registry, HORSE_VARIANT.key.clone());
-    // 98: painting/variant
+    // 102: painting/variant
     register_stub!(registry, PAINTING_VARIANT.key.clone());
-    // 99: llama/variant
+    // 103: llama/variant
     register_stub!(registry, LLAMA_VARIANT.key.clone());
-    // 100: axolotl/variant
+    // 104: axolotl/variant
     register_stub!(registry, AXOLOTL_VARIANT.key.clone());
-    // 101: cat/variant
+    // 105: cat/variant
     register_stub!(registry, CAT_VARIANT.key.clone());
-    // 102: cat/collar
+    // 106: cat/sound_variant
+    register_stub!(registry, CAT_SOUND_VARIANT.key.clone());
+    // 107: cat/collar
     register_stub!(registry, CAT_COLLAR.key.clone());
-    // 103: sheep/color
+    // 108: sheep/color
     register_stub!(registry, SHEEP_COLOR.key.clone());
-    // 104: shulker/color
+    // 109: shulker/color
     register_stub!(registry, SHULKER_COLOR.key.clone());
 }

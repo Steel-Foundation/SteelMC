@@ -41,7 +41,7 @@ impl BambooStalkBlock {
     pub fn can_survive(world: &World, pos: BlockPos) -> bool {
         REGISTRY.blocks.is_in_tag(
             world.get_block_state(pos.below()).get_block(),
-            &vanilla_block_tags::BAMBOO_PLANTABLE_ON_TAG,
+            &vanilla_block_tags::SUPPORTS_BAMBOO_TAG,
         )
     }
 
@@ -166,7 +166,7 @@ impl BlockBehavior for BambooStalkBlock {
 
         if !REGISTRY
             .blocks
-            .is_in_tag(block_below, &vanilla_block_tags::BAMBOO_PLANTABLE_ON_TAG)
+            .is_in_tag(block_below, &vanilla_block_tags::SUPPORTS_BAMBOO_TAG)
         {
             return None;
         }

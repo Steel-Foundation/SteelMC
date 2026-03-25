@@ -55,7 +55,7 @@ Uses **nightly Rust**.
 
 ## Architecture
 
-Steel = Minecraft 1.21.11 server in Rust.
+Steel = Minecraft 26.1 server in Rust.
 
 **Crates:** `steel` (thin wrapper) -> `steel-login` (initial connection) → `steel-core` (game logic) → `steel-protocol` (packets) → `steel-macros` (derives) → `steel-registry` (generated data) → `steel-utils` (common) → `steel-crypto` (encryption)
 

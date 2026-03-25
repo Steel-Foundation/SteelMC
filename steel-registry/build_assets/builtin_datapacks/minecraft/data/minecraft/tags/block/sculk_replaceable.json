@@ -1,7 +1,7 @@
 {
   "values": [
     "#minecraft:base_stone_overworld",
-    "#minecraft:dirt",
+    "#minecraft:substrate_overworld",
     "#minecraft:terracotta",
     "#minecraft:nylium",
     "#minecraft:base_stone_nether",

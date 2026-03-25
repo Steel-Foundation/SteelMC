@@ -32,7 +32,7 @@ pub struct ExitAction {
     pub width: i32,
 }
 
-impl ToNbtTag for Dialog {
+impl ToNbtTag for &Dialog {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

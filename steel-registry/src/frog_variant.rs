@@ -25,7 +25,7 @@ pub struct BiomeCondition {
     pub biomes: &'static str,
 }
 
-impl ToNbtTag for FrogVariant {
+impl ToNbtTag for &FrogVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList};
         let mut compound = NbtCompound::new();
