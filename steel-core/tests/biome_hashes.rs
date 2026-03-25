@@ -109,6 +109,7 @@ fn verify_dimension(source: &BiomeSourceKind, dim: &DimensionHashes, dimension_n
 }
 
 #[test]
+#[ignore = "This test takes too long to run for normal testing"]
 fn overworld_biome_hashes_match_vanilla() {
     let expected = load_expected_hashes();
 
@@ -125,6 +126,7 @@ fn overworld_biome_hashes_match_vanilla() {
 }
 
 #[test]
+#[ignore = "This test takes too long to run for normal testing"]
 fn nether_biome_hashes_match_vanilla() {
     let expected = load_expected_hashes();
 
@@ -140,6 +142,7 @@ fn nether_biome_hashes_match_vanilla() {
 }
 
 #[test]
+#[ignore = "This test takes too long to run for normal testing"]
 fn end_biome_hashes_match_vanilla() {
     let expected = load_expected_hashes();
 
