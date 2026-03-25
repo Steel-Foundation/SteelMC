@@ -167,7 +167,7 @@ impl PersistentPlayerData {
                 lock.level(),
                 lock.progress() as f32,
                 lock.total_points(),
-                lock.score(),
+                lock.score,
             )
         };
 
@@ -494,7 +494,7 @@ impl PersistentPlayerData {
             let mut experience = player.experience.lock();
             experience.set_levels(self.experience_level);
             experience.set_progress(f64::from(self.experience_progress));
-            experience.set_score(self.score);
+            experience.score = self.score;
         }
     }
 }

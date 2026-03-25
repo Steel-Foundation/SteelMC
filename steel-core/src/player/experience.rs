@@ -11,7 +11,7 @@ pub struct Experience {
     /// This is a non decreasing total of the points the player has collected through advancements,
     /// experience orbs and the `/xp add ... points` command.
     /// This value is the source of truth for the score value and trumps the `PlayerEntityData.score` value
-    score: i32,
+    pub score: i32,
     /// Whether the `total_points` has changed since the last time the client was updated
     pub dirty: bool,
 }
@@ -71,17 +71,6 @@ impl Experience {
     #[must_use]
     pub const fn total_points(self) -> i32 {
         self.total_points
-    }
-
-    /// The score the player has
-    #[must_use]
-    pub const fn score(self) -> i32 {
-        self.score
-    }
-
-    /// Sets the score
-    pub const fn set_score(&mut self, score: i32) {
-        self.score = score;
     }
 
     /// Syncs the score with the player's entity data

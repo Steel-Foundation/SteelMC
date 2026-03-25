@@ -2626,7 +2626,7 @@ impl Player {
             let mut experience = self.experience.lock();
 
             experience.sync_score(&mut self.entity_data.lock());
-            experience.set_score(0);
+            experience.score = 0;
         }
 
         self.sync_entity_data();
