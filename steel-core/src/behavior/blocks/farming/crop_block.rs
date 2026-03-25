@@ -6,7 +6,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::vanilla_blocks;
+use steel_registry::{TaggedRegistryExt, vanilla_block_tags};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
@@ -84,10 +84,15 @@ impl CropBlock {
                 let block_state = world.get_block_state(check_pos);
                 let mut block_speed = 0.0f32;
 
-                if block_state.get_block() == vanilla_blocks::FARMLAND {
+                if steel_registry::REGISTRY.blocks.is_in_tag(
+                    block_state.get_block(),
+                    &vanilla_block_tags::GROWS_CROPS_TAG,
+                ) {
                     block_speed = 1.0;
-                    // Check moisture level
-                    let moisture = block_state.get_value(&BlockStateProperties::MOISTURE);
+                    // Check moisture level (defaults to 0 for non-farmland blocks)
+                    let moisture = block_state
+                        .try_get_value(&BlockStateProperties::MOISTURE)
+                        .unwrap_or(0);
                     if moisture > 0 {
                         block_speed = 3.0;
                     }
