@@ -1,4 +1,5 @@
 {
+  "clock": "minecraft:overworld",
   "period_ticks": 24000,
   "tracks": {
     "minecraft:gameplay/baby_villager_activity": {

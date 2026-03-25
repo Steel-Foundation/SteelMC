@@ -2849,11 +2849,8 @@ impl Player {
                 .get_game_rule(ADVANCE_TIME)
                 .as_bool()
                 .expect("gamerule advance_time should always be a bool.");
-            self.send_packet(CSetTime {
-                game_time,
-                day_time,
-                time_of_day_increasing: advance_time,
-            });
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
         }
 
         if world.is_raining() {

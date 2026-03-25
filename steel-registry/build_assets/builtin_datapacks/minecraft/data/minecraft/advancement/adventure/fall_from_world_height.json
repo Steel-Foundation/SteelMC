@@ -39,7 +39,6 @@
       "translate": "advancements.adventure.fall_from_world_height.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:water_bucket"
     },
     "title": {

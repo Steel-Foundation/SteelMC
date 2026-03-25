@@ -6,13 +6,11 @@ use quote::quote;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
-struct FluidJson {
-    id: u32,
-    name: String,
+struct BehaviorProperties {
     is_empty: bool,
     is_source: bool,
-    block: String,
-    bucket_item: String,
+    #[allow(dead_code)]
+    is_flowing_fluid: bool,
     #[serde(default)]
     source_fluid: Option<String>,
     #[serde(default)]
@@ -20,7 +18,28 @@ struct FluidJson {
     #[serde(default)]
     tick_delay: Option<u32>,
     #[serde(default)]
+    #[allow(dead_code)]
+    drop_off: Option<u32>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    slope_find_distance: Option<u32>,
+    #[serde(default)]
     explosion_resistance: Option<f32>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct FluidJson {
+    id: u32,
+    name: String,
+    block: String,
+    bucket_item: String,
+    behavior_properties: BehaviorProperties,
+    #[serde(default)]
+    #[allow(dead_code)]
+    properties: Vec<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    default_properties: Vec<String>,
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -42,19 +61,22 @@ pub(crate) fn build() -> TokenStream {
     for fluid in &fluids {
         let fluid_ident = Ident::new(&fluid.name.to_shouty_snake_case(), Span::call_site());
         let fluid_name = &fluid.name;
-        let is_empty = fluid.is_empty;
-        let is_source = fluid.is_source;
+        let is_empty = fluid.behavior_properties.is_empty;
+        let is_source = fluid.behavior_properties.is_source;
         let block = &fluid.block;
         let bucket_item = &fluid.bucket_item;
-        let tick_delay = fluid.tick_delay.unwrap_or(0);
-        let explosion_resistance = fluid.explosion_resistance.unwrap_or(0.0);
+        let tick_delay = fluid.behavior_properties.tick_delay.unwrap_or(0);
+        let explosion_resistance = fluid
+            .behavior_properties
+            .explosion_resistance
+            .unwrap_or(0.0);
 
-        let source_fluid = match &fluid.source_fluid {
+        let source_fluid = match &fluid.behavior_properties.source_fluid {
             Some(s) => quote! { Some(Identifier::vanilla_static(#s)) },
             None => quote! { None },
         };
 
-        let flowing_fluid = match &fluid.flowing_fluid {
+        let flowing_fluid = match &fluid.behavior_properties.flowing_fluid {
             Some(s) => quote! { Some(Identifier::vanilla_static(#s)) },
             None => quote! { None },
         };

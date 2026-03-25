@@ -102,7 +102,7 @@ pub struct ParticleOptions {
     pub particle_type: Identifier,
 }
 
-impl ToNbtTag for Biome {
+impl ToNbtTag for &Biome {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList};
         let mut compound = NbtCompound::new();

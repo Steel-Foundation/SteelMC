@@ -462,6 +462,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -763,6 +764,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "armadillo_state",
         "serializer": "armadillo_state",
         "default_value": "IDLE"
@@ -782,6 +789,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -1021,6 +1029,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -1208,9 +1217,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.375,
-      "height": 0.21,
-      "eye_height": 0.13755
+      "width": 0.5,
+      "height": 0.25,
+      "eye_height": 0.2
     },
     "mob_category": "AXOLOTLS",
     "client_tracking_range": 10,
@@ -1328,18 +1337,24 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "variant",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "playing_dead",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "from_bucket",
         "serializer": "boolean",
         "default_value": false
@@ -1360,6 +1375,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -1835,6 +1851,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -2012,12 +2029,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "anger_end_time",
         "serializer": "long",
         "default_value": -1
@@ -2039,6 +2062,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -2515,6 +2539,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -2926,6 +2951,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -3111,6 +3137,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -3274,9 +3301,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.765,
-      "height": 1.06875,
-      "eye_height": 1.0237501
+      "width": 1.0200001,
+      "height": 1.4250001,
+      "eye_height": 1.3650001
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -3394,18 +3421,24 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "dash",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "last_pose_change_tick",
         "serializer": "long",
         "default_value": 0
@@ -3425,6 +3458,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.5,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -3483,9 +3517,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.765,
-      "height": 1.06875,
-      "eye_height": 1.0237501
+      "width": 1.7,
+      "height": 2.375,
+      "eye_height": 2.275
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
@@ -3603,18 +3637,24 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "dash",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "last_pose_change_tick",
         "serializer": "long",
         "default_value": 0
@@ -3634,6 +3674,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.5,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -3812,12 +3853,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "owneruuid_id",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -3825,28 +3872,34 @@
         }
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "variant_id",
         "serializer": "cat_variant",
         "default_value": "minecraft:black"
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "is_lying",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 21,
+        "index": 22,
         "name": "relax_state_one",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 22,
+        "index": 23,
         "name": "collar_color",
         "serializer": "int",
         "default_value": 14
+      },
+      {
+        "index": 24,
+        "name": "sound_variant_id",
+        "serializer": "cat_sound_variant",
+        "default_value": "minecraft:classic"
       }
     ],
     "attributes": {
@@ -3864,6 +3917,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -4056,6 +4110,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -4535,9 +4590,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.2,
-      "height": 0.35,
-      "eye_height": 0.2975
+      "width": 0.3,
+      "height": 0.4,
+      "eye_height": 0.28
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -4655,9 +4710,21 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "variant_id",
         "serializer": "chicken_variant",
         "default_value": "minecraft:temperate"
+      },
+      {
+        "index": 19,
+        "name": "sound_variant_id",
+        "serializer": "chicken_sound_variant",
+        "default_value": "minecraft:classic"
       }
     ],
     "attributes": {
@@ -4674,6 +4741,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -4865,6 +4933,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -5061,6 +5130,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -5388,9 +5458,21 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "variant_id",
         "serializer": "cow_variant",
         "default_value": "minecraft:temperate"
+      },
+      {
+        "index": 19,
+        "name": "sound_variant_id",
+        "serializer": "cow_sound_variant",
+        "default_value": "minecraft:classic"
       }
     ],
     "attributes": {
@@ -5407,6 +5489,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -5619,6 +5702,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0625,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -5822,6 +5906,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -6283,12 +6368,18 @@
       },
       {
         "index": 17,
-        "name": "got_fish",
+        "name": "age_locked",
         "serializer": "boolean",
         "default_value": false
       },
       {
         "index": 18,
+        "name": "got_fish",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 19,
         "name": "moistness_level",
         "serializer": "int",
         "default_value": 2400
@@ -6309,6 +6400,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -6486,12 +6578,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "id_chest",
         "serializer": "boolean",
         "default_value": false
@@ -6511,6 +6609,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -6675,9 +6774,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.93
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.775
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -6822,6 +6921,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -7134,6 +7234,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -7339,6 +7440,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -7524,6 +7626,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -7756,6 +7859,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -8188,6 +8292,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -9053,8 +9158,8 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.35,
+      "width": 0.36,
+      "height": 0.42000002,
       "eye_height": 0.2975
     },
     "mob_category": "CREATURE",
@@ -9173,18 +9278,24 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "type_id",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "trusted_id_0",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -9192,7 +9303,7 @@
         }
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "trusted_id_1",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -9215,6 +9326,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -9393,12 +9505,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "variant_id",
         "serializer": "frog_variant",
         "default_value": "minecraft:temperate"
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "tongue_target_id",
         "serializer": "optional_unsigned_int",
         "default_value": {
@@ -9421,6 +9539,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -9757,6 +9876,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -9949,12 +10069,18 @@
       },
       {
         "index": 17,
-        "name": "is_leash_holder",
+        "name": "age_locked",
         "serializer": "boolean",
         "default_value": false
       },
       {
         "index": 18,
+        "name": "is_leash_holder",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 19,
         "name": "stays_still",
         "serializer": "boolean",
         "default_value": false
@@ -9975,6 +10101,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -10161,6 +10288,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -10342,9 +10470,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.4,
-      "height": 0.4,
-      "eye_height": 0.2
+      "width": 0.5,
+      "height": 0.63,
+      "eye_height": 0.37
     },
     "mob_category": "UNDERGROUND_WATER_CREATURE",
     "client_tracking_range": 10,
@@ -10462,6 +10590,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "dark_ticks_remaining",
         "serializer": "int",
         "default_value": 0
@@ -10481,6 +10615,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -10538,9 +10673,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.45,
-      "height": 0.65,
-      "eye_height": 0.5525
+      "width": 0.495,
+      "height": 0.715,
+      "eye_height": 0.60775
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -10658,18 +10793,24 @@
       },
       {
         "index": 17,
-        "name": "is_screaming_goat",
+        "name": "age_locked",
         "serializer": "boolean",
         "default_value": false
       },
       {
         "index": 18,
+        "name": "is_screaming_goat",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 19,
         "name": "has_left_horn",
         "serializer": "boolean",
         "default_value": true
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "has_right_horn",
         "serializer": "boolean",
         "default_value": true
@@ -10690,6 +10831,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -10888,6 +11030,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -11065,6 +11208,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "immune_to_zombification",
         "serializer": "boolean",
         "default_value": false
@@ -11085,6 +11234,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -11280,9 +11430,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.6982422,
-      "height": 0.8,
-      "eye_height": 0.76
+      "width": 0.97753906,
+      "height": 1.12,
+      "eye_height": 1.064
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -11400,12 +11550,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "id_type_variant",
         "serializer": "int",
         "default_value": 0
@@ -11425,6 +11581,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -11483,9 +11640,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.93
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.825
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -11630,6 +11787,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -11827,6 +11985,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -12142,6 +12301,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -13277,24 +13437,30 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "id_chest",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "strength_id",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "variant_id",
         "serializer": "int",
         "default_value": 0
@@ -13314,6 +13480,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -13612,6 +13779,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -14101,6 +14269,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -14522,6 +14691,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "type",
         "serializer": "int",
         "default_value": 0
@@ -14541,6 +14716,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -14719,12 +14895,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "id_chest",
         "serializer": "boolean",
         "default_value": false
@@ -14744,6 +14926,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -14922,12 +15105,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "owneruuid_id",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -14935,7 +15124,7 @@
         }
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "dash",
         "serializer": "boolean",
         "default_value": false
@@ -14956,6 +15145,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -15418,6 +15608,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "trusting",
         "serializer": "boolean",
         "default_value": false
@@ -15438,6 +15634,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -16130,36 +16327,42 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "unhappy_counter",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "sneeze_counter",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "eat_counter",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "main_gene_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 21,
+        "index": 22,
         "name": "hidden_gene_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 22,
+        "index": 23,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
@@ -16180,6 +16383,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -16366,6 +16570,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -16543,12 +16748,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "owneruuid_id",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -16556,7 +16767,7 @@
         }
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "variant_id",
         "serializer": "int",
         "default_value": 0
@@ -16578,6 +16789,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -16770,6 +16982,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -16947,15 +17160,27 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "boost_time",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "variant_id",
         "serializer": "pig_variant",
         "default_value": "minecraft:temperate"
+      },
+      {
+        "index": 20,
+        "name": "sound_variant_id",
+        "serializer": "pig_sound_variant",
+        "default_value": "minecraft:classic"
       }
     ],
     "attributes": {
@@ -16972,6 +17197,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -17030,9 +17256,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.97
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.78
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -17182,6 +17408,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -17373,6 +17600,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -17570,6 +17798,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -17747,6 +17976,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "standing_id",
         "serializer": "boolean",
         "default_value": false
@@ -17767,6 +18002,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -18194,6 +18430,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -18216,15 +18453,15 @@
   {
     "id": 108,
     "name": "rabbit",
-    "width": 0.4,
-    "height": 0.5,
-    "eye_height": 0.425,
+    "width": 0.49,
+    "height": 0.6,
+    "eye_height": 0.59,
     "fixed": false,
     "attachments": {
       "passenger": [
         {
           "x": 0.0,
-          "y": 0.5,
+          "y": 0.6000000238418579,
           "z": 0.0
         }
       ],
@@ -18238,22 +18475,22 @@
       "name_tag": [
         {
           "x": 0.0,
-          "y": 0.5,
+          "y": 0.6000000238418579,
           "z": 0.0
         }
       ],
       "warden_chest": [
         {
           "x": 0.0,
-          "y": 0.25,
+          "y": 0.30000001192092896,
           "z": 0.0
         }
       ]
     },
     "baby_dimensions": {
-      "width": 0.2,
-      "height": 0.25,
-      "eye_height": 0.2125
+      "width": 0.24,
+      "height": 0.4,
+      "eye_height": 0.39
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
@@ -18371,6 +18608,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "type_id",
         "serializer": "int",
         "default_value": 0
@@ -18391,6 +18634,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -18583,6 +18827,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -18779,6 +19024,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -18956,6 +19202,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "wool_id",
         "serializer": "byte",
         "default_value": 0
@@ -18975,6 +19227,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -19178,6 +19431,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -19469,6 +19723,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -19660,6 +19915,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -19717,9 +19973,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.6982422,
-      "height": 0.8,
-      "eye_height": 0.76
+      "width": 0.97753906,
+      "height": 1.12,
+      "eye_height": 1.064
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -19837,6 +20093,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
@@ -19856,6 +20118,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -20048,6 +20311,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -20340,12 +20604,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "state",
         "serializer": "sniffer_state",
         "default_value": "IDLING"
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "drop_seed_at_tick",
         "serializer": "int",
         "default_value": 0
@@ -20365,6 +20635,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -20671,6 +20942,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -21124,6 +21396,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -21465,9 +21738,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.4,
-      "height": 0.4,
-      "eye_height": 0.2
+      "width": 0.5,
+      "height": 0.63,
+      "eye_height": 0.37
     },
     "mob_category": "WATER_CREATURE",
     "client_tracking_range": 8,
@@ -21582,6 +21855,12 @@
         "name": "baby_id",
         "serializer": "boolean",
         "default_value": false
+      },
+      {
+        "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
       }
     ],
     "attributes": {
@@ -21598,6 +21877,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -21783,6 +22063,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -21960,12 +22241,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "boost_time",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "suffocating",
         "serializer": "boolean",
         "default_value": false
@@ -21985,6 +22272,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -22160,6 +22448,12 @@
         "name": "from_bucket",
         "serializer": "boolean",
         "default_value": false
+      },
+      {
+        "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
       }
     ],
     "attributes": {
@@ -22176,6 +22470,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -22854,24 +23149,30 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "id_chest",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "strength_id",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "variant_id",
         "serializer": "int",
         "default_value": 0
@@ -22891,6 +23192,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -23224,6 +23526,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -23401,12 +23704,18 @@
       },
       {
         "index": 17,
-        "name": "has_egg",
+        "name": "age_locked",
         "serializer": "boolean",
         "default_value": false
       },
       {
         "index": 18,
+        "name": "has_egg",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 19,
         "name": "laying_egg",
         "serializer": "boolean",
         "default_value": false
@@ -23426,6 +23735,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -23618,6 +23928,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -23675,9 +23986,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.81
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.63
     },
     "mob_category": "MISC",
     "client_tracking_range": 10,
@@ -23795,15 +24106,27 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "unhappy_counter",
         "serializer": "int",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "villager_data",
         "serializer": "villager_data",
         "default_value": "VillagerData"
+      },
+      {
+        "index": 20,
+        "name": "villager_data_finalized",
+        "serializer": "boolean",
+        "default_value": false
       }
     ],
     "attributes": {
@@ -23820,6 +24143,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -24011,6 +24335,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -24188,6 +24513,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "unhappy_counter",
         "serializer": "int",
         "default_value": 0
@@ -24207,6 +24538,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -24398,6 +24730,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -24701,6 +25034,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -24911,6 +25245,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -25096,6 +25431,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -25385,12 +25721,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "owneruuid_id",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -25398,31 +25740,31 @@
         }
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "interested_id",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "collar_color",
         "serializer": "int",
         "default_value": 14
       },
       {
-        "index": 21,
+        "index": 22,
         "name": "anger_end_time",
         "serializer": "long",
         "default_value": -1
       },
       {
-        "index": 22,
+        "index": 23,
         "name": "variant_id",
         "serializer": "wolf_variant",
         "default_value": "minecraft:pale"
       },
       {
-        "index": 23,
+        "index": 24,
         "name": "sound_variant_id",
         "serializer": "wolf_sound_variant",
         "default_value": "minecraft:classic"
@@ -25443,6 +25785,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -25635,6 +25978,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -25692,9 +26036,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.93
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.775
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -25839,6 +26183,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -25896,9 +26241,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.6982422,
-      "height": 0.8,
-      "eye_height": 0.76
+      "width": 0.97753906,
+      "height": 1.12,
+      "eye_height": 1.064
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
@@ -26016,6 +26361,12 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "id_flags",
         "serializer": "byte",
         "default_value": 0
@@ -26035,6 +26386,7 @@
       "fall_damage_multiplier": 0.5,
       "scale": 1.0,
       "step_height": 1.0,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -26213,12 +26565,18 @@
       },
       {
         "index": 17,
+        "name": "age_locked",
+        "serializer": "boolean",
+        "default_value": false
+      },
+      {
+        "index": 18,
         "name": "flags_id",
         "serializer": "byte",
         "default_value": 0
       },
       {
-        "index": 18,
+        "index": 19,
         "name": "owneruuid_id",
         "serializer": "optional_living_entity_reference",
         "default_value": {
@@ -26226,13 +26584,13 @@
         }
       },
       {
-        "index": 19,
+        "index": 20,
         "name": "dash",
         "serializer": "boolean",
         "default_value": false
       },
       {
-        "index": 20,
+        "index": 21,
         "name": "variant_id",
         "serializer": "zombie_nautilus_variant",
         "default_value": "minecraft:temperate"
@@ -26253,6 +26611,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -26311,9 +26670,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.93
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.67
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -26452,6 +26811,12 @@
         "name": "villager_data",
         "serializer": "villager_data",
         "default_value": "VillagerData"
+      },
+      {
+        "index": 21,
+        "name": "villager_data_finalized",
+        "serializer": "boolean",
+        "default_value": false
       }
     ],
     "attributes": {
@@ -26470,6 +26835,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,
@@ -26527,9 +26893,9 @@
       ]
     },
     "baby_dimensions": {
-      "width": 0.3,
-      "height": 0.975,
-      "eye_height": 0.97
+      "width": 0.49,
+      "height": 0.99,
+      "eye_height": 0.78
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -26674,6 +27040,7 @@
       "fall_damage_multiplier": 1.0,
       "scale": 1.0,
       "step_height": 0.6,
+      "entity_interaction_range": 3.0,
       "oxygen_bonus": 0.0,
       "water_movement_efficiency": 0.0,
       "burning_time": 1.0,

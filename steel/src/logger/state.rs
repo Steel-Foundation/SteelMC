@@ -8,7 +8,7 @@ use crate::logger::suggestions::Completer;
 use crossterm::{
     cursor::MoveLeft,
     style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
-    terminal::{self, Clear, ClearType},
+    terminal::{Clear, ClearType},
 };
 use std::{
     fmt::Write as _,
@@ -170,9 +170,7 @@ impl LogState {
             self.out.text.clone()
         };
 
-        let end_correction = if let Ok((w, _)) = terminal::size()
-            && (length + 2).is_multiple_of(w as usize)
-        {
+        let end_correction = if (length + 2).is_multiple_of(super::terminal_width()) {
             format!(" {}", MoveLeft(1))
         } else {
             String::new()

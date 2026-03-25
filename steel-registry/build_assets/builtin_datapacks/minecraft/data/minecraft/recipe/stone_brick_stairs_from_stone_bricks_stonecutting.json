@@ -2,7 +2,6 @@
   "type": "minecraft:stonecutting",
   "ingredient": "minecraft:stone_bricks",
   "result": {
-    "count": 1,
     "id": "minecraft:stone_brick_stairs"
   }
 }

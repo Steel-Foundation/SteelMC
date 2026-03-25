@@ -8,7 +8,7 @@ use crossterm::style::Color;
 use crossterm::{
     cursor::{MoveRight, MoveUp},
     style::{Color::Rgb, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{self, Clear, ClearType},
+    terminal::{Clear, ClearType},
 };
 use std::io::{Result, Write};
 use steel_core::chunk::chunk_access::ChunkStatus;
@@ -115,11 +115,7 @@ impl SpawnProgressDisplay {
             MoveUp(DISPLAY_RADIUS as u16 + 2),
             Clear(ClearType::FromCursorDown)
         )?;
-        let w = if let Ok((w, _)) = terminal::size() {
-            w / 2 - DISPLAY_RADIUS as u16 - 1
-        } else {
-            0
-        };
+        let w = (super::terminal_width() / 2).saturating_sub((DISPLAY_RADIUS + 1) as usize) as u16;
         for z in (0..DISPLAY_DIAMETER).step_by(2) {
             write!(out, "\r")?;
             if w != 0 {

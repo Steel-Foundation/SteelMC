@@ -1,5 +1,6 @@
 {
-  "asset_id": "minecraft:entity/cat/red",
+  "asset_id": "minecraft:entity/cat/cat_red",
+  "baby_asset_id": "minecraft:entity/cat/cat_red_baby",
   "spawn_conditions": [
     {
       "priority": 0

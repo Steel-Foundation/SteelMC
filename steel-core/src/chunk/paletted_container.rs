@@ -186,7 +186,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 0u8.write(writer)?;
                 // Single-value palette
                 VarInt(value.to_global_id() as i32).write(writer)?;
-                // No data array - vanilla's writeFixedSizeLongArray(new long[0]) writes nothing
+                // writeFixedSizeLongArray(new long[0]) writes nothing
             }
             Self::Heterogeneous(data) => {
                 let (bits, mode) = Self::calculate_strategy(data.palette.len());
@@ -222,7 +222,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
 
                 let packed = pack_bits(&indices, bits as usize);
 
-                // Write data
+                // writeFixedSizeLongArray: raw longs, no VarInt length prefix
                 for long in packed {
                     long.write(writer)?;
                 }

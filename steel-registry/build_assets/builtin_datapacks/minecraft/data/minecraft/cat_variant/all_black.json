@@ -1,5 +1,6 @@
 {
-  "asset_id": "minecraft:entity/cat/all_black",
+  "asset_id": "minecraft:entity/cat/cat_all_black",
+  "baby_asset_id": "minecraft:entity/cat/cat_all_black_baby",
   "spawn_conditions": [
     {
       "condition": {

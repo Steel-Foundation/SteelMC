@@ -23,7 +23,6 @@
       "translate": "advancements.nether.find_fortress.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:nether_bricks"
     },
     "title": {

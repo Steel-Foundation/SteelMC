@@ -1,5 +1,6 @@
 {
-  "asset_id": "minecraft:entity/chicken/temperate_chicken",
+  "asset_id": "minecraft:entity/chicken/chicken_temperate",
+  "baby_asset_id": "minecraft:entity/chicken/chicken_temperate_baby",
   "spawn_conditions": [
     {
       "priority": 0

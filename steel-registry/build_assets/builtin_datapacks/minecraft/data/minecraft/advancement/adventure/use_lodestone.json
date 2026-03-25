@@ -28,7 +28,6 @@
       "translate": "advancements.adventure.use_lodestone.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:lodestone"
     },
     "title": {

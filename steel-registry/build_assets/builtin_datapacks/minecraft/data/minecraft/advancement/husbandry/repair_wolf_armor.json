@@ -32,7 +32,6 @@
       "translate": "advancements.husbandry.repair_wolf_armor.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:wolf_armor"
     },
     "title": {

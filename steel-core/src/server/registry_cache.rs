@@ -1,3 +1,4 @@
+use simdnbt::ToNbtTag;
 use std::sync::Arc;
 
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
@@ -11,13 +12,15 @@ use steel_protocol::{
 };
 
 use steel_registry::{
-    BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCKS_REGISTRY, CAT_VARIANT_REGISTRY,
-    CHAT_TYPE_REGISTRY, CHICKEN_VARIANT_REGISTRY, COW_VARIANT_REGISTRY, DAMAGE_TYPE_REGISTRY,
-    DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, ENTITY_TYPE_REGISTRY, FLUID_REGISTRY,
-    FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY, ITEMS_REGISTRY, JUKEBOX_SONG_REGISTRY,
-    PAINTING_VARIANT_REGISTRY, PIG_VARIANT_REGISTRY, REGISTRY, Registry, RegistryEntry as _,
-    TIMELINE_REGISTRY, TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, TaggedRegistryExt,
-    WOLF_SOUND_VARIANT_REGISTRY, WOLF_VARIANT_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
+    BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCKS_REGISTRY, CAT_SOUND_VARIANT_REGISTRY,
+    CAT_VARIANT_REGISTRY, CHAT_TYPE_REGISTRY, CHICKEN_SOUND_VARIANT_REGISTRY,
+    CHICKEN_VARIANT_REGISTRY, COW_SOUND_VARIANT_REGISTRY, COW_VARIANT_REGISTRY,
+    DAMAGE_TYPE_REGISTRY, DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, ENTITY_TYPE_REGISTRY,
+    FLUID_REGISTRY, FROG_VARIANT_REGISTRY, INSTRUMENT_REGISTRY, ITEMS_REGISTRY,
+    JUKEBOX_SONG_REGISTRY, PAINTING_VARIANT_REGISTRY, PIG_SOUND_VARIANT_REGISTRY,
+    PIG_VARIANT_REGISTRY, REGISTRY, Registry, RegistryEntry as _, TIMELINE_REGISTRY,
+    TRIM_MATERIAL_REGISTRY, TRIM_PATTERN_REGISTRY, TaggedRegistryExt, WOLF_SOUND_VARIANT_REGISTRY,
+    WOLF_VARIANT_REGISTRY, WORLD_CLOCK_REGISTRY, ZOMBIE_NAUTILUS_VARIANT_REGISTRY,
 };
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
@@ -55,7 +58,7 @@ impl RegistryCache {
     }
 
     fn build_registry_packets(registry: &Registry) -> Vec<CRegistryData> {
-        let mut packets = Vec::new();
+        let mut packets = Vec::with_capacity(9);
 
         macro_rules! add_registry {
             ($reg_key:expr, $field:ident) => {
@@ -64,7 +67,9 @@ impl RegistryCache {
                     registry
                         .$field
                         .iter()
-                        .map(|(_, entry)| RegistryEntry::new(entry.key.clone(), None))
+                        .map(|(_, entry)| {
+                            RegistryEntry::new(entry.key.clone(), Some(entry.to_nbt_tag()))
+                        })
                         .collect(),
                 ));
             };
@@ -79,10 +84,14 @@ impl RegistryCache {
         add_registry!(WOLF_VARIANT_REGISTRY, wolf_variants);
         add_registry!(WOLF_SOUND_VARIANT_REGISTRY, wolf_sound_variants);
         add_registry!(PIG_VARIANT_REGISTRY, pig_variants);
+        add_registry!(PIG_SOUND_VARIANT_REGISTRY, pig_sound_variants);
         add_registry!(FROG_VARIANT_REGISTRY, frog_variants);
         add_registry!(CAT_VARIANT_REGISTRY, cat_variants);
+        add_registry!(CAT_SOUND_VARIANT_REGISTRY, cat_sound_variants);
         add_registry!(COW_VARIANT_REGISTRY, cow_variants);
+        add_registry!(COW_SOUND_VARIANT_REGISTRY, cow_sound_variants);
         add_registry!(CHICKEN_VARIANT_REGISTRY, chicken_variants);
+        add_registry!(CHICKEN_SOUND_VARIANT_REGISTRY, chicken_sound_variants);
         add_registry!(PAINTING_VARIANT_REGISTRY, painting_variants);
         add_registry!(DIMENSION_TYPE_REGISTRY, dimension_types);
         add_registry!(DAMAGE_TYPE_REGISTRY, damage_types);
@@ -96,6 +105,8 @@ impl RegistryCache {
         add_registry!(INSTRUMENT_REGISTRY, instruments);
         add_registry!(TIMELINE_REGISTRY, timelines);
         add_registry!(DIALOG_REGISTRY, dialogs);
+
+        add_registry!(WORLD_CLOCK_REGISTRY, world_clocks);
 
         packets
     }

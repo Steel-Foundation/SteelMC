@@ -26,9 +26,9 @@ pub struct BiomeCondition {
     pub biomes: &'static str,
 }
 
-impl ToNbtTag for ZombieNautilusVariant {
+impl ToNbtTag for &ZombieNautilusVariant {
     fn to_nbt_tag(self) -> NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtList};
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         let mut compound = NbtCompound::new();
         let asset_id = self.asset_id.to_string();
         compound.insert("asset_id", asset_id.as_str());

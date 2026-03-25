@@ -18,6 +18,9 @@ mod entity_data;
 mod fluid_tags;
 mod fluids;
 
+mod cat_sound_variants;
+mod chicken_sound_variants;
+mod cow_sound_variants;
 mod frog_variants;
 mod game_rules;
 mod instruments;
@@ -29,6 +32,7 @@ mod loot_tables;
 mod menu_types;
 mod packets;
 mod painting_variants;
+mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
 mod recipes;
@@ -40,6 +44,7 @@ mod trim_materials;
 mod trim_patterns;
 mod wolf_sound_variants;
 mod wolf_variants;
+mod world_clocks;
 mod zombie_nautilus_variants;
 
 mod density_functions;
@@ -70,6 +75,10 @@ const TRIM_MATERIALS: &str = "trim_materials";
 const WOLF_VARIANTS: &str = "wolf_variants";
 const WOLF_SOUNDS: &str = "wolf_sound_variants";
 const PIG_VARIANTS: &str = "pig_variants";
+const PIG_SOUNDS: &str = "pig_sound_variants";
+const CHICKEN_SOUNDS: &str = "chicken_sound_variants";
+const CAT_SOUNDS: &str = "cat_sound_variants";
+const COW_SOUNDS: &str = "cow_sound_variants";
 const FROG_VARIANTS: &str = "frog_variants";
 const CAT_VARIANTS: &str = "cat_variants";
 const COW_VARIANTS: &str = "cow_variants";
@@ -106,6 +115,7 @@ const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
 const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
+const WORLD_CLOCKS: &str = "world_clocks";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -134,6 +144,10 @@ pub fn main() {
         (wolf_variants::build(), WOLF_VARIANTS),
         (wolf_sound_variants::build(), WOLF_SOUNDS),
         (pig_variants::build(), PIG_VARIANTS),
+        (pig_sound_variants::build(), PIG_SOUNDS),
+        (chicken_sound_variants::build(), CHICKEN_SOUNDS),
+        (cat_sound_variants::build(), CAT_SOUNDS),
+        (cow_sound_variants::build(), COW_SOUNDS),
         (frog_variants::build(), FROG_VARIANTS),
         (cat_variants::build(), CAT_VARIANTS),
         (cow_variants::build(), COW_VARIANTS),
@@ -161,6 +175,7 @@ pub fn main() {
         (level_events::build(), LEVEL_EVENTS),
         (sound_events::build(), SOUND_EVENTS),
         (sound_types::build(), SOUND_TYPES),
+        (world_clocks::build(), WORLD_CLOCKS),
         (multi_noise::build(), MULTI_NOISE),
         (noise_parameters::build(), NOISE_PARAMETERS),
         (poi_types::build(), POI_TYPES),

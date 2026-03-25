@@ -22,7 +22,7 @@ const MAX_MOISTURE: u8 = 7;
 /// - Moisture increases to max (7) when near water
 /// - Moisture decreases by 1 each random tick when not near water
 /// - Farmland turns back to dirt when moisture reaches 0 and no crop is planted
-#[block_behavior(class = "FarmBlock")]
+#[block_behavior]
 pub struct FarmlandBlock {
     block: BlockRef,
 }
