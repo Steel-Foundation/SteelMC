@@ -11,9 +11,7 @@ pub struct WorldClock {
 
 impl ToNbtTag for &WorldClock {
     fn to_nbt_tag(self) -> NbtTag {
-        let mut compound = NbtCompound::new();
-        compound.insert("key", self.key.to_string());
-        NbtTag::Compound(compound)
+        NbtTag::Compound(NbtCompound::new())
     }
 }
 

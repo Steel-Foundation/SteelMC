@@ -37,9 +37,9 @@ impl ToNbtTag for &WolfAge {
         let s = self.pant_sound.to_string();
         compound.insert("pant_sound", s.as_str());
         let s = self.step_sound.to_string();
-        compound.insert("whine_sound", s.as_str());
-        let s = self.whine_sound.to_string();
         compound.insert("step_sound", s.as_str());
+        let s = self.whine_sound.to_string();
+        compound.insert("whine_sound", s.as_str());
         NbtTag::Compound(compound)
     }
 }

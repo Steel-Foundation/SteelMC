@@ -73,8 +73,8 @@ pub(crate) fn build() -> TokenStream {
             generate_identifier(&pig_sound_variant.adult_sounds.ambient_sound);
         let adult_death_sound = generate_identifier(&pig_sound_variant.adult_sounds.death_sound);
         let adult_hurt_sound = generate_identifier(&pig_sound_variant.adult_sounds.hurt_sound);
-        let adult_eat_sound = generate_identifier(&pig_sound_variant.adult_sounds.step_sound);
-        let adult_step_sound = generate_identifier(&pig_sound_variant.adult_sounds.eat_sound);
+        let adult_eat_sound = generate_identifier(&pig_sound_variant.adult_sounds.eat_sound);
+        let adult_step_sound = generate_identifier(&pig_sound_variant.adult_sounds.step_sound);
         let baby_ambient_sound = generate_identifier(&pig_sound_variant.baby_sounds.ambient_sound);
         let baby_death_sound = generate_identifier(&pig_sound_variant.baby_sounds.death_sound);
         let baby_hurt_sound = generate_identifier(&pig_sound_variant.baby_sounds.hurt_sound);
