@@ -95,6 +95,13 @@ pub struct EntityType {
 
 pub type EntityTypeRef = &'static EntityType;
 
+impl PartialEq for EntityTypeRef {
+    #[allow(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(*self, *other)
+    }
+}
+
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
     types_by_key: FxHashMap<Identifier, usize>,

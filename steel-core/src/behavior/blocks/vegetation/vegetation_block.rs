@@ -19,10 +19,10 @@ use crate::{
 pub trait Vegetation {
     /// Checks if the vegetation block can be placed on the given block state below on the given position below.
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        REGISTRY
-            .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::DIRT_TAG)
-            || state.get_block() == vanilla_blocks::FARMLAND
+        REGISTRY.blocks.is_in_tag(
+            state.get_block(),
+            &vanilla_block_tags::SUPPORTS_VEGETATION_TAG,
+        )
     }
 }
 
