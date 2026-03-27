@@ -7,7 +7,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{TaggedRegistryExt, vanilla_block_tags, vanilla_items};
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
@@ -243,5 +243,13 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(self.clone_item_stack())
+    }
+}
+
+impl<T: CropLike> Vegetation for T {
+    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+        REGISTRY
+            .blocks
+            .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)
     }
 }

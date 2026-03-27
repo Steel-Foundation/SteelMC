@@ -37,7 +37,11 @@ impl Vegetation for DoublePlantBlock {}
 
 impl BlockBehavior for DoublePlantBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.relative_pos.y() < context.world.get_max_y()
+        if self.may_place_on(
+            context.world.get_block_state(context.relative_pos.below()),
+            context.world,
+            context.relative_pos.below(),
+        ) && context.relative_pos.y() < context.world.get_max_y()
             && context
                 .world
                 .get_block_state(context.relative_pos.above())

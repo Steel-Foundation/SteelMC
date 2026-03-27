@@ -10,10 +10,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, math::Axis};
 
-use crate::{
-    behavior::{BlockBehavior, blocks::vegetation::crop_block::CropLike},
-    world::World,
-};
+use crate::{behavior::BlockBehavior, world::World};
 
 /// Common behavior for vegetation blocks
 pub trait Vegetation {
@@ -98,11 +95,5 @@ pub fn double_plant_update_shape<B: BlockBehavior>(
         vegetation_update_shape(block, state, world, pos)
     } else {
         vanilla_blocks::AIR.default_state()
-    }
-}
-
-impl<T: CropLike> Vegetation for T {
-    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.get_block() == vanilla_blocks::FARMLAND
     }
 }

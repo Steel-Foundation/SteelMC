@@ -27,6 +27,6 @@ pub use vegetation::FarmlandBlock;
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
     CactusFlowerBlock, CarrotBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock,
-    NetherWartBlock, PotatoBlock, SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock,
-    TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerCropBlock,
+    NetherWartBlock, PitcherCropBlock, PotatoBlock, SeagrassBlock, SugarCaneBlock,
+    SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerCropBlock,
 };
