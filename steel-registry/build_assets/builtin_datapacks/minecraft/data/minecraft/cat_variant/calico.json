@@ -1,5 +1,6 @@
 {
-  "asset_id": "minecraft:entity/cat/calico",
+  "asset_id": "minecraft:entity/cat/cat_calico",
+  "baby_asset_id": "minecraft:entity/cat/cat_calico_baby",
   "spawn_conditions": [
     {
       "priority": 0

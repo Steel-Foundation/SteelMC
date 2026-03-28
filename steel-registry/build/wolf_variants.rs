@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct WolfVariantJson {
     assets: WolfAssetInfo,
+    pub baby_assets: WolfAssetInfo,
     spawn_conditions: Vec<SpawnConditionEntry>,
 }
 
@@ -120,6 +121,9 @@ pub(crate) fn build() -> TokenStream {
         let wild = generate_identifier(&wolf_variant.assets.wild);
         let tame = generate_identifier(&wolf_variant.assets.tame);
         let angry = generate_identifier(&wolf_variant.assets.angry);
+        let baby_wild = generate_identifier(&wolf_variant.baby_assets.wild);
+        let baby_tame = generate_identifier(&wolf_variant.baby_assets.tame);
+        let baby_angry = generate_identifier(&wolf_variant.baby_assets.angry);
 
         let spawn_conditions: Vec<_> = wolf_variant
             .spawn_conditions
@@ -134,6 +138,11 @@ pub(crate) fn build() -> TokenStream {
                     wild: #wild,
                     tame: #tame,
                     angry: #angry,
+                },
+                baby_assets: WolfAssetInfo {
+                    wild: #baby_wild,
+                    tame: #baby_tame,
+                    angry: #baby_angry,
                 },
                 spawn_conditions: &[#(#spawn_conditions),*],
             };

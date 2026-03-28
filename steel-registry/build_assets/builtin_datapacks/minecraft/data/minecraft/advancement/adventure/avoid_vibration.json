@@ -10,7 +10,6 @@
       "translate": "advancements.adventure.avoid_vibration.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:sculk_sensor"
     },
     "title": {

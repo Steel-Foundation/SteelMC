@@ -1,5 +1,6 @@
 {
-  "asset_id": "minecraft:entity/chicken/cold_chicken",
+  "asset_id": "minecraft:entity/chicken/chicken_cold",
+  "baby_asset_id": "minecraft:entity/chicken/chicken_cold_baby",
   "model": "cold",
   "spawn_conditions": [
     {

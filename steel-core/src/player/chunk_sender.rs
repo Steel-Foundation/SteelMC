@@ -101,7 +101,8 @@ impl ChunkSender {
                             if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
                                 if let ChunkAccess::Full(chunk) = &*chunk_guard {
                                     chunks_to_send.push(CLevelChunkWithLight {
-                                        pos: holder.get_pos(),
+                                        x: holder.get_pos().0.x,
+                                        z: holder.get_pos().0.y,
                                         chunk_data: chunk.extract_chunk_data(),
                                         light_data: chunk.extract_light_data(),
                                     });

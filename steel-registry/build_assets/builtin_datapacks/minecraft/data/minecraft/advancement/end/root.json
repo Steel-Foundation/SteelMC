@@ -14,7 +14,6 @@
       "translate": "advancements.end.root.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:end_stone"
     },
     "show_toast": false,

@@ -8,9 +8,9 @@
     "description": {
       "translate": "dataPack.minecart_improvements.description"
     },
-    "max_format": 94,
+    "max_format": 101,
     "min_format": [
-      94,
+      101,
       1
     ]
   }

@@ -1,4 +1,5 @@
 {
+  "clock": "minecraft:overworld",
   "tracks": {
     "minecraft:gameplay/can_pillager_patrol_spawn": {
       "keyframes": [

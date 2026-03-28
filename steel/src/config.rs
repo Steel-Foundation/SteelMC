@@ -18,7 +18,7 @@ const ICON_PREFIX: &str = "data:image/png;base64,";
 const DEFAULT_CONFIG: &str = include_str!("../../package-content/steel_config.json5");
 
 /// The Minecraft version this server supports.
-pub const MC_VERSION: &str = "1.21.11";
+pub const MC_VERSION: &str = "26.1";
 
 /// The server configuration.
 ///

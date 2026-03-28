@@ -1,5 +1,5 @@
 {
-  "feature": "minecraft:patch_firefly_bush",
+  "feature": "minecraft:firefly_bush",
   "placement": [
     {
       "type": "minecraft:count",
@@ -21,8 +21,8 @@
         "type": "minecraft:all_of",
         "predicates": [
           {
-            "type": "minecraft:matching_blocks",
-            "blocks": "minecraft:air"
+            "type": "minecraft:matching_block_tag",
+            "tag": "minecraft:air"
           },
           {
             "type": "minecraft:would_survive",
@@ -84,6 +84,32 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "type": "minecraft:count",
+      "count": 20
+    },
+    {
+      "type": "minecraft:random_offset",
+      "xz_spread": {
+        "type": "minecraft:trapezoid",
+        "max": 4,
+        "min": -4,
+        "plateau": 0
+      },
+      "y_spread": {
+        "type": "minecraft:trapezoid",
+        "max": 3,
+        "min": -3,
+        "plateau": 0
+      }
+    },
+    {
+      "type": "minecraft:block_predicate_filter",
+      "predicate": {
+        "type": "minecraft:matching_block_tag",
+        "tag": "minecraft:air"
       }
     }
   ]

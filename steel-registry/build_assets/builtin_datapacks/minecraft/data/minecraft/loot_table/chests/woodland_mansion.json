@@ -31,11 +31,6 @@
         },
         {
           "type": "minecraft:item",
-          "name": "minecraft:name_tag",
-          "weight": 20
-        },
-        {
-          "type": "minecraft:item",
           "name": "minecraft:chainmail_chestplate",
           "weight": 10
         },

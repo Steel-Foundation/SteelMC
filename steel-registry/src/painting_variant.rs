@@ -15,7 +15,7 @@ pub struct PaintingVariant {
     pub author: Option<TextComponent>,
 }
 
-impl ToNbtTag for PaintingVariant {
+impl ToNbtTag for &PaintingVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

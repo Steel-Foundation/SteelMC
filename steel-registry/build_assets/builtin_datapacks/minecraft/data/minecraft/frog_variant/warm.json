@@ -1,5 +1,5 @@
 {
-  "asset_id": "minecraft:entity/frog/warm_frog",
+  "asset_id": "minecraft:entity/frog/frog_warm",
   "spawn_conditions": [
     {
       "condition": {

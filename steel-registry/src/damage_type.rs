@@ -41,7 +41,7 @@ pub enum DeathMessageType {
     IntentionalGameDesign,
 }
 
-impl ToNbtTag for DamageType {
+impl ToNbtTag for &DamageType {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

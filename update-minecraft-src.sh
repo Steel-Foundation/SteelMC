@@ -24,6 +24,6 @@ grep groovy "$TEMP_DIR/GitCraft/gradle.properties"
 # Run GitCraft
 cd "$TEMP_DIR/GitCraft"
 echo "Running GitCraft..."
-./gradlew run -Dorg.gradle.jvmargs="-Xmx8G" --args="--override-repo-target=$MINECRAFT_SRC_DIR --only-unobfuscated --mappings=identity_unmapped --min-version=1.21.11"
+JAVA_TOOL_OPTIONS="-Xmx8G" ./gradlew run --args="--override-repo-target=$MINECRAFT_SRC_DIR --only-unobfuscated --mappings=identity_unmapped --min-version=1.21.11 --only-stable"
 
 echo "Done! minecraft-src has been updated."

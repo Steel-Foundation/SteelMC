@@ -92,8 +92,7 @@ impl BlockBehavior for CactusBlock {
         let valid_below = below_block == vanilla_blocks::CACTUS
             || steel_registry::REGISTRY
                 .blocks
-                //TODO: In 26.1 this tag is changed
-                .is_in_tag(below_block, &vanilla_block_tags::SAND_TAG);
+                .is_in_tag(below_block, &vanilla_block_tags::SUPPORTS_CACTUS_TAG);
 
         if !valid_below {
             return false;
