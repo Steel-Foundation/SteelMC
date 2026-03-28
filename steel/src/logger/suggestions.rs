@@ -8,7 +8,7 @@ use crossterm::{
         Color::{DarkGrey, Yellow},
         ResetColor, SetForegroundColor,
     },
-    terminal::{self, Clear, ClearType},
+    terminal::{Clear, ClearType},
 };
 use std::io::{Result, Write};
 use steel_core::command::sender::CommandSender;
@@ -85,11 +85,7 @@ impl Completer {
             Move::None => (),
         }
         // Updates the screen width
-        let width = if let Ok((width, _)) = terminal::size() {
-            width as usize / 20
-        } else {
-            1
-        };
+        let width = (super::terminal_width() / 20).max(1);
         let grid_size = width * 3;
         let start = (self.selected / grid_size) * grid_size;
         let mut height = 0u16;

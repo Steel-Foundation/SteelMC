@@ -1,271 +1,281 @@
 {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "SteelConfig",
-    "description": "Configuration schema for Steel Minecraft server",
-    "type": "object",
-    "properties": {
-        "$schema": {
-            "type": "string",
-            "format": "uri"
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SteelConfig",
+  "description": "Configuration schema for Steel Minecraft server",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "server_port": {
+      "type": "integer",
+      "description": "Server port",
+      "minimum": 1,
+      "maximum": 65000,
+      "default": 25565
+    },
+    "seed": {
+      "type": "string",
+      "description": "World seed for generating the world",
+      "default": ""
+    },
+    "max_players": {
+      "type": "integer",
+      "description": "Maximum number of players allowed on the server",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "default": 20
+    },
+    "view_distance": {
+      "type": "integer",
+      "description": "Maximum view distance in chunks",
+      "minimum": 1,
+      "maximum": 32,
+      "default": 10
+    },
+    "simulation_distance": {
+      "type": "integer",
+      "description": "Maximum simulation distance in chunks",
+      "minimum": 1,
+      "maximum": 32,
+      "default": 10
+    },
+    "online_mode": {
+      "type": "boolean",
+      "description": "Whether to use Mojang's authentication service",
+      "default": true
+    },
+    "encryption": {
+      "type": "boolean",
+      "description": "Whether to enable encryption for client-server communication",
+      "default": true
+    },
+    "motd": {
+      "type": "string",
+      "description": "Message of the day displayed in server lists",
+      "default": "A Steel Server"
+    },
+    "use_favicon": {
+      "type": "boolean",
+      "description": "Whether to use a custom favicon for the server",
+      "default": true
+    },
+    "favicon": {
+      "type": "string",
+      "description": "Path to the favicon file (PNG format, 64x64 pixels)",
+      "default": "config/favicon.png"
+    },
+    "enforce_secure_chat": {
+      "type": "boolean",
+      "description": "Whether to enforce secure chat",
+      "default": false
+    },
+    "world_generator": {
+      "type": "string",
+      "enum": [
+        "flat",
+        "empty",
+        "vanilla"
+      ],
+      description: "World generation settings",
+    },
+    "world_storage_config": {
+      "description": "Defines which storage format and storage option should be used for the world.",
+      "oneOf": [
+        {
+          "description": "Standard disk persistence using region files.",
+          "type": "object",
+          "properties": {
+            "disk": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Path to the worlds directory (e.g., \"world\")."
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "disk"
+          ],
+          "additionalProperties": false
         },
-        "server_port": {
-            "type": "integer",
-            "description": "Server port",
-            "minimum": 1,
-            "maximum": 65000,
-            "default": 25565
+        {
+          "description": "RAM-only storage with empty chunks created on demand. No data is persisted.",
+          "type": "string",
+          "enum": [
+            "ram_only"
+          ]
+        }
+      ]
+    },
+    "compression": {
+      "type": "object",
+      "description": "Compression settings",
+      "properties": {
+        "threshold": {
+          "type": "integer",
+          "description": "Compression threshold",
+          "minimum": 256,
+          "maximum": 2147483647,
+          "default": 256
         },
-        "seed": {
-            "type": "string",
-            "description": "World seed for generating the world",
-            "default": ""
-        },
-        "max_players": {
-            "type": "integer",
-            "description": "Maximum number of players allowed on the server",
-            "minimum": 1,
-            "maximum": 2147483647,
-            "default": 20
-        },
-        "view_distance": {
-            "type": "integer",
-            "description": "Maximum view distance in chunks",
-            "minimum": 1,
-            "maximum": 32,
-            "default": 10
-        },
-        "simulation_distance": {
-            "type": "integer",
-            "description": "Maximum simulation distance in chunks",
-            "minimum": 1,
-            "maximum": 32,
-            "default": 10
-        },
-        "online_mode": {
-            "type": "boolean",
-            "description": "Whether to use Mojang's authentication service",
-            "default": true
-        },
-        "encryption": {
-            "type": "boolean",
-            "description": "Whether to enable encryption for client-server communication",
-            "default": true
-        },
-        "motd": {
-            "type": "string",
-            "description": "Message of the day displayed in server lists",
-            "default": "A Steel Server"
-        },
-        "use_favicon": {
-            "type": "boolean",
-            "description": "Whether to use a custom favicon for the server",
-            "default": true
-        },
-        "favicon": {
-            "type": "string",
-            "description": "Path to the favicon file (PNG format, 64x64 pixels)",
-            "default": "config/favicon.png"
-        },
-        "enforce_secure_chat": {
-            "type": "boolean",
-            "description": "Whether to enforce secure chat",
-            "default": false
-        },
-      "world_generator": {
-        "type": "string",
-        "enum": [
-          "flat",
-          "empty"
-        ],
-        description: "World generation settings",
+        "level": {
+          "type": "integer",
+          "description": "Compression level",
+          "minimum": 1,
+          "maximum": 9,
+          "default": 4
+        }
       },
-      "world_storage_config": {
-        "description": "Defines which storage format and storage option should be used for the world.",
-        "oneOf": [
-          {
-            "description": "Standard disk persistence using region files.",
+      "required": [
+        "threshold",
+        "level"
+      ],
+      "additionalProperties": false
+    },
+    "log": {
+      "type": "object",
+      "description": "Logging configuration",
+      "properties": {
+        "time": {
+          "type": "string",
+          "description": "Time format: none, date (HH:MM:SS:mmm), or uptime (seconds since start)",
+          "enum": [
+            "none",
+            "date",
+            "uptime"
+          ],
+          "default": "uptime"
+        },
+        "module_path": {
+          "type": "boolean",
+          "description": "Whether the module_path of the log should be displayed",
+          "default": false
+        },
+        "extra": {
+          "type": "boolean",
+          "description": "Whether the extra data of the log should be displayed",
+          "default": false
+        }
+      },
+      "required": [
+        "time",
+        "module_path",
+        "extra"
+      ],
+      "additionalProperties": false
+    },
+    "server_links": {
+      "type": "object",
+      "description": "Server links configuration",
+      "properties": {
+        "enable": {
+          "type": "boolean",
+          "description": "Enable the server links feature",
+          "default": false
+        },
+        "links": {
+          "type": "array",
+          "description": "List of server links to display in the server menu",
+          "items": {
             "type": "object",
             "properties": {
-              "disk": {
-                "type": "object",
-                "properties": {
-                  "path": {
+              "label": {
+                "description": "Label for the link - either a built-in type (string) or custom TextComponent (object)",
+                "oneOf": [
+                  {
                     "type": "string",
-                    "description": "Path to the worlds directory (e.g., \"world\")."
+                    "enum": [
+                      "bug_report",
+                      "community_guidelines",
+                      "support",
+                      "status",
+                      "feedback",
+                      "community",
+                      "website",
+                      "forums",
+                      "news",
+                      "announcements"
+                    ],
+                    "description": "Built-in server link type"
+                  },
+                  {
+                    "type": "object",
+                    "description": "Custom text component with formatting",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "description": "The text content"
+                      },
+                      "color": {
+                        "type": "string",
+                        "description": "Text color (named color or #RRGGBB hex)",
+                        "pattern": "^(#[0-9a-fA-F]{6}|black|dark_blue|dark_green|dark_aqua|dark_red|dark_purple|gold|gray|dark_gray|blue|green|aqua|red|light_purple|yellow|white|reset)$"
+                      },
+                      "bold": {
+                        "type": "boolean",
+                        "description": "Make text bold"
+                      },
+                      "italic": {
+                        "type": "boolean",
+                        "description": "Make text italic"
+                      },
+                      "underlined": {
+                        "type": "boolean",
+                        "description": "Underline text"
+                      },
+                      "strikethrough": {
+                        "type": "boolean",
+                        "description": "Strikethrough text"
+                      },
+                      "obfuscated": {
+                        "type": "boolean",
+                        "description": "Obfuscate text"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": true
                   }
-                },
-                "required": [
-                  "path"
-                ],
-                "additionalProperties": false
+                ]
+              },
+              "url": {
+                "type": "string",
+                "description": "The URL for this link",
+                "format": "uri"
               }
             },
             "required": [
-              "disk"
+              "label",
+              "url"
             ],
             "additionalProperties": false
           },
-          {
-            "description": "RAM-only storage with empty chunks created on demand. No data is persisted.",
-            "type": "string",
-            "enum": [
-              "ram_only"
-            ]
-          }
-        ]
-      },
-        "compression": {
-            "type": "object",
-            "description": "Compression settings",
-            "properties": {
-                "threshold": {
-                    "type": "integer",
-                    "description": "Compression threshold",
-                    "minimum": 256,
-                    "maximum": 2147483647,
-                    "default": 256
-                },
-                "level": {
-                    "type": "integer",
-                    "description": "Compression level",
-                    "minimum": 1,
-                    "maximum": 9,
-                    "default": 4
-                }
-            },
-            "required": [
-                "threshold",
-                "level"
-            ],
-            "additionalProperties": false
-        },
-        "log": {
-            "type": "object",
-            "description": "Logging configuration",
-            "properties": {
-                "time": {
-                    "type": "string",
-                    "description": "Time format: none, date (HH:MM:SS:mmm), or uptime (seconds since start)",
-                    "enum": ["none", "date", "uptime"],
-                    "default": "uptime"
-                },
-                "module_path": {
-                    "type": "boolean",
-                    "description": "Whether the module_path of the log should be displayed",
-                    "default": false
-                },
-                "extra": {
-                    "type": "boolean",
-                    "description": "Whether the extra data of the log should be displayed",
-                    "default": false
-                }
-            },
-            "required": [
-                "time",
-                "module_path",
-                "extra"
-            ],
-            "additionalProperties": false
-        },
-        "server_links": {
-            "type": "object",
-            "description": "Server links configuration",
-            "properties": {
-                "enable": {
-                    "type": "boolean",
-                    "description": "Enable the server links feature",
-                    "default": false
-                },
-                "links": {
-                    "type": "array",
-                    "description": "List of server links to display in the server menu",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "label": {
-                                "description": "Label for the link - either a built-in type (string) or custom TextComponent (object)",
-                                "oneOf": [
-                                    {
-                                        "type": "string",
-                                        "enum": [
-                                            "bug_report",
-                                            "community_guidelines",
-                                            "support",
-                                            "status",
-                                            "feedback",
-                                            "community",
-                                            "website",
-                                            "forums",
-                                            "news",
-                                            "announcements"
-                                        ],
-                                        "description": "Built-in server link type"
-                                    },
-                                    {
-                                        "type": "object",
-                                        "description": "Custom text component with formatting",
-                                        "properties": {
-                                            "text": {
-                                                "type": "string",
-                                                "description": "The text content"
-                                            },
-                                            "color": {
-                                                "type": "string",
-                                                "description": "Text color (named color or #RRGGBB hex)",
-                                                "pattern": "^(#[0-9a-fA-F]{6}|black|dark_blue|dark_green|dark_aqua|dark_red|dark_purple|gold|gray|dark_gray|blue|green|aqua|red|light_purple|yellow|white|reset)$"
-                                            },
-                                            "bold": {
-                                                "type": "boolean",
-                                                "description": "Make text bold"
-                                            },
-                                            "italic": {
-                                                "type": "boolean",
-                                                "description": "Make text italic"
-                                            },
-                                            "underlined": {
-                                                "type": "boolean",
-                                                "description": "Underline text"
-                                            },
-                                            "strikethrough": {
-                                                "type": "boolean",
-                                                "description": "Strikethrough text"
-                                            },
-                                            "obfuscated": {
-                                                "type": "boolean",
-                                                "description": "Obfuscate text"
-                                            }
-                                        },
-                                        "required": ["text"],
-                                        "additionalProperties": true
-                                    }
-                                ]
-                            },
-                            "url": {
-                                "type": "string",
-                                "description": "The URL for this link",
-                                "format": "uri"
-                            }
-                        },
-                        "required": ["label", "url"],
-                        "additionalProperties": false
-                    },
-                    "default": []
-                }
-            },
-            "additionalProperties": false
+          "default": []
         }
-    },
-    "required": [
-        "server_port",
-        "seed",
-        "max_players",
-        "view_distance",
-        "simulation_distance",
-        "online_mode",
-        "encryption",
-        "motd",
-        "use_favicon",
-        "favicon"
-    ],
-    "additionalProperties": false
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "server_port",
+    "seed",
+    "max_players",
+    "view_distance",
+    "simulation_distance",
+    "online_mode",
+    "encryption",
+    "motd",
+    "use_favicon",
+    "favicon"
+  ],
+  "additionalProperties": false
 }

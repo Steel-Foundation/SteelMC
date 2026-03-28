@@ -7,19 +7,24 @@ use serde::Deserialize;
 use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug)]
-pub struct WolfSoundVariantJson {
+pub struct Age {
     ambient_sound: Identifier,
     death_sound: Identifier,
     growl_sound: Identifier,
     hurt_sound: Identifier,
     pant_sound: Identifier,
+    step_sound: Identifier,
     whine_sound: Identifier,
+}
+#[derive(Deserialize, Debug)]
+pub struct WolfSoundVariantJson {
+    adult_sounds: Age,
+    baby_sounds: Age,
 }
 
 fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
     let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
+    quote! { Identifier::vanilla_static(#path) }
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -50,7 +55,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::wolf_sound_variant::{
-            WolfSoundVariant, WolfSoundVariantRegistry,
+            WolfSoundVariant, WolfSoundVariantRegistry, WolfAge
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
@@ -66,22 +71,43 @@ pub(crate) fn build() -> TokenStream {
         let wolf_sound_variant_name_str = wolf_sound_variant_name.clone();
 
         let key = quote! { Identifier::vanilla_static(#wolf_sound_variant_name_str) };
-        let ambient_sound = generate_identifier(&wolf_sound_variant.ambient_sound);
-        let death_sound = generate_identifier(&wolf_sound_variant.death_sound);
-        let growl_sound = generate_identifier(&wolf_sound_variant.growl_sound);
-        let hurt_sound = generate_identifier(&wolf_sound_variant.hurt_sound);
-        let pant_sound = generate_identifier(&wolf_sound_variant.pant_sound);
-        let whine_sound = generate_identifier(&wolf_sound_variant.whine_sound);
+        let adult_ambient_sound =
+            generate_identifier(&wolf_sound_variant.adult_sounds.ambient_sound);
+        let adult_death_sound = generate_identifier(&wolf_sound_variant.adult_sounds.death_sound);
+        let adult_growl_sound = generate_identifier(&wolf_sound_variant.adult_sounds.growl_sound);
+        let adult_hurt_sound = generate_identifier(&wolf_sound_variant.adult_sounds.hurt_sound);
+        let adult_pant_sound = generate_identifier(&wolf_sound_variant.adult_sounds.pant_sound);
+        let adult_whine_sound = generate_identifier(&wolf_sound_variant.adult_sounds.whine_sound);
+        let adult_step_sound = generate_identifier(&wolf_sound_variant.adult_sounds.step_sound);
+        let baby_ambient_sound = generate_identifier(&wolf_sound_variant.baby_sounds.ambient_sound);
+        let baby_death_sound = generate_identifier(&wolf_sound_variant.baby_sounds.death_sound);
+        let baby_growl_sound = generate_identifier(&wolf_sound_variant.baby_sounds.growl_sound);
+        let baby_hurt_sound = generate_identifier(&wolf_sound_variant.baby_sounds.hurt_sound);
+        let baby_pant_sound = generate_identifier(&wolf_sound_variant.baby_sounds.pant_sound);
+        let baby_whine_sound = generate_identifier(&wolf_sound_variant.baby_sounds.whine_sound);
+        let baby_step_sound = generate_identifier(&wolf_sound_variant.baby_sounds.step_sound);
 
         stream.extend(quote! {
             pub static #wolf_sound_variant_ident: &WolfSoundVariant = &WolfSoundVariant {
                 key: #key,
-                ambient_sound: #ambient_sound,
-                death_sound: #death_sound,
-                growl_sound: #growl_sound,
-                hurt_sound: #hurt_sound,
-                pant_sound: #pant_sound,
-                whine_sound: #whine_sound,
+                adult_sounds: WolfAge {
+                    ambient_sound: #adult_ambient_sound,
+                    death_sound: #adult_death_sound,
+                    growl_sound: #adult_growl_sound,
+                    hurt_sound: #adult_hurt_sound,
+                    pant_sound: #adult_pant_sound,
+                    whine_sound: #adult_whine_sound,
+                    step_sound: #adult_step_sound,
+                },
+                baby_sounds: WolfAge {
+                    ambient_sound: #baby_ambient_sound,
+                    death_sound: #baby_death_sound,
+                    growl_sound: #baby_growl_sound,
+                    hurt_sound: #baby_hurt_sound,
+                    pant_sound: #baby_pant_sound,
+                    whine_sound: #baby_whine_sound,
+                    step_sound: #baby_step_sound,
+                }
             };
         });
 

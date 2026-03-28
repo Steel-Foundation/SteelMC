@@ -19,7 +19,7 @@ pub struct StyledTextComponent {
     pub color: Option<String>,
 }
 
-impl ToNbtTag for TrimMaterial {
+impl ToNbtTag for &TrimMaterial {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();

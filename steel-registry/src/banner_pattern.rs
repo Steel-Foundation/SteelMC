@@ -11,7 +11,7 @@ pub struct BannerPattern {
     pub translation_key: &'static str,
 }
 
-impl ToNbtTag for BannerPattern {
+impl ToNbtTag for &BannerPattern {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();

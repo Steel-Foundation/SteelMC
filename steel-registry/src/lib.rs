@@ -1,13 +1,17 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
 
+use crate::world_clock::WorldClockRegistry;
 use crate::{
     banner_pattern::BannerPatternRegistry,
     biome::BiomeRegistry,
     block_entity_type::BlockEntityTypeRegistry,
     blocks::BlockRegistry,
+    cat_sound_variant::CatSoundVariantRegistry,
     cat_variant::CatVariantRegistry,
     chat_type::ChatTypeRegistry,
+    chicken_sound_variant::ChickenSoundVariantRegistry,
     chicken_variant::ChickenVariantRegistry,
+    cow_sound_variant::CowSoundVariantRegistry,
     cow_variant::CowVariantRegistry,
     damage_type::DamageTypeRegistry,
     data_components::{DataComponentRegistry, vanilla_components},
@@ -25,6 +29,7 @@ use crate::{
     loot_table::LootTableRegistry,
     menu_type::MenuTypeRegistry,
     painting_variant::PaintingVariantRegistry,
+    pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
@@ -42,9 +47,12 @@ pub mod banner_pattern;
 pub mod biome;
 pub mod block_entity_type;
 pub mod blocks;
+pub mod cat_sound_variant;
 pub mod cat_variant;
 pub mod chat_type;
+pub mod chicken_sound_variant;
 pub mod chicken_variant;
+pub mod cow_sound_variant;
 pub mod cow_variant;
 pub mod damage_type;
 pub mod data_components;
@@ -63,6 +71,7 @@ pub mod jukebox_song;
 pub mod loot_table;
 pub mod menu_type;
 pub mod painting_variant;
+pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
@@ -71,6 +80,7 @@ pub mod trim_material;
 pub mod trim_pattern;
 pub mod wolf_sound_variant;
 pub mod wolf_variant;
+pub mod world_clock;
 pub mod zombie_nautilus_variant;
 
 #[expect(warnings)]
@@ -134,6 +144,26 @@ pub mod vanilla_wolf_sound_variants;
 pub mod vanilla_pig_variants;
 
 #[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_pig_sound_variants.rs"]
+pub mod vanilla_pig_sound_variants;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_chicken_sound_variants.rs"]
+pub mod vanilla_chicken_sound_variants;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_cat_sound_variants.rs"]
+pub mod vanilla_cat_sound_variants;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_cow_sound_variants.rs"]
+pub mod vanilla_cow_sound_variants;
+
+#[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_frog_variants.rs"]
 pub mod vanilla_frog_variants;
@@ -325,6 +355,11 @@ pub mod noise_parameters;
 #[rustfmt::skip]
 #[path = "generated/vanilla_density_functions/mod.rs"]
 pub mod density_functions;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_world_clocks.rs"]
+pub mod vanilla_world_clocks;
 
 pub struct RegistryLock(OnceLock<Registry>);
 
@@ -549,6 +584,11 @@ pub const WOLF_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("wolf_v
 pub const WOLF_SOUND_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("wolf_sound_variant");
 pub const PIG_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("pig_variant");
+pub const PIG_SOUND_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("pig_sound_variant");
+pub const CHICKEN_SOUND_VARIANT_REGISTRY: Identifier =
+    Identifier::vanilla_static("chicken_sound_variant");
+pub const CAT_SOUND_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cat_sound_variant");
+pub const COW_SOUND_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_sound_variant");
 pub const FROG_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("frog_variant");
 pub const CAT_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cat_variant");
 pub const COW_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_variant");
@@ -570,6 +610,7 @@ pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("b
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
+pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
 
 pub struct Registry {
     pub blocks: BlockRegistry,
@@ -582,6 +623,10 @@ pub struct Registry {
     pub trim_materials: TrimMaterialRegistry,
     pub wolf_variants: WolfVariantRegistry,
     pub wolf_sound_variants: WolfSoundVariantRegistry,
+    pub pig_sound_variants: PigSoundVariantRegistry,
+    pub chicken_sound_variants: ChickenSoundVariantRegistry,
+    pub cat_sound_variants: CatSoundVariantRegistry,
+    pub cow_sound_variants: CowSoundVariantRegistry,
     pub pig_variants: PigVariantRegistry,
     pub frog_variants: FrogVariantRegistry,
     pub cat_variants: CatVariantRegistry,
@@ -605,6 +650,7 @@ pub struct Registry {
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
+    pub world_clocks: WorldClockRegistry,
 }
 
 impl Debug for Registry {
@@ -639,6 +685,12 @@ impl Registry {
             &mut registry.wolf_sound_variants,
         );
         vanilla_pig_variants::register_pig_variants(&mut registry.pig_variants);
+        vanilla_pig_sound_variants::register_pig_sound_variants(&mut registry.pig_sound_variants);
+        vanilla_chicken_sound_variants::register_chicken_sound_variants(
+            &mut registry.chicken_sound_variants,
+        );
+        vanilla_cat_sound_variants::register_cat_sound_variants(&mut registry.cat_sound_variants);
+        vanilla_cow_sound_variants::register_cow_sound_variants(&mut registry.cow_sound_variants);
         vanilla_frog_variants::register_frog_variants(&mut registry.frog_variants);
         vanilla_cat_variants::register_cat_variants(&mut registry.cat_variants);
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
@@ -678,6 +730,8 @@ impl Registry {
 
         vanilla_enchantments::register_enchantments(&mut registry.enchantments);
 
+        vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
+
         registry
     }
 
@@ -693,6 +747,10 @@ impl Registry {
         self.wolf_variants.freeze();
         self.wolf_sound_variants.freeze();
         self.pig_variants.freeze();
+        self.pig_sound_variants.freeze();
+        self.chicken_sound_variants.freeze();
+        self.cat_sound_variants.freeze();
+        self.cow_sound_variants.freeze();
         self.frog_variants.freeze();
         self.cat_variants.freeze();
         self.cow_variants.freeze();
@@ -715,6 +773,7 @@ impl Registry {
         self.fluids.freeze();
         self.poi_types.freeze();
         self.enchantments.freeze();
+        self.world_clocks.freeze();
     }
 
     #[must_use]
@@ -731,6 +790,10 @@ impl Registry {
             wolf_variants: WolfVariantRegistry::new(),
             wolf_sound_variants: WolfSoundVariantRegistry::new(),
             pig_variants: PigVariantRegistry::new(),
+            pig_sound_variants: PigSoundVariantRegistry::new(),
+            chicken_sound_variants: ChickenSoundVariantRegistry::new(),
+            cat_sound_variants: CatSoundVariantRegistry::new(),
+            cow_sound_variants: CowSoundVariantRegistry::new(),
             frog_variants: FrogVariantRegistry::new(),
             cat_variants: CatVariantRegistry::new(),
             cow_variants: CowVariantRegistry::new(),
@@ -751,6 +814,7 @@ impl Registry {
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             fluids: FluidRegistry::new(),
+            world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
         }

@@ -31,7 +31,6 @@
       "translate": "advancements.nether.charge_respawn_anchor.description"
     },
     "icon": {
-      "count": 1,
       "id": "minecraft:respawn_anchor"
     },
     "title": {

@@ -79,19 +79,19 @@
     "ridges": 0.0,
     "temperature": {
       "type": "minecraft:shifted_noise",
-      "noise": "minecraft:temperature",
-      "shift_x": "minecraft:shift_x",
+      "noise": "minecraft:nether/temperature",
+      "shift_x": 0.0,
       "shift_y": 0.0,
-      "shift_z": "minecraft:shift_z",
+      "shift_z": 0.0,
       "xz_scale": 0.25,
       "y_scale": 0.0
     },
     "vegetation": {
       "type": "minecraft:shifted_noise",
-      "noise": "minecraft:vegetation",
-      "shift_x": "minecraft:shift_x",
+      "noise": "minecraft:nether/vegetation",
+      "shift_x": 0.0,
       "shift_y": 0.0,
-      "shift_z": "minecraft:shift_z",
+      "shift_z": 0.0,
       "xz_scale": 0.25,
       "y_scale": 0.0
     },

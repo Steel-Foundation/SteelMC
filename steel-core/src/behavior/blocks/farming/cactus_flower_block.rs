@@ -13,6 +13,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
+use steel_registry::{TaggedRegistryExt, vanilla_block_tags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -47,9 +48,10 @@ impl BlockBehavior for CactusFlowerBlock {
         let below = world.get_block_state(below_pos);
         let below_block = below.get_block();
 
-        below_block == vanilla_blocks::CACTUS
-            || below_block == vanilla_blocks::FARMLAND
-            || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
+        steel_registry::REGISTRY.blocks.is_in_tag(
+            below_block,
+            &vanilla_block_tags::SUPPORT_OVERRIDE_CACTUS_FLOWER_TAG,
+        ) || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
