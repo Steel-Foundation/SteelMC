@@ -280,6 +280,8 @@ pub mod vanilla_entity_type_tags;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_enchantment_tags.rs"]
+pub mod vanilla_enchantment_tags;
 #[path = "generated/vanilla_enchantments.rs"]
 pub mod vanilla_enchantments;
 
@@ -729,6 +731,7 @@ impl Registry {
         vanilla_poi_type_tags::register_poi_type_tags(&mut registry.poi_types);
 
         vanilla_enchantments::register_enchantments(&mut registry.enchantments);
+        vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
 

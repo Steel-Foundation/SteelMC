@@ -803,6 +803,25 @@ impl ReadFrom for ItemStack {
     }
 }
 
+impl ItemStack {
+    /// Reads an item stack using the delimited (untrusted) component format.
+    ///
+    /// Vanilla uses this for serverbound packets where component data is
+    /// length-prefixed (e.g., `ServerboundSetCreativeModeSlotPacket`).
+    pub fn read_untrusted(data: &mut Cursor<&[u8]>) -> Result<Self> {
+        let count = VarInt::read(data)?.0;
+        if count <= 0 {
+            return Ok(Self::empty());
+        }
+
+        let item_id = VarInt::read(data)?.0 as usize;
+        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let patch = DataComponentPatch::read_delimited(data)?;
+
+        Ok(Self { item, count, patch })
+    }
+}
+
 // ==================== NBT Serialization ====================
 
 use simdnbt::{

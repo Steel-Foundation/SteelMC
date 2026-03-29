@@ -449,7 +449,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 12: rarity
     register_stub!(registry, RARITY.key.clone());
     // 13: enchantments
-    register_stub!(registry, ENCHANTMENTS.key.clone());
+    registry.register(ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
     // 14: can_place_on
     register_stub!(registry, CAN_PLACE_ON.key.clone());
     // 15: can_break
@@ -512,7 +512,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 41: additional_trade_cost
     register_stub!(registry, ADDITIONAL_TRADE_COST.key.clone());
     // 42: stored_enchantments
-    register_stub!(registry, STORED_ENCHANTMENTS.key.clone());
+    registry.register(STORED_ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
     // 43: dye
     register_stub!(registry, DYE.key.clone());
     // 44: dyed_color

@@ -1,6 +1,12 @@
 use rustc_hash::FxHashMap;
+use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
+use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
+use steel_utils::serial::{ReadFrom, WriteTo};
+
+use crate::{REGISTRY, RegistryExt};
 
 /// Enchantments stored on an item. Maps enchantment key to level.
 ///
@@ -52,6 +58,74 @@ impl ItemEnchantments {
 impl Default for ItemEnchantments {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+/// Network format: VarInt count, then (VarInt enchantment_id, VarInt level) pairs.
+impl WriteTo for ItemEnchantments {
+    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        VarInt(self.levels.len() as i32).write(writer)?;
+        for (key, &level) in &self.levels {
+            let id = REGISTRY
+                .enchantments
+                .id_from_key(key)
+                .ok_or_else(|| std::io::Error::other(format!("Unknown enchantment: {key}")))?;
+            VarInt(id as i32).write(writer)?;
+            VarInt(level as i32).write(writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl ReadFrom for ItemEnchantments {
+    fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
+        let count = VarInt::read(data)?.0 as usize;
+        let mut levels = FxHashMap::default();
+        for _ in 0..count {
+            let id = VarInt::read(data)?.0 as usize;
+            let level = VarInt::read(data)?.0 as u32;
+            let enchantment = REGISTRY
+                .enchantments
+                .by_id(id)
+                .ok_or_else(|| std::io::Error::other(format!("Unknown enchantment id: {id}")))?;
+            levels.insert(enchantment.key.clone(), level);
+        }
+        Ok(Self {
+            levels,
+            show_in_tooltip: true,
+        })
+    }
+}
+
+/// NBT format: compound with enchantment identifiers as keys and int levels as values.
+impl ToNbtTag for ItemEnchantments {
+    fn to_nbt_tag(self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        for (key, level) in &self.levels {
+            compound.insert(key.to_string(), NbtTag::Int(*level as i32));
+        }
+        NbtTag::Compound(compound)
+    }
+}
+
+impl FromNbtTag for ItemEnchantments {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        let compound = tag.compound()?;
+        let mut levels = FxHashMap::default();
+        for (key, value) in compound.iter() {
+            let key_str = key.to_str();
+            if let Ok(ident) = key_str.parse::<Identifier>() {
+                if let Some(level) = value.int() {
+                    if level > 0 {
+                        levels.insert(ident, level as u32);
+                    }
+                }
+            }
+        }
+        Some(Self {
+            levels,
+            show_in_tooltip: true,
+        })
     }
 }
 

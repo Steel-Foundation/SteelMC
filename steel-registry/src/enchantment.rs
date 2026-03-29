@@ -1,5 +1,7 @@
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::Identifier;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +16,24 @@ pub enum EquipmentSlotGroup {
     Legs,
     Feet,
     Body,
+}
+
+impl EquipmentSlotGroup {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::Hand => "hand",
+            Self::Mainhand => "mainhand",
+            Self::Offhand => "offhand",
+            Self::Armor => "armor",
+            Self::Head => "head",
+            Self::Chest => "chest",
+            Self::Legs => "legs",
+            Self::Feet => "feet",
+            Self::Body => "body",
+        }
+    }
 }
 
 /// Enchanting cost formula: `base + per_level_above_first * (level - 1)`.
@@ -48,6 +68,48 @@ impl RegistryEntry for Enchantment {
     }
 }
 
+impl ToNbtTag for &Enchantment {
+    fn to_nbt_tag(self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+
+        // description: translatable text component {"translate": "enchantment.minecraft.<key>"}
+        let mut desc = NbtCompound::new();
+        desc.insert("translate", format!("enchantment.{}", self.key).as_str());
+        compound.insert("description", NbtTag::Compound(desc));
+
+        // Definition fields (inlined, not nested)
+        compound.insert("supported_items", self.supported_items);
+        if let Some(primary) = self.primary_items {
+            compound.insert("primary_items", primary);
+        }
+        compound.insert("weight", self.weight as i32);
+        compound.insert("max_level", self.max_level as i32);
+
+        let mut min_cost = NbtCompound::new();
+        min_cost.insert("base", self.min_cost.base);
+        min_cost.insert("per_level_above_first", self.min_cost.per_level_above_first);
+        compound.insert("min_cost", NbtTag::Compound(min_cost));
+
+        let mut max_cost = NbtCompound::new();
+        max_cost.insert("base", self.max_cost.base);
+        max_cost.insert("per_level_above_first", self.max_cost.per_level_above_first);
+        compound.insert("max_cost", NbtTag::Compound(max_cost));
+
+        compound.insert("anvil_cost", self.anvil_cost);
+
+        let slots: Vec<String> = self.slots.iter().map(|s| s.as_str().to_owned()).collect();
+        compound.insert("slots", NbtTag::List(NbtList::from(slots)));
+
+        if let Some(exclusive) = self.exclusive_set {
+            compound.insert("exclusive_set", exclusive);
+        }
+
+        // TODO: effects (data-driven, complex nested JSON structures)
+
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type EnchantmentRef = &'static Enchantment;
 
 impl PartialEq for EnchantmentRef {
@@ -62,6 +124,7 @@ impl Eq for EnchantmentRef {}
 pub struct EnchantmentRegistry {
     enchantments_by_id: Vec<EnchantmentRef>,
     enchantments_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -71,6 +134,7 @@ impl EnchantmentRegistry {
         Self {
             enchantments_by_id: Vec::new(),
             enchantments_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -113,6 +177,8 @@ crate::impl_registry_ext!(
     enchantments_by_id,
     enchantments_by_key
 );
+
+crate::impl_tagged_registry!(EnchantmentRegistry, enchantments_by_key, "enchantment");
 
 impl Default for EnchantmentRegistry {
     fn default() -> Self {
