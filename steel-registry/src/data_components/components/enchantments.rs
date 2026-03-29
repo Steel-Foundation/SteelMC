@@ -40,6 +40,15 @@ impl ItemEnchantments {
         }
     }
 
+    /// Vanilla `Mutable.upgrade`: keeps the higher of existing vs new level.
+    pub fn upgrade(&mut self, enchantment: Identifier, level: u32) {
+        if level > 0 {
+            let existing = self.get_level(&enchantment);
+            self.levels
+                .insert(enchantment, existing.max(level).min(255));
+        }
+    }
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.levels.is_empty()

@@ -74,7 +74,10 @@ impl ToNbtTag for &Enchantment {
 
         // description: translatable text component {"translate": "enchantment.minecraft.<key>"}
         let mut desc = NbtCompound::new();
-        desc.insert("translate", format!("enchantment.{}", self.key).as_str());
+        desc.insert(
+            "translate",
+            format!("enchantment.{}.{}", self.key.namespace, self.key.path).as_str(),
+        );
         compound.insert("description", NbtTag::Compound(desc));
 
         // Definition fields (inlined, not nested)

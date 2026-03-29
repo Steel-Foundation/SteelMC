@@ -172,7 +172,7 @@ fn enchant(
         }
 
         let item = inv.get_selected_item_mut();
-        item.set_enchantments(&[(enchantment_key.clone(), level.max(0) as u32)], false);
+        item.upgrade_enchantment(enchantment_key.clone(), level.max(0) as u32);
         success += 1;
     }
 
@@ -211,7 +211,10 @@ fn enchant(
 /// translatable enchantment name + level suffix when level > 1 or max_level > 1.
 fn enchantment_display_name(enchantment: EnchantmentRef, level: i32) -> TextComponent {
     let name_msg = TranslatedMessage {
-        key: Cow::Owned(format!("enchantment.{}", enchantment.key)),
+        key: Cow::Owned(format!(
+            "enchantment.{}.{}",
+            enchantment.key.namespace, enchantment.key.path
+        )),
         args: None,
         fallback: None,
     };

@@ -748,11 +748,26 @@ impl DataComponentPatch {
         let added_count = VarInt::read(data)?.0 as usize;
         let removed_count = VarInt::read(data)?.0 as usize;
 
+        const MAX_COMPONENTS: usize = 65_536;
+        const MAX_COMPONENT_BYTES: usize = 2 * 1024 * 1024;
+
+        if added_count.saturating_add(removed_count) > MAX_COMPONENTS {
+            return Err(std::io::Error::other(format!(
+                "Component patch too large: {added_count} added + {removed_count} removed > {MAX_COMPONENTS}"
+            )));
+        }
+
         let mut patch = Self::new();
 
         for _ in 0..added_count {
             let type_id = VarInt::read(data)?.0 as usize;
             let byte_len = VarInt::read(data)?.0 as usize;
+
+            if byte_len > MAX_COMPONENT_BYTES {
+                return Err(std::io::Error::other(format!(
+                    "Component data too large: {byte_len} bytes > {MAX_COMPONENT_BYTES}"
+                )));
+            }
 
             let key = REGISTRY
                 .data_components

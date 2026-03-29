@@ -555,6 +555,16 @@ impl ItemStack {
         self.set(ENCHANTMENTS, current);
     }
 
+    /// Vanilla `ItemStack.enchant` → `Mutable.upgrade`: keeps the higher of existing vs new level.
+    pub fn upgrade_enchantment(&mut self, enchantment: Identifier, level: u32) {
+        let mut current = self
+            .get(ENCHANTMENTS)
+            .cloned()
+            .unwrap_or_else(ItemEnchantments::empty);
+        current.upgrade(enchantment, level);
+        self.set(ENCHANTMENTS, current);
+    }
+
     /// Changes the item type entirely.
     pub fn set_item(&mut self, new_item: &Identifier) {
         if let Some(item_ref) = REGISTRY.items.by_key(new_item) {
