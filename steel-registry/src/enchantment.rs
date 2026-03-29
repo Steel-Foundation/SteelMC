@@ -92,6 +92,9 @@ impl EnchantmentRegistry {
         if id >= self.enchantments_by_id.len() {
             return false;
         }
+        let old = self.enchantments_by_id[id];
+        self.enchantments_by_key.remove(&old.key);
+        self.enchantments_by_key.insert(enchantment.key.clone(), id);
         self.enchantments_by_id[id] = enchantment;
         true
     }

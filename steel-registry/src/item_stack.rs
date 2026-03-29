@@ -537,24 +537,18 @@ impl ItemStack {
         // Pick a random instrument from the tag and set INSTRUMENT component
     }
 
-    pub fn set_enchantments<R: rand::Rng>(
-        &mut self,
-        enchantments: &[(Identifier, crate::loot_table::NumberProvider)],
-        add: bool,
-        rng: &mut R,
-    ) {
+    pub fn set_enchantments(&mut self, enchantments: &[(Identifier, u32)], add: bool) {
         let mut current = self
             .get(ENCHANTMENTS)
             .cloned()
             .unwrap_or_else(ItemEnchantments::empty);
 
-        for (key, provider) in enchantments {
-            let level = provider.get_int(rng).max(0) as u32;
+        for (key, level) in enchantments {
             if add {
                 let existing = current.get_level(key);
-                current.set(key.clone(), existing + level);
+                current.set(key.clone(), existing + *level);
             } else {
-                current.set(key.clone(), level);
+                current.set(key.clone(), *level);
             }
         }
 

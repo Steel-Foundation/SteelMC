@@ -1701,7 +1701,11 @@ impl LootFunction {
                 item.set_instrument(options, ctx.rng);
             }
             LootFunction::SetEnchantments { enchantments, add } => {
-                item.set_enchantments(enchantments, *add, ctx.rng);
+                let resolved: Vec<_> = enchantments
+                    .iter()
+                    .map(|(key, provider)| (key.clone(), provider.get_int(ctx.rng).max(0) as u32))
+                    .collect();
+                item.set_enchantments(&resolved, *add);
             }
             // === New function implementations ===
             LootFunction::SetItem { item: new_item } => {
