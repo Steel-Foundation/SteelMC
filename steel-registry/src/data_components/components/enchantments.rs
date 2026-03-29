@@ -12,10 +12,11 @@ use crate::{REGISTRY, RegistryExt};
 ///
 /// Used by both the `minecraft:enchantments` component (on enchanted items)
 /// and the `minecraft:stored_enchantments` component (on enchanted books).
+///
+/// Vanilla moved tooltip visibility to the separate `TOOLTIP_DISPLAY` component.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemEnchantments {
     pub levels: FxHashMap<Identifier, u32>,
-    pub show_in_tooltip: bool,
 }
 
 impl ItemEnchantments {
@@ -23,7 +24,6 @@ impl ItemEnchantments {
     pub fn empty() -> Self {
         Self {
             levels: FxHashMap::default(),
-            show_in_tooltip: true,
         }
     }
 
@@ -88,7 +88,13 @@ impl WriteTo for ItemEnchantments {
 
 impl ReadFrom for ItemEnchantments {
     fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
-        let count = VarInt::read(data)?.0 as usize;
+        let count = VarInt::read(data)?.0;
+        if count < 0 || count > 256 {
+            return Err(std::io::Error::other(format!(
+                "Enchantment count out of range: {count}"
+            )));
+        }
+        let count = count as usize;
         let mut levels = FxHashMap::default();
         for _ in 0..count {
             let id = VarInt::read(data)?.0 as usize;
@@ -99,10 +105,7 @@ impl ReadFrom for ItemEnchantments {
                 .ok_or_else(|| std::io::Error::other(format!("Unknown enchantment id: {id}")))?;
             levels.insert(enchantment.key.clone(), level);
         }
-        Ok(Self {
-            levels,
-            show_in_tooltip: true,
-        })
+        Ok(Self { levels })
     }
 }
 
@@ -131,10 +134,7 @@ impl FromNbtTag for ItemEnchantments {
                 }
             }
         }
-        Some(Self {
-            levels,
-            show_in_tooltip: true,
-        })
+        Some(Self { levels })
     }
 }
 

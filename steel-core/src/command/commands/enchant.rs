@@ -96,19 +96,19 @@ fn is_enchantment_compatible(enchantment: EnchantmentRef, item: &ItemStack) -> b
 /// Mirrors vanilla `Enchantment.areCompatible`: two enchantments are compatible if
 /// neither's exclusive_set tag contains the other.
 fn are_compatible(a: EnchantmentRef, b: EnchantmentRef) -> bool {
-    if std::ptr::eq(a, b) {
+    if a == b {
         return false;
     }
 
-    if let Some(set) = a.exclusive_set {
-        if is_in_enchantment_tag(set, b) {
-            return false;
-        }
+    if let Some(set) = a.exclusive_set
+        && is_in_enchantment_tag(set, b)
+    {
+        return false;
     }
-    if let Some(set) = b.exclusive_set {
-        if is_in_enchantment_tag(set, a) {
-            return false;
-        }
+    if let Some(set) = b.exclusive_set
+        && is_in_enchantment_tag(set, a)
+    {
+        return false;
     }
 
     true
@@ -208,7 +208,7 @@ fn enchant(
 }
 
 /// Builds a display name matching vanilla's `Enchantment.getFullname`:
-/// translatable enchantment name + level suffix when level > 1 or max_level > 1.
+/// translatable enchantment name + level suffix when level > 1 or `max_level` > 1.
 fn enchantment_display_name(enchantment: EnchantmentRef, level: i32) -> TextComponent {
     let name_msg = TranslatedMessage {
         key: Cow::Owned(format!(
