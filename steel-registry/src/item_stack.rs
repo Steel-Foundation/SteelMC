@@ -203,10 +203,9 @@ impl ItemStack {
 
         let unbreaking_level =
             self.get_enchantment_level(&crate::vanilla_enchantments::UNBREAKING.key);
-        let mut rng = rand::rng();
         let mut effective_amount = 0;
         for _ in 0..amount {
-            if should_consume_durability(unbreaking_level, &mut rng) {
+            if should_consume_durability(unbreaking_level) {
                 effective_amount += 1;
             }
         }
@@ -390,12 +389,6 @@ impl ItemStack {
         self.get_enchantments()
             .map(|e| e.get_level(enchantment) as i32)
             .unwrap_or(0)
-    }
-
-    #[must_use]
-    pub fn get_enchantment_level_by_name(&self, name: &str) -> i32 {
-        let key = Identifier::vanilla(name.to_string());
-        self.get_enchantment_level(&key)
     }
 
     #[must_use]
@@ -763,12 +756,12 @@ impl ItemStack {
 }
 
 /// Vanilla unbreaking formula: `1 / (unbreaking_level + 1)` chance to consume durability.
-fn should_consume_durability(unbreaking_level: i32, rng: &mut impl rand::Rng) -> bool {
+fn should_consume_durability(unbreaking_level: i32) -> bool {
     if unbreaking_level <= 0 {
         return true;
     }
     // TODO: Armor uses a different formula: `3 / (unbreaking_level + 3)`
-    rng.random_range(0..unbreaking_level + 1) == 0
+    rand::rng().random_range(0..unbreaking_level + 1) == 0
 }
 
 impl std::fmt::Display for ItemStack {

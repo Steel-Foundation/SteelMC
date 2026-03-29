@@ -1,40 +1,10 @@
-use crate::{REGISTRY, RegistryEntry, RegistryExt};
+use crate::items::ItemRef;
+pub use crate::loot_table::EquipmentSlotGroup;
+use crate::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::Identifier;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EquipmentSlotGroup {
-    Any,
-    Hand,
-    Mainhand,
-    Offhand,
-    Armor,
-    Head,
-    Chest,
-    Legs,
-    Feet,
-    Body,
-}
-
-impl EquipmentSlotGroup {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Any => "any",
-            Self::Hand => "hand",
-            Self::Mainhand => "mainhand",
-            Self::Offhand => "offhand",
-            Self::Armor => "armor",
-            Self::Head => "head",
-            Self::Chest => "chest",
-            Self::Legs => "legs",
-            Self::Feet => "feet",
-            Self::Body => "body",
-        }
-    }
-}
 
 /// Enchanting cost formula: `base + per_level_above_first * (level - 1)`.
 #[derive(Debug, Clone, Copy)]
@@ -113,10 +83,72 @@ impl ToNbtTag for &Enchantment {
     }
 }
 
+/// Parses a tag reference string like `"#minecraft:foo"` into an `Identifier`.
+fn parse_tag_ref(tag_ref: &str) -> Option<Identifier> {
+    let without_hash = tag_ref.strip_prefix('#')?;
+    Some(if let Some((ns, path)) = without_hash.split_once(':') {
+        Identifier::new(ns.to_owned(), path.to_owned())
+    } else {
+        Identifier::vanilla(without_hash.to_owned())
+    })
+}
+
+impl Enchantment {
+    /// Checks if this enchantment can be applied to the given item via `supported_items` tag.
+    pub fn can_enchant(&self, item: ItemRef) -> bool {
+        let Some(tag) = parse_tag_ref(self.supported_items) else {
+            return false;
+        };
+        REGISTRY.items.is_in_tag(item, &tag)
+    }
+
+    /// Checks if two enchantments are compatible (neither's `exclusive_set` contains the other).
+    pub fn are_compatible(a: EnchantmentRef, b: EnchantmentRef) -> bool {
+        if a == b {
+            return false;
+        }
+        if let Some(set) = a.exclusive_set
+            && let Some(tag) = parse_tag_ref(set)
+            && REGISTRY.enchantments.is_in_tag(b, &tag)
+        {
+            return false;
+        }
+        if let Some(set) = b.exclusive_set
+            && let Some(tag) = parse_tag_ref(set)
+            && REGISTRY.enchantments.is_in_tag(a, &tag)
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Checks if this enchantment is compatible with all existing enchantments on an item.
+    pub fn is_compatible_with_existing(
+        enchantment: EnchantmentRef,
+        item: &crate::item_stack::ItemStack,
+    ) -> bool {
+        let Some(enchantments) = item.get_enchantments() else {
+            return true;
+        };
+        for (existing_key, _) in enchantments.iter() {
+            if *existing_key == enchantment.key {
+                continue;
+            }
+            let Some(existing) = REGISTRY.enchantments.by_key(existing_key) else {
+                continue;
+            };
+            if !Self::are_compatible(enchantment, existing) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 pub type EnchantmentRef = &'static Enchantment;
 
 impl PartialEq for EnchantmentRef {
-    #[allow(clippy::disallowed_methods)]
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(*self, *other)
     }

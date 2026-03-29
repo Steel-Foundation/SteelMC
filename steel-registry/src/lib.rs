@@ -282,6 +282,8 @@ pub mod vanilla_entity_type_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_enchantment_tags.rs"]
 pub mod vanilla_enchantment_tags;
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_enchantments.rs"]
 pub mod vanilla_enchantments;
 

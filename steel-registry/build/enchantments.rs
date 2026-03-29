@@ -28,8 +28,8 @@ fn slot_to_tokens(slot: &str) -> TokenStream {
     match slot {
         "any" => quote! { EquipmentSlotGroup::Any },
         "hand" => quote! { EquipmentSlotGroup::Hand },
-        "mainhand" => quote! { EquipmentSlotGroup::Mainhand },
-        "offhand" => quote! { EquipmentSlotGroup::Offhand },
+        "mainhand" => quote! { EquipmentSlotGroup::MainHand },
+        "offhand" => quote! { EquipmentSlotGroup::OffHand },
         "armor" => quote! { EquipmentSlotGroup::Armor },
         "head" => quote! { EquipmentSlotGroup::Head },
         "chest" => quote! { EquipmentSlotGroup::Chest },
@@ -75,9 +75,8 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::enchantment::{
-            Enchantment, EnchantmentCost, EnchantmentRegistry, EquipmentSlotGroup,
-        };
+        use crate::enchantment::{Enchantment, EnchantmentCost, EnchantmentRegistry};
+        use crate::loot_table::EquipmentSlotGroup;
         use steel_utils::Identifier;
     });
 

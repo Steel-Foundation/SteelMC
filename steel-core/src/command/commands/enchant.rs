@@ -1,15 +1,14 @@
 //! Handler for the "enchant" command.
+//!
+//! Vanilla targets any `LivingEntity`, but steel currently only supports players.
+// TODO: Support all LivingEntity targets when the entity system supports it
+use std::borrow::Cow;
 use std::sync::Arc;
 
-use steel_registry::enchantment::EnchantmentRef;
-use steel_registry::item_stack::ItemStack;
-use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt};
-use steel_utils::Identifier;
+use steel_registry::enchantment::{Enchantment, EnchantmentRef};
 use steel_utils::translations;
 use text_components::translation::TranslatedMessage;
 use text_components::{Modifier, TextComponent};
-
-use std::borrow::Cow;
 
 use crate::{
     command::{
@@ -23,7 +22,7 @@ use crate::{
     player::Player,
 };
 
-/// Handler for the "enchant" command.
+/// Handler for the `/enchant` command.
 #[must_use]
 pub fn command_handler() -> impl CommandHandlerDyn {
     CommandHandlerBuilder::new(
@@ -42,6 +41,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                 )
                 .then(
                     argument("level", IntegerArgument::bounded(Some(0), None)).executes(
+                        #[expect(clippy::type_complexity, reason = "command framework pattern")]
                         |((((), targets), enchantment), level): (
                             (((), Vec<Arc<Player>>), EnchantmentRef),
                             i32,
@@ -53,75 +53,6 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                 ),
         ),
     )
-}
-
-/// Checks if the enchantment can be applied to this item (supported_items tag check).
-fn can_enchant(enchantment: EnchantmentRef, item: &ItemStack) -> bool {
-    let Some(tag_str) = enchantment.supported_items.strip_prefix('#') else {
-        return false;
-    };
-    let tag_key = tag_str.strip_prefix("minecraft:").unwrap_or(tag_str);
-    let tag = Identifier::vanilla(tag_key.to_owned());
-    REGISTRY.items.is_in_tag(item.item, &tag)
-}
-
-/// Checks if the given enchantment is compatible with all existing enchantments on the item.
-///
-/// Vanilla checks `Enchantment.areCompatible` for each pair, which verifies:
-/// - Not the same enchantment
-/// - Neither enchantment's exclusive_set contains the other
-fn is_enchantment_compatible(enchantment: EnchantmentRef, item: &ItemStack) -> bool {
-    let Some(enchantments) = item.get_enchantments() else {
-        return true;
-    };
-
-    for (existing_key, _) in enchantments.iter() {
-        if *existing_key == enchantment.key {
-            // Same enchantment is allowed (it will be upgraded)
-            continue;
-        }
-
-        let Some(existing) = REGISTRY.enchantments.by_key(existing_key) else {
-            continue;
-        };
-
-        if !are_compatible(enchantment, existing) {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Mirrors vanilla `Enchantment.areCompatible`: two enchantments are compatible if
-/// neither's exclusive_set tag contains the other.
-fn are_compatible(a: EnchantmentRef, b: EnchantmentRef) -> bool {
-    if a == b {
-        return false;
-    }
-
-    if let Some(set) = a.exclusive_set
-        && is_in_enchantment_tag(set, b)
-    {
-        return false;
-    }
-    if let Some(set) = b.exclusive_set
-        && is_in_enchantment_tag(set, a)
-    {
-        return false;
-    }
-
-    true
-}
-
-/// Checks if an enchantment is in a tag reference like `"#minecraft:exclusive_set/damage"`.
-fn is_in_enchantment_tag(tag_ref: &str, enchantment: EnchantmentRef) -> bool {
-    let Some(tag_str) = tag_ref.strip_prefix('#') else {
-        return false;
-    };
-    let tag_key = tag_str.strip_prefix("minecraft:").unwrap_or(tag_str);
-    let tag = Identifier::vanilla(tag_key.to_owned());
-    REGISTRY.enchantments.is_in_tag(enchantment, &tag)
 }
 
 fn enchant(
@@ -159,7 +90,9 @@ fn enchant(
             continue;
         }
 
-        if !can_enchant(enchantment, item) || !is_enchantment_compatible(enchantment, item) {
+        if !enchantment.can_enchant(item.item)
+            || !Enchantment::is_compatible_with_existing(enchantment, item)
+        {
             if targets.len() == 1 {
                 let item_name = item.item.key.to_string();
                 return Err(CommandError::CommandFailed(Box::new(

@@ -89,7 +89,7 @@ impl WriteTo for ItemEnchantments {
 impl ReadFrom for ItemEnchantments {
     fn read(data: &mut std::io::Cursor<&[u8]>) -> std::io::Result<Self> {
         let count = VarInt::read(data)?.0;
-        if count < 0 || count > 256 {
+        if !(0..=256).contains(&count) {
             return Err(std::io::Error::other(format!(
                 "Enchantment count out of range: {count}"
             )));
@@ -126,12 +126,11 @@ impl FromNbtTag for ItemEnchantments {
         let mut levels = FxHashMap::default();
         for (key, value) in compound.iter() {
             let key_str = key.to_str();
-            if let Ok(ident) = key_str.parse::<Identifier>() {
-                if let Some(level) = value.int() {
-                    if level > 0 {
-                        levels.insert(ident, level as u32);
-                    }
-                }
+            if let Ok(ident) = key_str.parse::<Identifier>()
+                && let Some(level) = value.int()
+                && level > 0
+            {
+                levels.insert(ident, level as u32);
             }
         }
         Some(Self { levels })
