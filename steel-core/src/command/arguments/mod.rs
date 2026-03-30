@@ -2,6 +2,7 @@
 pub mod anchor;
 pub mod bool;
 pub mod dimension;
+pub mod enchantment;
 pub mod entity;
 pub mod float;
 pub mod gamemode;

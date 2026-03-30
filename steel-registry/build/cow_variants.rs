@@ -81,11 +81,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/cow_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/cow_variant/");
 
-    let cow_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/cow_variant";
+    let cow_variant_dir = "build_assets/builtin_datapacks/minecraft/cow_variant";
     let mut cow_variants = Vec::new();
 
     // Read all cow variant JSON files

@@ -520,11 +520,9 @@ fn generate_biome_effects(effects: &BiomeEffects) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/biome/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/biome/");
 
-    let biome_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/biome";
+    let biome_dir = "build_assets/builtin_datapacks/minecraft/worldgen/biome";
     let mut biomes = Vec::new();
 
     // Read all biome JSON files

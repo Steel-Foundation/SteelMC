@@ -98,10 +98,10 @@ fn resolve_tag(
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/tags/damage_type/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/damage_type/"
     );
 
-    let tag_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/tags/damage_type";
+    let tag_dir = "build_assets/builtin_datapacks/minecraft/tags/damage_type";
     let all_tags = read_all_tags(tag_dir);
 
     // Resolve all tags

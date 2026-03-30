@@ -990,7 +990,7 @@ impl MenuBehavior {
 
             // max_amount is i32::MAX for primary action (take all requested)
             // For result slots, try_remove will reject partial takes
-            if let Some(taken) = slot.try_remove(&mut guard, amount, i32::MAX) {
+            if let Some(taken) = slot.try_remove(&mut guard, amount, i32::MAX, player) {
                 if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
                     // There's a remainder from crafting - add to player inventory or drop
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
@@ -1036,7 +1036,7 @@ impl MenuBehavior {
             } else {
                 // Can't place this item type in this slot
                 // In Java, if items are same type but may_place fails, try to take from slot
-                if slot.may_pickup() {
+                if slot.may_pickup(&guard, player) {
                     // Try to add slot items to carried stack
                     let space = carried.max_stack_size() - carried.count;
                     if space > 0 {
@@ -1058,7 +1058,7 @@ impl MenuBehavior {
             }
         } else {
             // Different items - swap (if both operations are allowed)
-            if slot.may_pickup() && slot.may_place(&carried) {
+            if slot.may_pickup(&guard, player) && slot.may_place(&carried) {
                 if carried.count <= slot.get_max_stack_size_for_item(&guard, &carried) {
                     slot.set_by_player(&mut guard, carried, &slot_item);
                     self.carried = slot_item;
@@ -1111,7 +1111,7 @@ impl MenuBehavior {
         let slot = &self.slots[slot_index];
 
         // Check if pickup is allowed (Java's safeTake checks this internally)
-        if !slot.may_pickup() {
+        if !slot.may_pickup(&guard, player) {
             return;
         }
 
@@ -1136,7 +1136,7 @@ impl MenuBehavior {
         if button == 1 {
             loop {
                 // Check may_pickup again for each iteration (Java does this via safeTake)
-                if !slot.may_pickup() {
+                if !slot.may_pickup(&guard, player) {
                     break;
                 }
                 // Java checks player.canDropItems() before each drop
@@ -1261,13 +1261,12 @@ pub trait Menu {
             return;
         }
 
+        let mut guard = self.behavior().lock_all_containers();
+
         // Check if slot allows pickup
-        let may_pickup = self.behavior().slots[slot_index].may_pickup();
-        if !may_pickup {
+        if !self.behavior().slots[slot_index].may_pickup(&guard, player) {
             return;
         }
-
-        let mut guard = self.behavior().lock_all_containers();
 
         // Get the initial item for comparison
         let initial_item = self.behavior().slots[slot_index].get_item(&guard).clone();
@@ -1327,7 +1326,7 @@ pub trait Menu {
 
         if source_item.is_empty() {
             // Move from target to inventory
-            if target_slot.may_pickup() {
+            if target_slot.may_pickup(&guard, player) {
                 if let Some(inv) = guard.get_mut(player_inv_id) {
                     inv.set_item(inventory_slot, target_item.clone());
                 }
@@ -1360,7 +1359,7 @@ pub trait Menu {
             }
         } else {
             // Swap items between target and inventory
-            if target_slot.may_pickup() && target_slot.may_place(&source_item) {
+            if target_slot.may_pickup(&guard, player) && target_slot.may_place(&source_item) {
                 let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Source is too big - place partial and add target to inventory
@@ -1409,7 +1408,7 @@ pub trait Menu {
         let behavior = self.behavior();
         let slot = &behavior.slots[slot_index];
         let slot_has_item = !slot.get_item(&guard).is_empty();
-        let slot_may_pickup = slot.may_pickup();
+        let slot_may_pickup = slot.may_pickup(&guard, player);
 
         // Can only pickup all if carried is not empty and (slot is empty or can't be picked up)
         // Java: if (!carried.isEmpty() && (!slotxx.hasItem() || !slotxx.mayPickup(player)))
@@ -1440,7 +1439,7 @@ pub trait Menu {
                 //              && target.mayPickup(player) && this.canTakeItemForPickAll(carried, target)
                 if !target_item.is_empty()
                     && can_item_quick_replace(&target_item, &carried_item, true)
-                    && target_slot.may_pickup()
+                    && target_slot.may_pickup(&guard, player)
                     && self.can_take_item_for_pick_all(&carried_item, i as usize)
                 {
                     // First pass: skip full stacks; Second pass: include full stacks

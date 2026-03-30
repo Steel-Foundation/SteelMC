@@ -26,11 +26,9 @@ fn generate_identifier(resource: &Identifier) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/trim_pattern/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/trim_pattern/");
 
-    let trim_pattern_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/trim_pattern";
+    let trim_pattern_dir = "build_assets/builtin_datapacks/minecraft/trim_pattern";
     let mut trim_patterns = Vec::new();
 
     // Read all trim pattern JSON files

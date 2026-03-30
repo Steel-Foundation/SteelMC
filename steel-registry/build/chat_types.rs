@@ -91,11 +91,9 @@ fn generate_chat_type_decoration(decoration: &ChatTypeDecoration) -> TokenStream
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/chat_type/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/chat_type/");
 
-    let chat_type_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/chat_type";
+    let chat_type_dir = "build_assets/builtin_datapacks/minecraft/chat_type";
     let mut chat_types = Vec::new();
 
     // Read all chat type JSON files

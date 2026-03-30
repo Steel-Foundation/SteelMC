@@ -270,11 +270,9 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/recipe/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/recipe/");
 
-    let recipe_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/recipe";
+    let recipe_dir = "build_assets/builtin_datapacks/minecraft/recipe";
 
     let mut shaped_recipes: Vec<ShapedRecipeData> = Vec::new();
     let mut shapeless_recipes: Vec<ShapelessRecipeData> = Vec::new();

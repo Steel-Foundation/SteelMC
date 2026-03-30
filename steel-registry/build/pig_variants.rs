@@ -80,11 +80,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/pig_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/pig_variant/");
 
-    let pig_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/pig_variant";
+    let pig_variant_dir = "build_assets/builtin_datapacks/minecraft/pig_variant";
     let mut pig_variants = Vec::new();
 
     // Read all pig variant JSON files

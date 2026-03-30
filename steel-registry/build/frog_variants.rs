@@ -70,11 +70,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/frog_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/frog_variant/");
 
-    let frog_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/frog_variant";
+    let frog_variant_dir = "build_assets/builtin_datapacks/minecraft/frog_variant";
     let mut frog_variants = Vec::new();
 
     // Read all frog variant JSON files

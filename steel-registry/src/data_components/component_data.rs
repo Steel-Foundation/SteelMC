@@ -3,7 +3,7 @@
 //! This module provides the core types for storing component values in an ABI-stable way.
 //! Vanilla components get dedicated enum variants for zero-cost access, while plugin
 //! components use the `Other` variant with opaque bytes.
-use super::components::{Equippable, Tool};
+use super::components::{Equippable, ItemEnchantments, Tool};
 use text_components::TextComponent;
 
 /// Discriminant for [`ComponentData`] variants.
@@ -18,6 +18,7 @@ pub enum ComponentDataDiscriminant {
     Float,
     Tool,
     Equippable,
+    Enchantments,
     TextComponent,
     Todo,
     Other,
@@ -69,6 +70,8 @@ pub enum ComponentData {
     Tool(Tool),
     /// minecraft:equippable
     Equippable(Equippable),
+    /// minecraft:enchantments / minecraft:stored_enchantments
+    Enchantments(ItemEnchantments),
     /// TextComponent component (e.g., CustomName, ItemName)
     TextComponent(Box<TextComponent>),
 
@@ -109,6 +112,7 @@ impl ComponentData {
             Self::Float(_) => ComponentDataDiscriminant::Float,
             Self::Tool(_) => ComponentDataDiscriminant::Tool,
             Self::Equippable(_) => ComponentDataDiscriminant::Equippable,
+            Self::Enchantments(_) => ComponentDataDiscriminant::Enchantments,
             Self::TextComponent(_) => ComponentDataDiscriminant::TextComponent,
             Self::Todo => ComponentDataDiscriminant::Todo,
             Self::Other(_) => ComponentDataDiscriminant::Other,
@@ -134,6 +138,7 @@ impl ComponentData {
             // Complex types
             Self::Tool(v) => v.hash_component(&mut hasher),
             Self::Equippable(v) => v.hash_component(&mut hasher),
+            Self::Enchantments(v) => v.hash_component(&mut hasher),
             Self::TextComponent(v) => v.hash_component(&mut hasher),
 
             // Stub/plugin types - hash as empty map for now
@@ -280,6 +285,26 @@ impl Component for Tool {
     fn from_data_ref(data: &ComponentData) -> Option<&Self> {
         match data {
             ComponentData::Tool(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
+impl Component for ItemEnchantments {
+    fn into_data(self) -> ComponentData {
+        ComponentData::Enchantments(self)
+    }
+
+    fn from_data(data: ComponentData) -> Option<Self> {
+        match data {
+            ComponentData::Enchantments(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    fn from_data_ref(data: &ComponentData) -> Option<&Self> {
+        match data {
+            ComponentData::Enchantments(v) => Some(v),
             _ => None,
         }
     }

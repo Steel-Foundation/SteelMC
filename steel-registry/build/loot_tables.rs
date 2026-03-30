@@ -1584,11 +1584,9 @@ struct LootTableData {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/loot_table/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/loot_table/");
 
-    let loot_table_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/loot_table";
+    let loot_table_dir = "build_assets/builtin_datapacks/minecraft/loot_table";
     let mut tables: Vec<LootTableData> = Vec::new();
 
     // Recursively read all loot table JSON files

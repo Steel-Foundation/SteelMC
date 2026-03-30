@@ -10,7 +10,7 @@ use super::registry::DataComponentRegistry;
 pub use super::registry::DataComponentType;
 
 // Re-export component types for convenience
-pub use super::components::{Equippable, EquippableSlot, Tool, ToolRule};
+pub use super::components::{Equippable, EquippableSlot, ItemEnchantments, Tool, ToolRule};
 
 // ==================== Fully Implemented Components ====================
 
@@ -80,7 +80,7 @@ pub const LORE: DataComponentType<()> = DataComponentType::new(Identifier::vanil
 pub const RARITY: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("rarity"));
 
-pub const ENCHANTMENTS: DataComponentType<()> =
+pub const ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("enchantments"));
 
 pub const CAN_PLACE_ON: DataComponentType<()> =
@@ -148,7 +148,7 @@ pub const SWING_ANIMATION: DataComponentType<()> =
 pub const ADDITIONAL_TRADE_COST: DataComponentType<()> =
     DataComponentType::new(Identifier::vanilla_static("additional_trade_cost"));
 
-pub const STORED_ENCHANTMENTS: DataComponentType<()> =
+pub const STORED_ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("stored_enchantments"));
 
 pub const DYE: DataComponentType<()> = DataComponentType::new(Identifier::vanilla_static("dye"));
@@ -449,7 +449,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 12: rarity
     register_stub!(registry, RARITY.key.clone());
     // 13: enchantments
-    register_stub!(registry, ENCHANTMENTS.key.clone());
+    registry.register(ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
     // 14: can_place_on
     register_stub!(registry, CAN_PLACE_ON.key.clone());
     // 15: can_break
@@ -512,7 +512,7 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     // 41: additional_trade_cost
     register_stub!(registry, ADDITIONAL_TRADE_COST.key.clone());
     // 42: stored_enchantments
-    register_stub!(registry, STORED_ENCHANTMENTS.key.clone());
+    registry.register(STORED_ENCHANTMENTS, ComponentDataDiscriminant::Enchantments);
     // 43: dye
     register_stub!(registry, DYE.key.clone());
     // 44: dyed_color

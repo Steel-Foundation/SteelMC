@@ -26,11 +26,11 @@ fn generate_identifier(resource: &Identifier) -> TokenStream {
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/chicken_sound_variant/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/chicken_sound_variant/"
     );
 
     let chicken_sound_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/chicken_sound_variant";
+        "build_assets/builtin_datapacks/minecraft/chicken_sound_variant";
     let mut chicken_sound_variants = Vec::new();
 
     // Read all chicken sound variant JSON files
