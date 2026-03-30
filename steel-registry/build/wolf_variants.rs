@@ -78,11 +78,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/wolf_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/wolf_variant/");
 
-    let wolf_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/wolf_variant";
+    let wolf_variant_dir = "build_assets/builtin_datapacks/minecraft/wolf_variant";
     let mut wolf_variants = Vec::new();
 
     // Read all wolf variant JSON files

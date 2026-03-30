@@ -107,11 +107,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/cat_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/cat_variant/");
 
-    let cat_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/cat_variant";
+    let cat_variant_dir = "build_assets/builtin_datapacks/minecraft/cat_variant";
     let mut cat_variants = Vec::new();
 
     // Read all cat variant JSON files

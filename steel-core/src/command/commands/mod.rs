@@ -1,5 +1,6 @@
 //! This module contains the command building structs.
 pub mod clear;
+pub mod enchant;
 pub mod execute;
 pub mod fly;
 pub mod gamemode;

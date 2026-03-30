@@ -64,11 +64,9 @@ fn generate_exit_action(action: &ExitActionJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/dialog/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/dialog/");
 
-    let dialog_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/dialog";
+    let dialog_dir = "build_assets/builtin_datapacks/minecraft/dialog";
     let mut dialogs = Vec::new();
 
     // Read all dialog JSON files

@@ -33,11 +33,9 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/jukebox_song/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/jukebox_song/");
 
-    let jukebox_song_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/jukebox_song";
+    let jukebox_song_dir = "build_assets/builtin_datapacks/minecraft/jukebox_song";
     let mut jukebox_songs = Vec::new();
 
     // Read all jukebox song JSON files

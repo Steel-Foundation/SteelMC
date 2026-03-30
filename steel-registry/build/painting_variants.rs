@@ -97,12 +97,9 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/painting_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/painting_variant/");
 
-    let painting_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/painting_variant";
+    let painting_variant_dir = "build_assets/builtin_datapacks/minecraft/painting_variant";
     let mut painting_variants = Vec::new();
 
     // Read all painting variant JSON files

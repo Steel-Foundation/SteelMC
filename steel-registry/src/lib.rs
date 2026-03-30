@@ -17,6 +17,7 @@ use crate::{
     data_components::{DataComponentRegistry, vanilla_components},
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
+    enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
     entity_types::EntityTypeRegistry,
     fluid::FluidRegistry,
@@ -57,6 +58,7 @@ pub mod damage_type;
 pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
+pub mod enchantment;
 pub mod entity_data;
 pub mod entity_types;
 pub mod fluid;
@@ -277,6 +279,15 @@ pub mod vanilla_banner_pattern_tags;
 pub mod vanilla_entity_type_tags;
 
 #[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_enchantment_tags.rs"]
+pub mod vanilla_enchantment_tags;
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_enchantments.rs"]
+pub mod vanilla_enchantments;
+
+#[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_instrument_tags.rs"]
 pub mod vanilla_instrument_tags;
@@ -590,8 +601,7 @@ pub const PAINTING_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("pa
 pub const DIMENSION_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("dimension_type");
 pub const DAMAGE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("damage_type");
 pub const BANNER_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("banner_pattern");
-//TODO: Add enchantments
-//pub const ENCHANTMENT_REGISTRY: Identifier = Identifier::vanilla_static("enchantment");
+pub const ENCHANTMENT_REGISTRY: Identifier = Identifier::vanilla_static("enchantment");
 pub const JUKEBOX_SONG_REGISTRY: Identifier = Identifier::vanilla_static("jukebox_song");
 pub const INSTRUMENT_REGISTRY: Identifier = Identifier::vanilla_static("instrument");
 pub const DIALOG_REGISTRY: Identifier = Identifier::vanilla_static("dialog");
@@ -643,6 +653,7 @@ pub struct Registry {
     pub game_rules: GameRuleRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
+    pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
 }
 
@@ -721,7 +732,11 @@ impl Registry {
         vanilla_poi_types::register_poi_types(&mut registry.poi_types);
         vanilla_poi_type_tags::register_poi_type_tags(&mut registry.poi_types);
 
+        vanilla_enchantments::register_enchantments(&mut registry.enchantments);
+        vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
+
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
+
         registry
     }
 
@@ -762,6 +777,7 @@ impl Registry {
         self.game_rules.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
+        self.enchantments.freeze();
         self.world_clocks.freeze();
     }
 
@@ -805,6 +821,7 @@ impl Registry {
             fluids: FluidRegistry::new(),
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
+            enchantments: EnchantmentRegistry::new(),
         }
     }
 }

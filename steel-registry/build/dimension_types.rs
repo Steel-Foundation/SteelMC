@@ -248,12 +248,9 @@ fn generate_background_music(bg: &BackgroundMusicJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/dimension_type/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/dimension_type/");
 
-    let dimension_type_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/dimension_type";
+    let dimension_type_dir = "build_assets/builtin_datapacks/minecraft/dimension_type";
     let mut dimension_types = Vec::new();
 
     // Read all dimension type JSON files

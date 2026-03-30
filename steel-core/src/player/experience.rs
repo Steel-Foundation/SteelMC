@@ -1,8 +1,17 @@
+use steel_registry::vanilla_entity_data::PlayerEntityData;
+
 /// Holds the total amount of experience points a player has.
-/// Vanilla uses signed `i32` for XP — negative values are clamped to 0.
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Experience {
+    /// The CURRENT total points that the player currently has.
+    /// This is the value that is consumed when for example levels are consumed during enchanting.
+    /// Vanilla uses signed `i32` for XP — negative values are clamped to 0.
     total_points: i32,
+    /// The score that is displayed upon player death.
+    /// This is a non decreasing total of the points the player has collected through advancements,
+    /// experience orbs and the `/xp add ... points` command.
+    /// This value is the source of truth for the score value and trumps the `PlayerEntityData.score` value
+    pub score: i32,
     /// Whether the `total_points` has changed since the last time the client was updated
     pub dirty: bool,
 }
@@ -13,6 +22,7 @@ impl Experience {
     pub fn new(total_points: i32) -> Self {
         Self {
             total_points: total_points.max(0),
+            score: 0,
             dirty: true,
         }
     }
@@ -63,6 +73,11 @@ impl Experience {
         self.total_points
     }
 
+    /// Syncs the score with the player's entity data
+    pub fn sync_score(self, entity_data: &mut PlayerEntityData) {
+        entity_data.score.set(self.score);
+    }
+
     /// Returns the progress to the next level between 0.0 and 1.0
     #[must_use]
     pub fn progress(self) -> f64 {
@@ -82,8 +97,10 @@ impl Experience {
         self.set_total_points(new_total_points);
     }
 
-    /// Add points to the total experience
+    /// Add points to the total experience, also increases the score
     pub const fn add_points(&mut self, additional_points: i32) {
+        self.score += additional_points;
+
         let new_total_points = self.total_points.saturating_add(additional_points);
 
         self.set_total_points(new_total_points);
@@ -136,5 +153,19 @@ impl Experience {
             new_total_points
         };
         self.dirty = true;
+    }
+
+    /// Clears the score, the total experience and sets the dirty flag to true
+    pub const fn clear(&mut self) {
+        self.score = 0;
+        self.total_points = 0;
+        self.dirty = true;
+    }
+
+    /// The base XP reward dropped on death.
+    /// Matches vanilla `Player::getBaseExperienceReward`: `min(level * 7, 100)`.
+    #[must_use]
+    pub fn death_xp_reward(&self) -> i32 {
+        (self.level() * 7).min(100)
     }
 }

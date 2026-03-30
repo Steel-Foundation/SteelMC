@@ -26,12 +26,9 @@ fn generate_identifier(resource: &Identifier) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/pig_sound_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/pig_sound_variant/");
 
-    let pig_sound_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/pig_sound_variant";
+    let pig_sound_variant_dir = "build_assets/builtin_datapacks/minecraft/pig_sound_variant";
     let mut pig_sound_variants = Vec::new();
 
     // Read all pig sound variant JSON files

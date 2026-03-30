@@ -33,11 +33,9 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/instrument/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/instrument/");
 
-    let instrument_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/instrument";
+    let instrument_dir = "build_assets/builtin_datapacks/minecraft/instrument";
     let mut instruments = Vec::new();
 
     // Read all instrument JSON files
