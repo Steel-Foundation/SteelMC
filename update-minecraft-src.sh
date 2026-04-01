@@ -17,7 +17,7 @@ trap "rm -rf $TEMP_DIR" EXIT
 git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 
 # Patch Groovy version (use specific version instead of dynamic 5.0.+)
-sed -i 's/groovy_version = 5\.0\.+/groovy_version = 5.0.0/' "$TEMP_DIR/GitCraft/gradle.properties"
+sed -i.bak 's/groovy_version = 5\.0\.+/groovy_version = 5.0.0/' "$TEMP_DIR/GitCraft/gradle.properties"
 echo "Patched gradle.properties:"
 grep groovy "$TEMP_DIR/GitCraft/gradle.properties"
 
