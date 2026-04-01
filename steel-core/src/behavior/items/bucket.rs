@@ -5,8 +5,6 @@
 //! Mirrors vanilla's `BucketItem(Fluid fluid)`: `fluid_block = None` = empty bucket,
 //! `Some(block)` = filled bucket. Logic is dispatched in `use_item`.
 //!
-// TODO: Spawn particles
-
 use crate::behavior::context::InteractionResult;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
@@ -22,6 +20,7 @@ use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
@@ -203,9 +202,15 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         let state = context.world.get_block_state(pos);
         let fluid_state = state.get_fluid_state();
 
-        // TODO: Nether water evaporation (vanilla uses EnvironmentAttributes.WATER_EVAPORATES)
-        // If the dimension evaporates water and we are placing WATER, play FIRE_EXTINGUISH
-        // sound, spawn LARGE_SMOKE particles, and consume the bucket without placing.
+        // Vanilla parity: in dimensions where water evaporates (e.g. the Nether),
+        // water buckets fizz out without placing any fluid.
+        if fluid_block == vanilla_blocks::WATER && context.world.dimension.water_evaporates {
+            context
+                .world
+                .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);
+            consume_bucket(context, &vanilla_items::ITEMS.bucket);
+            return Some(InteractionResult::Success);
+        }
 
         // Vanilla parity (bl4): when sneaking, only air allows placement at this position.
         // Non-air blocks redirect to the neighbor — handled by the secondary call.
