@@ -16,10 +16,8 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Clone GitCraft
 git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 
-# Patch Groovy version (use specific version instead of dynamic 5.0.+)
-sed -i.bak 's/groovy_version = 5\.0\.+/groovy_version = 5.0.0/' "$TEMP_DIR/GitCraft/gradle.properties"
-echo "Patched gradle.properties:"
-grep groovy "$TEMP_DIR/GitCraft/gradle.properties"
+# Pin fabric-loom to avoid TinyJavadocProvider API breakage in newer versions
+sed -i.bak 's/loom_version = 1\.+/loom_version = 1.15.5/' "$TEMP_DIR/GitCraft/gradle.properties"
 
 # Run GitCraft
 cd "$TEMP_DIR/GitCraft"
