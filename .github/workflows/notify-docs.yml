@@ -1,0 +1,19 @@
+name: Notify SteelDocs of changes
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "steel-core/build/classes.json"
+      - "steel-core/src/behavior/**"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to SteelDocs
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          repository: Steel-Foundation/SteelDocs
+          event-type: steel-updated

@@ -24,3 +24,5 @@ profile.json.gz
 .vscode/settings.json
 .idea
 
+.DS_STORE
+rustc-ice-*.txt
