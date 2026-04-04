@@ -24,6 +24,7 @@ pub enum DimensionChangeRequest {
     /// Pre-computed transition (players after chunk pre-warming).
     Computed(TeleportTransition),
     /// Portal position — server computes destination at processing time.
+    /// TODO: implement portal destination calculation (`nether_portal::calculate_destination`)
     Portal {
         /// The world the entity is currently in.
         source_world: Arc<World>,

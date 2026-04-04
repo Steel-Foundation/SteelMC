@@ -809,10 +809,13 @@ impl World {
                 reason = "comparing against the exact previously-assigned value to detect any change"
             )]
             if weather.previous_rain_level != weather.rain_level {
-                self.broadcast_to_all(CGameEvent {
-                    event: GameEventType::RainLevelChange,
-                    data: weather.rain_level,
-                });
+                self.broadcast_to_all(
+                    CGameEvent {
+                        event: GameEventType::RainLevelChange,
+                        data: weather.rain_level,
+                    },
+                    None,
+                );
             }
 
             #[expect(
@@ -820,33 +823,48 @@ impl World {
                 reason = "comparing against the exact previously-assigned value to detect any change"
             )]
             if weather.previous_thunder_level != weather.thunder_level {
-                self.broadcast_to_all(CGameEvent {
-                    event: GameEventType::ThunderLevelChange,
-                    data: weather.thunder_level,
-                });
+                self.broadcast_to_all(
+                    CGameEvent {
+                        event: GameEventType::ThunderLevelChange,
+                        data: weather.thunder_level,
+                    },
+                    None,
+                );
             }
         } else {
             if raining_before {
-                self.broadcast_to_all(CGameEvent {
-                    event: GameEventType::StopRaining,
-                    data: 0.0,
-                });
+                self.broadcast_to_all(
+                    CGameEvent {
+                        event: GameEventType::StopRaining,
+                        data: 0.0,
+                    },
+                    None,
+                );
             } else {
-                self.broadcast_to_all(CGameEvent {
-                    event: GameEventType::StartRaining,
-                    data: 0.0,
-                });
+                self.broadcast_to_all(
+                    CGameEvent {
+                        event: GameEventType::StartRaining,
+                        data: 0.0,
+                    },
+                    None,
+                );
             }
 
-            self.broadcast_to_all(CGameEvent {
-                event: GameEventType::RainLevelChange,
-                data: weather.rain_level,
-            });
+            self.broadcast_to_all(
+                CGameEvent {
+                    event: GameEventType::RainLevelChange,
+                    data: weather.rain_level,
+                },
+                None,
+            );
 
-            self.broadcast_to_all(CGameEvent {
-                event: GameEventType::ThunderLevelChange,
-                data: weather.thunder_level,
-            });
+            self.broadcast_to_all(
+                CGameEvent {
+                    event: GameEventType::ThunderLevelChange,
+                    data: weather.thunder_level,
+                },
+                None,
+            );
         }
     }
 
@@ -1001,7 +1019,7 @@ impl World {
 
         if game_time % 20 == 0 {
             let rate = if advance_time { 1.0 } else { 0.0 };
-            self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate));
+            self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate), None);
         }
     }
 
@@ -1018,7 +1036,7 @@ impl World {
         // Only broadcast if there are players
         if !latency_entries.is_empty() {
             let packet = CPlayerInfoUpdate::update_latency(latency_entries);
-            self.broadcast_to_all(packet);
+            self.broadcast_to_all(packet, None);
         }
     }
 
@@ -1094,25 +1112,22 @@ impl World {
 
     /// Broadcasts a system chat message to all players.
     pub fn broadcast_system_chat(&self, packet: CSystemChat) {
-        self.broadcast_to_all(packet);
+        self.broadcast_to_all(packet, None);
     }
 
-    /// Broadcasts a packet to all players in the world.
-    ///
-    /// This method handles encoding the packet once and sending it to all players,
-    /// avoiding repeated cloning of unencoded packets.
-    pub fn broadcast_to_all<P: ClientPacket>(&self, packet: P) {
+    /// Broadcasts a packet to all players in the world, optionally excluding one by entity ID.
+    pub fn broadcast_to_all<P: ClientPacket>(&self, packet: P, exclude: Option<i32>) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
         else {
             return;
         };
-        self.broadcast_to_all_encoded(encoded);
+        self.broadcast_to_all_encoded(encoded, exclude);
     }
 
     /// Broadcasts a packet to all players in the world.
     ///
-    /// This method handles encoding the packets producced from the function passed
+    /// This method handles encoding the packets produced from the function passed.
     pub fn broadcast_to_all_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
         self.players.iter_players(|_, player| {
             let Ok(encoded) = EncodedPacket::from_bare(
@@ -1127,12 +1142,12 @@ impl World {
         });
     }
 
-    /// Broadcasts an already-encoded packet to all players in the world.
-    ///
-    /// Use this when you have a pre-encoded packet to avoid re-encoding.
-    pub fn broadcast_to_all_encoded(&self, packet: EncodedPacket) {
+    /// Broadcasts an already-encoded packet to all players in the world, optionally excluding one.
+    pub fn broadcast_to_all_encoded(&self, packet: EncodedPacket, exclude: Option<i32>) {
         self.players.iter_players(|_, player| {
-            player.connection.send_encoded(packet.clone());
+            if Some(player.id) != exclude {
+                player.connection.send_encoded(packet.clone());
+            }
             true
         });
     }

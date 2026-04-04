@@ -8,6 +8,7 @@ pub mod gamerule;
 pub mod give;
 pub mod kill;
 pub mod seed;
+pub mod steel;
 pub mod stop;
 pub mod summon;
 pub mod tellraw;
@@ -16,8 +17,6 @@ pub mod time;
 pub mod tp;
 pub mod weather;
 pub mod xp;
-
-pub mod steel;
 
 use std::marker::PhantomData;
 use std::ops::Not;

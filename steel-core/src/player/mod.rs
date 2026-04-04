@@ -64,12 +64,12 @@ use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ELYTRA_MOVEMENT_CHECK, IMMEDIATE_RESPAWN, KEEP_INVENTORY, PLAYER_MOVEMENT_CHECK,
     SHOW_DEATH_MESSAGES,
 };
-use steel_registry::{REGISTRY, RegistryExt, vanilla_entities};
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::entity_events::EntityStatus;
 
@@ -455,13 +455,12 @@ impl Player {
 
         *self.last_chunk_pos.lock() = chunk_pos;
 
-        self.get_world().chunk_map.update_player_status(self);
+        let world = self.get_world();
+        world.chunk_map.update_player_status(self);
 
-        self.chunk_sender.lock().send_next_chunks(
-            self.connection.clone(),
-            &self.get_world(),
-            chunk_pos,
-        );
+        self.chunk_sender
+            .lock()
+            .send_next_chunks(self.connection.clone(), &world, chunk_pos);
 
         {
             let mut living_base = self.living_base.lock();
@@ -474,7 +473,7 @@ impl Player {
             self.tick_death();
         } else {
             self.touch_nearby_items();
-            self.block_breaking.lock().tick(self, &self.get_world());
+            self.block_breaking.lock().tick(self, &world);
             self.check_inside_blocks();
             self.check_below_world();
 
@@ -545,7 +544,7 @@ impl Player {
             );
 
             self.get_world()
-                .broadcast_to_all(CRemoveEntities::single(self.id));
+                .broadcast_to_all(CRemoveEntities::single(self.id), None);
             self.set_removed(RemovalReason::Killed);
         }
     }
@@ -1218,7 +1217,7 @@ impl Player {
         // Broadcast the chat session to all players so they can verify this player's signatures
         let update_packet =
             CPlayerInfoUpdate::update_chat_session(self.gameprofile.id, protocol_data);
-        self.get_world().broadcast_to_all(update_packet);
+        self.get_world().broadcast_to_all(update_packet, None);
     }
 
     /// Gets a reference to the player's chat session if present
@@ -1353,7 +1352,7 @@ impl Player {
         // This updates PlayerInfo on clients, which is used for isSpectator() checks
         let update_packet =
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
-        self.get_world().broadcast_to_all(update_packet);
+        self.get_world().broadcast_to_all(update_packet, None);
 
         self.send_message(
             &translations::COMMANDS_GAMEMODE_SUCCESS_SELF
@@ -2484,6 +2483,7 @@ impl Player {
         use crate::behavior::BLOCK_BEHAVIORS;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
 
+        let world = self.get_world();
         let aabb = self.bounding_box().deflate(1.0E-5);
 
         let min_x = aabb.min_x.floor() as i32;
@@ -2497,13 +2497,12 @@ impl Player {
             for y in min_y..=max_y {
                 for z in min_z..=max_z {
                     let pos = BlockPos::new(x, y, z);
-                    let state = self.get_world().get_block_state(pos);
+                    let state = world.get_block_state(pos);
                     if state.is_air() {
                         continue;
                     }
                     let block = state.get_block();
                     let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-                    let world = self.get_world();
                     behavior.entity_inside(state, &world, pos, self as &dyn Entity);
                 }
             }
@@ -2715,10 +2714,6 @@ impl Player {
     ///
     /// # Panics
     /// If the player dies in a dimension that doesn't exist.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "respawn logic is a single sequential operation matching vanilla ServerPlayer.respawn; splitting would hurt readability"
-    )]
     pub fn respawn(&self) {
         {
             let mut living_base = self.living_base.lock();
@@ -2729,7 +2724,6 @@ impl Player {
         };
 
         let was_removed = self.removed.swap(false, Ordering::AcqRel);
-
         let world = self.get_world();
 
         // Only send CRemoveEntities if tick_death() hasn't already removed us
@@ -2738,73 +2732,41 @@ impl Player {
         // fresh ServerPlayer), clients may briefly see remove+re-add in the same
         // frame if respawn races with tick_death's DEATH_DURATION removal.
         if !was_removed {
-            world.broadcast_to_all(CRemoveEntities::single(self.id));
+            world.broadcast_to_all(CRemoveEntities::single(self.id), None);
         }
 
-        // Reset transient state. Vanilla creates a fresh ServerPlayer so all state
-        // is naturally zeroed; we reuse the same Player, so we must reset manually.
-        // TODO: as new transient fields are added (effects, fire ticks, frozen
-        // ticks, etc.), they must be reset here too.
-        self.movement.lock().delta_movement = DVec3::default();
-        {
-            let mut es = self.entity_state.lock();
-            es.on_ground = false;
-            es.fall_flying = false;
-            es.sleeping = false;
-            es.crouching = false;
-        }
-        *self.block_breaking.lock() = BlockBreakingManager::new();
-
+        // Respawn-specific state: reset health and pose
         {
             let mut entity_data = self.entity_data.lock();
             entity_data.health.set(20.0);
             entity_data.pose.set(EntityPose::Standing);
         }
-
         self.health_sync.lock().reset_for_respawn();
 
         // TODO: bed/respawn anchor lookup, send NO_RESPAWN_BLOCK_AVAILABLE if missing
 
-        self.send_packet(CRespawn {
-            dimension_type: world.dimension.id() as i32,
-            dimension_name: world.dimension.key().to_owned(),
-            hashed_seed: world.obfuscated_seed(),
-            gamemode: self.game_mode.load() as u8,
-            previous_gamemode: self.prev_game_mode.load() as i8,
-            is_debug: false,
-            is_flat: matches!(STEEL_CONFIG.world_generator, WorldGeneratorTypes::Flat),
-            has_death_location: false,
-            death_dimension_name: None,
-            death_location: None,
-            portal_cooldown_ticks: 0,
-            // TODO: read from dimension's noise_settings (varies per dimension, e.g. nether=32, end=0)
-            sea_level: 63,
-            data_kept: 0,
-        });
+        let Some(player_arc) = world.players.get_by_entity_id(self.id) else {
+            return;
+        };
 
+        // Shared reset (clears transient state, sends CRespawn)
+        player_arc.reset(world.clone(), ResetReason::Respawn);
+
+        // Compute spawn position
         let spawn_pos = world.level_data.read().data().spawn_pos();
         let spawn = DVec3::new(
             f64::from(spawn_pos.x()) + 0.5,
             f64::from(spawn_pos.y()),
             f64::from(spawn_pos.z()) + 0.5,
         );
-        *self.position.lock() = spawn;
-        {
-            let mut mv = self.movement.lock();
-            mv.prev_position = spawn;
-            mv.last_good_position = spawn;
-            mv.first_good_position = spawn;
-        }
-        self.rotation.store((0.0, 0.0));
-        self.teleport(spawn.x, spawn.y, spawn.z, 0.0, 0.0);
 
         // TODO: send CSetDefaultSpawnPosition (dimension, pos, yaw, pitch)
-
         // TODO: send CChangeDifficulty (difficulty, locked)
 
+        // Handle XP loss on death
         {
             let mut experience = self.experience.lock();
-            if self.get_world().get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true)
+            if world.get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true)
                 && self.game_mode.load() != GameType::Spectator
             {
                 // TODO: drop XP orbs (min(level * 7, 100))
@@ -2815,9 +2777,9 @@ impl Player {
         }
 
         // TODO: send mob effect packets once effects are implemented
-
         // TODO: send CInitializeBorder once world border is implemented
 
+        // Broadcast respawned entity to other players
         // Vanilla: ChunkMap.addEntity -> addPairing -> sendPairingData
         // TODO: also send SetEquipment + UpdateAttributes in the bundle
         let player_type_id = vanilla_entities::PLAYER.id() as i32;
@@ -2847,57 +2809,10 @@ impl Player {
 
         // TODO: sendPlayerPermissionLevel
         // TODO: initInventoryMenu
-
-        {
-            let level_data = world.level_data.read();
-            let game_time = level_data.game_time();
-            let day_time = level_data.day_time();
-            drop(level_data);
-
-            let advance_time = world
-                .get_game_rule(ADVANCE_TIME)
-                .as_bool()
-                .expect("gamerule advance_time should always be a bool.");
-            let rate = if advance_time { 1.0 } else { 0.0 };
-            self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
-        }
-
-        if world.is_raining() {
-            let (rain_level, thunder_level) = {
-                let weather = world.weather.lock();
-                (weather.rain_level, weather.thunder_level)
-            };
-
-            self.send_packet(CGameEvent {
-                event: GameEventType::StartRaining,
-                data: 0.0,
-            });
-
-            self.send_packet(CGameEvent {
-                event: GameEventType::RainLevelChange,
-                data: rain_level,
-            });
-
-            self.send_packet(CGameEvent {
-                event: GameEventType::ThunderLevelChange,
-                data: thunder_level,
-            });
-        }
-
-        self.send_packet(CGameEvent {
-            event: GameEventType::LevelChunksLoadStart,
-            data: 0.0,
-        });
-
         // TODO: tick rate update for joining player
 
-        // --- 6) Re-enter chunk tracking (vanilla: addEntity -> updatePlayerStatus) ---
-        world.player_area_map.remove_by_entity_id(self.id);
-        world.chunk_map.remove_player(self);
-        world.entity_tracker().on_player_leave(self.id);
-        self.client_loaded.store(false, Ordering::Relaxed);
-
-        self.send_abilities();
+        // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
+        player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
         self.send_inventory_to_remote();
     }
 
@@ -2927,6 +2842,184 @@ impl Player {
     pub fn set_world(&self, world: Arc<World>) {
         self.world.store(world);
     }
+
+    /// Resets the player's transient state and prepares them for a new world.
+    ///
+    /// This is the shared "clean slate" path used by initial join, respawn, and
+    /// dimension change. If the player is currently in a different world, they are
+    /// removed from the old world first.
+    ///
+    /// Vanilla equivalent: the work that happens when a fresh `ServerPlayer` is
+    /// constructed during respawn / dimension change, since vanilla recreates the
+    /// player object. We reuse the same `Player`, so we reset manually.
+    pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
+        let old_world = self.get_world();
+        let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
+
+        // --- Old world cleanup (only when actually switching worlds) ---
+        if switching_worlds {
+            self.do_close_container();
+            self.send_packet(CContainerClose { container_id: 0 });
+            old_world.remove_player_for_dimension_change(self);
+            self.set_world(new_world.clone());
+        }
+
+        // --- Reset transient state ---
+        self.client_loaded.store(false, Ordering::Relaxed);
+        self.movement.lock().delta_movement = DVec3::default();
+        {
+            let mut es = self.entity_state.lock();
+            es.on_ground = false;
+            es.fall_flying = false;
+            es.sleeping = false;
+            es.crouching = false;
+            es.sprinting = false;
+        }
+        *self.block_breaking.lock() = BlockBreakingManager::new();
+
+        // Reset chunk tracking
+        *self.chunk_sender.lock() = ChunkSender::default();
+        *self.last_tracking_view.lock() = None;
+        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
+
+        // --- Send CRespawn (not needed on initial join — CLogin already sent) ---
+        if reason != ResetReason::InitialJoin {
+            let is_flat = matches!(STEEL_CONFIG.world_generator, WorldGeneratorTypes::Flat);
+
+            // 0x01 = keep attributes, 0x02 = keep entity data
+            let data_kept: i8 = match reason {
+                ResetReason::DimensionChange => 0x03,
+                _ => 0x00,
+            };
+
+            self.send_packet(CRespawn {
+                dimension_type: new_world.dimension.id() as i32,
+                dimension_name: new_world.dimension.key().to_owned(),
+                hashed_seed: new_world.obfuscated_seed(),
+                gamemode: self.game_mode.load() as u8,
+                previous_gamemode: self.prev_game_mode.load() as i8,
+                is_debug: false,
+                is_flat,
+                has_death_location: false,
+                death_dimension_name: None,
+                death_location: None,
+                portal_cooldown_ticks: 0,
+                // TODO: read from dimension's noise_settings (varies per dimension, e.g. nether=32, end=0)
+                sea_level: 63,
+                data_kept,
+            });
+        }
+    }
+
+    /// Spawns the player into their current world at the given position.
+    ///
+    /// This is the shared "enter world" path used by initial join, respawn, and
+    /// dimension change. Sends position sync, abilities, inventory, time, weather,
+    /// and adds the player to the world as appropriate for the given reason.
+    ///
+    /// # Panics
+    /// Panics if the `advance_time` gamerule is not a bool.
+    pub fn spawn(self: &Arc<Self>, position: DVec3, rotation: (f32, f32), reason: ResetReason) {
+        let world = self.get_world();
+
+        // Set position and rotation
+        *self.position.lock() = position;
+        self.rotation.store(rotation);
+        {
+            let mut mv = self.movement.lock();
+            mv.prev_position = position;
+            mv.last_good_position = position;
+            mv.first_good_position = position;
+            mv.received_move_packet_count = 0;
+            mv.known_move_packet_count = 0;
+        }
+
+        // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
+        self.teleport(position.x, position.y, position.z, rotation.0, rotation.1);
+
+        // Abilities and held slot
+        self.send_abilities();
+        self.send_packet(CSetHeldSlot {
+            slot: i32::from(self.inventory.lock().get_selected_slot()),
+        });
+
+        // Time sync
+        {
+            let level_data = world.level_data.read();
+            let game_time = level_data.game_time();
+            let day_time = level_data.day_time();
+            drop(level_data);
+
+            let advance_time = world
+                .get_game_rule(ADVANCE_TIME)
+                .as_bool()
+                .expect("gamerule advance_time should always be a bool.");
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            self.send_packet(CSetTime::new(game_time, day_time, 0.0, rate));
+        }
+
+        // Weather sync
+        if world.can_have_weather() && world.is_raining() {
+            let (rain_level, thunder_level) = {
+                let weather = world.weather.lock();
+                (weather.rain_level, weather.thunder_level)
+            };
+
+            self.send_packet(CGameEvent {
+                event: GameEventType::StartRaining,
+                data: 0.0,
+            });
+            self.send_packet(CGameEvent {
+                event: GameEventType::RainLevelChange,
+                data: rain_level,
+            });
+            self.send_packet(CGameEvent {
+                event: GameEventType::ThunderLevelChange,
+                data: thunder_level,
+            });
+        }
+
+        // Force health/xp resync on next tick
+        self.reset_sent_info();
+
+        // Add to world / re-enter chunk tracking
+        match reason {
+            ResetReason::InitialJoin | ResetReason::DimensionChange => {
+                if reason == ResetReason::DimensionChange {
+                    log::info!(
+                        "Player {} changed dimension to {}",
+                        self.gameprofile.name,
+                        world.dimension.key
+                    );
+                }
+                world.add_player(self.clone(), reason);
+            }
+            ResetReason::Respawn => {
+                // Same world — re-enter chunk tracking
+                world.player_area_map.remove_by_entity_id(self.id);
+                world.chunk_map.remove_player(self);
+                world.entity_tracker().on_player_leave(self.id);
+
+                self.send_packet(CGameEvent {
+                    event: GameEventType::LevelChunksLoadStart,
+                    data: 0.0,
+                });
+            }
+        }
+    }
+}
+
+/// Why the player is being reset and spawned into a world.
+///
+/// Controls which packets are sent and how world add/remove is handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetReason {
+    /// First time joining the server. `CLogin` was already sent, so `CRespawn` is skipped.
+    InitialJoin,
+    /// Respawning after death in the same world.
+    Respawn,
+    /// Teleporting to a different world (dimension change).
+    DimensionChange,
 }
 
 impl Entity for Player {
@@ -3025,102 +3118,14 @@ impl Entity for Player {
     }
 
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
-        let old_world = self.get_world();
         let new_world = teleport_transition.target_world.clone();
-
-        // === Phase 1: Cleanup old world ===
-
-        // Close any open container menu
-        self.do_close_container();
-        self.send_packet(CContainerClose { container_id: 0 });
-        old_world.remove_player_for_dimension_change(&self);
-
-        // === Phase 2: Reset player state ===
-
-        // Update world reference
-        self.set_world(new_world.clone());
-
-        // Update position + rotation
-        *self.position.lock() = teleport_transition.position;
-        self.rotation.store(teleport_transition.rotation);
-
-        // Reset movement/physics state
-        let mut state = self.entity_state.lock();
-        state.on_ground = false;
-        state.sleeping = false;
-        state.fall_flying = false;
-        state.sprinting = false;
-        drop(state);
-        self.client_loaded.store(false, Ordering::Relaxed);
-
-        // Reset movement validation state
-        let mut movement = self.movement.lock();
-        movement.first_good_position = teleport_transition.position;
-        movement.last_good_position = teleport_transition.position;
-        movement.received_move_packet_count = 0;
-        movement.known_move_packet_count = 0;
-        drop(movement);
-
-        // === Phase 3: Send packets ===
-
-        // CRespawn packet (client unloads old dimension, loads new one)
-        let dim_type_id = REGISTRY
-            .dimension_types
-            .id_from_key(&new_world.dimension.key)
-            .expect("Should be here the dimension can't be found!")
-            as i32;
-
-        self.send_packet(CRespawn {
-            dimension_type: dim_type_id,
-            dimension_name: new_world.dimension.key.clone(),
-            hashed_seed: new_world.obfuscated_seed(),
-            gamemode: self.game_mode.load() as u8,
-            previous_gamemode: self.prev_game_mode.load() as i8,
-            is_debug: false,
-            is_flat: true,
-            has_death_location: false,
-            death_dimension_name: None,
-            death_location: None,
-            portal_cooldown_ticks: teleport_transition.portal_cooldown,
-            sea_level: 63,
-            // Preserve entity attributes and metadata across dimension changes
-            data_kept: 0x03,
-        });
-
-        // Reset chunk sender state
-        *self.chunk_sender.lock() = ChunkSender::default();
-        *self.last_tracking_view.lock() = None;
-        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
-
-        // Teleport (sends CPlayerPosition, sets awaiting_teleport for ack)
-        self.teleport(
-            teleport_transition.position.x,
-            teleport_transition.position.y,
-            teleport_transition.position.z,
-            teleport_transition.rotation.0,
-            teleport_transition.rotation.1,
+        self.reset(new_world, ResetReason::DimensionChange);
+        // TODO: set portal cooldown from teleport_transition.portal_cooldown
+        self.spawn(
+            teleport_transition.position,
+            teleport_transition.rotation,
+            ResetReason::DimensionChange,
         );
-
-        // Re-send abilities
-        self.send_abilities();
-
-        // Re-send held item slot
-        self.send_packet(CSetHeldSlot {
-            slot: i32::from(self.inventory.lock().get_selected_slot()),
-        });
-
-        // === Phase 4: Set portal cooldown ===
-        // self.portal_cooldown
-        //     .store(transition.portal_cooldown, Ordering::Relaxed);
-
-        // === Phase 5: Add to new world ===
-        // TODO: send level data (time, weather, border, etc.) for new dimension
-        log::info!(
-            "Player {} changed dimension to {}",
-            self.gameprofile.name,
-            new_world.dimension.key
-        );
-        new_world.add_player_for_dimension_change(self);
     }
 }
 

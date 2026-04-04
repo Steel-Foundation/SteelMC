@@ -22,7 +22,6 @@ use crate::world::{World, WorldConfig, WorldTickTimings};
 use crate::worldgen::BiomeSourceKind;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use small_map::FxSmallMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     mem,
     sync::Arc,
@@ -30,8 +29,7 @@ use std::{
 };
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
-    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
 };
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::game_rules::GameRuleValue;
@@ -66,8 +64,6 @@ pub struct Server {
     pub player_data_storage: PlayerDataStorage,
     /// Queued dimension changes to process after the tick.
     pub pending_dimension_changes: SyncMutex<Vec<(SharedEntity, DimensionChangeRequest)>>,
-    /// Fast-path flag to skip locking when no dimension changes are queued.
-    pub has_dimension_changes: AtomicBool,
 }
 
 impl Server {
@@ -164,7 +160,6 @@ impl Server {
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             player_data_storage,
             pending_dimension_changes: SyncMutex::new(vec![]),
-            has_dimension_changes: AtomicBool::new(false),
         }
     }
 
@@ -173,6 +168,8 @@ impl Server {
     /// # Panics
     /// Panics if the registry is not initialized.
     pub async fn add_player(&self, player: Arc<Player>) {
+        use crate::player::ResetReason;
+
         // Load saved player data if it exists
         match self.player_data_storage.load(player.gameprofile.id).await {
             Ok(Some(saved_data)) => {
@@ -194,7 +191,7 @@ impl Server {
         }
 
         player.reset_health_if_dead();
-        let world = &self.overworld();
+        let world = self.overworld().clone();
 
         // Get gamerule values
         let reduced_debug_info =
@@ -231,41 +228,11 @@ impl Server {
                 is_flat: matches!(STEEL_CONFIG.world_generator, WorldGeneratorTypes::Flat),
                 last_death_location: None,
                 portal_cooldown: 0,
-                sea_level: 63, // Standard overworld sea level
+                // TODO: read from dimension's noise_settings (varies per dimension, e.g. nether=32, end=0)
+                sea_level: 63,
             },
             enforces_secure_chat: STEEL_CONFIG.enforce_secure_chat,
         });
-
-        // Send player abilities (flight, invulnerability, etc.)
-        player.send_abilities();
-
-        player.send_packet(CSetHeldSlot {
-            slot: i32::from(player.inventory.lock().get_selected_slot()),
-        });
-
-        if world.can_have_weather() {
-            let (rain_level, thunder_level) = {
-                let weather = world.weather.lock();
-                (weather.rain_level, weather.thunder_level)
-            };
-
-            if world.is_raining() {
-                player.send_packet(CGameEvent {
-                    event: GameEventType::StartRaining,
-                    data: 0.0,
-                });
-            }
-
-            player.send_packet(CGameEvent {
-                event: GameEventType::RainLevelChange,
-                data: rain_level,
-            });
-
-            player.send_packet(CGameEvent {
-                event: GameEventType::ThunderLevelChange,
-                data: thunder_level,
-            });
-        }
 
         let commands = self.command_dispatcher.read().get_commands();
         player.send_packet(commands);
@@ -279,17 +246,11 @@ impl Server {
         // Send current ticking state to the joining player
         self.send_ticking_state_to_player(&player);
 
-        // Get player position for teleport sync (must be done before add_player moves the Arc)
+        // Reset transient state and spawn into world
         let pos = *player.position.lock();
-        let (yaw, pitch) = player.rotation.load();
-
-        // Send position sync to client (ensures client is at the correct loaded position)
-        // This must be sent after the player is added to the world
-        player.teleport(pos.x, pos.y, pos.z, yaw, pitch);
-
-        player.reset_sent_info();
-
-        world.add_player(player.clone());
+        let rotation = player.rotation.load();
+        player.reset(world, ResetReason::InitialJoin);
+        player.spawn(pos, rotation, ResetReason::InitialJoin);
     }
 
     /// Gets all the players on the server
@@ -455,7 +416,6 @@ impl Server {
 
     fn process_world_teleporting(&self) {
         let changes = mem::take(&mut *self.pending_dimension_changes.lock());
-        self.has_dimension_changes.store(false, Ordering::Relaxed);
 
         for (entity, request) in changes {
             if entity.is_removed() {
@@ -465,27 +425,13 @@ impl Server {
                 DimensionChangeRequest::Computed(transition) => {
                     entity.change_world(&transition);
                 }
-                DimensionChangeRequest::Portal {
-                    source_world: _,
-                    portal_pos: _,
-                } => {
-                    // // Run portal search/creation on a blocking thread
-                    // // to avoid stalling the tick loop.
-                    // let server = self.clone();
-                    // spawn_blocking(move || {
-                    //     if entity.is_removed() {
-                    //         return;
-                    //     }
-                    //     if let Some(transition) =
-                    //         nether_portal::calculate_destination(&server, &source_world, &portal_pos)
-                    //     {
-                    //         entity.change_dimension(&transition);
-                    //     }
-                    // });
+                DimensionChangeRequest::Portal { .. } => {
+                    // TODO: portal destination calculation + async chunk pre-warming
                 }
             }
         }
     }
+
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
@@ -590,7 +536,7 @@ impl Server {
         drop(tick_manager);
 
         for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone());
+            world.broadcast_to_all(packet.clone(), None);
         }
     }
 
@@ -602,7 +548,7 @@ impl Server {
         drop(tick_manager);
 
         for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone());
+            world.broadcast_to_all(packet.clone(), None);
         }
     }
 
@@ -690,6 +636,5 @@ impl Server {
         self.pending_dimension_changes
             .lock()
             .push((entity, request));
-        self.has_dimension_changes.store(true, Ordering::Relaxed);
     }
 }
