@@ -1,4 +1,9 @@
 //! Argument that resolves a dimension identifier to a loaded world.
+//!
+//! Accepts full identifiers (`minecraft:overworld`) and path-only shorthands
+//! (`the_nether`). Shorthands are resolved against the namespace of the
+//! sender's current world, so a player in `mymod:lobby` typing `arena`
+//! resolves to `mymod:arena`.
 
 use std::sync::Arc;
 
@@ -14,20 +19,7 @@ use crate::{
 };
 
 /// Parses a dimension argument into a loaded [`World`].
-///
-/// Accepts shorthand aliases (`overworld`, `nether`, `end`) as well as full identifiers
-/// (e.g. `minecraft:overworld`). Suggestions list all currently loaded worlds by identifier.
 pub struct DimensionArgument;
-
-/// Maps shorthand aliases to their full Minecraft identifiers.
-fn resolve_alias(s: &str) -> Option<Identifier> {
-    match s {
-        "overworld" => Some(Identifier::vanilla_static("overworld")),
-        "nether" => Some(Identifier::vanilla_static("the_nether")),
-        "end" => Some(Identifier::vanilla_static("the_end")),
-        _ => None,
-    }
-}
 
 impl CommandArgument for DimensionArgument {
     type Output = Arc<World>;
@@ -39,7 +31,18 @@ impl CommandArgument for DimensionArgument {
     ) -> Option<(&'a [&'a str], Self::Output)> {
         let s = *arg.first()?;
 
-        let key = resolve_alias(s).or_else(|| s.parse().ok())?;
+        // Try as a full identifier first (e.g. "minecraft:the_nether")
+        if let Some(world) = s
+            .parse::<Identifier>()
+            .ok()
+            .and_then(|key| context.server.worlds.get(&key).cloned())
+        {
+            return Some((&arg[1..], world));
+        }
+
+        // Fall back to path-only shorthand using the sender's current namespace
+        let ns = &context.world.dimension.key.namespace;
+        let key = Identifier::new(ns.clone(), s.to_owned());
         let world = context.server.worlds.get(&key)?.clone();
 
         Some((&arg[1..], world))
@@ -50,6 +53,8 @@ impl CommandArgument for DimensionArgument {
     }
 
     fn suggest(&self, prefix: &str, suggestion_ctx: &SuggestionContext) -> Vec<SuggestionEntry> {
+        let player_ns = &suggestion_ctx.world.dimension.key.namespace;
+
         let mut suggestions: Vec<SuggestionEntry> = suggestion_ctx
             .server
             .worlds
@@ -57,9 +62,14 @@ impl CommandArgument for DimensionArgument {
             .map(|id| SuggestionEntry::new(id.to_string()))
             .collect();
 
-        // Add shorthand aliases for vanilla dimensions
-        for alias in ["overworld", "nether", "end"] {
-            suggestions.push(SuggestionEntry::new(alias));
+        // For worlds sharing the sender's namespace, also suggest the path-only shorthand
+        for id in suggestion_ctx.server.worlds.keys() {
+            if id.namespace == *player_ns {
+                let path = id.path.as_ref();
+                if !suggestions.iter().any(|s| s.text == path) {
+                    suggestions.push(SuggestionEntry::new(path));
+                }
+            }
         }
 
         suggestions.retain(|s| s.text.starts_with(prefix));

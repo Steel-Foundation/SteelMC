@@ -47,8 +47,8 @@ impl World {
         self.entity_tracker().on_player_leave(entity_id);
 
         self.player_area_map.on_player_leave(&player);
-        self.broadcast_to_all(CRemoveEntities::single(entity_id), None);
-        self.broadcast_to_all(CRemovePlayerInfo::single(uuid), None);
+        self.broadcast_to_all(CRemoveEntities::single(entity_id));
+        self.broadcast_to_all(CRemovePlayerInfo::single(uuid));
 
         self.chunk_map.remove_player(&player);
         player.cleanup();
@@ -76,7 +76,7 @@ impl World {
         self.entity_cache.unregister(entity_id, uuid, section);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(player);
-        self.broadcast_to_all(CRemoveEntities::single(entity_id), None);
+        self.broadcast_to_all(CRemoveEntities::single(entity_id));
         // Note: no CRemovePlayerInfo — player stays in the global tab list
         self.chunk_map.remove_player(player);
     }
@@ -192,7 +192,7 @@ impl World {
             None, // display_name
             true, // show_hat
         );
-        self.broadcast_to_all(player_info_packet, None);
+        self.broadcast_to_all(player_info_packet);
 
         // Spawn new player entity for all other players
         // TODO: bundle with entity metadata + equipment packets when implemented
@@ -207,6 +207,6 @@ impl World {
             yaw,
             pitch,
         );
-        self.broadcast_to_all(spawn_packet, Some(player.id));
+        self.broadcast_to_all_except(spawn_packet, player.id);
     }
 }

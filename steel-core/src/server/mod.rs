@@ -536,7 +536,7 @@ impl Server {
         drop(tick_manager);
 
         for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone(), None);
+            world.broadcast_to_all(packet.clone());
         }
     }
 
@@ -548,7 +548,7 @@ impl Server {
         drop(tick_manager);
 
         for world in self.worlds.values() {
-            world.broadcast_to_all(packet.clone(), None);
+            world.broadcast_to_all(packet.clone());
         }
     }
 

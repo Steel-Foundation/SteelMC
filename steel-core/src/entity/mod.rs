@@ -386,8 +386,16 @@ pub trait Entity: Send + Sync {
         false
     }
 
-    /// This teleports an entity from one dimension to another dimension
-    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {}
+    /// Teleports an entity from one dimension to another.
+    ///
+    /// The default implementation logs a warning — non-player entity teleportation
+    /// is not yet implemented. Override in entity types that support it.
+    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
+        log::warn!(
+            "change_world called on entity {} which does not implement dimension changes",
+            self.id(),
+        );
+    }
 }
 
 /// A trait for living entities that can take damage, heal, and die.

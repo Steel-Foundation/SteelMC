@@ -253,7 +253,7 @@ where
         args_start_pos: usize,
         context: &mut CommandContext,
     ) -> Option<SuggestionResult> {
-        let mut suggestion_ctx = SuggestionContext::new(context.server.clone());
+        let mut suggestion_ctx = SuggestionContext::new(context.server.clone(), context.world.clone());
         self.executor
             .suggest(args, args_start_pos, context, &mut suggestion_ctx)
     }
@@ -970,7 +970,7 @@ impl CommandHandlerDyn for DynCommandHandler {
         context: &mut CommandContext,
     ) -> Option<SuggestionResult> {
         let mut combined: Option<SuggestionResult> = None;
-        let suggestion_ctx = SuggestionContext::new(context.server.clone());
+        let suggestion_ctx = SuggestionContext::new(context.server.clone(), context.world.clone());
 
         for executor in &self.executors {
             if let Some(result) =
