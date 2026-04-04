@@ -22,7 +22,12 @@ pub struct EntityDimensions {
     pub height: f32,
     pub eye_height: f32,
 }
-
+impl PartialEq for EntityDimensions {
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
 impl EntityDimensions {
     /// Creates new entity dimensions.
     #[must_use]
@@ -65,7 +70,12 @@ pub struct EntityFlags {
     pub can_breathe_underwater: bool,
     pub can_be_seen_as_enemy: bool,
 }
-
+impl PartialEq for EntityFlags {
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
 #[derive(Debug)]
 pub struct EntityType {
     pub key: Identifier,
@@ -94,6 +104,13 @@ pub struct EntityType {
 }
 
 pub type EntityTypeRef = &'static EntityType;
+
+impl PartialEq for EntityTypeRef {
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(*self, *other)
+    }
+}
 
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
