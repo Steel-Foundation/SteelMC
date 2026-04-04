@@ -16,18 +16,13 @@ pub enum MobCategory {
 
 /// Entity dimensions used for bounding box calculation.
 /// Bounding box is centered on X/Z with Y at entity feet.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityDimensions {
     pub width: f32,
     pub height: f32,
     pub eye_height: f32,
 }
-impl PartialEq for EntityDimensions {
-    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other)
-    }
-}
+
 impl EntityDimensions {
     /// Creates new entity dimensions.
     #[must_use]
@@ -57,7 +52,7 @@ impl EntityDimensions {
 }
 
 /// Behavioral flags for entity collision and interaction.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityFlags {
     pub is_pushable: bool,
     pub is_attackable: bool,
@@ -70,12 +65,7 @@ pub struct EntityFlags {
     pub can_breathe_underwater: bool,
     pub can_be_seen_as_enemy: bool,
 }
-impl PartialEq for EntityFlags {
-    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other)
-    }
-}
+
 #[derive(Debug)]
 pub struct EntityType {
     pub key: Identifier,
