@@ -253,7 +253,8 @@ where
         args_start_pos: usize,
         context: &mut CommandContext,
     ) -> Option<SuggestionResult> {
-        let mut suggestion_ctx = SuggestionContext::new(context.server.clone(), context.world.clone());
+        let mut suggestion_ctx =
+            SuggestionContext::new(context.server.clone(), context.world.clone());
         self.executor
             .suggest(args, args_start_pos, context, &mut suggestion_ctx)
     }

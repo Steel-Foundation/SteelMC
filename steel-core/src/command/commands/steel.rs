@@ -53,9 +53,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                     } else {
                         format!("Teleporting {count} players to {dim_name}")
                     };
-                    context
-                        .sender
-                        .send_message(&TextComponent::from(msg));
+                    context.sender.send_message(&TextComponent::from(msg));
 
                     Ok(())
                 },

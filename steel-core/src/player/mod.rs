@@ -1880,8 +1880,7 @@ impl Player {
 
         let chunk = *self.last_chunk_pos.lock();
         let exclude = if update_self { None } else { Some(self.id) };
-        self.get_world()
-            .broadcast_to_nearby(chunk, packet, exclude);
+        self.get_world().broadcast_to_nearby(chunk, packet, exclude);
     }
 
     /// Handles a player input packet (movement keys, sneaking, sprinting).
