@@ -460,7 +460,7 @@ impl Player {
 
         self.chunk_sender
             .lock()
-            .send_next_chunks(self.connection.clone(), &world, chunk_pos);
+            .send_next_chunks(&self.connection, &world, chunk_pos);
 
         {
             let mut living_base = self.living_base.lock();

@@ -8,7 +8,6 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_utils::ChunkPos;
-use tokio::task::spawn_blocking;
 
 use crate::{
     chunk::{
@@ -73,7 +72,7 @@ impl ChunkSender {
     /// Panics if a chunk is not at Full status when it should be.
     pub fn send_next_chunks(
         &mut self,
-        connection: Arc<PlayerConnection>,
+        connection: &PlayerConnection,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
     ) {
@@ -88,61 +87,36 @@ impl ChunkSender {
                     self.unacknowledged_batches += 1;
                     self.batch_quota -= chunks_to_process.len() as f32;
 
-                    // Pre-compute compression info for encoding inside the blocking task
-                    let compression = connection.compression();
-
-                    #[expect(
-                        clippy::let_underscore_future,
-                        reason = "chunk sending is fire-and-forget; we don't need to await or track the task"
-                    )]
-                    let _ = spawn_blocking(move || {
-                        let mut chunks_to_send = Vec::new();
-                        for holder in chunks_to_process {
-                            if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                                if let ChunkAccess::Full(chunk) = &*chunk_guard {
-                                    chunks_to_send.push(CLevelChunkWithLight {
-                                        x: holder.get_pos().0.x,
-                                        z: holder.get_pos().0.y,
-                                        chunk_data: chunk.extract_chunk_data(),
-                                        light_data: chunk.extract_light_data(),
-                                    });
-                                } else {
-                                    panic!("Chunk must be at Full status to be sent to the client");
-                                }
+                    let mut chunks_to_send = Vec::new();
+                    for holder in chunks_to_process {
+                        if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
+                            if let ChunkAccess::Full(chunk) = &*chunk_guard {
+                                chunks_to_send.push(CLevelChunkWithLight {
+                                    x: holder.get_pos().0.x,
+                                    z: holder.get_pos().0.y,
+                                    chunk_data: chunk.extract_chunk_data(),
+                                    light_data: chunk.extract_light_data(),
+                                });
+                            } else {
+                                panic!("Chunk must be at Full status to be sent to the client");
                             }
                         }
+                    }
 
-                        // Encode and send batch start
-                        let start_encoded = EncodedPacket::from_bare(
-                            CChunkBatchStart {},
-                            compression,
-                            ConnectionProtocol::Play,
-                        )
-                        .expect("Failed to encode packet");
-                        connection.send_encoded(start_encoded);
+                    Self::send_packet(connection, CChunkBatchStart {});
 
-                        let batch_size = chunks_to_send.len();
+                    let batch_size = chunks_to_send.len();
 
-                        for chunk in chunks_to_send {
-                            let chunk_encoded = EncodedPacket::from_bare(
-                                chunk,
-                                compression,
-                                ConnectionProtocol::Play,
-                            )
-                            .expect("Failed to encode chunk packet");
-                            connection.send_encoded(chunk_encoded);
-                        }
+                    for chunk in chunks_to_send {
+                        Self::send_packet(connection, chunk);
+                    }
 
-                        let finish_encoded = EncodedPacket::from_bare(
-                            CChunkBatchFinished {
-                                batch_size: batch_size as i32,
-                            },
-                            compression,
-                            ConnectionProtocol::Play,
-                        )
-                        .expect("Failed to encode packet");
-                        connection.send_encoded(finish_encoded);
-                    });
+                    Self::send_packet(
+                        connection,
+                        CChunkBatchFinished {
+                            batch_size: batch_size as i32,
+                        },
+                    );
                 }
             }
         }
