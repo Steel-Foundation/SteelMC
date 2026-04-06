@@ -97,10 +97,16 @@ fn triangle_random(mode: f64, deviation: f64) -> f64 {
 /// Timing information for a world tick.
 #[derive(Debug)]
 pub struct WorldTickTimings {
+    /// Total time for this world's tick.
+    pub elapsed: Duration,
     /// Chunk map tick timings.
     pub chunk_map: ChunkMapTickTimings,
     /// Time spent ticking players.
     pub player_tick: Duration,
+    /// Time spent encoding and sending chunks to players.
+    pub chunk_sending: Duration,
+    /// Number of chunks encoded (cache misses) this tick.
+    pub chunks_encoded: usize,
 }
 
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
@@ -674,6 +680,7 @@ impl World {
     /// Returns timing information for the world tick.
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
     pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+        let world_start = Instant::now();
         // Update the world's stored game time so components (like fluids) can access it
         {
             let mut level_data = self.level_data.write();
@@ -709,9 +716,22 @@ impl World {
             self.broadcast_player_latency_updates();
         }
 
+        let chunk_sending = Duration::from_nanos(
+            self.chunk_map
+                .chunk_sending_nanos
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
+        let chunks_encoded = self
+            .chunk_map
+            .chunks_encoded
+            .load(std::sync::atomic::Ordering::Relaxed);
+
         WorldTickTimings {
+            elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
             player_tick,
+            chunk_sending,
+            chunks_encoded,
         }
     }
 

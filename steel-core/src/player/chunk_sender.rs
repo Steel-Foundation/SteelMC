@@ -87,28 +87,48 @@ impl ChunkSender {
                     self.unacknowledged_batches += 1;
                     self.batch_quota -= chunks_to_process.len() as f32;
 
-                    let mut chunks_to_send = Vec::new();
+                    let compression = connection.compression();
+                    let mut encoded_chunks = Vec::new();
+                    let mut cache = world.chunk_map.encoded_chunk_cache.lock();
+
                     for holder in chunks_to_process {
-                        if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                            if let ChunkAccess::Full(chunk) = &*chunk_guard {
-                                chunks_to_send.push(CLevelChunkWithLight {
-                                    x: holder.get_pos().0.x,
-                                    z: holder.get_pos().0.y,
-                                    chunk_data: chunk.extract_chunk_data(),
-                                    light_data: chunk.extract_light_data(),
-                                });
-                            } else {
-                                panic!("Chunk must be at Full status to be sent to the client");
-                            }
+                        let pos = ChunkPos::new(holder.get_pos().0.x, holder.get_pos().0.y);
+                        if let Some(cached) = cache.get(&pos) {
+                            encoded_chunks.push(cached.clone());
+                            continue;
                         }
+
+                        let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) else {
+                            continue;
+                        };
+                        let ChunkAccess::Full(chunk) = &*chunk_guard else {
+                            panic!("Chunk must be at Full status to be sent to the client");
+                        };
+
+                        let encoded = EncodedPacket::from_bare(
+                            CLevelChunkWithLight {
+                                x: pos.0.x,
+                                z: pos.0.y,
+                                chunk_data: chunk.extract_chunk_data(),
+                                light_data: chunk.extract_light_data(),
+                            },
+                            compression,
+                            ConnectionProtocol::Play,
+                        )
+                        .expect("Failed to encode chunk packet");
+                        cache.insert(pos, encoded.clone());
+                        encoded_chunks.push(encoded);
+                        world.chunk_map.chunks_encoded.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
+
+                    drop(cache);
 
                     Self::send_packet(connection, CChunkBatchStart {});
 
-                    let batch_size = chunks_to_send.len();
+                    let batch_size = encoded_chunks.len();
 
-                    for chunk in chunks_to_send {
-                        Self::send_packet(connection, chunk);
+                    for encoded in encoded_chunks {
+                        connection.send_encoded(encoded);
                     }
 
                     Self::send_packet(

@@ -7,7 +7,7 @@ use std::{
     io, mem,
     sync::{
         Arc, Weak,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -95,6 +95,12 @@ pub struct ChunkMap {
     pub storage: Arc<ChunkStorage>,
     /// Chunk holders with pending block changes to broadcast.
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
+    /// Per-tick cache of encoded chunk packets, shared across all players.
+    pub encoded_chunk_cache: SyncMutex<rustc_hash::FxHashMap<ChunkPos, EncodedPacket>>,
+    /// Accumulated chunk sending time (nanoseconds) for the current tick.
+    pub chunk_sending_nanos: AtomicU64,
+    /// Number of chunks encoded (cache misses) this tick.
+    pub chunks_encoded: AtomicUsize,
     /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
     last_tickable_len: AtomicUsize,
     /// Parent cancellation token for all generation tasks.
@@ -126,6 +132,9 @@ impl ChunkMap {
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
+            encoded_chunk_cache: SyncMutex::new(rustc_hash::FxHashMap::default()),
+            chunk_sending_nanos: AtomicU64::new(0),
+            chunks_encoded: AtomicUsize::new(0),
             last_tickable_len: AtomicUsize::new(0),
             cancel_token: CancellationToken::new(),
         }
@@ -395,6 +404,9 @@ impl ChunkMap {
         let mut timings = ChunkMapTickTimings::default();
         let mut ready_block_ticks = Vec::new();
         let mut ready_fluid_ticks = Vec::new();
+        self.encoded_chunk_cache.lock().clear();
+        self.chunk_sending_nanos.store(0, Ordering::Relaxed);
+        self.chunks_encoded.store(0, Ordering::Relaxed);
 
         {
             let mut ct = self.chunk_tickets.lock();

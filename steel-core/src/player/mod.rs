@@ -458,9 +458,16 @@ impl Player {
         let world = self.get_world();
         world.chunk_map.update_player_status(self);
 
-        self.chunk_sender
-            .lock()
-            .send_next_chunks(&self.connection, &world, chunk_pos);
+        {
+            let start = std::time::Instant::now();
+            self.chunk_sender
+                .lock()
+                .send_next_chunks(&self.connection, &world, chunk_pos);
+            world.chunk_map.chunk_sending_nanos.fetch_add(
+                start.elapsed().as_nanos() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
 
         {
             let mut living_base = self.living_base.lock();

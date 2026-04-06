@@ -441,37 +441,37 @@ impl Server {
                 world_clone.tick_b(tick_count, runs_normally)
             }));
         }
-        let start = Instant::now();
         let mut all_timings: Vec<WorldTickTimings> = Vec::with_capacity(tasks.len());
         for task in tasks {
             if let Ok(timings) = task.await {
                 all_timings.push(timings);
             }
         }
-        let elapsed = start.elapsed();
-        if elapsed.as_millis() >= 30 {
-            // Log detailed breakdown when tick is slow
-            for (i, timings) in all_timings.iter().enumerate() {
-                let cm = &timings.chunk_map;
-                tracing::warn!(
-                    world = i,
-                    ?elapsed,
-                    tick_count,
-                    player_tick = ?timings.player_tick,
-                    ticket_updates = ?cm.ticket_updates,
-                    holder_creation = ?cm.holder_creation,
-                    schedule_generation = ?cm.schedule_generation,
-                    scheduled_count = cm.scheduled_count,
-                    run_generation = ?cm.run_generation,
-                    broadcast_changes = ?cm.broadcast_changes,
-                    process_unloads = ?cm.process_unloads,
-                    collect_tickable = ?cm.collect_tickable,
-                    tick_chunks = ?cm.tick_chunks,
-                    tickable_count = cm.tickable_count,
-                    total_chunks = cm.total_chunks,
-                    "Worlds tick slow"
-                );
+        for (i, timings) in all_timings.iter().enumerate() {
+            if timings.elapsed.as_millis() < 10 {
+                continue;
             }
+            let cm = &timings.chunk_map;
+            tracing::warn!(
+                world = i,
+                elapsed = ?timings.elapsed,
+                tick_count,
+                player_tick = ?timings.player_tick,
+                chunk_sending = ?timings.chunk_sending,
+                chunks_encoded = timings.chunks_encoded,
+                ticket_updates = ?cm.ticket_updates,
+                holder_creation = ?cm.holder_creation,
+                schedule_generation = ?cm.schedule_generation,
+                scheduled_count = cm.scheduled_count,
+                run_generation = ?cm.run_generation,
+                broadcast_changes = ?cm.broadcast_changes,
+                process_unloads = ?cm.process_unloads,
+                collect_tickable = ?cm.collect_tickable,
+                tick_chunks = ?cm.tick_chunks,
+                tickable_count = cm.tickable_count,
+                total_chunks = cm.total_chunks,
+                "Worlds tick slow"
+            );
         }
     }
 
