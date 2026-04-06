@@ -119,17 +119,6 @@ impl ItemRegistry {
         id
     }
 
-    /// Replaces a item at a given index.
-    /// Returns true if the item was replaced and false if the item wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, item: ItemRef, id: usize) -> bool {
-        if id >= self.items_by_id.len() {
-            return false;
-        }
-        self.items_by_id[id] = item;
-        true
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, ItemRef)> + '_ {
         self.items_by_id
             .iter()

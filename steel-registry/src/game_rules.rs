@@ -114,43 +114,15 @@ impl GameRuleRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, game_rule: GameRuleRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register game rules after the registry has been frozen"
-        );
-
-        let id = self.game_rules_by_id.len();
-        self.game_rules_by_key.insert(game_rule.key.clone(), id);
-        self.game_rules_by_id.push(game_rule);
-        id
-    }
-
-    /// Replaces a gamerule at a given index.
-    /// Returns true if the gamerule was replaced and false if the gamerule wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, gamerule: GameRuleRef, id: usize) -> bool {
-        if id >= self.game_rules_by_id.len() {
-            return false;
-        }
-        self.game_rules_by_id[id] = gamerule;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, GameRuleRef)> + '_ {
-        self.game_rules_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &gr)| (id, gr))
-    }
 }
 
-impl Default for GameRuleRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    GameRuleRegistry,
+    GameRuleRef,
+    game_rules_by_id,
+    game_rules_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     GameRuleRegistry,

@@ -193,17 +193,6 @@ impl BlockRegistry {
         id
     }
 
-    /// Replaces a block at a given index.
-    /// Returns true if the block was replaced and false if the block wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, block: BlockRef, id: usize) -> bool {
-        if id >= self.blocks_by_id.len() {
-            return false;
-        }
-        self.blocks_by_id[id] = block;
-        true
-    }
-
     #[must_use]
     pub fn get_base_state_id(&self, block: BlockRef) -> BlockStateId {
         let id = *self.blocks_by_key.get(&block.key).expect("Block not found");

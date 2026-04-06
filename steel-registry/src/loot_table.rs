@@ -1879,17 +1879,6 @@ impl LootTableRegistry {
         id
     }
 
-    /// Replaces a table at a given index.
-    /// Returns true if the table was replaced and false if the table wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, table: LootTableRef, id: usize) -> bool {
-        if id >= self.tables_by_id.len() {
-            return false;
-        }
-        self.tables_by_id[id] = table;
-        true
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (usize, LootTableRef)> + '_ {
         self.tables_by_id
             .iter()

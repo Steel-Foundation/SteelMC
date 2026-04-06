@@ -595,7 +595,7 @@ pub(crate) fn build() -> TokenStream {
         });
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(&#biome_ident, #biome_ident.key.clone());
+            registry.register(&#biome_ident);
         });
     }
 

@@ -265,42 +265,14 @@ impl BiomeRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, biome: BiomeRef, key: Identifier) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register biomes after the registry has been frozen"
-        );
-
-        let id = self.biomes_by_id.len();
-        self.biomes_by_key.insert(key, id);
-        self.biomes_by_id.push(biome);
-        id
-    }
-
-    /// Replaces a biome at a given index.
-    /// Returns true if the biome was replaced and false if the biome wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, biome: BiomeRef, id: usize) -> bool {
-        if id >= self.biomes_by_id.len() {
-            return false;
-        }
-        self.biomes_by_id[id] = biome;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, BiomeRef)> + '_ {
-        self.biomes_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &biome)| (id, biome))
-    }
 }
 
-impl Default for BiomeRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    BiomeRegistry,
+    BiomeRef,
+    biomes_by_id,
+    biomes_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key, biomes);

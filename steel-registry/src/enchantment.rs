@@ -173,37 +173,6 @@ impl EnchantmentRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, enchantment: EnchantmentRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register enchantments after the registry has been frozen"
-        );
-
-        let id = self.enchantments_by_id.len();
-        self.enchantments_by_key.insert(enchantment.key.clone(), id);
-        self.enchantments_by_id.push(enchantment);
-        id
-    }
-
-    #[must_use]
-    pub fn replace(&mut self, enchantment: EnchantmentRef, id: usize) -> bool {
-        if id >= self.enchantments_by_id.len() {
-            return false;
-        }
-        let old = self.enchantments_by_id[id];
-        self.enchantments_by_key.remove(&old.key);
-        self.enchantments_by_key.insert(enchantment.key.clone(), id);
-        self.enchantments_by_id[id] = enchantment;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, EnchantmentRef)> + '_ {
-        self.enchantments_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &ench)| (id, ench))
-    }
 }
 
 crate::impl_registry_ext!(
@@ -213,10 +182,12 @@ crate::impl_registry_ext!(
     enchantments_by_key
 );
 
-crate::impl_tagged_registry!(EnchantmentRegistry, enchantments_by_key, "enchantment");
+crate::impl_standard_methods!(
+    EnchantmentRegistry,
+    EnchantmentRef,
+    enchantments_by_id,
+    enchantments_by_key,
+    allows_registering
+);
 
-impl Default for EnchantmentRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_tagged_registry!(EnchantmentRegistry, enchantments_by_key, "enchantment");

@@ -188,17 +188,6 @@ impl FluidRegistry {
         id
     }
 
-    /// Replaces a fluid at a given index.
-    /// Returns true if the fluid was replaced and false if the fluid wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, item: FluidRef, id: usize) -> bool {
-        if id >= self.fluids_by_id.len() {
-            return false;
-        }
-        self.fluids_by_id[id] = item;
-        true
-    }
-
     /// Iterates over all fluids with their IDs.
     pub fn iter(&self) -> impl Iterator<Item = (usize, FluidRef)> + '_ {
         self.fluids_by_id
