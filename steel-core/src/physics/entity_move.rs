@@ -463,9 +463,9 @@ mod tests {
     impl CollisionWorld for MockWorld {
         fn get_block_state(&self, pos: BlockPos) -> steel_utils::BlockStateId {
             if self.has_floor && pos.y() == 0 {
-                REGISTRY.blocks.get_base_state_id(vanilla_blocks::STONE)
+                REGISTRY.blocks.get_base_state_id(&vanilla_blocks::STONE)
             } else {
-                REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR)
+                REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR)
             }
         }
 

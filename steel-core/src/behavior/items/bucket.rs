@@ -90,7 +90,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         let state = world.get_block_state(pos);
         let block = state.get_block();
 
-        if block == vanilla_blocks::AIR {
+        if block == &vanilla_blocks::AIR {
             return RaytraceAction::Pass;
         }
 
@@ -168,7 +168,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         let state = world.get_block_state(pos);
         let block = state.get_block();
         // Pass through air and all fluids
-        if block == vanilla_blocks::AIR {
+        if block == &vanilla_blocks::AIR {
             return RaytraceAction::Pass;
         }
         // Check fluid state for pass-through
@@ -215,7 +215,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         }
 
         // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
-        let is_water_bucket = fluid_block == vanilla_blocks::WATER;
+        let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
 
         if is_water_bucket {
             let source_water = FluidState::source(&vanilla_fluids::WATER);
@@ -293,7 +293,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     // WATERLOGGED property existence approximates the LiquidBlockContainer type check.
     // If primary fails, secondary retries at the offset pos without sneak check,
     // matching vanilla's recursive `emptyContents(hitResult=null)` fallback.
-    let is_water_bucket = fluid_block == vanilla_blocks::WATER;
+    let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
     let clicked_is_waterloggable = clicked_state
         .try_get_value(&BlockStateProperties::WATERLOGGED)
         .is_some();

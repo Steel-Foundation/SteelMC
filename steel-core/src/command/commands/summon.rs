@@ -52,7 +52,7 @@ impl CommandExecutor<()> for SummonAtSelfExecutor {
             Arc::downgrade(&world),
         ));
 
-        entity.set_block_state_id(REGISTRY.blocks.get_base_state_id(vanilla_blocks::STONE));
+        entity.set_block_state_id(REGISTRY.blocks.get_base_state_id(&vanilla_blocks::STONE));
 
         // Add it to the world
         world.add_entity(entity);

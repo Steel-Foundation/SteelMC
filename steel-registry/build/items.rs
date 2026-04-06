@@ -265,23 +265,23 @@ pub(crate) fn build() -> TokenStream {
             if builder_calls.is_empty() {
                 if block_name != &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str),
+                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str),
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(vanilla_blocks::#block_ident),
+                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident),
                     });
                 }
             } else {
                 // Block item with custom components
                 if block_name != &item.name {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(vanilla_blocks::#block_ident, #item_name_str)
+                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str)
                             #(#builder_calls)*,
                     });
                 } else {
                     item_construction.extend(quote! {
-                        #item_ident: Item::from_block(vanilla_blocks::#block_ident)
+                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident)
                             #(#builder_calls)*,
                     });
                 }

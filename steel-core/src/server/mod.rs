@@ -731,35 +731,35 @@ impl Server {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                            .get_default_state_id(&vanilla_blocks::BEDROCK),
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::NETHER_BRICKS),
+                            .get_default_state_id(&vanilla_blocks::NETHER_BRICKS),
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::NETHERRACK),
+                            .get_default_state_id(&vanilla_blocks::NETHERRACK),
                     ))
                 } else if dimension == THE_END {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::BEDROCK),
+                            .get_default_state_id(&vanilla_blocks::BEDROCK),
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::END_STONE),
+                            .get_default_state_id(&vanilla_blocks::END_STONE),
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::END_STONE),
+                            .get_default_state_id(&vanilla_blocks::END_STONE),
                     ))
                 } else {
                     ChunkGeneratorType::Flat(FlatChunkGenerator::new(
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::BEDROCK),
-                        REGISTRY.blocks.get_default_state_id(vanilla_blocks::DIRT),
+                            .get_default_state_id(&vanilla_blocks::BEDROCK),
+                        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::DIRT),
                         REGISTRY
                             .blocks
-                            .get_default_state_id(vanilla_blocks::GRASS_BLOCK),
+                            .get_default_state_id(&vanilla_blocks::GRASS_BLOCK),
                     ))
                 }
             }
