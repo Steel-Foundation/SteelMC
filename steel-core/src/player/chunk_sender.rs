@@ -1,7 +1,7 @@
 //! This module is responsible for sending chunks to the client.
 //!
 //! Chunk sending runs on its own independent tick loop, separate from the game
-//! tick. The three-phase design (prepare → encode → commit) minimises lock hold
+//! tick. The three-phase design (prepare → encode → commit) minimizes lock hold
 //! time on the per-player `ChunkSender` mutex so that game-tick operations like
 //! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
 use rustc_hash::FxHashSet;
