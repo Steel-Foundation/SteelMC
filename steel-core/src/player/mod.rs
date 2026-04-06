@@ -45,7 +45,7 @@ use profile_key::RemoteChatSession;
 use std::{
     sync::{
         Arc, Weak,
-        atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -292,6 +292,10 @@ pub struct Player {
 
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
+
+    /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
+    /// snapshots this before encoding and compares after to detect stale batches.
+    pub chunk_send_epoch: AtomicU32,
 }
 
 impl Player {
@@ -377,6 +381,7 @@ impl Player {
             removed: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             experience: SyncMutex::new(Experience::default()),
+            chunk_send_epoch: AtomicU32::new(0),
         }
     }
 
@@ -457,17 +462,6 @@ impl Player {
 
         let world = self.get_world();
         world.chunk_map.update_player_status(self);
-
-        {
-            let start = std::time::Instant::now();
-            self.chunk_sender
-                .lock()
-                .send_next_chunks(&self.connection, &world, chunk_pos);
-            world.chunk_map.chunk_sending_nanos.fetch_add(
-                start.elapsed().as_nanos() as u64,
-                std::sync::atomic::Ordering::Relaxed,
-            );
-        }
 
         {
             let mut living_base = self.living_base.lock();
@@ -2890,7 +2884,9 @@ impl Player {
         }
         *self.block_breaking.lock() = BlockBreakingManager::new();
 
-        // Reset chunk tracking
+        // Reset chunk tracking — bump generation counter so the chunk sending tick
+        // discards any in-flight batch encoded against the old world.
+        self.chunk_send_epoch.fetch_add(1, Ordering::Release);
         *self.chunk_sender.lock() = ChunkSender::default();
         *self.last_tracking_view.lock() = None;
         *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
@@ -3069,7 +3065,7 @@ impl Entity for Player {
     }
 
     fn tick(&self) {
-        // Player tick is handled separately by World::tick_b()
+        // Player tick is handled separately by World::tick_game()
         // This is here for Entity trait compliance
     }
 

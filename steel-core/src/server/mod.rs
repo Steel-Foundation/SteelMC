@@ -15,10 +15,12 @@ use crate::config::{STEEL_CONFIG, WorldGeneratorTypes, WorldStorageConfig};
 use crate::entity::{SharedEntity, init_entities};
 
 use crate::player::Player;
+use crate::player::chunk_sender::ChunkSender;
+use crate::player::connection::NetworkConnection;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::portal::DimensionChangeRequest;
 use crate::server::registry_cache::RegistryCache;
-use crate::world::{World, WorldConfig, WorldTickTimings};
+use crate::world::{World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::BiomeSourceKind;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use small_map::FxSmallMap;
@@ -28,6 +30,7 @@ use std::{
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
+use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
     CEntityEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep, CommonPlayerSpawnInfo,
 };
@@ -37,7 +40,7 @@ use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_blocks};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{Identifier, entity_events::EntityStatus, locks::SyncRwLock};
+use steel_utils::{ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, task::spawn_blocking, time::sleep};
@@ -45,6 +48,12 @@ use tokio_util::sync::CancellationToken;
 
 /// Interval in ticks between tab list updates (20 ticks = 1 second).
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
+
+/// Tick rate for the chunk sending loop.
+const CHUNK_SENDING_TPS: u64 = 20;
+
+/// Tick rate for the chunk scheduling loop.
+const CHUNK_SCHEDULING_TPS: u64 = 20;
 
 /// The main server struct.
 pub struct Server {
@@ -330,8 +339,28 @@ impl Server {
         self.worlds.get(&THE_END.key)
     }
 
-    /// Runs the server tick loop.
+    /// Runs the three independent tick loops concurrently.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
+        let game_handle = {
+            let s = self.clone();
+            let t = cancel_token.clone();
+            tokio::spawn(async move { s.run_game_tick(t).await })
+        };
+        let chunk_send_handle = {
+            let s = self.clone();
+            let t = cancel_token.clone();
+            tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
+        };
+        let chunk_sched_handle = {
+            let s = self.clone();
+            let t = cancel_token.clone();
+            tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
+        };
+        let _ = tokio::join!(game_handle, chunk_send_handle, chunk_sched_handle);
+    }
+
+    /// The main game tick loop (20 TPS, governed by tick rate manager).
+    async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
 
         loop {
@@ -342,12 +371,9 @@ impl Server {
             let (nanoseconds_per_tick, should_sprint_this_tick) = {
                 let mut tick_manager = self.tick_rate_manager.write();
                 let nanoseconds_per_tick = tick_manager.nanoseconds_per_tick;
-
-                // Handle sprinting - returns (should_sprint, Option<sprint_report>)
                 let (should_sprint, sprint_report) = tick_manager.check_should_sprint_this_tick();
                 drop(tick_manager);
 
-                // If sprint finished, broadcast the report and state change to all players
                 if let Some(report) = sprint_report {
                     self.broadcast_sprint_report(&report);
                     self.broadcast_ticking_state();
@@ -357,10 +383,8 @@ impl Server {
             };
 
             if should_sprint_this_tick {
-                // If sprinting, we don't wait
                 next_tick_time = Instant::now();
             } else {
-                // Normal wait logic
                 let now = Instant::now();
                 if now < next_tick_time {
                     tokio::select! {
@@ -375,7 +399,6 @@ impl Server {
                 break;
             }
 
-            // Record tick start time for MSPT tracking
             let tick_start = Instant::now();
 
             let (tick_count, runs_normally) = {
@@ -388,13 +411,10 @@ impl Server {
                 (tick_manager.tick_count, runs_normally)
             };
 
-            // Always tick worlds (for chunk loading/gen), but pass runs_normally
-            // so game elements like random ticks only run when not frozen
-            self.tick_worlds(tick_count, runs_normally).await;
+            self.tick_worlds_game(tick_count, runs_normally).await;
 
             self.process_world_teleporting();
 
-            // Record tick duration for TPS/MSPT tracking
             let (tps, mspt) = {
                 let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
                 let mut tick_manager = self.tick_rate_manager.write();
@@ -402,7 +422,6 @@ impl Server {
                 (tick_manager.get_tps(), tick_manager.get_average_mspt())
             };
 
-            // Update tab list with TPS/MSPT periodically
             if tick_count % TAB_LIST_UPDATE_INTERVAL == 0 {
                 self.broadcast_tab_list(tps, mspt);
             }
@@ -410,6 +429,138 @@ impl Server {
             if should_sprint_this_tick {
                 let mut tick_manager = self.tick_rate_manager.write();
                 tick_manager.end_tick_work();
+            }
+        }
+    }
+
+    /// Chunk sending tick loop — encodes and sends chunks to players independently.
+    async fn run_chunk_sending_tick(self: Arc<Self>, cancel_token: CancellationToken) {
+        let nanos_per_tick = 1_000_000_000 / CHUNK_SENDING_TPS;
+        let mut next_tick_time = Instant::now();
+
+        loop {
+            if cancel_token.is_cancelled() {
+                break;
+            }
+
+            let now = Instant::now();
+            if now < next_tick_time {
+                tokio::select! {
+                    () = cancel_token.cancelled() => break,
+                    () = sleep(next_tick_time - now) => {}
+                }
+            }
+            next_tick_time += Duration::from_nanos(nanos_per_tick);
+
+            if cancel_token.is_cancelled() {
+                break;
+            }
+
+            let server = self.clone();
+            let _ = spawn_blocking(move || {
+                server.tick_chunk_sending();
+            })
+            .await;
+        }
+    }
+
+    /// Chunk scheduling tick loop — ticket updates, holder creation, generation, unloads.
+    async fn run_chunk_scheduling_tick(self: Arc<Self>, cancel_token: CancellationToken) {
+        let nanos_per_tick = 1_000_000_000 / CHUNK_SCHEDULING_TPS;
+        let mut next_tick_time = Instant::now();
+
+        loop {
+            if cancel_token.is_cancelled() {
+                break;
+            }
+
+            let now = Instant::now();
+            if now < next_tick_time {
+                tokio::select! {
+                    () = cancel_token.cancelled() => break,
+                    () = sleep(next_tick_time - now) => {}
+                }
+            }
+            next_tick_time += Duration::from_nanos(nanos_per_tick);
+
+            if cancel_token.is_cancelled() {
+                break;
+            }
+
+            let server = self.clone();
+            let _ = spawn_blocking(move || {
+                server.tick_chunk_scheduling();
+            })
+            .await;
+        }
+    }
+
+    /// Executes one chunk sending tick across all worlds and players.
+    ///
+    /// A per-world per-tick encode cache is used so overlapping view areas
+    /// don't re-encode the same chunk within a single tick.
+    fn tick_chunk_sending(&self) {
+        for world in self.worlds.values() {
+            let mut encode_cache = rustc_hash::FxHashMap::default();
+            world.players.iter_players(|_uuid, player| {
+                Self::send_chunks_for_player(player, world, &mut encode_cache);
+                true
+            });
+        }
+    }
+
+    /// Three-phase chunk send for a single player: prepare (lock briefly),
+    /// encode (no lock), commit (lock briefly + generation check).
+    fn send_chunks_for_player(
+        player: &Arc<Player>,
+        world: &Arc<World>,
+        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedPacket>,
+    ) {
+        let chunk_pos = *player.last_chunk_pos.lock();
+        let connection = &player.connection;
+
+        // Phase 1: prepare (brief lock)
+        let prepared = {
+            let mut sender = player.chunk_sender.lock();
+            sender.prepare_batch(world, chunk_pos, &player.chunk_send_epoch)
+        };
+
+        let Some(batch) = prepared else {
+            return;
+        };
+
+        // Phase 2: encode (no lock held — uses per-tick local cache)
+        let compression = connection.compression();
+        let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression);
+
+        // Phase 3: commit (brief lock + generation check)
+        let mut sender = player.chunk_sender.lock();
+        sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch);
+    }
+
+    /// Executes one chunk scheduling tick across all worlds.
+    fn tick_chunk_scheduling(&self) {
+        for (i, world) in self.worlds.values().enumerate() {
+            let timings = world.chunk_map.tick_scheduling();
+
+            let total = timings.ticket_updates
+                + timings.holder_creation
+                + timings.schedule_generation
+                + timings.run_generation
+                + timings.process_unloads;
+
+            if total.as_millis() >= 10 {
+                tracing::warn!(
+                    world = i,
+                    elapsed = ?total,
+                    ticket_updates = ?timings.ticket_updates,
+                    holder_creation = ?timings.holder_creation,
+                    schedule_generation = ?timings.schedule_generation,
+                    scheduled_count = timings.scheduled_count,
+                    run_generation = ?timings.run_generation,
+                    process_unloads = ?timings.process_unloads,
+                    "Chunk scheduling tick slow"
+                );
             }
         }
     }
@@ -433,15 +584,15 @@ impl Server {
     }
 
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
-    async fn tick_worlds(&self, tick_count: u64, runs_normally: bool) {
+    async fn tick_worlds_game(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
         for world in self.worlds.values() {
             let world_clone = world.clone();
             tasks.push(spawn_blocking(move || {
-                world_clone.tick_b(tick_count, runs_normally)
+                world_clone.tick_game(tick_count, runs_normally)
             }));
         }
-        let mut all_timings: Vec<WorldTickTimings> = Vec::with_capacity(tasks.len());
+        let mut all_timings: Vec<WorldGameTickTimings> = Vec::with_capacity(tasks.len());
         for task in tasks {
             if let Ok(timings) = task.await {
                 all_timings.push(timings);
@@ -457,20 +608,12 @@ impl Server {
                 elapsed = ?timings.elapsed,
                 tick_count,
                 player_tick = ?timings.player_tick,
-                chunk_sending = ?timings.chunk_sending,
-                chunks_encoded = timings.chunks_encoded,
-                ticket_updates = ?cm.ticket_updates,
-                holder_creation = ?cm.holder_creation,
-                schedule_generation = ?cm.schedule_generation,
-                scheduled_count = cm.scheduled_count,
-                run_generation = ?cm.run_generation,
                 broadcast_changes = ?cm.broadcast_changes,
-                process_unloads = ?cm.process_unloads,
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
-                "Worlds tick slow"
+                "Game tick slow"
             );
         }
     }

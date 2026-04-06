@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{chunk::chunk_map::ChunkMapTickTimings, world::weather::Weather};
+use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
@@ -94,19 +94,15 @@ fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
-/// Timing information for a world tick.
+/// Timing information for a world game tick.
 #[derive(Debug)]
-pub struct WorldTickTimings {
+pub struct WorldGameTickTimings {
     /// Total time for this world's tick.
     pub elapsed: Duration,
-    /// Chunk map tick timings.
-    pub chunk_map: ChunkMapTickTimings,
+    /// Chunk map game tick timings.
+    pub chunk_map: ChunkMapGameTickTimings,
     /// Time spent ticking players.
     pub player_tick: Duration,
-    /// Time spent encoding and sending chunks to players.
-    pub chunk_sending: Duration,
-    /// Number of chunks encoded (cache misses) this tick.
-    pub chunks_encoded: usize,
 }
 
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
@@ -671,17 +667,19 @@ impl World {
         });
     }
 
-    /// Ticks the world.
+    /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
+    /// and player logic (without chunk sending).
     ///
     /// * `tick_count` - The current tick number
     /// * `runs_normally` - Whether game elements (random ticks, entities) should run.
     ///   When false (frozen), only essential operations like chunk loading run.
-    ///
-    /// Returns timing information for the world tick.
-    #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
-    pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+    #[tracing::instrument(level = "trace", skip(self), name = "world_game_tick")]
+    pub fn tick_game(
+        self: &Arc<Self>,
+        tick_count: u64,
+        runs_normally: bool,
+    ) -> WorldGameTickTimings {
         let world_start = Instant::now();
-        // Update the world's stored game time so components (like fluids) can access it
         {
             let mut level_data = self.level_data.write();
             level_data.data_mut().game_time = tick_count as i64;
@@ -695,11 +693,8 @@ impl World {
 
         let chunk_map_timings =
             self.chunk_map
-                .tick_b(self, tick_count, random_tick_speed, runs_normally);
+                .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
-        // Scheduled ticks are now processed per-chunk in ChunkMap::execute_scheduled_ticks()
-
-        // Tick players (always tick players - they can move when frozen)
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
@@ -710,28 +705,15 @@ impl World {
             start.elapsed()
         };
 
-        // Broadcast player latency updates periodically
         if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
             let _span = tracing::trace_span!("broadcast_latency").entered();
             self.broadcast_player_latency_updates();
         }
 
-        let chunk_sending = Duration::from_nanos(
-            self.chunk_map
-                .chunk_sending_nanos
-                .load(std::sync::atomic::Ordering::Relaxed),
-        );
-        let chunks_encoded = self
-            .chunk_map
-            .chunks_encoded
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        WorldTickTimings {
+        WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
             player_tick,
-            chunk_sending,
-            chunks_encoded,
         }
     }
 
