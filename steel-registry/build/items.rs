@@ -301,6 +301,7 @@ pub(crate) fn build() -> TokenStream {
                     components: DataComponentMap::common_item_components()
                         #(#builder_calls)*,
                     craft_remainder: #craft_remainder_value,
+                    id: OnceLock::new(),
                 },
             });
         }
@@ -317,7 +318,7 @@ pub(crate) fn build() -> TokenStream {
             items::{Item, ItemRegistry},
         };
         use steel_utils::Identifier;
-        use std::sync::LazyLock;
+        use std::sync::{LazyLock, OnceLock};
 
         pub static ITEMS: LazyLock<Items> = LazyLock::new(Items::init);
 

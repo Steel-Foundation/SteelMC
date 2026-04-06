@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -16,6 +18,8 @@ pub struct Biome {
     pub spawn_costs: FxHashMap<Identifier, SpawnCost>,
     pub carvers: Vec<Identifier>,
     pub features: Vec<Vec<Identifier>>,
+    /// Cached registry ID, set during registration for O(1) lookup on hot paths.
+    pub id: OnceLock<usize>,
 }
 
 #[derive(Debug)]
@@ -267,12 +271,42 @@ impl BiomeRegistry {
     }
 }
 
-crate::impl_standard_methods!(
-    BiomeRegistry,
-    BiomeRef,
-    biomes_by_id,
-    biomes_by_key,
-    allows_registering
-);
+impl BiomeRegistry {
+    pub fn register(&mut self, entry: BiomeRef) -> usize {
+        assert!(
+            self.allows_registering,
+            "Cannot register Biome after registry has been frozen"
+        );
+        let id = self.biomes_by_id.len();
+        let cached = entry.id.get_or_init(|| id);
+        assert_eq!(*cached, id, "biome registered with conflicting id");
+        self.biomes_by_id.push(entry);
+        self.biomes_by_key.insert(entry.key.clone(), id);
+        id
+    }
 
-crate::impl_registry!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key, biomes);
+    pub fn iter(&self) -> impl Iterator<Item = (usize, BiomeRef)> + '_ {
+        self.biomes_by_id
+            .iter()
+            .enumerate()
+            .map(|(id, &entry)| (id, entry))
+    }
+}
+
+impl Default for BiomeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+crate::impl_registry_ext!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key);
+
+impl crate::RegistryEntry for Biome {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        self.id.get().copied()
+    }
+}

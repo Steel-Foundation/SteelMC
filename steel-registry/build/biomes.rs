@@ -553,7 +553,7 @@ pub(crate) fn build() -> TokenStream {
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
-        use std::sync::LazyLock;
+        use std::sync::{LazyLock, OnceLock};
         use rustc_hash::FxHashMap;
     });
 
@@ -591,6 +591,7 @@ pub(crate) fn build() -> TokenStream {
                 spawn_costs: #spawn_costs,
                 carvers: #carvers,
                 features: #features,
+                id: OnceLock::new(),
             });
         });
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
