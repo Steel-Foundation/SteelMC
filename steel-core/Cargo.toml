@@ -34,6 +34,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 # Concurrency
+arc-swap.workspace = true
 crossbeam.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true

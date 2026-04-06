@@ -460,7 +460,7 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
     // Spawn each dropped item using the player's world reference (Arc<World>)
     for item in drops {
         if !item.is_empty() {
-            player.world.pop_resource(pos, item);
+            player.get_world().pop_resource(pos, item);
         }
     }
 }

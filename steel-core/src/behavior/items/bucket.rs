@@ -139,7 +139,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 
         // Vanilla parity: destroy blocks that can't survive without water.
         if !block_behavior.can_survive(new_state, context.world, hit_pos) {
-            context.player.world.destroy_block(hit_pos, true);
+            context.player.get_world().destroy_block(hit_pos, true);
         }
 
         context
@@ -251,7 +251,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             // Vanilla parity: destroy non-liquid replaceable blocks first so they
             // drop their items (e.g. tall grass, flowers, snow layers).
             if !state.get_block().config.liquid && !state.get_block().config.is_air {
-                context.player.world.destroy_block(pos, true);
+                context.player.get_world().destroy_block(pos, true);
             }
 
             // Place fluid block

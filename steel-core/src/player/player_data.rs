@@ -191,7 +191,7 @@ impl PersistentPlayerData {
             },
             inventory: slots,
             selected_slot: i32::from(inventory.get_selected_slot()),
-            dimension: player.world.dimension.key.to_string(),
+            dimension: player.get_world().dimension.key.to_string(),
             data_version: PLAYER_DATA_VERSION,
             experience_level,
             experience_progress,

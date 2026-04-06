@@ -43,13 +43,13 @@ impl CommandExecutor<()> for SummonAtSelfExecutor {
         };
 
         let pos = player.position();
-        let world = &player.world;
+        let world = player.get_world();
 
         // Create the block display entity
         let entity = Arc::new(BlockDisplayEntity::new(
             next_entity_id(),
             pos,
-            Arc::downgrade(world),
+            Arc::downgrade(&world),
         ));
 
         entity.set_block_state_id(REGISTRY.blocks.get_base_state_id(vanilla_blocks::STONE));
@@ -78,13 +78,13 @@ impl CommandExecutor<((), DVec3)> for SummonAtPosExecutor {
             ))));
         };
 
-        let world = &player.world;
+        let world = player.get_world();
 
         // Create the block display entity
         let entity = Arc::new(BlockDisplayEntity::new(
             next_entity_id(),
             pos,
-            Arc::downgrade(world),
+            Arc::downgrade(&world),
         ));
 
         // Add it to the world

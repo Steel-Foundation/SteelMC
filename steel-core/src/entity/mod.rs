@@ -46,6 +46,7 @@ mod registry;
 mod storage;
 mod tracker;
 
+use crate::portal::TeleportTransition;
 pub use base::EntityBase;
 pub use cache::EntityCache;
 pub use callback::{
@@ -383,6 +384,17 @@ pub trait Entity: Send + Sync {
     )]
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
         false
+    }
+
+    /// Teleports an entity from one dimension to another.
+    ///
+    /// The default implementation logs a warning — non-player entity teleportation
+    /// is not yet implemented. Override in entity types that support it.
+    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
+        log::warn!(
+            "change_world called on entity {} which does not implement dimension changes",
+            self.id(),
+        );
     }
 }
 
