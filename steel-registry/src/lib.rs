@@ -488,8 +488,12 @@ macro_rules! impl_standard_methods {
         impl $Registry {
             pub fn register(&mut self, entry: $Entry) -> usize {
                 assert!(
-                    !self.$allow_registering,
-                    "Cannot register $Entry after registry has been frozen"
+                    self.$allow_registering,
+                    concat!(
+                        "Cannot register ",
+                        stringify!($Entry),
+                        " after registry has been frozen"
+                    )
                 );
                 let id = self.$id_field.len();
                 self.$id_field.push(entry);
