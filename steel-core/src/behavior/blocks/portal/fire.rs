@@ -33,8 +33,8 @@ impl FireBlock {
 
     /// Returns true if the dimension supports nether portal creation (Overworld or Nether).
     pub(crate) fn in_portal_dimension(world: &World) -> bool {
-        world.dimension == vanilla_dimension_types::OVERWORLD
-            || world.dimension == vanilla_dimension_types::THE_NETHER
+        world.dimension == &vanilla_dimension_types::OVERWORLD
+            || world.dimension == &vanilla_dimension_types::THE_NETHER
     }
 
     /// Checks if fire can be placed at `pos`, matching vanilla's `BaseFireBlock.canBePlacedAt`.

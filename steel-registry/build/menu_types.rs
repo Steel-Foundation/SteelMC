@@ -30,13 +30,13 @@ pub(crate) fn build() -> TokenStream {
         let key = quote! { Identifier::vanilla_static(#menu_type_name_str) };
 
         stream.extend(quote! {
-            pub static #menu_type_ident: &MenuType = &MenuType {
+            pub static #menu_type_ident: MenuType = MenuType {
                 key: #key,
             };
         });
 
         register_stream.extend(quote! {
-            registry.register(#menu_type_ident);
+            registry.register(&#menu_type_ident);
         });
     }
 

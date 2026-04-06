@@ -888,14 +888,14 @@ impl Player {
     /// Returns `true` if movement should be validated, `false` to skip validation.
     fn should_validate_movement(world: &World, is_fall_flying: bool) -> bool {
         // Check playerMovementCheck gamerule
-        let player_check = world.get_game_rule(PLAYER_MOVEMENT_CHECK);
+        let player_check = world.get_game_rule(&PLAYER_MOVEMENT_CHECK);
         if player_check != GameRuleValue::Bool(true) {
             return false;
         }
 
         // If fall flying, also check elytraMovementCheck gamerule
         if is_fall_flying {
-            let elytra_check = world.get_game_rule(ELYTRA_MOVEMENT_CHECK);
+            let elytra_check = world.get_game_rule(&ELYTRA_MOVEMENT_CHECK);
             return elytra_check == GameRuleValue::Bool(true);
         }
 
@@ -2517,7 +2517,7 @@ impl Player {
         let pos = *self.position.lock();
         if pos.y < f64::from(self.get_world().get_min_y() - 64) {
             self.hurt(
-                &DamageSource::environment(vanilla_damage_types::OUT_OF_WORLD),
+                &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
                 4.0,
             );
         }
@@ -2662,7 +2662,7 @@ impl Player {
         );
 
         let show_death_messages =
-            world.get_game_rule(SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
+            world.get_game_rule(&SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
 
         // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
         let death_key = format!("death.attack.{}", source.damage_type.message_id);
@@ -2692,7 +2692,7 @@ impl Player {
             });
         }
 
-        if world.get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true) {
+        if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true) {
             let items: Vec<ItemStack> = {
                 let mut inventory = self.inventory.lock();
                 (0..inventory.get_container_size())
@@ -2712,7 +2712,7 @@ impl Player {
             }
         }
 
-        if world.get_game_rule(IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true) {
+        if world.get_game_rule(&IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true) {
             self.respawn();
         }
     }
@@ -2773,7 +2773,7 @@ impl Player {
         // Handle XP loss on death
         {
             let mut experience = self.experience.lock();
-            if world.get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true)
+            if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
                 && self.game_mode.load() != GameType::Spectator
             {
                 // TODO: drop XP orbs (min(level * 7, 100))
@@ -2960,7 +2960,7 @@ impl Player {
             drop(level_data);
 
             let advance_time = world
-                .get_game_rule(ADVANCE_TIME)
+                .get_game_rule(&ADVANCE_TIME)
                 .as_bool()
                 .expect("gamerule advance_time should always be a bool.");
             let rate = if advance_time { 1.0 } else { 0.0 };
@@ -3033,7 +3033,7 @@ pub enum ResetReason {
 
 impl Entity for Player {
     fn entity_type(&self) -> EntityTypeRef {
-        vanilla_entities::PLAYER
+        &vanilla_entities::PLAYER
     }
 
     fn id(&self) -> i32 {

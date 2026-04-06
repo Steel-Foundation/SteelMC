@@ -704,7 +704,7 @@ impl Entity for ItemEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        vanilla_entities::ITEM
+        &vanilla_entities::ITEM
     }
 
     fn bounding_box(&self) -> AABBd {

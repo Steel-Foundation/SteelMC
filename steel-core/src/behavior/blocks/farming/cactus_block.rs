@@ -206,7 +206,7 @@ impl BlockBehavior for CactusBlock {
         entity: &dyn Entity,
     ) {
         entity.hurt(
-            &DamageSource::environment(vanilla_damage_types::CACTUS),
+            &DamageSource::environment(&vanilla_damage_types::CACTUS),
             1.0,
         );
     }

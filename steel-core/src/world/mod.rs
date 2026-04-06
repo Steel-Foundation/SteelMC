@@ -689,7 +689,7 @@ impl World {
             self.tick_time();
         }
 
-        let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
+        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
         let chunk_map_timings =
             self.chunk_map
@@ -734,7 +734,7 @@ impl World {
             let mut level_data = self.level_data.write();
 
             if self
-                .get_game_rule_with_guard(ADVANCE_WEATHER, &level_data)
+                .get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data)
                 .as_bool()
                 .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
             {
@@ -982,7 +982,7 @@ impl World {
     /// then sends an update to all clients in this world every 20th tick.
     fn tick_time(&self) {
         let advance_time = self
-            .get_game_rule(ADVANCE_TIME)
+            .get_game_rule(&ADVANCE_TIME)
             .as_bool()
             .expect("gamerule advance_time should always be a bool.");
 
@@ -1985,7 +1985,7 @@ impl World {
         }
 
         // Respect doTileDrops gamerule
-        if !self.get_game_rule(BLOCK_DROPS).as_bool().unwrap_or(true) {
+        if !self.get_game_rule(&BLOCK_DROPS).as_bool().unwrap_or(true) {
             return None;
         }
 
