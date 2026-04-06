@@ -413,7 +413,10 @@ impl Server {
 
             self.tick_worlds_game(tick_count, runs_normally).await;
 
-            self.process_world_teleporting();
+            {
+                let server = self.clone();
+                let _ = spawn_blocking(move || server.process_world_teleporting()).await;
+            }
 
             let (tps, mspt) = {
                 let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;

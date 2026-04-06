@@ -3135,6 +3135,8 @@ impl Entity for Player {
             teleport_transition.rotation,
             ResetReason::DimensionChange,
         );
+        // Vanilla: PlayerList.sendAllPlayerInfo → inventoryMenu.sendAllDataToRemote
+        self.send_inventory_to_remote();
     }
 }
 
