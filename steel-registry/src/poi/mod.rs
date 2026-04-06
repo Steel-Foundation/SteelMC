@@ -11,7 +11,7 @@ use steel_utils::{BlockStateId, Identifier};
 ///
 /// Each type maps to specific block states and defines how many entities
 /// can claim it via tickets (e.g., a bed has 1 ticket for 1 villager).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PointOfInterestType {
     pub key: Identifier,
     pub block_state_ids: &'static [BlockStateId],

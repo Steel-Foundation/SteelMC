@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
 /// A fluid type definition (e.g., water, lava, empty).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Fluid {
     /// The identifier for this fluid (e.g., "minecraft:water").
     pub key: Identifier,
