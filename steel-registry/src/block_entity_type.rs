@@ -26,44 +26,15 @@ impl BlockEntityTypeRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, block_entity_type: BlockEntityTypeRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register block entity types after the registry has been frozen"
-        );
-
-        let id = self.block_entity_types_by_id.len();
-        self.block_entity_types_by_key
-            .insert(block_entity_type.key.clone(), id);
-        self.block_entity_types_by_id.push(block_entity_type);
-        id
-    }
-
-    /// Replaces a block_entity_type at a given index.
-    /// Returns true if the block_entity_type was replaced and false if the block_entity_type wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, block_entity_type: BlockEntityTypeRef, id: usize) -> bool {
-        if id >= self.block_entity_types_by_id.len() {
-            return false;
-        }
-        self.block_entity_types_by_id[id] = block_entity_type;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, BlockEntityTypeRef)> + '_ {
-        self.block_entity_types_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &block_entity_type)| (id, block_entity_type))
-    }
 }
 
-impl Default for BlockEntityTypeRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    BlockEntityTypeRegistry,
+    BlockEntityTypeRef,
+    block_entity_types_by_id,
+    block_entity_types_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     BlockEntityTypeRegistry,

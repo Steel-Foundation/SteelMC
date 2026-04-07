@@ -231,7 +231,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #timeline_ident: &Timeline = &Timeline {
+            pub static #timeline_ident: Timeline = Timeline {
                 key: #key,
                 clock: #clock_ts,
                 period_ticks: #period_ticks_ts,
@@ -245,7 +245,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#timeline_ident);
+            registry.register(&#timeline_ident);
         });
     }
 

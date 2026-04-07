@@ -66,7 +66,7 @@ pub(crate) fn build() -> TokenStream {
         let step_sound = generate_identifier(&cow_sound_variant.step_sound);
 
         stream.extend(quote! {
-            pub static #cow_sound_variant_ident: &CowSoundVariant = &CowSoundVariant {
+            pub static #cow_sound_variant_ident: CowSoundVariant = CowSoundVariant {
                 key: #key,
                 ambient_sound: #ambient_sound,
                 death_sound: #death_sound,
@@ -76,7 +76,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#cow_sound_variant_ident);
+            registry.register(&#cow_sound_variant_ident);
         });
     }
 

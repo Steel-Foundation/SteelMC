@@ -129,7 +129,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #pig_variant_ident: &PigVariant = &PigVariant {
+            pub static #pig_variant_ident: PigVariant = PigVariant {
                 key: #key,
                 asset_id: #asset_id,
                 baby_asset_id: #baby_asset_id,
@@ -139,7 +139,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#pig_variant_ident);
+            registry.register(&#pig_variant_ident);
         });
     }
 

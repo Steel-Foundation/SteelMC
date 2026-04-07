@@ -94,7 +94,7 @@ impl BlockBehavior for BarrelBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) -> Option<SharedBlockEntity> {
-        BLOCK_ENTITIES.create(vanilla_block_entity_types::BARREL, level, pos, state)
+        BLOCK_ENTITIES.create(&vanilla_block_entity_types::BARREL, level, pos, state)
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

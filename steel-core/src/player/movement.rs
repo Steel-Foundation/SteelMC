@@ -120,7 +120,7 @@ pub fn simulate_move(
     on_ground: bool,
 ) -> MoveResult {
     // Create physics state for the player
-    let mut state = EntityPhysicsState::new(start_pos, vanilla_entities::PLAYER);
+    let mut state = EntityPhysicsState::new(start_pos, &vanilla_entities::PLAYER);
     state.is_crouching = is_crouching;
     state.on_ground = on_ground;
 

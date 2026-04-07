@@ -486,7 +486,7 @@ impl SurfaceSystem {
                 .unwrap_or(BlockStateId(0));
 
             let is_air = state.is_air();
-            let is_water = state.get_block() == vanilla_blocks::WATER;
+            let is_water = state.get_block() == &vanilla_blocks::WATER;
 
             if (is_air && y < extension_top as i32 && random.next_f64() > 0.01)
                 || (is_water

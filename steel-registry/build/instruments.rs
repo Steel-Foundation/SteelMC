@@ -78,7 +78,7 @@ pub(crate) fn build() -> TokenStream {
         let description = generate_text_component(&instrument.description);
 
         stream.extend(quote! {
-            pub static #instrument_ident: &Instrument = &Instrument {
+            pub static #instrument_ident: Instrument = Instrument {
                 key: #key,
                 sound_event: #sound_event,
                 use_duration: #use_duration,
@@ -89,7 +89,7 @@ pub(crate) fn build() -> TokenStream {
         let instrument_ident =
             Ident::new(&instrument_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(#instrument_ident);
+            registry.register(&#instrument_ident);
         });
     }
 

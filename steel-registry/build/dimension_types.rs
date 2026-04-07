@@ -463,7 +463,7 @@ pub(crate) fn build() -> TokenStream {
         let has_ender_dragon_fight = dimension_type.has_ender_dragon_fight;
 
         stream.extend(quote! {
-            pub static #dimension_type_ident: &DimensionType = &DimensionType {
+            pub static #dimension_type_ident: DimensionType = DimensionType {
                 key: #key,
                 fixed_time: #fixed_time,
                 has_skylight: #has_skylight,
@@ -506,7 +506,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#dimension_type_ident);
+            registry.register(&#dimension_type_ident);
         });
     }
 

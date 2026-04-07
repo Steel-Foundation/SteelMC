@@ -85,7 +85,7 @@ pub(crate) fn build() -> TokenStream {
         let baby_step_sound = generate_identifier(&wolf_sound_variant.baby_sounds.step_sound);
 
         stream.extend(quote! {
-            pub static #wolf_sound_variant_ident: &WolfSoundVariant = &WolfSoundVariant {
+            pub static #wolf_sound_variant_ident: WolfSoundVariant = WolfSoundVariant {
                 key: #key,
                 adult_sounds: WolfAge {
                     ambient_sound: #adult_ambient_sound,
@@ -109,7 +109,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#wolf_sound_variant_ident);
+            registry.register(&#wolf_sound_variant_ident);
         });
     }
 

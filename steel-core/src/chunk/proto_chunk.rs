@@ -125,7 +125,7 @@ impl ProtoChunk {
             return Some(
                 REGISTRY
                     .blocks
-                    .get_default_state_id(vanilla_blocks::VOID_AIR),
+                    .get_default_state_id(&vanilla_blocks::VOID_AIR),
             );
         }
 
@@ -183,7 +183,7 @@ impl ProtoChunk {
         // Check bounds
         if y < self.min_y || y >= self.min_y + self.height {
             // Out of bounds - return default air
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
 
         let section_index = self.get_section_index(y);
@@ -191,7 +191,7 @@ impl ProtoChunk {
 
         // Optimization: if section is empty, return air
         if section.read().states.has_only_air() {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
 
         let local_x = (pos.0.x & 15) as usize;

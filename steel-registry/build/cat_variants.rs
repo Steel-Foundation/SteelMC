@@ -155,7 +155,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #cat_variant_ident: &CatVariant = &CatVariant {
+            pub static #cat_variant_ident: CatVariant = CatVariant {
                 key: #key,
                 asset_id: #asset_id,
                 baby_asset_id: #baby_asset_id,
@@ -163,7 +163,7 @@ pub(crate) fn build() -> TokenStream {
             };
         });
         register_stream.extend(quote! {
-            registry.register(#cat_variant_ident);
+            registry.register(&#cat_variant_ident);
         });
     }
 

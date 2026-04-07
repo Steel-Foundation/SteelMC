@@ -481,6 +481,42 @@ macro_rules! impl_registry_entry {
     };
 }
 
+/// Implements the default register, replace, and iter methods in the registries
+#[macro_export]
+macro_rules! impl_standard_methods {
+    ($Registry:ty, $Entry:ty, $id_field:ident, $key_field:ident, $allow_registering:ident) => {
+        impl $Registry {
+            pub fn register(&mut self, entry: $Entry) -> usize {
+                assert!(
+                    self.$allow_registering,
+                    concat!(
+                        "Cannot register ",
+                        stringify!($Entry),
+                        " after registry has been frozen"
+                    )
+                );
+                let id = self.$id_field.len();
+                self.$id_field.push(entry);
+                self.$key_field.insert(entry.key.clone(), id);
+                id
+            }
+
+            pub fn iter(&self) -> impl Iterator<Item = (usize, $Entry)> + '_ {
+                self.$id_field
+                    .iter()
+                    .enumerate()
+                    .map(|(id, &entry)| (id, entry))
+            }
+        }
+
+        impl Default for $Registry {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}
+
 /// Implements both `RegistryExt` and `RegistryEntry` for a standard registry.
 #[macro_export]
 macro_rules! impl_registry {
