@@ -69,8 +69,8 @@ pub fn build(blocks: &[BlockClass]) -> String {
 
         let registration = quote! {
             registry.set_behavior(
-                vanilla_blocks::#const_ident,
-                Box::new(#struct_ident::new(vanilla_blocks::#const_ident #(, #args)*)),
+                &vanilla_blocks::#const_ident,
+                Box::new(#struct_ident::new(&vanilla_blocks::#const_ident #(, #args)*)),
             );
         };
 

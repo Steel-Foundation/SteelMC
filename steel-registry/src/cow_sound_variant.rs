@@ -46,38 +46,15 @@ impl CowSoundVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, cow_sound_variant: CowSoundVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register cow sound variants after the registry has been frozen"
-        );
-
-        let id = self.cow_sound_variants_by_id.len();
-        self.cow_sound_variants_by_key
-            .insert(cow_sound_variant.key.clone(), id);
-        self.cow_sound_variants_by_id.push(cow_sound_variant);
-        id
-    }
-
-    /// Replaces a cow_sound_variant at a given index.
-    /// Returns true if the cow_sound_variant was replaced and false if the cow_sound_variant wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, cow_sound_variant: CowSoundVariantRef, id: usize) -> bool {
-        if id >= self.cow_sound_variants_by_id.len() {
-            return false;
-        }
-        self.cow_sound_variants_by_id[id] = cow_sound_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, CowSoundVariantRef)> + '_ {
-        self.cow_sound_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
+
+crate::impl_standard_methods!(
+    CowSoundVariantRegistry,
+    CowSoundVariantRef,
+    cow_sound_variants_by_id,
+    cow_sound_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     CowSoundVariantRegistry,
@@ -86,9 +63,3 @@ crate::impl_registry!(
     cow_sound_variants_by_key,
     cow_sound_variants
 );
-
-impl Default for CowSoundVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}

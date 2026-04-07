@@ -131,7 +131,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #zombie_nautilus_variant_ident: &ZombieNautilusVariant = &ZombieNautilusVariant {
+            pub static #zombie_nautilus_variant_ident: ZombieNautilusVariant = ZombieNautilusVariant {
                 key: #key,
                 asset_id: #asset_id,
                 model: #model,
@@ -144,7 +144,7 @@ pub(crate) fn build() -> TokenStream {
             Span::call_site(),
         );
         register_stream.extend(quote! {
-            registry.register(#zombie_nautilus_variant_ident);
+            registry.register(&#zombie_nautilus_variant_ident);
         });
     }
 

@@ -2,7 +2,16 @@
 //!
 //! This crate contains a collection of utilities used by the Steel Minecraft server.
 
-#![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
+#![feature(
+    const_trait_impl,
+    const_cmp,
+    derive_const,
+    array_try_from_fn,
+    portable_simd
+)]
+
+/// The Minecraft version this server supports.
+pub const MC_VERSION: &str = "26.1";
 
 /// Climate system for biome selection.
 pub mod climate;

@@ -132,13 +132,13 @@ pub fn init_block_entities() {
     let mut registry = BlockEntityRegistry::new();
 
     // Register sign block entity factory
-    registry.register(vanilla_block_entity_types::SIGN, |level, pos, state| {
+    registry.register(&vanilla_block_entity_types::SIGN, |level, pos, state| {
         Arc::new(SyncMutex::new(SignBlockEntity::new(level, pos, state)))
     });
 
     // Register hanging sign block entity factory
     registry.register(
-        vanilla_block_entity_types::HANGING_SIGN,
+        &vanilla_block_entity_types::HANGING_SIGN,
         |level, pos, state| {
             Arc::new(SyncMutex::new(SignBlockEntity::new_hanging(
                 level, pos, state,
@@ -147,7 +147,7 @@ pub fn init_block_entities() {
     );
 
     // Register barrel block entity factory
-    registry.register(vanilla_block_entity_types::BARREL, |level, pos, state| {
+    registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
         Arc::new(SyncMutex::new(BarrelBlockEntity::new(level, pos, state)))
     });
 

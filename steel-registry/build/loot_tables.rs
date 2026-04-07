@@ -1685,7 +1685,7 @@ pub(crate) fn build() -> TokenStream {
         };
 
         stream.extend(quote! {
-            pub static #const_ident: &LootTable = &LootTable {
+            pub static #const_ident: LootTable = LootTable {
                 key: Identifier::vanilla_static(#key),
                 loot_type: #loot_type,
                 pools: &[#(#pools),*],
@@ -1700,7 +1700,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|t| {
             let const_ident = &t.const_ident;
-            quote! { registry.register(#const_ident); }
+            quote! { registry.register(&#const_ident); }
         })
         .collect();
 
@@ -1768,7 +1768,7 @@ pub(crate) fn build() -> TokenStream {
             .iter()
             .map(|(table, field_ident)| {
                 let const_ident = &table.const_ident;
-                quote! { #field_ident: #const_ident, }
+                quote! { #field_ident: &#const_ident, }
             })
             .collect();
 

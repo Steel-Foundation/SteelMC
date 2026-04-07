@@ -90,43 +90,15 @@ impl CowVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, cow_variant: CowVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register cow variants after the registry has been frozen"
-        );
-
-        let id = self.cow_variants_by_id.len();
-        self.cow_variants_by_key.insert(cow_variant.key.clone(), id);
-        self.cow_variants_by_id.push(cow_variant);
-        id
-    }
-
-    /// Replaces a cow at a given index.
-    /// Returns true if the cow was replaced and false if the cow wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, cow: CowVariantRef, id: usize) -> bool {
-        if id >= self.cow_variants_by_id.len() {
-            return false;
-        }
-        self.cow_variants_by_id[id] = cow;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, CowVariantRef)> + '_ {
-        self.cow_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
 
-impl Default for CowVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    CowVariantRegistry,
+    CowVariantRef,
+    cow_variants_by_id,
+    cow_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     CowVariantRegistry,

@@ -72,44 +72,15 @@ impl FrogVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, frog_variant: FrogVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register frog variants after the registry has been frozen"
-        );
-
-        let id = self.frog_variants_by_id.len();
-        self.frog_variants_by_key
-            .insert(frog_variant.key.clone(), id);
-        self.frog_variants_by_id.push(frog_variant);
-        id
-    }
-
-    /// Replaces a frog at a given index.
-    /// Returns true if the frog was replaced and false if the frog wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, frog: FrogVariantRef, id: usize) -> bool {
-        if id >= self.frog_variants_by_id.len() {
-            return false;
-        }
-        self.frog_variants_by_id[id] = frog;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, FrogVariantRef)> + '_ {
-        self.frog_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
 
-impl Default for FrogVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    FrogVariantRegistry,
+    FrogVariantRef,
+    frog_variants_by_id,
+    frog_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     FrogVariantRegistry,

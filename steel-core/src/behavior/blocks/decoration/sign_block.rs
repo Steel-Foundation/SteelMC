@@ -299,7 +299,7 @@ impl BlockBehavior for StandingSignBlock {
     ) -> BlockStateId {
         // Standing signs break when the block below is removed
         if direction == Direction::Down && !can_support_standing_sign(world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }
@@ -383,7 +383,7 @@ impl BlockBehavior for WallSignBlock {
             && direction.opposite() == facing
             && !can_wall_sign_survive(world, pos, facing)
         {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }
@@ -467,7 +467,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
     ) -> BlockStateId {
         // Ceiling hanging signs break when the block above is removed
         if direction == Direction::Up && !can_ceiling_hanging_sign_survive(world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }
@@ -605,7 +605,7 @@ impl BlockBehavior for WallHangingSignBlock {
             if direction.axis() == facing.rotate_y_clockwise().axis()
                 && !can_wall_hanging_sign_survive(world, pos, facing)
             {
-                return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+                return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
             }
         }
         state

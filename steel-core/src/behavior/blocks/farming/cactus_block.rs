@@ -89,7 +89,7 @@ impl BlockBehavior for CactusBlock {
         let below = world.get_block_state(below_pos);
         let below_block = below.get_block();
 
-        let valid_below = below_block == vanilla_blocks::CACTUS
+        let valid_below = below_block == &vanilla_blocks::CACTUS
             || steel_registry::REGISTRY
                 .blocks
                 .is_in_tag(below_block, &vanilla_block_tags::SUPPORTS_CACTUS_TAG);
@@ -141,7 +141,7 @@ impl BlockBehavior for CactusBlock {
         while world
             .get_block_state(pos.offset(0, -(height as i32), 0))
             .get_block()
-            == vanilla_blocks::CACTUS
+            == &vanilla_blocks::CACTUS
         {
             height += 1;
             if height == MAX_CACTUS_HEIGHT && age == 15 {
@@ -173,7 +173,7 @@ impl BlockBehavior for CactusBlock {
             );
             let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
-            world.neighbor_changed(above_pos, vanilla_blocks::CACTUS, false);
+            world.neighbor_changed(above_pos, &vanilla_blocks::CACTUS, false);
         }
 
         if age < 15 {
@@ -206,7 +206,7 @@ impl BlockBehavior for CactusBlock {
         entity: &dyn Entity,
     ) {
         entity.hurt(
-            &DamageSource::environment(vanilla_damage_types::CACTUS),
+            &DamageSource::environment(&vanilla_damage_types::CACTUS),
             1.0,
         );
     }

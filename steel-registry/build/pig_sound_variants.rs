@@ -79,7 +79,7 @@ pub(crate) fn build() -> TokenStream {
         let baby_eat_sound = generate_identifier(&pig_sound_variant.baby_sounds.eat_sound);
 
         stream.extend(quote! {
-            pub static #pig_sound_variant_ident: &PigSoundVariant = &PigSoundVariant {
+            pub static #pig_sound_variant_ident: PigSoundVariant = PigSoundVariant {
                 key: #key,
                 adult_sounds: PigAge {
                     ambient_sound: #adult_ambient_sound,
@@ -99,7 +99,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#pig_sound_variant_ident);
+            registry.register(&#pig_sound_variant_ident);
         });
     }
 

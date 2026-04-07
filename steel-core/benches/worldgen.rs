@@ -85,7 +85,7 @@ fn sample_chunk_biomes(
 // ── Biome benchmarks ────────────────────────────────────────────────────────
 
 fn bench_overworld_biome(c: &mut Criterion) {
-    let dim = vanilla_dimension_types::OVERWORLD;
+    let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     c.bench_function("overworld_biome", |b| {
         b.iter(|| {
@@ -102,7 +102,7 @@ fn bench_overworld_biome(c: &mut Criterion) {
 }
 
 fn bench_nether_biome(c: &mut Criterion) {
-    let dim = vanilla_dimension_types::THE_NETHER;
+    let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     c.bench_function("nether_biome", |b| {
         b.iter(|| {
@@ -119,7 +119,7 @@ fn bench_nether_biome(c: &mut Criterion) {
 }
 
 fn bench_end_biome(c: &mut Criterion) {
-    let dim = vanilla_dimension_types::THE_END;
+    let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     c.bench_function("end_biome", |b| {
         b.iter(|| {
@@ -139,7 +139,7 @@ fn bench_end_biome(c: &mut Criterion) {
 
 fn bench_overworld_noise(c: &mut Criterion) {
     ensure_registry();
-    let dim = vanilla_dimension_types::OVERWORLD;
+    let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(source, 0);
 
@@ -153,7 +153,7 @@ fn bench_overworld_noise(c: &mut Criterion) {
 
 fn bench_nether_noise(c: &mut Criterion) {
     ensure_registry();
-    let dim = vanilla_dimension_types::THE_NETHER;
+    let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(source, 0);
 
@@ -167,7 +167,7 @@ fn bench_nether_noise(c: &mut Criterion) {
 
 fn bench_end_noise(c: &mut Criterion) {
     ensure_registry();
-    let dim = vanilla_dimension_types::THE_END;
+    let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(source, 0);
 
@@ -183,7 +183,7 @@ fn bench_end_noise(c: &mut Criterion) {
 
 fn bench_overworld_surface(c: &mut Criterion) {
     ensure_registry();
-    let dim = vanilla_dimension_types::OVERWORLD;
+    let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
     let generator = OverworldGenerator::new(source, 0);
 
@@ -206,7 +206,7 @@ fn bench_overworld_surface(c: &mut Criterion) {
 
 fn bench_nether_surface(c: &mut Criterion) {
     ensure_registry();
-    let dim = vanilla_dimension_types::THE_NETHER;
+    let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
     let generator = NetherGenerator::new(source, 0);
 
@@ -229,7 +229,7 @@ fn bench_nether_surface(c: &mut Criterion) {
 
 fn bench_end_surface(c: &mut Criterion) {
     ensure_registry();
-    let dim = vanilla_dimension_types::THE_END;
+    let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
     let generator = EndGenerator::new(source, 0);
 

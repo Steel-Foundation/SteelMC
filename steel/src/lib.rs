@@ -19,7 +19,7 @@ pub mod logger;
 /// Spawn chunk generation with optional terminal progress display.
 pub mod spawn_progress;
 
-pub use config::{MC_VERSION, STEEL_CONFIG};
+pub use config::STEEL_CONFIG;
 
 /// Static access to the server
 pub static SERVER: OnceLock<Arc<Server>> = OnceLock::new();

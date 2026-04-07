@@ -61,7 +61,7 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn get_type(&self) -> BlockEntityTypeRef {
-        vanilla_block_entity_types::BARREL
+        &vanilla_block_entity_types::BARREL
     }
 
     fn get_block_pos(&self) -> BlockPos {
