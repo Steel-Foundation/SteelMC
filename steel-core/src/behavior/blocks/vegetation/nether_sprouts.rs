@@ -66,7 +66,7 @@ impl BlockBehavior for NetherSproutsBlock {
 
 impl Vegetation for NetherSproutsBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.get_block() == vanilla_blocks::SOUL_SOIL
+        state.get_block() == &vanilla_blocks::SOUL_SOIL
             || REGISTRY
                 .blocks
                 .is_in_tag(state.get_block(), &vanilla_block_tags::NYLIUM_TAG)
@@ -74,7 +74,7 @@ impl Vegetation for NetherSproutsBlock {
                 steel_registry::REGISTRY
                     .blocks
                     .is_in_tag(state.get_block(), &vanilla_block_tags::DIRT_TAG)
-                    || state.get_block() == vanilla_blocks::FARMLAND
+                    || state.get_block() == &vanilla_blocks::FARMLAND
             }
     }
 }

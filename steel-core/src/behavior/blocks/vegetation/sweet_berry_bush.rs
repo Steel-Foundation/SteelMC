@@ -100,8 +100,8 @@ impl BlockBehavior for SweetBerryBushBlock {
         _pos: BlockPos,
         entity: &dyn Entity,
     ) {
-        if entity.entity_type() == vanilla_entities::FOX
-            || entity.entity_type() == vanilla_entities::BEE
+        if entity.entity_type() == &vanilla_entities::FOX
+            || entity.entity_type() == &vanilla_entities::BEE
         {
             return;
         }

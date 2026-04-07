@@ -98,6 +98,6 @@ impl BlockBehavior for NetherWartBlock {
 
 impl Vegetation for NetherWartBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.get_block() == vanilla_blocks::SOUL_SAND
+        state.get_block() == &vanilla_blocks::SOUL_SAND
     }
 }

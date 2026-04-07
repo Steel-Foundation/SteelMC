@@ -48,7 +48,7 @@ impl BambooStalkBlock {
     fn stalk_segments_below(world: &World, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
-            && world.get_block_state(pos.below_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
+            && world.get_block_state(pos.below_n(height + 1)).get_block() == &vanilla_blocks::BAMBOO
         {
             height += 1;
         }
@@ -59,7 +59,7 @@ impl BambooStalkBlock {
     fn stalk_segments_above(world: &World, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
-            && world.get_block_state(pos.above_n(height + 1)).get_block() == vanilla_blocks::BAMBOO
+            && world.get_block_state(pos.above_n(height + 1)).get_block() == &vanilla_blocks::BAMBOO
         {
             height += 1;
         }
@@ -76,10 +76,10 @@ impl BambooStalkBlock {
         } else {
             let leaves_below = state_below.get_value(&BAMBOO_LEAVES_PROPERTY);
 
-            if block_below != vanilla_blocks::BAMBOO || leaves_below == BambooLeaves::None {
+            if block_below != &vanilla_blocks::BAMBOO || leaves_below == BambooLeaves::None {
                 BambooLeaves::Small
             } else {
-                if state_two_below.get_block() == vanilla_blocks::BAMBOO {
+                if state_two_below.get_block() == &vanilla_blocks::BAMBOO {
                     world.set_block(
                         pos.below(),
                         state_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
@@ -97,7 +97,7 @@ impl BambooStalkBlock {
 
         let new_age = u8::from(
             state.get_value(&AGE_PROPERTY) == 1
-                || state_two_below.get_block() == vanilla_blocks::BAMBOO,
+                || state_two_below.get_block() == &vanilla_blocks::BAMBOO,
         );
 
         let new_stage = u8::from(height == 15 || (height >= 11 && rand::random::<f32>() < 0.25));
@@ -171,20 +171,20 @@ impl BlockBehavior for BambooStalkBlock {
             return None;
         }
 
-        if block_below == vanilla_blocks::BAMBOO_SAPLING {
+        if block_below == &vanilla_blocks::BAMBOO_SAPLING {
             Some(
                 vanilla_blocks::BAMBOO
                     .default_state()
                     .set_value(&AGE_PROPERTY, 0),
             )
-        } else if block_below == vanilla_blocks::BAMBOO {
+        } else if block_below == &vanilla_blocks::BAMBOO {
             Some(vanilla_blocks::BAMBOO.default_state().set_value(
                 &AGE_PROPERTY,
                 state_below.get_value(&BlockStateProperties::AGE_1),
             ))
         } else {
             let state_above = context.world.get_block_state(context.clicked_pos.above());
-            if state_above.get_block() == vanilla_blocks::BAMBOO {
+            if state_above.get_block() == &vanilla_blocks::BAMBOO {
                 Some(
                     vanilla_blocks::BAMBOO
                         .default_state()
@@ -236,7 +236,7 @@ impl BlockBehavior for BambooStalkBlock {
         let age = state.get_value(&AGE_PROPERTY);
 
         if direction == Direction::Up
-            && neighbor_state.get_block() == vanilla_blocks::BAMBOO
+            && neighbor_state.get_block() == &vanilla_blocks::BAMBOO
             && neighbor_state.get_value(&AGE_PROPERTY) > age
         {
             return state.set_value(&AGE_PROPERTY, age.not() & 1); // 0 => 1; 1 => 0

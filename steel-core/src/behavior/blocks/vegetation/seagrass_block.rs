@@ -102,7 +102,7 @@ impl BlockBehavior for SeagrassBlock {
 
 impl Bonemealable for SeagrassBlock {
     fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        world.get_block_state(pos.above()).get_block() == vanilla_blocks::WATER
+        world.get_block_state(pos.above()).get_block() == &vanilla_blocks::WATER
     }
 
     fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -119,6 +119,6 @@ impl Bonemealable for SeagrassBlock {
 
 impl Vegetation for SeagrassBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.is_face_sturdy(Direction::Up) && state.get_block() != vanilla_blocks::MAGMA_BLOCK
+        state.is_face_sturdy(Direction::Up) && state.get_block() != &vanilla_blocks::MAGMA_BLOCK
     }
 }

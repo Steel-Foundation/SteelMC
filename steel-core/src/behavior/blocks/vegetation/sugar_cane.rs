@@ -123,7 +123,7 @@ impl BlockBehavior for SugarCaneBlock {
         let below_state = world.get_block_state(below_pos);
         let below_block = below_state.get_block();
 
-        if below_block == vanilla_blocks::SUGAR_CANE {
+        if below_block == &vanilla_blocks::SUGAR_CANE {
             return true;
         }
 
@@ -149,7 +149,7 @@ impl BlockBehavior for SugarCaneBlock {
             let neighbor_block = neighbor_state.get_block();
 
             if neighbor_state.get_fluid_state().is_water()
-                || neighbor_block == vanilla_blocks::FROSTED_ICE
+                || neighbor_block == &vanilla_blocks::FROSTED_ICE
             {
                 return true;
             }

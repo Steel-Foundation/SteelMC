@@ -66,11 +66,11 @@ impl BlockBehavior for AzaleaBlock {
 
 impl Vegetation for AzaleaBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.get_block() == vanilla_blocks::CLAY
+        state.get_block() == &vanilla_blocks::CLAY
             || steel_registry::REGISTRY
                 .blocks
                 .is_in_tag(state.get_block(), &vanilla_block_tags::DIRT_TAG)
-            || state.get_block() == vanilla_blocks::FARMLAND
+            || state.get_block() == &vanilla_blocks::FARMLAND
     }
 }
 

@@ -79,7 +79,7 @@ impl BlockBehavior for BambooSaplingBlock {
             return vanilla_blocks::AIR.default_state();
         }
 
-        if direction == Direction::Up && neighbor_state.get_block() == vanilla_blocks::BAMBOO {
+        if direction == Direction::Up && neighbor_state.get_block() == &vanilla_blocks::BAMBOO {
             return vanilla_blocks::BAMBOO.default_state();
         }
 

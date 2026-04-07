@@ -46,12 +46,12 @@ impl BoneMealItem {
         _clicked_face: Direction,
     ) -> bool {
         let state = world.get_block_state(pos);
-        if state.get_block() != vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
+        if state.get_block() != &vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
             return false;
         }
 
         let bonemealable = BLOCK_BEHAVIORS
-            .get_behavior(vanilla_blocks::SEAGRASS)
+            .get_behavior(&vanilla_blocks::SEAGRASS)
             .as_bonemealable()
             .expect("Seagrass bonemealable should exist.");
 
@@ -83,11 +83,11 @@ impl BoneMealItem {
 
             if behavior.can_survive(new_state, world, new_pos) {
                 let current_state = world.get_block_state(new_pos);
-                if current_state.get_block() == vanilla_blocks::WATER
+                if current_state.get_block() == &vanilla_blocks::WATER
                     && current_state.get_fluid_state().amount == 8
                 {
                     world.set_block(new_pos, new_state, UpdateFlags::UPDATE_ALL);
-                } else if current_state.get_block() == vanilla_blocks::SEAGRASS
+                } else if current_state.get_block() == &vanilla_blocks::SEAGRASS
                     && bonemealable.is_bonemealable(current_state, world, new_pos)
                     && rng.random_range(0..10) == 0
                 {

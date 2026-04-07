@@ -43,7 +43,7 @@ impl PitcherCropBlock {
     }
 
     fn is_lower(state: BlockStateId) -> bool {
-        state.get_block() == vanilla_blocks::PITCHER_CROP
+        state.get_block() == &vanilla_blocks::PITCHER_CROP
             && state.get_value(&BlockStateProperties::HALF) == Half::Bottom
     }
 
@@ -154,7 +154,7 @@ impl PitcherCropBlock {
             && world.is_in_valid_bounds(pos.above())
             && (new_age < 3
                 || state_above.is_air()
-                || state_above.get_block() == vanilla_blocks::PITCHER_CROP) // TODO: light
+                || state_above.get_block() == &vanilla_blocks::PITCHER_CROP) // TODO: light
     }
 }
 
@@ -200,9 +200,9 @@ impl BlockBehavior for PitcherCropBlock {
         pos: BlockPos,
         entity: &dyn Entity,
     ) {
-        if entity.entity_type() == vanilla_entities::RAVAGER
+        if entity.entity_type() == &vanilla_entities::RAVAGER
             && world
-                .get_game_rule(vanilla_game_rules::MOB_GRIEFING)
+                .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
                 .as_bool()
                 .expect("Game Rule `MOB_GRIEFING` should be a boolean")
         {
@@ -244,7 +244,7 @@ impl Bonemealable for PitcherCropBlock {
         let Some((lower_state, lower_pos)) = Self::get_lower_half(state, world, pos) else {
             return false;
         };
-        if lower_state.get_block() != vanilla_blocks::PITCHER_CROP
+        if lower_state.get_block() != &vanilla_blocks::PITCHER_CROP
             || lower_state.get_value(&HALF_PROPERTY) != Half::Bottom
         {
             return false;

@@ -111,6 +111,6 @@ impl BlockBehavior for TallSeagrassBlock {
 
 impl Vegetation for TallSeagrassBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.is_face_sturdy(Direction::Up) && state.get_block() != vanilla_blocks::MAGMA_BLOCK
+        state.is_face_sturdy(Direction::Up) && state.get_block() != &vanilla_blocks::MAGMA_BLOCK
     }
 }

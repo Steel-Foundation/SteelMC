@@ -74,8 +74,8 @@ impl BlockBehavior for CactusFlowerBlock {
 
 impl Vegetation for CactusFlowerBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
-        state.get_block() == vanilla_blocks::CACTUS
-            || state.get_block() == vanilla_blocks::FARMLAND
+        state.get_block() == &vanilla_blocks::CACTUS
+            || state.get_block() == &vanilla_blocks::FARMLAND
             || state.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 }
