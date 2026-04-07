@@ -365,9 +365,9 @@ fn chunk_stage_hashes_inner() {
 
         let dim_short = dim_key.strip_prefix("minecraft:").unwrap_or(dim_key);
         let dim_type = match dim_key {
-            "minecraft:overworld" => vanilla_dimension_types::OVERWORLD,
-            "minecraft:the_nether" => vanilla_dimension_types::THE_NETHER,
-            "minecraft:the_end" => vanilla_dimension_types::THE_END,
+            "minecraft:overworld" => &vanilla_dimension_types::OVERWORLD,
+            "minecraft:the_nether" => &vanilla_dimension_types::THE_NETHER,
+            "minecraft:the_end" => &vanilla_dimension_types::THE_END,
             _ => panic!("Unknown dimension: {dim_key}"),
         };
 

@@ -16,14 +16,12 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Clone GitCraft
 git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 
-# Patch Groovy version (use specific version instead of dynamic 5.0.+)
-sed -i 's/groovy_version = 5\.0\.+/groovy_version = 5.0.0/' "$TEMP_DIR/GitCraft/gradle.properties"
-echo "Patched gradle.properties:"
-grep groovy "$TEMP_DIR/GitCraft/gradle.properties"
+# Increase heap from default 4G to 8G
+sed -i.bak "s/-Xmx4G/-Xmx8G/" "$TEMP_DIR/GitCraft/build.gradle" && rm -f "$TEMP_DIR/GitCraft/build.gradle.bak"
 
 # Run GitCraft
 cd "$TEMP_DIR/GitCraft"
 echo "Running GitCraft..."
-JAVA_TOOL_OPTIONS="-Xmx8G" ./gradlew run --args="--override-repo-target=$MINECRAFT_SRC_DIR --only-unobfuscated --mappings=identity_unmapped --min-version=1.21.11 --only-stable"
+./gradlew run --args="--override-repo-target=$MINECRAFT_SRC_DIR --only-unobfuscated --mappings=identity_unmapped --min-version=1.21.11 --only-stable"
 
 echo "Done! minecraft-src has been updated."

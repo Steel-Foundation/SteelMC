@@ -127,7 +127,7 @@ pub(crate) fn build() -> TokenStream {
         };
 
         stream.extend(quote! {
-            pub static #entity_type_ident: &EntityType = &EntityType {
+            pub static #entity_type_ident: EntityType = EntityType {
                 key: Identifier::vanilla_static(#entity_type_key),
                 client_tracking_range: #client_tracking_range,
                 update_interval: #update_interval,
@@ -154,7 +154,7 @@ pub(crate) fn build() -> TokenStream {
             };
         });
         register_stream.extend(quote! {
-            registry.register(#entity_type_ident);
+            registry.register(&#entity_type_ident);
         });
     }
 

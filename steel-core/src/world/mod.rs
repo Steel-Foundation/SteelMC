@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{chunk::chunk_map::ChunkMapTickTimings, world::weather::Weather};
+use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
@@ -93,11 +93,13 @@ fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
-/// Timing information for a world tick.
+/// Timing information for a world game tick.
 #[derive(Debug)]
-pub struct WorldTickTimings {
-    /// Chunk map tick timings.
-    pub chunk_map: ChunkMapTickTimings,
+pub struct WorldGameTickTimings {
+    /// Total time for this world's tick.
+    pub elapsed: Duration,
+    /// Chunk map game tick timings.
+    pub chunk_map: ChunkMapGameTickTimings,
     /// Time spent ticking players.
     pub player_tick: Duration,
 }
@@ -428,13 +430,13 @@ impl World {
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
         }
 
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
-            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR))
+            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
     /// Sets a block at the given position.
@@ -556,7 +558,7 @@ impl World {
         let current_state = self.get_block_state(pos);
 
         if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
-            && current_state.get_block() == vanilla_blocks::REDSTONE_WIRE
+            && current_state.get_block() == &vanilla_blocks::REDSTONE_WIRE
         {
             return;
         }
@@ -664,16 +666,19 @@ impl World {
         });
     }
 
-    /// Ticks the world.
+    /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
+    /// and player logic (without chunk sending).
     ///
     /// * `tick_count` - The current tick number
     /// * `runs_normally` - Whether game elements (random ticks, entities) should run.
     ///   When false (frozen), only essential operations like chunk loading run.
-    ///
-    /// Returns timing information for the world tick.
-    #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
-    pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
-        // Update the world's stored game time so components (like fluids) can access it
+    #[tracing::instrument(level = "trace", skip(self), name = "world_game_tick")]
+    pub fn tick_game(
+        self: &Arc<Self>,
+        tick_count: u64,
+        runs_normally: bool,
+    ) -> WorldGameTickTimings {
+        let world_start = Instant::now();
         {
             let mut level_data = self.level_data.write();
             level_data.data_mut().game_time = tick_count as i64;
@@ -683,15 +688,12 @@ impl World {
             self.tick_time();
         }
 
-        let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
+        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
         let chunk_map_timings =
             self.chunk_map
-                .tick_b(self, tick_count, random_tick_speed, runs_normally);
+                .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
-        // Scheduled ticks are now processed per-chunk in ChunkMap::execute_scheduled_ticks()
-
-        // Tick players (always tick players - they can move when frozen)
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
@@ -702,13 +704,13 @@ impl World {
             start.elapsed()
         };
 
-        // Broadcast player latency updates periodically
         if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
             let _span = tracing::trace_span!("broadcast_latency").entered();
             self.broadcast_player_latency_updates();
         }
 
-        WorldTickTimings {
+        WorldGameTickTimings {
+            elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
             player_tick,
         }
@@ -731,7 +733,7 @@ impl World {
             let mut level_data = self.level_data.write();
 
             if self
-                .get_game_rule_with_guard(ADVANCE_WEATHER, &level_data)
+                .get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data)
                 .as_bool()
                 .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
             {
@@ -979,7 +981,7 @@ impl World {
     /// then sends an update to all clients in this world every 20th tick.
     fn tick_time(&self) {
         let advance_time = self
-            .get_game_rule(ADVANCE_TIME)
+            .get_game_rule(&ADVANCE_TIME)
             .as_bool()
             .expect("gamerule advance_time should always be a bool.");
 
@@ -1097,9 +1099,6 @@ impl World {
     }
 
     /// Broadcasts a packet to all players in the world.
-    ///
-    /// This method handles encoding the packet once and sending it to all players,
-    /// avoiding repeated cloning of unencoded packets.
     pub fn broadcast_to_all<P: ClientPacket>(&self, packet: P) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
@@ -1109,9 +1108,19 @@ impl World {
         self.broadcast_to_all_encoded(encoded);
     }
 
+    /// Broadcasts a packet to all players in the world except one (identified by entity ID).
+    pub fn broadcast_to_all_except<P: ClientPacket>(&self, packet: P, exclude: i32) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.broadcast_to_all_encoded_except(encoded, exclude);
+    }
+
     /// Broadcasts a packet to all players in the world.
     ///
-    /// This method handles encoding the packets producced from the function passed
+    /// This method handles encoding the packets produced from the function passed.
     pub fn broadcast_to_all_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
         self.players.iter_players(|_, player| {
             let Ok(encoded) = EncodedPacket::from_bare(
@@ -1127,8 +1136,6 @@ impl World {
     }
 
     /// Broadcasts an already-encoded packet to all players in the world.
-    ///
-    /// Use this when you have a pre-encoded packet to avoid re-encoding.
     pub fn broadcast_to_all_encoded(&self, packet: EncodedPacket) {
         self.players.iter_players(|_, player| {
             player.connection.send_encoded(packet.clone());
@@ -1136,15 +1143,18 @@ impl World {
         });
     }
 
-    /// Broadcasts an unsigned player chat message to all players.
-    pub fn broadcast_unsigned_chat(
-        &self,
-        mut packet: CPlayerChat,
-        sender_name: &str,
-        message: &str,
-    ) {
-        log::info!("<{sender_name}> {message}");
+    /// Broadcasts an already-encoded packet to all players except one.
+    pub fn broadcast_to_all_encoded_except(&self, packet: EncodedPacket, exclude: i32) {
+        self.players.iter_players(|_, player| {
+            if player.id != exclude {
+                player.connection.send_encoded(packet.clone());
+            }
+            true
+        });
+    }
 
+    /// Broadcasts an unsigned player chat message to all players.
+    pub fn broadcast_unsigned_chat(&self, mut packet: CPlayerChat) {
         self.players.iter_players(|_, recipient| {
             let messages_received = recipient.get_and_increment_messages_received();
             packet.global_index = messages_received;
@@ -1682,7 +1692,7 @@ impl World {
         }
 
         let block = state.get_block();
-        let is_fire = block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
+        let is_fire = block == &vanilla_blocks::FIRE || block == &vanilla_blocks::SOUL_FIRE;
         if !is_fire {
             self.destroy_block_effect(pos, u32::from(state.0), None);
         }
@@ -1967,7 +1977,7 @@ impl World {
         }
 
         // Respect doTileDrops gamerule
-        if !self.get_game_rule(BLOCK_DROPS).as_bool().unwrap_or(true) {
+        if !self.get_game_rule(&BLOCK_DROPS).as_bool().unwrap_or(true) {
             return None;
         }
 

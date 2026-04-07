@@ -131,14 +131,14 @@ pub(crate) fn build() -> TokenStream {
         let narration = generate_chat_type_decoration(&chat_type.narration);
 
         stream.extend(quote! {
-            pub static #chat_type_ident: &ChatType = &ChatType {
+            pub static #chat_type_ident: ChatType = ChatType {
                 key: #key,
                 chat: #chat,
                 narration: #narration,
             };
         });
         register_stream.extend(quote! {
-            registry.register(#chat_type_ident);
+            registry.register(&#chat_type_ident);
         });
     }
 

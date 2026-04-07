@@ -11,9 +11,9 @@ pub struct CLoginDisconnect {
 
 impl CLoginDisconnect {
     #[must_use]
-    pub fn new<T: TextResolutor>(reason: &TextComponent, player: &T) -> Self {
+    pub fn new<T: TextResolutor>(reason: &TextComponent, resolutor: &T) -> Self {
         Self {
-            reason: reason.resolve(player),
+            reason: reason.resolve(resolutor),
         }
     }
 }

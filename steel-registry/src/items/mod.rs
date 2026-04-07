@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use rustc_hash::FxHashMap;
 
 use steel_utils::Identifier;
@@ -16,6 +18,8 @@ pub struct Item {
     /// The item key returned when this item is used in crafting (e.g., "bucket" from milk_bucket).
     /// Stored as an Identifier to avoid circular reference issues during initialization.
     pub craft_remainder: Option<Identifier>,
+    /// Cached registry ID, set during registration for O(1) lookup on hot paths.
+    pub id: OnceLock<usize>,
 }
 
 impl std::fmt::Debug for Item {
@@ -31,6 +35,7 @@ impl Item {
             key: block.key.clone(),
             components: DataComponentMap::common_item_components(),
             craft_remainder: None,
+            id: OnceLock::new(),
         }
     }
 
@@ -40,6 +45,7 @@ impl Item {
             key: Identifier::vanilla_static(name),
             components: DataComponentMap::common_item_components(),
             craft_remainder: None,
+            id: OnceLock::new(),
         }
     }
 
@@ -113,21 +119,12 @@ impl ItemRegistry {
         );
 
         let id = self.items_by_id.len();
+        let cached = item.id.get_or_init(|| id);
+        assert_eq!(*cached, id, "item registered with conflicting id");
         self.items_by_key.insert(item.key.clone(), id);
         self.items_by_id.push(item);
 
         id
-    }
-
-    /// Replaces a item at a given index.
-    /// Returns true if the item was replaced and false if the item wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, item: ItemRef, id: usize) -> bool {
-        if id >= self.items_by_id.len() {
-            return false;
-        }
-        self.items_by_id[id] = item;
-        true
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, ItemRef)> + '_ {
@@ -138,5 +135,15 @@ impl ItemRegistry {
     }
 }
 
-crate::impl_registry!(ItemRegistry, Item, items_by_id, items_by_key, items);
+crate::impl_registry_ext!(ItemRegistry, Item, items_by_id, items_by_key);
 crate::impl_tagged_registry!(ItemRegistry, items_by_key, "item");
+
+impl crate::RegistryEntry for Item {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        self.id.get().copied()
+    }
+}

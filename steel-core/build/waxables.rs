@@ -14,13 +14,13 @@ pub fn build() -> String {
     let waxables: Vec<proc_macro2::TokenStream> = waxables_raw
         .iter()
         .map(|(normal, waxed)| (to_block_ident(normal), to_block_ident(waxed)))
-        .map(|(from, to)| quote! { b if b == vanilla_blocks::#from => Some(vanilla_blocks::#to) , })
+        .map(|(from, to)| quote! { b if b == &vanilla_blocks::#from => Some(&vanilla_blocks::#to) , })
         .collect();
 
     let waxables_reverse: Vec<proc_macro2::TokenStream> = waxables_raw
         .iter()
         .map(|(normal, waxed)| (to_block_ident(normal), to_block_ident(waxed)))
-        .map(|(from, to)| quote! { b if b == vanilla_blocks::#to => Some(vanilla_blocks::#from) , })
+        .map(|(from, to)| quote! { b if b == &vanilla_blocks::#to => Some(&vanilla_blocks::#from) , })
         .collect();
 
     let output = quote! {

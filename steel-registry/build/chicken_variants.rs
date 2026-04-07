@@ -131,7 +131,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #chicken_variant_ident: &ChickenVariant = &ChickenVariant {
+            pub static #chicken_variant_ident: ChickenVariant = ChickenVariant {
                 key: #key,
                 asset_id: #asset_id,
                 baby_asset_id: #baby_asset_id,
@@ -140,7 +140,7 @@ pub(crate) fn build() -> TokenStream {
             };
         });
         register_stream.extend(quote! {
-            registry.register(#chicken_variant_ident);
+            registry.register(&#chicken_variant_ident);
         });
     }
 

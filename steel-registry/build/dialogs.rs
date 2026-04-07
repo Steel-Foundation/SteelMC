@@ -110,7 +110,7 @@ pub(crate) fn build() -> TokenStream {
                 let title = generate_text_component(&dialog_list.title);
 
                 stream.extend(quote! {
-                    pub static #dialog_ident: &Dialog = &Dialog {
+                    pub static #dialog_ident: Dialog = Dialog {
                         key: #key,
                         button_width: #button_width,
                         columns: #columns,
@@ -129,7 +129,7 @@ pub(crate) fn build() -> TokenStream {
                 let title = generate_text_component(&server_links.title);
 
                 stream.extend(quote! {
-                    pub static #dialog_ident: &Dialog = &Dialog {
+                    pub static #dialog_ident: Dialog = Dialog {
                         key: #key,
                         button_width: #button_width,
                         columns: #columns,
@@ -142,7 +142,7 @@ pub(crate) fn build() -> TokenStream {
             }
         }
         register_stream.extend(quote! {
-            registry.register(#dialog_ident);
+            registry.register(&#dialog_ident);
         });
     }
 

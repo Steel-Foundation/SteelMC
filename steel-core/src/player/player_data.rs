@@ -207,7 +207,7 @@ impl PersistentPlayerData {
             },
             inventory: slots,
             selected_slot: i32::from(inventory.get_selected_slot()),
-            dimension: player.world.dimension.key.to_string(),
+            dimension: player.get_world().dimension.key.to_string(),
             food_level: food_data.food_level,
             food_saturation_level: food_data.saturation_level,
             food_exhaustion_level: food_data.exhaustion_level,

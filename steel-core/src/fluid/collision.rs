@@ -78,18 +78,18 @@ pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
 /// Vanilla's `BlockState.blocksMotion()`:
 /// `block != Cobweb && block != BambooSapling && isSolid()`
 fn blocks_motion(block: BlockRef, state: BlockStateId) -> bool {
-    block != vanilla_blocks::COBWEB && block != vanilla_blocks::BAMBOO_SAPLING && state.is_solid()
+    block != &vanilla_blocks::COBWEB && block != &vanilla_blocks::BAMBOO_SAPLING && state.is_solid()
 }
 
 /// Returns true if a block is in the vanilla fluid exclusion list.
 fn is_fluid_excluded_block(block: BlockRef) -> bool {
-    block == vanilla_blocks::LADDER
-        || block == vanilla_blocks::SUGAR_CANE
-        || block == vanilla_blocks::BUBBLE_COLUMN
-        || block == vanilla_blocks::NETHER_PORTAL
-        || block == vanilla_blocks::END_PORTAL
-        || block == vanilla_blocks::END_GATEWAY
-        || block == vanilla_blocks::STRUCTURE_VOID
+    block == &vanilla_blocks::LADDER
+        || block == &vanilla_blocks::SUGAR_CANE
+        || block == &vanilla_blocks::BUBBLE_COLUMN
+        || block == &vanilla_blocks::NETHER_PORTAL
+        || block == &vanilla_blocks::END_PORTAL
+        || block == &vanilla_blocks::END_GATEWAY
+        || block == &vanilla_blocks::STRUCTURE_VOID
         || REGISTRY.blocks.is_in_tag(block, &SIGNS_TAG)
         || REGISTRY.blocks.is_in_tag(block, &DOORS_TAG)
 }

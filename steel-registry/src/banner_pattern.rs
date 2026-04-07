@@ -41,44 +41,15 @@ impl BannerPatternRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, banner_pattern: BannerPatternRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register banner patterns after the registry has been frozen"
-        );
-
-        let id = self.banner_patterns_by_id.len();
-        self.banner_patterns_by_key
-            .insert(banner_pattern.key.clone(), id);
-        self.banner_patterns_by_id.push(banner_pattern);
-        id
-    }
-
-    /// Replaces a banner_pattern at a given index.
-    /// Returns true if the banner_pattern was replaced and false if the banner_pattern wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, banner_pattern: BannerPatternRef, id: usize) -> bool {
-        if id >= self.banner_patterns_by_id.len() {
-            return false;
-        }
-        self.banner_patterns_by_id[id] = banner_pattern;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, BannerPatternRef)> + '_ {
-        self.banner_patterns_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &pattern)| (id, pattern))
-    }
 }
 
-impl Default for BannerPatternRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    BannerPatternRegistry,
+    BannerPatternRef,
+    banner_patterns_by_id,
+    banner_patterns_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     BannerPatternRegistry,

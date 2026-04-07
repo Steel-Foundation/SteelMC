@@ -88,44 +88,15 @@ impl ChickenVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, chicken_variant: ChickenVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register chicken variants after the registry has been frozen"
-        );
-
-        let id = self.chicken_variants_by_id.len();
-        self.chicken_variants_by_key
-            .insert(chicken_variant.key.clone(), id);
-        self.chicken_variants_by_id.push(chicken_variant);
-        id
-    }
-
-    /// Replaces a chicken at a given index.
-    /// Returns true if the chicken was replaced and false if the chicken wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, chicken: ChickenVariantRef, id: usize) -> bool {
-        if id >= self.chicken_variants_by_id.len() {
-            return false;
-        }
-        self.chicken_variants_by_id[id] = chicken;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, ChickenVariantRef)> + '_ {
-        self.chicken_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
 
-impl Default for ChickenVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    ChickenVariantRegistry,
+    ChickenVariantRef,
+    chicken_variants_by_id,
+    chicken_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     ChickenVariantRegistry,
