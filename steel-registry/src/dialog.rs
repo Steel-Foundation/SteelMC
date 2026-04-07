@@ -77,37 +77,15 @@ impl DialogRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, dialog: DialogRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register dialogs after the registry has been frozen"
-        );
-
-        let id = self.dialogs_by_id.len();
-        self.dialogs_by_key.insert(dialog.key.clone(), id);
-        self.dialogs_by_id.push(dialog);
-        id
-    }
-
-    /// Replaces a dialog at a given index.
-    /// Returns true if the dialog was replaced and false if the dialog wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, dialog: DialogRef, id: usize) -> bool {
-        if id >= self.dialogs_by_id.len() {
-            return false;
-        }
-        self.dialogs_by_id[id] = dialog;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, DialogRef)> + '_ {
-        self.dialogs_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &dialog)| (id, dialog))
-    }
 }
+
+crate::impl_standard_methods!(
+    DialogRegistry,
+    DialogRef,
+    dialogs_by_id,
+    dialogs_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     DialogRegistry,
@@ -117,9 +95,3 @@ crate::impl_registry!(
     dialogs
 );
 crate::impl_tagged_registry!(DialogRegistry, dialogs_by_key, "dialog");
-
-impl Default for DialogRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}

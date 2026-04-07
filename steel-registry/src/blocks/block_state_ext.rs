@@ -125,11 +125,11 @@ impl FluidReplaceableExt for BlockStateId {
     fn can_be_replaced_by_fluid(&self, fluid: BlockRef) -> bool {
         let block = self.get_block();
 
-        if block == vanilla_blocks::AIR {
+        if block == &vanilla_blocks::AIR {
             return true;
         }
 
-        if fluid == vanilla_blocks::WATER
+        if fluid == &vanilla_blocks::WATER
             && let Some(false) = self.try_get_value(&BlockStateProperties::WATERLOGGED)
         {
             return true;

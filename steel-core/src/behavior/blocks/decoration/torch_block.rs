@@ -58,7 +58,7 @@ impl BlockBehavior for TorchBlock {
     ) -> BlockStateId {
         // Standing torches break when the block below is removed
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }
@@ -116,7 +116,7 @@ impl BlockBehavior for WallTorchBlock {
         let attach_direction = facing.opposite();
 
         if direction == attach_direction && !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }

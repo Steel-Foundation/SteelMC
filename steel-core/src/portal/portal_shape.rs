@@ -54,8 +54,8 @@ pub fn nether_portal_config() -> PortalFrameConfig {
         max_width: 21,
         min_height: 3,
         max_height: 21,
-        frame: vanilla_blocks::OBSIDIAN,
-        portal: vanilla_blocks::NETHER_PORTAL,
+        frame: &vanilla_blocks::OBSIDIAN,
+        portal: &vanilla_blocks::NETHER_PORTAL,
     }
 }
 

@@ -189,22 +189,22 @@ pub fn init_entities() {
     let mut registry = EntityRegistry::new();
 
     // Register block display entity factory
-    registry.register(vanilla_entities::BLOCK_DISPLAY, |id, pos, world| {
+    registry.register(&vanilla_entities::BLOCK_DISPLAY, |id, pos, world| {
         Arc::new(BlockDisplayEntity::new(id, pos, world))
     });
     registry.register_load(
-        vanilla_entities::BLOCK_DISPLAY,
+        &vanilla_entities::BLOCK_DISPLAY,
         |id, pos, uuid, _velocity, _rotation, _on_ground, world| {
             Arc::new(BlockDisplayEntity::from_saved(id, pos, uuid, world))
         },
     );
 
     // Register item entity factory
-    registry.register(vanilla_entities::ITEM, |id, pos, world| {
+    registry.register(&vanilla_entities::ITEM, |id, pos, world| {
         Arc::new(ItemEntity::new(id, pos, world))
     });
     registry.register_load(
-        vanilla_entities::ITEM,
+        &vanilla_entities::ITEM,
         |id, pos, uuid, velocity, rotation, on_ground, world| {
             Arc::new(ItemEntity::from_saved(
                 id, pos, uuid, velocity, rotation, on_ground, world,

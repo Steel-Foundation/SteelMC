@@ -309,48 +309,19 @@ impl DimensionTypeRegistry {
         }
     }
 
-    pub fn register(&mut self, dimension_type: DimensionTypeRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register dimension types after the registry has been frozen"
-        );
-
-        let id = self.dimension_types_by_id.len();
-        self.dimension_types_by_key
-            .insert(dimension_type.key.clone(), id);
-        self.dimension_types_by_id.push(dimension_type);
-        id
-    }
-
-    /// Replaces a dimension at a given index.
-    /// Returns true if the dimension was replaced and false if the dimension wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, dimension: DimensionTypeRef, id: usize) -> bool {
-        if id >= self.dimension_types_by_id.len() {
-            return false;
-        }
-        self.dimension_types_by_id[id] = dimension;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, DimensionTypeRef)> + '_ {
-        self.dimension_types_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &dt)| (id, dt))
-    }
-
     #[must_use]
     pub fn get_ids(&self) -> Vec<Identifier> {
         self.dimension_types_by_key.keys().cloned().collect()
     }
 }
 
-impl Default for DimensionTypeRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    DimensionTypeRegistry,
+    DimensionTypeRef,
+    dimension_types_by_id,
+    dimension_types_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     DimensionTypeRegistry,

@@ -233,8 +233,8 @@ impl<N: DimensionNoises> Aquifer<N> {
         const AQUIFER_HASH: NameHash = NameHash::new("minecraft:aquifer");
 
         let sea_level = N::Settings::SEA_LEVEL;
-        let water_id = REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER);
-        let lava_id = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
+        let water_id = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        let lava_id = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
         let default_fluid_id = N::Settings::default_fluid_id();
 
         let mut aquifer_rng = splitter.with_hash_of(&AQUIFER_HASH);

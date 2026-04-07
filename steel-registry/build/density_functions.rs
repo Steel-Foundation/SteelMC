@@ -731,13 +731,13 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             /// Get the default block state ID for this dimension.
             #[inline]
             pub fn default_block_id() -> steel_utils::BlockStateId {
-                crate::REGISTRY.blocks.get_default_state_id(crate::vanilla_blocks::#default_block_ident)
+                crate::REGISTRY.blocks.get_default_state_id(&crate::vanilla_blocks::#default_block_ident)
             }
 
             /// Get the default fluid state ID for this dimension.
             #[inline]
             pub fn default_fluid_id() -> steel_utils::BlockStateId {
-                crate::REGISTRY.blocks.get_default_state_id(crate::vanilla_blocks::#default_fluid_ident)
+                crate::REGISTRY.blocks.get_default_state_id(&crate::vanilla_blocks::#default_fluid_ident)
             }
         }
 
@@ -878,9 +878,13 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 VEIN_INTERP_ENABLED
             }
 
+            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
+                self.blended_noise.compute_column(x, block_ys, z, out);
+            }
+
             #[inline]
-            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, out: &mut [f64]) {
-                fill_cell_corner_densities(self, cache, x, y, z, out)
+            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f64, out: &mut [f64]) {
+                fill_cell_corner_densities(self, cache, x, y, z, blended_noise_value, out)
             }
 
             #[inline]

@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -16,6 +18,8 @@ pub struct Biome {
     pub spawn_costs: FxHashMap<Identifier, SpawnCost>,
     pub carvers: Vec<Identifier>,
     pub features: Vec<Vec<Identifier>>,
+    /// Cached registry ID, set during registration for O(1) lookup on hot paths.
+    pub id: OnceLock<usize>,
 }
 
 #[derive(Debug)]
@@ -265,35 +269,27 @@ impl BiomeRegistry {
             allows_registering: true,
         }
     }
+}
 
-    pub fn register(&mut self, biome: BiomeRef, key: Identifier) -> usize {
+impl BiomeRegistry {
+    pub fn register(&mut self, entry: BiomeRef) -> usize {
         assert!(
             self.allows_registering,
-            "Cannot register biomes after the registry has been frozen"
+            "Cannot register Biome after registry has been frozen"
         );
-
         let id = self.biomes_by_id.len();
-        self.biomes_by_key.insert(key, id);
-        self.biomes_by_id.push(biome);
+        let cached = entry.id.get_or_init(|| id);
+        assert_eq!(*cached, id, "biome registered with conflicting id");
+        self.biomes_by_id.push(entry);
+        self.biomes_by_key.insert(entry.key.clone(), id);
         id
-    }
-
-    /// Replaces a biome at a given index.
-    /// Returns true if the biome was replaced and false if the biome wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, biome: BiomeRef, id: usize) -> bool {
-        if id >= self.biomes_by_id.len() {
-            return false;
-        }
-        self.biomes_by_id[id] = biome;
-        true
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, BiomeRef)> + '_ {
         self.biomes_by_id
             .iter()
             .enumerate()
-            .map(|(id, &biome)| (id, biome))
+            .map(|(id, &entry)| (id, entry))
     }
 }
 
@@ -303,4 +299,14 @@ impl Default for BiomeRegistry {
     }
 }
 
-crate::impl_registry!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key, biomes);
+crate::impl_registry_ext!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key);
+
+impl crate::RegistryEntry for Biome {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        self.id.get().copied()
+    }
+}

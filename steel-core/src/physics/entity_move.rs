@@ -463,9 +463,9 @@ mod tests {
     impl CollisionWorld for MockWorld {
         fn get_block_state(&self, pos: BlockPos) -> steel_utils::BlockStateId {
             if self.has_floor && pos.y() == 0 {
-                REGISTRY.blocks.get_base_state_id(vanilla_blocks::STONE)
+                REGISTRY.blocks.get_base_state_id(&vanilla_blocks::STONE)
             } else {
-                REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR)
+                REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR)
             }
         }
 
@@ -495,7 +495,7 @@ mod tests {
     #[test]
     fn test_move_entity_free_fall() {
         let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), vanilla_entities::PLAYER);
+            EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), &vanilla_entities::PLAYER);
         state.on_ground = false;
 
         let world = MockWorld { has_floor: true };
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn test_move_entity_land_on_ground() {
         let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 5.0, 0.0), vanilla_entities::PLAYER);
+            EntityPhysicsState::new(DVec3::new(0.0, 5.0, 0.0), &vanilla_entities::PLAYER);
         state.on_ground = false;
 
         let world = MockWorld { has_floor: true };
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_move_entity_no_collision_in_air() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), vanilla_entities::PLAYER);
+        let state = EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), &vanilla_entities::PLAYER);
 
         let world = MockWorld { has_floor: false };
         let movement = DVec3::new(1.0, 0.0, 1.0);
@@ -549,7 +549,7 @@ mod tests {
     fn test_item_on_ground_with_accumulated_velocity() {
         // Simulates an item that's on the ground (Y=1.0 on top of floor)
         // and has accumulated negative velocity from gravity
-        let mut state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), vanilla_entities::ITEM);
+        let mut state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::ITEM);
         state.on_ground = true;
 
         let world = MockWorld { has_floor: true };
@@ -578,7 +578,7 @@ mod tests {
         // Simulates an item that's slightly above the ground due to floating point
         // Floor at Y=1.0, item at Y=1.00001 (just above)
         let mut state =
-            EntityPhysicsState::new(DVec3::new(0.0, 1.00001, 0.0), vanilla_entities::ITEM);
+            EntityPhysicsState::new(DVec3::new(0.0, 1.00001, 0.0), &vanilla_entities::ITEM);
         state.on_ground = false; // Not quite on ground yet
 
         let world = MockWorld { has_floor: true };

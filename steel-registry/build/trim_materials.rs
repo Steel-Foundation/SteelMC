@@ -43,7 +43,7 @@ where
 
 fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> TokenStream {
     if map.is_empty() {
-        return quote! { rustc_hash::FxHashMap::default() };
+        return quote! { FxHashMap::default() };
     }
     let entries: Vec<_> = map
         .iter()
@@ -52,7 +52,7 @@ fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> Toke
             quote! { (#key, #v.to_string()) }
         })
         .collect();
-    quote! { rustc_hash::FxHashMap::from_iter([#(#entries),*]) }
+    quote! { FxHashMap::from_iter([#(#entries),*]) }
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -120,7 +120,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(&#trim_material_ident, #trim_material_ident.key.clone());
+            registry.register(&#trim_material_ident);
         });
     }
 

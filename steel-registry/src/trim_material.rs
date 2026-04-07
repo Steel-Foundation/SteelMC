@@ -57,43 +57,15 @@ impl TrimMaterialRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, trim_material: TrimMaterialRef, key: Identifier) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register trim materials after the registry has been frozen"
-        );
-
-        let id = self.trim_materials_by_id.len();
-        self.trim_materials_by_key.insert(key, id);
-        self.trim_materials_by_id.push(trim_material);
-        id
-    }
-
-    /// Replaces a trim_material at a given index.
-    /// Returns true if the trim_material was replaced and false if the trim_material wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, trim_material: TrimMaterialRef, id: usize) -> bool {
-        if id >= self.trim_materials_by_id.len() {
-            return false;
-        }
-        self.trim_materials_by_id[id] = trim_material;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, TrimMaterialRef)> + '_ {
-        self.trim_materials_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &material)| (id, material))
-    }
 }
 
-impl Default for TrimMaterialRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    TrimMaterialRegistry,
+    TrimMaterialRef,
+    trim_materials_by_id,
+    trim_materials_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     TrimMaterialRegistry,

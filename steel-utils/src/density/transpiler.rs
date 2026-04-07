@@ -18,8 +18,11 @@
 //! Gated behind the `codegen` feature flag.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::mem;
 use std::sync::Arc;
+
+use rustc_hash::{FxHashMap, FxHasher};
 
 use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
@@ -117,6 +120,9 @@ struct TranspileContext {
     legacy_random_source: bool,
     /// Whether any density function uses `EndIslands`.
     uses_end_islands: bool,
+    /// When true, `BlendedNoise` emits the `blended_noise_value` parameter
+    /// instead of calling `noises.blended_noise.compute(x, y, z)`.
+    fill_mode: bool,
     /// When true, `Interpolated` markers emit `interpolated[i]` parameter references
     /// instead of recursing into the wrapped function.
     interpolated_param_mode: bool,
@@ -125,6 +131,21 @@ struct TranspileContext {
     /// Named functions that (transitively) contain `Interpolated` markers.
     /// In param mode, these are inlined instead of called as functions.
     interpolated_refs: BTreeSet<String>,
+    /// Named functions that (transitively) contain `BlendedNoise`.
+    /// In fill mode, these are inlined so the precomputed value is used.
+    blended_noise_refs: BTreeSet<String>,
+    /// CSE bindings keyed by structural hash. When a subexpression has been
+    /// hoisted into a `let` binding, subsequent occurrences emit the variable
+    /// name instead of recomputing. Covers `Reference`, `Noise`,
+    /// `ShiftedNoise`, and other expensive nodes.
+    cse_bindings: FxHashMap<u64, Ident>,
+    /// Counter for generating unique CSE variable names.
+    cse_counter: usize,
+    /// Inline `Noise` nodes with `y_scale == 0.0` found inside non-flat
+    /// functions. These are Y-independent but get recomputed per Y corner;
+    /// caching them in the column cache avoids ~48 redundant evaluations per
+    /// column. Keyed by structural hash, value is `(index, noise_id, xz_scale)`.
+    inline_flat_noises: BTreeMap<u64, (usize, String, f64)>,
 }
 
 impl TranspileContext {
@@ -142,9 +163,14 @@ impl TranspileContext {
             blended_noise_config: None,
             legacy_random_source: false,
             uses_end_islands: false,
+            fill_mode: false,
             interpolated_param_mode: false,
             interpolated_param_counter: 0,
             interpolated_refs: BTreeSet::new(),
+            blended_noise_refs: BTreeSet::new(),
+            cse_bindings: FxHashMap::default(),
+            cse_counter: 0,
+            inline_flat_noises: BTreeMap::new(),
         }
     }
 
@@ -206,6 +232,31 @@ impl TranspileContext {
             }
         }
 
+        // Collect Y-independent inline Noise nodes inside non-flat functions.
+        // These get cached in the column cache to avoid per-Y-corner recomputation.
+        {
+            let mut seen = BTreeMap::new();
+            for name in &self.used_names {
+                if self.flat_cached.contains(name) {
+                    continue;
+                }
+                if let Some(df) = input.registry.get(name) {
+                    collect_inline_flat_noises(unwrap_markers(df), &mut seen);
+                }
+            }
+            for (name, df) in &input.router_entries {
+                if self.flat_routers.contains(name) {
+                    continue;
+                }
+                collect_inline_flat_noises(unwrap_markers(df), &mut seen);
+            }
+            for (fp, (noise_id, xz_scale)) in seen {
+                let idx = self.inline_flat_noises.len();
+                self.inline_flat_noises
+                    .insert(fp, (idx, noise_id, xz_scale));
+            }
+        }
+
         // Compute which named functions transitively contain Interpolated markers.
         // These must be inlined (not called) when generating combine_interpolated.
         for name in &self.used_names {
@@ -213,6 +264,10 @@ impl TranspileContext {
                 let mut visited = BTreeSet::new();
                 if has_interpolated_markers(df, &input.registry, &mut visited) {
                     self.interpolated_refs.insert(name.clone());
+                }
+                let mut visited = BTreeSet::new();
+                if has_blended_noise(df, &input.registry, &mut visited) {
+                    self.blended_noise_refs.insert(name.clone());
                 }
             }
         }
@@ -622,6 +677,78 @@ impl TranspileContext {
             })
             .collect();
 
+        // Inline Y-independent noise cache
+        let inline_noise_fields: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                quote! { pub #field: f64 }
+            })
+            .collect();
+
+        let inline_noise_grid_fields: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("grid_inline_noise_{}", idx);
+                quote! { #field: [f64; #grid_total_lit] }
+            })
+            .collect();
+
+        let inline_noise_ensure_stmts: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, noise_id, xz_scale)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                let noise_field = noise_field_ident(noise_id);
+                let scale = Literal::f64_unsuffixed(*xz_scale);
+                quote! {
+                    self.#field = noises.#noise_field.get_value(
+                        f64::from(x) * #scale, 0.0, f64::from(z) * #scale,
+                    );
+                }
+            })
+            .collect();
+
+        let inline_noise_grid_load_stmts: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let active = format_ident!("inline_noise_{}", idx);
+                let grid = format_ident!("grid_inline_noise_{}", idx);
+                quote! { self.#active = self.#grid[idx]; }
+            })
+            .collect();
+
+        let inline_noise_grid_store_stmts: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let active = format_ident!("inline_noise_{}", idx);
+                let grid = format_ident!("grid_inline_noise_{}", idx);
+                quote! { self.#grid[idx] = self.#active; }
+            })
+            .collect();
+
+        let inline_noise_default_fields: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                quote! { #field: 0.0 }
+            })
+            .collect();
+
+        let inline_noise_grid_default_fields: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("grid_inline_noise_{}", idx);
+                quote! { #field: [0.0; #grid_total_lit] }
+            })
+            .collect();
+
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         quote! {
@@ -651,9 +778,11 @@ impl TranspileContext {
                 // Active value fields (read by compute functions)
                 #(#cache_fields,)*
                 #(#router_fields,)*
+                #(#inline_noise_fields,)*
                 // Grid arrays (SoA layout, fixed-size per dimension)
                 #(#grid_fields,)*
-                #(#router_grid_fields),*
+                #(#router_grid_fields,)*
+                #(#inline_noise_grid_fields),*
             }
 
             impl #cache {
@@ -674,8 +803,10 @@ impl TranspileContext {
                         has_grid: false,
                         #(#default_fields,)*
                         #(#router_default_fields,)*
+                        #(#inline_noise_default_fields,)*
                         #(#grid_default_fields,)*
-                        #(#router_grid_default_fields),*
+                        #(#router_grid_default_fields,)*
+                        #(#inline_noise_grid_default_fields),*
                     }
                 }
 
@@ -705,6 +836,8 @@ impl TranspileContext {
                             #(#grid_store_stmts)*
                             #(#router_ensure_stmts)*
                             #(#router_grid_store_stmts)*
+                            #(#inline_noise_ensure_stmts)*
+                            #(#inline_noise_grid_store_stmts)*
                         }
                     }
                 }
@@ -737,6 +870,7 @@ impl TranspileContext {
                             let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
                             #(#grid_load_stmts)*
                             #(#router_grid_load_stmts)*
+                            #(#inline_noise_grid_load_stmts)*
                             self.qx = eval_x;
                             self.qz = eval_z;
                             self.valid = true;
@@ -752,6 +886,7 @@ impl TranspileContext {
                         let z = z;
                         #(#ensure_stmts)*
                         #(#router_ensure_stmts)*
+                        #(#inline_noise_ensure_stmts)*
                         self.valid = true;
                         return;
                     }
@@ -768,6 +903,7 @@ impl TranspileContext {
                     let z = eval_z;
                     #(#ensure_stmts)*
                     #(#router_ensure_stmts)*
+                    #(#inline_noise_ensure_stmts)*
                     self.valid = true;
                 }
             }
@@ -947,6 +1083,7 @@ impl TranspileContext {
         let total_count_lit = Literal::usize_unsuffixed(total_count);
 
         // Phase 2: Generate fill_cell_corner_densities with ALL channels
+        self.fill_mode = true;
         let mut inner_stmts = Vec::with_capacity(total_count);
         for (i, inner_df) in all_inners.iter().enumerate() {
             let idx = Literal::usize_unsuffixed(i);
@@ -954,6 +1091,7 @@ impl TranspileContext {
             let expr = self.gen_expr(inner, input, false);
             inner_stmts.push(quote! { out[#idx] = #expr; });
         }
+        self.fill_mode = false;
         let fill_spline_fns = mem::take(&mut self.spline_fns);
 
         // Phase 3: Generate combine_interpolated for final_density
@@ -1012,12 +1150,14 @@ impl TranspileContext {
             /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
             ///
             /// `out` must have length `INTERPOLATED_COUNT`.
+            #[expect(unused_variables, reason = "generated function has a fixed signature; blended_noise_value is unused in dimensions without blended noise")]
             pub fn fill_cell_corner_densities(
                 noises: &#noises,
                 cache: &#cache,
                 x: i32,
                 y: i32,
                 z: i32,
+                blended_noise_value: f64,
                 out: &mut [f64],
             ) {
                 let x = cache.x;
@@ -1089,6 +1229,15 @@ impl TranspileContext {
         input: &TranspilerInput,
         is_flat: bool,
     ) -> TokenStream {
+        // Unified CSE: if this node was hoisted by an enclosing scope, emit
+        // the variable instead of recomputing.
+        if is_cse_candidate(df) {
+            let fp = fingerprint(df);
+            if let Some(var) = self.cse_bindings.get(&fp) {
+                return quote! { #var };
+            }
+        }
+
         match df {
             DensityFunction::Constant(c) => {
                 let val = Literal::f64_unsuffixed(c.value);
@@ -1104,6 +1253,14 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
+                // Y-independent noise inside a 3D function: read from column cache
+                if !is_flat && n.y_scale == 0.0 {
+                    let fp = fingerprint(df);
+                    if let Some((idx, _, _)) = self.inline_flat_noises.get(&fp) {
+                        let cache_field = format_ident!("inline_noise_{}", idx);
+                        return quote! { cache.#cache_field };
+                    }
+                }
                 let field = noise_field_ident(&n.noise_id);
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
@@ -1166,13 +1323,34 @@ impl TranspileContext {
             }
 
             DensityFunction::TwoArgumentSimple(t) => {
+                let (hoisted, hoisted_fps) =
+                    self.hoist_common_subexprs(&[&t.argument1, &t.argument2], input, is_flat);
+
                 let a = self.gen_expr(&t.argument1, input, is_flat);
                 let b = self.gen_expr(&t.argument2, input, is_flat);
-                match t.op {
-                    TwoArgType::Add => quote! { ((#a) + (#b)) },
-                    TwoArgType::Mul => quote! { ((#a) * (#b)) },
-                    TwoArgType::Min => quote! { f64::min(#a, #b) },
-                    TwoArgType::Max => quote! { f64::max(#a, #b) },
+
+                for fp in &hoisted_fps {
+                    self.cse_bindings.remove(fp);
+                }
+
+                if hoisted.is_empty() {
+                    match t.op {
+                        TwoArgType::Add => quote! { ((#a) + (#b)) },
+                        TwoArgType::Mul => quote! { ((#a) * (#b)) },
+                        TwoArgType::Min => quote! { f64::min(#a, #b) },
+                        TwoArgType::Max => quote! { f64::max(#a, #b) },
+                    }
+                } else {
+                    let op = match t.op {
+                        TwoArgType::Add => quote! { ((#a) + (#b)) },
+                        TwoArgType::Mul => quote! { ((#a) * (#b)) },
+                        TwoArgType::Min => quote! { f64::min(#a, #b) },
+                        TwoArgType::Max => quote! { f64::max(#a, #b) },
+                    };
+                    quote! {{
+                        #(#hoisted)*
+                        #op
+                    }}
                 }
             }
 
@@ -1203,12 +1381,44 @@ impl TranspileContext {
             }
 
             DensityFunction::RangeChoice(rc) => {
-                let input_expr = self.gen_expr(&rc.input, input, is_flat);
-                let in_range = self.gen_expr(&rc.when_in_range, input, is_flat);
-                let out_range = self.gen_expr(&rc.when_out_of_range, input, is_flat);
                 let min = Literal::f64_unsuffixed(rc.min_inclusive);
                 let max = Literal::f64_unsuffixed(rc.max_exclusive);
+
+                // Generate input expression BEFORE registering any CSE
+                // bindings (otherwise a self-referencing input produces
+                // `let v = v;`).
+                let input_expr = self.gen_expr(&rc.input, input, is_flat);
+
+                // CSE: if input is a CSE candidate, register `v` so the same
+                // subexpression inside the branches reuses the binding.
+                let input_fp = if is_cse_candidate(&rc.input) {
+                    let fp = fingerprint(&rc.input);
+                    self.cse_bindings.insert(fp, format_ident!("v"));
+                    Some(fp)
+                } else {
+                    None
+                };
+
+                // CSE: hoist subexpressions common to both branches.
+                let (hoisted, hoisted_fps) = self.hoist_common_subexprs(
+                    &[&rc.when_in_range, &rc.when_out_of_range],
+                    input,
+                    is_flat,
+                );
+
+                let in_range = self.gen_expr(&rc.when_in_range, input, is_flat);
+                let out_range = self.gen_expr(&rc.when_out_of_range, input, is_flat);
+
+                // Clean up all CSE bindings
+                if let Some(ref fp) = input_fp {
+                    self.cse_bindings.remove(fp);
+                }
+                for fp in &hoisted_fps {
+                    self.cse_bindings.remove(fp);
+                }
+
                 quote! {{
+                    #(#hoisted)*
                     let v = #input_expr;
                     if v >= #min && v < #max { #in_range } else { #out_range }
                 }}
@@ -1217,7 +1427,11 @@ impl TranspileContext {
             DensityFunction::Spline(s) => self.gen_spline_expr(&s.spline, input, is_flat),
 
             DensityFunction::BlendedNoise(_) => {
-                quote! { noises.blended_noise.compute(x, y, z) }
+                if self.fill_mode {
+                    quote! { blended_noise_value }
+                } else {
+                    quote! { noises.blended_noise.compute(x, y, z) }
+                }
             }
 
             DensityFunction::WeirdScaledSampler(ws) => {
@@ -1286,9 +1500,20 @@ impl TranspileContext {
             }
 
             DensityFunction::Reference(r) => {
+                // Note: the unified CSE check at the top of gen_expr handles
+                // Reference nodes too, so we only reach here if there's no
+                // active CSE binding for this reference.
                 if self.interpolated_param_mode && self.interpolated_refs.contains(&r.id) {
                     // In param mode, inline references that contain Interpolated markers
                     // so that the markers within are replaced with interpolated[i].
+                    if let Some(ref_df) = input.registry.get(&r.id) {
+                        self.gen_expr(ref_df, input, is_flat)
+                    } else {
+                        quote! { 0.0 }
+                    }
+                } else if self.fill_mode && self.blended_noise_refs.contains(&r.id) {
+                    // In fill mode, inline references that contain BlendedNoise
+                    // so the precomputed blended_noise_value is used.
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr(ref_df, input, is_flat)
                     } else {
@@ -1390,6 +1615,64 @@ impl TranspileContext {
         });
 
         fn_name
+    }
+
+    /// Find subexpressions common to all `branches` and hoist them into `let`
+    /// bindings. Returns the bindings (as `TokenStream`s) and the fingerprints
+    /// that were registered (caller must clean them up after generating the
+    /// branch expressions).
+    fn hoist_common_subexprs(
+        &mut self,
+        branches: &[&Arc<DensityFunction>],
+        input: &TranspilerInput,
+        is_flat: bool,
+    ) -> (Vec<TokenStream>, Vec<u64>) {
+        if branches.len() < 2 {
+            return (Vec::new(), Vec::new());
+        }
+
+        // In interpolated param mode, references get inlined and Interpolated
+        // markers rewritten to `interpolated[i]`, which can make hoisted
+        // bindings dead code. Skip CSE in that mode.
+        if self.interpolated_param_mode {
+            return (Vec::new(), Vec::new());
+        }
+
+        // Collect expensive subexprs from each branch
+        let branch_exprs: Vec<FxHashMap<u64, DensityFunction>> = branches
+            .iter()
+            .map(|b| collect_expensive_subexprs(b))
+            .collect();
+
+        // Find hashes present in ALL branches
+        let common_fps: BTreeSet<u64> = branch_exprs[0]
+            .keys()
+            .filter(|fp| branch_exprs[1..].iter().all(|m| m.contains_key(*fp)))
+            .copied()
+            .collect();
+
+        let mut bindings = Vec::new();
+        let mut hoisted_fps = Vec::new();
+        for fp in common_fps {
+            if self.cse_bindings.contains_key(&fp) {
+                continue;
+            }
+            let df = &branch_exprs[0][&fp];
+            // Skip flat-cached references — they're already cheap cache reads
+            if let DensityFunction::Reference(r) = df
+                && self.flat_cached.contains(&r.id)
+            {
+                continue;
+            }
+            let var = format_ident!("__cse_{}", self.cse_counter);
+            self.cse_counter += 1;
+            let expr = self.gen_expr(df, input, is_flat);
+            bindings.push(quote! { let #var = #expr; });
+            self.cse_bindings.insert(fp, var);
+            hoisted_fps.push(fp);
+        }
+
+        (bindings, hoisted_fps)
     }
 }
 
@@ -1496,6 +1779,84 @@ fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
     }
 }
 
+/// Recursively collect `Noise` nodes with `y_scale == 0.0` in a density
+/// function tree. These are Y-independent computations that can be cached
+/// per (x, z) column. Keyed by structural hash → `(noise_id, xz_scale)`.
+fn collect_inline_flat_noises(df: &DensityFunction, out: &mut BTreeMap<u64, (String, f64)>) {
+    if let DensityFunction::Noise(n) = df
+        && n.y_scale == 0.0
+    {
+        let fp = fingerprint(df);
+        out.entry(fp)
+            .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
+    }
+    // Recurse into children (but NOT into References — those are separate functions)
+    match df {
+        DensityFunction::TwoArgumentSimple(t) => {
+            collect_inline_flat_noises(&t.argument1, out);
+            collect_inline_flat_noises(&t.argument2, out);
+        }
+        DensityFunction::Mapped(m) => collect_inline_flat_noises(&m.input, out),
+        DensityFunction::Clamp(c) => collect_inline_flat_noises(&c.input, out),
+        DensityFunction::RangeChoice(rc) => {
+            collect_inline_flat_noises(&rc.input, out);
+            collect_inline_flat_noises(&rc.when_in_range, out);
+            collect_inline_flat_noises(&rc.when_out_of_range, out);
+        }
+        DensityFunction::WeirdScaledSampler(ws) => collect_inline_flat_noises(&ws.input, out),
+        DensityFunction::BlendDensity(bd) => collect_inline_flat_noises(&bd.input, out),
+        DensityFunction::Marker(m) => collect_inline_flat_noises(&m.wrapped, out),
+        DensityFunction::ShiftedNoise(sn) => {
+            collect_inline_flat_noises(&sn.shift_x, out);
+            collect_inline_flat_noises(&sn.shift_y, out);
+            collect_inline_flat_noises(&sn.shift_z, out);
+        }
+        _ => {}
+    }
+}
+
+/// Whether a node is a CSE candidate (worth deduplicating).
+const fn is_cse_candidate(df: &DensityFunction) -> bool {
+    matches!(
+        df,
+        DensityFunction::Reference(_)
+            | DensityFunction::Noise(_)
+            | DensityFunction::ShiftedNoise(_)
+    )
+}
+
+/// Collect CSE-candidate subexpressions with their structural hashes.
+fn collect_expensive_subexprs(df: &DensityFunction) -> FxHashMap<u64, DensityFunction> {
+    let mut result = FxHashMap::default();
+    collect_expensive_inner(df, &mut result);
+    result
+}
+
+fn collect_expensive_inner(df: &DensityFunction, out: &mut FxHashMap<u64, DensityFunction>) {
+    if is_cse_candidate(df) {
+        let fp = fingerprint(df);
+        out.entry(fp).or_insert_with(|| df.clone());
+    }
+    // Recurse into children
+    match df {
+        DensityFunction::TwoArgumentSimple(t) => {
+            collect_expensive_inner(&t.argument1, out);
+            collect_expensive_inner(&t.argument2, out);
+        }
+        DensityFunction::Mapped(m) => collect_expensive_inner(&m.input, out),
+        DensityFunction::Clamp(c) => collect_expensive_inner(&c.input, out),
+        DensityFunction::RangeChoice(rc) => {
+            collect_expensive_inner(&rc.input, out);
+            collect_expensive_inner(&rc.when_in_range, out);
+            collect_expensive_inner(&rc.when_out_of_range, out);
+        }
+        DensityFunction::WeirdScaledSampler(ws) => collect_expensive_inner(&ws.input, out),
+        DensityFunction::BlendDensity(bd) => collect_expensive_inner(&bd.input, out),
+        DensityFunction::Marker(m) => collect_expensive_inner(&m.wrapped, out),
+        _ => {}
+    }
+}
+
 fn collect_spline_refs(spline: &CubicSpline, refs: &mut Vec<String>) {
     collect_refs_inner(&spline.coordinate, refs);
     for point in &spline.points {
@@ -1579,6 +1940,68 @@ fn collect_interpolated_spline_walk(
             collect_interpolated_spline_walk(nested, registry, inners);
         }
     }
+}
+
+/// Check if a density function tree transitively contains `BlendedNoise`.
+fn has_blended_noise(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    match df {
+        DensityFunction::BlendedNoise(_) => true,
+        DensityFunction::TwoArgumentSimple(t) => {
+            has_blended_noise(&t.argument1, registry, visited)
+                || has_blended_noise(&t.argument2, registry, visited)
+        }
+        DensityFunction::Mapped(m) => has_blended_noise(&m.input, registry, visited),
+        DensityFunction::Clamp(c) => has_blended_noise(&c.input, registry, visited),
+        DensityFunction::Marker(m) => has_blended_noise(&m.wrapped, registry, visited),
+        DensityFunction::RangeChoice(rc) => {
+            has_blended_noise(&rc.input, registry, visited)
+                || has_blended_noise(&rc.when_in_range, registry, visited)
+                || has_blended_noise(&rc.when_out_of_range, registry, visited)
+        }
+        DensityFunction::BlendDensity(bd) => has_blended_noise(&bd.input, registry, visited),
+        DensityFunction::WeirdScaledSampler(ws) => has_blended_noise(&ws.input, registry, visited),
+        DensityFunction::ShiftedNoise(sn) => {
+            has_blended_noise(&sn.shift_x, registry, visited)
+                || has_blended_noise(&sn.shift_y, registry, visited)
+                || has_blended_noise(&sn.shift_z, registry, visited)
+        }
+        DensityFunction::FindTopSurface(fts) => {
+            has_blended_noise(&fts.density, registry, visited)
+                || has_blended_noise(&fts.upper_bound, registry, visited)
+        }
+        DensityFunction::Spline(s) => has_blended_noise_spline(&s.spline, registry, visited),
+        DensityFunction::Reference(r) => {
+            if visited.contains(&r.id) {
+                return false;
+            }
+            visited.insert(r.id.clone());
+            registry
+                .get(&r.id)
+                .is_some_and(|ref_df| has_blended_noise(ref_df, registry, visited))
+        }
+        _ => false,
+    }
+}
+
+fn has_blended_noise_spline(
+    spline: &CubicSpline,
+    registry: &BTreeMap<String, DensityFunction>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    if has_blended_noise(&spline.coordinate, registry, visited) {
+        return true;
+    }
+    spline.points.iter().any(|p| {
+        if let SplineValue::Spline(nested) = &p.value {
+            has_blended_noise_spline(nested, registry, visited)
+        } else {
+            false
+        }
+    })
 }
 
 /// Check if a named function (transitively) contains `Interpolated` markers.
@@ -1685,4 +2108,88 @@ fn sanitize_name(id: &str) -> String {
         None => id,
     };
     path.replace('/', "__").replace('-', "_")
+}
+
+/// Produce a structural hash for a `DensityFunction` subtree.
+///
+/// Two structurally identical subtrees produce the same hash. Used to detect
+/// common subexpressions across sibling branches (e.g., both arguments of a
+/// `Max` or `Min`).
+fn fingerprint(df: &DensityFunction) -> u64 {
+    let mut hasher = FxHasher::default();
+    hash_df(df, &mut hasher);
+    hasher.finish()
+}
+
+/// Hash a `DensityFunction` tree into the given hasher. Each variant is
+/// discriminated by a unique tag byte so structurally different trees never
+/// collide (within the limits of the hash).
+fn hash_df(df: &DensityFunction, h: &mut impl Hasher) {
+    mem::discriminant(df).hash(h);
+    match df {
+        DensityFunction::Constant(c) => c.value.to_bits().hash(h),
+        DensityFunction::Reference(r) => r.id.hash(h),
+        DensityFunction::YClampedGradient(g) => {
+            g.from_y.hash(h);
+            g.to_y.hash(h);
+            g.from_value.to_bits().hash(h);
+            g.to_value.to_bits().hash(h);
+        }
+        DensityFunction::Noise(n) => {
+            n.noise_id.hash(h);
+            n.xz_scale.to_bits().hash(h);
+            n.y_scale.to_bits().hash(h);
+        }
+        DensityFunction::ShiftedNoise(sn) => {
+            hash_df(&sn.shift_x, h);
+            hash_df(&sn.shift_y, h);
+            hash_df(&sn.shift_z, h);
+            sn.xz_scale.to_bits().hash(h);
+            sn.y_scale.to_bits().hash(h);
+            sn.noise_id.hash(h);
+        }
+        DensityFunction::ShiftA(s) => s.noise_id.hash(h),
+        DensityFunction::ShiftB(s) => s.noise_id.hash(h),
+        DensityFunction::Shift(s) => s.noise_id.hash(h),
+        DensityFunction::TwoArgumentSimple(t) => {
+            mem::discriminant(&t.op).hash(h);
+            hash_df(&t.argument1, h);
+            hash_df(&t.argument2, h);
+        }
+        DensityFunction::Mapped(m) => {
+            mem::discriminant(&m.op).hash(h);
+            hash_df(&m.input, h);
+        }
+        DensityFunction::Clamp(c) => {
+            c.min.to_bits().hash(h);
+            c.max.to_bits().hash(h);
+            hash_df(&c.input, h);
+        }
+        DensityFunction::RangeChoice(rc) => {
+            rc.min_inclusive.to_bits().hash(h);
+            rc.max_exclusive.to_bits().hash(h);
+            hash_df(&rc.input, h);
+            hash_df(&rc.when_in_range, h);
+            hash_df(&rc.when_out_of_range, h);
+        }
+        DensityFunction::WeirdScaledSampler(ws) => {
+            mem::discriminant(&ws.rarity_value_mapper).hash(h);
+            ws.noise_id.hash(h);
+            hash_df(&ws.input, h);
+        }
+        DensityFunction::Spline(_)
+        | DensityFunction::BlendedNoise(_)
+        | DensityFunction::EndIslands
+        | DensityFunction::BlendAlpha(_)
+        | DensityFunction::BlendOffset(_) => {}
+        DensityFunction::BlendDensity(bd) => hash_df(&bd.input, h),
+        DensityFunction::Marker(m) => {
+            mem::discriminant(&m.kind).hash(h);
+            hash_df(&m.wrapped, h);
+        }
+        DensityFunction::FindTopSurface(fts) => {
+            hash_df(&fts.density, h);
+            hash_df(&fts.upper_bound, h);
+        }
+    }
 }

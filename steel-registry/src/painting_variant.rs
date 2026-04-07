@@ -58,44 +58,15 @@ impl PaintingVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, painting_variant: PaintingVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register painting variants after the registry has been frozen"
-        );
-
-        let id = self.painting_variants_by_id.len();
-        self.painting_variants_by_key
-            .insert(painting_variant.key.clone(), id);
-        self.painting_variants_by_id.push(painting_variant);
-        id
-    }
-
-    /// Replaces a painting_variant at a given index.
-    /// Returns true if the painting_variant was replaced and false if the painting_variant wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, painting_variant: PaintingVariantRef, id: usize) -> bool {
-        if id >= self.painting_variants_by_id.len() {
-            return false;
-        }
-        self.painting_variants_by_id[id] = painting_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, PaintingVariantRef)> + '_ {
-        self.painting_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
 
-impl Default for PaintingVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    PaintingVariantRegistry,
+    PaintingVariantRef,
+    painting_variants_by_id,
+    painting_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     PaintingVariantRegistry,
