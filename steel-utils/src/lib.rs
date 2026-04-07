@@ -10,6 +10,9 @@
     portable_simd
 )]
 
+/// The Minecraft version this server supports.
+pub const MC_VERSION: &str = "26.1";
+
 /// Climate system for biome selection.
 pub mod climate;
 pub mod codec;

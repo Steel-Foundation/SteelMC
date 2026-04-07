@@ -120,6 +120,9 @@ struct TranspileContext {
     legacy_random_source: bool,
     /// Whether any density function uses `EndIslands`.
     uses_end_islands: bool,
+    /// When true, `BlendedNoise` emits the `blended_noise_value` parameter
+    /// instead of calling `noises.blended_noise.compute(x, y, z)`.
+    fill_mode: bool,
     /// When true, `Interpolated` markers emit `interpolated[i]` parameter references
     /// instead of recursing into the wrapped function.
     interpolated_param_mode: bool,
@@ -128,6 +131,9 @@ struct TranspileContext {
     /// Named functions that (transitively) contain `Interpolated` markers.
     /// In param mode, these are inlined instead of called as functions.
     interpolated_refs: BTreeSet<String>,
+    /// Named functions that (transitively) contain `BlendedNoise`.
+    /// In fill mode, these are inlined so the precomputed value is used.
+    blended_noise_refs: BTreeSet<String>,
     /// CSE bindings keyed by structural hash. When a subexpression has been
     /// hoisted into a `let` binding, subsequent occurrences emit the variable
     /// name instead of recomputing. Covers `Reference`, `Noise`,
@@ -157,9 +163,11 @@ impl TranspileContext {
             blended_noise_config: None,
             legacy_random_source: false,
             uses_end_islands: false,
+            fill_mode: false,
             interpolated_param_mode: false,
             interpolated_param_counter: 0,
             interpolated_refs: BTreeSet::new(),
+            blended_noise_refs: BTreeSet::new(),
             cse_bindings: FxHashMap::default(),
             cse_counter: 0,
             inline_flat_noises: BTreeMap::new(),
@@ -256,6 +264,10 @@ impl TranspileContext {
                 let mut visited = BTreeSet::new();
                 if has_interpolated_markers(df, &input.registry, &mut visited) {
                     self.interpolated_refs.insert(name.clone());
+                }
+                let mut visited = BTreeSet::new();
+                if has_blended_noise(df, &input.registry, &mut visited) {
+                    self.blended_noise_refs.insert(name.clone());
                 }
             }
         }
@@ -1071,6 +1083,7 @@ impl TranspileContext {
         let total_count_lit = Literal::usize_unsuffixed(total_count);
 
         // Phase 2: Generate fill_cell_corner_densities with ALL channels
+        self.fill_mode = true;
         let mut inner_stmts = Vec::with_capacity(total_count);
         for (i, inner_df) in all_inners.iter().enumerate() {
             let idx = Literal::usize_unsuffixed(i);
@@ -1078,6 +1091,7 @@ impl TranspileContext {
             let expr = self.gen_expr(inner, input, false);
             inner_stmts.push(quote! { out[#idx] = #expr; });
         }
+        self.fill_mode = false;
         let fill_spline_fns = mem::take(&mut self.spline_fns);
 
         // Phase 3: Generate combine_interpolated for final_density
@@ -1136,12 +1150,14 @@ impl TranspileContext {
             /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
             ///
             /// `out` must have length `INTERPOLATED_COUNT`.
+            #[expect(unused_variables, reason = "generated function has a fixed signature; blended_noise_value is unused in dimensions without blended noise")]
             pub fn fill_cell_corner_densities(
                 noises: &#noises,
                 cache: &#cache,
                 x: i32,
                 y: i32,
                 z: i32,
+                blended_noise_value: f64,
                 out: &mut [f64],
             ) {
                 let x = cache.x;
@@ -1411,7 +1427,11 @@ impl TranspileContext {
             DensityFunction::Spline(s) => self.gen_spline_expr(&s.spline, input, is_flat),
 
             DensityFunction::BlendedNoise(_) => {
-                quote! { noises.blended_noise.compute(x, y, z) }
+                if self.fill_mode {
+                    quote! { blended_noise_value }
+                } else {
+                    quote! { noises.blended_noise.compute(x, y, z) }
+                }
             }
 
             DensityFunction::WeirdScaledSampler(ws) => {
@@ -1486,6 +1506,14 @@ impl TranspileContext {
                 if self.interpolated_param_mode && self.interpolated_refs.contains(&r.id) {
                     // In param mode, inline references that contain Interpolated markers
                     // so that the markers within are replaced with interpolated[i].
+                    if let Some(ref_df) = input.registry.get(&r.id) {
+                        self.gen_expr(ref_df, input, is_flat)
+                    } else {
+                        quote! { 0.0 }
+                    }
+                } else if self.fill_mode && self.blended_noise_refs.contains(&r.id) {
+                    // In fill mode, inline references that contain BlendedNoise
+                    // so the precomputed blended_noise_value is used.
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr(ref_df, input, is_flat)
                     } else {
@@ -1912,6 +1940,68 @@ fn collect_interpolated_spline_walk(
             collect_interpolated_spline_walk(nested, registry, inners);
         }
     }
+}
+
+/// Check if a density function tree transitively contains `BlendedNoise`.
+fn has_blended_noise(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    match df {
+        DensityFunction::BlendedNoise(_) => true,
+        DensityFunction::TwoArgumentSimple(t) => {
+            has_blended_noise(&t.argument1, registry, visited)
+                || has_blended_noise(&t.argument2, registry, visited)
+        }
+        DensityFunction::Mapped(m) => has_blended_noise(&m.input, registry, visited),
+        DensityFunction::Clamp(c) => has_blended_noise(&c.input, registry, visited),
+        DensityFunction::Marker(m) => has_blended_noise(&m.wrapped, registry, visited),
+        DensityFunction::RangeChoice(rc) => {
+            has_blended_noise(&rc.input, registry, visited)
+                || has_blended_noise(&rc.when_in_range, registry, visited)
+                || has_blended_noise(&rc.when_out_of_range, registry, visited)
+        }
+        DensityFunction::BlendDensity(bd) => has_blended_noise(&bd.input, registry, visited),
+        DensityFunction::WeirdScaledSampler(ws) => has_blended_noise(&ws.input, registry, visited),
+        DensityFunction::ShiftedNoise(sn) => {
+            has_blended_noise(&sn.shift_x, registry, visited)
+                || has_blended_noise(&sn.shift_y, registry, visited)
+                || has_blended_noise(&sn.shift_z, registry, visited)
+        }
+        DensityFunction::FindTopSurface(fts) => {
+            has_blended_noise(&fts.density, registry, visited)
+                || has_blended_noise(&fts.upper_bound, registry, visited)
+        }
+        DensityFunction::Spline(s) => has_blended_noise_spline(&s.spline, registry, visited),
+        DensityFunction::Reference(r) => {
+            if visited.contains(&r.id) {
+                return false;
+            }
+            visited.insert(r.id.clone());
+            registry
+                .get(&r.id)
+                .is_some_and(|ref_df| has_blended_noise(ref_df, registry, visited))
+        }
+        _ => false,
+    }
+}
+
+fn has_blended_noise_spline(
+    spline: &CubicSpline,
+    registry: &BTreeMap<String, DensityFunction>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    if has_blended_noise(&spline.coordinate, registry, visited) {
+        return true;
+    }
+    spline.points.iter().any(|p| {
+        if let SplineValue::Spline(nested) = &p.value {
+            has_blended_noise_spline(nested, registry, visited)
+        } else {
+            false
+        }
+    })
 }
 
 /// Check if a named function (transitively) contains `Interpolated` markers.

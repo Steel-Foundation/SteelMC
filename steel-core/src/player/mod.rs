@@ -699,10 +699,6 @@ impl Player {
     }
 
     /// Handles a chat message from the player.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "chat verification, signing, and broadcast form a single logical flow; splitting would hurt readability"
-    )]
     pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
         let chat_message = packet.message.clone();
 
@@ -784,44 +780,32 @@ impl Player {
             },
         );
 
-        if let Some(sig_box) = &signature {
-            if sig_box.len() == 256 {
-                let mut sig_array = [0u8; 256];
-                sig_array.copy_from_slice(&sig_box[..]);
+        steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
+        if let Some(sig_box) = &signature
+            && sig_box.len() == 256
+        {
+            let mut sig_array = [0u8; 256];
+            sig_array.copy_from_slice(&sig_box[..]);
 
-                let last_seen = if let Some(Ok((_, ref last_seen))) = verification_result {
-                    last_seen.clone()
-                } else {
-                    LastSeen::default()
-                };
+            let last_seen = if let Some(Ok((_, ref last_seen))) = verification_result {
+                last_seen.clone()
+            } else {
+                LastSeen::default()
+            };
 
-                steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
-                if let Some(server) = self.server.upgrade() {
-                    for world in server.worlds.values() {
-                        world.broadcast_chat(
-                            chat_packet.clone(),
-                            Arc::clone(&player),
-                            last_seen.clone(),
-                            Some(&sig_array),
-                        );
-                    }
-                }
-            } else if let Some(server) = self.server.upgrade() {
+            if let Some(server) = self.server.upgrade() {
                 for world in server.worlds.values() {
-                    world.broadcast_unsigned_chat(
+                    world.broadcast_chat(
                         chat_packet.clone(),
-                        &player.gameprofile.name,
-                        &chat_message,
+                        Arc::clone(&player),
+                        last_seen.clone(),
+                        Some(&sig_array),
                     );
                 }
             }
         } else if let Some(server) = self.server.upgrade() {
             for world in server.worlds.values() {
-                world.broadcast_unsigned_chat(
-                    chat_packet.clone(),
-                    &player.gameprofile.name,
-                    &chat_message,
-                );
+                world.broadcast_unsigned_chat(chat_packet.clone());
             }
         }
     }

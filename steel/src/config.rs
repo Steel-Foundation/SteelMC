@@ -7,6 +7,7 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Deserialize;
 use std::{fs, path::Path, sync::LazyLock};
+use steel_utils::MC_VERSION;
 
 // Re-export types from steel-core for convenience
 pub use steel_core::config::{ConfigLabel, ConfigLink, ServerConfig, ServerConfigRef, ServerLinks};
@@ -16,9 +17,6 @@ const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png
 const ICON_PREFIX: &str = "data:image/png;base64,";
 
 const DEFAULT_CONFIG: &str = include_str!("../../package-content/steel_config.json5");
-
-/// The Minecraft version this server supports.
-pub const MC_VERSION: &str = "26.1";
 
 /// The server configuration.
 ///

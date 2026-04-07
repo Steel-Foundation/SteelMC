@@ -4,6 +4,7 @@
 //! until the connection is upgraded to play state.
 
 use std::{
+    cmp::Ordering,
     fmt::{self, Debug, Formatter},
     io::Cursor,
     net::SocketAddr,
@@ -25,8 +26,10 @@ use steel_protocol::{
     },
     utils::{ConnectionProtocol, PacketError, RawPacket},
 };
-use steel_registry::packets::{config, handshake, login as login_packets, status};
-use steel_utils::locks::AsyncMutex;
+use steel_registry::packets::{
+    CURRENT_MC_PROTOCOL, config, handshake, login as login_packets, status,
+};
+use steel_utils::{MC_VERSION, locks::AsyncMutex, translations};
 use text_components::{
     TextComponent, content::Resolvable, custom::CustomData, resolving::TextResolutor,
 };
@@ -352,7 +355,7 @@ impl JavaTcpClient {
 
     async fn process_packet(&self, packet: RawPacket) -> Result<(), PacketError> {
         match self.protocol.load() {
-            ConnectionProtocol::Handshake => self.handle_handshake(packet),
+            ConnectionProtocol::Handshake => self.handle_handshake(packet).await,
             ConnectionProtocol::Status => self.handle_status(packet).await,
             ConnectionProtocol::Login => self.handle_login(packet).await,
             ConnectionProtocol::Config => self.handle_config(packet).await,
@@ -361,19 +364,31 @@ impl JavaTcpClient {
     }
 
     /// Handles a handshake packet.
-    pub fn handle_handshake(&self, packet: RawPacket) -> Result<(), PacketError> {
+    pub async fn handle_handshake(&self, packet: RawPacket) -> Result<(), PacketError> {
         let data = &mut Cursor::new(packet.payload.as_slice());
 
         match packet.id {
             handshake::S_INTENTION => {
-                let intent = match SClientIntention::read_packet(data)?.intention {
+                let packet = SClientIntention::read_packet(data)?;
+                let intent = match packet.intention {
                     ClientIntent::Status => ConnectionProtocol::Status,
                     ClientIntent::Login | ClientIntent::Transfer => ConnectionProtocol::Login,
                 };
                 self.protocol.store(intent);
 
                 if intent != ConnectionProtocol::Status {
-                    //TODO: Handle client version being too low or high
+                    let reason = match packet.protocol_version.cmp(&CURRENT_MC_PROTOCOL) {
+                        Ordering::Equal => return Ok(()),
+                        Ordering::Less => TextComponent::translated(
+                            translations::MULTIPLAYER_DISCONNECT_OUTDATED_CLIENT
+                                .message([MC_VERSION]),
+                        ),
+                        Ordering::Greater => TextComponent::translated(
+                            translations::MULTIPLAYER_DISCONNECT_INCOMPATIBLE.message([MC_VERSION]),
+                        ),
+                    };
+                    self.kick(reason).await;
+                    return Ok(());
                 }
             }
             id => {
@@ -452,7 +467,7 @@ impl JavaTcpClient {
                 let packet = CDisconnect::new(&reason, self);
                 self.send_bare_packet_now(packet).await;
             }
-            _ => {}
+            ConnectionProtocol::Handshake | ConnectionProtocol::Status => (),
         }
         log::debug!("Closing connection for {}", self.id);
         self.close();
