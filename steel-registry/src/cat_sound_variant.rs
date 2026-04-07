@@ -76,38 +76,15 @@ impl CatSoundVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, cat_sound_variant: CatSoundVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register cat sound variants after the registry has been frozen"
-        );
-
-        let id = self.cat_sound_variants_by_id.len();
-        self.cat_sound_variants_by_key
-            .insert(cat_sound_variant.key.clone(), id);
-        self.cat_sound_variants_by_id.push(cat_sound_variant);
-        id
-    }
-
-    /// Replaces a cat_sound_variant at a given index.
-    /// Returns true if the cat_sound_variant was replaced and false if the cat_sound_variant wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, cat_sound_variant: CatSoundVariantRef, id: usize) -> bool {
-        if id >= self.cat_sound_variants_by_id.len() {
-            return false;
-        }
-        self.cat_sound_variants_by_id[id] = cat_sound_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, CatSoundVariantRef)> + '_ {
-        self.cat_sound_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
+
+crate::impl_standard_methods!(
+    CatSoundVariantRegistry,
+    CatSoundVariantRef,
+    cat_sound_variants_by_id,
+    cat_sound_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     CatSoundVariantRegistry,
@@ -116,9 +93,3 @@ crate::impl_registry!(
     cat_sound_variants_by_key,
     cat_sound_variants
 );
-
-impl Default for CatSoundVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}

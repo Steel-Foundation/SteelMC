@@ -66,7 +66,7 @@ pub fn build() -> TokenStream {
         };
 
         constants.extend(quote! {
-            pub static #const_name: &GameRule = &GameRule {
+            pub static #const_name: GameRule = GameRule {
                 key: Identifier::vanilla_static(#rule_name),
                 category: GameRuleCategory::#category,
                 value_type: #value_type,
@@ -77,7 +77,7 @@ pub fn build() -> TokenStream {
         });
 
         registrations.extend(quote! {
-            registry.register(#const_name);
+            registry.register(&#const_name);
         });
     }
 

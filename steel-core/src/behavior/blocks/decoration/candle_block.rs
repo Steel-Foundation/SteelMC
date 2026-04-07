@@ -63,16 +63,7 @@ impl BlockBehavior for CandleBlock {
     ) -> Option<steel_utils::BlockStateId> {
         let default_state = self.block.default_state();
         if self.can_survive(default_state, context.world, context.relative_pos) {
-            if context
-                .world
-                .get_block_state(context.relative_pos)
-                .get_block()
-                == vanilla_blocks::WATER
-            {
-                // FIXME: is_water_source()
-                return Some(default_state.set_value(&WATERLOGGED, true));
-            }
-            return Some(default_state);
+            return Some(default_state.set_value(&WATERLOGGED, context.is_water_source()));
         }
         None
     }
@@ -87,7 +78,7 @@ impl BlockBehavior for CandleBlock {
         _neighbor_state: steel_utils::BlockStateId,
     ) -> steel_utils::BlockStateId {
         if !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }

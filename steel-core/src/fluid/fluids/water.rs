@@ -48,7 +48,7 @@ impl FluidBehavior for WaterFluid {
     }
 
     fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
-        match world.get_game_rule(WATER_SOURCE_CONVERSION) {
+        match world.get_game_rule(&WATER_SOURCE_CONVERSION) {
             GameRuleValue::Bool(val) => val,
             GameRuleValue::Int(_) => true,
         }

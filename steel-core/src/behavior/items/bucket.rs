@@ -90,7 +90,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         let state = world.get_block_state(pos);
         let block = state.get_block();
 
-        if block == vanilla_blocks::AIR {
+        if block == &vanilla_blocks::AIR {
             return RaytraceAction::Pass;
         }
 
@@ -139,7 +139,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 
         // Vanilla parity: destroy blocks that can't survive without water.
         if !block_behavior.can_survive(new_state, context.world, hit_pos) {
-            context.player.world.destroy_block(hit_pos, true);
+            context.player.get_world().destroy_block(hit_pos, true);
         }
 
         context
@@ -168,7 +168,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         let state = world.get_block_state(pos);
         let block = state.get_block();
         // Pass through air and all fluids
-        if block == vanilla_blocks::AIR {
+        if block == &vanilla_blocks::AIR {
             return RaytraceAction::Pass;
         }
         // Check fluid state for pass-through
@@ -215,7 +215,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         }
 
         // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
-        let is_water_bucket = fluid_block == vanilla_blocks::WATER;
+        let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
 
         if is_water_bucket {
             let source_water = FluidState::source(&vanilla_fluids::WATER);
@@ -251,7 +251,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             // Vanilla parity: destroy non-liquid replaceable blocks first so they
             // drop their items (e.g. tall grass, flowers, snow layers).
             if !state.get_block().config.liquid && !state.get_block().config.is_air {
-                context.player.world.destroy_block(pos, true);
+                context.player.get_world().destroy_block(pos, true);
             }
 
             // Place fluid block
@@ -293,7 +293,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
     // WATERLOGGED property existence approximates the LiquidBlockContainer type check.
     // If primary fails, secondary retries at the offset pos without sneak check,
     // matching vanilla's recursive `emptyContents(hitResult=null)` fallback.
-    let is_water_bucket = fluid_block == vanilla_blocks::WATER;
+    let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
     let clicked_is_waterloggable = clicked_state
         .try_get_value(&BlockStateProperties::WATERLOGGED)
         .is_some();

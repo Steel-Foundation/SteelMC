@@ -96,7 +96,7 @@ pub(crate) fn build() -> TokenStream {
             generate_identifier(&cat_sound_variant.baby_sounds.stray_ambient_sound);
 
         stream.extend(quote! {
-            pub static #cat_sound_variant_ident: &CatSoundVariant = &CatSoundVariant {
+            pub static #cat_sound_variant_ident: CatSoundVariant = CatSoundVariant {
                 key: #key,
                 adult_sounds: CatAge {
                     ambient_sound: #adult_ambient_sound,
@@ -124,7 +124,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#cat_sound_variant_ident);
+            registry.register(&#cat_sound_variant_ident);
         });
     }
 

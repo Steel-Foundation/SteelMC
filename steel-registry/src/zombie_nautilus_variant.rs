@@ -76,49 +76,15 @@ impl ZombieNautilusVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, zombie_nautilus_variant: ZombieNautilusVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register zombie nautilus variants after the registry has been frozen"
-        );
-
-        let id = self.zombie_nautilus_variants_by_id.len();
-        self.zombie_nautilus_variants_by_key
-            .insert(zombie_nautilus_variant.key.clone(), id);
-        self.zombie_nautilus_variants_by_id
-            .push(zombie_nautilus_variant);
-        id
-    }
-
-    /// Replaces a zombie_nautilus_variant at a given index.
-    /// Returns true if the zombie_nautilus_variant was replaced and false if the zombie_nautilus_variant wasn't replaced
-    #[must_use]
-    pub fn replace(
-        &mut self,
-        zombie_nautilus_variant: ZombieNautilusVariantRef,
-        id: usize,
-    ) -> bool {
-        if id >= self.zombie_nautilus_variants_by_id.len() {
-            return false;
-        }
-        self.zombie_nautilus_variants_by_id[id] = zombie_nautilus_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, ZombieNautilusVariantRef)> + '_ {
-        self.zombie_nautilus_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
 
-impl Default for ZombieNautilusVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    ZombieNautilusVariantRegistry,
+    ZombieNautilusVariantRef,
+    zombie_nautilus_variants_by_id,
+    zombie_nautilus_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     ZombieNautilusVariantRegistry,

@@ -1,14 +1,21 @@
 //! This module is responsible for sending chunks to the client.
+//!
+//! Chunk sending runs on its own independent tick loop, separate from the game
+//! tick. The three-phase design (prepare → encode → commit) minimizes lock hold
+//! time on the per-player `ChunkSender` mutex so that game-tick operations like
+//! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
 use rustc_hash::FxHashSet;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
 
-use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
+use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::game::{
     CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk, CLevelChunkWithLight,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_utils::ChunkPos;
-use tokio::task::spawn_blocking;
 
 use crate::{
     chunk::{
@@ -28,6 +35,14 @@ const MAX_CHUNKS_PER_TICK: f32 = 500.0;
 const START_CHUNKS_PER_TICK: f32 = 9.0;
 /// Maximum unacknowledged batches after first ack (vanilla: 10)
 const MAX_UNACKNOWLEDGED_BATCHES: u16 = 10;
+
+/// Data collected during the prepare phase, used to encode and then commit.
+pub struct PreparedBatch {
+    /// Chunk holders to encode.
+    pub holders: Vec<Arc<ChunkHolder>>,
+    /// Snapshot of the player's generation counter at prepare time.
+    pub epoch_snapshot: u32,
+}
 
 /// This struct is responsible for sending chunks to the client.
 #[derive(Debug)]
@@ -67,85 +82,122 @@ impl ChunkSender {
         connection.send_encoded(encoded);
     }
 
-    /// Sends the next batch of chunks to the client.
+    /// Phase 1: Lock briefly to drain pending chunks and snapshot state.
     ///
-    /// # Panics
-    /// Panics if a chunk is not at Full status when it should be.
-    pub fn send_next_chunks(
+    /// Returns `None` if there is nothing to send this tick.
+    pub fn prepare_batch(
         &mut self,
-        connection: Arc<PlayerConnection>,
         world: &Arc<World>,
         player_chunk_pos: ChunkPos,
-    ) {
-        if self.unacknowledged_batches < self.max_unacknowledged_batches {
-            let max_batch_size = self.desired_chunks_per_tick.max(1.0);
-            self.batch_quota =
-                (self.batch_quota + self.desired_chunks_per_tick).min(max_batch_size);
-
-            if self.batch_quota >= 1.0 && !self.pending_chunks.is_empty() {
-                let chunks_to_process = self.collect_candidates(world, player_chunk_pos);
-                if !chunks_to_process.is_empty() {
-                    self.unacknowledged_batches += 1;
-                    self.batch_quota -= chunks_to_process.len() as f32;
-
-                    // Pre-compute compression info for encoding inside the blocking task
-                    let compression = connection.compression();
-
-                    #[expect(
-                        clippy::let_underscore_future,
-                        reason = "chunk sending is fire-and-forget; we don't need to await or track the task"
-                    )]
-                    let _ = spawn_blocking(move || {
-                        let mut chunks_to_send = Vec::new();
-                        for holder in chunks_to_process {
-                            if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
-                                if let ChunkAccess::Full(chunk) = &*chunk_guard {
-                                    chunks_to_send.push(CLevelChunkWithLight {
-                                        x: holder.get_pos().0.x,
-                                        z: holder.get_pos().0.y,
-                                        chunk_data: chunk.extract_chunk_data(),
-                                        light_data: chunk.extract_light_data(),
-                                    });
-                                } else {
-                                    panic!("Chunk must be at Full status to be sent to the client");
-                                }
-                            }
-                        }
-
-                        // Encode and send batch start
-                        let start_encoded = EncodedPacket::from_bare(
-                            CChunkBatchStart {},
-                            compression,
-                            ConnectionProtocol::Play,
-                        )
-                        .expect("Failed to encode packet");
-                        connection.send_encoded(start_encoded);
-
-                        let batch_size = chunks_to_send.len();
-
-                        for chunk in chunks_to_send {
-                            let chunk_encoded = EncodedPacket::from_bare(
-                                chunk,
-                                compression,
-                                ConnectionProtocol::Play,
-                            )
-                            .expect("Failed to encode chunk packet");
-                            connection.send_encoded(chunk_encoded);
-                        }
-
-                        let finish_encoded = EncodedPacket::from_bare(
-                            CChunkBatchFinished {
-                                batch_size: batch_size as i32,
-                            },
-                            compression,
-                            ConnectionProtocol::Play,
-                        )
-                        .expect("Failed to encode packet");
-                        connection.send_encoded(finish_encoded);
-                    });
-                }
-            }
+        chunk_send_epoch: &AtomicU32,
+    ) -> Option<PreparedBatch> {
+        if self.unacknowledged_batches >= self.max_unacknowledged_batches {
+            return None;
         }
+
+        let max_batch_size = self.desired_chunks_per_tick.max(1.0);
+        self.batch_quota = (self.batch_quota + self.desired_chunks_per_tick).min(max_batch_size);
+
+        if self.batch_quota < 1.0 || self.pending_chunks.is_empty() {
+            return None;
+        }
+
+        let holders = self.collect_candidates(world, player_chunk_pos);
+        if holders.is_empty() {
+            return None;
+        }
+
+        let epoch_snapshot = chunk_send_epoch.load(Ordering::Acquire);
+
+        Some(PreparedBatch {
+            holders,
+            epoch_snapshot,
+        })
+    }
+
+    /// Phase 2: Encode chunks without holding any lock. Called between prepare and commit.
+    ///
+    /// Uses a per-tick local cache so multiple players sharing the same chunks
+    /// don't re-encode them within the same sending tick. No mutex needed.
+    ///
+    /// # Panics
+    /// Panics if a chunk packet fails to encode.
+    pub fn encode_batch(
+        batch: &PreparedBatch,
+        cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedPacket>,
+        compression: Option<CompressionInfo>,
+    ) -> Vec<EncodedPacket> {
+        let mut encoded_chunks = Vec::with_capacity(batch.holders.len());
+
+        for holder in &batch.holders {
+            let pos = ChunkPos::new(holder.get_pos().0.x, holder.get_pos().0.y);
+
+            if let Some(cached) = cache.get(&pos) {
+                encoded_chunks.push(cached.clone());
+                continue;
+            }
+
+            let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) else {
+                continue;
+            };
+            let ChunkAccess::Full(chunk) = &*chunk_guard else {
+                continue;
+            };
+
+            let encoded = EncodedPacket::from_bare(
+                CLevelChunkWithLight {
+                    x: pos.0.x,
+                    z: pos.0.y,
+                    chunk_data: chunk.extract_chunk_data(),
+                    light_data: chunk.extract_light_data(),
+                },
+                compression,
+                ConnectionProtocol::Play,
+            )
+            .expect("Failed to encode chunk packet");
+
+            cache.insert(pos, encoded.clone());
+            encoded_chunks.push(encoded);
+        }
+
+        encoded_chunks
+    }
+
+    /// Phase 3: Lock briefly to verify generation counter and send the batch.
+    ///
+    /// If the player teleported between prepare and commit (generation counter
+    /// changed), the batch is discarded.
+    pub fn commit_batch(
+        &mut self,
+        batch: &PreparedBatch,
+        encoded_chunks: Vec<EncodedPacket>,
+        connection: &PlayerConnection,
+        chunk_send_epoch: &AtomicU32,
+    ) {
+        if chunk_send_epoch.load(Ordering::Acquire) != batch.epoch_snapshot {
+            return;
+        }
+
+        if encoded_chunks.is_empty() {
+            return;
+        }
+
+        self.unacknowledged_batches += 1;
+        self.batch_quota -= encoded_chunks.len() as f32;
+
+        Self::send_packet(connection, CChunkBatchStart {});
+
+        let batch_size = encoded_chunks.len();
+        for encoded in encoded_chunks {
+            connection.send_encoded(encoded);
+        }
+
+        Self::send_packet(
+            connection,
+            CChunkBatchFinished {
+                batch_size: batch_size as i32,
+            },
+        );
     }
 
     fn collect_candidates(

@@ -731,13 +731,13 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             /// Get the default block state ID for this dimension.
             #[inline]
             pub fn default_block_id() -> steel_utils::BlockStateId {
-                crate::REGISTRY.blocks.get_default_state_id(crate::vanilla_blocks::#default_block_ident)
+                crate::REGISTRY.blocks.get_default_state_id(&crate::vanilla_blocks::#default_block_ident)
             }
 
             /// Get the default fluid state ID for this dimension.
             #[inline]
             pub fn default_fluid_id() -> steel_utils::BlockStateId {
-                crate::REGISTRY.blocks.get_default_state_id(crate::vanilla_blocks::#default_fluid_ident)
+                crate::REGISTRY.blocks.get_default_state_id(&crate::vanilla_blocks::#default_fluid_ident)
             }
         }
 
@@ -876,6 +876,10 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
             fn vein_interp_enabled() -> bool {
                 VEIN_INTERP_ENABLED
+            }
+
+            fn precompute_noise_column(&self, x: i32, block_ys: &[i32], z: i32) {
+                self.blended_noise.precompute_column(x, block_ys, z);
             }
 
             #[inline]

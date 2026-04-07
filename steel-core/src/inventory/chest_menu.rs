@@ -168,12 +168,12 @@ impl ChestMenu {
     #[must_use]
     pub fn menu_type_for_rows(rows: usize) -> MenuTypeRef {
         match rows {
-            1 => vanilla_menu_types::GENERIC_9X1,
-            2 => vanilla_menu_types::GENERIC_9X2,
-            3 => vanilla_menu_types::GENERIC_9X3,
-            4 => vanilla_menu_types::GENERIC_9X4,
-            5 => vanilla_menu_types::GENERIC_9X5,
-            6 => vanilla_menu_types::GENERIC_9X6,
+            1 => &vanilla_menu_types::GENERIC_9X1,
+            2 => &vanilla_menu_types::GENERIC_9X2,
+            3 => &vanilla_menu_types::GENERIC_9X3,
+            4 => &vanilla_menu_types::GENERIC_9X4,
+            5 => &vanilla_menu_types::GENERIC_9X5,
+            6 => &vanilla_menu_types::GENERIC_9X6,
             _ => panic!("Invalid row count: {rows}"),
         }
     }

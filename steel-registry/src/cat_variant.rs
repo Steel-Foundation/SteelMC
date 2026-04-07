@@ -90,42 +90,6 @@ impl CatVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, cat_variant: CatVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register cat variants after the registry has been frozen"
-        );
-
-        let id = self.cat_variants_by_id.len();
-        self.cat_variants_by_key.insert(cat_variant.key.clone(), id);
-        self.cat_variants_by_id.push(cat_variant);
-        id
-    }
-
-    /// Replaces a cat_variant at a given index.
-    /// Returns true if the cat_variant was replaced and false if the cat_variant wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, cat_variant: CatVariantRef, id: usize) -> bool {
-        if id >= self.cat_variants_by_id.len() {
-            return false;
-        }
-        self.cat_variants_by_id[id] = cat_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, CatVariantRef)> + '_ {
-        self.cat_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
-}
-
-impl Default for CatVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 crate::impl_registry!(
@@ -134,4 +98,12 @@ crate::impl_registry!(
     cat_variants_by_id,
     cat_variants_by_key,
     cat_variants
+);
+
+crate::impl_standard_methods!(
+    CatVariantRegistry,
+    CatVariantRef,
+    cat_variants_by_id,
+    cat_variants_by_key,
+    allows_registering
 );

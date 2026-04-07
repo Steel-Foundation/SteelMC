@@ -170,12 +170,11 @@ async fn generate_with_display(
 
     let _ = logger.activate_spawn_display().await;
     let start = Instant::now();
-    let mut tick_count: u64 = 1;
     let mut grid = [[None; DISPLAY_DIAMETER]; DISPLAY_DIAMETER];
     let mut last_render = Instant::now();
 
     loop {
-        world.chunk_map.tick_b(world, tick_count, 0, false);
+        world.chunk_map.tick_scheduling();
 
         let mut completed = 0;
         let mut pending_dependencies = false;
@@ -214,7 +213,6 @@ async fn generate_with_display(
         }
 
         sleep(Duration::from_millis(10)).await;
-        tick_count += 1;
     }
 
     let elapsed = start.elapsed();
@@ -232,13 +230,12 @@ async fn generate_with_display(
 /// Generates chunks with progress reporting for pregeneration.
 async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32) {
     let total_chunks = ((radius * 2 + 1) * (radius * 2 + 1)) as usize;
-    let mut tick_count: u64 = 1;
     let mut last_report = Instant::now();
     let mut last_completed = 0usize;
     let start = Instant::now();
 
     loop {
-        world.chunk_map.tick_b(world, tick_count, 0, false);
+        world.chunk_map.tick_scheduling();
 
         // Count completed chunks
         let completed = count_full_chunks(world, center_chunk, radius);
@@ -269,7 +266,6 @@ async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32
         }
 
         sleep(Duration::from_millis(10)).await;
-        tick_count += 1;
     }
 }
 

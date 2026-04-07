@@ -54,7 +54,7 @@ impl BlockBehavior for RedstoneTorchBlock {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }
@@ -111,7 +111,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
         let attach_direction = facing.opposite();
 
         if direction == attach_direction && !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }

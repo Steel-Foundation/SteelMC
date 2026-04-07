@@ -578,7 +578,7 @@ pub(crate) fn build() -> TokenStream {
         );
 
         stream.extend(quote! {
-            pub static #block_name: &Block = &Block::new(
+            pub static #block_name: Block = Block::new(
                 Identifier::vanilla_static(#block_name_str),
                 BlockConfig::new()#(#builder_calls)*,
                 &[
@@ -594,7 +594,7 @@ pub(crate) fn build() -> TokenStream {
         let block_name = Ident::new(&block.name.to_shouty_snake_case(), Span::call_site());
 
         register_stream.extend(quote! {
-            registry.register(#block_name);
+            registry.register(&#block_name);
         });
     }
 

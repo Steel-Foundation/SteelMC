@@ -85,7 +85,7 @@ pub(crate) fn build() -> TokenStream {
         let comparator_output = jukebox_song.comparator_output;
 
         stream.extend(quote! {
-            pub static #jukebox_song_ident: &JukeboxSong = &JukeboxSong {
+            pub static #jukebox_song_ident: JukeboxSong = JukeboxSong {
                 key: #key,
                 sound_event: #sound_event,
                 description: #description,
@@ -95,7 +95,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#jukebox_song_ident);
+            registry.register(&#jukebox_song_ident);
         });
     }
 

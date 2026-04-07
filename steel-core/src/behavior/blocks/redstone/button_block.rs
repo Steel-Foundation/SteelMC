@@ -142,7 +142,7 @@ impl BlockBehavior for ButtonBlock {
     ) -> BlockStateId {
         let support_dir = Self::get_connected_direction(state).opposite();
         if direction == support_dir && !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }

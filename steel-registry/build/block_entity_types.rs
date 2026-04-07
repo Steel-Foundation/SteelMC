@@ -39,12 +39,12 @@ pub(crate) fn build() -> TokenStream {
         let key = quote! { Identifier::vanilla_static(#block_entity_type_name_str) };
 
         stream.extend(quote! {
-            pub static #block_entity_type_ident: &BlockEntityType = &BlockEntityType {
+            pub static #block_entity_type_ident: BlockEntityType = BlockEntityType {
                 key: #key,
             };
         });
         register_stream.extend(quote! {
-            registry.register(#block_entity_type_ident);
+            registry.register(&#block_entity_type_ident);
         });
     }
 

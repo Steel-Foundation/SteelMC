@@ -158,6 +158,15 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// Whether vein functions have interpolation channels.
     fn vein_interp_enabled() -> bool;
 
+    /// Pre-compute expensive Y-dependent noise for an entire column of Y values.
+    ///
+    /// Called by `NoiseChunk::fill_slice` before iterating over Y corners.
+    /// Dimensions that use `BlendedNoise` (e.g. overworld) should override this
+    /// to SIMD-batch the blended noise computation.
+    ///
+    /// Default: no-op.
+    fn precompute_noise_column(&self, _x: i32, _block_ys: &[i32], _z: i32) {}
+
     /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
     ///
     /// `out` must have length [`interpolated_count()`]. Each element receives

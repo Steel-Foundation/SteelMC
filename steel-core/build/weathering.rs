@@ -19,14 +19,14 @@ pub fn build() -> String {
     let oxidizables: Vec<proc_macro2::TokenStream> = oxidizables_raw
         .iter()
         .map(|(current, next)| (to_block_ident(current), to_block_ident(next)))
-        .map(|(from, to)| quote! { b if b == vanilla_blocks::#from => Some(vanilla_blocks::#to) , })
+        .map(|(from, to)| quote! { b if b == &vanilla_blocks::#from => Some(&vanilla_blocks::#to) , })
         .collect();
 
     // Build the reverse map: next -> current
     let oxidizables_reverse: Vec<proc_macro2::TokenStream> = oxidizables_raw
         .iter()
         .map(|(current, next)| (to_block_ident(current), to_block_ident(next)))
-        .map(|(from, to)| quote! { b if b == vanilla_blocks::#to => Some(vanilla_blocks::#from) , })
+        .map(|(from, to)| quote! { b if b == &vanilla_blocks::#to => Some(&vanilla_blocks::#from) , })
         .collect();
 
     // Derive WeatherState for every block by walking chains.
@@ -46,7 +46,7 @@ pub fn build() -> String {
             let block_ident = to_block_ident(current);
             let state_ident = proc_macro2::Ident::new(stage_name, proc_macro2::Span::call_site());
             weather_state_arms.push(
-                quote! { b if b == vanilla_blocks::#block_ident => Some(WeatherState::#state_ident) , },
+                quote! { b if b == &vanilla_blocks::#block_ident => Some(WeatherState::#state_ident) , },
             );
 
             let Some(next) = oxidizables_raw.get(current) else {
@@ -58,7 +58,7 @@ pub fn build() -> String {
         // The final block in the chain is Oxidized
         let block_ident = to_block_ident(current);
         weather_state_arms.push(
-            quote! { b if b == vanilla_blocks::#block_ident => Some(WeatherState::Oxidized) , },
+            quote! { b if b == &vanilla_blocks::#block_ident => Some(WeatherState::Oxidized) , },
         );
     }
 

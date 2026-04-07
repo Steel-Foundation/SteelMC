@@ -88,43 +88,15 @@ impl PigVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, pig_variant: PigVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register pig variants after the registry has been frozen"
-        );
-
-        let id = self.pig_variants_by_id.len();
-        self.pig_variants_by_key.insert(pig_variant.key.clone(), id);
-        self.pig_variants_by_id.push(pig_variant);
-        id
-    }
-
-    /// Replaces a pig_variant at a given index.
-    /// Returns true if the pig_variant was replaced and false if the pig_variant wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, pig_variant: PigVariantRef, id: usize) -> bool {
-        if id >= self.pig_variants_by_id.len() {
-            return false;
-        }
-        self.pig_variants_by_id[id] = pig_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, PigVariantRef)> + '_ {
-        self.pig_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
 
-impl Default for PigVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    PigVariantRegistry,
+    PigVariantRef,
+    pig_variants_by_id,
+    pig_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     PigVariantRegistry,

@@ -154,13 +154,13 @@ impl SignBlockEntity {
     /// Creates a new sign block entity.
     #[must_use]
     pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
-        Self::with_type(level, vanilla_block_entity_types::SIGN, pos, state)
+        Self::with_type(level, &vanilla_block_entity_types::SIGN, pos, state)
     }
 
     /// Creates a new hanging sign block entity.
     #[must_use]
     pub fn new_hanging(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
-        Self::with_type(level, vanilla_block_entity_types::HANGING_SIGN, pos, state)
+        Self::with_type(level, &vanilla_block_entity_types::HANGING_SIGN, pos, state)
     }
 
     /// Creates a sign block entity with a specific type.
