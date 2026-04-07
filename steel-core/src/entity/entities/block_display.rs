@@ -82,7 +82,7 @@ impl Entity for BlockDisplayEntity {
     }
 
     fn entity_type(&self) -> EntityTypeRef {
-        vanilla_entities::BLOCK_DISPLAY
+        &vanilla_entities::BLOCK_DISPLAY
     }
 
     fn bounding_box(&self) -> AABBd {

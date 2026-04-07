@@ -3,6 +3,8 @@ pub mod block_state_ext;
 pub mod properties;
 pub mod shapes;
 
+use std::sync::OnceLock;
+
 use rustc_hash::FxHashMap;
 
 use crate::RegistryExt;
@@ -21,6 +23,8 @@ pub struct Block {
     pub collision_shape: ShapeFn,
     /// Function to get outline shape for a state offset
     pub outline_shape: ShapeFn,
+    /// Cached registry ID, set during registration for O(1) lookup on hot paths.
+    pub id: OnceLock<usize>,
 }
 
 impl std::fmt::Debug for Block {
@@ -52,6 +56,7 @@ impl Block {
             default_state_offset: 0,
             collision_shape: full_block_shape,
             outline_shape: full_block_shape,
+            id: OnceLock::new(),
         }
     }
 
@@ -174,6 +179,8 @@ impl BlockRegistry {
         let id = self.blocks_by_id.len();
         let base_state_id = self.next_state_id;
 
+        let cached = block.id.get_or_init(|| id);
+        assert_eq!(*cached, id, "block registered with conflicting id");
         self.blocks_by_key.insert(block.key.clone(), id);
         self.blocks_by_id.push(block);
         self.block_to_base_state.push(base_state_id);
@@ -191,17 +198,6 @@ impl BlockRegistry {
         self.next_state_id += state_count as u16;
 
         id
-    }
-
-    /// Replaces a block at a given index.
-    /// Returns true if the block was replaced and false if the block wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, block: BlockRef, id: usize) -> bool {
-        if id >= self.blocks_by_id.len() {
-            return false;
-        }
-        self.blocks_by_id[id] = block;
-        true
     }
 
     #[must_use]
@@ -420,7 +416,17 @@ impl BlockRegistry {
     }
 }
 
-crate::impl_registry!(BlockRegistry, Block, blocks_by_id, blocks_by_key, blocks);
+crate::impl_registry_ext!(BlockRegistry, Block, blocks_by_id, blocks_by_key);
+
+impl crate::RegistryEntry for Block {
+    fn key(&self) -> &Identifier {
+        &self.key
+    }
+
+    fn try_id(&self) -> Option<usize> {
+        self.id.get().copied()
+    }
+}
 crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 
 // Shape lookup methods

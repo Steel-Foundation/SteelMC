@@ -8,7 +8,8 @@ use std::f64::consts::PI;
 ///
 /// This is the standard smoothstep used in Perlin noise for smooth transitions.
 /// Java reference: `Mth.smoothstep(double)`
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 #[must_use]
 pub fn smoothstep(x: f64) -> f64 {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
@@ -31,7 +32,8 @@ pub fn smoothstep_derivative(x: f64) -> f64 {
 /// For negative values, we need to subtract 1 if there's a fractional part.
 ///
 /// Java reference: `Mth.floor(double)`
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 #[must_use]
 pub fn floor(v: f64) -> i32 {
     let i = v as i32;
@@ -53,7 +55,8 @@ pub fn lfloor(v: f64) -> i64 {
 /// Formula: a + alpha * (b - a)
 ///
 /// Java reference: `Mth.lerp(double, double, double)`
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 #[must_use]
 pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
     a + alpha * (b - a)
@@ -64,7 +67,8 @@ pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
 /// Interpolates between 4 values in a 2D grid.
 ///
 /// Java reference: `Mth.lerp2(double, double, double, double, double, double)`
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 #[must_use]
 pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
     lerp(a2, lerp(a1, x00, x10), lerp(a1, x01, x11))
@@ -75,7 +79,8 @@ pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
 /// Interpolates between 8 values in a 3D grid.
 ///
 /// Java reference: `Mth.lerp3(...)`
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 #[must_use]
 #[expect(
     clippy::too_many_arguments,

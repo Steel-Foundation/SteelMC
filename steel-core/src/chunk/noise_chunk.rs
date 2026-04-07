@@ -18,8 +18,12 @@ use steel_utils::math::lerp;
 use crate::chunk::beardifier::Beardifier;
 
 /// Maximum number of interpolation channels supported.
-/// Overworld uses 5 (1 terrain + 4 noodle caves), nether/end use 1.
+/// Overworld uses 8 (1 terrain + 4 noodle caves + 3 vein channels), nether/end use 1.
 const MAX_INTERP: usize = 16;
+
+/// Maximum slice length (`z_corners` * `corners_y`) across all dimensions.
+/// Overworld: (16/4+1) * (384/8+1) = 5 * 49 = 245. Rounded up for headroom.
+const MAX_SLICE_LEN: usize = 256;
 
 /// Stores density values at cell corners for a single chunk and provides
 /// trilinear interpolation between corners for block-level resolution.
@@ -52,8 +56,8 @@ pub struct NoiseChunk<N: DimensionNoises> {
 /// Two slices (current X and next X) for one interpolation channel.
 /// Flat layout: index with `z * corners_y + y`.
 struct ChannelSlices {
-    slice0: Vec<f64>,
-    slice1: Vec<f64>,
+    slice0: [f64; MAX_SLICE_LEN],
+    slice1: [f64; MAX_SLICE_LEN],
 }
 
 impl<N: DimensionNoises> NoiseChunk<N> {
@@ -62,6 +66,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     /// `chunk_min_block_x` and `chunk_min_block_z` are the world-space block
     /// coordinates of the chunk's northwest corner.
     #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is a compile-time constant check"
+    )]
     pub fn new(chunk_min_block_x: i32, chunk_min_block_z: i32) -> Self {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
@@ -79,10 +87,14 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let slice_len = z_corners * corners_y;
 
         let interp_count = N::interpolated_count();
+        assert!(
+            slice_len <= MAX_SLICE_LEN,
+            "slice_len {slice_len} exceeds MAX_SLICE_LEN {MAX_SLICE_LEN}"
+        );
         let channels = (0..interp_count)
             .map(|_| ChannelSlices {
-                slice0: vec![0.0; slice_len],
-                slice1: vec![0.0; slice_len],
+                slice0: [0.0; MAX_SLICE_LEN],
+                slice1: [0.0; MAX_SLICE_LEN],
             })
             .collect();
 
@@ -121,6 +133,11 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
         let mut values = [0.0f64; MAX_INTERP];
 
+        // Collect Y values for SIMD precomputation
+        let block_ys: Vec<i32> = (0..corners_y)
+            .map(|cy| (cy as i32 + self.cell_min_y) * cell_height)
+            .collect();
+
         for cz in 0..=self.cell_count_xz {
             let cell_z = self.first_cell_z + cz as i32;
             let block_z = cell_z * cell_width;
@@ -128,8 +145,12 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             // Ensure column cache for this (x, z)
             cache.ensure(block_x, block_z, noises);
 
+            // SIMD-batch blended noise for the entire Y column
+            let mut blended_column = vec![0.0f64; corners_y];
+            noises.compute_noise_column(block_x, &block_ys, block_z, &mut blended_column);
+
             for cy in 0..corners_y {
-                let block_y = (cy as i32 + self.cell_min_y) * cell_height;
+                let block_y = block_ys[cy];
 
                 // Evaluate all inner functions at this cell corner
                 noises.fill_cell_corner_densities(
@@ -137,6 +158,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     block_x,
                     block_y,
                     block_z,
+                    blended_column[cy],
                     &mut values[..interp_count],
                 );
 
@@ -218,30 +240,41 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                     (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
 
                                 // Trilinearly interpolate each channel independently
-                                #[expect(
-                                    clippy::needless_range_loop,
-                                    reason = "index ch is used to index both channels[] slices and interpolated[]"
-                                )]
+                                // SAFETY: All indices are in bounds:
+                                // - ch < interp_count <= channels.len()
+                                // - z1_base + cell_y_idx + 1 is the max index:
+                                //   (cell_z_idx+1)*corners_y + cell_count_y
+                                //   ≤ cell_count_xz*corners_y + (corners_y-1)
+                                //   = (cell_count_xz+1)*corners_y - 1
+                                //   = slice_len - 1 < MAX_SLICE_LEN
                                 for ch in 0..interp_count {
-                                    let s0 = &self.channels[ch].slice0;
-                                    let s1 = &self.channels[ch].slice1;
+                                    // SAFETY: ch < interp_count <= channels.len()
+                                    let s0 = unsafe { &self.channels.get_unchecked(ch).slice0 };
+                                    // SAFETY: ch < interp_count <= channels.len()
+                                    let s1 = unsafe { &self.channels.get_unchecked(ch).slice1 };
 
-                                    let n000 = s0[z0_base + cell_y_idx];
-                                    let n001 = s0[z1_base + cell_y_idx];
-                                    let n100 = s1[z0_base + cell_y_idx];
-                                    let n101 = s1[z1_base + cell_y_idx];
-                                    let n010 = s0[z0_base + cell_y_idx + 1];
-                                    let n011 = s0[z1_base + cell_y_idx + 1];
-                                    let n110 = s1[z0_base + cell_y_idx + 1];
-                                    let n111 = s1[z1_base + cell_y_idx + 1];
+                                    let i0 = z0_base + cell_y_idx;
+                                    let i1 = z1_base + cell_y_idx;
+                                    // SAFETY: see bounds proof above
+                                    unsafe {
+                                        let n000 = *s0.get_unchecked(i0);
+                                        let n001 = *s0.get_unchecked(i1);
+                                        let n100 = *s1.get_unchecked(i0);
+                                        let n101 = *s1.get_unchecked(i1);
+                                        let n010 = *s0.get_unchecked(i0 + 1);
+                                        let n011 = *s0.get_unchecked(i1 + 1);
+                                        let n110 = *s1.get_unchecked(i0 + 1);
+                                        let n111 = *s1.get_unchecked(i1 + 1);
 
-                                    let d00 = lerp(factor_y, n000, n010);
-                                    let d10 = lerp(factor_y, n100, n110);
-                                    let d01 = lerp(factor_y, n001, n011);
-                                    let d11 = lerp(factor_y, n101, n111);
-                                    let d0 = lerp(factor_x, d00, d10);
-                                    let d1 = lerp(factor_x, d01, d11);
-                                    interpolated[ch] = lerp(factor_z, d0, d1);
+                                        let d00 = lerp(factor_y, n000, n010);
+                                        let d10 = lerp(factor_y, n100, n110);
+                                        let d01 = lerp(factor_y, n001, n011);
+                                        let d11 = lerp(factor_y, n101, n111);
+                                        let d0 = lerp(factor_x, d00, d10);
+                                        let d1 = lerp(factor_x, d01, d11);
+                                        *interpolated.get_unchecked_mut(ch) =
+                                            lerp(factor_z, d0, d1);
+                                    }
                                 }
 
                                 // Apply outer operations per-block.

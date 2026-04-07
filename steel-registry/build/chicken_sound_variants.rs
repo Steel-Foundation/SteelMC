@@ -84,7 +84,7 @@ pub(crate) fn build() -> TokenStream {
         let baby_step_sound = generate_identifier(&chicken_sound_variant.baby_sounds.step_sound);
 
         stream.extend(quote! {
-            pub static #chicken_sound_variant_ident: &ChickenSoundVariant = &ChickenSoundVariant {
+            pub static #chicken_sound_variant_ident: ChickenSoundVariant = ChickenSoundVariant {
                 key: #key,
                 adult_sounds: ChickenAge {
                     ambient_sound: #adult_ambient_sound,
@@ -102,7 +102,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#chicken_sound_variant_ident);
+            registry.register(&#chicken_sound_variant_ident);
         });
     }
 

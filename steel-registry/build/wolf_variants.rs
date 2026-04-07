@@ -130,7 +130,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #wolf_variant_ident: &WolfVariant = &WolfVariant {
+            pub static #wolf_variant_ident: WolfVariant = WolfVariant {
                 key: #key,
                 assets: WolfAssetInfo {
                     wild: #wild,
@@ -147,7 +147,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#wolf_variant_ident);
+            registry.register(&#wolf_variant_ident);
         });
     }
 

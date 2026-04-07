@@ -14,12 +14,12 @@ use steel_utils::types::UpdateFlags;
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
 
 const FLATTENABLES: [&Block; 6] = [
-    vanilla_blocks::GRASS_BLOCK,
-    vanilla_blocks::DIRT,
-    vanilla_blocks::PODZOL,
-    vanilla_blocks::COARSE_DIRT,
-    vanilla_blocks::MYCELIUM,
-    vanilla_blocks::ROOTED_DIRT,
+    &vanilla_blocks::GRASS_BLOCK,
+    &vanilla_blocks::DIRT,
+    &vanilla_blocks::PODZOL,
+    &vanilla_blocks::COARSE_DIRT,
+    &vanilla_blocks::MYCELIUM,
+    &vanilla_blocks::ROOTED_DIRT,
 ];
 
 const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;

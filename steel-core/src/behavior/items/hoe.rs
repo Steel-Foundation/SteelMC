@@ -15,14 +15,14 @@ pub struct HoeItem;
 impl HoeItem {
     fn get_tilled_variant(block: BlockRef) -> Option<BlockRef> {
         match block {
-            _ if block == vanilla_blocks::GRASS_BLOCK
-                || block == vanilla_blocks::DIRT_PATH
-                || block == vanilla_blocks::DIRT =>
+            _ if block == &vanilla_blocks::GRASS_BLOCK
+                || block == &vanilla_blocks::DIRT_PATH
+                || block == &vanilla_blocks::DIRT =>
             {
-                Some(vanilla_blocks::FARMLAND)
+                Some(&vanilla_blocks::FARMLAND)
             }
-            _ if block == vanilla_blocks::COARSE_DIRT => Some(vanilla_blocks::DIRT),
-            _ if block == vanilla_blocks::ROOTED_DIRT => Some(vanilla_blocks::DIRT),
+            _ if block == &vanilla_blocks::COARSE_DIRT => Some(&vanilla_blocks::DIRT),
+            _ if block == &vanilla_blocks::ROOTED_DIRT => Some(&vanilla_blocks::DIRT),
             _ => None,
         }
     }
@@ -40,7 +40,7 @@ impl ItemBehavior for HoeItem {
                 .world
                 .get_block_state(context.hit_result.block_pos.above())
                 .is_air())
-            && state.get_block() != vanilla_blocks::ROOTED_DIRT
+            && state.get_block() != &vanilla_blocks::ROOTED_DIRT
         {
             return InteractionResult::Pass;
         }
@@ -52,7 +52,7 @@ impl ItemBehavior for HoeItem {
         );
         // TODO: Emit GameEvent::BLOCK_CHANGE
 
-        if state.get_block() == vanilla_blocks::ROOTED_DIRT {
+        if state.get_block() == &vanilla_blocks::ROOTED_DIRT {
             context.world.pop_resource_from_face(
                 context.hit_result.block_pos,
                 context.hit_result.direction,

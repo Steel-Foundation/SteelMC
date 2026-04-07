@@ -78,7 +78,7 @@ impl BlockBehavior for CandleBlock {
         _neighbor_state: steel_utils::BlockStateId,
     ) -> steel_utils::BlockStateId {
         if !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }

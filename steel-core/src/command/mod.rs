@@ -45,6 +45,7 @@ impl CommandDispatcher {
         dispatcher.register(commands::time::command_handler());
         dispatcher.register(commands::tp::command_handler());
         dispatcher.register(commands::weather::command_handler());
+        dispatcher.register(commands::steel::command_handler());
         dispatcher.register(commands::xp::command_handler());
         dispatcher
     }

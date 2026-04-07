@@ -130,7 +130,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #cow_variant_ident: &CowVariant = &CowVariant {
+            pub static #cow_variant_ident: CowVariant = CowVariant {
                 key: #key,
                 asset_id: #asset_id,
                 baby_asset_id: #baby_asset_id,
@@ -141,7 +141,7 @@ pub(crate) fn build() -> TokenStream {
         let cow_variant_ident =
             Ident::new(&cow_variant_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(#cow_variant_ident);
+            registry.register(&#cow_variant_ident);
         });
     }
 

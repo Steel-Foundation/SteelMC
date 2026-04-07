@@ -47,13 +47,13 @@ pub(crate) fn build() -> TokenStream {
         let key = quote! { Identifier::vanilla_static(#world_clock_name_str) };
 
         stream.extend(quote! {
-            pub static #world_clock_ident: &WorldClock = &WorldClock {
+            pub static #world_clock_ident: WorldClock = WorldClock {
                 key: #key,
             };
         });
 
         register_stream.extend(quote! {
-            registry.register(#world_clock_ident);
+            registry.register(&#world_clock_ident);
         });
     }
 

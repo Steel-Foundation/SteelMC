@@ -244,7 +244,13 @@ pub(crate) fn generate_arg(
             } else {
                 let module_ident = Ident::new(module, Span::call_site());
                 let const_ident = to_block_ident(name);
-                quote! { #module_ident::#const_ident }
+                // vanilla_blocks statics are owned `Block` values; constructors
+                // expect `BlockRef = &'static Block`, so auto-borrow here.
+                if module == "vanilla_blocks" {
+                    quote! { &#module_ident::#const_ident }
+                } else {
+                    quote! { #module_ident::#const_ident }
+                }
             }
         }
         JsonArgKind::Enum { type_name, .. } => {

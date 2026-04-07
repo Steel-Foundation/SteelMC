@@ -62,38 +62,15 @@ impl PigSoundVariantRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, pig_sound_variant: PigSoundVariantRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register pig sound variants after the registry has been frozen"
-        );
-
-        let id = self.pig_sound_variants_by_id.len();
-        self.pig_sound_variants_by_key
-            .insert(pig_sound_variant.key.clone(), id);
-        self.pig_sound_variants_by_id.push(pig_sound_variant);
-        id
-    }
-
-    /// Replaces a pig_sound_variant at a given index.
-    /// Returns true if the pig_sound_variant was replaced and false if the pig_sound_variant wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, pig_sound_variant: PigSoundVariantRef, id: usize) -> bool {
-        if id >= self.pig_sound_variants_by_id.len() {
-            return false;
-        }
-        self.pig_sound_variants_by_id[id] = pig_sound_variant;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, PigSoundVariantRef)> + '_ {
-        self.pig_sound_variants_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &variant)| (id, variant))
-    }
 }
+
+crate::impl_standard_methods!(
+    PigSoundVariantRegistry,
+    PigSoundVariantRef,
+    pig_sound_variants_by_id,
+    pig_sound_variants_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     PigSoundVariantRegistry,
@@ -102,9 +79,3 @@ crate::impl_registry!(
     pig_sound_variants_by_key,
     pig_sound_variants
 );
-
-impl Default for PigSoundVariantRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}

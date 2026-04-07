@@ -44,9 +44,24 @@ use crate::player::connection::NetworkConnection;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
 
-/// Timing information for chunk map tick operations.
+/// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
-pub struct ChunkMapTickTimings {
+pub struct ChunkMapGameTickTimings {
+    /// Time spent broadcasting block changes.
+    pub broadcast_changes: Duration,
+    /// Time spent collecting tickable chunks.
+    pub collect_tickable: Duration,
+    /// Time spent ticking chunks (random ticks, etc.).
+    pub tick_chunks: Duration,
+    /// Number of chunks that were ticked.
+    pub tickable_count: usize,
+    /// Total number of loaded chunks.
+    pub total_chunks: usize,
+}
+
+/// Timing information for the chunk scheduling tick operations.
+#[derive(Debug, Default)]
+pub struct ChunkMapSchedulingTimings {
     /// Time spent processing ticket updates.
     pub ticket_updates: Duration,
     /// Time spent creating/updating chunk holders.
@@ -57,18 +72,8 @@ pub struct ChunkMapTickTimings {
     pub scheduled_count: usize,
     /// Time spent spawning generation tasks.
     pub run_generation: Duration,
-    /// Time spent broadcasting block changes.
-    pub broadcast_changes: Duration,
     /// Time spent processing chunk unloads.
     pub process_unloads: Duration,
-    /// Time spent collecting tickable chunks.
-    pub collect_tickable: Duration,
-    /// Time spent ticking chunks (random ticks, etc.).
-    pub tick_chunks: Duration,
-    /// Number of chunks that were ticked.
-    pub tickable_count: usize,
-    /// Total number of loaded chunks.
-    pub total_chunks: usize,
 }
 
 /// A map of chunks managing their state, loading, and generation.
@@ -375,103 +380,26 @@ impl ChunkMap {
     ///
     /// # Arguments
     /// * `world` - The world reference (needed for executing scheduled tick callbacks)
-    /// * `tick_count` - The current server tick count
-    /// * `random_tick_speed` - Number of random blocks to tick per section per tick
-    /// * `runs_normally` - Whether game elements should run (false when frozen)
+    /// Game tick: broadcasts block changes, ticks chunks (random + scheduled ticks).
     ///
-    /// Returns timing information for each phase of the tick.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "splitting would hurt readability of the tick pipeline"
-    )]
-    #[instrument(level = "trace", skip(self, world), name = "chunk_map_tick")]
-    pub fn tick_b(
+    /// Runs on the main game tick loop. Does NOT handle chunk generation or unloading.
+    #[instrument(level = "trace", skip(self, world), name = "chunk_map_game_tick")]
+    pub fn tick_game(
         self: &Arc<Self>,
         world: &Arc<World>,
         tick_count: u64,
         random_tick_speed: u32,
         runs_normally: bool,
-    ) -> ChunkMapTickTimings {
-        let mut timings = ChunkMapTickTimings::default();
+    ) -> ChunkMapGameTickTimings {
+        let mut timings = ChunkMapGameTickTimings::default();
         let mut ready_block_ticks = Vec::new();
         let mut ready_fluid_ticks = Vec::new();
-
-        {
-            let mut ct = self.chunk_tickets.lock();
-
-            // Only process chunks that actually changed
-            let changes: Vec<LevelChange> = {
-                let _span = tracing::trace_span!("ticket_updates").entered();
-                let start = Instant::now();
-                let result = ct.run_all_updates().to_vec();
-                timings.ticket_updates = start.elapsed();
-                result
-            };
-
-            let holders_to_schedule: Vec<_> = {
-                let _span = tracing::trace_span!("holder_creation").entered();
-                let start = Instant::now();
-                let result = changes
-                    .iter()
-                    .filter_map(|change| {
-                        self.update_chunk_level(change.pos, change.new_level)
-                            .map(|holder| (holder, change.new_level))
-                    })
-                    .collect();
-                timings.holder_creation = start.elapsed();
-                result
-            };
-
-            {
-                let _span = tracing::trace_span!("schedule_generation").entered();
-                let start = Instant::now();
-                let scheduled_count = if holders_to_schedule.len() < 100 {
-                    holders_to_schedule
-                        .iter()
-                        .filter(|(holder, level)| {
-                            level.is_some_and(is_full)
-                                && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
-                        })
-                        .count()
-                } else {
-                    let self_ref = self;
-                    self.generation_pool.install(|| {
-                        holders_to_schedule
-                            .into_par_iter()
-                            .filter(|(holder, level)| {
-                                level.is_some_and(is_full)
-                                    && holder.schedule_chunk_generation_task_b(
-                                        ChunkStatus::Full,
-                                        self_ref,
-                                    )
-                            })
-                            .count()
-                    })
-                };
-                timings.schedule_generation = start.elapsed();
-                timings.scheduled_count = scheduled_count;
-            }
-        };
-
-        {
-            let _span = tracing::trace_span!("run_generation").entered();
-            let start = Instant::now();
-            self.run_generation_tasks_b();
-            timings.run_generation = start.elapsed();
-        }
 
         {
             let _span = tracing::trace_span!("broadcast_changes").entered();
             let start = Instant::now();
             self.broadcast_changed_chunks();
             timings.broadcast_changes = start.elapsed();
-        }
-
-        {
-            let _span = tracing::trace_span!("process_unloads").entered();
-            let start = Instant::now();
-            self.process_unloads();
-            timings.process_unloads = start.elapsed();
         }
 
         if tick_count.is_multiple_of(100) {
@@ -482,7 +410,6 @@ impl ChunkMap {
             );
         }
 
-        // Chunk ticking - skip when frozen
         if !runs_normally {
             return timings;
         }
@@ -515,7 +442,6 @@ impl ChunkMap {
                 )
                 .entered();
                 let start = Instant::now();
-                // TODO: In the future we might want to tick different regions/islands in parallel
                 for holder in &tickable_chunks {
                     if let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) {
                         chunk_guard.tick(
@@ -530,8 +456,86 @@ impl ChunkMap {
             }
         }
 
-        // Execute scheduled ticks collected during chunk ticking
         Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+
+        timings
+    }
+
+    /// Scheduling tick: processes tickets, creates holders, schedules generation,
+    /// runs generation tasks, and processes unloads.
+    ///
+    /// Runs on its own independent tick loop, separate from the game tick.
+    #[instrument(level = "trace", skip(self), name = "chunk_map_scheduling_tick")]
+    pub fn tick_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+        let mut timings = ChunkMapSchedulingTimings::default();
+
+        // Only hold the ticket lock for run_all_updates — holder creation and
+        // generation scheduling don't need it, and holding it blocks
+        // update_player_status on the game tick.
+        let changes: Vec<LevelChange> = {
+            let _span = tracing::trace_span!("ticket_updates").entered();
+            let start = Instant::now();
+            let mut ct = self.chunk_tickets.lock();
+            let result = ct.run_all_updates().to_vec();
+            timings.ticket_updates = start.elapsed();
+            result
+        };
+
+        let holders_to_schedule: Vec<_> = {
+            let _span = tracing::trace_span!("holder_creation").entered();
+            let start = Instant::now();
+            let result = changes
+                .iter()
+                .filter_map(|change| {
+                    self.update_chunk_level(change.pos, change.new_level)
+                        .map(|holder| (holder, change.new_level))
+                })
+                .collect();
+            timings.holder_creation = start.elapsed();
+            result
+        };
+
+        {
+            let _span = tracing::trace_span!("schedule_generation").entered();
+            let start = Instant::now();
+            let scheduled_count = if holders_to_schedule.len() < 100 {
+                holders_to_schedule
+                    .iter()
+                    .filter(|(holder, level)| {
+                        level.is_some_and(is_full)
+                            && holder.schedule_chunk_generation_task_b(ChunkStatus::Full, self)
+                    })
+                    .count()
+            } else {
+                let self_ref = self;
+                self.generation_pool.install(|| {
+                    holders_to_schedule
+                        .into_par_iter()
+                        .filter(|(holder, level)| {
+                            level.is_some_and(is_full)
+                                && holder
+                                    .schedule_chunk_generation_task_b(ChunkStatus::Full, self_ref)
+                        })
+                        .count()
+                })
+            };
+            timings.schedule_generation = start.elapsed();
+            timings.scheduled_count = scheduled_count;
+        }
+
+        {
+            let _span = tracing::trace_span!("run_generation").entered();
+            let start = Instant::now();
+            self.run_generation_tasks_b();
+            timings.run_generation = start.elapsed();
+        }
+
+        {
+            let _span = tracing::trace_span!("process_unloads").entered();
+            let start = Instant::now();
+            self.process_unloads();
+            timings.process_unloads = start.elapsed();
+        }
 
         timings
     }
