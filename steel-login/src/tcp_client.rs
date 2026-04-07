@@ -388,6 +388,7 @@ impl JavaTcpClient {
                         ),
                     };
                     self.kick(reason).await;
+                    return Ok(());
                 }
             }
             id => {
@@ -458,7 +459,7 @@ impl JavaTcpClient {
     pub async fn kick(&self, reason: TextComponent) {
         log::info!("Kicking client {}: {:p}", self.id, reason);
         match self.protocol.load() {
-            ConnectionProtocol::Handshake | ConnectionProtocol::Login => {
+            ConnectionProtocol::Login => {
                 let packet = CLoginDisconnect::new(&reason, self);
                 self.send_bare_packet_now(packet).await;
             }
@@ -466,7 +467,7 @@ impl JavaTcpClient {
                 let packet = CDisconnect::new(&reason, self);
                 self.send_bare_packet_now(packet).await;
             }
-            ConnectionProtocol::Status => (),
+            ConnectionProtocol::Handshake | ConnectionProtocol::Status => (),
         }
         log::debug!("Closing connection for {}", self.id);
         self.close();
