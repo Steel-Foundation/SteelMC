@@ -1413,15 +1413,17 @@ impl Player {
     pub fn handle_change_difficulty(&self, difficulty: Difficulty) {
         // TODO: implement op-level permission check
         let world = self.get_world();
-        if world.level_data.read().data().difficulty_locked {
+        {
             let level_data = world.level_data.read();
-            let current = level_data.data().difficulty;
-            drop(level_data);
-            self.send_packet(CChangeDifficulty {
-                difficulty: current,
-                locked: true,
-            });
-            return;
+            if level_data.data().difficulty_locked {
+                let current = level_data.data().difficulty;
+                drop(level_data);
+                self.send_packet(CChangeDifficulty {
+                    difficulty: current,
+                    locked: true,
+                });
+                return;
+            }
         }
 
         // Vanilla: difficulty is global across all dimensions
@@ -2847,8 +2849,7 @@ impl Player {
         // This is the LivingEntity mob-despawn counter (separate from ServerPlayer.lastActionTime).
         // For players it's not critical, but add for completeness when mob AI is implemented.
 
-        // Difficulty scaling
-        // TODO: well so basically this isn't done in hurt but rather on the ATTACKER side (so Mob.doHurtTarget)
+        // Difficulty scaling (vanilla: Player.hurtServer)
         let mut amount = amount;
         if source.scales_with_difficulty() {
             let difficulty = self.get_world().level_data.read().data().difficulty;
@@ -2949,9 +2950,7 @@ impl Player {
         }
 
         // TODO: absorption handling
-        if amount > 0.0 {
-            self.cause_food_exhaustion(source.damage_type.exhaustion);
-        }
+        self.cause_food_exhaustion(source.damage_type.exhaustion);
 
         let mut entity_data = self.entity_data.lock();
         let new_health = (*entity_data.health.get() - amount).max(0.0);

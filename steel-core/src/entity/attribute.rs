@@ -136,9 +136,20 @@ impl AttributeInstance {
         true
     }
 
-    /// Adds or replaces a modifier
-    pub fn set_modifier(&mut self, modifier: AttributeModifier, persistent: bool) {
+    /// Adds or replaces a modifier. Returns `true` if the value actually changed.
+    #[expect(
+        clippy::float_cmp,
+        reason = "exact equality is intentional — we want to skip recalculation when the modifier is identical"
+    )]
+    pub fn set_modifier(&mut self, modifier: AttributeModifier, persistent: bool) -> bool {
         if let Some(idx) = self.modifiers.iter().position(|m| m.id == modifier.id) {
+            let existing = &self.modifiers[idx];
+            if existing.amount == modifier.amount
+                && existing.operation == modifier.operation
+                && self.persistent[idx] == persistent
+            {
+                return false;
+            }
             self.modifiers[idx] = modifier;
             self.persistent[idx] = persistent;
         } else {
@@ -146,6 +157,7 @@ impl AttributeInstance {
             self.persistent.push(persistent);
         }
         self.recalculate();
+        true
     }
 
     /// Removes a modifier by ID, Returns `true` if it existed
@@ -346,8 +358,9 @@ impl AttributeMap {
         let Some(Some(instance)) = self.instances.get_mut(id) else {
             return;
         };
-        instance.set_modifier(modifier, persistent);
-        self.mark_dirty(id, attribute);
+        if instance.set_modifier(modifier, persistent) {
+            self.mark_dirty(id, attribute);
+        }
     }
 
     /// Removes a modifier from an attribute. Returns `true` if it existed
