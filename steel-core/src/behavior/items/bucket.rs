@@ -202,16 +202,6 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         let state = context.world.get_block_state(pos);
         let fluid_state = state.get_fluid_state();
 
-        // Vanilla parity: in dimensions where water evaporates (e.g. the Nether),
-        // water buckets fizz out without placing any fluid.
-        if fluid_block == vanilla_blocks::WATER && context.world.dimension.water_evaporates {
-            context
-                .world
-                .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);
-            consume_bucket(context, &vanilla_items::ITEMS.bucket);
-            return Some(InteractionResult::Success);
-        }
-
         // Vanilla parity (bl4): when sneaking, only air allows placement at this position.
         // Non-air blocks redirect to the neighbor — handled by the secondary call.
         // The secondary call bypasses this check (hitResult == null in vanilla).
@@ -219,24 +209,37 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             return None;
         }
 
-        // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
         let is_water_bucket = fluid_block == &vanilla_blocks::WATER;
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        let can_waterlog = is_water_bucket
+            && behavior
+                .can_place_liquid(state, FluidState::source(&vanilla_fluids::WATER).fluid_id);
+        let can_replace = state.can_be_replaced_by_fluid(fluid_block);
 
-        if is_water_bucket {
+        // Vanilla parity: block must be replaceable or waterloggable for placement
+        if !can_waterlog && !can_replace {
+            return None;
+        }
+
+        // Vanilla parity: in dimensions where water evaporates (e.g. the Nether),
+        // water buckets fizz out without placing any fluid.
+        if is_water_bucket && context.world.dimension.water_evaporates {
+            context
+                .world
+                .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);
+            consume_bucket(context, &vanilla_items::ITEMS.bucket);
+            return Some(InteractionResult::Success);
+        }
+
+        // 1. Try Waterlogging via LiquidBlockContainer (only if Water bucket)
+        if can_waterlog {
             let source_water = FluidState::source(&vanilla_fluids::WATER);
-            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            if behavior.can_place_liquid(state, source_water.fluid_id) {
-                behavior.place_liquid(context.world, pos, state, source_water);
-                context.world.play_block_sound(
-                    sound_events::ITEM_BUCKET_EMPTY,
-                    pos,
-                    1.0,
-                    1.0,
-                    None,
-                );
-                consume_bucket(context, &vanilla_items::ITEMS.bucket);
-                return Some(InteractionResult::Success);
-            }
+            behavior.place_liquid(context.world, pos, state, source_water);
+            context
+                .world
+                .play_block_sound(sound_events::ITEM_BUCKET_EMPTY, pos, 1.0, 1.0, None);
+            consume_bucket(context, &vanilla_items::ITEMS.bucket);
+            return Some(InteractionResult::Success);
         }
 
         // 2. Try Standard Placement (Replaceable block)
