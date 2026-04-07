@@ -16,9 +16,6 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Clone GitCraft
 git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 
-# Pin fabric-loom to avoid TinyJavadocProvider API breakage in newer versions
-sed -i.bak 's/loom_version = 1\.+/loom_version = 1.15.5/' "$TEMP_DIR/GitCraft/gradle.properties"
-
 # Run GitCraft
 cd "$TEMP_DIR/GitCraft"
 echo "Running GitCraft..."
