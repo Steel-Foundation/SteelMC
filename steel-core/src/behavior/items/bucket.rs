@@ -223,6 +223,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
         // Vanilla parity: in dimensions where water evaporates (e.g. the Nether),
         // water buckets fizz out without placing any fluid.
+        // TODO: Per-position environment attributes (vanilla uses EnvironmentAttributes.WATER_EVAPORATES per-pos)
         if is_water_bucket && context.world.dimension.water_evaporates {
             context
                 .world
@@ -243,7 +244,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         }
 
         // 2. Try Standard Placement (Replaceable block)
-        if state.can_be_replaced_by_fluid(fluid_block) {
+        if can_replace {
             // If same fluid already exists and is source, just consume bucket (parity)
             let is_same_fluid = if is_water_bucket {
                 fluid_state.is_water()
