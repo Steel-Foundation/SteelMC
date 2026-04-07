@@ -141,6 +141,8 @@ bitflags! {
 }
 
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
+const CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT: f64 = 0.5;
+const CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT: f64 = 2.0;
 
 use crate::inventory::{
     MenuInstance, MenuProvider,
@@ -338,13 +340,11 @@ impl Player {
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
         let (yaw, pitch) = self.rotation();
         let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
-        // Vanilla: Attributes.BLOCK_INTERACTION_RANGE defaults to 4.5,
-        // creative mode adds +0.5 via CREATIVE_BLOCK_INTERACTION_RANGE_MODIFIER.
-        let block_interaction_range = if self.has_infinite_materials() {
-            5.0
-        } else {
-            4.5
-        };
+        let block_interaction_range = self
+            .attributes
+            .lock()
+            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+            .unwrap_or(4.5);
         let direction = DVec3::new(
             -yaw_rad.sin() * pitch_rad.cos() * block_interaction_range,
             -pitch_rad.sin() * block_interaction_range,
@@ -524,6 +524,7 @@ impl Player {
                 self.speed.store(speed as f32);
             }
 
+            self.update_player_attributes();
             self.tick_regeneration();
 
             if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
@@ -1412,24 +1413,68 @@ impl Player {
     pub fn handle_change_difficulty(&self, difficulty: Difficulty) {
         // TODO: implement op-level permission check
         let world = self.get_world();
-        let mut level_data = world.level_data.write();
-        if level_data.data().difficulty_locked {
-            let locked = true;
+        if world.level_data.read().data().difficulty_locked {
+            let level_data = world.level_data.read();
             let current = level_data.data().difficulty;
             drop(level_data);
             self.send_packet(CChangeDifficulty {
                 difficulty: current,
-                locked,
+                locked: true,
             });
             return;
         }
 
-        level_data.data_mut().difficulty = difficulty;
-        let locked = level_data.data().difficulty_locked;
-        drop(level_data);
+        // Vanilla: difficulty is global across all dimensions
+        let Some(server) = self.server.upgrade() else {
+            return;
+        };
+        for w in server.worlds.values() {
+            let mut level_data = w.level_data.write();
+            level_data.data_mut().difficulty = difficulty;
+            let locked = level_data.data().difficulty_locked;
+            drop(level_data);
 
-        let packet = CChangeDifficulty { difficulty, locked };
-        world.broadcast_to_all(packet);
+            w.broadcast_to_all(CChangeDifficulty { difficulty, locked });
+        }
+    }
+
+    /// Updates interaction range attribute modifiers based on game mode.
+    ///
+    /// Vanilla: `ServerPlayer.updatePlayerAttributes()` — applies creative-mode
+    /// range modifiers every tick.
+    fn update_player_attributes(&self) {
+        let is_creative = self.game_mode.load() == GameType::Creative;
+        let mut attrs = self.attributes.lock();
+
+        if is_creative {
+            attrs.set_modifier(
+                vanilla_attributes::BLOCK_INTERACTION_RANGE,
+                AttributeModifier {
+                    id: Identifier::vanilla_static("creative_mode_block_range"),
+                    amount: CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT,
+                    operation: AttributeModifierOperation::AddValue,
+                },
+                false,
+            );
+            attrs.set_modifier(
+                vanilla_attributes::ENTITY_INTERACTION_RANGE,
+                AttributeModifier {
+                    id: Identifier::vanilla_static("creative_mode_entity_range"),
+                    amount: CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT,
+                    operation: AttributeModifierOperation::AddValue,
+                },
+                false,
+            );
+        } else {
+            attrs.remove_modifier(
+                vanilla_attributes::BLOCK_INTERACTION_RANGE,
+                &Identifier::vanilla_static("creative_mode_block_range"),
+            );
+            attrs.remove_modifier(
+                vanilla_attributes::ENTITY_INTERACTION_RANGE,
+                &Identifier::vanilla_static("creative_mode_entity_range"),
+            );
+        }
     }
 
     /// Ticks food/hunger regeneration and starvation.
@@ -1751,8 +1796,12 @@ impl Player {
         let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
-        // Base range is 4.5 blocks + 1.0 buffer
-        let max_range = 4.5 + 1.0;
+        let base_range = self
+            .attributes
+            .lock()
+            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+            .unwrap_or(4.5);
+        let max_range = base_range + 1.0;
         dist_sq < max_range * max_range
     }
 
