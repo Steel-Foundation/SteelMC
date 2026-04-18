@@ -25,6 +25,7 @@ use steel_utils::{
 };
 
 use super::component_data::{Component, ComponentData, ComponentDataDiscriminant};
+use super::components::ItemEnchantments;
 use super::vanilla_components::{
     ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
     TOOLTIP_DISPLAY,
@@ -385,7 +386,10 @@ impl DataComponentMap {
         let mut map = FxHashMap::default();
         map.insert(MAX_STACK_SIZE.key.clone(), ComponentData::I32(64));
         map.insert(LORE.key.clone(), ComponentData::Todo);
-        map.insert(ENCHANTMENTS.key.clone(), ComponentData::Todo);
+        map.insert(
+            ENCHANTMENTS.key.clone(),
+            ComponentData::Enchantments(ItemEnchantments::empty()),
+        );
         map.insert(REPAIR_COST.key.clone(), ComponentData::I32(0));
         map.insert(ATTRIBUTE_MODIFIERS.key.clone(), ComponentData::Todo);
         map.insert(RARITY.key.clone(), ComponentData::Todo);
@@ -725,6 +729,84 @@ impl ReadFrom for DataComponentPatch {
                 })?
                 .clone();
 
+            patch.entries.insert(key, ComponentPatchEntry::Removed);
+        }
+
+        Ok(patch)
+    }
+}
+
+impl DataComponentPatch {
+    /// Reads a patch where each component value is prefixed with a VarInt byte length.
+    ///
+    /// Vanilla uses this for untrusted client packets (e.g., creative mode slot)
+    /// via `DataComponentPatch.DELIMITED_STREAM_CODEC`.
+    pub fn read_delimited(data: &mut Cursor<&[u8]>) -> Result<Self> {
+        use crate::{REGISTRY, RegistryExt};
+        use std::io::Read;
+
+        let added_count = VarInt::read(data)?.0 as usize;
+        let removed_count = VarInt::read(data)?.0 as usize;
+
+        const MAX_COMPONENTS: usize = 65_536;
+        const MAX_COMPONENT_BYTES: usize = 2 * 1024 * 1024;
+
+        if added_count.saturating_add(removed_count) > MAX_COMPONENTS {
+            return Err(std::io::Error::other(format!(
+                "Component patch too large: {added_count} added + {removed_count} removed > {MAX_COMPONENTS}"
+            )));
+        }
+
+        let mut patch = Self::new();
+
+        for _ in 0..added_count {
+            let type_id = VarInt::read(data)?.0 as usize;
+            let byte_len = VarInt::read(data)?.0 as usize;
+
+            if byte_len > MAX_COMPONENT_BYTES {
+                return Err(std::io::Error::other(format!(
+                    "Component data too large: {byte_len} bytes > {MAX_COMPONENT_BYTES}"
+                )));
+            }
+
+            let key = REGISTRY
+                .data_components
+                .get_key_by_id(type_id)
+                .ok_or_else(|| {
+                    std::io::Error::other(format!("Unknown component type ID: {type_id}"))
+                })?
+                .clone();
+
+            let entry = REGISTRY.data_components.by_id(type_id);
+
+            // Read the component bytes into a sub-buffer
+            let mut buf = vec![0u8; byte_len];
+            data.read_exact(&mut buf)?;
+
+            if let Some(entry) = entry {
+                let mut sub_cursor = Cursor::new(buf.as_slice());
+                match (entry.network_reader)(&mut sub_cursor) {
+                    Ok(component_data) => {
+                        patch
+                            .entries
+                            .insert(key, ComponentPatchEntry::Set(component_data));
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read delimited component {key}: {e}");
+                    }
+                }
+            }
+        }
+
+        for _ in 0..removed_count {
+            let type_id = VarInt::read(data)?.0 as usize;
+            let key = REGISTRY
+                .data_components
+                .get_key_by_id(type_id)
+                .ok_or_else(|| {
+                    std::io::Error::other(format!("Unknown component type ID: {type_id}"))
+                })?
+                .clone();
             patch.entries.insert(key, ComponentPatchEntry::Removed);
         }
 

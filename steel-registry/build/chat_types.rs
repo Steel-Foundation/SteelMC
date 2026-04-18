@@ -91,11 +91,9 @@ fn generate_chat_type_decoration(decoration: &ChatTypeDecoration) -> TokenStream
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/chat_type/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/chat_type/");
 
-    let chat_type_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/chat_type";
+    let chat_type_dir = "build_assets/builtin_datapacks/minecraft/chat_type";
     let mut chat_types = Vec::new();
 
     // Read all chat type JSON files
@@ -133,14 +131,14 @@ pub(crate) fn build() -> TokenStream {
         let narration = generate_chat_type_decoration(&chat_type.narration);
 
         stream.extend(quote! {
-            pub static #chat_type_ident: &ChatType = &ChatType {
+            pub static #chat_type_ident: ChatType = ChatType {
                 key: #key,
                 chat: #chat,
                 narration: #narration,
             };
         });
         register_stream.extend(quote! {
-            registry.register(#chat_type_ident);
+            registry.register(&#chat_type_ident);
         });
     }
 

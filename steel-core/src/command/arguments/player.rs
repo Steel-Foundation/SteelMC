@@ -53,7 +53,7 @@ impl CommandArgument for PlayerArgument {
                 let position = context.position;
                 let mut near_dist = (f64::MAX, players[0].clone());
                 for player in players {
-                    let dist = player.position().squared_distance_to_vec(position);
+                    let dist = player.position().distance_squared(position);
                     if dist < near_dist.0 {
                         near_dist = (dist, player);
                     }

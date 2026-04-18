@@ -11,6 +11,7 @@ use std::{mem, sync::Arc};
 use enum_dispatch::enum_dispatch;
 use steel_registry::data_components::vanilla_components::EquippableSlot;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_enchantments::BINDING_CURSE;
 use steel_utils::locks::SyncMutex;
 
 use crate::inventory::SyncPlayerInv;
@@ -76,7 +77,10 @@ pub trait Slot {
     }
 
     /// Returns true if items can be picked up from this slot.
-    fn may_pickup(&self) -> bool {
+    ///
+    /// Vanilla signature: `mayPickup(Player)`. The `player` is needed because
+    /// some slots (e.g. armor with Curse of Binding) conditionally prevent pickup.
+    fn may_pickup(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
         true
     }
 
@@ -84,8 +88,8 @@ pub trait Slot {
     ///
     /// For normal slots: `may_pickup() && may_place(current_item)`
     /// For result slots: `false` (must take the full stack)
-    fn allow_modification(&self, guard: &ContainerLockGuard) -> bool {
-        self.may_pickup() && self.may_place(self.get_item(guard))
+    fn allow_modification(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
+        self.may_pickup(guard, player) && self.may_place(self.get_item(guard))
     }
 
     /// Returns the maximum stack size for this slot.
@@ -107,19 +111,7 @@ pub trait Slot {
         if item.is_empty() || amount <= 0 {
             return ItemStack::empty();
         }
-
-        let take_count = amount.min(item.count());
-        let mut taken = item.clone();
-        taken.set_count(take_count);
-
-        let remaining = item.count() - take_count;
-        if remaining <= 0 {
-            *item = ItemStack::empty();
-        } else {
-            item.set_count(remaining);
-        }
-
-        taken
+        item.split(amount)
     }
 
     /// Tries to remove items from this slot with validation.
@@ -132,15 +124,16 @@ pub trait Slot {
         guard: &mut ContainerLockGuard,
         amount: i32,
         max_amount: i32,
+        player: &Player,
     ) -> Option<ItemStack> {
-        if !self.may_pickup() {
+        if !self.may_pickup(guard, player) {
             return None;
         }
 
         let item_count = self.get_item(guard).count();
 
         // If modification not allowed (e.g., result slots), must take full stack
-        if !self.allow_modification(guard) && max_amount < item_count {
+        if !self.allow_modification(guard, player) && max_amount < item_count {
             return None;
         }
 
@@ -176,7 +169,7 @@ pub trait Slot {
         max_amount: i32,
         player: &Player,
     ) -> ItemStack {
-        if let Some(taken) = self.try_remove(guard, amount, max_amount) {
+        if let Some(taken) = self.try_remove(guard, amount, max_amount, player) {
             if let Some(remainder) = self.on_take(guard, &taken, player) {
                 // Try to add remainder to player inventory, or drop it
                 player.add_item_or_drop_with_guard(guard, remainder);
@@ -330,6 +323,18 @@ impl Slot for ArmorSlot {
 
     fn may_place(&self, stack: &ItemStack) -> bool {
         stack.is_equippable_in_slot(self.slot)
+    }
+
+    /// Prevents picking up armor with Curse of Binding unless in creative mode.
+    fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
+        let item = self.get_item(guard);
+        if !item.is_empty()
+            && !player.has_infinite_materials()
+            && item.get_enchantment_level(&BINDING_CURSE.key) > 0
+        {
+            return false;
+        }
+        true
     }
 
     fn get_max_stack_size(&self, _guard: &ContainerLockGuard) -> i32 {
@@ -552,7 +557,7 @@ impl Slot for CraftingResultSlot {
     }
 
     /// Result slots don't allow partial removal.
-    fn allow_modification(&self, _guard: &ContainerLockGuard) -> bool {
+    fn allow_modification(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
         false
     }
 

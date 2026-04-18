@@ -12,12 +12,13 @@ use steel_protocol::packets::common::{
     SPingRequest,
 };
 use steel_protocol::packets::game::{
-    CBundleDelimiter, SAcceptTeleportation, SChangeGameMode, SChat, SChatAck, SChatCommand,
-    SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd, SCommandSuggestion,
-    SContainerButtonClick, SContainerClick, SContainerClose, SContainerSlotStateChanged,
-    SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SPickItemFromBlock,
-    SPlayerAbilities, SPlayerAction, SPlayerInput, SPlayerLoad, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSwing, SUseItem, SUseItemOn,
+    CBundleDelimiter, SAcceptTeleportation, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
+    SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
+    SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
+    SContainerSlotStateChanged, SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot,
+    SMovePlayerStatusOnly, SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand,
+    SPlayerInput, SPlayerLoad, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSwing,
+    SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -74,7 +75,10 @@ impl BundleBuilder {
     }
 }
 
-#[allow(clippy::struct_field_names)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "alive_ prefix is intentional to group related keep-alive fields"
+)]
 struct KeepAliveTracker {
     alive_time: u64,
     alive_pending: bool,
@@ -125,7 +129,6 @@ impl JavaConnection {
         self.keep_connection_alive();
     }
 
-    #[allow(clippy::unwrap_used)]
     fn keep_connection_alive(&self) {
         let mut tracker = self.keep_alive_tracker.lock();
         let now = SystemTime::now()
@@ -146,7 +149,10 @@ impl JavaConnection {
     }
 
     /// Handles a keep alive packet.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "latency saturates at u32::MAX ms (~49 days), which is unreachable in practice"
+    )]
     fn handle_keep_alive(&self, packet: SKeepAlive) {
         let mut tracker = self.keep_alive_tracker.lock();
         if tracker.alive_pending && packet.id as u64 == tracker.alive_id {
@@ -218,7 +224,10 @@ impl JavaConnection {
     }
 
     /// Processes a packet from the client.
-    #[allow(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single match dispatch over all play packets; splitting would hurt readability"
+    )]
     pub fn process_packet(
         &self,
         packet: RawPacket,
@@ -314,6 +323,9 @@ impl JavaConnection {
             play::S_PLAYER_INPUT => {
                 player.handle_player_input(SPlayerInput::read_packet(data)?);
             }
+            play::S_PLAYER_COMMAND => {
+                player.handle_player_command(SPlayerCommand::read_packet(data)?);
+            }
             play::S_PLAYER_ABILITIES => {
                 player.handle_player_abilities(SPlayerAbilities::read_packet(data)?);
             }
@@ -354,6 +366,10 @@ impl JavaConnection {
                 // TODO: Check player permission level (Or gamemode permission)
                 let packet = SChangeGameMode::read_packet(data)?;
                 player.set_game_mode(packet.gamemode);
+            }
+            play::S_CHANGE_DIFFICULTY => {
+                let packet = SChangeDifficulty::read_packet(data)?;
+                player.handle_change_difficulty(packet.difficulty);
             }
             id => log::info!("play packet id {id} is not known"),
         }
@@ -421,7 +437,7 @@ impl JavaConnection {
         }
 
         let player = self.player.upgrade().expect("Player is not available");
-        let world = player.world.clone();
+        let world = player.get_world();
         world.remove_player(player).await;
     }
 }

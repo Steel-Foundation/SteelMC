@@ -2,8 +2,16 @@
 //!
 //! This crate contains a collection of utilities used by the Steel Minecraft server.
 
-#![feature(const_trait_impl, const_cmp, derive_const)]
-#![allow(internal_features)]
+#![feature(
+    const_trait_impl,
+    const_cmp,
+    derive_const,
+    array_try_from_fn,
+    portable_simd
+)]
+
+/// The Minecraft version this server supports.
+pub const MC_VERSION: &str = "26.1";
 
 /// Climate system for biome selection.
 pub mod climate;
@@ -38,15 +46,15 @@ pub mod uuid_ext;
 
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/ids.rs"]
-#[allow(missing_docs, warnings)]
+#[expect(missing_docs, warnings)]
 pub mod translations;
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/registry.rs"]
-#[allow(missing_docs, warnings)]
+#[expect(missing_docs, warnings)]
 pub mod translations_registry;
 #[rustfmt::skip]
 #[path = "generated/entity_events.rs"]
-#[allow(missing_docs, warnings)]
+#[expect(missing_docs, warnings)]
 pub mod entity_events;
 
 pub use direction::Direction;

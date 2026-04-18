@@ -697,8 +697,8 @@ mod tests {
 
         // All positions should be unique
         let mut unique = positions.clone();
-        unique.sort();
-        unique.dedup();
+        unique.sort_by_key(|p| (p.0.x, p.0.y));
+        unique.dedup_by_key(|p| (p.0.x, p.0.y));
         assert_eq!(
             unique.len(),
             positions.len(),

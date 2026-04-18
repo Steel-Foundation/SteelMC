@@ -59,13 +59,13 @@ impl OreVeinifier {
         let copper = VeinType {
             ore: REGISTRY
                 .blocks
-                .get_default_state_id(vanilla_blocks::COPPER_ORE),
+                .get_default_state_id(&vanilla_blocks::COPPER_ORE),
             raw_ore_block: REGISTRY
                 .blocks
-                .get_default_state_id(vanilla_blocks::RAW_COPPER_BLOCK),
+                .get_default_state_id(&vanilla_blocks::RAW_COPPER_BLOCK),
             filler: REGISTRY
                 .blocks
-                .get_default_state_id(vanilla_blocks::GRANITE),
+                .get_default_state_id(&vanilla_blocks::GRANITE),
             min_y: 0,
             max_y: 50,
         };
@@ -73,11 +73,11 @@ impl OreVeinifier {
         let iron = VeinType {
             ore: REGISTRY
                 .blocks
-                .get_default_state_id(vanilla_blocks::DEEPSLATE_IRON_ORE),
+                .get_default_state_id(&vanilla_blocks::DEEPSLATE_IRON_ORE),
             raw_ore_block: REGISTRY
                 .blocks
-                .get_default_state_id(vanilla_blocks::RAW_IRON_BLOCK),
-            filler: REGISTRY.blocks.get_default_state_id(vanilla_blocks::TUFF),
+                .get_default_state_id(&vanilla_blocks::RAW_IRON_BLOCK),
+            filler: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::TUFF),
             min_y: -60,
             max_y: -8,
         };

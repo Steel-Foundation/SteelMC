@@ -1,4 +1,4 @@
-#![allow(missing_docs)]
+#![expect(missing_docs, reason = "self-explanatory utility types")]
 
 use std::{
     borrow::Cow,
@@ -10,6 +10,7 @@ use std::{
 };
 
 use bitflags::bitflags;
+use glam::{DVec3, IVec2, IVec3};
 use serde::{Deserialize, Serialize, de::Error as _};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
@@ -18,7 +19,7 @@ use crate::{
     codec::VarInt,
     direction::Direction,
     hash::{ComponentHasher, HashComponent},
-    math::{Axis, Vector2, Vector3},
+    math::Axis,
     serial::{ReadFrom, WriteTo},
 };
 
@@ -95,14 +96,17 @@ impl WriteTo for BlockStateId {
 impl ReadFrom for BlockStateId {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let id = VarInt::read(data)?.0;
-        #[allow(clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "VarInt is validated upstream; block state IDs are non-negative"
+        )]
         Ok(Self(id as u16))
     }
 }
 
 /// A chunk position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ChunkPos(pub Vector2<i32>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkPos(pub IVec2);
 
 impl Hash for ChunkPos {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -135,7 +139,7 @@ impl ChunkPos {
 
     /// Returns all 8 neighbors of this chunk position.
     #[must_use]
-    pub fn neighbors(&self) -> [ChunkPos; 8] {
+    pub fn neighbors(self) -> [ChunkPos; 8] {
         Self::OFFSETS.map(|(dx, dy)| ChunkPos::new(self.0.x + dx, self.0.y + dy))
     }
 
@@ -143,7 +147,7 @@ impl ChunkPos {
     #[inline]
     /// Creates a new `ChunkPos` with the given x and y coordinates.
     pub const fn new(x: i32, y: i32) -> Self {
-        Self(Vector2::new(x, y))
+        Self(IVec2::new(x, y))
     }
 
     /// Checks if the given chunk coordinates are within valid bounds.
@@ -157,7 +161,7 @@ impl ChunkPos {
     /// Converts the `ChunkPos` to an `i64`.
     #[must_use]
     #[inline]
-    pub fn as_i64(&self) -> i64 {
+    pub fn as_i64(self) -> i64 {
         (i64::from(self.0.x) & 0xFFFF_FFFF) | ((i64::from(self.0.y) & 0xFFFF_FFFF) << 32)
     }
 
@@ -165,34 +169,32 @@ impl ChunkPos {
     #[must_use]
     #[inline]
     pub const fn from_i64(value: i64) -> Self {
-        Self(Vector2::new(
+        Self(IVec2::new(
             (value & 0xFFFF_FFFF) as i32,
             (value >> 32) as i32,
         ))
     }
 }
 
-#[allow(missing_docs)]
 impl WriteTo for ChunkPos {
     fn write(&self, writer: &mut impl Write) -> io::Result<()> {
         self.0.write(writer)
     }
 }
 
-#[allow(missing_docs)]
 impl ReadFrom for ChunkPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
-        Ok(Self(Vector2::<i32>::read(data)?))
+        Ok(Self(IVec2::read(data)?))
     }
 }
 
 /// A block position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlockPos(pub Vector3<i32>);
+pub struct BlockPos(pub IVec3);
 
-impl From<Vector3<f64>> for BlockPos {
-    fn from(value: Vector3<f64>) -> Self {
-        BlockPos(Vector3 {
+impl From<DVec3> for BlockPos {
+    fn from(value: DVec3) -> Self {
+        BlockPos(IVec3 {
             x: value.x.floor() as i32,
             y: value.y.floor() as i32,
             z: value.z.floor() as i32,
@@ -209,7 +211,7 @@ impl BlockPos {
     const PACKED_X_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
     const PACKED_Y_MASK: i64 = (1i64 << Self::PACKED_Y_LEN) - 1;
     const PACKED_Z_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
-    pub const ZERO: BlockPos = BlockPos(Vector3::new(0, 0, 0));
+    pub const ZERO: BlockPos = BlockPos(IVec3::new(0, 0, 0));
 
     /// Maximum horizontal coordinate value: `(1 << 26) / 2 - 1 = 33554431`
     pub const MAX_HORIZONTAL_COORDINATE: i32 = (1 << Self::PACKED_HORIZONTAL_LEN) / 2 - 1;
@@ -217,7 +219,7 @@ impl BlockPos {
     /// Creates a new `BlockPos` from coordinates.
     #[must_use]
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
-        Self(Vector3::new(x, y, z))
+        Self(IVec3::new(x, y, z))
     }
 
     /// Converts the `BlockPos` to an `i64`.
@@ -245,13 +247,13 @@ impl BlockPos {
         let y = (y << (64 - Self::PACKED_Y_LEN)) >> (64 - Self::PACKED_Y_LEN);
         let z = (z << (64 - Self::PACKED_HORIZONTAL_LEN)) >> (64 - Self::PACKED_HORIZONTAL_LEN);
 
-        Self(Vector3::new(x as i32, y as i32, z as i32))
+        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 
     /// Returns a new `BlockPos` offset by the given amounts.
     #[must_use]
     pub const fn offset(&self, dx: i32, dy: i32, dz: i32) -> Self {
-        Self(Vector3::new(self.0.x + dx, self.0.y + dy, self.0.z + dz))
+        Self(IVec3::new(self.0.x + dx, self.0.y + dy, self.0.z + dz))
     }
 
     /// Returns the x coordinate.
@@ -442,7 +444,7 @@ impl ReadFrom for BlockPos {
 
 /// A chunk section position (16x16x16 region).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SectionPos(pub Vector3<i32>);
+pub struct SectionPos(pub IVec3);
 
 impl SectionPos {
     const SECTION_BITS: i32 = 4;
@@ -452,7 +454,7 @@ impl SectionPos {
     /// Creates a new `SectionPos` from section coordinates.
     #[must_use]
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
-        Self(Vector3::new(x, y, z))
+        Self(IVec3::new(x, y, z))
     }
 
     /// Converts a block coordinate to a section coordinate.
@@ -550,7 +552,7 @@ impl SectionPos {
         let y = (y << 44) >> 44;
         let z = (z << 42) >> 42;
 
-        Self(Vector3::new(x as i32, y as i32, z as i32))
+        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 
     /// Packs a block position into a section-relative short.
@@ -567,7 +569,7 @@ impl SectionPos {
     /// Converts a section-relative packed position back to a block position.
     #[must_use]
     pub const fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
-        BlockPos(Vector3::new(
+        BlockPos(IVec3::new(
             self.relative_to_block_x(relative),
             self.relative_to_block_y(relative),
             self.relative_to_block_z(relative),
@@ -665,7 +667,7 @@ impl BoundingBox {
     /// Returns the center of this bounding box.
     #[must_use]
     pub const fn get_center(&self) -> BlockPos {
-        BlockPos(Vector3::new(
+        BlockPos(IVec3::new(
             self.min_x + (self.max_x - self.min_x + 1) / 2,
             self.min_y + (self.max_y - self.min_y + 1) / 2,
             self.min_z + (self.max_z - self.min_z + 1) / 2,
@@ -732,7 +734,7 @@ impl BoundingBox {
 
 /// The game type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(missing_docs)]
+#[expect(missing_docs, reason = "variant names are self-explanatory")]
 pub enum GameType {
     Survival = 0,
     Creative = 1,
@@ -743,7 +745,7 @@ pub enum GameType {
 impl GameType {
     /// Returns the name of the game type.
     #[must_use]
-    pub const fn name(&self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             GameType::Survival => "survival",
             GameType::Creative => "creative",
@@ -769,14 +771,12 @@ impl ReadFrom for GameType {
     }
 }
 
-#[allow(missing_docs)]
 impl From<GameType> for i8 {
     fn from(value: GameType) -> Self {
         value as i8
     }
 }
 
-#[allow(missing_docs)]
 impl From<GameType> for i32 {
     fn from(value: GameType) -> Self {
         value as i32
@@ -789,7 +789,6 @@ impl From<GameType> for f32 {
     }
 }
 
-#[allow(missing_docs)]
 impl From<i8> for GameType {
     fn from(value: i8) -> Self {
         match value {
@@ -801,7 +800,6 @@ impl From<i8> for GameType {
     }
 }
 
-#[allow(missing_docs)]
 impl From<i32> for GameType {
     fn from(value: i32) -> Self {
         match value {
@@ -813,7 +811,6 @@ impl From<i32> for GameType {
     }
 }
 
-#[allow(missing_docs)]
 impl From<f32> for GameType {
     fn from(value: f32) -> Self {
         match value {
@@ -822,6 +819,84 @@ impl From<f32> for GameType {
             3. => GameType::Spectator,
             _ => GameType::Survival,
         }
+    }
+}
+
+/// World difficulty level.
+///
+/// Controls starvation damage thresholds, mob spawning behavior,
+/// and various other gameplay tweaks.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Difficulty {
+    /// No hostile mobs, no starvation, health regenerates quickly.
+    Peaceful = 0,
+    /// Hostile mobs deal less damage, starvation stops at 10 HP.
+    Easy = 1,
+    /// Default difficulty, starvation stops at 1 HP.
+    #[default]
+    Normal = 2,
+    /// Hostile mobs deal more damage, starvation can kill.
+    Hard = 3,
+}
+
+#[expect(clippy::match_same_arms, reason = "cause it looks better")]
+impl From<u8> for Difficulty {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Difficulty::Peaceful,
+            1 => Difficulty::Easy,
+            2 => Difficulty::Normal,
+            3 => Difficulty::Hard,
+            _ => Difficulty::Normal,
+        }
+    }
+}
+
+impl From<Difficulty> for u8 {
+    fn from(value: Difficulty) -> Self {
+        value as u8
+    }
+}
+
+impl ReadFrom for Difficulty {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        let value = <u8 as ReadFrom>::read(data)?;
+        match value {
+            0 => Ok(Difficulty::Peaceful),
+            1 => Ok(Difficulty::Easy),
+            2 => Ok(Difficulty::Normal),
+            3 => Ok(Difficulty::Hard),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid Difficulty: {value}"),
+            )),
+        }
+    }
+}
+
+impl WriteTo for Difficulty {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        (*self as u8).write(writer)
+    }
+}
+
+impl Serialize for Difficulty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+impl<'de> Deserialize<'de> for Difficulty {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let id = u8::deserialize(deserializer)?;
+        Ok(Self::from(id))
     }
 }
 
@@ -914,14 +989,12 @@ impl Identifier {
     }
 }
 
-#[allow(missing_docs)]
 impl Display for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.namespace, self.path)
     }
 }
 
-#[allow(missing_docs)]
 impl FromStr for Identifier {
     type Err = &'static str;
 
@@ -945,7 +1018,6 @@ impl FromStr for Identifier {
         })
     }
 }
-#[allow(missing_docs)]
 impl Serialize for Identifier {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -955,7 +1027,6 @@ impl Serialize for Identifier {
     }
 }
 
-#[allow(missing_docs)]
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1027,12 +1098,12 @@ mod tests {
     #[test]
     fn test_block_pos_roundtrip() {
         let positions = vec![
-            BlockPos(Vector3::new(0, -61, -2)),
-            BlockPos(Vector3::new(0, 0, 0)),
-            BlockPos(Vector3::new(100, 64, -100)),
-            BlockPos(Vector3::new(-1000, -64, 1000)),
-            BlockPos(Vector3::new(33_554_431, 2047, 33_554_431)), // Max positive values
-            BlockPos(Vector3::new(-33_554_432, -2048, -33_554_432)), // Max negative values
+            BlockPos(IVec3::new(0, -61, -2)),
+            BlockPos(IVec3::new(0, 0, 0)),
+            BlockPos(IVec3::new(100, 64, -100)),
+            BlockPos(IVec3::new(-1000, -64, 1000)),
+            BlockPos(IVec3::new(33_554_431, 2047, 33_554_431)), // Max positive values
+            BlockPos(IVec3::new(-33_554_432, -2048, -33_554_432)), // Max negative values
         ];
 
         for pos in positions {
@@ -1048,7 +1119,7 @@ mod tests {
     #[test]
     fn test_block_pos_specific_case() {
         // Test the specific case from the bug report
-        let pos = BlockPos(Vector3::new(0, -61, -2));
+        let pos = BlockPos(IVec3::new(0, -61, -2));
         let encoded = pos.as_i64();
         let decoded = BlockPos::from_i64(encoded);
         assert_eq!(pos, decoded, "Position 0, -61, -2 failed roundtrip");

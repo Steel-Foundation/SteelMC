@@ -35,7 +35,10 @@ struct SessionServerResponse {
     #[serde(rename = "playerCertificateKeys")]
     player_certificate_keys: Vec<PublicKeyEntry>,
     #[serde(rename = "profilePropertyKeys")]
-    #[allow(dead_code)] // We only use playerCertificateKeys for profile key validation
+    #[allow(
+        dead_code,
+        reason = "deserialized for completeness but only certificate keys are used"
+    )]
     profile_property_keys: Vec<PublicKeyEntry>,
 }
 

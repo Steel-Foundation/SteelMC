@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -30,6 +32,32 @@ pub struct ExitAction {
     pub width: i32,
 }
 
+impl ToNbtTag for &Dialog {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        compound.insert(
+            "type",
+            match &self.variant {
+                DialogVariant::DialogList { .. } => "minecraft:dialog_list",
+                DialogVariant::ServerLinks => "minecraft:server_links",
+            },
+        );
+        compound.insert("title", (&self.title).to_nbt_tag());
+        compound.insert("external_title", (&self.external_title).to_nbt_tag());
+        compound.insert("button_width", self.button_width);
+        compound.insert("columns", self.columns);
+        let mut exit_action = NbtCompound::new();
+        exit_action.insert("label", (&self.exit_action.label).to_nbt_tag());
+        exit_action.insert("width", self.exit_action.width);
+        compound.insert("exit_action", NbtTag::Compound(exit_action));
+        if let DialogVariant::DialogList { dialogs } = &self.variant {
+            compound.insert("dialogs", *dialogs);
+        }
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type DialogRef = &'static Dialog;
 
 pub struct DialogRegistry {
@@ -49,37 +77,15 @@ impl DialogRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, dialog: DialogRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register dialogs after the registry has been frozen"
-        );
-
-        let id = self.dialogs_by_id.len();
-        self.dialogs_by_key.insert(dialog.key.clone(), id);
-        self.dialogs_by_id.push(dialog);
-        id
-    }
-
-    /// Replaces a dialog at a given index.
-    /// Returns true if the dialog was replaced and false if the dialog wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, dialog: DialogRef, id: usize) -> bool {
-        if id >= self.dialogs_by_id.len() {
-            return false;
-        }
-        self.dialogs_by_id[id] = dialog;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, DialogRef)> + '_ {
-        self.dialogs_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &dialog)| (id, dialog))
-    }
 }
+
+crate::impl_standard_methods!(
+    DialogRegistry,
+    DialogRef,
+    dialogs_by_id,
+    dialogs_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     DialogRegistry,
@@ -89,9 +95,3 @@ crate::impl_registry!(
     dialogs
 );
 crate::impl_tagged_registry!(DialogRegistry, dialogs_by_key, "dialog");
-
-impl Default for DialogRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}

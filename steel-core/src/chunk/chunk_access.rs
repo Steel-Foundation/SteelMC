@@ -136,7 +136,6 @@ impl ChunkStatus {
 
 /// An enum that allows access to a chunk in different states.
 // Always stored behind `SyncRwLock` in `ChunkHolder`, so variant size doesn't matter.
-#[allow(clippy::large_enum_variant)]
 pub enum ChunkAccess {
     /// A fully generated chunk.
     Full(LevelChunk),

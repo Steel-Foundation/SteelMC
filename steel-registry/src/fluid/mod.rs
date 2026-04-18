@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
 /// A fluid type definition (e.g., water, lava, empty).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Fluid {
     /// The identifier for this fluid (e.g., "minecraft:water").
     pub key: Identifier,
@@ -137,7 +137,7 @@ impl FluidState {
 
     /// Encodes this fluid state to a liquid block's LEVEL property (0-15).
     #[must_use]
-    pub const fn to_block_level(&self) -> u8 {
+    pub const fn to_block_level(self) -> u8 {
         if self.is_source() {
             0
         } else if self.falling {
@@ -186,17 +186,6 @@ impl FluidRegistry {
         self.fluids_by_key.insert(fluid.key.clone(), id);
         self.fluids_by_id.push(fluid);
         id
-    }
-
-    /// Replaces a fluid at a given index.
-    /// Returns true if the fluid was replaced and false if the fluid wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, item: FluidRef, id: usize) -> bool {
-        if id >= self.fluids_by_id.len() {
-            return false;
-        }
-        self.fluids_by_id[id] = item;
-        true
     }
 
     /// Iterates over all fluids with their IDs.

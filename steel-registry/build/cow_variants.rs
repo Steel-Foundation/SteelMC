@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct CowVariantJson {
     asset_id: Identifier,
+    baby_asset_id: Identifier,
     #[serde(default)]
     model: String,
     spawn_conditions: Vec<SpawnConditionEntry>,
@@ -80,11 +81,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/cow_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/cow_variant/");
 
-    let cow_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/cow_variant";
+    let cow_variant_dir = "build_assets/builtin_datapacks/minecraft/cow_variant";
     let mut cow_variants = Vec::new();
 
     // Read all cow variant JSON files
@@ -121,6 +120,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#cow_variant_name_str) };
         let asset_id = generate_identifier(&cow_variant.asset_id);
+        let baby_asset_id = generate_identifier(&cow_variant.baby_asset_id);
         let model = generate_cow_model_type(&cow_variant.model);
 
         let spawn_conditions: Vec<_> = cow_variant
@@ -130,9 +130,10 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #cow_variant_ident: &CowVariant = &CowVariant {
+            pub static #cow_variant_ident: CowVariant = CowVariant {
                 key: #key,
                 asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
                 model: #model,
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
@@ -140,7 +141,7 @@ pub(crate) fn build() -> TokenStream {
         let cow_variant_ident =
             Ident::new(&cow_variant_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(#cow_variant_ident);
+            registry.register(&#cow_variant_ident);
         });
     }
 

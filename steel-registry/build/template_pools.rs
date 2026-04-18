@@ -260,14 +260,14 @@ fn gen_joint(s: &str) -> TokenStream {
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/template_pool/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/template_pool/"
     );
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/structure/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/structure/"
     );
 
-    let pool_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/template_pool";
-    let structure_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/structure";
+    let pool_dir = "build_assets/builtin_datapacks/minecraft/worldgen/template_pool";
+    let structure_dir = "build_assets/builtin_datapacks/minecraft/structure";
 
     // ── Parse template pools ──
 

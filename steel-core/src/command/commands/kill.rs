@@ -28,7 +28,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
 /// `LivingEntity.kill()` — hurt with `genericKill` at `Float.MAX_VALUE`.
 fn kill_player(player: &Player) {
     player.hurt(
-        &DamageSource::environment(vanilla_damage_types::GENERIC_KILL),
+        &DamageSource::environment(&vanilla_damage_types::GENERIC_KILL),
         f32::MAX,
     );
 }

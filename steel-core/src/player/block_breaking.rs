@@ -8,6 +8,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::loot_table::LootContext;
+use steel_registry::vanilla_attributes;
 use steel_registry::{REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks};
 use steel_utils::Identifier;
 use steel_utils::{
@@ -15,6 +16,7 @@ use steel_utils::{
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
+use super::food_data::food_constants;
 use crate::behavior::BlockStateBehaviorExt;
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
@@ -132,7 +134,6 @@ impl BlockBreakingManager {
     ///
     /// Note: The caller (packet handler) is responsible for calling `ack_block_changes_up_to`
     /// after this method returns, matching vanilla behavior.
-    #[allow(clippy::too_many_lines)]
     pub fn handle_block_break_action(
         &mut self,
         player: &Player,
@@ -264,7 +265,10 @@ impl BlockBreakingManager {
     /// Destroys a block at the given position.
     ///
     /// Returns true if the block was successfully destroyed.
-    #[allow(clippy::unused_self)]
+    #[expect(
+        clippy::unused_self,
+        reason = "method belongs logically to BlockBreakingManager and will use self when additional state is added"
+    )]
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
@@ -326,6 +330,8 @@ impl BlockBreakingManager {
                     }
                 }
             }
+
+            player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
             // Handle drops (skip for creative/spectator)
             let game_mode = player.game_mode.load();
@@ -430,7 +436,6 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
 }
 
 /// Drops loot for a destroyed block using its loot table.
-#[allow(clippy::needless_pass_by_value)]
 fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
     let block = state.get_block();
 
@@ -447,8 +452,13 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
 
     // Create loot context
     let mut rng = rand::rng();
-    // TODO: Get luck from player attributes
+    let luck = player
+        .attributes
+        .lock()
+        .get_value(vanilla_attributes::LUCK)
+        .unwrap_or(0.0) as f32;
     let mut ctx = LootContext::new(&mut rng)
+        .with_luck(luck)
         .with_block_state(state)
         .with_tool(&tool)
         .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
@@ -459,7 +469,7 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
     // Spawn each dropped item using the player's world reference (Arc<World>)
     for item in drops {
         if !item.is_empty() {
-            player.world.pop_resource(pos, item);
+            player.get_world().pop_resource(pos, item);
         }
     }
 }

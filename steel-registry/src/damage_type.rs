@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 /// Represents a damage type definition from a data pack JSON file.
@@ -39,6 +41,43 @@ pub enum DeathMessageType {
     IntentionalGameDesign,
 }
 
+impl ToNbtTag for &DamageType {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        compound.insert("message_id", self.message_id);
+        compound.insert(
+            "scaling",
+            match self.scaling {
+                DamageScaling::Always => "always",
+                DamageScaling::WhenCausedByLivingNonPlayer => "when_caused_by_living_non_player",
+                DamageScaling::Never => "never",
+            },
+        );
+        compound.insert("exhaustion", self.exhaustion);
+        compound.insert(
+            "effects",
+            match self.effects {
+                DamageEffects::Hurt => "hurt",
+                DamageEffects::Thorns => "thorns",
+                DamageEffects::Drowning => "drowning",
+                DamageEffects::Burning => "burning",
+                DamageEffects::Poking => "poking",
+                DamageEffects::Freezing => "freezing",
+            },
+        );
+        compound.insert(
+            "death_message_type",
+            match self.death_message_type {
+                DeathMessageType::Default => "default",
+                DeathMessageType::FallVariants => "fall_variants",
+                DeathMessageType::IntentionalGameDesign => "intentional_game_design",
+            },
+        );
+        NbtTag::Compound(compound)
+    }
+}
+
 pub type DamageTypeRef = &'static DamageType;
 
 pub struct DamageTypeRegistry {
@@ -58,43 +97,15 @@ impl DamageTypeRegistry {
             tags: FxHashMap::default(),
         }
     }
-
-    pub fn register(&mut self, damage_type: DamageTypeRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register damage types after the registry has been frozen"
-        );
-
-        let id = self.damage_types_by_id.len();
-        self.damage_types_by_key.insert(damage_type.key.clone(), id);
-        self.damage_types_by_id.push(damage_type);
-        id
-    }
-
-    /// Replaces damage at a given index.
-    /// Returns true if the damage was replaced and false if the damage wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, damage: DamageTypeRef, id: usize) -> bool {
-        if id >= self.damage_types_by_id.len() {
-            return false;
-        }
-        self.damage_types_by_id[id] = damage;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, DamageTypeRef)> + '_ {
-        self.damage_types_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &dt)| (id, dt))
-    }
 }
 
-impl Default for DamageTypeRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    DamageTypeRegistry,
+    DamageTypeRef,
+    damage_types_by_id,
+    damage_types_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     DamageTypeRegistry,

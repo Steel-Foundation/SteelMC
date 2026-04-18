@@ -77,11 +77,9 @@ fn generate_death_message_type(death_message_type: DeathMessageTypeJson) -> Toke
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/damage_type/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/damage_type/");
 
-    let damage_type_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/damage_type";
+    let damage_type_dir = "build_assets/builtin_datapacks/minecraft/damage_type";
     let mut damage_types = Vec::new();
 
     // Read all damage type JSON files
@@ -123,7 +121,7 @@ pub(crate) fn build() -> TokenStream {
         let death_message_type = generate_death_message_type(damage_type.death_message_type);
 
         stream.extend(quote! {
-            pub static #damage_type_ident: &DamageType = &DamageType {
+            pub static #damage_type_ident: DamageType = DamageType {
                 key: #key,
                 message_id: #message_id,
                 scaling: #scaling,
@@ -133,7 +131,7 @@ pub(crate) fn build() -> TokenStream {
             };
         });
         register_stream.extend(quote! {
-            registry.register(#damage_type_ident);
+            registry.register(&#damage_type_ident);
         });
     }
 

@@ -25,8 +25,7 @@ pub const PLAYER_DATA_VERSION: i32 = 1;
 ///
 /// # TODO: Missing vanilla fields
 /// The following fields should be added once their systems are implemented:
-/// - Food data: `foodLevel`, `foodSaturationLevel`, `foodExhaustionLevel`, `foodTickTimer`
-/// - Experience: `XpP` (progress), `XpLevel`, `XpTotal`, `XpSeed`
+/// - Experience: `XpSeed`
 /// - Active potion effects: `active_effects` (List)
 /// - Score: `Score` (Int)
 /// - Ender chest inventory: `EnderItems` (List)
@@ -82,9 +81,43 @@ pub struct PersistentPlayerData {
     /// NBT tag: `Dimension` (String)
     pub dimension: String,
 
+    /// Current food level (0–20, default 20).
+    /// NBT tag: `foodLevel` (Int)
+    pub food_level: i32,
+
+    /// Food saturation level (0.0–`food_level`, default 5.0).
+    /// NBT tag: `foodSaturationLevel` (Float)
+    pub food_saturation_level: f32,
+
+    /// Accumulated food exhaustion (0.0–40.0, default 0.0).
+    /// NBT tag: `foodExhaustionLevel` (Float)
+    pub food_exhaustion_level: f32,
+
+    /// Internal tick timer for regen/starvation (default 0).
+    /// NBT tag: `foodTickTimer` (Int)
+    pub food_tick_timer: i32,
+
     /// Data version for format migrations.
     /// NBT tag: `DataVersion` (Int)
     pub data_version: i32,
+
+    /// Current experience level
+    /// NBT tag: `XpLevel` (Int)
+    pub experience_level: i32,
+
+    /// To progress to the next experience level
+    /// NBT tag: `XpP` (Float)
+    pub experience_progress: f32,
+
+    /// The checked value of the Score, cannot decrease below 0 (???)
+    /// TODO: what exactly is experienceTotal
+    /// NBT tag: `XpTotal` (Int)
+    pub experience_total: i32,
+
+    /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
+    /// this value can be negative by using (/xp add ... -x)
+    /// NBT tag: `Score` (Int)
+    pub score: i32,
 }
 
 /// Persistent abilities data.
@@ -129,6 +162,7 @@ impl PersistentPlayerData {
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
         let entity_data = player.entity_data.lock();
+        let food_data = player.food_data.lock();
 
         // Collect non-empty inventory slots
         let mut slots = Vec::new();
@@ -142,6 +176,16 @@ impl PersistentPlayerData {
                 });
             }
         }
+
+        let (experience_level, experience_progress, experience_total, score) = {
+            let lock = player.experience.lock();
+            (
+                lock.level(),
+                lock.progress() as f32,
+                lock.total_points(),
+                lock.score,
+            )
+        };
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -163,8 +207,16 @@ impl PersistentPlayerData {
             },
             inventory: slots,
             selected_slot: i32::from(inventory.get_selected_slot()),
-            dimension: player.world.dimension.key.to_string(),
+            dimension: player.get_world().dimension.key.to_string(),
+            food_level: food_data.food_level,
+            food_saturation_level: food_data.saturation_level,
+            food_exhaustion_level: food_data.exhaustion_level,
+            food_tick_timer: food_data.tick_timer,
             data_version: PLAYER_DATA_VERSION,
+            experience_level,
+            experience_progress,
+            experience_total,
+            score,
         }
     }
 
@@ -205,6 +257,12 @@ impl PersistentPlayerData {
         compound.insert("Dimension", self.dimension.clone());
         compound.insert("DataVersion", self.data_version);
 
+        // Food data (vanilla-compatible keys)
+        compound.insert("foodLevel", self.food_level);
+        compound.insert("foodSaturationLevel", self.food_saturation_level);
+        compound.insert("foodExhaustionLevel", self.food_exhaustion_level);
+        compound.insert("foodTickTimer", self.food_tick_timer);
+
         // Abilities compound
         compound.insert("abilities", self.abilities.to_nbt());
 
@@ -222,6 +280,12 @@ impl PersistentPlayerData {
             })
             .collect();
         compound.insert("Inventory", NbtList::from(inventory_list));
+
+        // Experience
+        compound.insert("XpLevel", self.experience_level);
+        compound.insert("XpP", self.experience_progress);
+        compound.insert("XpTotal", self.experience_total);
+        compound.insert("Score", self.score);
 
         compound
     }
@@ -277,6 +341,12 @@ impl PersistentPlayerData {
         );
         let data_version = nbt.int("DataVersion").unwrap_or(0);
 
+        // Food data (vanilla-compatible keys, with sane defaults)
+        let food_level = nbt.int("foodLevel").unwrap_or(20);
+        let food_saturation_level = nbt.float("foodSaturationLevel").unwrap_or(5.0);
+        let food_exhaustion_level = nbt.float("foodExhaustionLevel").unwrap_or(0.0);
+        let food_tick_timer = nbt.int("foodTickTimer").unwrap_or(0);
+
         // Abilities
         let abilities = nbt
             .compound("abilities")
@@ -296,6 +366,11 @@ impl PersistentPlayerData {
             }
         }
 
+        let experience_level = nbt.int("XpLevel").unwrap_or(0);
+        let experience_progress = nbt.float("XpP").unwrap_or(0.0);
+        let experience_total = nbt.int("XpTotal").unwrap_or(0);
+        let score = nbt.int("Score").unwrap_or(0);
+
         Some(Self {
             pos,
             motion,
@@ -309,7 +384,15 @@ impl PersistentPlayerData {
             inventory,
             selected_slot,
             dimension,
+            food_level,
+            food_saturation_level,
+            food_exhaustion_level,
+            food_tick_timer,
             data_version,
+            experience_level,
+            experience_progress,
+            experience_total,
+            score,
         })
     }
 }
@@ -391,17 +474,17 @@ impl PersistentPlayerData {
     ///
     /// This restores position, rotation, inventory, abilities, etc.
     pub fn apply_to_player(&self, player: &Player) {
-        use steel_utils::math::Vector3;
+        use glam::DVec3;
 
         // Position
-        *player.position.lock() = Vector3::new(self.pos[0], self.pos[1], self.pos[2]);
+        *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
 
         // Rotation
         player.rotation.store((self.rotation[0], self.rotation[1]));
 
         // Motion/velocity
         player.movement.lock().delta_movement =
-            Vector3::new(self.motion[0], self.motion[1], self.motion[2]);
+            DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
 
         // Ground state
         {
@@ -441,6 +524,22 @@ impl PersistentPlayerData {
             // Restore selected slot
             let selected = self.selected_slot.clamp(0, 8) as u8;
             inventory.set_selected_slot(selected);
+        }
+
+        // Food data
+        {
+            let mut food = player.food_data.lock();
+            food.food_level = self.food_level;
+            food.saturation_level = self.food_saturation_level;
+            food.exhaustion_level = self.food_exhaustion_level;
+            food.tick_timer = self.food_tick_timer;
+        }
+
+        {
+            let mut experience = player.experience.lock();
+            experience.set_levels(self.experience_level);
+            experience.set_progress(f64::from(self.experience_progress));
+            experience.score = self.score;
         }
     }
 }

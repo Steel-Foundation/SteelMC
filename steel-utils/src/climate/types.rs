@@ -66,7 +66,7 @@ impl TargetPoint {
     /// Convert to a 7-element array for tree lookups.
     /// The 7th element is always 0 (offset position).
     #[must_use]
-    pub const fn to_parameter_array(&self) -> [i64; PARAMETER_COUNT] {
+    pub const fn to_parameter_array(self) -> [i64; PARAMETER_COUNT] {
         [
             self.temperature,
             self.humidity,
@@ -220,7 +220,10 @@ impl ParameterPoint {
     ///
     /// Lower fitness = better match. Uses squared distances.
     #[must_use]
-    #[allow(clippy::many_single_char_names)]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "single-letter abbreviations match vanilla's climate parameter names"
+    )]
     pub const fn fitness(&self, target: &TargetPoint) -> i64 {
         let t = self.temperature.distance(target.temperature);
         let h = self.humidity.distance(target.humidity);

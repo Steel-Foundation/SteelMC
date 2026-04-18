@@ -212,12 +212,8 @@ const fn const_max_status(a: Option<ChunkStatus>, b: Option<ChunkStatus>) -> Opt
 // ============================================================================
 
 /// A task that generates a chunk.
-pub type ChunkStatusTask = fn(
-    Arc<WorldGenContext>,
-    &ChunkStep,
-    &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-    Arc<ChunkHolder>,
-) -> Result<(), anyhow::Error>;
+pub type ChunkStatusTask =
+    fn(Arc<WorldGenContext>, &ChunkStep, &Arc<StaticCache2D<Arc<ChunkHolder>>>, Arc<ChunkHolder>);
 
 /// A chunk step (const-compatible).
 #[derive(Clone, Copy)]
@@ -255,14 +251,12 @@ impl ChunkStep {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn noop_task(
     _context: Arc<WorldGenContext>,
     _step: &ChunkStep,
     _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
     _holder: Arc<ChunkHolder>,
-) -> Result<(), anyhow::Error> {
-    Ok(())
+) {
 }
 
 // ============================================================================
@@ -367,7 +361,7 @@ macro_rules! define_pyramid {
             }),* $(,)?
         };
     ) => {
-        #[allow(missing_docs)]
+        #[expect(missing_docs, reason = "generated pyramid constant; name is self-documenting")]
         $vis const $name: &'static ChunkPyramid = &{
             ConstPyramidBuilder::new()
             $(

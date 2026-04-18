@@ -26,11 +26,9 @@ fn generate_identifier(resource: &Identifier) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/trim_pattern/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/trim_pattern/");
 
-    let trim_pattern_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/trim_pattern";
+    let trim_pattern_dir = "build_assets/builtin_datapacks/minecraft/trim_pattern";
     let mut trim_patterns = Vec::new();
 
     // Read all trim pattern JSON files
@@ -72,7 +70,7 @@ pub(crate) fn build() -> TokenStream {
         let decal = trim_pattern.decal;
 
         stream.extend(quote! {
-            pub static #trim_pattern_ident: &TrimPattern = &TrimPattern {
+            pub static #trim_pattern_ident: TrimPattern = TrimPattern {
                 key: #key,
                 asset_id: #asset_id,
                 description: TextComponent::translated(TranslatedMessage::new(#translate, None)),
@@ -81,7 +79,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#trim_pattern_ident);
+            registry.register(&#trim_pattern_ident);
         });
     }
 

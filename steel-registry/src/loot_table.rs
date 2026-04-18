@@ -24,7 +24,10 @@ pub enum LootContextEntity {
     Interacting,
 }
 
-/// Equipment/attribute slot for items.
+/// Equipment/attribute slot group for enchantments and attributes.
+///
+/// Vanilla's `EquipmentSlotGroup` — a grouping/predicate over concrete `EquipmentSlot` values.
+/// `Hand` matches both main/offhand, `Armor` matches all armor slots, `Any` matches everything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EquipmentSlotGroup {
     Any,
@@ -37,6 +40,24 @@ pub enum EquipmentSlotGroup {
     Feet,
     Armor,
     Body,
+}
+
+impl EquipmentSlotGroup {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::MainHand => "mainhand",
+            Self::OffHand => "offhand",
+            Self::Hand => "hand",
+            Self::Head => "head",
+            Self::Chest => "chest",
+            Self::Legs => "legs",
+            Self::Feet => "feet",
+            Self::Armor => "armor",
+            Self::Body => "body",
+        }
+    }
 }
 
 /// Dye/banner color.
@@ -473,13 +494,6 @@ impl<'a, R: rand::Rng> LootContext<'a, R> {
         self
     }
 
-    /// Get the level of an enchantment on the tool by name.
-    pub fn get_enchantment_level(&self, enchantment_name: &str) -> i32 {
-        self.tool
-            .map(|t| t.get_enchantment_level_by_name(enchantment_name))
-            .unwrap_or(0)
-    }
-
     /// Get the level of an enchantment on the tool by identifier.
     pub fn get_enchantment_level_by_id(&self, enchantment: &Identifier) -> i32 {
         self.tool
@@ -508,7 +522,7 @@ pub struct PropertyCheck {
 
 /// A condition that must be met for a loot entry or pool to apply.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum LootCondition {
     /// The loot survives explosion damage (random chance based on explosion radius).
     /// Vanilla: 1/radius chance to pass. If no explosion, always passes.
@@ -1025,6 +1039,7 @@ pub struct AttributeModifier {
 }
 
 /// Attribute modifier operation type.
+#[expect(clippy::enum_variant_names, reason = "matches Vanilla naming")]
 #[derive(Debug, Clone, Copy)]
 pub enum AttributeOperation {
     AddValue,
@@ -1700,7 +1715,11 @@ impl LootFunction {
                 item.set_instrument(options, ctx.rng);
             }
             LootFunction::SetEnchantments { enchantments, add } => {
-                item.set_enchantments(enchantments, *add, ctx.rng);
+                let resolved: Vec<_> = enchantments
+                    .iter()
+                    .map(|(key, provider)| (key.clone(), provider.get_int(ctx.rng).max(0) as u32))
+                    .collect();
+                item.set_enchantments(&resolved, *add);
             }
             // === New function implementations ===
             LootFunction::SetItem { item: new_item } => {
@@ -1858,17 +1877,6 @@ impl LootTableRegistry {
         self.tables_by_key.insert(table.key.clone(), id);
         self.tables_by_id.push(table);
         id
-    }
-
-    /// Replaces a table at a given index.
-    /// Returns true if the table was replaced and false if the table wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, table: LootTableRef, id: usize) -> bool {
-        if id >= self.tables_by_id.len() {
-            return false;
-        }
-        self.tables_by_id[id] = table;
-        true
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, LootTableRef)> + '_ {

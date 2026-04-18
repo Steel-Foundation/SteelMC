@@ -23,6 +23,7 @@ simdnbt.workspace = true
 thiserror.workspace = true
 
 # Data structures
+glam.workspace = true
 rustc-hash.workspace = true
 
 # UUID

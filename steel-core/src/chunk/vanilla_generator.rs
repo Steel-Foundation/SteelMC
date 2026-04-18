@@ -368,13 +368,14 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
     let mut interpolated = [0.0f64; MAX_INTERP];
 
     macro_rules! fill {
-        ($out:expr, $ex:expr, $ey:expr, $ez:expr) => {{
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
             cache.ensure($ex, $ez, noises);
             noises.fill_cell_corner_densities(
                 &mut *cache,
                 $ex,
                 $ey,
                 $ez,
+                $blended,
                 &mut $out[..interp_count],
             );
         }};
@@ -391,19 +392,37 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
     let top_cell_top_y_in_cell = (max_y_inclusive - (cell_min_y + max_cell_y_idx) * cell_h)
         .clamp(0, cell_h - 1);
 
+    // Precompute blended noise per corner (x, z) × two Y levels per cell.
+    let mut blended_scratch = [0.0_f64; 2];
     for cell_y_idx in (0..=max_cell_y_idx).rev() {
         let y0 = (cell_min_y + cell_y_idx) * cell_h;
         let y1 = y0 + cell_h;
+        let ys = [y0, y1];
+
+        // `compute_noise_column` gives us the blended noise values at (x0,z0),
+        // (x1,z0), (x0,z1), (x1,z1) for this Y pair. Query each corner once.
+        noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
+        let b000 = blended_scratch[0];
+        let b010 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
+        let b100 = blended_scratch[0];
+        let b110 = blended_scratch[1];
+        noises.compute_noise_column(x0, &ys, z1, &mut blended_scratch);
+        let b001 = blended_scratch[0];
+        let b011 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z1, &mut blended_scratch);
+        let b101 = blended_scratch[0];
+        let b111 = blended_scratch[1];
 
         // Evaluate inner functions at 8 cell corners (all channels)
-        fill!(c000, x0, y0, z0);
-        fill!(c100, x1, y0, z0);
-        fill!(c010, x0, y1, z0);
-        fill!(c110, x1, y1, z0);
-        fill!(c001, x0, y0, z1);
-        fill!(c101, x1, y0, z1);
-        fill!(c011, x0, y1, z1);
-        fill!(c111, x1, y1, z1);
+        fill!(c000, x0, y0, z0, b000);
+        fill!(c100, x1, y0, z0, b100);
+        fill!(c010, x0, y1, z0, b010);
+        fill!(c110, x1, y1, z0, b110);
+        fill!(c001, x0, y0, z1, b001);
+        fill!(c101, x1, y0, z1, b101);
+        fill!(c011, x0, y1, z1, b011);
+        fill!(c111, x1, y1, z1, b111);
 
         // For the topmost cell, start from the Y within cell that corresponds
         // to `max_y_inclusive`. For lower cells, start at cell_h - 1.
@@ -493,26 +512,39 @@ fn interpolated_density<N: DimensionNoises>(
     let mut interpolated = [0.0f64; MAX_INTERP];
 
     macro_rules! fill {
-        ($out:expr, $ex:expr, $ey:expr, $ez:expr) => {{
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
             cache.ensure($ex, $ez, noises);
             noises.fill_cell_corner_densities(
                 &mut *cache,
                 $ex,
                 $ey,
                 $ez,
+                $blended,
                 &mut $out[..interp_count],
             );
         }};
     }
 
-    fill!(c000, x0, y0, z0);
-    fill!(c100, x1, y0, z0);
-    fill!(c010, x0, y1, z0);
-    fill!(c110, x1, y1, z0);
-    fill!(c001, x0, y0, z1);
-    fill!(c101, x1, y0, z1);
-    fill!(c011, x0, y1, z1);
-    fill!(c111, x1, y1, z1);
+    // Precompute blended noise at each corner (x, z) for the two cell Y levels.
+    let ys = [y0, y1];
+    let mut blended_scratch = [0.0_f64; 2];
+    noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
+    let (b000, b010) = (blended_scratch[0], blended_scratch[1]);
+    noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
+    let (b100, b110) = (blended_scratch[0], blended_scratch[1]);
+    noises.compute_noise_column(x0, &ys, z1, &mut blended_scratch);
+    let (b001, b011) = (blended_scratch[0], blended_scratch[1]);
+    noises.compute_noise_column(x1, &ys, z1, &mut blended_scratch);
+    let (b101, b111) = (blended_scratch[0], blended_scratch[1]);
+
+    fill!(c000, x0, y0, z0, b000);
+    fill!(c100, x1, y0, z0, b100);
+    fill!(c010, x0, y1, z0, b010);
+    fill!(c110, x1, y1, z0, b110);
+    fill!(c001, x0, y0, z1, b001);
+    fill!(c101, x1, y0, z1, b101);
+    fill!(c011, x0, y1, z1, b011);
+    fill!(c111, x1, y1, z1, b111);
 
     use steel_utils::math::noise_math::lerp;
     for ch in 0..interp_count {
@@ -1124,7 +1156,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
         let min_y = N::Settings::MIN_Y;
         let pos = chunk.pos();
@@ -1404,7 +1436,10 @@ struct FuzzedBiomeColumn<'a> {
 }
 
 impl<'a> FuzzedBiomeColumn<'a> {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla BiomeManager.getBiome signature"
+    )]
     fn new(
         biome_data: &'a [u16],
         section_count: usize,
@@ -1500,7 +1535,10 @@ impl<'a> FuzzedBiomeColumn<'a> {
     }
 
     /// Fuzzed biome lookup for a given `block_y`.
-    #[allow(clippy::similar_names)]
+    #[expect(
+        clippy::similar_names,
+        reason = "matches vanilla variable names: fract_x/y/z, parent_x/y/z"
+    )]
     #[inline]
     fn get(&mut self, block_y: i32) -> u16 {
         let abs_y = block_y - 2;

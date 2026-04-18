@@ -1,8 +1,9 @@
-#![allow(missing_docs)]
+#![expect(
+    missing_docs,
+    reason = "task functions are named after their vanilla counterparts"
+)]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
@@ -15,90 +16,6 @@ use crate::chunk::{
     world_gen_context::WorldGenContext,
 };
 
-// Instrumentation: per-stage nanosecond accumulators. Reset between dimensions
-// by `stage_timings::take_snapshot_and_reset`. Temporary — for worldgen perf
-// investigation. Remove along with the nether/end pregen hack.
-pub mod stage_timings {
-    use super::{AtomicU64, Ordering};
-
-    pub struct Stage {
-        pub nanos: AtomicU64,
-        pub count: AtomicU64,
-    }
-
-    impl Stage {
-        const fn new() -> Self {
-            Self {
-                nanos: AtomicU64::new(0),
-                count: AtomicU64::new(0),
-            }
-        }
-        pub(super) fn add(&self, ns: u64) {
-            self.nanos.fetch_add(ns, Ordering::Relaxed);
-            self.count.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    pub static EMPTY: Stage = Stage::new();
-    pub static STARTS: Stage = Stage::new();
-    pub static REFS: Stage = Stage::new();
-    pub static BIOMES: Stage = Stage::new();
-    pub static NOISE: Stage = Stage::new();
-    pub static SURFACE: Stage = Stage::new();
-    pub static CARVERS: Stage = Stage::new();
-    pub static FEATURES: Stage = Stage::new();
-    pub static INIT_LIGHT: Stage = Stage::new();
-    pub static LIGHT: Stage = Stage::new();
-    pub static SPAWN: Stage = Stage::new();
-    pub static FULL: Stage = Stage::new();
-
-    /// Snapshot each stage's (nanos, count) and reset counters.
-    pub fn take_all() -> Vec<(&'static str, u64, u64)> {
-        let snap = |name: &'static str, s: &Stage| {
-            let n = s.nanos.swap(0, Ordering::Relaxed);
-            let c = s.count.swap(0, Ordering::Relaxed);
-            (name, n, c)
-        };
-        vec![
-            snap("empty", &EMPTY),
-            snap("starts", &STARTS),
-            snap("refs", &REFS),
-            snap("biomes", &BIOMES),
-            snap("noise", &NOISE),
-            snap("surface", &SURFACE),
-            snap("carvers", &CARVERS),
-            snap("features", &FEATURES),
-            snap("init_light", &INIT_LIGHT),
-            snap("light", &LIGHT),
-            snap("spawn", &SPAWN),
-            snap("full", &FULL),
-        ]
-    }
-
-}
-
-/// RAII timer that records elapsed nanos into a stage on drop.
-struct StageTimer {
-    stage: &'static stage_timings::Stage,
-    start: Instant,
-}
-
-impl StageTimer {
-    fn new(stage: &'static stage_timings::Stage) -> Self {
-        Self {
-            stage,
-            start: Instant::now(),
-        }
-    }
-}
-
-impl Drop for StageTimer {
-    fn drop(&mut self) {
-        let ns = self.start.elapsed().as_nanos() as u64;
-        self.stage.add(ns);
-    }
-}
-
 pub struct ChunkStatusTasks;
 
 /// All these functions are blocking.
@@ -108,8 +25,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::EMPTY);
+    ) {
         let sections = (0..context.section_count())
             .map(|_| ChunkSection::new_empty())
             .collect::<Vec<_>>()
@@ -122,12 +38,9 @@ impl ChunkStatusTasks {
             context.height(),
         );
 
-        //log::info!("Inserted proto chunk for {:?}", holder.get_pos());
-
         // Use no_notify variant - the caller (apply_step) will notify via the completion channel
         // to avoid rayon threads contending on tokio's scheduler mutex
         holder.insert_chunk_no_notify(ChunkAccess::Proto(proto_chunk));
-        Ok(())
     }
 
     /// Generates structure starts.
@@ -139,14 +52,12 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::STARTS);
+    ) {
         let chunk = holder
             .try_chunk(ChunkStatus::Empty)
             .expect("Chunk not found at status Empty");
 
         context.generator.create_structures(&chunk);
-        Ok(())
     }
 
     pub fn generate_structure_references(
@@ -154,8 +65,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::REFS);
+    ) {
         let chunk = holder
             .try_chunk(ChunkStatus::StructureStarts)
             .expect("Chunk not found at status StructureStarts");
@@ -212,15 +122,13 @@ impl ChunkStatusTasks {
                             .or_default()
                             .push(steel_utils::ChunkPos::new(source_x, source_z));
 
-                        // Increment the reference count on the source start
+                        // Reference count updates on the source chunk's start
+                        // are handled during serialization.
                         drop(target_chunk);
-                        // Note: reference count updates on the source chunk's start
-                        // are handled during serialization, not here.
                     }
                 }
             }
         }
-        Ok(())
     }
 
     pub fn load_structure_starts(
@@ -228,8 +136,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+    ) {
     }
 
     /// # Panics
@@ -239,42 +146,39 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::BIOMES);
+    ) {
         let chunk = holder
             .try_chunk(ChunkStatus::StructureReferences)
             .expect("Chunk not found at status StructureReferences");
 
         context.generator.create_biomes(&chunk);
-
-        Ok(())
     }
 
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable given correct status ordering"
+    )]
     pub fn generate_noise(
         context: Arc<WorldGenContext>,
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::NOISE);
+    ) {
         let chunk = holder
             .try_chunk(ChunkStatus::Biomes)
             .expect("Chunk not found at status Biomes");
         context.generator.fill_from_noise(&chunk);
-        Ok(())
     }
 
     /// # Panics
     /// Panics if the chunk has not reached `ChunkStatus::Noise`.
-    #[allow(clippy::similar_names)]
+    #[expect(clippy::similar_names, reason = "local variable naming matches vanilla")]
     pub fn generate_surface(
         context: Arc<WorldGenContext>,
         _step: &ChunkStep,
         cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::SURFACE);
+    ) {
         let chunk = holder
             .try_chunk(ChunkStatus::Noise)
             .expect("Chunk not found at status Noise");
@@ -302,7 +206,6 @@ impl ChunkStatusTasks {
         };
 
         context.generator.build_surface(&chunk, &neighbor_biomes);
-        Ok(())
     }
 
     // TODO: Wire up to context.generator.apply_carvers() once carver generation is implemented
@@ -311,9 +214,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::CARVERS);
-        Ok(())
+    ) {
     }
 
     // TODO: Wire up to context.generator.apply_biome_decorations() once feature generation is implemented
@@ -322,9 +223,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::FEATURES);
-        Ok(())
+    ) {
     }
 
     pub fn initialize_light(
@@ -332,9 +231,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::INIT_LIGHT);
-        Ok(())
+    ) {
     }
 
     pub fn light(
@@ -342,9 +239,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::LIGHT);
-        Ok(())
+    ) {
     }
 
     pub fn generate_spawn(
@@ -352,9 +247,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         _holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::SPAWN);
-        Ok(())
+    ) {
     }
 
     pub fn full(
@@ -362,10 +255,7 @@ impl ChunkStatusTasks {
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
-    ) -> Result<(), anyhow::Error> {
-        let _t = StageTimer::new(&stage_timings::FULL);
-        //log::info!("Chunk {:?} upgraded to full", holder.get_pos());
+    ) {
         holder.upgrade_to_full(context.weak_world());
-        Ok(())
     }
 }

@@ -1,4 +1,6 @@
 use rustc_hash::FxHashMap;
+use simdnbt::ToNbtTag;
+use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
@@ -10,6 +12,19 @@ pub struct JukeboxSong {
     pub description: TextComponent,
     pub length_in_seconds: f32,
     pub comparator_output: i32,
+}
+
+impl ToNbtTag for &JukeboxSong {
+    fn to_nbt_tag(self) -> NbtTag {
+        use simdnbt::owned::NbtCompound;
+        let mut compound = NbtCompound::new();
+        let sound_event = self.sound_event.to_string();
+        compound.insert("sound_event", sound_event.as_str());
+        compound.insert("description", (&self.description).to_nbt_tag());
+        compound.insert("length_in_seconds", self.length_in_seconds);
+        compound.insert("comparator_output", self.comparator_output);
+        NbtTag::Compound(compound)
+    }
 }
 
 pub type JukeboxSongRef = &'static JukeboxSong;
@@ -29,44 +44,15 @@ impl JukeboxSongRegistry {
             allows_registering: true,
         }
     }
-
-    pub fn register(&mut self, jukebox_song: JukeboxSongRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register jukebox songs after the registry has been frozen"
-        );
-
-        let id = self.jukebox_songs_by_id.len();
-        self.jukebox_songs_by_key
-            .insert(jukebox_song.key.clone(), id);
-        self.jukebox_songs_by_id.push(jukebox_song);
-        id
-    }
-
-    /// Replaces a song at a given index.
-    /// Returns true if the song was replaced and false if the song wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, song: JukeboxSongRef, id: usize) -> bool {
-        if id >= self.jukebox_songs_by_id.len() {
-            return false;
-        }
-        self.jukebox_songs_by_id[id] = song;
-        true
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (usize, JukeboxSongRef)> + '_ {
-        self.jukebox_songs_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &song)| (id, song))
-    }
 }
 
-impl Default for JukeboxSongRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+crate::impl_standard_methods!(
+    JukeboxSongRegistry,
+    JukeboxSongRef,
+    jukebox_songs_by_id,
+    jukebox_songs_by_key,
+    allows_registering
+);
 
 crate::impl_registry!(
     JukeboxSongRegistry,

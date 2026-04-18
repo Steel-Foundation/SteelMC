@@ -1,19 +1,24 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
-#![allow(internal_features)]
 
+use crate::world_clock::WorldClockRegistry;
 use crate::{
+    attribute::AttributeRegistry,
     banner_pattern::BannerPatternRegistry,
     biome::BiomeRegistry,
     block_entity_type::BlockEntityTypeRegistry,
     blocks::BlockRegistry,
+    cat_sound_variant::CatSoundVariantRegistry,
     cat_variant::CatVariantRegistry,
     chat_type::ChatTypeRegistry,
+    chicken_sound_variant::ChickenSoundVariantRegistry,
     chicken_variant::ChickenVariantRegistry,
+    cow_sound_variant::CowSoundVariantRegistry,
     cow_variant::CowVariantRegistry,
     damage_type::DamageTypeRegistry,
     data_components::{DataComponentRegistry, vanilla_components},
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
+    enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
     entity_types::EntityTypeRegistry,
     fluid::FluidRegistry,
@@ -25,6 +30,7 @@ use crate::{
     loot_table::LootTableRegistry,
     menu_type::MenuTypeRegistry,
     painting_variant::PaintingVariantRegistry,
+    pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
@@ -38,18 +44,23 @@ use crate::{
 use std::{fmt::Debug, ops::Deref, sync::OnceLock};
 use steel_utils::Identifier;
 
+pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;
 pub mod block_entity_type;
 pub mod blocks;
+pub mod cat_sound_variant;
 pub mod cat_variant;
 pub mod chat_type;
+pub mod chicken_sound_variant;
 pub mod chicken_variant;
+pub mod cow_sound_variant;
 pub mod cow_variant;
 pub mod damage_type;
 pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
+pub mod enchantment;
 pub mod entity_data;
 pub mod entity_types;
 pub mod fluid;
@@ -62,6 +73,7 @@ pub mod jukebox_song;
 pub mod loot_table;
 pub mod menu_type;
 pub mod painting_variant;
+pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
@@ -72,234 +84,269 @@ pub mod trim_material;
 pub mod trim_pattern;
 pub mod wolf_sound_variant;
 pub mod wolf_variant;
+pub mod world_clock;
 pub mod zombie_nautilus_variant;
 
-#[allow(warnings)]
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_attributes.rs"]
+pub mod vanilla_attributes;
+
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_blocks.rs"]
 pub mod vanilla_blocks;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_block_tags.rs"]
 pub mod vanilla_block_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_banner_patterns.rs"]
 pub mod vanilla_banner_patterns;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_items.rs"]
 pub mod vanilla_items;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_item_tags.rs"]
 pub mod vanilla_item_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_biomes.rs"]
 pub mod vanilla_biomes;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_chat_types.rs"]
 pub mod vanilla_chat_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_trim_patterns.rs"]
 pub mod vanilla_trim_patterns;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_trim_materials.rs"]
 pub mod vanilla_trim_materials;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_wolf_variants.rs"]
 pub mod vanilla_wolf_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_wolf_sound_variants.rs"]
 pub mod vanilla_wolf_sound_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_pig_variants.rs"]
 pub mod vanilla_pig_variants;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_pig_sound_variants.rs"]
+pub mod vanilla_pig_sound_variants;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_chicken_sound_variants.rs"]
+pub mod vanilla_chicken_sound_variants;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_cat_sound_variants.rs"]
+pub mod vanilla_cat_sound_variants;
+
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_cow_sound_variants.rs"]
+pub mod vanilla_cow_sound_variants;
 
 #[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_frog_variants.rs"]
 pub mod vanilla_frog_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_cat_variants.rs"]
 pub mod vanilla_cat_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_cow_variants.rs"]
 pub mod vanilla_cow_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_chicken_variants.rs"]
 pub mod vanilla_chicken_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_painting_variants.rs"]
 pub mod vanilla_painting_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_dimension_types.rs"]
 pub mod vanilla_dimension_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_types.rs"]
 pub mod vanilla_damage_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_type_tags.rs"]
 pub mod vanilla_damage_type_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_jukebox_songs.rs"]
 pub mod vanilla_jukebox_songs;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_instruments.rs"]
 pub mod vanilla_instruments;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_dialogs.rs"]
 pub mod vanilla_dialogs;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_dialog_tags.rs"]
 pub mod vanilla_dialog_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_menu_types.rs"]
 pub mod vanilla_menu_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_zombie_nautilus_variants.rs"]
 pub mod vanilla_zombie_nautilus_variants;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_timelines.rs"]
 pub mod vanilla_timelines;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_timeline_tags.rs"]
 pub mod vanilla_timeline_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_recipes.rs"]
 pub mod vanilla_recipes;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_entities.rs"]
 pub mod vanilla_entities;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_entity_data.rs"]
 pub mod vanilla_entity_data;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_fluids.rs"]
 pub mod vanilla_fluids;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_poi_types.rs"]
 pub mod vanilla_poi_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_banner_pattern_tags.rs"]
 pub mod vanilla_banner_pattern_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_entity_type_tags.rs"]
 pub mod vanilla_entity_type_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_enchantment_tags.rs"]
+pub mod vanilla_enchantment_tags;
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_enchantments.rs"]
+pub mod vanilla_enchantments;
 
 #[allow(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_instrument_tags.rs"]
 pub mod vanilla_instrument_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_painting_variant_tags.rs"]
 pub mod vanilla_painting_variant_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_poi_type_tags.rs"]
 pub mod vanilla_poi_type_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_fluid_tags.rs"]
 pub mod vanilla_fluid_tags;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_loot_tables.rs"]
 pub mod vanilla_loot_tables;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_block_entity_types.rs"]
 pub mod vanilla_block_entity_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_game_rules.rs"]
 pub mod vanilla_game_rules;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_level_events.rs"]
 pub mod level_events;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_sound_events.rs"]
 pub mod sound_events;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_sound_types.rs"]
 pub mod sound_types;
 
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_structure_sets.rs"]
 pub mod vanilla_structure_sets;
@@ -314,27 +361,32 @@ pub mod vanilla_template_pools;
 pub mod packets;
 
 /// Multi-noise biome parameters for climate-based biome selection.
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_multi_noise.rs"]
 pub mod multi_noise;
 
 /// Noise parameters for world generation.
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_noise_parameters.rs"]
 pub mod noise_parameters;
 
 /// Density functions and noise router for terrain generation.
-#[allow(warnings)]
+#[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_density_functions/mod.rs"]
 pub mod density_functions;
 
+#[allow(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_world_clocks.rs"]
+pub mod vanilla_world_clocks;
+
 pub struct RegistryLock(OnceLock<Registry>);
 
 impl RegistryLock {
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     pub fn init(&self, value: Registry) -> Result<(), Registry> {
         self.0.set(value)
     }
@@ -447,6 +499,42 @@ macro_rules! impl_registry_entry {
     };
 }
 
+/// Implements the default register, replace, and iter methods in the registries
+#[macro_export]
+macro_rules! impl_standard_methods {
+    ($Registry:ty, $Entry:ty, $id_field:ident, $key_field:ident, $allow_registering:ident) => {
+        impl $Registry {
+            pub fn register(&mut self, entry: $Entry) -> usize {
+                assert!(
+                    self.$allow_registering,
+                    concat!(
+                        "Cannot register ",
+                        stringify!($Entry),
+                        " after registry has been frozen"
+                    )
+                );
+                let id = self.$id_field.len();
+                self.$id_field.push(entry);
+                self.$key_field.insert(entry.key.clone(), id);
+                id
+            }
+
+            pub fn iter(&self) -> impl Iterator<Item = (usize, $Entry)> + '_ {
+                self.$id_field
+                    .iter()
+                    .enumerate()
+                    .map(|(id, &entry)| (id, entry))
+            }
+        }
+
+        impl Default for $Registry {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+    };
+}
+
 /// Implements both `RegistryExt` and `RegistryEntry` for a standard registry.
 #[macro_export]
 macro_rules! impl_registry {
@@ -554,6 +642,11 @@ pub const WOLF_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("wolf_v
 pub const WOLF_SOUND_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("wolf_sound_variant");
 pub const PIG_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("pig_variant");
+pub const PIG_SOUND_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("pig_sound_variant");
+pub const CHICKEN_SOUND_VARIANT_REGISTRY: Identifier =
+    Identifier::vanilla_static("chicken_sound_variant");
+pub const CAT_SOUND_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cat_sound_variant");
+pub const COW_SOUND_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_sound_variant");
 pub const FROG_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("frog_variant");
 pub const CAT_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cat_variant");
 pub const COW_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_variant");
@@ -562,8 +655,7 @@ pub const PAINTING_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("pa
 pub const DIMENSION_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("dimension_type");
 pub const DAMAGE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("damage_type");
 pub const BANNER_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("banner_pattern");
-//TODO: Add enchantments
-//pub const ENCHANTMENT_REGISTRY: Identifier = Identifier::vanilla_static("enchantment");
+pub const ENCHANTMENT_REGISTRY: Identifier = Identifier::vanilla_static("enchantment");
 pub const JUKEBOX_SONG_REGISTRY: Identifier = Identifier::vanilla_static("jukebox_song");
 pub const INSTRUMENT_REGISTRY: Identifier = Identifier::vanilla_static("instrument");
 pub const DIALOG_REGISTRY: Identifier = Identifier::vanilla_static("dialog");
@@ -576,8 +668,10 @@ pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("b
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
+pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
 
 pub struct Registry {
+    pub attributes: AttributeRegistry,
     pub blocks: BlockRegistry,
     pub items: ItemRegistry,
     pub data_components: DataComponentRegistry,
@@ -588,6 +682,10 @@ pub struct Registry {
     pub trim_materials: TrimMaterialRegistry,
     pub wolf_variants: WolfVariantRegistry,
     pub wolf_sound_variants: WolfSoundVariantRegistry,
+    pub pig_sound_variants: PigSoundVariantRegistry,
+    pub chicken_sound_variants: ChickenSoundVariantRegistry,
+    pub cat_sound_variants: CatSoundVariantRegistry,
+    pub cow_sound_variants: CowSoundVariantRegistry,
     pub pig_variants: PigVariantRegistry,
     pub frog_variants: FrogVariantRegistry,
     pub cat_variants: CatVariantRegistry,
@@ -610,6 +708,8 @@ pub struct Registry {
     pub game_rules: GameRuleRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
+    pub enchantments: EnchantmentRegistry,
+    pub world_clocks: WorldClockRegistry,
 }
 
 impl Debug for Registry {
@@ -624,6 +724,8 @@ impl Registry {
     #[must_use]
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
+
+        vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
         vanilla_block_tags::register_block_tags(&mut registry.blocks);
@@ -644,6 +746,12 @@ impl Registry {
             &mut registry.wolf_sound_variants,
         );
         vanilla_pig_variants::register_pig_variants(&mut registry.pig_variants);
+        vanilla_pig_sound_variants::register_pig_sound_variants(&mut registry.pig_sound_variants);
+        vanilla_chicken_sound_variants::register_chicken_sound_variants(
+            &mut registry.chicken_sound_variants,
+        );
+        vanilla_cat_sound_variants::register_cat_sound_variants(&mut registry.cat_sound_variants);
+        vanilla_cow_sound_variants::register_cow_sound_variants(&mut registry.cow_sound_variants);
         vanilla_frog_variants::register_frog_variants(&mut registry.frog_variants);
         vanilla_cat_variants::register_cat_variants(&mut registry.cat_variants);
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
@@ -681,10 +789,16 @@ impl Registry {
         vanilla_poi_types::register_poi_types(&mut registry.poi_types);
         vanilla_poi_type_tags::register_poi_type_tags(&mut registry.poi_types);
 
+        vanilla_enchantments::register_enchantments(&mut registry.enchantments);
+        vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
+
+        vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
+
         registry
     }
 
     pub fn freeze(&mut self) {
+        self.attributes.freeze();
         self.blocks.freeze();
         self.data_components.freeze();
         self.entity_data_serializers.freeze();
@@ -696,6 +810,10 @@ impl Registry {
         self.wolf_variants.freeze();
         self.wolf_sound_variants.freeze();
         self.pig_variants.freeze();
+        self.pig_sound_variants.freeze();
+        self.chicken_sound_variants.freeze();
+        self.cat_sound_variants.freeze();
+        self.cow_sound_variants.freeze();
         self.frog_variants.freeze();
         self.cat_variants.freeze();
         self.cow_variants.freeze();
@@ -717,11 +835,14 @@ impl Registry {
         self.game_rules.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
+        self.enchantments.freeze();
+        self.world_clocks.freeze();
     }
 
     #[must_use]
     pub fn new_empty() -> Self {
         Self {
+            attributes: AttributeRegistry::new(),
             blocks: BlockRegistry::new(),
             data_components: DataComponentRegistry::new(),
             entity_data_serializers: EntityDataSerializerRegistry::new(),
@@ -733,6 +854,10 @@ impl Registry {
             wolf_variants: WolfVariantRegistry::new(),
             wolf_sound_variants: WolfSoundVariantRegistry::new(),
             pig_variants: PigVariantRegistry::new(),
+            pig_sound_variants: PigSoundVariantRegistry::new(),
+            chicken_sound_variants: ChickenSoundVariantRegistry::new(),
+            cat_sound_variants: CatSoundVariantRegistry::new(),
+            cow_sound_variants: CowSoundVariantRegistry::new(),
             frog_variants: FrogVariantRegistry::new(),
             cat_variants: CatVariantRegistry::new(),
             cow_variants: CowVariantRegistry::new(),
@@ -753,7 +878,9 @@ impl Registry {
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             fluids: FluidRegistry::new(),
+            world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
+            enchantments: EnchantmentRegistry::new(),
         }
     }
 }

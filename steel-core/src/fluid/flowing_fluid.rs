@@ -41,7 +41,7 @@ pub trait FlowingFluid: FluidBehavior {
             if new_fluid.is_empty() {
                 current_fluid = new_fluid;
                 // Vanilla: unconditionally sets Blocks.AIR when fluid empties
-                let air = REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+                let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
                 world.set_block(pos, air, UpdateFlags::UPDATE_ALL);
             } else if new_fluid != current_fluid {
                 let old_fluid = current_fluid;

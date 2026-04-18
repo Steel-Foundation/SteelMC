@@ -242,7 +242,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_next_f64() {
         let mut rand = LegacyRandom::from_seed(0);
 
@@ -268,7 +268,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_next_f32() {
         let mut rand = LegacyRandom::from_seed(0);
 
@@ -326,7 +326,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_next_gaussian() {
         let mut rand = LegacyRandom::from_seed(0);
 
@@ -349,7 +349,7 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
     fn test_triangle() {
         let mut rand = LegacyRandom::from_seed(0);
 

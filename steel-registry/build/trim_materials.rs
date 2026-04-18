@@ -43,7 +43,7 @@ where
 
 fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> TokenStream {
     if map.is_empty() {
-        return quote! { rustc_hash::FxHashMap::default() };
+        return quote! { FxHashMap::default() };
     }
     let entries: Vec<_> = map
         .iter()
@@ -52,15 +52,13 @@ fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> Toke
             quote! { (#key, #v.to_string()) }
         })
         .collect();
-    quote! { rustc_hash::FxHashMap::from_iter([#(#entries),*]) }
+    quote! { FxHashMap::from_iter([#(#entries),*]) }
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/trim_material/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/trim_material/");
 
-    let trim_material_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/trim_material";
+    let trim_material_dir = "build_assets/builtin_datapacks/minecraft/trim_material";
     let mut trim_materials = Vec::new();
 
     // Read all trim material JSON files
@@ -122,7 +120,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(&#trim_material_ident, #trim_material_ident.key.clone());
+            registry.register(&#trim_material_ident);
         });
     }
 

@@ -29,12 +29,12 @@ pub fn get_fluid_state(world: &Arc<World>, pos: BlockPos) -> FluidState {
 pub fn get_fluid_state_from_block(state: BlockStateId) -> FluidState {
     let block = state.get_block();
 
-    if block == vanilla_blocks::WATER {
+    if block == &vanilla_blocks::WATER {
         let level: u8 = state
             .try_get_value(&BlockStateProperties::LEVEL)
             .unwrap_or(0);
         FluidState::from_block_level(water_id(), level)
-    } else if block == vanilla_blocks::LAVA {
+    } else if block == &vanilla_blocks::LAVA {
         let level: u8 = state
             .try_get_value(&BlockStateProperties::LEVEL)
             .unwrap_or(0);
@@ -69,7 +69,7 @@ pub fn fluid_state_to_block_with_existing(
         {
             return existing_state.set_value(&BlockStateProperties::WATERLOGGED, false);
         }
-        return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+        return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     }
 
     // If it's water, check if the block can be waterlogged.
@@ -84,19 +84,19 @@ pub fn fluid_state_to_block_with_existing(
         }
 
         // If not waterloggable, fall back to pure water block
-        let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER);
+        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         let level = fluid_state.to_block_level();
         return base.set_value(&BlockStateProperties::LEVEL, level);
     }
 
     if is_lava_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
+        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
         let level = fluid_state.to_block_level();
         return base.set_value(&BlockStateProperties::LEVEL, level);
     }
 
     // Unknown fluid type - default to air
-    REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR)
+    REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
 }
 
 /// Converts a `FluidState` into a `BlockStateId` directly without preserving any block.
@@ -106,19 +106,19 @@ pub fn fluid_state_to_block_with_existing(
 pub fn fluid_state_to_block(fluid_state: FluidState) -> BlockStateId {
     let fluid_id = fluid_state.fluid_id;
     if fluid_id.is_empty {
-        REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR)
+        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
     } else if is_water_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER);
+        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         // Use FluidState's to_block_level method for proper conversion
         let level = fluid_state.to_block_level();
         base.set_value(&BlockStateProperties::LEVEL, level)
     } else if is_lava_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA);
+        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
         let level = fluid_state.to_block_level();
         base.set_value(&BlockStateProperties::LEVEL, level)
     } else {
         // Unknown fluid type - default to air
-        REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR)
+        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
     }
 }
 

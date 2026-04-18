@@ -232,7 +232,10 @@ impl LevelChunk {
     /// # Panics
     /// Panics if the block behavior registry has not been initialized.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all parameters are required to fully restore a chunk from disk"
+    )]
     pub fn from_disk(
         sections: Sections,
         pos: ChunkPos,
@@ -605,14 +608,14 @@ impl LevelChunk {
 
         // Bounds check - return air if out of range
         if section_index >= self.sections.sections.len() {
-            return REGISTRY.blocks.get_base_state_id(vanilla_blocks::VOID_AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
         }
 
         let section = &self.sections.sections[section_index];
         let section_guard = section.read();
 
         if section_guard.is_empty() {
-            return REGISTRY.blocks.get_base_state_id(vanilla_blocks::VOID_AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
         }
 
         let local_x = (pos.0.x & 15) as usize;

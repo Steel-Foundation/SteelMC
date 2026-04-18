@@ -97,12 +97,9 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/painting_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/painting_variant/");
 
-    let painting_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/painting_variant";
+    let painting_variant_dir = "build_assets/builtin_datapacks/minecraft/painting_variant";
     let mut painting_variants = Vec::new();
 
     // Read all painting variant JSON files
@@ -150,7 +147,7 @@ pub(crate) fn build() -> TokenStream {
         let author = generate_option(&painting_variant.author, generate_text_component);
 
         stream.extend(quote! {
-            pub static #painting_variant_ident: &PaintingVariant = &PaintingVariant {
+            pub static #painting_variant_ident: PaintingVariant = PaintingVariant {
                 key: #key,
                 width: #width,
                 height: #height,
@@ -161,7 +158,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#painting_variant_ident);
+            registry.register(&#painting_variant_ident);
         });
     }
 

@@ -73,11 +73,11 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/zombie_nautilus_variant/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/zombie_nautilus_variant/"
     );
 
     let zombie_nautilus_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/zombie_nautilus_variant";
+        "build_assets/builtin_datapacks/minecraft/zombie_nautilus_variant";
     let mut zombie_nautilus_variants = Vec::new();
 
     // Read all zombie nautilus variant JSON files
@@ -131,7 +131,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #zombie_nautilus_variant_ident: &ZombieNautilusVariant = &ZombieNautilusVariant {
+            pub static #zombie_nautilus_variant_ident: ZombieNautilusVariant = ZombieNautilusVariant {
                 key: #key,
                 asset_id: #asset_id,
                 model: #model,
@@ -144,7 +144,7 @@ pub(crate) fn build() -> TokenStream {
             Span::call_site(),
         );
         register_stream.extend(quote! {
-            registry.register(#zombie_nautilus_variant_ident);
+            registry.register(&#zombie_nautilus_variant_ident);
         });
     }
 

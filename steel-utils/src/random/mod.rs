@@ -18,7 +18,7 @@ pub mod xoroshiro;
 
 /// A trait for random number generators.
 #[enum_dispatch]
-#[allow(missing_docs)]
+#[expect(missing_docs, reason = "method names are self-explanatory")]
 pub trait Random {
     #[must_use]
     fn fork(&mut self) -> Self;
@@ -64,7 +64,7 @@ pub trait Random {
 
 /// A trait for positional random number generators.
 #[enum_dispatch]
-#[allow(missing_docs)]
+#[expect(missing_docs, reason = "method names are self-explanatory")]
 pub trait PositionalRandom {
     fn at(&self, x: i32, y: i32, z: i32) -> RandomSource;
 
@@ -93,7 +93,6 @@ pub enum RandomSplitter {
 }
 
 /// Gets a seed from a position.
-#[allow(clippy::cast_sign_loss)]
 #[must_use]
 pub fn get_seed(x: i32, y: i32, z: i32) -> i64 {
     let l = i64::from(x.wrapping_mul(3_129_871))

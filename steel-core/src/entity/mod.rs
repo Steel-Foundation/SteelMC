@@ -3,21 +3,23 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_attributes;
 use steel_utils::locks::SyncMutex;
-use steel_utils::math::Vector3;
 use uuid::Uuid;
 
+use crate::entity::attribute::AttributeMap;
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
 use crate::world::World;
-use crate::{entity::damage::DamageSource, inventory::equipment::EquipmentSlot, player::Player};
+use crate::{entity::damage::DamageSource, player::Player};
 
 use entities::ItemEntity;
 
@@ -36,6 +38,7 @@ pub fn next_entity_id() -> i32 {
     ENTITY_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+pub mod attribute;
 mod base;
 mod cache;
 mod callback;
@@ -46,6 +49,7 @@ mod registry;
 mod storage;
 mod tracker;
 
+use crate::portal::TeleportTransition;
 pub use base::EntityBase;
 pub use cache::EntityCache;
 pub use callback::{
@@ -104,9 +108,9 @@ pub trait Entity: Send + Sync {
     }
 
     /// Gets the entity's current position.
-    fn position(&self) -> Vector3<f64> {
+    fn position(&self) -> DVec3 {
         self.base()
-            .map_or(Vector3::new(0.0, 0.0, 0.0), EntityBase::position)
+            .map_or(DVec3::new(0.0, 0.0, 0.0), EntityBase::position)
     }
 
     /// Gets the entity's bounding box for collision queries.
@@ -203,12 +207,12 @@ pub trait Entity: Send + Sync {
     }
 
     /// Gets the entity's velocity in blocks per tick.
-    fn velocity(&self) -> Vector3<f64> {
-        Vector3::new(0.0, 0.0, 0.0)
+    fn velocity(&self) -> DVec3 {
+        DVec3::new(0.0, 0.0, 0.0)
     }
 
     /// Sets the entity's velocity.
-    fn set_velocity(&self, _velocity: Vector3<f64>) {}
+    fn set_velocity(&self, _velocity: DVec3) {}
 
     /// Returns true if the entity is on the ground.
     fn on_ground(&self) -> bool {
@@ -219,7 +223,7 @@ pub trait Entity: Send + Sync {
     fn set_on_ground(&self, _on_ground: bool) {}
 
     /// Sets the entity's position.
-    fn set_position(&self, pos: Vector3<f64>) {
+    fn set_position(&self, pos: DVec3) {
         if let Some(base) = self.base() {
             base.set_position(pos);
         }
@@ -297,7 +301,7 @@ pub trait Entity: Send + Sync {
         // TODO: Support block-specific behavior (slime bounce, etc.)
         if result.horizontal_collision {
             let vel = self.velocity();
-            self.set_velocity(Vector3::new(
+            self.set_velocity(DVec3::new(
                 if result.x_collision { 0.0 } else { vel.x },
                 vel.y,
                 if result.z_collision { 0.0 } else { vel.z },
@@ -306,7 +310,7 @@ pub trait Entity: Send + Sync {
         if result.vertical_collision {
             // Default Block.updateEntityMovementAfterFallOn behavior: zero Y velocity
             let vel = self.velocity();
-            self.set_velocity(Vector3::new(vel.x, 0.0, vel.z));
+            self.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
         }
 
         Some(result)
@@ -325,7 +329,7 @@ pub trait Entity: Send + Sync {
     ) -> Option<Arc<entities::ItemEntity>> {
         let world = self.level()?;
         let pos = self.position();
-        world.spawn_item(Vector3::new(pos.x, pos.y + y_offset, pos.z), item)
+        world.spawn_item(DVec3::new(pos.x, pos.y + y_offset, pos.z), item)
     }
 
     // === Persistence Methods ===
@@ -377,9 +381,23 @@ pub trait Entity: Send + Sync {
     /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
     /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
     /// and discard). Default returns `false` (entity ignores damage).
-    #[allow(unused_variables)]
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameters used by overrides"
+    )]
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
         false
+    }
+
+    /// Teleports an entity from one dimension to another.
+    ///
+    /// The default implementation logs a warning — non-player entity teleportation
+    /// is not yet implemented. Override in entity types that support it.
+    fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
+        log::warn!(
+            "change_world called on entity {} which does not implement dimension changes",
+            self.id(),
+        );
     }
 }
 
@@ -391,14 +409,22 @@ pub trait Entity: Send + Sync {
 /// **Note:** All methods take `&self` (not `&mut self`) because living entities
 /// are shared via `Arc` and use interior mutability (atomics, `SyncMutex`, etc.).
 pub trait LivingEntity: Entity {
+    /// Returns a reference to this entity's attribute map.
+    fn attributes(&self) -> &SyncMutex<AttributeMap>;
+
     /// Gets the current health of the entity.
     fn get_health(&self) -> f32;
 
     /// Sets the health of the entity, clamped between 0 and max health.
     fn set_health(&self, health: f32);
 
-    /// Gets the maximum health of the entity.
-    fn get_max_health(&self) -> f32;
+    /// Gets the maximum health from the attribute system.
+    fn get_max_health(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::MAX_HEALTH)
+            .unwrap_or(20.0) as f32
+    }
 
     /// Heals the entity by the specified amount.
     fn heal(&self, amount: f32) {
@@ -428,8 +454,21 @@ pub trait LivingEntity: Entity {
     /// Sets the absorption amount.
     fn set_absorption_amount(&self, amount: f32);
 
-    /// Gets the entity's armor value.
-    fn get_armor_value(&self) -> i32;
+    /// Gets the entity's armor value from the attribute system.
+    fn get_armor_value(&self) -> i32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::ARMOR)
+            .unwrap_or(0.0) as i32
+    }
+
+    /// Gets the gravity value from the attribute system.
+    fn get_attribute_gravity(&self) -> f64 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::GRAVITY)
+            .unwrap_or(0.08)
+    }
 
     /// Checks if the entity can be affected by potions.
     fn is_affected_by_potions(&self) -> bool {
@@ -472,38 +511,33 @@ pub trait LivingEntity: Entity {
     /// Sets whether the entity is sprinting.
     fn set_sprinting(&self, sprinting: bool);
 
-    /// Gets the entity's speed attribute value.
+    /// Gets the entity's cached movement speed.
     fn get_speed(&self) -> f32;
 
-    /// Sets the entity's speed.
+    /// Sets the entity's cached movement speed.
     fn set_speed(&self, speed: f32);
 
-    // Equipment methods
-
-    /// Gets a clone of the item in the specified equipment slot.
-    ///
-    /// Default implementation returns an empty stack.
-    fn get_item_by_slot(&self, _slot: EquipmentSlot) -> ItemStack {
-        ItemStack::empty()
-    }
-
-    /// Gets the main hand item.
-    fn get_main_hand_item(&self) -> ItemStack {
-        self.get_item_by_slot(EquipmentSlot::MainHand)
-    }
-
-    /// Gets the off hand item.
-    fn get_off_hand_item(&self) -> ItemStack {
-        self.get_item_by_slot(EquipmentSlot::OffHand)
-    }
-
-    /// Checks if the main hand slot is empty.
-    fn is_main_hand_empty(&self) -> bool {
-        self.get_item_by_slot(EquipmentSlot::MainHand).is_empty()
-    }
-
-    /// Checks if the off hand slot is empty.
-    fn is_off_hand_empty(&self) -> bool {
-        self.get_item_by_slot(EquipmentSlot::OffHand).is_empty()
+    /// Drains dirty attributes and applies server-side effects.
+    fn refresh_dirty_attributes(&self) {
+        let dirty = self.attributes().lock().drain_dirty_updates();
+        for attr in dirty {
+            if attr.key == vanilla_attributes::MAX_HEALTH.key {
+                let max = self.get_max_health();
+                if self.get_health() > max {
+                    self.set_health(max);
+                }
+            } else if attr.key == vanilla_attributes::MAX_ABSORPTION.key {
+                let max = self
+                    .attributes()
+                    .lock()
+                    .get_value(vanilla_attributes::MAX_ABSORPTION)
+                    .unwrap_or(0.0) as f32;
+                if self.get_absorption_amount() > max {
+                    self.set_absorption_amount(max);
+                }
+            }
+            // TODO: SCALE → refreshDimensions()
+            // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
+        }
     }
 }

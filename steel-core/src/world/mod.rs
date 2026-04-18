@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{chunk::chunk_map::ChunkMapTickTimings, world::weather::Weather};
+use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
@@ -39,7 +39,6 @@ use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_ty
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
-
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 /// Controls how a block position is treated during a raytrace traversal.
@@ -55,7 +54,7 @@ pub enum RaytraceAction {
     ImmediateHit,
 }
 
-use steel_utils::math::Vector3;
+use glam::DVec3;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 use tokio::{runtime::Runtime, time::Instant};
 
@@ -94,11 +93,13 @@ fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
-/// Timing information for a world tick.
+/// Timing information for a world game tick.
 #[derive(Debug)]
-pub struct WorldTickTimings {
-    /// Chunk map tick timings.
-    pub chunk_map: ChunkMapTickTimings,
+pub struct WorldGameTickTimings {
+    /// Total time for this world's tick.
+    pub elapsed: Duration,
+    /// Chunk map game tick timings.
+    pub chunk_map: ChunkMapGameTickTimings,
     /// Time spent ticking players.
     pub player_tick: Duration,
 }
@@ -163,6 +164,7 @@ impl World {
         dimension: DimensionTypeRef,
         seed: i64,
         config: WorldConfig,
+        generation_pool: Arc<rayon::ThreadPool>,
     ) -> io::Result<Arc<Self>> {
         // Create storage backend based on config
         let storage: Arc<ChunkStorage> = match &config.storage {
@@ -203,9 +205,10 @@ impl World {
             chunk_map: Arc::new(ChunkMap::new_with_storage(
                 chunk_runtime,
                 weak_self.clone(),
-                &dimension,
+                dimension,
                 storage,
                 config.generator,
+                generation_pool,
             )),
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),
@@ -221,8 +224,10 @@ impl World {
     }
 
     /// Cleans up the world by saving all chunks.
-    /// `await_holding_lock` is safe here cause it's only done on shutdown
-    #[allow(clippy::await_holding_lock)]
+    #[expect(
+        clippy::await_holding_lock,
+        reason = "holding the write lock across await is safe here because it only happens during shutdown"
+    )]
     pub async fn cleanup(&self, total_saved: &mut usize) {
         match self.level_data.write().save().await {
             Ok(()) => log::info!(
@@ -259,6 +264,7 @@ impl World {
     }
 
     /// Returns whether the block position is within valid horizontal bounds.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn is_in_valid_bounds_horizontal(&self, block_pos: BlockPos) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(block_pos.0.x);
         let chunk_z = SectionPos::block_to_section_coord(block_pos.0.z);
@@ -358,6 +364,7 @@ impl World {
     }
 
     /// Gets the value of a game rule on the `LevelDataManager` guard being passed in.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
     pub fn get_game_rule_with_guard(
         &self,
@@ -379,6 +386,7 @@ impl World {
     }
 
     /// Sets the value of a game rule on the `LevelDataManager` guard being passed in.
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn set_game_rule_with_guard(
         &self,
         rule: GameRuleRef,
@@ -402,7 +410,10 @@ impl World {
     /// This uses SHA-256 hashing to prevent clients from easily extracting
     /// the actual world seed, matching vanilla's `BiomeManager.obfuscateSeed()`.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)] // SHA-256 always produces 32 bytes
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "panic is unreachable: SHA-256 always produces 32 bytes"
+    )]
     pub fn obfuscated_seed(&self) -> i64 {
         let seed = self.seed();
         let mut hasher = Sha256::new();
@@ -419,13 +430,13 @@ impl World {
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
         }
 
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(&chunk_pos, |chunk| chunk.get_block_state(pos))
-            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(vanilla_blocks::AIR))
+            .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
     /// Sets a block at the given position.
@@ -465,7 +476,7 @@ impl World {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         let Some(old_state) = self
             .chunk_map
-            .with_full_chunk(&chunk_pos, |chunk| {
+            .with_full_chunk(chunk_pos, |chunk| {
                 chunk.set_block_state(pos, block_state, flags)
             })
             .flatten()
@@ -546,9 +557,11 @@ impl World {
 
         let current_state = self.get_block_state(pos);
 
-        // TODO: Skip redstone wire if UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE is set
-        // if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
-        //     && current_state.is_redstone_wire() { return; }
+        if flags.contains(UpdateFlags::UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE)
+            && current_state.get_block() == &vanilla_blocks::REDSTONE_WIRE
+        {
+            return;
+        }
 
         let block_behaviors = &*BLOCK_BEHAVIORS;
         let behavior = block_behaviors.get_behavior(current_state.get_block());
@@ -561,13 +574,7 @@ impl World {
             neighbor_state,
         );
 
-        if new_state != current_state {
-            log::debug!(
-                "Shape update at {pos:?}: {current_state:?} -> {new_state:?} (neighbor {neighbor_pos:?} changed)"
-            );
-            // Use set_block_with_limit to prevent infinite recursion
-            self.set_block_with_limit(pos, new_state, flags, update_limit);
-        }
+        self.update_or_destroy(current_state, new_state, pos, flags, update_limit);
 
         // Vanilla parity: `SimpleWaterloggedBlock.updateShape` / `Level.neighborShapeChanged` —
         // always reschedule the fluid tick when a block with fluid has a neighbor shape change,
@@ -579,6 +586,25 @@ impl World {
                 .get_behavior(fluid_state.fluid_id)
                 .tick_delay(self);
             self.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+        }
+    }
+
+    fn update_or_destroy(
+        self: &Arc<World>,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        recursion_left: i32,
+    ) {
+        if new_state == old_state {
+            return;
+        }
+
+        if new_state.is_air() {
+            self.destroy_block(pos, !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS));
+        } else {
+            self.set_block_with_limit(pos, new_state, flags, recursion_left);
         }
     }
 
@@ -615,7 +641,7 @@ impl World {
     pub fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(&chunk_pos, |chunk| {
+            .with_full_chunk(chunk_pos, |chunk| {
                 chunk.as_full().and_then(|lc| lc.get_block_entity(pos))
             })
             .flatten()
@@ -633,23 +659,26 @@ impl World {
     ///
     /// Called when entities move, are added/removed, or when block entities change.
     pub fn mark_chunk_dirty(&self, chunk_pos: ChunkPos) {
-        self.chunk_map.with_full_chunk(&chunk_pos, |chunk| {
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             if let Some(lc) = chunk.as_full() {
                 lc.dirty.store(true, Ordering::Release);
             }
         });
     }
 
-    /// Ticks the world.
+    /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
+    /// and player logic (without chunk sending).
     ///
     /// * `tick_count` - The current tick number
     /// * `runs_normally` - Whether game elements (random ticks, entities) should run.
     ///   When false (frozen), only essential operations like chunk loading run.
-    ///
-    /// Returns timing information for the world tick.
-    #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
-    pub fn tick_b(self: &Arc<Self>, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
-        // Update the world's stored game time so components (like fluids) can access it
+    #[tracing::instrument(level = "trace", skip(self), name = "world_game_tick")]
+    pub fn tick_game(
+        self: &Arc<Self>,
+        tick_count: u64,
+        runs_normally: bool,
+    ) -> WorldGameTickTimings {
+        let world_start = Instant::now();
         {
             let mut level_data = self.level_data.write();
             level_data.data_mut().game_time = tick_count as i64;
@@ -659,15 +688,12 @@ impl World {
             self.tick_time();
         }
 
-        let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
+        let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
         let chunk_map_timings =
             self.chunk_map
-                .tick_b(self, tick_count, random_tick_speed, runs_normally);
+                .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
-        // Scheduled ticks are now processed per-chunk in ChunkMap::execute_scheduled_ticks()
-
-        // Tick players (always tick players - they can move when frozen)
         let player_tick = {
             let _span = tracing::trace_span!("player_tick").entered();
             let start = Instant::now();
@@ -678,19 +704,22 @@ impl World {
             start.elapsed()
         };
 
-        // Broadcast player latency updates periodically
         if tick_count.is_multiple_of(SEND_PLAYER_INFO_INTERVAL) {
             let _span = tracing::trace_span!("broadcast_latency").entered();
             self.broadcast_player_latency_updates();
         }
 
-        WorldTickTimings {
+        WorldGameTickTimings {
+            elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
             player_tick,
         }
     }
 
-    #[expect(clippy::too_many_lines)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting would hurt readability of the weather state machine"
+    )]
     fn tick_weather(&self) {
         if !self.can_have_weather() {
             return;
@@ -704,7 +733,7 @@ impl World {
             let mut level_data = self.level_data.write();
 
             if self
-                .get_game_rule_with_guard(ADVANCE_WEATHER, &level_data)
+                .get_game_rule_with_guard(&ADVANCE_WEATHER, &level_data)
                 .as_bool()
                 .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
             {
@@ -776,7 +805,10 @@ impl World {
         // Broadcast weather changes to clients
         let raining_now = self.is_raining_with_guard(&weather);
         if raining_before == raining_now {
-            #[expect(clippy::float_cmp)]
+            #[expect(
+                clippy::float_cmp,
+                reason = "comparing against the exact previously-assigned value to detect any change"
+            )]
             if weather.previous_rain_level != weather.rain_level {
                 self.broadcast_to_all(CGameEvent {
                     event: GameEventType::RainLevelChange,
@@ -784,7 +816,10 @@ impl World {
                 });
             }
 
-            #[expect(clippy::float_cmp)]
+            #[expect(
+                clippy::float_cmp,
+                reason = "comparing against the exact previously-assigned value to detect any change"
+            )]
             if weather.previous_thunder_level != weather.thunder_level {
                 self.broadcast_to_all(CGameEvent {
                     event: GameEventType::ThunderLevelChange,
@@ -866,7 +901,7 @@ impl World {
         priority: tick_scheduler::TickPriority,
     ) {
         let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map.with_full_chunk(&chunk_pos, |chunk_access| {
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
             if let Some(chunk) = chunk_access.as_full() {
                 let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
                 let tick = tick_scheduler::BlockTick {
@@ -898,7 +933,7 @@ impl World {
         priority: tick_scheduler::TickPriority,
     ) {
         let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map.with_full_chunk(&chunk_pos, |chunk_access| {
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
             if let Some(chunk) = chunk_access.as_full() {
                 let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
                 let tick = tick_scheduler::FluidTick {
@@ -922,7 +957,7 @@ impl World {
     pub fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(&chunk_pos, |chunk_access| {
+            .with_full_chunk(chunk_pos, |chunk_access| {
                 chunk_access
                     .as_full()
                     .is_some_and(|chunk| chunk.block_ticks.lock().has_tick(pos, block))
@@ -934,7 +969,7 @@ impl World {
     pub fn has_scheduled_fluid_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(&chunk_pos, |chunk_access| {
+            .with_full_chunk(chunk_pos, |chunk_access| {
                 chunk_access
                     .as_full()
                     .is_some_and(|chunk| chunk.fluid_ticks.lock().has_tick(pos, fluid))
@@ -946,7 +981,7 @@ impl World {
     /// then sends an update to all clients in this world every 20th tick.
     fn tick_time(&self) {
         let advance_time = self
-            .get_game_rule(ADVANCE_TIME)
+            .get_game_rule(&ADVANCE_TIME)
             .as_bool()
             .expect("gamerule advance_time should always be a bool.");
 
@@ -966,11 +1001,8 @@ impl World {
         };
 
         if game_time % 20 == 0 {
-            self.broadcast_to_all(CSetTime {
-                game_time,
-                day_time,
-                time_of_day_increasing: advance_time,
-            });
+            let rate = if advance_time { 1.0 } else { 0.0 };
+            self.broadcast_to_all(CSetTime::new(game_time, day_time, 0.0, rate));
         }
     }
 
@@ -1000,7 +1032,7 @@ impl World {
         mut packet: CPlayerChat,
         _sender: Arc<Player>,
         sender_last_seen: LastSeen,
-        message_signature: Option<[u8; 256]>,
+        message_signature: Option<&[u8; 256]>,
     ) {
         log::debug!(
             "broadcast_chat: sender_last_seen has {} signatures, message_signature present: {}",
@@ -1043,13 +1075,13 @@ impl World {
                 let mut chat = recipient.chat.lock();
                 if let Some(signature) = message_signature {
                     chat.signature_cache
-                        .push(&sender_last_seen, Some(&signature));
+                        .push(&sender_last_seen, Some(signature));
 
                     log::debug!("  Added signature to recipient's cache and pending list");
 
                     // Add to pending messages for acknowledgment tracking
                     chat.message_validator
-                        .add_pending(Some(Box::new(signature) as Box<[u8]>));
+                        .add_pending(Some(Box::new(*signature) as Box<[u8]>));
                 } else {
                     // Even unsigned messages update the pending tracker
                     chat.message_validator.add_pending(None);
@@ -1067,9 +1099,6 @@ impl World {
     }
 
     /// Broadcasts a packet to all players in the world.
-    ///
-    /// This method handles encoding the packet once and sending it to all players,
-    /// avoiding repeated cloning of unencoded packets.
     pub fn broadcast_to_all<P: ClientPacket>(&self, packet: P) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
@@ -1079,9 +1108,19 @@ impl World {
         self.broadcast_to_all_encoded(encoded);
     }
 
+    /// Broadcasts a packet to all players in the world except one (identified by entity ID).
+    pub fn broadcast_to_all_except<P: ClientPacket>(&self, packet: P, exclude: i32) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.broadcast_to_all_encoded_except(encoded, exclude);
+    }
+
     /// Broadcasts a packet to all players in the world.
     ///
-    /// This method handles encoding the packets producced from the function passed
+    /// This method handles encoding the packets produced from the function passed.
     pub fn broadcast_to_all_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
         self.players.iter_players(|_, player| {
             let Ok(encoded) = EncodedPacket::from_bare(
@@ -1097,8 +1136,6 @@ impl World {
     }
 
     /// Broadcasts an already-encoded packet to all players in the world.
-    ///
-    /// Use this when you have a pre-encoded packet to avoid re-encoding.
     pub fn broadcast_to_all_encoded(&self, packet: EncodedPacket) {
         self.players.iter_players(|_, player| {
             player.connection.send_encoded(packet.clone());
@@ -1106,15 +1143,18 @@ impl World {
         });
     }
 
-    /// Broadcasts an unsigned player chat message to all players.
-    pub fn broadcast_unsigned_chat(
-        &self,
-        mut packet: CPlayerChat,
-        sender_name: &str,
-        message: &str,
-    ) {
-        log::info!("<{sender_name}> {message}");
+    /// Broadcasts an already-encoded packet to all players except one.
+    pub fn broadcast_to_all_encoded_except(&self, packet: EncodedPacket, exclude: i32) {
+        self.players.iter_players(|_, player| {
+            if player.id != exclude {
+                player.connection.send_encoded(packet.clone());
+            }
+            true
+        });
+    }
 
+    /// Broadcasts an unsigned player chat message to all players.
+    pub fn broadcast_unsigned_chat(&self, mut packet: CPlayerChat) {
         self.players.iter_players(|_, recipient| {
             let messages_received = recipient.get_and_increment_messages_received();
             packet.global_index = messages_received;
@@ -1179,7 +1219,10 @@ impl World {
     /// * `entity_id` - The entity ID of the player breaking the block
     /// * `pos` - The position of the block being broken
     /// * `progress` - The destruction progress (0-9), or -1 to clear
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "value is clamped to -1..=9 before cast; -1 wraps intentionally to 255 as sentinel"
+    )]
     pub fn broadcast_block_destruction(&self, entity_id: i32, pos: BlockPos, progress: i32) {
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x()),
@@ -1277,9 +1320,9 @@ impl World {
             let entity_id = next_entity_id();
             let entity = Arc::new(ItemEntity::with_item_and_velocity(
                 entity_id,
-                Vector3::new(x, y, z),
+                DVec3::new(x, y, z),
                 split_stack,
-                Vector3::new(vx, vy, vz),
+                DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
             ));
             entity.set_default_pickup_delay();
@@ -1291,8 +1334,8 @@ impl World {
     pub fn ray_outline_check(
         &self,
         block_pos: BlockPos,
-        from: Vector3<f64>,
-        to: Vector3<f64>,
+        from: DVec3,
+        to: DVec3,
     ) -> (bool, Option<Direction>) {
         let state = self.get_block_state(block_pos);
         let bounding_boxes = state.get_outline_shape();
@@ -1306,23 +1349,21 @@ impl World {
         let mut closest: Option<(f64, Direction)> = None;
 
         for shape in bounding_boxes {
-            let block_vec = Vector3::new(
+            let block_vec = DVec3::new(
                 f64::from(block_pos.x()),
                 f64::from(block_pos.y()),
                 f64::from(block_pos.z()),
             );
-            let world_min = Vector3::new(
+            let world_min = DVec3::new(
                 f64::from(shape.min_x),
                 f64::from(shape.min_y),
                 f64::from(shape.min_z),
-            )
-            .add(&block_vec);
-            let world_max = Vector3::new(
+            ) + block_vec;
+            let world_max = DVec3::new(
                 f64::from(shape.max_x),
                 f64::from(shape.max_y),
                 f64::from(shape.max_z),
-            )
-            .add(&block_vec);
+            ) + block_vec;
 
             if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
                 && closest.is_none_or(|(best_t, _)| hit.0 < best_t)
@@ -1346,10 +1387,10 @@ impl World {
     /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
     /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behavior.
     fn intersects_aabb_with_t(
-        start: Vector3<f64>,
-        end: Vector3<f64>,
-        min: Vector3<f64>,
-        max: Vector3<f64>,
+        start: DVec3,
+        end: DVec3,
+        min: DVec3,
+        max: DVec3,
     ) -> Option<(f64, Direction)> {
         let dir = end - start;
 
@@ -1418,8 +1459,8 @@ impl World {
     /// Adapted from Pumpkin project.
     pub fn raytrace<F>(
         &self,
-        start_pos: Vector3<f64>,
-        end_pos: Vector3<f64>,
+        start_pos: DVec3,
+        end_pos: DVec3,
         hit_check: F,
     ) -> (Option<BlockPos>, Option<Direction>)
     where
@@ -1430,8 +1471,8 @@ impl World {
         }
 
         let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(&start_pos, adjust);
-        let from = start_pos.lerp(&end_pos, adjust);
+        let to = end_pos.lerp(start_pos, adjust);
+        let from = start_pos.lerp(end_pos, adjust);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -1450,11 +1491,11 @@ impl World {
             RaytraceAction::Pass => {}
         }
 
-        let difference = to.sub(&from);
+        let difference = to - from;
 
-        let step = difference.sign();
+        let step = difference.signum().as_ivec3();
 
-        let delta = Vector3::new(
+        let delta = DVec3::new(
             if step.x == 0 {
                 f64::MAX
             } else {
@@ -1472,7 +1513,7 @@ impl World {
             },
         );
 
-        let mut next = Vector3::new(
+        let mut next = DVec3::new(
             delta.x
                 * (if step.x > 0 {
                     1.0 - (from.x - from.x.floor())
@@ -1629,26 +1670,42 @@ impl World {
     ///
     /// Sends destruction particles (skipping fire blocks), optionally drops
     /// resources via loot table, then replaces with air.
+    ///
+    /// Defaults to recursion limit of 512
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
+        self.destroy_block_with_limit(pos, drop_items, 512)
+    }
+
+    /// Destroys a block at the given position, optionally dropping its loot.
+    ///
+    /// Sends destruction particles (skipping fire blocks), optionally drops
+    /// resources via loot table, then replaces with air.
+    pub fn destroy_block_with_limit(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        drop_items: bool,
+        recursion_left: i32,
+    ) -> bool {
         let state = self.get_block_state(pos);
         if state.is_air() {
             return false;
         }
 
         let block = state.get_block();
-        let is_fire = block == vanilla_blocks::FIRE || block == vanilla_blocks::SOUL_FIRE;
+        let is_fire = block == &vanilla_blocks::FIRE || block == &vanilla_blocks::SOUL_FIRE;
         if !is_fire {
             self.destroy_block_effect(pos, u32::from(state.0), None);
         }
 
         if drop_items {
             self.drop_resources(state, pos);
+            // TODO: block entity and entity drops
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        self.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
+        self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
         // TODO: Fire GameEvent.BLOCK_DESTROY
         true
     }
@@ -1659,6 +1716,7 @@ impl World {
     /// `block_breaking::drop_block_loot` which includes tool context for
     /// fortune/silk touch.
     // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
+    // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
@@ -1852,7 +1910,7 @@ impl World {
         let pos = entity.position();
         let chunk_pos = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
 
-        self.chunk_map.with_full_chunk(&chunk_pos, |chunk| {
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             if let Some(c) = chunk.as_full() {
                 c.add_and_register_entity(entity.clone());
             }
@@ -1865,16 +1923,12 @@ impl World {
     /// The item will have a default pickup delay.
     ///
     /// Returns `None` if the item stack is empty.
-    pub fn spawn_item(
-        self: &Arc<Self>,
-        pos: Vector3<f64>,
-        item: ItemStack,
-    ) -> Option<Arc<ItemEntity>> {
+    pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
         // Default ItemEntity velocity: random horizontal scatter + upward pop
         let vx = rand::random::<f64>() * 0.2 - 0.1;
         let vy = 0.2;
         let vz = rand::random::<f64>() * 0.2 - 0.1;
-        self.spawn_item_with_velocity(pos, item, Vector3::new(vx, vy, vz))
+        self.spawn_item_with_velocity(pos, item, DVec3::new(vx, vy, vz))
     }
 
     /// Spawns an item entity at the given position with initial velocity.
@@ -1882,9 +1936,9 @@ impl World {
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item_with_velocity(
         self: &Arc<Self>,
-        pos: Vector3<f64>,
+        pos: DVec3,
         item: ItemStack,
-        velocity: Vector3<f64>,
+        velocity: DVec3,
     ) -> Option<Arc<ItemEntity>> {
         use crate::entity::next_entity_id;
 
@@ -1923,7 +1977,7 @@ impl World {
         }
 
         // Respect doTileDrops gamerule
-        if !self.get_game_rule(BLOCK_DROPS).as_bool().unwrap_or(true) {
+        if !self.get_game_rule(&BLOCK_DROPS).as_bool().unwrap_or(true) {
             return None;
         }
 
@@ -1935,7 +1989,7 @@ impl World {
         let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
         let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
 
-        self.spawn_item(Vector3::new(x, y, z), item)
+        self.spawn_item(DVec3::new(x, y, z), item)
     }
 
     /// Drops an item from a block face with directional velocity.
@@ -2001,9 +2055,9 @@ impl World {
         };
 
         self.spawn_item_with_velocity(
-            Vector3::new(x, y, z),
+            DVec3::new(x, y, z),
             item,
-            Vector3::new(delta_x, delta_y, delta_z),
+            DVec3::new(delta_x, delta_y, delta_z),
         )
     }
 
@@ -2038,14 +2092,14 @@ impl World {
         // Remove Arc from old chunk
         let entity = self
             .chunk_map
-            .with_full_chunk(&from, |chunk| {
+            .with_full_chunk(from, |chunk| {
                 chunk.as_full().and_then(|c| c.entities.remove(entity_id))
             })
             .flatten();
 
         // Add Arc to new chunk
         if let Some(entity) = entity {
-            self.chunk_map.with_full_chunk(&to, |chunk| {
+            self.chunk_map.with_full_chunk(to, |chunk| {
                 if let Some(c) = chunk.as_full() {
                     c.entities.add(entity);
                 }
@@ -2065,7 +2119,7 @@ impl World {
         // Remove from chunk storage
         let entity: Option<SharedEntity> = self
             .chunk_map
-            .with_full_chunk(&chunk_pos, |chunk| {
+            .with_full_chunk(chunk_pos, |chunk| {
                 chunk.as_full().and_then(|c| c.entities.remove(entity_id))
             })
             .flatten();

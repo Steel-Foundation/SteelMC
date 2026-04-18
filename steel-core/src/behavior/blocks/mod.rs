@@ -21,5 +21,5 @@ pub use decoration::{
 };
 pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
 pub use fluid::LiquidBlock;
-pub use portal::EndPortalFrameBlock;
+pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};

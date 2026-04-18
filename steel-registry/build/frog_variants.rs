@@ -70,11 +70,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/frog_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/frog_variant/");
 
-    let frog_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/frog_variant";
+    let frog_variant_dir = "build_assets/builtin_datapacks/minecraft/frog_variant";
     let mut frog_variants = Vec::new();
 
     // Read all frog variant JSON files
@@ -119,7 +117,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #frog_variant_ident: &FrogVariant = &FrogVariant {
+            pub static #frog_variant_ident: FrogVariant = FrogVariant {
                 key: #key,
                 asset_id: #asset_id,
                 spawn_conditions: &[#(#spawn_conditions),*],
@@ -127,7 +125,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#frog_variant_ident);
+            registry.register(&#frog_variant_ident);
         });
     }
 

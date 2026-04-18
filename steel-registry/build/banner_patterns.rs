@@ -19,12 +19,9 @@ fn generate_identifier(resource: &Identifier) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/banner_pattern/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/banner_pattern/");
 
-    let banner_pattern_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/banner_pattern";
+    let banner_pattern_dir = "build_assets/builtin_datapacks/minecraft/banner_pattern";
     let mut banner_patterns = Vec::new();
 
     // Read all banner pattern JSON files
@@ -64,14 +61,14 @@ pub(crate) fn build() -> TokenStream {
         let translation_key = banner_pattern.translation_key.as_str();
 
         stream.extend(quote! {
-            pub static #banner_pattern_ident: &BannerPattern = &BannerPattern {
+            pub static #banner_pattern_ident: BannerPattern = BannerPattern {
                 key: #key,
                 asset_id: #asset_id,
                 translation_key: #translation_key,
             };
         });
         register_stream.extend(quote! {
-            registry.register(#banner_pattern_ident);
+            registry.register(&#banner_pattern_ident);
         });
     }
 

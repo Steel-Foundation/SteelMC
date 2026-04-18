@@ -46,7 +46,7 @@
     },
     {
       "name": "podzol",
-      "class": "SnowyDirtBlock"
+      "class": "SnowyBlock"
     },
     {
       "name": "cobblestone",
@@ -709,6 +709,10 @@
       "class": "FlowerBlock"
     },
     {
+      "name": "golden_dandelion",
+      "class": "FlowerBlock"
+    },
+    {
       "name": "torchflower",
       "class": "FlowerBlock"
     },
@@ -864,14 +868,14 @@
       "ignite_odds_n": 512,
       "ignite_odds_max_fill": 384,
       "ignite_odds_min_n": 32,
-      "ignite_odds_size": 206,
+      "ignite_odds_size": 207,
       "ignite_odds_f": 0.75,
       "burn_odds_mask": 511,
       "burn_odds_contains_null_key": false,
       "burn_odds_n": 512,
       "burn_odds_max_fill": 384,
       "burn_odds_min_n": 32,
-      "burn_odds_size": 206,
+      "burn_odds_size": 207,
       "burn_odds_f": 0.75,
       "registry_key": "fire",
       "fire_damage": 1.0
@@ -931,7 +935,7 @@
     },
     {
       "name": "farmland",
-      "class": "FarmBlock"
+      "class": "FarmlandBlock"
     },
     {
       "name": "furnace",
@@ -2084,7 +2088,7 @@
     },
     {
       "name": "lily_pad",
-      "class": "WaterlilyBlock"
+      "class": "LilyPadBlock"
     },
     {
       "name": "resin_block",
@@ -2138,25 +2142,21 @@
     },
     {
       "name": "cauldron",
-      "class": "CauldronBlock",
-      "interactions_name": "empty"
+      "class": "CauldronBlock"
     },
     {
       "name": "water_cauldron",
       "class": "LayeredCauldronBlock",
-      "precipitation_type": "rain",
-      "interactions_name": "water"
+      "precipitation_type": "rain"
     },
     {
       "name": "lava_cauldron",
-      "class": "LavaCauldronBlock",
-      "interactions_name": "lava"
+      "class": "LavaCauldronBlock"
     },
     {
       "name": "powder_snow_cauldron",
       "class": "LayeredCauldronBlock",
-      "precipitation_type": "snow",
-      "interactions_name": "powder_snow"
+      "precipitation_type": "snow"
     },
     {
       "name": "end_portal",
@@ -2312,6 +2312,11 @@
       "name": "potted_dandelion",
       "class": "FlowerPotBlock",
       "potted": "dandelion"
+    },
+    {
+      "name": "potted_golden_dandelion",
+      "class": "FlowerPotBlock",
+      "potted": "golden_dandelion"
     },
     {
       "name": "potted_poppy",
@@ -4604,7 +4609,7 @@
     },
     {
       "name": "warped_fungus",
-      "class": "FungusBlock",
+      "class": "NetherFungusBlock",
       "required_block": "warped_nylium"
     },
     {
@@ -4613,7 +4618,7 @@
     },
     {
       "name": "warped_roots",
-      "class": "RootsBlock"
+      "class": "NetherRootsBlock"
     },
     {
       "name": "nether_sprouts",
@@ -4641,7 +4646,7 @@
     },
     {
       "name": "crimson_fungus",
-      "class": "FungusBlock",
+      "class": "NetherFungusBlock",
       "required_block": "crimson_nylium"
     },
     {
@@ -4676,7 +4681,7 @@
     },
     {
       "name": "crimson_roots",
-      "class": "RootsBlock"
+      "class": "NetherRootsBlock"
     },
     {
       "name": "crimson_planks",
@@ -7467,6 +7472,11 @@
       "name": "dandelion",
       "class": "BlockItem",
       "block": "dandelion"
+    },
+    {
+      "name": "golden_dandelion",
+      "class": "BlockItem",
+      "block": "golden_dandelion"
     },
     {
       "name": "open_eyeblossom",
@@ -11888,83 +11898,67 @@
     },
     {
       "name": "white_dye",
-      "class": "DyeItem",
-      "dye_color": "white"
+      "class": "DyeItem"
     },
     {
       "name": "orange_dye",
-      "class": "DyeItem",
-      "dye_color": "orange"
+      "class": "DyeItem"
     },
     {
       "name": "magenta_dye",
-      "class": "DyeItem",
-      "dye_color": "magenta"
+      "class": "DyeItem"
     },
     {
       "name": "light_blue_dye",
-      "class": "DyeItem",
-      "dye_color": "light_blue"
+      "class": "DyeItem"
     },
     {
       "name": "yellow_dye",
-      "class": "DyeItem",
-      "dye_color": "yellow"
+      "class": "DyeItem"
     },
     {
       "name": "lime_dye",
-      "class": "DyeItem",
-      "dye_color": "lime"
+      "class": "DyeItem"
     },
     {
       "name": "pink_dye",
-      "class": "DyeItem",
-      "dye_color": "pink"
+      "class": "DyeItem"
     },
     {
       "name": "gray_dye",
-      "class": "DyeItem",
-      "dye_color": "gray"
+      "class": "DyeItem"
     },
     {
       "name": "light_gray_dye",
-      "class": "DyeItem",
-      "dye_color": "light_gray"
+      "class": "DyeItem"
     },
     {
       "name": "cyan_dye",
-      "class": "DyeItem",
-      "dye_color": "cyan"
+      "class": "DyeItem"
     },
     {
       "name": "purple_dye",
-      "class": "DyeItem",
-      "dye_color": "purple"
+      "class": "DyeItem"
     },
     {
       "name": "blue_dye",
-      "class": "DyeItem",
-      "dye_color": "blue"
+      "class": "DyeItem"
     },
     {
       "name": "brown_dye",
-      "class": "DyeItem",
-      "dye_color": "brown"
+      "class": "DyeItem"
     },
     {
       "name": "green_dye",
-      "class": "DyeItem",
-      "dye_color": "green"
+      "class": "DyeItem"
     },
     {
       "name": "red_dye",
-      "class": "DyeItem",
-      "dye_color": "red"
+      "class": "DyeItem"
     },
     {
       "name": "black_dye",
-      "class": "DyeItem",
-      "dye_color": "black"
+      "class": "DyeItem"
     },
     {
       "name": "bone_meal",

@@ -5,7 +5,7 @@ use std::{
 
 use quote::quote;
 
-use crate::items::to_block_const;
+use crate::to_block_ident;
 
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/weathering.json");
@@ -18,15 +18,15 @@ pub fn build() -> String {
     // Build the forward map: current -> next
     let oxidizables: Vec<proc_macro2::TokenStream> = oxidizables_raw
         .iter()
-        .map(|(current, next)| (to_block_const(current), to_block_const(next)))
-        .map(|(from, to)| quote! { b if b == vanilla_blocks::#from => Some(vanilla_blocks::#to) , })
+        .map(|(current, next)| (to_block_ident(current), to_block_ident(next)))
+        .map(|(from, to)| quote! { b if b == &vanilla_blocks::#from => Some(&vanilla_blocks::#to) , })
         .collect();
 
     // Build the reverse map: next -> current
     let oxidizables_reverse: Vec<proc_macro2::TokenStream> = oxidizables_raw
         .iter()
-        .map(|(current, next)| (to_block_const(current), to_block_const(next)))
-        .map(|(from, to)| quote! { b if b == vanilla_blocks::#to => Some(vanilla_blocks::#from) , })
+        .map(|(current, next)| (to_block_ident(current), to_block_ident(next)))
+        .map(|(from, to)| quote! { b if b == &vanilla_blocks::#to => Some(&vanilla_blocks::#from) , })
         .collect();
 
     // Derive WeatherState for every block by walking chains.
@@ -43,10 +43,10 @@ pub fn build() -> String {
         let stages = ["Unaffected", "Exposed", "Weathered"];
 
         for stage_name in &stages {
-            let block_ident = to_block_const(current);
+            let block_ident = to_block_ident(current);
             let state_ident = proc_macro2::Ident::new(stage_name, proc_macro2::Span::call_site());
             weather_state_arms.push(
-                quote! { b if b == vanilla_blocks::#block_ident => Some(WeatherState::#state_ident) , },
+                quote! { b if b == &vanilla_blocks::#block_ident => Some(WeatherState::#state_ident) , },
             );
 
             let Some(next) = oxidizables_raw.get(current) else {
@@ -56,13 +56,13 @@ pub fn build() -> String {
         }
 
         // The final block in the chain is Oxidized
-        let block_ident = to_block_const(current);
+        let block_ident = to_block_ident(current);
         weather_state_arms.push(
-            quote! { b if b == vanilla_blocks::#block_ident => Some(WeatherState::Oxidized) , },
+            quote! { b if b == &vanilla_blocks::#block_ident => Some(WeatherState::Oxidized) , },
         );
     }
 
-    let output = quote! {
+    let output: proc_macro2::TokenStream = quote! {
         use steel_registry::{blocks::BlockRef, vanilla_blocks};
         use crate::behavior::blocks::WeatherState;
 

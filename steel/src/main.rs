@@ -1,6 +1,8 @@
 //! Main entry point for the Steel Minecraft server.
 
+use std::num::NonZero;
 use std::sync::Arc;
+use std::thread;
 
 use steel::logger::CommandLogger;
 use steel::spawn_progress::generate_spawn_chunks;
@@ -97,14 +99,31 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// If we only used one runtime this would lead to the tick task being blocked by the chunk tasks.
 ///
 /// We have to create the runtimes at this level cause tokio panics if you drop a runtime in a context where blocking is not allowed.
-#[allow(clippy::unwrap_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "runtime build failures are fatal and unrecoverable at startup"
+)]
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    let chunk_runtime = Arc::new(Builder::new_multi_thread().enable_all().build().unwrap());
+    let half_cpus = (thread::available_parallelism().map_or(4, NonZero::get) / 2).max(2);
 
-    let main_runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    let chunk_runtime = Arc::new(
+        Builder::new_multi_thread()
+            .worker_threads(half_cpus)
+            .thread_name("chunk-worker")
+            .enable_all()
+            .build()
+            .unwrap(),
+    );
+
+    let main_runtime = Builder::new_multi_thread()
+        .worker_threads(half_cpus)
+        .thread_name("main-worker")
+        .enable_all()
+        .build()
+        .unwrap();
 
     main_runtime.block_on(main_async(chunk_runtime.clone()));
 

@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct ChickenVariantJson {
     asset_id: Identifier,
+    baby_asset_id: Identifier,
     #[serde(default)]
     model: String,
     spawn_conditions: Vec<SpawnConditionEntry>,
@@ -79,12 +80,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/chicken_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/chicken_variant/");
 
-    let chicken_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/chicken_variant";
+    let chicken_variant_dir = "build_assets/builtin_datapacks/minecraft/chicken_variant";
     let mut chicken_variants = Vec::new();
 
     // Read all chicken variant JSON files
@@ -123,6 +121,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#chicken_variant_name_str) };
         let asset_id = generate_identifier(&chicken_variant.asset_id);
+        let baby_asset_id = generate_identifier(&chicken_variant.baby_asset_id);
         let model = generate_chicken_model_type(&chicken_variant.model);
 
         let spawn_conditions: Vec<_> = chicken_variant
@@ -132,15 +131,16 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #chicken_variant_ident: &ChickenVariant = &ChickenVariant {
+            pub static #chicken_variant_ident: ChickenVariant = ChickenVariant {
                 key: #key,
                 asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
                 model: #model,
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
         register_stream.extend(quote! {
-            registry.register(#chicken_variant_ident);
+            registry.register(&#chicken_variant_ident);
         });
     }
 

@@ -1,4 +1,3 @@
-#![allow(missing_docs)]
 use std::io::{Cursor, Error, Read, Result};
 
 use crate::serial::{PrefixedRead, ReadFrom};
@@ -18,7 +17,7 @@ impl PrefixedRead for String {
 
         let mut buf = vec![0; len];
         data.read_exact(&mut buf)?;
-        Ok(unsafe { String::from_utf8_unchecked(buf) })
+        String::from_utf8(buf).map_err(Error::other)
     }
 }
 

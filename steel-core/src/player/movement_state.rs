@@ -1,23 +1,23 @@
 //! Movement tracking state for position validation, broadcast delta detection,
 //! and anti-cheat rate limiting.
 
-use steel_utils::math::Vector3;
+use glam::DVec3;
 
 /// Internal movement tracking state, stored behind a single `SyncMutex` on `Player`.
 pub struct MovementState {
     /// The previous position for delta movement calculations.
-    pub prev_position: Vector3<f64>,
+    pub prev_position: DVec3,
     /// The previous rotation for movement broadcasts.
     pub prev_rotation: (f32, f32),
 
     /// Player's current velocity (delta movement per tick).
-    pub delta_movement: Vector3<f64>,
+    pub delta_movement: DVec3,
 
     /// Last known good position (for collision rollback).
-    pub last_good_position: Vector3<f64>,
+    pub last_good_position: DVec3,
     /// Position at start of tick (for speed validation).
     /// Matches vanilla `firstGoodX/Y/Z`.
-    pub first_good_position: Vector3<f64>,
+    pub first_good_position: DVec3,
 
     /// Number of move packets received since connection started.
     pub received_move_packet_count: i32,
@@ -38,11 +38,11 @@ impl MovementState {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            prev_position: Vector3::new(0.0, 0.0, 0.0),
+            prev_position: DVec3::new(0.0, 0.0, 0.0),
             prev_rotation: (0.0, 0.0),
-            delta_movement: Vector3::new(0.0, 0.0, 0.0),
-            last_good_position: Vector3::new(0.0, 0.0, 0.0),
-            first_good_position: Vector3::new(0.0, 0.0, 0.0),
+            delta_movement: DVec3::new(0.0, 0.0, 0.0),
+            last_good_position: DVec3::new(0.0, 0.0, 0.0),
+            first_good_position: DVec3::new(0.0, 0.0, 0.0),
             received_move_packet_count: 0,
             known_move_packet_count: 0,
             last_impulse_tick: 0,

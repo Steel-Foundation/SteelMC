@@ -12,6 +12,8 @@ use crate::command::sender::CommandSender;
 use crate::player::Player;
 use text_components::TextComponent;
 
+const MAX_FLY_SPEED: f32 = 30f32;
+
 /// Handler for the "flyspeed" command.
 #[must_use]
 pub fn command_handler() -> impl CommandHandlerDyn {
@@ -54,7 +56,11 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                         },
                     )
                     .then(
-                        argument("speed", FloatArgument::bounded(Some(0.0), Some(10.0))).executes(
+                        argument(
+                            "speed",
+                            FloatArgument::bounded(Some(0.0), Some(MAX_FLY_SPEED)),
+                        )
+                        .executes(
                             |(((), targets), speed): (((), Vec<Arc<Player>>), f32),
                              ctx: &mut CommandContext| {
                                 set_flying_speed(&targets, speed, &ctx.sender);
@@ -78,16 +84,18 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                 Ok(())
             })
             .then(
-                argument("speed", FloatArgument::bounded(Some(0.0), Some(10.0))).executes(
-                    |((), speed): ((), f32), ctx: &mut CommandContext| {
-                        let player = ctx
-                            .sender
-                            .get_player()
-                            .ok_or(CommandError::InvalidRequirement)?;
-                        set_flying_speed(slice::from_ref(player), speed, &ctx.sender);
-                        Ok(())
-                    },
-                ),
+                argument(
+                    "speed",
+                    FloatArgument::bounded(Some(0.0), Some(MAX_FLY_SPEED)),
+                )
+                .executes(|((), speed): ((), f32), ctx: &mut CommandContext| {
+                    let player = ctx
+                        .sender
+                        .get_player()
+                        .ok_or(CommandError::InvalidRequirement)?;
+                    set_flying_speed(slice::from_ref(player), speed, &ctx.sender);
+                    Ok(())
+                }),
             ),
     )
 }

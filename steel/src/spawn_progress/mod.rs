@@ -14,7 +14,6 @@ use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use tokio::time::sleep;
 
 use steel_core::chunk::chunk_access::ChunkStatus;
-use steel_core::chunk::chunk_status_tasks::stage_timings;
 use steel_core::chunk::chunk_ticket_manager::MAX_VIEW_DISTANCE;
 use steel_core::server::Server;
 use steel_core::world::World;
@@ -66,7 +65,7 @@ const TOTAL_SPAWN_CHUNKS: usize = ((SPAWN_RADIUS * 2 + 1) * (SPAWN_RADIUS * 2 + 
 /// Set `PREGEN_RADIUS` environment variable to generate a larger area.
 pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
-    #[allow(unused)] logger: &Arc<CommandLogger>,
+    logger: &Arc<CommandLogger>,
 ) {
     let overworld = server.overworld();
     let pregen_radius = get_pregen_radius();
@@ -100,7 +99,14 @@ async fn pregen_overworld(
     world: &Arc<World>,
     center_chunk: ChunkPos,
     pregen_radius: i32,
-    #[allow(unused)] logger: &Arc<CommandLogger>,
+    #[cfg_attr(
+        not(feature = "spawn_chunk_display"),
+        expect(
+            unused_variables,
+            reason = "logger only used with `spawn_chunk_display` feature enabled"
+        )
+    )]
+    logger: &Arc<CommandLogger>,
 ) {
     let total_chunks = ((pregen_radius * 2 + 1) * (pregen_radius * 2 + 1)) as usize;
 
@@ -157,7 +163,6 @@ async fn pregen_overworld(
         elapsed.as_secs_f64(),
         total_chunks as f64 / elapsed.as_secs_f64(),
     );
-    log_stage_report("overworld", elapsed.as_secs_f64());
 }
 
 /// Temporary: generates the same chunk area for a secondary dimension so
@@ -201,36 +206,6 @@ async fn pregen_extra_dimension(
         elapsed.as_secs_f64(),
         total_chunks as f64 / elapsed.as_secs_f64(),
     );
-    log_stage_report(name, elapsed.as_secs_f64());
-}
-
-/// Prints a per-stage breakdown of the time spent in each `ChunkStatusTasks`
-/// function since the counters were last read, then resets them.
-fn log_stage_report(dim: &str, total_s: f64) {
-    let stages = stage_timings::take_all();
-    let total_ns: u64 = stages.iter().map(|(_, n, _)| n).sum();
-    log::info!("--- {dim} stage timings (wall-clock parallel sum) ---");
-    log::info!(
-        "{:>10} {:>10} {:>14} {:>10}",
-        "stage", "calls", "total_ms", "% of sum"
-    );
-    for (name, ns, count) in &stages {
-        if *count == 0 {
-            continue;
-        }
-        let ms = (*ns as f64) / 1.0e6;
-        let pct = if total_ns > 0 {
-            (*ns as f64 / total_ns as f64) * 100.0
-        } else {
-            0.0
-        };
-        log::info!("{name:>10} {count:>10} {ms:>14.1} {pct:>9.1}%");
-    }
-    let sum_ms = (total_ns as f64) / 1.0e6;
-    log::info!(
-        "  sum (CPU-ms across workers): {sum_ms:.1}ms vs wall {:.1}ms",
-        total_s * 1000.0
-    );
 }
 
 fn build_ticket_positions(center_chunk: ChunkPos, pregen_radius: i32) -> Vec<ChunkPos> {
@@ -259,12 +234,11 @@ async fn generate_with_display(
 
     let _ = logger.activate_spawn_display().await;
     let start = Instant::now();
-    let mut tick_count: u64 = 1;
     let mut grid = [[None; DISPLAY_DIAMETER]; DISPLAY_DIAMETER];
     let mut last_render = Instant::now();
 
     loop {
-        world.chunk_map.tick_b(world, tick_count, 0, false);
+        world.chunk_map.tick_scheduling();
 
         let mut completed = 0;
         let mut pending_dependencies = false;
@@ -303,7 +277,6 @@ async fn generate_with_display(
         }
 
         sleep(Duration::from_millis(10)).await;
-        tick_count += 1;
     }
 
     let elapsed = start.elapsed();
@@ -321,13 +294,12 @@ async fn generate_with_display(
 /// Generates chunks with progress reporting for pregeneration.
 async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32) {
     let total_chunks = ((radius * 2 + 1) * (radius * 2 + 1)) as usize;
-    let mut tick_count: u64 = 1;
     let mut last_report = Instant::now();
     let mut last_completed = 0usize;
     let start = Instant::now();
 
     loop {
-        world.chunk_map.tick_b(world, tick_count, 0, false);
+        world.chunk_map.tick_scheduling();
 
         // Count completed chunks
         let completed = count_full_chunks(world, center_chunk, radius);
@@ -358,7 +330,6 @@ async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32
         }
 
         sleep(Duration::from_millis(10)).await;
-        tick_count += 1;
     }
 }
 

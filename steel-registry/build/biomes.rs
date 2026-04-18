@@ -225,7 +225,7 @@ struct BackgroundMusicEntry {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 struct BackgroundMusic {
     #[serde(default)]
     default: Option<BackgroundMusicEntry>,
@@ -520,11 +520,9 @@ fn generate_biome_effects(effects: &BiomeEffects) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/biome/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/biome/");
 
-    let biome_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/biome";
+    let biome_dir = "build_assets/builtin_datapacks/minecraft/worldgen/biome";
     let mut biomes = Vec::new();
 
     // Read all biome JSON files
@@ -555,7 +553,7 @@ pub(crate) fn build() -> TokenStream {
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
-        use std::sync::LazyLock;
+        use std::sync::{LazyLock, OnceLock};
         use rustc_hash::FxHashMap;
     });
 
@@ -593,11 +591,12 @@ pub(crate) fn build() -> TokenStream {
                 spawn_costs: #spawn_costs,
                 carvers: #carvers,
                 features: #features,
+                id: OnceLock::new(),
             });
         });
         let biome_ident = Ident::new(&biome_name.to_shouty_snake_case(), Span::call_site());
         register_stream.extend(quote! {
-            registry.register(&#biome_ident, #biome_ident.key.clone());
+            registry.register(&#biome_ident);
         });
     }
 

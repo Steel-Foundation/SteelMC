@@ -33,11 +33,9 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/jukebox_song/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/jukebox_song/");
 
-    let jukebox_song_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/jukebox_song";
+    let jukebox_song_dir = "build_assets/builtin_datapacks/minecraft/jukebox_song";
     let mut jukebox_songs = Vec::new();
 
     // Read all jukebox song JSON files
@@ -87,7 +85,7 @@ pub(crate) fn build() -> TokenStream {
         let comparator_output = jukebox_song.comparator_output;
 
         stream.extend(quote! {
-            pub static #jukebox_song_ident: &JukeboxSong = &JukeboxSong {
+            pub static #jukebox_song_ident: JukeboxSong = JukeboxSong {
                 key: #key,
                 sound_event: #sound_event,
                 description: #description,
@@ -97,7 +95,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         register_stream.extend(quote! {
-            registry.register(#jukebox_song_ident);
+            registry.register(&#jukebox_song_ident);
         });
     }
 

@@ -94,7 +94,7 @@ struct TagJson {
 /// Loads all biome tags from the worldgen/biome tags directory,
 /// then recursively resolves tag references to flat biome lists.
 fn load_biome_tags() -> HashMap<String, Vec<String>> {
-    let tag_base = "build_assets/builtin_datapacks/minecraft/data/minecraft/tags/worldgen/biome";
+    let tag_base = "build_assets/builtin_datapacks/minecraft/tags/worldgen/biome";
 
     // First pass: load raw tag definitions (may contain #tag references)
     let mut raw_tags: HashMap<String, Vec<String>> = HashMap::new();
@@ -278,7 +278,7 @@ fn load_structure_data(
     biome_tags: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, StructureData> {
     let structure_dir =
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/structure";
+        "build_assets/builtin_datapacks/minecraft/worldgen/structure";
     let mut result = HashMap::new();
 
     for entry in fs::read_dir(structure_dir).unwrap() {
@@ -409,20 +409,20 @@ fn generate_identifier(id: &str) -> TokenStream {
 
 pub(crate) fn build() -> TokenStream {
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/structure_set/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure_set/"
     );
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/structure/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure/"
     );
     println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/tags/worldgen/biome/"
+        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
     );
 
     // Load and resolve biome tags, then get per-structure data
     let biome_tags = load_biome_tags();
     let structure_data = load_structure_data(&biome_tags);
 
-    let set_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/structure_set";
+    let set_dir = "build_assets/builtin_datapacks/minecraft/worldgen/structure_set";
     let mut sets = Vec::new();
 
     for entry in fs::read_dir(set_dir).unwrap() {

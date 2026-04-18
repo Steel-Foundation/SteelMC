@@ -1,7 +1,7 @@
 //! Damage source system.
 
+use glam::DVec3;
 use steel_registry::damage_type::{DamageScaling, DamageType};
-use steel_utils::math::Vector3;
 
 /// Describes how an entity was damaged.
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub struct DamageSource {
     /// The entity that directly dealt the damage (e.g. the projectile itself).
     pub direct_entity_id: Option<i32>,
     /// Source position (for explosions, etc.).
-    pub source_position: Option<Vector3<f64>>,
+    pub source_position: Option<DVec3>,
 }
 
 impl DamageSource {
@@ -39,6 +39,7 @@ impl DamageSource {
     /// No vanilla damage types currently use this, but the logic exists in
     /// `LivingEntity.hurtServer()`.
     /// TODO: use damage type tag query once supported
+    #[expect(clippy::unused_self, reason = "this is an api function")]
     #[must_use]
     pub const fn bypasses_cooldown(&self) -> bool {
         false

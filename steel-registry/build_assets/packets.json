@@ -1,5 +1,5 @@
 {
-  "version": 774,
+  "version": 775,
   "serverbound": {
     "handshake": [
       "intention"
@@ -29,6 +29,7 @@
     ],
     "play": [
       "accept_teleportation",
+      "attack",
       "block_entity_tag_query",
       "bundle_item_selected",
       "change_difficulty",
@@ -84,10 +85,12 @@
       "set_command_block",
       "set_command_minecart",
       "set_creative_mode_slot",
+      "set_game_rule",
       "set_jigsaw_block",
       "set_structure_block",
       "set_test_block",
       "sign_update",
+      "spectate_entity",
       "swing",
       "teleport_to_entity",
       "test_instance_block_action",
@@ -171,6 +174,7 @@
       "explode",
       "forget_level_chunk",
       "game_event",
+      "game_rule_values",
       "game_test_highlight_pos",
       "mount_screen_open",
       "hurt_animation",
@@ -181,6 +185,7 @@
       "level_particles",
       "light_update",
       "login",
+      "low_disk_space_warning",
       "map_item_data",
       "merchant_offers",
       "move_entity_pos",

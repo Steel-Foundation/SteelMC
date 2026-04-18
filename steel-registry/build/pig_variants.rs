@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct PigVariantJson {
     asset_id: Identifier,
+    baby_asset_id: Identifier,
     #[serde(default)]
     model: String,
     spawn_conditions: Vec<SpawnConditionEntry>,
@@ -79,11 +80,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/pig_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/pig_variant/");
 
-    let pig_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/pig_variant";
+    let pig_variant_dir = "build_assets/builtin_datapacks/minecraft/pig_variant";
     let mut pig_variants = Vec::new();
 
     // Read all pig variant JSON files
@@ -120,6 +119,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#pig_variant_name_str) };
         let asset_id = generate_identifier(&pig_variant.asset_id);
+        let baby_asset_id = generate_identifier(&pig_variant.baby_asset_id);
         let model = generate_pig_model_type(&pig_variant.model);
 
         let spawn_conditions: Vec<_> = pig_variant
@@ -129,16 +129,17 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #pig_variant_ident: &PigVariant = &PigVariant {
+            pub static #pig_variant_ident: PigVariant = PigVariant {
                 key: #key,
                 asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
                 model: #model,
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
 
         register_stream.extend(quote! {
-            registry.register(#pig_variant_ident);
+            registry.register(&#pig_variant_ident);
         });
     }
 

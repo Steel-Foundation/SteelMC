@@ -16,7 +16,7 @@ pub enum MobCategory {
 
 /// Entity dimensions used for bounding box calculation.
 /// Bounding box is centered on X/Z with Y at entity feet.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityDimensions {
     pub width: f32,
     pub height: f32,
@@ -52,7 +52,7 @@ impl EntityDimensions {
 }
 
 /// Behavioral flags for entity collision and interaction.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityFlags {
     pub is_pushable: bool,
     pub is_attackable: bool,
@@ -91,9 +91,20 @@ pub struct EntityType {
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,
+
+    /// Default attribute base values for this entity type
+    /// Empty for entities that don't have attributes (projectiles, items, displays, etc.)
+    pub default_attributes: &'static [(&'static str, f64)],
 }
 
 pub type EntityTypeRef = &'static EntityType;
+
+impl PartialEq for EntityTypeRef {
+    #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(*self, *other)
+    }
+}
 
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
@@ -129,17 +140,6 @@ impl EntityTypeRegistry {
         let idx = self.types_by_id.len();
         self.types_by_key.insert(entity_type.key.clone(), idx);
         self.types_by_id.push(entity_type);
-    }
-
-    /// Replaces a entity_type at a given index.
-    /// Returns true if the entity_type was replaced and false if the entity_type wasn't replaced
-    #[must_use]
-    pub fn replace(&mut self, entity_type: EntityTypeRef, id: usize) -> bool {
-        if id >= self.types_by_id.len() {
-            return false;
-        }
-        self.types_by_id[id] = entity_type;
-        true
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, EntityTypeRef)> + '_ {

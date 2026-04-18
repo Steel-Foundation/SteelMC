@@ -34,12 +34,15 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 # Concurrency
+arc-swap.workspace = true
 crossbeam.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true
 scc.workspace = true
 
 # Data structures
+bitflags.workspace = true
+glam.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
 small-map.workspace = true

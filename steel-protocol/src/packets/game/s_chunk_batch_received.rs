@@ -1,5 +1,5 @@
 use steel_macros::{ReadFrom, ServerPacket};
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 use steel_registry::packets::play::S_CHUNK_BATCH_RECEIVED;
 
 #[derive(ServerPacket, ReadFrom)]

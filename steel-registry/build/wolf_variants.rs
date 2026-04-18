@@ -9,6 +9,7 @@ use steel_utils::Identifier;
 #[derive(Deserialize, Debug)]
 pub struct WolfVariantJson {
     assets: WolfAssetInfo,
+    pub baby_assets: WolfAssetInfo,
     spawn_conditions: Vec<SpawnConditionEntry>,
 }
 
@@ -77,11 +78,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/data/minecraft/wolf_variant/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/wolf_variant/");
 
-    let wolf_variant_dir = "build_assets/builtin_datapacks/minecraft/data/minecraft/wolf_variant";
+    let wolf_variant_dir = "build_assets/builtin_datapacks/minecraft/wolf_variant";
     let mut wolf_variants = Vec::new();
 
     // Read all wolf variant JSON files
@@ -120,6 +119,9 @@ pub(crate) fn build() -> TokenStream {
         let wild = generate_identifier(&wolf_variant.assets.wild);
         let tame = generate_identifier(&wolf_variant.assets.tame);
         let angry = generate_identifier(&wolf_variant.assets.angry);
+        let baby_wild = generate_identifier(&wolf_variant.baby_assets.wild);
+        let baby_tame = generate_identifier(&wolf_variant.baby_assets.tame);
+        let baby_angry = generate_identifier(&wolf_variant.baby_assets.angry);
 
         let spawn_conditions: Vec<_> = wolf_variant
             .spawn_conditions
@@ -128,19 +130,24 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         stream.extend(quote! {
-            pub static #wolf_variant_ident: &WolfVariant = &WolfVariant {
+            pub static #wolf_variant_ident: WolfVariant = WolfVariant {
                 key: #key,
                 assets: WolfAssetInfo {
                     wild: #wild,
                     tame: #tame,
                     angry: #angry,
                 },
+                baby_assets: WolfAssetInfo {
+                    wild: #baby_wild,
+                    tame: #baby_tame,
+                    angry: #baby_angry,
+                },
                 spawn_conditions: &[#(#spawn_conditions),*],
             };
         });
 
         register_stream.extend(quote! {
-            registry.register(#wolf_variant_ident);
+            registry.register(&#wolf_variant_ident);
         });
     }
 
