@@ -14,6 +14,7 @@ use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use tokio::time::sleep;
 
 use steel_core::chunk::chunk_access::ChunkStatus;
+use steel_core::chunk::chunk_status_tasks::stage_timings;
 use steel_core::chunk::chunk_ticket_manager::MAX_VIEW_DISTANCE;
 use steel_core::server::Server;
 use steel_core::world::World;
@@ -67,20 +68,40 @@ pub async fn generate_spawn_chunks(
     server: &Arc<Server>,
     #[allow(unused)] logger: &Arc<CommandLogger>,
 ) {
-    let world = &server.overworld();
+    let overworld = server.overworld();
     let pregen_radius = get_pregen_radius();
 
     // For large pregeneration, use center at 0,0; otherwise use spawn position
     let center_chunk = if pregen_radius > SPAWN_RADIUS {
         ChunkPos::new(0, 0)
     } else {
-        let spawn_pos = world.level_data.read().data().spawn_pos();
+        let spawn_pos = overworld.level_data.read().data().spawn_pos();
         ChunkPos::new(
             SectionPos::block_to_section_coord(spawn_pos.0.x),
             SectionPos::block_to_section_coord(spawn_pos.0.z),
         )
     };
 
+    // Overworld: supports the interactive display path when the spawn radius is small.
+    pregen_overworld(overworld, center_chunk, pregen_radius, logger).await;
+
+    // TODO: remove — temporary nether/end pregen for worldgen comparison.
+    if pregen_radius > SPAWN_RADIUS {
+        if let Some(nether) = server.nether() {
+            pregen_extra_dimension("nether", nether, center_chunk, pregen_radius).await;
+        }
+        if let Some(end) = server.the_end() {
+            pregen_extra_dimension("end", end, center_chunk, pregen_radius).await;
+        }
+    }
+}
+
+async fn pregen_overworld(
+    world: &Arc<World>,
+    center_chunk: ChunkPos,
+    pregen_radius: i32,
+    #[allow(unused)] logger: &Arc<CommandLogger>,
+) {
     let total_chunks = ((pregen_radius * 2 + 1) * (pregen_radius * 2 + 1)) as usize;
 
     log::info!(
@@ -91,21 +112,8 @@ pub async fn generate_spawn_chunks(
         center_chunk.0.y,
     );
 
-    // For large pregeneration, add tickets for every chunk
-    // Ticket level MAX_VIEW_DISTANCE - 3 ensures chunks within 3 of each ticket reach Full
     let ticket_level = MAX_VIEW_DISTANCE - 3;
-    let ticket_positions: Vec<ChunkPos> = if pregen_radius > SPAWN_RADIUS {
-        // Add tickets for all chunks in the pregeneration area
-        let mut positions = Vec::with_capacity(total_chunks);
-        for z in -pregen_radius..=pregen_radius {
-            for x in -pregen_radius..=pregen_radius {
-                positions.push(ChunkPos::new(center_chunk.0.x + x, center_chunk.0.y + z));
-            }
-        }
-        positions
-    } else {
-        vec![center_chunk]
-    };
+    let ticket_positions = build_ticket_positions(center_chunk, pregen_radius);
 
     {
         let mut tickets = world.chunk_map.chunk_tickets.lock();
@@ -136,7 +144,6 @@ pub async fn generate_spawn_chunks(
     #[cfg(feature = "slow_chunk_gen")]
     SLOW_CHUNK_GEN.store(false, Ordering::Relaxed);
 
-    // Remove tickets
     {
         let mut tickets = world.chunk_map.chunk_tickets.lock();
         for pos in &ticket_positions {
@@ -150,6 +157,95 @@ pub async fn generate_spawn_chunks(
         elapsed.as_secs_f64(),
         total_chunks as f64 / elapsed.as_secs_f64(),
     );
+    log_stage_report("overworld", elapsed.as_secs_f64());
+}
+
+/// Temporary: generates the same chunk area for a secondary dimension so
+/// the worldgen can be compared against vanilla.
+async fn pregen_extra_dimension(
+    name: &str,
+    world: &Arc<World>,
+    center_chunk: ChunkPos,
+    pregen_radius: i32,
+) {
+    let total_chunks = ((pregen_radius * 2 + 1) * (pregen_radius * 2 + 1)) as usize;
+
+    log::info!(
+        "Preparing {name} area: {total_chunks} chunks (radius {pregen_radius}) around chunk ({}, {})",
+        center_chunk.0.x, center_chunk.0.y,
+    );
+
+    let ticket_level = MAX_VIEW_DISTANCE - 3;
+    let ticket_positions = build_ticket_positions(center_chunk, pregen_radius);
+
+    {
+        let mut tickets = world.chunk_map.chunk_tickets.lock();
+        for pos in &ticket_positions {
+            tickets.add_ticket(*pos, ticket_level);
+        }
+    }
+
+    let start = Instant::now();
+    generate_pregen(world, center_chunk, pregen_radius).await;
+    let elapsed = start.elapsed();
+
+    {
+        let mut tickets = world.chunk_map.chunk_tickets.lock();
+        for pos in &ticket_positions {
+            tickets.remove_ticket(*pos, ticket_level);
+        }
+    }
+
+    log::info!(
+        "{name} area prepared: {total_chunks} chunks in {:.2}s ({:.1} chunks/s)",
+        elapsed.as_secs_f64(),
+        total_chunks as f64 / elapsed.as_secs_f64(),
+    );
+    log_stage_report(name, elapsed.as_secs_f64());
+}
+
+/// Prints a per-stage breakdown of the time spent in each `ChunkStatusTasks`
+/// function since the counters were last read, then resets them.
+fn log_stage_report(dim: &str, total_s: f64) {
+    let stages = stage_timings::take_all();
+    let total_ns: u64 = stages.iter().map(|(_, n, _)| n).sum();
+    log::info!("--- {dim} stage timings (wall-clock parallel sum) ---");
+    log::info!(
+        "{:>10} {:>10} {:>14} {:>10}",
+        "stage", "calls", "total_ms", "% of sum"
+    );
+    for (name, ns, count) in &stages {
+        if *count == 0 {
+            continue;
+        }
+        let ms = (*ns as f64) / 1.0e6;
+        let pct = if total_ns > 0 {
+            (*ns as f64 / total_ns as f64) * 100.0
+        } else {
+            0.0
+        };
+        log::info!("{name:>10} {count:>10} {ms:>14.1} {pct:>9.1}%");
+    }
+    let sum_ms = (total_ns as f64) / 1.0e6;
+    log::info!(
+        "  sum (CPU-ms across workers): {sum_ms:.1}ms vs wall {:.1}ms",
+        total_s * 1000.0
+    );
+}
+
+fn build_ticket_positions(center_chunk: ChunkPos, pregen_radius: i32) -> Vec<ChunkPos> {
+    if pregen_radius > SPAWN_RADIUS {
+        let total = ((pregen_radius * 2 + 1) * (pregen_radius * 2 + 1)) as usize;
+        let mut positions = Vec::with_capacity(total);
+        for z in -pregen_radius..=pregen_radius {
+            for x in -pregen_radius..=pregen_radius {
+                positions.push(ChunkPos::new(center_chunk.0.x + x, center_chunk.0.y + z));
+            }
+        }
+        positions
+    } else {
+        vec![center_chunk]
+    }
 }
 
 /// Returns the elapsed generation time (excluding the final display delay).

@@ -6,9 +6,17 @@
 //! Matches vanilla's DFS recursion: each child's `addChildren` is called
 //! immediately after creation, before processing the next sibling.
 
-use steel_utils::BoundingBox;
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::{BoundingBox, Identifier};
+
+use crate::chunk::aquifer::Aquifer;
+use crate::chunk::vanilla_generator::iterate_noise_column_with_aquifer;
+use crate::world::structure::placement::StructureSelectionEntry;
+use crate::world::structure::{
+    GenerationContext, GenerationStub, Structure, StructurePiece,
+};
 
 const MAX_DEPTH: i32 = 8;
 const MAX_DISTANCE: i32 = 80;
@@ -30,12 +38,30 @@ enum Dir {
     East,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum PieceType {
+/// Mineshaft piece kind — produced by the DFS and mapped back to vanilla's
+/// `StructurePieceType` registry IDs for save-format parity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PieceType {
+    /// Start room (one per mineshaft).
     Room,
+    /// Horizontal corridor segment.
     Corridor,
+    /// Corridor crossing (possibly two-floored).
     Crossing,
+    /// Stair segment.
     Stairs,
+}
+
+impl PieceType {
+    /// Vanilla save-format identifier (lowercased `MSRoom` → `msroom`, etc.).
+    pub const fn piece_id(self) -> &'static str {
+        match self {
+            Self::Room => "msroom",
+            Self::Corridor => "mscorridor",
+            Self::Crossing => "mscrossing",
+            Self::Stairs => "msstairs",
+        }
+    }
 }
 
 struct PieceInfo {
@@ -61,8 +87,8 @@ impl Pieces {
 pub struct MineshaftResult {
     /// Biome check position `(block_x, block_y, block_z)`.
     pub biome_check_pos: (i32, i32, i32),
-    /// Bounding boxes of all generated pieces, offset to final Y position.
-    pub piece_bbs: Vec<BoundingBox>,
+    /// Pieces with their kind + BB, offset to final Y position.
+    pub pieces: Vec<(PieceType, BoundingBox)>,
 }
 
 /// Generates mineshaft pieces and returns the biome check position + piece data.
@@ -130,25 +156,26 @@ pub fn find_generation_point(
         y1_pos - overall.max_y
     };
 
-    // Offset all piece bounding boxes by y_offset
-    let piece_bbs = pieces
-        .bbs
+    // Offset all piece bounding boxes by y_offset, pairing each with its kind.
+    let out_pieces = pieces
+        .infos
         .iter()
-        .map(|bb| {
-            BoundingBox::new(
-                bb.min_x,
-                bb.min_y + y_offset,
-                bb.min_z,
-                bb.max_x,
-                bb.max_y + y_offset,
-                bb.max_z,
-            )
+        .map(|info| {
+            let bb = BoundingBox::new(
+                info.bb.min_x,
+                info.bb.min_y + y_offset,
+                info.bb.min_z,
+                info.bb.max_x,
+                info.bb.max_y + y_offset,
+                info.bb.max_z,
+            );
+            (info.kind, bb)
         })
         .collect();
 
     MineshaftResult {
         biome_check_pos: (middle_x, 50 + y_offset, min_z),
-        piece_bbs,
+        pieces: out_pieces,
     }
 }
 
@@ -850,5 +877,92 @@ mod tests {
         let y_offset = y1_pos - overall.max_y;
         assert_eq!(y_offset, -70);
         assert_eq!(50 + y_offset, -20); // biome check Y
+    }
+}
+
+/// `Structure` impl — registered under `"minecraft:mineshaft"`. Variant
+/// (Normal / Mesa) is resolved from `entry.structure.path`.
+pub struct MineshaftStructure;
+
+impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
+    fn find_generation_point(
+        &self,
+        ctx: &mut GenerationContext<'_, '_, N>,
+        entry: &StructureSelectionEntry,
+        rng: &mut LegacyRandom,
+    ) -> Option<GenerationStub> {
+        let mtype = if &*entry.structure.path == "mineshaft_mesa" {
+            MineshaftType::Mesa
+        } else {
+            MineshaftType::Normal
+        };
+
+        // Mineshaft pieces can span far outside this chunk — the get_height
+        // closure builds a fresh aquifer per query at the chunk containing
+        // the queried cell (matching vanilla's per-NoiseChunk aquifer).
+        let noises = ctx.noises;
+        let splitter = ctx.splitter;
+        let mut get_height = |x: i32, z: i32| -> i32 {
+            let cw = N::Settings::CELL_WIDTH;
+            let cell_x = x.div_euclid(cw) * cw;
+            let cell_z = z.div_euclid(cw) * cw;
+            let aq_chunk_x = (cell_x >> 4) * 16;
+            let aq_chunk_z = (cell_z >> 4) * 16;
+            let aq_cache = N::ColumnCache::default();
+            let mut fresh_aq = Aquifer::<N>::new(
+                aq_chunk_x,
+                aq_chunk_z,
+                N::Settings::MIN_Y,
+                N::Settings::HEIGHT,
+                splitter,
+                noises,
+                aq_cache,
+            );
+            let mut fresh_cache = N::ColumnCache::default();
+            fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
+            iterate_noise_column_with_aquifer::<N>(
+                &mut fresh_cache,
+                noises,
+                &mut fresh_aq,
+                x,
+                z,
+                false,
+            )
+        };
+
+        let result = find_generation_point(
+            rng,
+            ctx.chunk_x,
+            ctx.chunk_z,
+            mtype,
+            ctx.sea_level,
+            N::Settings::MIN_Y,
+            &mut get_height,
+        );
+
+        let (bx, by, bz) = result.biome_check_pos;
+        let biome = ctx.biome_at(bx, by, bz);
+        if !entry.allowed_biomes.contains(&biome.key) {
+            return None;
+        }
+
+        let pieces = result
+            .pieces
+            .into_iter()
+            .map(|(kind, bb)| StructurePiece {
+                piece_type: Identifier::new_static("minecraft", kind.piece_id()),
+                bounding_box: bb,
+                gen_depth: 0,
+                orientation: None,
+                nbt_data: Vec::new(),
+                ground_level_delta: 0,
+                junctions: Vec::new(),
+            })
+            .collect();
+
+        Some(GenerationStub {
+            position: result.biome_check_pos,
+            pieces,
+        })
     }
 }

@@ -3,9 +3,15 @@
 //! Mirrors vanilla's `RuinedPortalStructure.findGenerationPoint` RNG consumption
 //! to determine the correct Y for the biome check. Does not place actual blocks.
 
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Rotation};
+use steel_utils::{BoundingBox, Identifier, Rotation};
+
+use crate::chunk::aquifer::{Aquifer, AquiferResult};
+use crate::chunk::vanilla_generator::{iterate_noise_column_with_aquifer};
+use crate::world::structure::placement::StructureSelectionEntry;
+use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
 /// Template sizes (x, y, z) for regular portals (`portal_1` through `portal_10`).
 const PORTAL_SIZES: [(i32, i32, i32); 10] = [
@@ -300,5 +306,106 @@ pub fn find_generation_point(
     PortalResult {
         biome_check_pos: (base_x, projected_y, base_z),
         bounding_box: piece_bb,
+    }
+}
+
+/// `Structure` impl — registered under `"minecraft:ruined_portal"` and its
+/// biome variants (desert / jungle / mountain / ocean / swamp / nether).
+///
+/// The terrain closure creates fresh aquifer + column cache per query because
+/// the piece gen may probe positions outside this chunk.
+pub struct RuinedPortalStructure;
+
+impl<N: DimensionNoises> Structure<N> for RuinedPortalStructure {
+    fn find_generation_point(
+        &self,
+        ctx: &mut GenerationContext<'_, '_, N>,
+        entry: &StructureSelectionEntry,
+        rng: &mut LegacyRandom,
+    ) -> Option<GenerationStub> {
+        let noises = ctx.noises;
+        let splitter = ctx.splitter;
+        let cell_w = N::Settings::CELL_WIDTH;
+        let cell_h = N::Settings::CELL_HEIGHT;
+
+        let mut terrain = |q: TerrainQuery| -> TerrainResult {
+            let (qx, qz) = match q {
+                TerrainQuery::SurfaceHeight(x, z) => (x, z),
+                TerrainQuery::IsOpaque(x, _, z) => (x, z),
+            };
+            let cell_x = qx.div_euclid(cell_w) * cell_w;
+            let cell_z = qz.div_euclid(cell_w) * cell_w;
+            let aq_chunk_x = (cell_x >> 4) * 16;
+            let aq_chunk_z = (cell_z >> 4) * 16;
+            let aq_cache = N::ColumnCache::default();
+            let mut fresh_aq = Aquifer::<N>::new(
+                aq_chunk_x,
+                aq_chunk_z,
+                N::Settings::MIN_Y,
+                N::Settings::HEIGHT,
+                splitter,
+                noises,
+                aq_cache,
+            );
+            let mut fresh_cache = N::ColumnCache::default();
+            fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
+            match q {
+                TerrainQuery::SurfaceHeight(x, z) => {
+                    TerrainResult::Height(iterate_noise_column_with_aquifer::<N>(
+                        &mut fresh_cache,
+                        noises,
+                        &mut fresh_aq,
+                        x,
+                        z,
+                        false,
+                    ))
+                }
+                TerrainQuery::IsOpaque(x, y, z) => {
+                    let density =
+                        crate::chunk::vanilla_generator::column_interpolated_density::<N>(
+                            &mut fresh_cache,
+                            noises,
+                            x,
+                            y,
+                            z,
+                            cell_w,
+                            cell_h,
+                        );
+                    let opaque = match fresh_aq.compute_substance(noises, x, y, z, density) {
+                        AquiferResult::Solid | AquiferResult::Fluid(_) => true,
+                        AquiferResult::Air => false,
+                    };
+                    TerrainResult::Opaque(opaque)
+                }
+            }
+        };
+
+        let result = find_generation_point(
+            rng,
+            ctx.chunk_x,
+            ctx.chunk_z,
+            &entry.structure.path,
+            N::Settings::MIN_Y,
+            &mut terrain,
+        );
+
+        let (bx, by, bz) = result.biome_check_pos;
+        let biome = ctx.biome_at(bx, by, bz);
+        if !entry.allowed_biomes.contains(&biome.key) {
+            return None;
+        }
+
+        Some(GenerationStub {
+            position: result.biome_check_pos,
+            pieces: vec![StructurePiece {
+                piece_type: Identifier::new_static("minecraft", "rupo"),
+                bounding_box: result.bounding_box,
+                gen_depth: 0,
+                orientation: None,
+                nbt_data: Vec::new(),
+                ground_level_delta: 0,
+                junctions: Vec::new(),
+            }],
+        })
     }
 }

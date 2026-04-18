@@ -3,9 +3,13 @@
 //! Implements vanilla's `StrongholdPieces` recursive BFS to generate piece
 //! bounding boxes. Does not place actual blocks.
 
+use steel_utils::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Direction};
+use steel_utils::{BoundingBox, Direction, Identifier};
+
+use crate::world::structure::placement::StructureSelectionEntry;
+use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
 const MAX_DEPTH: i32 = 50;
 const MAX_DISTANCE: i32 = 112;
@@ -745,5 +749,42 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<(BoundingBo
                 })
                 .collect();
         }
+    }
+}
+
+/// `Structure` impl — registered under `"minecraft:stronghold"`. Biome check
+/// at chunk center, surface Y.
+pub struct StrongholdStructure;
+
+impl<N: DimensionNoises> Structure<N> for StrongholdStructure {
+    fn find_generation_point(
+        &self,
+        ctx: &mut GenerationContext<'_, '_, N>,
+        entry: &StructureSelectionEntry,
+        _rng: &mut LegacyRandom,
+    ) -> Option<GenerationStub> {
+        let biome = ctx.biome_at(ctx.center_block_x, ctx.surface_y, ctx.center_block_z);
+        if !entry.allowed_biomes.contains(&biome.key) {
+            return None;
+        }
+
+        let piece_bbs = generate_pieces(ctx.seed, ctx.chunk_x, ctx.chunk_z);
+        let pieces = piece_bbs
+            .into_iter()
+            .map(|(bb, piece_id)| StructurePiece {
+                piece_type: Identifier::new_static("minecraft", piece_id),
+                bounding_box: bb,
+                gen_depth: 0,
+                orientation: None,
+                nbt_data: Vec::new(),
+                ground_level_delta: 0,
+                junctions: Vec::new(),
+            })
+            .collect();
+
+        Some(GenerationStub {
+            position: (ctx.center_block_x, ctx.surface_y, ctx.center_block_z),
+            pieces,
+        })
     }
 }

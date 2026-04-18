@@ -6,15 +6,31 @@
 //!
 //! The structure key is `Identifier` until a structure registry is added.
 
+pub mod end_city;
+pub mod fortress;
+pub mod igloo;
 pub mod jigsaw;
+pub mod mansion;
 pub mod mineshaft;
+pub mod nether_fossil;
+pub mod ocean_monument;
+pub mod ocean_ruin;
 pub mod placement;
 pub mod ruined_portal;
+pub mod shipwreck;
+pub mod single_piece;
 pub mod stronghold;
 
 use rustc_hash::FxHashMap;
 
+use steel_utils::density::{DimensionNoises, NoiseSettings};
+use steel_utils::random::RandomSplitter;
 use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
+
+use steel_registry::biome::BiomeRef;
+
+use crate::chunk::aquifer::{Aquifer, AquiferResult};
+use crate::worldgen::ChunkBiomeSampler;
 
 /// A structure start placed in a chunk.
 ///
@@ -67,3 +83,161 @@ pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;
 /// Map of structure references keyed by structure identifier.
 /// Values are the chunk positions of origin chunks that contain the structure start.
 pub type StructureReferenceMap = FxHashMap<Identifier, Vec<ChunkPos>>;
+
+/// Ternary classification of a block in the base-noise column (no surface rules).
+/// Used by structures that walk the column to find valid placement positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnBlock {
+    /// Empty space.
+    Air,
+    /// Aquifer-placed fluid (lava/water).
+    Fluid,
+    /// Default solid block (e.g. stone, netherrack, end stone).
+    Solid,
+}
+
+/// Per-chunk context shared by every structure's `findGenerationPoint`.
+///
+/// Holds the mutable per-chunk state (biome sampler, height cache, aquifer)
+/// so that individual structures don't each allocate their own. Methods
+/// wrap the common operations — height queries, biome sampling, column
+/// classification — so structures don't reach into `VanillaGenerator`'s
+/// helpers directly.
+pub struct GenerationContext<'ctx, 'src, N: DimensionNoises>
+where
+    'src: 'ctx,
+{
+    /// World seed.
+    pub seed: i64,
+    /// Chunk being populated.
+    pub chunk_x: i32,
+    /// Chunk being populated.
+    pub chunk_z: i32,
+    /// `chunk_x * 16` — convenience.
+    pub chunk_min_x: i32,
+    /// `chunk_z * 16` — convenience.
+    pub chunk_min_z: i32,
+    /// `chunk_min_x + 8`.
+    pub center_block_x: i32,
+    /// `chunk_min_z + 8`.
+    pub center_block_z: i32,
+    /// Sea level for this dimension.
+    pub sea_level: i32,
+    /// Pre-computed surface Y at chunk center (via `base_height - 1`).
+    pub surface_y: i32,
+
+    /// Dimension noise router (immutable — shared across all chunks).
+    pub noises: &'src N,
+    /// Positional splitter used to seed per-chunk RNG.
+    pub splitter: &'src RandomSplitter,
+    /// Structure templates (piece definitions + sizes).
+    pub templates: &'src FxHashMap<Identifier, steel_registry::template_pool::TemplateData>,
+
+    /// Biome sampler scoped to this chunk.
+    pub biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
+    /// Column cache used by height/density queries (grid-initialized on construction).
+    pub height_cache: &'ctx mut N::ColumnCache,
+    /// Aquifer for this chunk (grid-initialized on construction).
+    pub aquifer: &'ctx mut Aquifer<N>,
+}
+
+/// Result of a successful `Structure::find_generation_point` call.
+pub struct GenerationStub {
+    /// World-space position the start anchors at. Used for the biome check
+    /// (if the structure impl didn't do it itself) and for downstream code.
+    pub position: (i32, i32, i32),
+    /// The pieces, already sized and positioned in world space.
+    pub pieces: Vec<StructurePiece>,
+}
+
+/// Common interface for every structure type. One impl per structure kind;
+/// each is registered in the per-dimension `VanillaGenerator::structures`
+/// registry.
+///
+/// Mirrors vanilla's `Structure::findValidGenerationPoint` — impls are
+/// responsible for their own RNG-consumption order, collision checks, and
+/// biome check. Returning `None` = no start placed for this chunk.
+pub trait Structure<N: DimensionNoises>: Send + Sync {
+    /// Bounding-box inflation for reference intersection. Vanilla inflates
+    /// by 12 when `terrain_adaptation != NONE`.
+    fn bb_inflate(&self) -> i32 {
+        0
+    }
+
+    /// Runs the full `findValidGenerationPoint` flow. `entry` carries the
+    /// per-set metadata (weight, allowed biomes, jigsaw config if any).
+    /// `rng` is a fresh `LegacyRandom` seeded with `setLargeFeatureSeed`.
+    fn find_generation_point(
+        &self,
+        ctx: &mut GenerationContext<'_, '_, N>,
+        entry: &crate::world::structure::placement::StructureSelectionEntry,
+        rng: &mut steel_utils::random::legacy_random::LegacyRandom,
+    ) -> Option<GenerationStub>;
+}
+
+impl<'ctx, 'src, N: DimensionNoises> GenerationContext<'ctx, 'src, N>
+where
+    'src: 'ctx,
+{
+    /// `getBaseHeight(WORLD_SURFACE_WG)` — first free-height Y above terrain,
+    /// aquifer-aware. Starts scan from `preliminary_surface_level + 16` using
+    /// the cell-based iterator.
+    ///
+    /// `ocean_floor = false` → opaque = Solid or Fluid (WORLD_SURFACE_WG).
+    /// `ocean_floor = true` → opaque = Solid only (OCEAN_FLOOR_WG).
+    ///
+    /// **Caveat:** in dimensions where `preliminary_surface_level` is a
+    /// constant (e.g. End = 0.0), the cap will miss real terrain — use
+    /// [`base_height_full`](Self::base_height_full) for those cases.
+    pub fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        crate::chunk::vanilla_generator::column_base_height::<N>(
+            self.height_cache,
+            self.noises,
+            self.aquifer,
+            x,
+            z,
+            ocean_floor,
+        )
+    }
+
+    /// Full-column variant of [`base_height`](Self::base_height) — scans from
+    /// the chunk top without relying on `preliminary_surface_level`. Matches
+    /// vanilla's `iterateNoiseColumn` exactly. Use for dimensions with an
+    /// unreliable `preliminary_surface_level` (End).
+    pub fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        crate::chunk::vanilla_generator::iterate_noise_column_with_aquifer::<N>(
+            self.height_cache,
+            self.noises,
+            self.aquifer,
+            x,
+            z,
+            ocean_floor,
+        )
+    }
+
+    /// Biome at a block position. Quantizes to quart coords before sampling.
+    pub fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef {
+        self.biome_sampler
+            .sample(block_x >> 2, block_y >> 2, block_z >> 2)
+    }
+
+    /// Classify a single block in the base-noise column (no surface rules).
+    pub fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
+        let cw = N::Settings::CELL_WIDTH;
+        let ch = N::Settings::CELL_HEIGHT;
+        let density = crate::chunk::vanilla_generator::column_interpolated_density::<N>(
+            self.height_cache,
+            self.noises,
+            x,
+            y,
+            z,
+            cw,
+            ch,
+        );
+        match self.aquifer.compute_substance(self.noises, x, y, z, density) {
+            AquiferResult::Solid => ColumnBlock::Solid,
+            AquiferResult::Fluid(_) => ColumnBlock::Fluid,
+            AquiferResult::Air => ColumnBlock::Air,
+        }
+    }
+}
