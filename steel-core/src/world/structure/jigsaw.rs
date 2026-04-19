@@ -437,11 +437,8 @@ pub fn assemble(
         if let Some(ref jigsaw_name) = config.start_jigsaw_name {
             // Find the named jigsaw in the start piece
             let jigsaws = get_shuffled_jigsaws(center_element, templates, center_rotation, rng);
-            let found = jigsaws.iter().find(|j| j.name == *jigsaw_name);
-            match found {
-                Some(j) => (j.pos.0, j.pos.1, j.pos.2),
-                None => return None, // Named jigsaw not found
-            }
+            let j = jigsaws.iter().find(|j| j.name == *jigsaw_name)?;
+            (j.pos.0, j.pos.1, j.pos.2)
         } else {
             (0, 0, 0)
         };
