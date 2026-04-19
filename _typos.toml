@@ -9,6 +9,8 @@ check-file = false
 flate = "flate"
 strat = "strat"
 axe = "axe"
+# Vanilla stronghold straight-corridor piece-type registry ID.
+shs = "shs"
 
 [default]
 locale = "en-us"
