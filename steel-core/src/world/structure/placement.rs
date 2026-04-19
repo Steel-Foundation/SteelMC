@@ -107,7 +107,9 @@ pub struct ExclusionZone {
     pub chunk_count: i32,
 }
 
-/// Java-compatible rounding: `(long)Math.floor(v + 0.5)`.
+/// Java-compatible rounding: `(long)Math.floor(v + 0.5)`, i.e. half-up
+/// toward positive infinity (see Java's
+/// [`Math.round(double)`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html#round(double))).
 ///
 /// Differs from Rust's `f64::round()` for negative half-integers:
 /// Java rounds -0.5 → 0, Rust rounds -0.5 → -1.

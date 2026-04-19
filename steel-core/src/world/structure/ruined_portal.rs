@@ -173,14 +173,12 @@ pub fn find_generation_point(
 
     let placement = setup.placement;
 
-    // Air pocket: sample(random, probability)
-    #[expect(
-        clippy::float_cmp,
-        reason = "air_pocket_prob is hardcoded {0.0, 0.5, 1.0} — exact compare mirrors vanilla's sample() fast path"
-    )]
-    let air_pocket = if setup.air_pocket_prob == 0.0 {
+    // Air pocket: sample(random, probability). Vanilla's sample() short-circuits
+    // at the 0.0 / 1.0 endpoints; using `<=` / `>=` keeps the fast path safe if
+    // anyone adds out-of-range values later (current set is {0.0, 0.5, 1.0}).
+    let air_pocket = if setup.air_pocket_prob <= 0.0 {
         false
-    } else if setup.air_pocket_prob == 1.0 {
+    } else if setup.air_pocket_prob >= 1.0 {
         true
     } else {
         rng.next_f32() < setup.air_pocket_prob

@@ -9,7 +9,10 @@ check-file = false
 flate = "flate"
 strat = "strat"
 axe = "axe"
-# Vanilla stronghold straight-corridor piece-type registry ID.
+# Vanilla stronghold piece-type registry IDs (see `stronghold.rs`). These are
+# short vanilla abbreviations (`shs`, `shsd`, `shrc`, `shlt`, ...) that the
+# typo checker would otherwise flag. Add new entries here when introducing
+# additional three-letter vanilla IDs.
 shs = "shs"
 
 [default]

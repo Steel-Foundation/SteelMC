@@ -597,7 +597,6 @@ impl MansionGrid {
 
     fn get_1x2_room_direction(
         &self,
-        _grid: &SimpleGrid,
         x: i32,
         y: i32,
         floor: usize,
@@ -1041,7 +1040,7 @@ pub fn generate_mansion_pieces(
                 if room_type == ROOM_1X1 {
                     add_room_1x1(&mut pieces, room_pos, rotation, door_dir, floor_num, rng);
                 } else if room_type == ROOM_1X2 && door_dir.is_some() {
-                    let room_dir = mansion.get_1x2_room_direction(grid, x, y, floor_num, room_id);
+                    let room_dir = mansion.get_1x2_room_direction(x, y, floor_num, room_id);
                     let is_stairs = (room_data & ROOM_STAIRS_FLAG) != 0;
                     if let (Some(rd), Some(dd)) = (room_dir, door_dir) {
                         add_room_1x2(

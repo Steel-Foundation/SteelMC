@@ -325,7 +325,9 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
         }
     }
     if expanded.is_empty() {
-        // Return empty element sentinel
+        // Return empty element sentinel. `PoolElement::Empty` is a unit variant
+        // with no interior mutability, so `&'static` sharing across threads is
+        // sound (the enum's `Identifier` variants aren't constructed here).
         static EMPTY: PoolElement = PoolElement::Empty;
         return &EMPTY;
     }

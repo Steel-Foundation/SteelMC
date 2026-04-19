@@ -128,7 +128,6 @@ impl ChunkStatusTasks {
 
                         // Reference count updates on the source chunk's start
                         // are handled during serialization.
-                        drop(target_chunk);
                     }
                 }
             }

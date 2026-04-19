@@ -213,7 +213,7 @@ fn global_fluid(
 }
 
 impl<N: DimensionNoises> Aquifer<N> {
-    /// Create a new aquifer for a chunk.
+    /// Create an aquifer for a full 16×16 chunk.
     ///
     /// `chunk_min_x/z` are the block coordinates of the chunk's NW corner.
     /// `min_block_y` and `y_block_size` define the vertical range.
@@ -221,7 +221,6 @@ impl<N: DimensionNoises> Aquifer<N> {
     /// `cache` should be a pre-initialized column cache for this chunk
     /// (avoids a redundant `init_grid` call).
     #[must_use]
-    /// Create an aquifer for a full 16x16 chunk.
     pub fn new(
         chunk_min_x: i32,
         chunk_min_z: i32,

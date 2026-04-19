@@ -19,7 +19,7 @@ const fn make_single_piece_bb(
     chunk_min_x: i32,
     y: i32,
     chunk_min_z: i32,
-    dir_idx: i32,
+    z_axis: bool,
     w: i32,
     h: i32,
     d: i32,
@@ -27,7 +27,6 @@ const fn make_single_piece_bb(
     // Vanilla's `StructurePiece.makeBoundingBox` with direction's axis:
     //   N/S (axis Z): (x..x+w-1, y..y+h-1, z..z+d-1)
     //   E/W (axis X): (x..x+d-1, y..y+h-1, z..z+w-1)
-    let z_axis = matches!(dir_idx, 0 | 2); // N=0, E=1, S=2, W=3
     let (bw, bd) = if z_axis { (w, d) } else { (d, w) };
     BoundingBox::new(
         chunk_min_x,
@@ -79,9 +78,12 @@ impl<N: DimensionNoises> Structure<N> for SinglePieceStructure {
             return None;
         }
 
-        // Consume rotation RNG (vanilla's getRandomHorizontalDirection).
+        // Consume rotation RNG (vanilla's getRandomHorizontalDirection):
+        // N=0, E=1, S=2, W=3 — the BB orientation only cares whether the
+        // piece's Z axis is the world's Z axis (N/S) or X axis (E/W).
         let dir_idx = rng.next_i32_bounded(4);
-        let bb = make_single_piece_bb(ctx.chunk_min_x, 64, ctx.chunk_min_z, dir_idx, w, h, d);
+        let z_axis = matches!(dir_idx, 0 | 2);
+        let bb = make_single_piece_bb(ctx.chunk_min_x, 64, ctx.chunk_min_z, z_axis, w, h, d);
 
         Some(GenerationStub {
             position: (ctx.center_block_x, ctx.surface_y, ctx.center_block_z),
