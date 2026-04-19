@@ -80,16 +80,6 @@ pub async fn generate_spawn_chunks(server: &Arc<Server>, logger: &Arc<CommandLog
 
     // Overworld: supports the interactive display path when the spawn radius is small.
     pregen_overworld(overworld, center_chunk, pregen_radius, logger).await;
-
-    // TODO: remove — temporary nether/end pregen for worldgen comparison.
-    if pregen_radius > SPAWN_RADIUS {
-        if let Some(nether) = server.nether() {
-            pregen_extra_dimension("nether", nether, center_chunk, pregen_radius).await;
-        }
-        if let Some(end) = server.the_end() {
-            pregen_extra_dimension("end", end, center_chunk, pregen_radius).await;
-        }
-    }
 }
 
 async fn pregen_overworld(
@@ -157,50 +147,6 @@ async fn pregen_overworld(
     log::info!(
         "Spawn area prepared: {} chunks in {:.2}s ({:.1} chunks/s)",
         total_chunks,
-        elapsed.as_secs_f64(),
-        total_chunks as f64 / elapsed.as_secs_f64(),
-    );
-}
-
-/// Temporary: generates the same chunk area for a secondary dimension so
-/// the worldgen can be compared against vanilla.
-async fn pregen_extra_dimension(
-    name: &str,
-    world: &Arc<World>,
-    center_chunk: ChunkPos,
-    pregen_radius: i32,
-) {
-    let total_chunks = ((pregen_radius * 2 + 1) * (pregen_radius * 2 + 1)) as usize;
-
-    log::info!(
-        "Preparing {name} area: {total_chunks} chunks (radius {pregen_radius}) around chunk ({}, {})",
-        center_chunk.0.x,
-        center_chunk.0.y,
-    );
-
-    let ticket_level = MAX_VIEW_DISTANCE - 3;
-    let ticket_positions = build_ticket_positions(center_chunk, pregen_radius);
-
-    {
-        let mut tickets = world.chunk_map.chunk_tickets.lock();
-        for pos in &ticket_positions {
-            tickets.add_ticket(*pos, ticket_level);
-        }
-    }
-
-    let start = Instant::now();
-    generate_pregen(world, center_chunk, pregen_radius).await;
-    let elapsed = start.elapsed();
-
-    {
-        let mut tickets = world.chunk_map.chunk_tickets.lock();
-        for pos in &ticket_positions {
-            tickets.remove_ticket(*pos, ticket_level);
-        }
-    }
-
-    log::info!(
-        "{name} area prepared: {total_chunks} chunks in {:.2}s ({:.1} chunks/s)",
         elapsed.as_secs_f64(),
         total_chunks as f64 / elapsed.as_secs_f64(),
     );
