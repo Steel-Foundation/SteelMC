@@ -60,6 +60,10 @@ impl ChunkStatusTasks {
         context.generator.create_structures(&chunk);
     }
 
+    /// Collects structure references from surrounding chunks' starts.
+    ///
+    /// # Panics
+    /// Panics if the chunk is not at `ChunkStatus::StructureStarts` or higher.
     pub fn generate_structure_references(
         _context: Arc<WorldGenContext>,
         _step: &ChunkStep,
@@ -172,7 +176,10 @@ impl ChunkStatusTasks {
 
     /// # Panics
     /// Panics if the chunk has not reached `ChunkStatus::Noise`.
-    #[expect(clippy::similar_names, reason = "local variable naming matches vanilla")]
+    #[expect(
+        clippy::similar_names,
+        reason = "local variable naming matches vanilla"
+    )]
     pub fn generate_surface(
         context: Arc<WorldGenContext>,
         _step: &ChunkStep,

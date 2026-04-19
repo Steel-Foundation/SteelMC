@@ -14,9 +14,7 @@ use steel_utils::{BoundingBox, Identifier};
 use crate::chunk::aquifer::Aquifer;
 use crate::chunk::vanilla_generator::iterate_noise_column_with_aquifer;
 use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{
-    GenerationContext, GenerationStub, Structure, StructurePiece,
-};
+use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
 const MAX_DEPTH: i32 = 8;
 const MAX_DISTANCE: i32 = 80;
@@ -54,6 +52,7 @@ pub enum PieceType {
 
 impl PieceType {
     /// Vanilla save-format identifier (lowercased `MSRoom` → `msroom`, etc.).
+    #[must_use]
     pub const fn piece_id(self) -> &'static str {
         match self {
             Self::Room => "msroom",
@@ -67,8 +66,6 @@ impl PieceType {
 struct PieceInfo {
     bb: BoundingBox,
     kind: PieceType,
-    depth: i32,
-    dir: Option<Dir>,
 }
 
 struct Pieces {
@@ -117,8 +114,6 @@ pub fn find_generation_point(
         infos: vec![PieceInfo {
             bb: room_bb,
             kind: PieceType::Room,
-            depth: 0,
-            dir: None,
         }],
         start_bb: room_bb,
     };
@@ -341,8 +336,6 @@ fn try_add_corridor(
             pieces.infos.push(PieceInfo {
                 bb,
                 kind: PieceType::Corridor,
-                depth: gen_depth,
-                dir: Some(dir),
             });
             // MineShaftCorridor constructor consumes random state:
             let has_rails = rng.next_i32_bounded(3) == 0;
@@ -385,8 +378,6 @@ fn try_add_crossing(
     pieces.infos.push(PieceInfo {
         bb,
         kind: PieceType::Crossing,
-        depth: gen_depth,
-        dir: Some(dir),
     });
     crossing_add_children(pieces, rng, bb, dir, gen_depth, is_two_floored);
     true
@@ -417,14 +408,16 @@ fn try_add_stairs(
     pieces.infos.push(PieceInfo {
         bb,
         kind: PieceType::Stairs,
-        depth: gen_depth,
-        dir: Some(dir),
     });
     stairs_add_children(pieces, rng, bb, dir, gen_depth);
     true
 }
 
 // Matches vanilla MineShaftCorridor.addChildren exactly.
+#[expect(
+    clippy::too_many_lines,
+    reason = "mirrors vanilla's MineShaftCorridor.addChildren directional dispatch"
+)]
 fn corridor_add_children(
     pieces: &mut Pieces,
     rng: &mut LegacyRandom,
@@ -581,6 +574,10 @@ fn corridor_add_children(
 }
 
 // Matches vanilla MineShaftCrossing.addChildren exactly.
+#[expect(
+    clippy::too_many_lines,
+    reason = "mirrors vanilla's MineShaftCrossing.addChildren directional dispatch"
+)]
 fn crossing_add_children(
     pieces: &mut Pieces,
     rng: &mut LegacyRandom,
@@ -828,58 +825,6 @@ fn union_bb(a: BoundingBox, b: BoundingBox) -> BoundingBox {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies mineshaft piece generation matches vanilla for seed 13579, chunk (0,0).
-    /// Vanilla values from the extractor mixin trace.
-    #[test]
-    fn mineshaft_matches_vanilla_seed_13579_chunk_0_0() {
-        let seed: i64 = 13579;
-
-        let mut rng = LegacyRandom::from_seed(0);
-        rng.set_large_feature_seed(seed, 0, 0);
-        rng.next_f64(); // consumed by findGenerationPoint
-
-        let room_bb = create_room_bb(&mut rng, 2, 2);
-        assert_eq!(room_bb, BoundingBox::new(2, 50, 2, 13, 56, 9));
-
-        let mut pieces = Pieces {
-            bbs: vec![room_bb],
-            infos: vec![PieceInfo {
-                bb: room_bb,
-                kind: PieceType::Room,
-                depth: 0,
-                dir: None,
-            }],
-            start_bb: room_bb,
-        };
-        room_add_children(&mut pieces, &mut rng, room_bb);
-
-        // Vanilla produces exactly 92 pieces
-        assert_eq!(pieces.bbs.len(), 92);
-
-        // Vanilla's overall bounding box
-        let mut overall = pieces.bbs[0];
-        for bb in &pieces.bbs[1..] {
-            overall = union_bb(overall, *bb);
-        }
-        assert_eq!(overall, BoundingBox::new(-45, 42, -74, 60, 59, 41));
-
-        // moveBelowSeaLevel produces y_offset = -70 → biome check at Y = -20
-        let max_y = 63 - 10; // sea_level - 10
-        let y_span = overall.max_y - overall.min_y + 1;
-        let mut y1_pos = y_span + (-64) + 1;
-        if y1_pos < max_y {
-            y1_pos += rng.next_i32_bounded(max_y - y1_pos);
-        }
-        let y_offset = y1_pos - overall.max_y;
-        assert_eq!(y_offset, -70);
-        assert_eq!(50 + y_offset, -20); // biome check Y
-    }
-}
-
 /// `Structure` impl — registered under `"minecraft:mineshaft"`. Variant
 /// (Normal / Mesa) is resolved from `entry.structure.path`.
 pub struct MineshaftStructure;
@@ -964,5 +909,55 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
             position: result.biome_check_pos,
             pieces,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies mineshaft piece generation matches vanilla for seed 13579, chunk (0,0).
+    /// Vanilla values from the extractor mixin trace.
+    #[test]
+    fn mineshaft_matches_vanilla_seed_13579_chunk_0_0() {
+        let seed: i64 = 13579;
+
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_seed(seed, 0, 0);
+        rng.next_f64(); // consumed by findGenerationPoint
+
+        let room_bb = create_room_bb(&mut rng, 2, 2);
+        assert_eq!(room_bb, BoundingBox::new(2, 50, 2, 13, 56, 9));
+
+        let mut pieces = Pieces {
+            bbs: vec![room_bb],
+            infos: vec![PieceInfo {
+                bb: room_bb,
+                kind: PieceType::Room,
+            }],
+            start_bb: room_bb,
+        };
+        room_add_children(&mut pieces, &mut rng, room_bb);
+
+        // Vanilla produces exactly 92 pieces
+        assert_eq!(pieces.bbs.len(), 92);
+
+        // Vanilla's overall bounding box
+        let mut overall = pieces.bbs[0];
+        for bb in &pieces.bbs[1..] {
+            overall = union_bb(overall, *bb);
+        }
+        assert_eq!(overall, BoundingBox::new(-45, 42, -74, 60, 59, 41));
+
+        // moveBelowSeaLevel produces y_offset = -70 → biome check at Y = -20
+        let max_y = 63 - 10; // sea_level - 10
+        let y_span = overall.max_y - overall.min_y + 1;
+        let mut y1_pos = y_span + (-64) + 1;
+        if y1_pos < max_y {
+            y1_pos += rng.next_i32_bounded(max_y - y1_pos);
+        }
+        let y_offset = y1_pos - overall.max_y;
+        assert_eq!(y_offset, -70);
+        assert_eq!(50 + y_offset, -20); // biome check Y
     }
 }

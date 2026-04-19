@@ -28,17 +28,14 @@ fn random_horizontal(rng: &mut LegacyRandom) -> Direction {
 
 /// Vanilla's `BoundingBox.orientBox`.
 const fn orient_box(
-    fx: i32,
-    fy: i32,
-    fz: i32,
-    ox: i32,
-    oy: i32,
-    oz: i32,
-    w: i32,
-    h: i32,
-    d: i32,
+    foot: (i32, i32, i32),
+    off: (i32, i32, i32),
+    size: (i32, i32, i32),
     dir: Direction,
 ) -> BoundingBox {
+    let (fx, fy, fz) = foot;
+    let (ox, oy, oz) = off;
+    let (w, h, d) = size;
     match dir {
         Direction::North => BoundingBox::new(
             fx + ox,
@@ -276,42 +273,39 @@ impl State {
     }
 }
 
-fn find_box(pt: PT, s: &State, fx: i32, fy: i32, fz: i32, dir: Direction) -> Option<BoundingBox> {
+fn find_box(pt: PT, s: &State, foot: (i32, i32, i32), dir: Direction) -> Option<BoundingBox> {
     let bb = match pt {
-        PT::Straight | PT::ChestCorridor => orient_box(fx, fy, fz, -1, -1, 0, 5, 5, 7, dir),
-        PT::StairsDown => orient_box(fx, fy, fz, -1, -7, 0, 5, 11, 5, dir),
-        PT::StraightStairs => orient_box(fx, fy, fz, -1, -7, 0, 5, 11, 8, dir),
-        PT::LeftTurn | PT::RightTurn => orient_box(fx, fy, fz, -1, -1, 0, 5, 5, 5, dir),
-        PT::RoomCrossing => orient_box(fx, fy, fz, -4, -1, 0, 11, 7, 11, dir),
-        PT::Prison => orient_box(fx, fy, fz, -1, -1, 0, 9, 5, 11, dir),
-        PT::FiveCrossing => orient_box(fx, fy, fz, -4, -3, 0, 10, 9, 11, dir),
-        PT::Portal => orient_box(fx, fy, fz, -4, -1, 0, 11, 8, 16, dir),
+        PT::Straight | PT::ChestCorridor => orient_box(foot, (-1, -1, 0), (5, 5, 7), dir),
+        PT::StairsDown => orient_box(foot, (-1, -7, 0), (5, 11, 5), dir),
+        PT::StraightStairs => orient_box(foot, (-1, -7, 0), (5, 11, 8), dir),
+        PT::LeftTurn | PT::RightTurn => orient_box(foot, (-1, -1, 0), (5, 5, 5), dir),
+        PT::RoomCrossing => orient_box(foot, (-4, -1, 0), (11, 7, 11), dir),
+        PT::Prison => orient_box(foot, (-1, -1, 0), (9, 5, 11), dir),
+        PT::FiveCrossing => orient_box(foot, (-4, -3, 0), (10, 9, 11), dir),
+        PT::Portal => orient_box(foot, (-4, -1, 0), (11, 8, 16), dir),
         PT::Library => {
-            let tall = orient_box(fx, fy, fz, -4, -1, 0, 14, 11, 15, dir);
+            let tall = orient_box(foot, (-4, -1, 0), (14, 11, 15), dir);
             if is_ok(&tall) && !s.collides(&tall) {
                 return Some(tall);
             }
-            orient_box(fx, fy, fz, -4, -1, 0, 14, 6, 15, dir)
+            orient_box(foot, (-4, -1, 0), (14, 6, 15), dir)
         }
         PT::Filler => {
             // Vanilla's FillerCorridor.findPieceBox:
             // 1. Create 5×5×4 box and check for collision
             // 2. If NO collision: return None (filler not needed)
             // 3. If collision at same Y: try shorter (2, 1) and return longest fitting
-            let full_box = orient_box(fx, fy, fz, -1, -1, 0, 5, 5, 4, dir);
+            let full_box = orient_box(foot, (-1, -1, 0), (5, 5, 4), dir);
             // Find colliding piece
-            let collision = s.pieces.iter().find(|p| p.bb.intersects(&full_box));
-            let Some(collision) = collision else {
-                return None;
-            };
+            let collision = s.pieces.iter().find(|p| p.bb.intersects(&full_box))?;
             if collision.bb.min_y != full_box.min_y {
                 return None;
             }
             let collision_bb = collision.bb;
             for d in (1..=2).rev() {
-                let b = orient_box(fx, fy, fz, -1, -1, 0, 5, 5, d, dir);
+                let b = orient_box(foot, (-1, -1, 0), (5, 5, d), dir);
                 if !collision_bb.intersects(&b) {
-                    return Some(orient_box(fx, fy, fz, -1, -1, 0, 5, 5, d + 1, dir));
+                    return Some(orient_box(foot, (-1, -1, 0), (5, 5, d + 1), dir));
                 }
             }
             return None;
@@ -384,9 +378,10 @@ fn generate_piece(
 
     // Try imposed piece first
     if let Some(imp) = s.imposed.take()
-        && let Some(bb) = find_box(imp, s, fx, fy, fz, dir) {
-            return Some(create_piece(imp, bb, dir, depth, rng));
-        }
+        && let Some(bb) = find_box(imp, s, (fx, fy, fz), dir)
+    {
+        return Some(create_piece(imp, bb, dir, depth, rng));
+    }
 
     // Weighted random selection (up to 5 attempts)
     // Vanilla uses totalWeight (sum of ALL weights), selects, THEN checks eligibility
@@ -404,7 +399,7 @@ fn generate_piece(
                     break; // Retry
                 }
 
-                if let Some(bb) = find_box(s.wts[wi].pt, s, fx, fy, fz, dir) {
+                if let Some(bb) = find_box(s.wts[wi].pt, s, (fx, fy, fz), dir) {
                     let pt = s.wts[wi].pt;
                     let piece = create_piece(pt, bb, dir, depth, rng);
                     s.wts[wi].count += 1;
@@ -421,10 +416,11 @@ fn generate_piece(
     }
 
     // Fallback: FillerCorridor
-    if let Some(bb) = find_box(PT::Filler, s, fx, fy, fz, dir)
-        && bb.min_y > 1 {
-            return Some(create_piece(PT::Filler, bb, dir, depth, rng));
-        }
+    if let Some(bb) = find_box(PT::Filler, s, (fx, fy, fz), dir)
+        && bb.min_y > 1
+    {
+        return Some(create_piece(PT::Filler, bb, dir, depth, rng));
+    }
     None
 }
 
@@ -667,17 +663,9 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<(BoundingBo
 
         // Reset weights
         let start_dir = random_horizontal(&mut rng);
-        // StartPiece uses makeBoundingBox (NOT orientBox) — no offsets
-        let start_bb = match start_dir {
-            Direction::North | Direction::South => {
-                BoundingBox::new(west, 64, north, west + 4, 74, north + 4)
-            }
-            _ =>
-            // East/West: swap width and depth
-            {
-                BoundingBox::new(west, 64, north, west + 4, 74, north + 4)
-            }
-        };
+        // StartPiece uses makeBoundingBox (NOT orientBox) — template is 5x11x5 so
+        // swapping width/depth between N/S and E/W collapses to the same box.
+        let start_bb = BoundingBox::new(west, 64, north, west + 4, 74, north + 4);
 
         let mut s = State {
             pieces: Vec::new(),

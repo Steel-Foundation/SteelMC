@@ -246,6 +246,10 @@ impl<N: DimensionNoises> Aquifer<N> {
 
     /// Create an aquifer with custom XZ extent (in blocks).
     /// Vanilla's iterateNoiseColumn uses width=cellWidth (4) for single-column queries.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla's Aquifer constructor shape"
+    )]
     pub fn new_sized(
         chunk_min_x: i32,
         chunk_min_z: i32,

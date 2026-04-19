@@ -25,11 +25,17 @@ use rustc_hash::FxHashMap;
 
 use steel_utils::density::{DimensionNoises, NoiseSettings};
 use steel_utils::random::RandomSplitter;
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
 
 use steel_registry::biome::BiomeRef;
+use steel_registry::template_pool::TemplateData;
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult};
+use crate::chunk::vanilla_generator::{
+    column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
+};
+use crate::world::structure::placement::StructureSelectionEntry;
 use crate::worldgen::ChunkBiomeSampler;
 
 /// A structure start placed in a chunk.
@@ -131,7 +137,7 @@ where
     /// Positional splitter used to seed per-chunk RNG.
     pub splitter: &'src RandomSplitter,
     /// Structure templates (piece definitions + sizes).
-    pub templates: &'src FxHashMap<Identifier, steel_registry::template_pool::TemplateData>,
+    pub templates: &'src FxHashMap<Identifier, TemplateData>,
 
     /// Biome sampler scoped to this chunk.
     pub biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
@@ -170,8 +176,8 @@ pub trait Structure<N: DimensionNoises>: Send + Sync {
     fn find_generation_point(
         &self,
         ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &crate::world::structure::placement::StructureSelectionEntry,
-        rng: &mut steel_utils::random::legacy_random::LegacyRandom,
+        entry: &StructureSelectionEntry,
+        rng: &mut LegacyRandom,
     ) -> Option<GenerationStub>;
 }
 
@@ -183,14 +189,14 @@ where
     /// aquifer-aware. Starts scan from `preliminary_surface_level + 16` using
     /// the cell-based iterator.
     ///
-    /// `ocean_floor = false` → opaque = Solid or Fluid (WORLD_SURFACE_WG).
-    /// `ocean_floor = true` → opaque = Solid only (OCEAN_FLOOR_WG).
+    /// `ocean_floor = false` → opaque = Solid or Fluid (`WORLD_SURFACE_WG`).
+    /// `ocean_floor = true` → opaque = Solid only (`OCEAN_FLOOR_WG`).
     ///
     /// **Caveat:** in dimensions where `preliminary_surface_level` is a
     /// constant (e.g. End = 0.0), the cap will miss real terrain — use
     /// [`base_height_full`](Self::base_height_full) for those cases.
     pub fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
-        crate::chunk::vanilla_generator::column_base_height::<N>(
+        column_base_height::<N>(
             self.height_cache,
             self.noises,
             self.aquifer,
@@ -205,7 +211,7 @@ where
     /// vanilla's `iterateNoiseColumn` exactly. Use for dimensions with an
     /// unreliable `preliminary_surface_level` (End).
     pub fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
-        crate::chunk::vanilla_generator::iterate_noise_column_with_aquifer::<N>(
+        iterate_noise_column_with_aquifer::<N>(
             self.height_cache,
             self.noises,
             self.aquifer,
@@ -225,16 +231,12 @@ where
     pub fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
         let cw = N::Settings::CELL_WIDTH;
         let ch = N::Settings::CELL_HEIGHT;
-        let density = crate::chunk::vanilla_generator::column_interpolated_density::<N>(
-            self.height_cache,
-            self.noises,
-            x,
-            y,
-            z,
-            cw,
-            ch,
-        );
-        match self.aquifer.compute_substance(self.noises, x, y, z, density) {
+        let density =
+            column_interpolated_density::<N>(self.height_cache, self.noises, x, y, z, cw, ch);
+        match self
+            .aquifer
+            .compute_substance(self.noises, x, y, z, density)
+        {
             AquiferResult::Solid => ColumnBlock::Solid,
             AquiferResult::Fluid(_) => ColumnBlock::Fluid,
             AquiferResult::Air => ColumnBlock::Air,

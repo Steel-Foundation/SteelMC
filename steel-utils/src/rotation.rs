@@ -125,16 +125,14 @@ impl Rotation {
     #[must_use]
     pub const fn get_bounding_box_full(
         self,
-        pos_x: i32,
-        pos_y: i32,
-        pos_z: i32,
-        size_x: i32,
-        size_y: i32,
-        size_z: i32,
+        pos: (i32, i32, i32),
+        size: (i32, i32, i32),
         pivot_x: i32,
         pivot_z: i32,
         mirror_front_back: bool,
     ) -> BoundingBox {
+        let (pos_x, pos_y, pos_z) = pos;
+        let (size_x, size_y, size_z) = size;
         let dx = size_x - 1;
         let dy = size_y - 1;
         let dz = size_z - 1;
@@ -161,15 +159,13 @@ impl Rotation {
     #[must_use]
     pub const fn get_bounding_box_with_pivot(
         self,
-        pos_x: i32,
-        pos_y: i32,
-        pos_z: i32,
-        size_x: i32,
-        size_y: i32,
-        size_z: i32,
+        pos: (i32, i32, i32),
+        size: (i32, i32, i32),
         pivot_x: i32,
         pivot_z: i32,
     ) -> BoundingBox {
+        let (pos_x, pos_y, pos_z) = pos;
+        let (size_x, size_y, size_z) = size;
         let dx = size_x - 1;
         let dy = size_y - 1;
         let dz = size_z - 1;

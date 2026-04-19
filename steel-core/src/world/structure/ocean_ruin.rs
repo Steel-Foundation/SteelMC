@@ -91,9 +91,9 @@ fn template_bb<N: DimensionNoises>(
     rot: Rotation,
 ) -> Option<BoundingBox> {
     let key = Identifier::new("minecraft", name.to_string());
-    ctx.templates.get(&key).map(|t| {
-        rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2])
-    })
+    ctx.templates
+        .get(&key)
+        .map(|t| rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2]))
 }
 
 /// `Structure` impl registered under `"minecraft:ocean_ruin"`. Warm/cold
@@ -101,6 +101,10 @@ fn template_bb<N: DimensionNoises>(
 pub struct OceanRuinStructure;
 
 impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "mirrors vanilla's OceanRuinStructure cluster-scatter piece emission"
+    )]
     fn find_generation_point(
         &self,
         ctx: &mut GenerationContext<'_, '_, N>,
@@ -130,7 +134,11 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
             }
         } else {
             let bricks = if is_large { COLD_BIG_BRICK } else { COLD_BRICK };
-            let cracked = if is_large { COLD_BIG_CRACKED } else { COLD_CRACKED };
+            let cracked = if is_large {
+                COLD_BIG_CRACKED
+            } else {
+                COLD_CRACKED
+            };
             let mossy = if is_large { COLD_BIG_MOSSY } else { COLD_MOSSY };
             let idx = rng.next_i32_bounded(bricks.len() as i32) as usize;
             if let Some(bb) = template_bb(ctx, bricks[idx], pos_x, pos_z, rotation) {

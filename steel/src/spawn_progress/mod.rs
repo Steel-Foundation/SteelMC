@@ -63,10 +63,7 @@ const TOTAL_SPAWN_CHUNKS: usize = ((SPAWN_RADIUS * 2 + 1) * (SPAWN_RADIUS * 2 + 
 /// a colored terminal grid that includes the surrounding dependency chunks.
 ///
 /// Set `PREGEN_RADIUS` environment variable to generate a larger area.
-pub async fn generate_spawn_chunks(
-    server: &Arc<Server>,
-    logger: &Arc<CommandLogger>,
-) {
+pub async fn generate_spawn_chunks(server: &Arc<Server>, logger: &Arc<CommandLogger>) {
     let overworld = server.overworld();
     let pregen_radius = get_pregen_radius();
 
@@ -177,7 +174,8 @@ async fn pregen_extra_dimension(
 
     log::info!(
         "Preparing {name} area: {total_chunks} chunks (radius {pregen_radius}) around chunk ({}, {})",
-        center_chunk.0.x, center_chunk.0.y,
+        center_chunk.0.x,
+        center_chunk.0.y,
     );
 
     let ticket_level = MAX_VIEW_DISTANCE - 3;

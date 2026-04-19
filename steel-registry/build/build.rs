@@ -124,7 +124,6 @@ const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
 const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
-const DENSITY_FUNCTIONS: &str = "density_functions";
 const STRUCTURE_SETS: &str = "structure_sets";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";

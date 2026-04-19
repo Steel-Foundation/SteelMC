@@ -15,7 +15,7 @@ use steel_utils::{BoundingBox, Identifier};
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
-fn make_single_piece_bb(
+const fn make_single_piece_bb(
     chunk_min_x: i32,
     y: i32,
     chunk_min_z: i32,
@@ -64,15 +64,9 @@ impl<N: DimensionNoises> Structure<N> for SinglePieceStructure {
         if self.require_above_sea {
             // Lowest-corner height check at the piece footprint's corners.
             let h0 = ctx.base_height(ctx.chunk_min_x, ctx.chunk_min_z, false) - 1;
-            let h1 = ctx
-                .base_height(ctx.chunk_min_x, ctx.chunk_min_z + d, false)
-                - 1;
-            let h2 = ctx
-                .base_height(ctx.chunk_min_x + w, ctx.chunk_min_z, false)
-                - 1;
-            let h3 = ctx
-                .base_height(ctx.chunk_min_x + w, ctx.chunk_min_z + d, false)
-                - 1;
+            let h1 = ctx.base_height(ctx.chunk_min_x, ctx.chunk_min_z + d, false) - 1;
+            let h2 = ctx.base_height(ctx.chunk_min_x + w, ctx.chunk_min_z, false) - 1;
+            let h3 = ctx.base_height(ctx.chunk_min_x + w, ctx.chunk_min_z + d, false) - 1;
             let lowest = h0.min(h1).min(h2).min(h3);
             if lowest < ctx.sea_level {
                 return None;

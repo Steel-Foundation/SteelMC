@@ -76,12 +76,8 @@ impl<N: DimensionNoises> Structure<N> for ShipwreckStructure {
         let template_id = Identifier::new("minecraft", template_name.to_string());
         let tmpl = ctx.templates.get(&template_id)?;
         let bb = rotation.get_bounding_box_with_pivot(
-            ctx.chunk_min_x,
-            90,
-            ctx.chunk_min_z,
-            tmpl.size[0],
-            tmpl.size[1],
-            tmpl.size[2],
+            (ctx.chunk_min_x, 90, ctx.chunk_min_z),
+            (tmpl.size[0], tmpl.size[1], tmpl.size[2]),
             4,
             15,
         );

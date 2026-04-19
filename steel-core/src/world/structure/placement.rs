@@ -3,6 +3,7 @@
 //! Determines which chunks are valid for structure generation. Corresponds to
 //! vanilla's `StructurePlacement` hierarchy.
 
+use steel_registry::structure_set::JigsawConfig;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
@@ -25,7 +26,10 @@ impl SpreadType {
         match self {
             Self::Linear => rng.next_i32_bounded(limit),
             // Matches vanilla: `(nextInt(limit) + nextInt(limit)) / 2`
-            #[allow(clippy::manual_midpoint)]
+            #[expect(
+                clippy::manual_midpoint,
+                reason = "preserves vanilla's two-sample average — midpoint would change overflow"
+            )]
             Self::Triangular => (rng.next_i32_bounded(limit) + rng.next_i32_bounded(limit)) / 2,
         }
     }
@@ -73,7 +77,10 @@ impl FrequencyReductionMethod {
                 let cz = source_z >> 4;
                 rng.set_seed(i64::from(cx ^ (cz << 4)) ^ seed);
                 rng.next_i32(); // consume one
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "vanilla pattern: truncating reciprocal probability to int bound"
+                )]
                 let bound = (1.0_f32 / probability) as i32;
                 rng.next_i32_bounded(bound) == 0
             }
@@ -377,7 +384,7 @@ pub struct StructureSelectionEntry {
     /// Structure type (e.g., `"minecraft:jigsaw"`, `"minecraft:mineshaft"`).
     pub structure_type: String,
     /// Jigsaw-specific configuration. Present only for `minecraft:jigsaw` structures.
-    pub jigsaw_config: Option<steel_registry::structure_set::JigsawConfig>,
+    pub jigsaw_config: Option<JigsawConfig>,
 }
 
 /// A set of structures sharing a placement strategy.
@@ -616,7 +623,10 @@ mod tests {
         assert_eq!(sets.len(), 20);
 
         // Verify villages loaded correctly from datapack
-        let (key, villages) = sets.iter().find(|(k, _)| &*k.path == "villages").unwrap();
+        let (key, villages) = sets
+            .iter()
+            .find(|(k, _)| &*k.path == "villages")
+            .expect("villages structure set must be present");
         assert_eq!(&*key.namespace, "minecraft");
         assert_eq!(villages.structures.len(), 5);
         if let PlacementKind::RandomSpread {
@@ -636,7 +646,7 @@ mod tests {
         let (_, strongholds) = sets
             .iter()
             .find(|(k, _)| &*k.path == "strongholds")
-            .unwrap();
+            .expect("strongholds structure set must be present");
         assert!(matches!(
             strongholds.placement.kind,
             PlacementKind::ConcentricRings { .. }
@@ -646,9 +656,12 @@ mod tests {
         let (_, outposts) = sets
             .iter()
             .find(|(k, _)| &*k.path == "pillager_outposts")
-            .unwrap();
-        assert!(outposts.placement.exclusion_zone.is_some());
-        let ez = outposts.placement.exclusion_zone.as_ref().unwrap();
+            .expect("pillager_outposts structure set must be present");
+        let ez = outposts
+            .placement
+            .exclusion_zone
+            .as_ref()
+            .expect("pillager_outposts has an exclusion zone");
         assert_eq!(&*ez.other_set.path, "villages");
         assert_eq!(ez.chunk_count, 10);
     }

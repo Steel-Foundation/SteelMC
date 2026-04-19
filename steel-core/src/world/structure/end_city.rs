@@ -14,9 +14,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
 use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{
-    GenerationContext, GenerationStub, Structure, StructurePiece,
-};
+use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
 const MAX_GEN_DEPTH: i32 = 8;
 
@@ -66,10 +64,9 @@ fn add_piece(
     template_name: &str,
     rotation: Rotation,
 ) -> EndCityPiece {
-    let (rx, ry, rz) =
-        parent
-            .rotation
-            .transform_pos(offset.0, offset.1, offset.2, 0, 0);
+    let (rx, ry, rz) = parent
+        .rotation
+        .transform_pos(offset.0, offset.1, offset.2, 0, 0);
     EndCityPiece {
         template_name: template_name.to_string(),
         template_position: (
@@ -97,6 +94,10 @@ enum SectionKind {
     FatTower,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "threads parent + rotation + shared state as in vanilla's recursive dispatch"
+)]
 fn recursive_children(
     templates: &Templates,
     kind: SectionKind,
@@ -157,11 +158,11 @@ fn recursive_children(
         }
     }
 
-    if !collision {
+    if collision {
+        false
+    } else {
         pieces.extend(child_pieces);
         true
-    } else {
-        false
     }
 }
 
@@ -181,7 +182,7 @@ fn generate_house_tower(
     let last = add_piece(parent, offset, "base_floor", rotation);
     pieces.push(last.clone());
     let num_floors = rng.next_i32_bounded(3);
-    let mut last = pieces.last().unwrap().clone();
+    let mut last = pieces.last().expect("just pushed base_floor above").clone();
     if num_floors == 0 {
         let p = add_piece(&last, (-1, 4, -1), "base_roof", rotation);
         pieces.push(p.clone());
@@ -258,8 +259,11 @@ fn generate_tower(
     pieces.push(p.clone());
     last = p;
 
-    let mut bridge_piece: Option<EndCityPiece> =
-        if rng.next_i32_bounded(3) == 0 { Some(last.clone()) } else { None };
+    let mut bridge_piece: Option<EndCityPiece> = if rng.next_i32_bounded(3) == 0 {
+        Some(last.clone())
+    } else {
+        None
+    };
     let tower_height = 1 + rng.next_i32_bounded(3);
     for i in 0..tower_height {
         let p = add_piece(&last, (0, 4, 0), "tower_piece", rotation);
@@ -329,7 +333,10 @@ fn generate_tower_bridge(
     }
 
     let mut next_y = 0;
-    let mut last = pieces.last().unwrap().clone();
+    let mut last = pieces
+        .last()
+        .expect("caller pushes the bridge anchor before invoking this helper")
+        .clone();
     for _ in 0..bridge_length {
         if rng.next_bool() {
             let p = add_piece(&last, (0, next_y, -4), "bridge_piece", rotation);
@@ -437,7 +444,9 @@ pub fn start_house_tower(
     rng: &mut LegacyRandom,
 ) -> Vec<EndCityPiece> {
     let mut pieces: Vec<EndCityPiece> = Vec::new();
-    let mut shared = SharedState { ship_created: false };
+    let mut shared = SharedState {
+        ship_created: false,
+    };
 
     // Root: base_floor at origin (constructor, no offset math).
     let root = EndCityPiece {
@@ -518,13 +527,8 @@ impl<N: DimensionNoises> Structure<N> for EndCityStructure {
         let pieces = ec_pieces
             .into_iter()
             .map(|p| {
-                let tmpl_id =
-                    Identifier::new("minecraft", format!("end_city/{}", p.template_name));
-                let size = ctx
-                    .templates
-                    .get(&tmpl_id)
-                    .map(|t| t.size)
-                    .unwrap_or([1, 1, 1]);
+                let tmpl_id = Identifier::new("minecraft", format!("end_city/{}", p.template_name));
+                let size = ctx.templates.get(&tmpl_id).map_or([1, 1, 1], |t| t.size);
                 let bb = p.rotation.get_bounding_box(
                     p.template_position.0,
                     p.template_position.1,

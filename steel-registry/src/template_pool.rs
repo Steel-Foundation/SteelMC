@@ -27,7 +27,7 @@ pub enum JigsawOrientation {
 impl JigsawOrientation {
     /// Parses from the block state property string (e.g., `"up_north"`).
     #[must_use]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "down_east" => Self::DownEast,
             "down_north" => Self::DownNorth,

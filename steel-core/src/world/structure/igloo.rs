@@ -26,7 +26,7 @@ const MID_OFF: (i32, i32, i32) = (2, -3, 4);
 const BOT_OFF: (i32, i32, i32) = (0, -3, -2);
 const GEN_Y: i32 = 90;
 
-fn make_piece_bb(
+const fn make_piece_bb(
     start_x: i32,
     start_z: i32,
     rotation: Rotation,
@@ -39,11 +39,14 @@ fn make_piece_bb(
     let pos_y = GEN_Y + off.1 - depth;
     let pos_z = start_z + off.2;
     rotation.get_bounding_box_with_pivot(
-        pos_x, pos_y, pos_z, size[0], size[1], size[2], pivot.0, pivot.1,
+        (pos_x, pos_y, pos_z),
+        (size[0], size[1], size[2]),
+        pivot.0,
+        pivot.1,
     )
 }
 
-fn piece(bb: BoundingBox) -> StructurePiece {
+const fn piece(bb: BoundingBox) -> StructurePiece {
     StructurePiece {
         piece_type: Identifier::new_static("minecraft", "iglu"),
         bounding_box: bb,
@@ -82,12 +85,24 @@ impl<N: DimensionNoises> Structure<N> for IglooStructure {
             let depth = rng.next_i32_bounded(8) + 4; // 4..11
             // Laboratory at the bottom.
             pieces.push(piece(make_piece_bb(
-                start_x, start_z, rotation, BOT_OFF, depth * 3, BOT_SIZE, BOT_PIVOT,
+                start_x,
+                start_z,
+                rotation,
+                BOT_OFF,
+                depth * 3,
+                BOT_SIZE,
+                BOT_PIVOT,
             )));
             // Ladder segments.
             for i in 0..depth - 1 {
                 pieces.push(piece(make_piece_bb(
-                    start_x, start_z, rotation, MID_OFF, i * 3, MID_SIZE, MID_PIVOT,
+                    start_x,
+                    start_z,
+                    rotation,
+                    MID_OFF,
+                    i * 3,
+                    MID_SIZE,
+                    MID_PIVOT,
                 )));
             }
         }

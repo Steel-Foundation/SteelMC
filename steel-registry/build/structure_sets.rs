@@ -1,5 +1,6 @@
-use std::collections::HashMap;
 use std::fs;
+
+use rustc_hash::FxHashMap as HashMap;
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -97,12 +98,12 @@ fn load_biome_tags() -> HashMap<String, Vec<String>> {
     let tag_base = "build_assets/builtin_datapacks/minecraft/tags/worldgen/biome";
 
     // First pass: load raw tag definitions (may contain #tag references)
-    let mut raw_tags: HashMap<String, Vec<String>> = HashMap::new();
+    let mut raw_tags: HashMap<String, Vec<String>> = HashMap::default();
     load_tags_from_dir(tag_base, "", &mut raw_tags);
 
     // Second pass: resolve all tag references recursively
     let keys: Vec<String> = raw_tags.keys().cloned().collect();
-    let mut resolved: HashMap<String, Vec<String>> = HashMap::new();
+    let mut resolved: HashMap<String, Vec<String>> = HashMap::default();
     for key in &keys {
         let biomes = resolve_tag(key, &raw_tags, &mut resolved, &mut Vec::new());
         resolved.insert(key.clone(), biomes);
@@ -262,14 +263,15 @@ fn parse_start_height(value: &serde_json::Value) -> Option<i32> {
     }
     // {"type": "minecraft:constant", "value": N} or {"type": "minecraft:constant", "value": {"absolute": N}}
     if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:constant")
-        && let Some(v) = value.get("value") {
-            if let Some(n) = v.as_i64() {
-                return Some(n as i32);
-            }
-            if let Some(n) = v.get("absolute").and_then(|v| v.as_i64()) {
-                return Some(n as i32);
-            }
+        && let Some(v) = value.get("value")
+    {
+        if let Some(n) = v.as_i64() {
+            return Some(n as i32);
         }
+        if let Some(n) = v.get("absolute").and_then(|v| v.as_i64()) {
+            return Some(n as i32);
+        }
+    }
     None
 }
 
@@ -277,9 +279,8 @@ fn parse_start_height(value: &serde_json::Value) -> Option<i32> {
 fn load_structure_data(
     biome_tags: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, StructureData> {
-    let structure_dir =
-        "build_assets/builtin_datapacks/minecraft/worldgen/structure";
-    let mut result = HashMap::new();
+    let structure_dir = "build_assets/builtin_datapacks/minecraft/worldgen/structure";
+    let mut result = HashMap::default();
 
     for entry in fs::read_dir(structure_dir).unwrap() {
         let entry = entry.unwrap();
@@ -411,9 +412,7 @@ pub(crate) fn build() -> TokenStream {
     println!(
         "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure_set/"
     );
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/structure/");
     println!(
         "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
     );

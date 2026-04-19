@@ -7,7 +7,7 @@
 
 use steel_utils::Identifier;
 use steel_utils::Rotation;
-use steel_utils::density::DimensionNoises;
+use steel_utils::density::{DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
@@ -22,7 +22,7 @@ const SEA_LEVEL: i32 = 32;
 
 /// Result of a successful `find_generation_point` call.
 pub struct FossilResult {
-    /// Template name relative to `minecraft:` (e.g. "nether_fossils/fossil_3").
+    /// Template name relative to `minecraft:` (e.g. "`nether_fossils/fossil_3`").
     pub template_name: String,
     /// World-space position where the piece sits (solid-block Y).
     pub position: (i32, i32, i32),
@@ -108,18 +108,14 @@ impl<N: DimensionNoises> Structure<N> for NetherFossilStructure {
         entry: &StructureSelectionEntry,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        let min_gen_y = <N::Settings as steel_utils::density::NoiseSettings>::MIN_Y;
-        let gen_depth = <N::Settings as steel_utils::density::NoiseSettings>::HEIGHT;
+        let min_gen_y = <N::Settings as NoiseSettings>::MIN_Y;
+        let gen_depth = <N::Settings as NoiseSettings>::HEIGHT;
         let (chunk_x, chunk_z) = (ctx.chunk_x, ctx.chunk_z);
 
-        let result = find_generation_point(
-            rng,
-            chunk_x,
-            chunk_z,
-            min_gen_y,
-            gen_depth,
-            |x, y, z| ctx.column_state(x, y, z),
-        )?;
+        let result =
+            find_generation_point(rng, chunk_x, chunk_z, min_gen_y, gen_depth, |x, y, z| {
+                ctx.column_state(x, y, z)
+            })?;
 
         let (bx, by, bz) = result.biome_check_pos;
         let biome = ctx.biome_at(bx, by, bz);

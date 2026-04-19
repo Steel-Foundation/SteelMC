@@ -48,16 +48,14 @@ impl<N: DimensionNoises> Structure<N> for OceanMonumentStructure {
         let check_y = ctx.sea_level;
         let radius = 29;
 
-        let q_x0 = (check_x - radius) >> 2;
-        let q_x1 = (check_x + radius) >> 2;
-        let q_z0 = (check_z - radius) >> 2;
-        let q_z1 = (check_z + radius) >> 2;
-        let q_y0 = (check_y - radius) >> 2;
-        let q_y1 = (check_y + radius) >> 2;
+        // Quart-coord bounds of the 3D sweep: [min, max] for each axis.
+        let x_range = ((check_x - radius) >> 2)..=((check_x + radius) >> 2);
+        let z_range = ((check_z - radius) >> 2)..=((check_z + radius) >> 2);
+        let y_range = ((check_y - radius) >> 2)..=((check_y + radius) >> 2);
 
-        for qz in q_z0..=q_z1 {
-            for qx in q_x0..=q_x1 {
-                for qy in q_y0..=q_y1 {
+        for qz in z_range {
+            for qx in x_range.clone() {
+                for qy in y_range.clone() {
                     let biome = ctx.biome_sampler.sample(qx, qy, qz);
                     let is_surrounding = SURROUNDING_BIOMES
                         .iter()

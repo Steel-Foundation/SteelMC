@@ -9,7 +9,9 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult};
-use crate::chunk::vanilla_generator::{iterate_noise_column_with_aquifer};
+use crate::chunk::vanilla_generator::{
+    column_interpolated_density, iterate_noise_column_with_aquifer,
+};
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
@@ -89,12 +91,7 @@ fn get_setups(structure_path: &str) -> Vec<Setup> {
                 air_pocket_prob: 0.5,
             },
         ],
-        "ruined_portal_ocean" => vec![Setup {
-            placement: Placement::OnOceanFloor,
-            weight: 1.0,
-            air_pocket_prob: 0.0,
-        }],
-        "ruined_portal_swamp" => vec![Setup {
+        "ruined_portal_ocean" | "ruined_portal_swamp" => vec![Setup {
             placement: Placement::OnOceanFloor,
             weight: 1.0,
             air_pocket_prob: 0.0,
@@ -140,6 +137,10 @@ pub struct PortalResult {
 ///
 /// Matches vanilla's `RuinedPortalStructure.findGenerationPoint`.
 /// `terrain` handles both surface height queries and block opacity checks.
+#[expect(
+    clippy::too_many_lines,
+    reason = "mirrors vanilla's RuinedPortalStructure.findGenerationPoint RNG order"
+)]
 pub fn find_generation_point(
     rng: &mut LegacyRandom,
     chunk_x: i32,
@@ -173,6 +174,10 @@ pub fn find_generation_point(
     let placement = setup.placement;
 
     // Air pocket: sample(random, probability)
+    #[expect(
+        clippy::float_cmp,
+        reason = "air_pocket_prob is hardcoded {0.0, 0.5, 1.0} — exact compare mirrors vanilla's sample() fast path"
+    )]
     let air_pocket = if setup.air_pocket_prob == 0.0 {
         false
     } else if setup.air_pocket_prob == 1.0 {
@@ -201,12 +206,8 @@ pub fn find_generation_point(
     let pivot_x = sx / 2;
     let pivot_z = sz / 2;
     let bb = rotation.get_bounding_box_full(
-        base_x,
-        0,
-        base_z,
-        sx,
-        sy,
-        sz,
+        (base_x, 0, base_z),
+        (sx, sy, sz),
         pivot_x,
         pivot_z,
         mirror_front_back,
@@ -224,7 +225,7 @@ pub fn find_generation_point(
     // Surface height at BB center
     let surface_y = match terrain(TerrainQuery::SurfaceHeight(bb_center_x, bb_center_z)) {
         TerrainResult::Height(h) => h,
-        _ => unreachable!(),
+        TerrainResult::Opaque(_) => unreachable!(),
     } - 1;
 
     // findSuitableY — compute newY based on placement type
@@ -292,12 +293,8 @@ pub fn find_generation_point(
     // Vanilla's piece BB: template.getBoundingBox(placeSettings, templatePosition)
     // where templatePosition = (base_x, projected_y, base_z).
     let piece_bb = rotation.get_bounding_box_full(
-        base_x,
-        projected_y,
-        base_z,
-        sx,
-        sy,
-        sz,
+        (base_x, projected_y, base_z),
+        (sx, sy, sz),
         pivot_x,
         pivot_z,
         mirror_front_back,
@@ -330,8 +327,7 @@ impl<N: DimensionNoises> Structure<N> for RuinedPortalStructure {
 
         let mut terrain = |q: TerrainQuery| -> TerrainResult {
             let (qx, qz) = match q {
-                TerrainQuery::SurfaceHeight(x, z) => (x, z),
-                TerrainQuery::IsOpaque(x, _, z) => (x, z),
+                TerrainQuery::SurfaceHeight(x, z) | TerrainQuery::IsOpaque(x, _, z) => (x, z),
             };
             let cell_x = qx.div_euclid(cell_w) * cell_w;
             let cell_z = qz.div_euclid(cell_w) * cell_w;
@@ -361,16 +357,15 @@ impl<N: DimensionNoises> Structure<N> for RuinedPortalStructure {
                     ))
                 }
                 TerrainQuery::IsOpaque(x, y, z) => {
-                    let density =
-                        crate::chunk::vanilla_generator::column_interpolated_density::<N>(
-                            &mut fresh_cache,
-                            noises,
-                            x,
-                            y,
-                            z,
-                            cell_w,
-                            cell_h,
-                        );
+                    let density = column_interpolated_density::<N>(
+                        &mut fresh_cache,
+                        noises,
+                        x,
+                        y,
+                        z,
+                        cell_w,
+                        cell_h,
+                    );
                     let opaque = match fresh_aq.compute_substance(noises, x, y, z, density) {
                         AquiferResult::Solid | AquiferResult::Fluid(_) => true,
                         AquiferResult::Air => false,

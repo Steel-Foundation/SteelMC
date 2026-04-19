@@ -6,6 +6,8 @@
 //! The assembly determines which pieces exist and their bounding boxes.
 //! Actual block placement from templates is handled separately.
 
+use std::cmp::Reverse;
+
 use rustc_hash::FxHashMap;
 use steel_registry::structure_set::{JigsawConfig, PoolAlias, StartHeight};
 use steel_registry::template_pool::{
@@ -133,21 +135,18 @@ fn get_shuffled_jigsaws(
     rotation: Rotation,
     rng: &mut LegacyRandom,
 ) -> Vec<TransformedJigsaw> {
-    let location = match element_location(element) {
-        Some(loc) => loc,
-        None => {
-            // Feature/Empty elements: synthetic jigsaw at origin facing down
-            return vec![TransformedJigsaw {
-                pos: (0, 0, 0),
-                orientation: JigsawOrientation::DownSouth,
-                name: Identifier::new_static("minecraft", "bottom"),
-                target: Identifier::new_static("minecraft", "empty"),
-                pool: Identifier::new_static("minecraft", "empty"),
-                joint: JointType::Rollable,
-                selection_priority: 0,
-                placement_priority: 0,
-            }];
-        }
+    let Some(location) = element_location(element) else {
+        // Feature/Empty elements: synthetic jigsaw at origin facing down
+        return vec![TransformedJigsaw {
+            pos: (0, 0, 0),
+            orientation: JigsawOrientation::DownSouth,
+            name: Identifier::new_static("minecraft", "bottom"),
+            target: Identifier::new_static("minecraft", "empty"),
+            pool: Identifier::new_static("minecraft", "empty"),
+            joint: JointType::Rollable,
+            selection_priority: 0,
+            placement_priority: 0,
+        }];
     };
 
     let Some(template) = templates.get(location) else {
@@ -177,7 +176,7 @@ fn get_shuffled_jigsaws(
 
     // Shuffle first, then stable-sort by selection_priority descending
     vanilla_shuffle(&mut jigsaws, rng);
-    jigsaws.sort_by(|a, b| b.selection_priority.cmp(&a.selection_priority));
+    jigsaws.sort_by_key(|j| Reverse(j.selection_priority));
 
     jigsaws
 }
@@ -202,10 +201,10 @@ fn pool_max_y_size(
     pool.elements
         .iter()
         .filter_map(|(element, _)| {
-            let loc = match element {
-                PoolElement::Single { location, .. }
-                | PoolElement::LegacySingle { location, .. } => location,
-                _ => return None,
+            let (PoolElement::Single { location: loc, .. }
+            | PoolElement::LegacySingle { location: loc, .. }) = element
+            else {
+                return None;
             };
             templates.get(loc).map(|t| t.size[1])
         })
@@ -383,6 +382,18 @@ pub struct AssemblyResult {
 ///
 /// Returns the assembly result, or `None` if assembly fails
 /// (empty start pool, dimension padding violation, etc.).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors vanilla's JigsawPlacement.addPieces call surface"
+)]
+#[expect(
+    clippy::implicit_hasher,
+    reason = "FxHashMap is intentional — we don't want SipHash overhead on Identifier lookups"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "implements the full BFS assembly inline to mirror vanilla's addPieces"
+)]
 pub fn assemble(
     config: &JigsawConfig,
     rng: &mut LegacyRandom,
@@ -450,10 +461,10 @@ pub fn assemble(
 
     // Height projection
     let bottom_y = if let Some(ref _heightmap) = config.project_start_to_heightmap {
-        let center_bx = i32::midpoint(center_bb.min_x, center_bb.max_x);
-        let center_bz = i32::midpoint(center_bb.min_z, center_bb.max_z);
+        let mid_x = i32::midpoint(center_bb.min_x, center_bb.max_x);
+        let mid_z = i32::midpoint(center_bb.min_z, center_bb.max_z);
         // Vanilla: start_y + getFirstFreeHeight(...)
-        let surface = get_height(center_bx, center_bz);
+        let surface = get_height(mid_x, mid_z);
         start_y + surface
     } else {
         adjusted_y
@@ -550,7 +561,7 @@ pub fn assemble(
     // BFS loop
     while !queue.is_empty() {
         // Sort by priority (higher first), stable for insertion order
-        queue.sort_by(|a, b| b.2.cmp(&a.2));
+        queue.sort_by_key(|entry| Reverse(entry.2));
         let (piece_idx, depth, _priority, context_idx) = queue.remove(0);
 
         try_placing_children(
@@ -583,7 +594,14 @@ pub fn assemble(
 /// `context_idx` is this piece's collision context in `free_spaces`:
 /// - If this piece was placed externally, it's the parent's context
 /// - If this piece was placed internally, it's the parent's internal free space
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors vanilla's JigsawPlacement.tryPlacingChildren signature"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "inlines the source-jigsaw / child-pool match loop to mirror vanilla"
+)]
 fn try_placing_children(
     source_idx: usize,
     depth: i32,
@@ -649,7 +667,7 @@ fn try_placing_children(
             })
             .collect();
         vanilla_shuffle(&mut jigsaws, rng);
-        jigsaws.sort_by(|a, b| b.selection_priority.cmp(&a.selection_priority));
+        jigsaws.sort_by_key(|j| Reverse(j.selection_priority));
         jigsaws
     };
 
@@ -687,9 +705,10 @@ fn try_placing_children(
         // Build candidate list
         let mut candidates: Vec<&PoolElement> = Vec::new();
         if depth != config.max_depth
-            && let Some(pool) = target_pool {
-                candidates.extend(get_shuffled_templates(pool, rng));
-            }
+            && let Some(pool) = target_pool
+        {
+            candidates.extend(get_shuffled_templates(pool, rng));
+        }
         if let Some(fallback) = fallback_pool {
             candidates.extend(get_shuffled_templates(fallback, rng));
         }
@@ -742,8 +761,9 @@ fn try_placing_children(
                                         .transform_pos(j.pos[0], j.pos[1], j.pos[2], 0, 0);
                                     let front =
                                         j.orientation.rotate(candidate_rotation).front_direction();
-                                    let (fdx2, fdy2, fdz2) = front.offset();
-                                    let front_pos = (rx + fdx2, ry + fdy2, rz + fdz2);
+                                    let front_off = front.offset();
+                                    let front_pos =
+                                        (rx + front_off.0, ry + front_off.1, rz + front_off.2);
                                     if !hack_box.contains_xyz(front_pos.0, front_pos.1, front_pos.2)
                                     {
                                         return 0;
@@ -841,7 +861,6 @@ fn try_placing_children(
                     // internal children use sourceFree (this piece's internal space),
                     // external children use contextFree (parent's context).
                     let effective_ctx = if attach_inside {
-                        
                         *internal_ctx_idx.get_or_insert_with(|| {
                             free_spaces.push(FreeSpace {
                                 constraint: source_bb,

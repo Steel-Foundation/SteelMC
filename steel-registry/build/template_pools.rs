@@ -262,9 +262,7 @@ pub(crate) fn build() -> TokenStream {
     println!(
         "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/worldgen/template_pool/"
     );
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/structure/"
-    );
+    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/structure/");
 
     let pool_dir = "build_assets/builtin_datapacks/minecraft/worldgen/template_pool";
     let structure_dir = "build_assets/builtin_datapacks/minecraft/structure";
