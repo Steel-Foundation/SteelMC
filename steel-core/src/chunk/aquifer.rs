@@ -14,6 +14,59 @@ use steel_utils::math::{clamp, map, map_clamped};
 use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 
+/// Deferred [`Aquifer`] construction. Holds the parameters needed to build
+/// the aquifer and materialises it on first `get`. Used by `create_structures`
+/// so chunks where no structure actually queries the aquifer skip its
+/// (expensive) `max_preliminary_surface_level` scan entirely.
+pub struct LazyAquifer<'a, N: DimensionNoises> {
+    chunk_min_x: i32,
+    chunk_min_z: i32,
+    splitter: &'a RandomSplitter,
+    noises: &'a N,
+    inner: Option<Aquifer<N>>,
+}
+
+impl<'a, N: DimensionNoises> LazyAquifer<'a, N> {
+    /// Create a new deferred aquifer for the given chunk.
+    #[must_use]
+    pub fn new(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        splitter: &'a RandomSplitter,
+        noises: &'a N,
+    ) -> Self {
+        Self {
+            chunk_min_x,
+            chunk_min_z,
+            splitter,
+            noises,
+            inner: None,
+        }
+    }
+
+    /// Build the aquifer if not yet built, then return `&mut Aquifer`.
+    ///
+    /// `height_cache` is cloned into the aquifer's own cache, matching the
+    /// eager-construction path. The caller retains its own `&mut height_cache`
+    /// afterwards.
+    pub fn ensure(&mut self, height_cache: &N::ColumnCache) -> &mut Aquifer<N> {
+        if self.inner.is_none() {
+            let aq_cache = height_cache.clone();
+            self.inner = Some(Aquifer::<N>::new(
+                self.chunk_min_x,
+                self.chunk_min_z,
+                <N::Settings as NoiseSettings>::MIN_Y,
+                <N::Settings as NoiseSettings>::HEIGHT,
+                self.splitter,
+                self.noises,
+                aq_cache,
+            ));
+        }
+        #[expect(clippy::unwrap_used, reason = "just initialized above")]
+        self.inner.as_mut().unwrap()
+    }
+}
+
 // Grid spacing
 const Y_SPACING: i32 = 12;
 

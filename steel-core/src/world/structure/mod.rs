@@ -31,7 +31,7 @@ use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
 use steel_registry::biome::BiomeRef;
 use steel_registry::template_pool::TemplateData;
 
-use crate::chunk::aquifer::{Aquifer, AquiferResult};
+use crate::chunk::aquifer::{AquiferResult, LazyAquifer};
 use crate::chunk::vanilla_generator::{
     column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
 };
@@ -129,8 +129,11 @@ where
     pub center_block_z: i32,
     /// Sea level for this dimension.
     pub sea_level: i32,
-    /// Pre-computed surface Y at chunk center (via `base_height - 1`).
-    pub surface_y: i32,
+    /// Shared memoisation slot for the chunk-center surface Y. First call to
+    /// [`surface_y`](GenerationContext::surface_y) fills it; subsequent calls
+    /// (including ones reached via a freshly rebuilt context for the next
+    /// structure) reuse the cached value.
+    pub(crate) surface_y_cache: &'ctx mut Option<i32>,
 
     /// Dimension noise router (immutable — shared across all chunks).
     pub noises: &'src N,
@@ -143,8 +146,9 @@ where
     pub biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
     /// Column cache used by height/density queries (grid-initialized on construction).
     pub height_cache: &'ctx mut N::ColumnCache,
-    /// Aquifer for this chunk (grid-initialized on construction).
-    pub aquifer: &'ctx mut Aquifer<N>,
+    /// Deferred aquifer. Built on first query; skipped entirely on chunks
+    /// where no selected structure reads the aquifer.
+    pub aquifer: &'ctx mut LazyAquifer<'src, N>,
 }
 
 /// Result of a successful `Structure::find_generation_point` call.
@@ -196,10 +200,11 @@ where
     /// constant (e.g. End = 0.0), the cap will miss real terrain — use
     /// [`base_height_full`](Self::base_height_full) for those cases.
     pub fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        let aq = self.aquifer.ensure(self.height_cache);
         column_base_height::<N>(
             self.height_cache,
             self.noises,
-            self.aquifer,
+            aq,
             x,
             z,
             ocean_floor,
@@ -211,10 +216,11 @@ where
     /// vanilla's `iterateNoiseColumn` exactly. Use for dimensions with an
     /// unreliable `preliminary_surface_level` (End).
     pub fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        let aq = self.aquifer.ensure(self.height_cache);
         iterate_noise_column_with_aquifer::<N>(
             self.height_cache,
             self.noises,
-            self.aquifer,
+            aq,
             x,
             z,
             ocean_floor,
@@ -233,13 +239,24 @@ where
         let ch = N::Settings::CELL_HEIGHT;
         let density =
             column_interpolated_density::<N>(self.height_cache, self.noises, x, y, z, cw, ch);
-        match self
-            .aquifer
-            .compute_substance(self.noises, x, y, z, density)
-        {
+        let aq = self.aquifer.ensure(self.height_cache);
+        match aq.compute_substance(self.noises, x, y, z, density) {
             AquiferResult::Solid => ColumnBlock::Solid,
             AquiferResult::Fluid(_) => ColumnBlock::Fluid,
             AquiferResult::Air => ColumnBlock::Air,
         }
+    }
+
+    /// Surface Y at chunk center (`base_height(center, center, false) - 1`).
+    /// Memoised — the first call pays for a column probe (and triggers aquifer
+    /// construction), subsequent calls are free. The cache is shared across
+    /// contexts for the same chunk via a borrowed slot.
+    pub fn surface_y(&mut self) -> i32 {
+        if let Some(y) = self.surface_y_cache.as_ref().copied() {
+            return y;
+        }
+        let y = self.base_height(self.center_block_x, self.center_block_z, false) - 1;
+        *self.surface_y_cache = Some(y);
+        y
     }
 }

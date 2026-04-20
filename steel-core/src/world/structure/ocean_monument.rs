@@ -68,7 +68,8 @@ impl<N: DimensionNoises> Structure<N> for OceanMonumentStructure {
         }
 
         // Center-biome check against the entry's allowed_biomes.
-        let biome = ctx.biome_at(ctx.center_block_x, ctx.surface_y, ctx.center_block_z);
+        let surface_y = ctx.surface_y();
+        let biome = ctx.biome_at(ctx.center_block_x, surface_y, ctx.center_block_z);
         if !entry.allowed_biomes.contains(&biome.key) {
             return None;
         }
@@ -79,7 +80,7 @@ impl<N: DimensionNoises> Structure<N> for OceanMonumentStructure {
         let north = ctx.chunk_min_z - 29;
         let bb = BoundingBox::new(west, 39, north, west + 57, 61, north + 57);
         Some(GenerationStub {
-            position: (ctx.center_block_x, ctx.surface_y, ctx.center_block_z),
+            position: (ctx.center_block_x, surface_y, ctx.center_block_z),
             pieces: vec![StructurePiece {
                 piece_type: Identifier::new_static("minecraft", "omb"),
                 bounding_box: bb,

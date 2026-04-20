@@ -16,7 +16,7 @@ use steel_utils::random::{
 use steel_utils::surface::SurfaceRuleContext;
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
-use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
+use crate::chunk::aquifer::{Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level};
 use crate::chunk::beardifier::Beardifier;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
@@ -635,51 +635,14 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         height_cache.init_grid(chunk_min_x, chunk_min_z, &self.noises);
         let sea_level = N::Settings::SEA_LEVEL;
 
-        // Create an aquifer for this chunk to match vanilla's iterateNoiseColumn,
-        // which creates a NoiseChunk (containing an aquifer) per height query.
-        // We reuse one aquifer for all queries in this chunk — the grid extends
-        // beyond the 16-block chunk boundary due to sample offsets, covering
-        // nearby positions needed by structure placement.
-        //
-        // Cloning `height_cache` skips a second `init_grid` pass (density-function
-        // eval at 25 quart positions); the grid arrays are fixed-size so clone is
-        // just memcpy.
-        let aquifer_cache = height_cache.clone();
-        let mut aquifer = Aquifer::<N>::new(
-            chunk_min_x,
-            chunk_min_z,
-            N::Settings::MIN_Y,
-            N::Settings::HEIGHT,
-            &self.splitter,
-            &self.noises,
-            aquifer_cache,
-        );
-
-        // Aquifer-aware height scan. Uses preliminary_surface_level + 16 as the
-        // upper bound to skip empty upper atmosphere, and the cell-based
-        // iterator so corner-density evaluations are shared across Y values
-        // in each cell.
-        let base_height = |cache: &mut N::ColumnCache,
-                           noises: &N,
-                           aquifer: &mut Aquifer<N>,
-                           x: i32,
-                           z: i32,
-                           ocean_floor: bool|
-         -> i32 {
-            let estimate = preliminary_surface_level::<N>(noises, cache, x, z);
-            let max_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
-            iterate_noise_column_capped::<N>(cache, noises, aquifer, x, z, max_y, ocean_floor)
-        };
-
-        // onTopOfChunkCenter uses getFirstOccupiedHeight = getBaseHeight - 1
-        let surface_y = base_height(
-            &mut height_cache,
-            &self.noises,
-            &mut aquifer,
-            center_block_x,
-            center_block_z,
-            false,
-        ) - 1;
+        // Aquifer and surface_y are both expensive (aquifer construction scans
+        // ~120 density positions for `skip_sampling_above_y`; surface_y needs a
+        // full aquifer-aware column walk). After the biome prefilter, chunks
+        // where no selected structure actually reads them are common — defer
+        // both, build on first access.
+        let mut aquifer =
+            LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
+        let mut surface_y_cache: Option<i32> = None;
 
         // Collect selected structures first (while can_generate borrows height_cache),
         // then run jigsaw assembly afterward (which also needs height_cache).
@@ -694,26 +657,27 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // it; for unknown types falls back to a center+surface_y biome check.
         // (Jigsaw entries take a separate path via `SelectedSet::Jigsaw`.)
         let mut can_generate = |entry: &StructureSelectionEntry| -> CanGen {
+            let mut ctx = GenerationContext::<'_, '_, N> {
+                seed: self.seed,
+                chunk_x,
+                chunk_z,
+                chunk_min_x,
+                chunk_min_z,
+                center_block_x,
+                center_block_z,
+                sea_level,
+                surface_y_cache: &mut surface_y_cache,
+                noises: &self.noises,
+                splitter: &self.splitter,
+                templates: &self.templates,
+                biome_sampler: &mut sampler,
+                height_cache: &mut height_cache,
+                aquifer: &mut aquifer,
+            };
+
             if let Some(structure_impl) = self.structures.get(&entry.structure_type) {
                 let mut reg_rng = LegacyRandom::from_seed(0);
                 reg_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
-                let mut ctx = GenerationContext::<'_, '_, N> {
-                    seed: self.seed,
-                    chunk_x,
-                    chunk_z,
-                    chunk_min_x,
-                    chunk_min_z,
-                    center_block_x,
-                    center_block_z,
-                    sea_level,
-                    surface_y,
-                    noises: &self.noises,
-                    splitter: &self.splitter,
-                    templates: &self.templates,
-                    biome_sampler: &mut sampler,
-                    height_cache: &mut height_cache,
-                    aquifer: &mut aquifer,
-                };
                 return match structure_impl.find_generation_point(&mut ctx, entry, &mut reg_rng) {
                     Some(stub) => CanGen::Trait(stub),
                     None => CanGen::No,
@@ -726,7 +690,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 entry.structure_type,
                 entry.structure
             );
-            let biome = sampler.sample(center_block_x >> 2, surface_y >> 2, center_block_z >> 2);
+            let sy = ctx.surface_y();
+            let biome = ctx.biome_at(ctx.center_block_x, sy, ctx.center_block_z);
             if entry.allowed_biomes.contains(&biome.key) {
                 CanGen::Legacy
             } else {
@@ -910,7 +875,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         center_block_x,
                                         center_block_z,
                                         sea_level,
-                                        surface_y,
+                                        surface_y_cache: &mut surface_y_cache,
                                         noises: &self.noises,
                                         splitter: &self.splitter,
                                         templates: &self.templates,

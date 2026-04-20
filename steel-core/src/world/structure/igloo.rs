@@ -69,7 +69,8 @@ impl<N: DimensionNoises> Structure<N> for IglooStructure {
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         // Biome check at chunk center, surface Y.
-        let biome = ctx.biome_at(ctx.center_block_x, ctx.surface_y, ctx.center_block_z);
+        let surface_y = ctx.surface_y();
+        let biome = ctx.biome_at(ctx.center_block_x, surface_y, ctx.center_block_z);
         if !entry.allowed_biomes.contains(&biome.key) {
             return None;
         }
@@ -113,7 +114,7 @@ impl<N: DimensionNoises> Structure<N> for IglooStructure {
         )));
 
         Some(GenerationStub {
-            position: (ctx.center_block_x, ctx.surface_y, ctx.center_block_z),
+            position: (ctx.center_block_x, surface_y, ctx.center_block_z),
             pieces,
         })
     }
