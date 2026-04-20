@@ -906,13 +906,13 @@ impl ChunkStorage {
                     })
                     .collect();
 
-                let start = StructureStart {
-                    structure: ps.structure.clone(),
-                    chunk_pos: ChunkPos::new(ps.chunk_x, ps.chunk_z),
-                    references: ps.references,
+                let mut start = StructureStart::new(
+                    ps.structure.clone(),
+                    ChunkPos::new(ps.chunk_x, ps.chunk_z),
                     pieces,
-                    bb_inflate: 0,
-                };
+                    0,
+                );
+                start.references = ps.references;
                 (ps.structure.clone(), start)
             })
             .collect()

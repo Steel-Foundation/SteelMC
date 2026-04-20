@@ -629,20 +629,19 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let center_block_z = chunk_min_z + 8;
 
         let mut height_cache = N::ColumnCache::default();
-        // Pre-populate the grid: most can_generate height queries land inside
-        // the chunk's quart grid, which makes them O(1) lookups instead of
-        // on-the-fly density evaluations.
-        height_cache.init_grid(chunk_min_x, chunk_min_z, &self.noises);
         let sea_level = N::Settings::SEA_LEVEL;
 
-        // Aquifer and surface_y are both expensive (aquifer construction scans
-        // ~120 density positions for `skip_sampling_above_y`; surface_y needs a
-        // full aquifer-aware column walk). After the biome prefilter, chunks
-        // where no selected structure actually reads them are common — defer
-        // both, build on first access.
+        // No `init_grid` here. After the biome prefilter the structures that
+        // run at most chunks (mineshaft, village) use their own caches — they
+        // never touch this one. For chunks that do reach `ctx.base_height` or
+        // `LazyAquifer::ensure`, the cache falls back to its single-entry lazy
+        // mode, which is fine for the 1–4 column probes those paths perform.
+        // Eagerly init-griding a 5×5 quart of the full density graph on
+        // every chunk was ~36 µs of pure waste.
         let mut aquifer =
             LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
         let mut surface_y_cache: Option<i32> = None;
+        let mut height_cache_grid_ready = false;
 
         // Collect selected structures first (while can_generate borrows height_cache),
         // then run jigsaw assembly afterward (which also needs height_cache).
@@ -667,6 +666,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 center_block_z,
                 sea_level,
                 surface_y_cache: &mut surface_y_cache,
+                height_cache_grid_ready: &mut height_cache_grid_ready,
                 noises: &self.noises,
                 splitter: &self.splitter,
                 templates: &self.templates,
@@ -826,13 +826,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     // types it's `None` and we emit an empty start.
                     let pieces = cached_stub.map(|s| s.pieces).unwrap_or_default();
 
-                    let start = StructureStart {
-                        structure: structure_id.clone(),
-                        chunk_pos: ChunkPos::new(chunk_x, chunk_z),
-                        references: 0,
+                    let bb_inflate = terrain_adapt_inflate(&structure_id);
+                    let start = StructureStart::new(
+                        structure_id.clone(),
+                        ChunkPos::new(chunk_x, chunk_z),
                         pieces,
-                        bb_inflate: terrain_adapt_inflate(&structure_id),
-                    };
+                        bb_inflate,
+                    );
                     chunk.structure_starts_mut().insert(structure_id, start);
                 }
                 SelectedSet::Jigsaw(entries) => {
@@ -876,6 +876,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         center_block_z,
                                         sea_level,
                                         surface_y_cache: &mut surface_y_cache,
+                height_cache_grid_ready: &mut height_cache_grid_ready,
                                         noises: &self.noises,
                                         splitter: &self.splitter,
                                         templates: &self.templates,
@@ -893,13 +894,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 }
                             };
                             if let Some(stub) = stub_opt {
-                                let start = StructureStart {
-                                    structure: candidate.structure.clone(),
-                                    chunk_pos: ChunkPos::new(chunk_x, chunk_z),
-                                    references: 0,
-                                    pieces: stub.pieces,
-                                    bb_inflate: terrain_adapt_inflate(&candidate.structure),
-                                };
+                                let start = StructureStart::new(
+                                    candidate.structure.clone(),
+                                    ChunkPos::new(chunk_x, chunk_z),
+                                    stub.pieces,
+                                    terrain_adapt_inflate(&candidate.structure),
+                                );
                                 chunk
                                     .structure_starts_mut()
                                     .insert(candidate.structure.clone(), start);
@@ -920,36 +920,50 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         let mut assembly_rng = LegacyRandom::from_seed(0);
                         assembly_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
 
+                        // Vanilla creates a fresh NoiseChunk(1) per query (see
+                        // NoiseChunk:137-139: aquifer anchored to the 16-aligned
+                        // ChunkPos of the cell). Since both the aquifer and the
+                        // grid-inited cache are pure functions of
+                        // `(aq_chunk_x, aq_chunk_z)`, memoise them across the
+                        // assembly's 20–50 piece-placement queries — most land
+                        // in the same few chunks.
+                        let mut height_query_cache: FxHashMap<
+                            (i32, i32),
+                            (N::ColumnCache, Aquifer<N>),
+                        > = FxHashMap::default();
+
                         let mut get_height_fn = |x: i32, z: i32| -> i32 {
-                            // Vanilla creates a fresh NoiseChunk(1) per query. The aquifer
-                            // is created at the CHUNK position (16-block aligned), not the
-                            // cell position — see NoiseChunk line 137-139:
-                            //   chunkX = SectionPos.blockToSectionCoord(chunkMinBlockX)
-                            //   Aquifer.create(this, new ChunkPos(chunkX, chunkZ), ...)
-                            // Vanilla: NoiseChunk at cell-aligned (r, s), aquifer at ChunkPos
                             let cw = N::Settings::CELL_WIDTH;
-                            let cell_x = x.div_euclid(cw) * cw; // firstBlockX
-                            let cell_z = z.div_euclid(cw) * cw; // firstBlockZ
-                            let aq_chunk_x = (cell_x >> 4) * 16; // ChunkPos from cell pos
+                            let cell_x = x.div_euclid(cw) * cw;
+                            let cell_z = z.div_euclid(cw) * cw;
+                            let aq_chunk_x = (cell_x >> 4) * 16;
                             let aq_chunk_z = (cell_z >> 4) * 16;
-                            let aq_cache = N::ColumnCache::default();
-                            let mut fresh_aq = Aquifer::<N>::new(
-                                aq_chunk_x,
-                                aq_chunk_z,
-                                N::Settings::MIN_Y,
-                                N::Settings::HEIGHT,
-                                &self.splitter,
-                                &self.noises,
-                                aq_cache,
-                            );
-                            // Init cache at the CHUNK containing the query (same grid
-                            // as chunk generation uses for this position)
-                            let mut fresh_cache = N::ColumnCache::default();
-                            fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
+
+                            let entry = height_query_cache
+                                .entry((aq_chunk_x, aq_chunk_z))
+                                .or_insert_with(|| {
+                                    let fresh_aq = Aquifer::<N>::new(
+                                        aq_chunk_x,
+                                        aq_chunk_z,
+                                        N::Settings::MIN_Y,
+                                        N::Settings::HEIGHT,
+                                        &self.splitter,
+                                        &self.noises,
+                                        N::ColumnCache::default(),
+                                    );
+                                    let mut fresh_cache = N::ColumnCache::default();
+                                    fresh_cache.init_grid(
+                                        aq_chunk_x,
+                                        aq_chunk_z,
+                                        &self.noises,
+                                    );
+                                    (fresh_cache, fresh_aq)
+                                });
+
                             iterate_noise_column_with_aquifer::<N>(
-                                &mut fresh_cache,
+                                &mut entry.0,
                                 &self.noises,
-                                &mut fresh_aq,
+                                &mut entry.1,
                                 x,
                                 z,
                                 false,
@@ -990,13 +1004,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         junctions: pp.junctions,
                                     })
                                     .collect();
-                                let start = StructureStart {
-                                    structure: candidate.structure.clone(),
-                                    chunk_pos: ChunkPos::new(chunk_x, chunk_z),
-                                    references: 0,
+                                let start = StructureStart::new(
+                                    candidate.structure.clone(),
+                                    ChunkPos::new(chunk_x, chunk_z),
                                     pieces,
-                                    bb_inflate: terrain_adapt_inflate(&candidate.structure),
-                                };
+                                    terrain_adapt_inflate(&candidate.structure),
+                                );
                                 chunk
                                     .structure_starts_mut()
                                     .insert(candidate.structure.clone(), start);

@@ -23,7 +23,7 @@ pub mod stronghold;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::density::{DimensionNoises, NoiseSettings};
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::RandomSplitter;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
@@ -56,6 +56,51 @@ pub struct StructureStart {
     /// Bounding box inflation for reference intersection checks.
     /// Vanilla inflates by 12 when `terrain_adaptation != NONE`.
     pub bb_inflate: i32,
+    /// Union of all pieces' bounding boxes, cached at creation. `None` when
+    /// `pieces` is empty (invalid start emitted by legacy/unknown types).
+    /// Reference scans do up to 17×17 neighbor lookups per target chunk, so
+    /// an origin chunk containing a 30-piece jigsaw would otherwise rebuild
+    /// this union per visiting neighbor.
+    pub bounding_box: Option<BoundingBox>,
+}
+
+impl StructureStart {
+    /// Create a new start, computing the piece-union bounding box up-front.
+    #[must_use]
+    pub fn new(
+        structure: Identifier,
+        chunk_pos: ChunkPos,
+        pieces: Vec<StructurePiece>,
+        bb_inflate: i32,
+    ) -> Self {
+        let bounding_box = Self::compute_bounding_box(&pieces);
+        Self {
+            structure,
+            chunk_pos,
+            references: 0,
+            pieces,
+            bb_inflate,
+            bounding_box,
+        }
+    }
+
+    /// Union of all pieces' bounding boxes, or `None` if empty.
+    #[must_use]
+    pub fn compute_bounding_box(pieces: &[StructurePiece]) -> Option<BoundingBox> {
+        let (first, rest) = pieces.split_first()?;
+        let mut bb = first.bounding_box;
+        for piece in rest {
+            bb = BoundingBox::new(
+                bb.min_x.min(piece.bounding_box.min_x),
+                bb.min_y.min(piece.bounding_box.min_y),
+                bb.min_z.min(piece.bounding_box.min_z),
+                bb.max_x.max(piece.bounding_box.max_x),
+                bb.max_y.max(piece.bounding_box.max_y),
+                bb.max_z.max(piece.bounding_box.max_z),
+            );
+        }
+        Some(bb)
+    }
 }
 
 /// A single piece of a structure.
@@ -134,6 +179,10 @@ where
     /// (including ones reached via a freshly rebuilt context for the next
     /// structure) reuse the cached value.
     pub(crate) surface_y_cache: &'ctx mut Option<i32>,
+    /// Whether `height_cache`'s 5×5 quart grid has been populated. First
+    /// access that benefits from the grid flips this and calls
+    /// `init_grid`. Shared across per-structure contexts for the same chunk.
+    pub(crate) height_cache_grid_ready: &'ctx mut bool,
 
     /// Dimension noise router (immutable — shared across all chunks).
     pub noises: &'src N,
@@ -200,6 +249,7 @@ where
     /// constant (e.g. End = 0.0), the cap will miss real terrain — use
     /// [`base_height_full`](Self::base_height_full) for those cases.
     pub fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        self.ensure_height_cache_grid();
         let aq = self.aquifer.ensure(self.height_cache);
         column_base_height::<N>(
             self.height_cache,
@@ -216,6 +266,7 @@ where
     /// vanilla's `iterateNoiseColumn` exactly. Use for dimensions with an
     /// unreliable `preliminary_surface_level` (End).
     pub fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        self.ensure_height_cache_grid();
         let aq = self.aquifer.ensure(self.height_cache);
         iterate_noise_column_with_aquifer::<N>(
             self.height_cache,
@@ -235,6 +286,7 @@ where
 
     /// Classify a single block in the base-noise column (no surface rules).
     pub fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
+        self.ensure_height_cache_grid();
         let cw = N::Settings::CELL_WIDTH;
         let ch = N::Settings::CELL_HEIGHT;
         let density =
@@ -258,5 +310,17 @@ where
         let y = self.base_height(self.center_block_x, self.center_block_z, false) - 1;
         *self.surface_y_cache = Some(y);
         y
+    }
+
+    /// Populate `height_cache`'s 5×5 quart grid if not already done. Called
+    /// by the cache-using query methods so chunks that don't reach them skip
+    /// the ~25-position density-graph evaluation entirely.
+    fn ensure_height_cache_grid(&mut self) {
+        if *self.height_cache_grid_ready {
+            return;
+        }
+        self.height_cache
+            .init_grid(self.chunk_min_x, self.chunk_min_z, self.noises);
+        *self.height_cache_grid_ready = true;
     }
 }

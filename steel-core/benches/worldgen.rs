@@ -258,6 +258,25 @@ fn bench_end_surface(c: &mut Criterion) {
 
 // ── Structure-starts benchmarks ─────────────────────────────────────────────
 
+/// A 20×20 chunk grid exercises more structure-set placement outcomes than a
+/// single origin chunk: different spacings (villages at 32, shipwrecks at 24,
+/// mineshafts at 1, etc.) each land on different chunks of the grid, so the
+/// numbers include the real mix of cheap-reject, full-placement, and jigsaw
+/// paths.
+const STRUCTURE_GRID_SIDE: i32 = 20;
+
+fn structure_grid_chunks(dim: &'static DimensionType) -> Vec<ChunkAccess> {
+    (0..STRUCTURE_GRID_SIDE)
+        .flat_map(|x| (0..STRUCTURE_GRID_SIDE).map(move |z| make_proto_chunk(x, z, dim)))
+        .collect()
+}
+
+fn run_grid<G: ChunkGenerator>(generator: &G, chunks: &[ChunkAccess]) {
+    for chunk in chunks {
+        generator.create_structures(black_box(chunk));
+    }
+}
+
 fn bench_overworld_structure_starts(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
@@ -265,10 +284,11 @@ fn bench_overworld_structure_starts(c: &mut Criterion) {
     let generator = OverworldGenerator::new(source, 0);
 
     c.bench_function("overworld_create_structures", |b| {
-        b.iter(|| {
-            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.create_structures(&chunk);
-        });
+        b.iter_batched(
+            || structure_grid_chunks(dim),
+            |chunks| run_grid(&generator, &chunks),
+            criterion::BatchSize::SmallInput,
+        );
     });
 }
 
@@ -279,10 +299,11 @@ fn bench_nether_structure_starts(c: &mut Criterion) {
     let generator = NetherGenerator::new(source, 0);
 
     c.bench_function("nether_create_structures", |b| {
-        b.iter(|| {
-            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.create_structures(&chunk);
-        });
+        b.iter_batched(
+            || structure_grid_chunks(dim),
+            |chunks| run_grid(&generator, &chunks),
+            criterion::BatchSize::SmallInput,
+        );
     });
 }
 
@@ -293,10 +314,11 @@ fn bench_end_structure_starts(c: &mut Criterion) {
     let generator = EndGenerator::new(source, 0);
 
     c.bench_function("end_create_structures", |b| {
-        b.iter(|| {
-            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.create_structures(&chunk);
-        });
+        b.iter_batched(
+            || structure_grid_chunks(dim),
+            |chunks| run_grid(&generator, &chunks),
+            criterion::BatchSize::SmallInput,
+        );
     });
 }
 

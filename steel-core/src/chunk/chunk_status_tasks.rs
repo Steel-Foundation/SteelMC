@@ -92,22 +92,10 @@ impl ChunkStatusTasks {
 
                 let starts = source_chunk.structure_starts();
                 for (structure_id, start) in starts.iter() {
-                    if start.pieces.is_empty() {
+                    // Empty-pieces starts have no bounding box (legacy/unknown types).
+                    let Some(bb) = start.bounding_box else {
                         continue;
-                    }
-
-                    // Compute the overall bounding box of all pieces
-                    let mut bb = start.pieces[0].bounding_box;
-                    for piece in &start.pieces[1..] {
-                        bb = steel_utils::BoundingBox::new(
-                            bb.min_x.min(piece.bounding_box.min_x),
-                            bb.min_y.min(piece.bounding_box.min_y),
-                            bb.min_z.min(piece.bounding_box.min_z),
-                            bb.max_x.max(piece.bounding_box.max_x),
-                            bb.max_y.max(piece.bounding_box.max_y),
-                            bb.max_z.max(piece.bounding_box.max_z),
-                        );
-                    }
+                    };
 
                     // Vanilla inflates the BB when terrain_adaptation != NONE
                     let inflate = start.bb_inflate;

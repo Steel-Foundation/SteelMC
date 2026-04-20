@@ -6,6 +6,7 @@
 //! Matches vanilla's DFS recursion: each child's `addChildren` is called
 //! immediately after creation, before processing the next sibling.
 
+use rustc_hash::FxHashMap;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -843,32 +844,43 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
         };
 
         // Mineshaft pieces can span far outside this chunk — the get_height
-        // closure builds a fresh aquifer per query at the chunk containing
-        // the queried cell (matching vanilla's per-NoiseChunk aquifer).
+        // closure needs aquifer-aware columns anchored at each queried cell's
+        // chunk. Outputs are a pure function of (aq_chunk_x, aq_chunk_z), so
+        // memoise the (cache, aquifer) across the DFS's many per-piece
+        // queries — mineshafts place dozens of pieces clustered across a few
+        // chunks.
         let noises = ctx.noises;
         let splitter = ctx.splitter;
+        let mut height_query_cache: FxHashMap<(i32, i32), (N::ColumnCache, Aquifer<N>)> =
+            FxHashMap::default();
         let mut get_height = |x: i32, z: i32| -> i32 {
             let cw = N::Settings::CELL_WIDTH;
             let cell_x = x.div_euclid(cw) * cw;
             let cell_z = z.div_euclid(cw) * cw;
             let aq_chunk_x = (cell_x >> 4) * 16;
             let aq_chunk_z = (cell_z >> 4) * 16;
-            let aq_cache = N::ColumnCache::default();
-            let mut fresh_aq = Aquifer::<N>::new(
-                aq_chunk_x,
-                aq_chunk_z,
-                N::Settings::MIN_Y,
-                N::Settings::HEIGHT,
-                splitter,
-                noises,
-                aq_cache,
-            );
-            let mut fresh_cache = N::ColumnCache::default();
-            fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
+
+            let entry = height_query_cache
+                .entry((aq_chunk_x, aq_chunk_z))
+                .or_insert_with(|| {
+                    let fresh_aq = Aquifer::<N>::new(
+                        aq_chunk_x,
+                        aq_chunk_z,
+                        N::Settings::MIN_Y,
+                        N::Settings::HEIGHT,
+                        splitter,
+                        noises,
+                        N::ColumnCache::default(),
+                    );
+                    let mut fresh_cache = N::ColumnCache::default();
+                    fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
+                    (fresh_cache, fresh_aq)
+                });
+
             iterate_noise_column_with_aquifer::<N>(
-                &mut fresh_cache,
+                &mut entry.0,
                 noises,
-                &mut fresh_aq,
+                &mut entry.1,
                 x,
                 z,
                 false,
