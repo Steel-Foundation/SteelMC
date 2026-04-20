@@ -1,7 +1,5 @@
-use std::fs;
-
 use crate::generator_functions::{
-    generate_identifier, generate_option, generate_spawn_condition_entry,
+    generate_identifier, generate_option, generate_spawn_condition_entry, read_variants_from_dir,
 };
 use crate::shared_structs::SpawnConditionEntry;
 use heck::ToShoutySnakeCase;
@@ -19,31 +17,8 @@ pub struct ZombieNautilusVariantJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/zombie_nautilus_variant/"
-    );
-
-    let zombie_nautilus_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/zombie_nautilus_variant";
-    let mut zombie_nautilus_variants = Vec::new();
-
-    // Read all zombie nautilus variant JSON files
-    for entry in fs::read_dir(zombie_nautilus_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let zombie_nautilus_variant_name =
-                path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let zombie_nautilus_variant: ZombieNautilusVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| {
-                    panic!("Failed to parse {}: {}", zombie_nautilus_variant_name, e)
-                });
-
-            zombie_nautilus_variants.push((zombie_nautilus_variant_name, zombie_nautilus_variant));
-        }
-    }
+    let zombie_nautilus_variants: Vec<(String, ZombieNautilusVariantJson)> =
+        read_variants_from_dir("zombie_nautilus_variant");
 
     let mut stream = TokenStream::new();
 

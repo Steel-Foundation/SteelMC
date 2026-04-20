@@ -1,6 +1,6 @@
-use std::fs;
-
-use crate::generator_functions::{generate_identifier, generate_spawn_condition_entry};
+use crate::generator_functions::{
+    generate_identifier, generate_spawn_condition_entry, read_variants_from_dir,
+};
 use crate::shared_structs::SpawnConditionEntry;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -25,25 +25,7 @@ fn generate_pig_model_type(model: &str) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/pig_variant/");
-
-    let pig_variant_dir = "build_assets/builtin_datapacks/minecraft/pig_variant";
-    let mut pig_variants = Vec::new();
-
-    // Read all pig variant JSON files
-    for entry in fs::read_dir(pig_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let pig_variant_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let pig_variant: PigVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", pig_variant_name, e));
-
-            pig_variants.push((pig_variant_name, pig_variant));
-        }
-    }
+    let pig_variants: Vec<(String, PigVariantJson)> = read_variants_from_dir("pig_variant");
 
     let mut stream = TokenStream::new();
 

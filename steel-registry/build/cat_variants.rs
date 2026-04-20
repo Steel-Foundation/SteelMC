@@ -1,6 +1,4 @@
-use std::fs;
-
-use crate::generator_functions::{generate_identifier, generate_option};
+use crate::generator_functions::{generate_identifier, generate_option, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -89,25 +87,7 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/cat_variant/");
-
-    let cat_variant_dir = "build_assets/builtin_datapacks/minecraft/cat_variant";
-    let mut cat_variants = Vec::new();
-
-    // Read all cat variant JSON files
-    for entry in fs::read_dir(cat_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let cat_variant_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let cat_variant: CatVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", cat_variant_name, e));
-
-            cat_variants.push((cat_variant_name, cat_variant));
-        }
-    }
+    let cat_variants: Vec<(String, CatVariantJson)> = read_variants_from_dir("cat_variant");
 
     let mut stream = TokenStream::new();
 

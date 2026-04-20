@@ -1,6 +1,6 @@
-use std::fs;
-
-use crate::generator_functions::{generate_identifier, generate_spawn_condition_entry};
+use crate::generator_functions::{
+    generate_identifier, generate_spawn_condition_entry, read_variants_from_dir,
+};
 use crate::shared_structs::SpawnConditionEntry;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -15,25 +15,7 @@ pub struct FrogVariantJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/frog_variant/");
-
-    let frog_variant_dir = "build_assets/builtin_datapacks/minecraft/frog_variant";
-    let mut frog_variants = Vec::new();
-
-    // Read all frog variant JSON files
-    for entry in fs::read_dir(frog_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let frog_variant_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let frog_variant: FrogVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", frog_variant_name, e));
-
-            frog_variants.push((frog_variant_name, frog_variant));
-        }
-    }
+    let frog_variants: Vec<(String, FrogVariantJson)> = read_variants_from_dir("frog_variant");
 
     let mut stream = TokenStream::new();
 

@@ -1,6 +1,4 @@
-use std::fs;
-
-use crate::generator_functions::generate_identifier;
+use crate::generator_functions::{generate_identifier, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -26,25 +24,8 @@ pub struct CatSoundVariantJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/cat_sound_variant/");
-
-    let cat_sound_variant_dir = "build_assets/builtin_datapacks/minecraft/cat_sound_variant";
-    let mut cat_sound_variants = Vec::new();
-
-    // Read all cat sound variant JSON files
-    for entry in fs::read_dir(cat_sound_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let cat_sound_variant_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let cat_sound_variant: CatSoundVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", cat_sound_variant_name, e));
-
-            cat_sound_variants.push((cat_sound_variant_name, cat_sound_variant));
-        }
-    }
+    let cat_sound_variants: Vec<(String, CatSoundVariantJson)> =
+        read_variants_from_dir("cat_sound_variant");
 
     let mut stream = TokenStream::new();
 

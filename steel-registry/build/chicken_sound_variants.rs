@@ -1,6 +1,4 @@
-use std::fs;
-
-use crate::generator_functions::generate_identifier;
+use crate::generator_functions::{generate_identifier, read_variants_from_dir};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -21,31 +19,8 @@ pub struct ChickenSoundVariantJson {
 }
 
 pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=build_assets/builtin_datapacks/minecraft/chicken_sound_variant/"
-    );
-
-    let chicken_sound_variant_dir =
-        "build_assets/builtin_datapacks/minecraft/chicken_sound_variant";
-    let mut chicken_sound_variants = Vec::new();
-
-    // Read all chicken sound variant JSON files
-    for entry in fs::read_dir(chicken_sound_variant_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let chicken_sound_variant_name =
-                path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let chicken_sound_variant: ChickenSoundVariantJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| {
-                    panic!("Failed to parse {}: {}", chicken_sound_variant_name, e)
-                });
-
-            chicken_sound_variants.push((chicken_sound_variant_name, chicken_sound_variant));
-        }
-    }
+    let chicken_sound_variants: Vec<(String, ChickenSoundVariantJson)> =
+        read_variants_from_dir("chicken_sound_variant");
 
     let mut stream = TokenStream::new();
 
