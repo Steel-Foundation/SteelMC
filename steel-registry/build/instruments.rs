@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_identifier;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -17,12 +18,6 @@ pub struct InstrumentJson {
 #[derive(Deserialize, Debug)]
 pub struct TextComponentJson {
     translate: String,
-}
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
 }
 
 fn generate_text_component(component: &TextComponentJson) -> TokenStream {

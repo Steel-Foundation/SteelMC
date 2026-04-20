@@ -59,6 +59,7 @@ mod surface_rules;
 mod banner_pattern_tags;
 mod damage_type_tags;
 mod entity_type_tags;
+mod generator_functions;
 mod instrument_tags;
 mod painting_variant_tags;
 mod poi_type_tags;

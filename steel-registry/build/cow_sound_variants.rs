@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_identifier;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -12,11 +13,6 @@ pub struct CowSoundVariantJson {
     death_sound: Identifier,
     hurt_sound: Identifier,
     step_sound: Identifier,
-}
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let path = resource.path.as_ref();
-    quote! { Identifier::vanilla_static(#path) }
 }
 
 pub(crate) fn build() -> TokenStream {
