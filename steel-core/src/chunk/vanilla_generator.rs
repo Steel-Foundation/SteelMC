@@ -132,7 +132,30 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
         };
 
-        let structure_sets = load_vanilla_structure_sets();
+        // Drop structure sets whose resolved `allowed_biomes` have no overlap
+        // with this dimension's biome palette. Vanilla scopes structures by the
+        // `biomes` tag on each Structure JSON; by the time we load it here that
+        // tag has already been resolved into each entry's `allowed_biomes`, so
+        // the cross-dimension pollution check is a straightforward set
+        // intersection.
+        //
+        // Matters for e.g. `nether_fossil`: its placement (random_spread) passes
+        // the spatial check in the overworld too, which used to drag the
+        // expensive per-chunk Y-walk column probe into every overworld chunk
+        // before the biome check rejected it.
+        let possible_biomes = biome_source.possible_biomes();
+        let structure_sets: Vec<(Identifier, StructureSet)> = load_vanilla_structure_sets()
+            .into_iter()
+            .filter(|(_, set)| {
+                set.structures.iter().any(|entry| {
+                    entry.allowed_biomes.is_empty()
+                        || entry
+                            .allowed_biomes
+                            .iter()
+                            .any(|b| possible_biomes.contains(b))
+                })
+            })
+            .collect();
 
         // Pre-compute ring positions for ConcentricRings placements (e.g., strongholds).
         // Positions are snapped to preferred biomes via findBiomeHorizontal (search radius 112).
@@ -617,8 +640,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // We reuse one aquifer for all queries in this chunk — the grid extends
         // beyond the 16-block chunk boundary due to sample offsets, covering
         // nearby positions needed by structure placement.
-        let mut aquifer_cache = N::ColumnCache::default();
-        aquifer_cache.init_grid(chunk_min_x, chunk_min_z, &self.noises);
+        //
+        // Cloning `height_cache` skips a second `init_grid` pass (density-function
+        // eval at 25 quart positions); the grid arrays are fixed-size so clone is
+        // just memcpy.
+        let aquifer_cache = height_cache.clone();
         let mut aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,

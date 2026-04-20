@@ -16,11 +16,16 @@
 //! generation order, and better L1 locality since the cache lives on the sampler struct
 //! alongside the column cache. The only cost is one cold start per chunk (1/1536 lookups).
 
+use rustc_hash::FxHashSet;
 use steel_registry::biome::BiomeRef;
 use steel_registry::density_functions::nether::NetherColumnCache;
 use steel_registry::density_functions::overworld::OverworldColumnCache;
-use steel_registry::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
+use steel_registry::multi_noise::{
+    NETHER_BIOME_PARAMETERS, OVERWORLD_BIOME_PARAMETERS, get_nether_biome_cached,
+    get_overworld_biome_cached,
+};
 use steel_registry::vanilla_biomes;
+use steel_utils::Identifier;
 use steel_utils::random::Random as _;
 use steel_utils::random::legacy_random::LegacyRandom;
 
@@ -61,6 +66,37 @@ impl BiomeSourceKind {
     #[must_use]
     pub fn end(seed: u64) -> Self {
         Self::End(Box::new(EndBiomeSource::new(seed)))
+    }
+
+    /// Every biome identifier this source can produce.
+    ///
+    /// Used for dimension-filtering structure sets whose resolved
+    /// `allowed_biomes` are all from another dimension (e.g. nether_fossil
+    /// should never be evaluated in the overworld).
+    #[must_use]
+    pub fn possible_biomes(&self) -> FxHashSet<Identifier> {
+        match self {
+            Self::Overworld(_) => OVERWORLD_BIOME_PARAMETERS
+                .values()
+                .iter()
+                .map(|(_, b)| b.key.clone())
+                .collect(),
+            Self::Nether(_) => NETHER_BIOME_PARAMETERS
+                .values()
+                .iter()
+                .map(|(_, b)| b.key.clone())
+                .collect(),
+            Self::End(_) => [
+                &vanilla_biomes::THE_END,
+                &vanilla_biomes::END_HIGHLANDS,
+                &vanilla_biomes::END_MIDLANDS,
+                &vanilla_biomes::END_BARRENS,
+                &vanilla_biomes::SMALL_END_ISLANDS,
+            ]
+            .iter()
+            .map(|b| b.key.clone())
+            .collect(),
+        }
     }
 
     /// Create a per-chunk biome sampler.

@@ -2,12 +2,18 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
-use std::sync::Once;
-use steel_core::chunk::chunk_access::ChunkAccess;
+use std::sync::{Arc, Once, Weak};
+use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_generator::ChunkGenerator;
+use steel_core::chunk::chunk_holder::ChunkHolder;
+use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep};
+use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::chunk::world_gen_context::{EndGenerator, NetherGenerator, OverworldGenerator};
+use steel_core::chunk::world_gen_context::{
+    ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator, WorldGenContext,
+};
 use steel_core::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
@@ -250,6 +256,194 @@ fn bench_end_surface(c: &mut Criterion) {
     });
 }
 
+// ── Structure-starts benchmarks ─────────────────────────────────────────────
+
+fn bench_overworld_structure_starts(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let source = BiomeSourceKind::overworld(0);
+    let generator = OverworldGenerator::new(source, 0);
+
+    c.bench_function("overworld_create_structures", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_structures(&chunk);
+        });
+    });
+}
+
+fn bench_nether_structure_starts(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
+
+    c.bench_function("nether_create_structures", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_structures(&chunk);
+        });
+    });
+}
+
+fn bench_end_structure_starts(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
+
+    c.bench_function("end_create_structures", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_structures(&chunk);
+        });
+    });
+}
+
+// ── Structure-references benchmarks ─────────────────────────────────────────
+
+/// No-op task used to populate `ChunkStep::task`; `generate_structure_references`
+/// never dispatches through it.
+fn noop_task(
+    _ctx: Arc<WorldGenContext>,
+    _step: &ChunkStep,
+    _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    _holder: Arc<ChunkHolder>,
+) {
+}
+
+fn dummy_step() -> ChunkStep {
+    ChunkStep {
+        target_status: ChunkStatus::StructureReferences,
+        direct_dependencies: ChunkDependencies::EMPTY,
+        accumulated_dependencies: ChunkDependencies::EMPTY,
+        block_state_write_radius: -1,
+        task: noop_task,
+    }
+}
+
+/// Builds a `ChunkHolder` at `(chunk_x, chunk_z)` containing a proto chunk
+/// with structure starts generated and the holder advanced to `StructureStarts`.
+fn make_holder_with_starts(
+    chunk_x: i32,
+    chunk_z: i32,
+    dim: &DimensionType,
+    generator: &ChunkGeneratorType,
+) -> Arc<ChunkHolder> {
+    let holder = Arc::new(ChunkHolder::new(
+        ChunkPos::new(chunk_x, chunk_z),
+        0,
+        dim.min_y,
+        dim.height,
+    ));
+    let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
+    generator.create_structures(&chunk);
+    holder.insert_chunk(chunk, ChunkStatus::StructureStarts);
+    holder
+}
+
+fn build_references_fixture(
+    dim: &'static DimensionType,
+    generator: ChunkGeneratorType,
+) -> (
+    Arc<WorldGenContext>,
+    Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    Arc<ChunkHolder>,
+) {
+    let generator_arc = Arc::new(generator);
+    let context = Arc::new(WorldGenContext::new(generator_arc.clone(), Weak::new()));
+
+    let gen_for_factory = generator_arc.clone();
+    let cache = Arc::new(StaticCache2D::create(0, 0, 8, move |x, z| {
+        make_holder_with_starts(x, z, dim, &gen_for_factory)
+    }));
+    let target = cache.get(0, 0).clone();
+    (context, cache, target)
+}
+
+fn bench_references(c: &mut Criterion, name: &str, context_fixture: ReferencesFixture) {
+    let ReferencesFixture {
+        context,
+        cache,
+        target,
+    } = context_fixture;
+    let step = dummy_step();
+
+    c.bench_function(name, |b| {
+        b.iter_batched(
+            || {
+                let chunk = target
+                    .try_chunk(ChunkStatus::StructureStarts)
+                    .expect("target chunk missing");
+                chunk.structure_references_mut().clear();
+            },
+            |()| {
+                ChunkStatusTasks::generate_structure_references(
+                    context.clone(),
+                    &step,
+                    &cache,
+                    target.clone(),
+                );
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+struct ReferencesFixture {
+    context: Arc<WorldGenContext>,
+    cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    target: Arc<ChunkHolder>,
+}
+
+fn bench_overworld_structure_references(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let generator = OverworldGenerator::new(BiomeSourceKind::overworld(0), 0).into();
+    let (context, cache, target) = build_references_fixture(dim, generator);
+    bench_references(
+        c,
+        "overworld_structure_references",
+        ReferencesFixture {
+            context,
+            cache,
+            target,
+        },
+    );
+}
+
+fn bench_nether_structure_references(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_NETHER;
+    let generator = NetherGenerator::new(BiomeSourceKind::nether(0), 0).into();
+    let (context, cache, target) = build_references_fixture(dim, generator);
+    bench_references(
+        c,
+        "nether_structure_references",
+        ReferencesFixture {
+            context,
+            cache,
+            target,
+        },
+    );
+}
+
+fn bench_end_structure_references(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_END;
+    let generator = EndGenerator::new(BiomeSourceKind::end(0), 0).into();
+    let (context, cache, target) = build_references_fixture(dim, generator);
+    bench_references(
+        c,
+        "end_structure_references",
+        ReferencesFixture {
+            context,
+            cache,
+            target,
+        },
+    );
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -264,5 +458,13 @@ criterion_group!(
     bench_overworld_surface,
     bench_nether_surface,
     bench_end_surface,
+    // Structure starts
+    bench_overworld_structure_starts,
+    bench_nether_structure_starts,
+    bench_end_structure_starts,
+    // Structure references
+    bench_overworld_structure_references,
+    bench_nether_structure_references,
+    bench_end_structure_references,
 );
 criterion_main!(benches);
