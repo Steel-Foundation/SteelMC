@@ -1,4 +1,3 @@
-use crate::zombie_nautilus_variants::{BiomeCondition, SpawnConditionEntry};
 use proc_macro2::TokenStream;
 use quote::quote;
 use steel_utils::Identifier;
