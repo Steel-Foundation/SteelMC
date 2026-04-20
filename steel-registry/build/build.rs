@@ -63,6 +63,7 @@ mod generator_functions;
 mod instrument_tags;
 mod painting_variant_tags;
 mod poi_type_tags;
+mod shared_structs;
 mod tag_utils;
 
 const FMT: bool = cfg!(feature = "fmt");

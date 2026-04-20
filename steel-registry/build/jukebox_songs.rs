@@ -1,6 +1,7 @@
 use std::fs;
 
-use crate::generator_functions::generate_identifier;
+use crate::generator_functions::{generate_identifier, generate_text_component};
+use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -13,18 +14,6 @@ pub struct JukeboxSongJson {
     description: TextComponentJson,
     length_in_seconds: f32,
     comparator_output: i32,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct TextComponentJson {
-    translate: String,
-}
-
-fn generate_text_component(component: &TextComponentJson) -> TokenStream {
-    let translate = component.translate.as_str();
-    quote! {
-        TextComponent::translated(TranslatedMessage::new(#translate, None))
-    }
 }
 
 pub(crate) fn build() -> TokenStream {

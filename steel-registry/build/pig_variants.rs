@@ -1,6 +1,7 @@
 use std::fs;
 
-use crate::generator_functions::{generate_identifier, generate_option};
+use crate::generator_functions::{generate_identifier, generate_spawn_condition_entry};
+use crate::shared_structs::SpawnConditionEntry;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -16,48 +17,10 @@ pub struct PigVariantJson {
     spawn_conditions: Vec<SpawnConditionEntry>,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct SpawnConditionEntry {
-    priority: i32,
-    #[serde(default)]
-    condition: Option<BiomeCondition>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct BiomeCondition {
-    #[serde(rename = "type")]
-    condition_type: String,
-    biomes: String,
-}
-
 fn generate_pig_model_type(model: &str) -> TokenStream {
     match model {
         "cold" => quote! { PigModelType::Cold },
         _ => quote! { PigModelType::Normal },
-    }
-}
-
-fn generate_biome_condition(condition: &BiomeCondition) -> TokenStream {
-    let condition_type = condition.condition_type.as_str();
-    let biomes = condition.biomes.as_str();
-
-    quote! {
-        BiomeCondition {
-            condition_type: #condition_type,
-            biomes: #biomes,
-        }
-    }
-}
-
-fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
-    let priority = entry.priority;
-    let condition = generate_option(&entry.condition, generate_biome_condition);
-
-    quote! {
-        SpawnConditionEntry {
-            priority: #priority,
-            condition: #condition,
-        }
     }
 }
 

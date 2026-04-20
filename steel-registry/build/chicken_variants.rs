@@ -1,6 +1,7 @@
 use std::fs;
 
 use crate::generator_functions::{generate_identifier, generate_option};
+use crate::shared_structs::{BiomeCondition, SpawnConditionEntry};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -14,20 +15,6 @@ pub struct ChickenVariantJson {
     #[serde(default)]
     model: String,
     spawn_conditions: Vec<SpawnConditionEntry>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct SpawnConditionEntry {
-    priority: i32,
-    #[serde(default)]
-    condition: Option<BiomeCondition>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct BiomeCondition {
-    #[serde(rename = "type")]
-    condition_type: String,
-    biomes: String,
 }
 
 fn generate_chicken_model_type(model: &str) -> TokenStream {
