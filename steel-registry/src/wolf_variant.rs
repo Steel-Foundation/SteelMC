@@ -23,7 +23,7 @@ pub struct WolfAssetInfo {
 
 impl ToNbtTag for &WolfVariant {
     fn to_nbt_tag(self) -> NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtList};
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         let mut assets = NbtCompound::new();
         let wild = self.assets.wild.to_string();
