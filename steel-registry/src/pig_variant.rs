@@ -23,7 +23,7 @@ pub enum PigModelType {
 
 impl ToNbtTag for &PigVariant {
     fn to_nbt_tag(self) -> NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+        use simdnbt::owned::{NbtCompound, NbtTag};
         let mut compound = NbtCompound::new();
         compound.insert("asset_id", self.asset_id.clone());
         compound.insert("baby_asset_id", self.baby_asset_id.clone());
