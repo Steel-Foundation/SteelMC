@@ -29,10 +29,11 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::wolf_variant::{
-            WolfVariant, WolfVariantRegistry, WolfAssetInfo, SpawnConditionEntry, BiomeCondition,
+            WolfVariant, WolfVariantRegistry, WolfAssetInfo,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static wolf variant definitions

@@ -31,10 +31,11 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::pig_variant::{
-            PigVariant, PigVariantRegistry, PigModelType, SpawnConditionEntry, BiomeCondition,
+            PigVariant, PigVariantRegistry, PigModelType,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static pig variant definitions

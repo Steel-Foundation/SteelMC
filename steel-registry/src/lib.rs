@@ -371,6 +371,7 @@ pub mod density_functions;
 #[rustfmt::skip]
 #[path = "generated/vanilla_world_clocks.rs"]
 pub mod vanilla_world_clocks;
+pub mod shared_structs;
 
 pub struct RegistryLock(OnceLock<Registry>);
 

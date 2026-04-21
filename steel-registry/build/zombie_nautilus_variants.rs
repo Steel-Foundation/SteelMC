@@ -24,10 +24,11 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::zombie_nautilus_variant::{
-            ZombieNautilusVariant, ZombieNautilusVariantRegistry, SpawnConditionEntry, BiomeCondition,
+            ZombieNautilusVariant, ZombieNautilusVariantRegistry,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static zombie nautilus variant definitions

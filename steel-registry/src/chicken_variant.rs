@@ -1,3 +1,4 @@
+use crate::shared_structs::SpawnConditionEntry;
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -21,20 +22,6 @@ pub enum ChickenModelType {
     Cold,
 }
 
-/// A single entry in the list of spawn conditions.
-#[derive(Debug)]
-pub struct SpawnConditionEntry {
-    pub priority: i32,
-    pub condition: Option<BiomeCondition>,
-}
-
-/// Defines a condition based on a biome or list of biomes.
-#[derive(Debug)]
-pub struct BiomeCondition {
-    pub condition_type: &'static str,
-    pub biomes: &'static str,
-}
-
 impl ToNbtTag for &ChickenVariant {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -48,25 +35,12 @@ impl ToNbtTag for &ChickenVariant {
                 ChickenModelType::Cold => "cold",
             },
         );
-        let conditions: Vec<NbtCompound> = self
+        let conditions: Vec<NbtTag> = self
             .spawn_conditions
             .iter()
-            .map(|entry| {
-                let mut e = NbtCompound::new();
-                e.insert("priority", entry.priority);
-                if let Some(cond) = &entry.condition {
-                    let mut c = NbtCompound::new();
-                    c.insert("type", cond.condition_type);
-                    c.insert("biomes", cond.biomes);
-                    e.insert("condition", NbtTag::Compound(c));
-                }
-                e
-            })
+            .map(|entry| entry.to_nbt_tag())
             .collect();
-        compound.insert(
-            "spawn_conditions",
-            NbtTag::List(NbtList::Compound(conditions)),
-        );
+        compound.insert("spawn_conditions", NbtTag::List(NbtList::from(conditions)));
         NbtTag::Compound(compound)
     }
 }

@@ -21,10 +21,11 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::frog_variant::{
-            FrogVariant, FrogVariantRegistry, SpawnConditionEntry, BiomeCondition,
+            FrogVariant, FrogVariantRegistry,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static frog variant definitions

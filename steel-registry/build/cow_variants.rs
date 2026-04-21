@@ -32,10 +32,11 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::cow_variant::{
-            CowVariant, CowVariantRegistry, CowModelType, SpawnConditionEntry, BiomeCondition,
+            CowVariant, CowVariantRegistry, CowModelType,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static cow variant definitions

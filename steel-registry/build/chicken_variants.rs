@@ -54,10 +54,11 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::chicken_variant::{
-            ChickenVariant, ChickenVariantRegistry, ChickenModelType, SpawnConditionEntry, BiomeCondition,
+            ChickenVariant, ChickenVariantRegistry, ChickenModelType,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
     });
 
     // Generate static chicken variant definitions
