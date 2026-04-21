@@ -47,11 +47,11 @@ impl ToNbtTag for &WolfVariant {
         assets.insert("angry", angry.as_str());
         compound.insert("assets", NbtTag::Compound(assets));
         let mut baby_assets = NbtCompound::new();
-        let wild = self.assets.wild.to_string();
+        let wild = self.baby_assets.wild.to_string();
         baby_assets.insert("wild", wild.as_str());
-        let tame = self.assets.tame.to_string();
+        let tame = self.baby_assets.tame.to_string();
         baby_assets.insert("tame", tame.as_str());
-        let angry = self.assets.angry.to_string();
+        let angry = self.baby_assets.angry.to_string();
         baby_assets.insert("angry", angry.as_str());
         compound.insert("baby_assets", NbtTag::Compound(baby_assets));
         let conditions: Vec<NbtCompound> = self
