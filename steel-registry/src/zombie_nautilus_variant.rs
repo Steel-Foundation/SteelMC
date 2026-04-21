@@ -1,4 +1,4 @@
-use crate::shared_structs::SpawnConditionEntry;
+use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -23,12 +23,7 @@ impl ToNbtTag for &ZombieNautilusVariant {
         if let Some(model) = self.model {
             compound.insert("model", model);
         }
-        let conditions: Vec<NbtTag> = self
-            .spawn_conditions
-            .iter()
-            .map(|entry| entry.to_nbt_tag())
-            .collect();
-        compound.insert("spawn_conditions", NbtTag::List(NbtList::from(conditions)));
+        insert_spawn_conditions(&mut compound, self.spawn_conditions);
         NbtTag::Compound(compound)
     }
 }

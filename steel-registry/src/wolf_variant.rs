@@ -1,4 +1,4 @@
-use crate::shared_structs::SpawnConditionEntry;
+use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -41,12 +41,7 @@ impl ToNbtTag for &WolfVariant {
         let angry = self.baby_assets.angry.to_string();
         baby_assets.insert("angry", angry.as_str());
         compound.insert("baby_assets", NbtTag::Compound(baby_assets));
-        let conditions: Vec<NbtTag> = self
-            .spawn_conditions
-            .iter()
-            .map(|entry| entry.to_nbt_tag())
-            .collect();
-        compound.insert("spawn_conditions", NbtTag::List(NbtList::from(conditions)));
+        insert_spawn_conditions(&mut compound, self.spawn_conditions);
         NbtTag::Compound(compound)
     }
 }
