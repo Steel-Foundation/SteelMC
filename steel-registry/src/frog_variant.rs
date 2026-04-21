@@ -1,5 +1,4 @@
 use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -24,37 +23,4 @@ impl ToNbtTag for &FrogVariant {
     }
 }
 
-pub type FrogVariantRef = &'static FrogVariant;
-
-pub struct FrogVariantRegistry {
-    frog_variants_by_id: Vec<FrogVariantRef>,
-    frog_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl FrogVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            frog_variants_by_id: Vec::new(),
-            frog_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    FrogVariantRegistry,
-    FrogVariantRef,
-    frog_variants_by_id,
-    frog_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    FrogVariantRegistry,
-    FrogVariant,
-    frog_variants_by_id,
-    frog_variants_by_key,
-    frog_variants
-);
+crate::define_registry!(FrogVariantRegistry, FrogVariant, stem: frog_variants);

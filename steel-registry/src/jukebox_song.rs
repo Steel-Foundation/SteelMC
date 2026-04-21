@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -27,37 +26,4 @@ impl ToNbtTag for &JukeboxSong {
     }
 }
 
-pub type JukeboxSongRef = &'static JukeboxSong;
-
-pub struct JukeboxSongRegistry {
-    jukebox_songs_by_id: Vec<JukeboxSongRef>,
-    jukebox_songs_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl JukeboxSongRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            jukebox_songs_by_id: Vec::new(),
-            jukebox_songs_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    JukeboxSongRegistry,
-    JukeboxSongRef,
-    jukebox_songs_by_id,
-    jukebox_songs_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    JukeboxSongRegistry,
-    JukeboxSong,
-    jukebox_songs_by_id,
-    jukebox_songs_by_key,
-    jukebox_songs
-);
+crate::define_registry!(JukeboxSongRegistry, JukeboxSong, stem: jukebox_songs);

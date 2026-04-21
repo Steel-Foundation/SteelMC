@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -29,37 +28,4 @@ impl ToNbtTag for &CowSoundVariant {
     }
 }
 
-pub type CowSoundVariantRef = &'static CowSoundVariant;
-
-pub struct CowSoundVariantRegistry {
-    cow_sound_variants_by_id: Vec<CowSoundVariantRef>,
-    cow_sound_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl CowSoundVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            cow_sound_variants_by_id: Vec::new(),
-            cow_sound_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    CowSoundVariantRegistry,
-    CowSoundVariantRef,
-    cow_sound_variants_by_id,
-    cow_sound_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    CowSoundVariantRegistry,
-    CowSoundVariant,
-    cow_sound_variants_by_id,
-    cow_sound_variants_by_key,
-    cow_sound_variants
-);
+crate::define_registry!(CowSoundVariantRegistry, CowSoundVariant, stem: cow_sound_variants);

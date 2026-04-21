@@ -40,37 +40,4 @@ impl ToNbtTag for &TrimMaterial {
     }
 }
 
-pub type TrimMaterialRef = &'static TrimMaterial;
-
-pub struct TrimMaterialRegistry {
-    trim_materials_by_id: Vec<TrimMaterialRef>,
-    trim_materials_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl TrimMaterialRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            trim_materials_by_id: Vec::new(),
-            trim_materials_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    TrimMaterialRegistry,
-    TrimMaterialRef,
-    trim_materials_by_id,
-    trim_materials_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    TrimMaterialRegistry,
-    TrimMaterial,
-    trim_materials_by_id,
-    trim_materials_by_key,
-    trim_materials
-);
+crate::define_registry!(TrimMaterialRegistry, TrimMaterial, stem: trim_materials);

@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -44,37 +43,8 @@ impl ToNbtTag for &ChickenSoundVariant {
     }
 }
 
-pub type ChickenSoundVariantRef = &'static ChickenSoundVariant;
-
-pub struct ChickenSoundVariantRegistry {
-    chicken_sound_variants_by_id: Vec<ChickenSoundVariantRef>,
-    chicken_sound_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl ChickenSoundVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            chicken_sound_variants_by_id: Vec::new(),
-            chicken_sound_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    ChickenSoundVariantRegistry,
-    ChickenSoundVariantRef,
-    chicken_sound_variants_by_id,
-    chicken_sound_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     ChickenSoundVariantRegistry,
     ChickenSoundVariant,
-    chicken_sound_variants_by_id,
-    chicken_sound_variants_by_key,
-    chicken_sound_variants
+    stem: chicken_sound_variants,
 );

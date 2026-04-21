@@ -1,5 +1,4 @@
 use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -28,37 +27,8 @@ impl ToNbtTag for &ZombieNautilusVariant {
     }
 }
 
-pub type ZombieNautilusVariantRef = &'static ZombieNautilusVariant;
-
-pub struct ZombieNautilusVariantRegistry {
-    zombie_nautilus_variants_by_id: Vec<ZombieNautilusVariantRef>,
-    zombie_nautilus_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl ZombieNautilusVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            zombie_nautilus_variants_by_id: Vec::new(),
-            zombie_nautilus_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    ZombieNautilusVariantRegistry,
-    ZombieNautilusVariantRef,
-    zombie_nautilus_variants_by_id,
-    zombie_nautilus_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     ZombieNautilusVariantRegistry,
     ZombieNautilusVariant,
-    zombie_nautilus_variants_by_id,
-    zombie_nautilus_variants_by_key,
-    zombie_nautilus_variants
+    stem: zombie_nautilus_variants,
 );

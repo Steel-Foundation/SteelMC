@@ -1,5 +1,4 @@
 use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -40,37 +39,4 @@ impl ToNbtTag for &PigVariant {
     }
 }
 
-pub type PigVariantRef = &'static PigVariant;
-
-pub struct PigVariantRegistry {
-    pig_variants_by_id: Vec<PigVariantRef>,
-    pig_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl PigVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            pig_variants_by_id: Vec::new(),
-            pig_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    PigVariantRegistry,
-    PigVariantRef,
-    pig_variants_by_id,
-    pig_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    PigVariantRegistry,
-    PigVariant,
-    pig_variants_by_id,
-    pig_variants_by_key,
-    pig_variants
-);
+crate::define_registry!(PigVariantRegistry, PigVariant, stem: pig_variants);

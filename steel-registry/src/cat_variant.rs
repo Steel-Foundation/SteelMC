@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -73,37 +72,4 @@ impl ToNbtTag for &CatVariant {
     }
 }
 
-pub type CatVariantRef = &'static CatVariant;
-
-pub struct CatVariantRegistry {
-    cat_variants_by_id: Vec<CatVariantRef>,
-    cat_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl CatVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            cat_variants_by_id: Vec::new(),
-            cat_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_registry!(
-    CatVariantRegistry,
-    CatVariant,
-    cat_variants_by_id,
-    cat_variants_by_key,
-    cat_variants
-);
-
-crate::impl_standard_methods!(
-    CatVariantRegistry,
-    CatVariantRef,
-    cat_variants_by_id,
-    cat_variants_by_key,
-    allows_registering
-);
+crate::define_registry!(CatVariantRegistry, CatVariant, stem: cat_variants);

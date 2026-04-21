@@ -98,6 +98,149 @@ macro_rules! impl_registry {
     };
 }
 
+/// Defines a "plain" registry in one shot: the `XxxRef` type alias, the registry
+/// struct with `<stem>_by_id` / `<stem>_by_key` / optional `tags` / `allows_registering`
+/// fields, its `new()` constructor, and the usual `impl_standard_methods!` +
+/// `impl_registry!` (+ `impl_tagged_registry!` when `tagged:` is supplied).
+///
+/// ```ignore
+/// crate::define_registry!(ChickenVariantRegistry, ChickenVariant, stem: chicken_variants);
+///
+/// crate::define_registry!(
+///     BannerPatternRegistry,
+///     BannerPattern,
+///     stem: banner_patterns,
+///     tagged: "banner pattern",
+/// );
+///
+/// // When the struct field stem differs from the global `Registry` field:
+/// crate::define_registry!(
+///     PoiTypeRegistry,
+///     PoiType,
+///     stem: types,
+///     global: poi_types,
+///     tagged: "POI type",
+/// );
+/// ```
+#[macro_export]
+macro_rules! define_registry {
+    // plain + global override
+    (
+        $Registry:ident, $Entry:ident,
+        stem: $stem:ident, global: $global:ident $(,)?
+    ) => {
+        $crate::__define_plain_registry!($Registry, $Entry, $stem, $global);
+    };
+    // plain (global defaults to stem)
+    (
+        $Registry:ident, $Entry:ident,
+        stem: $stem:ident $(,)?
+    ) => {
+        $crate::__define_plain_registry!($Registry, $Entry, $stem, $stem);
+    };
+    // tagged + global override
+    (
+        $Registry:ident, $Entry:ident,
+        stem: $stem:ident, global: $global:ident, tagged: $label:literal $(,)?
+    ) => {
+        $crate::__define_tagged_registry!($Registry, $Entry, $stem, $global, $label);
+    };
+    // tagged (global defaults to stem)
+    (
+        $Registry:ident, $Entry:ident,
+        stem: $stem:ident, tagged: $label:literal $(,)?
+    ) => {
+        $crate::__define_tagged_registry!($Registry, $Entry, $stem, $stem, $label);
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __define_plain_registry {
+    ($Registry:ident, $Entry:ident, $stem:ident, $global:ident) => {
+        ::paste::paste! {
+            pub type [<$Entry Ref>] = &'static $Entry;
+
+            pub struct $Registry {
+                [<$stem _by_id>]: ::std::vec::Vec<[<$Entry Ref>]>,
+                [<$stem _by_key>]:
+                    ::rustc_hash::FxHashMap<::steel_utils::Identifier, usize>,
+                allows_registering: bool,
+            }
+
+            impl $Registry {
+                #[must_use]
+                pub fn new() -> Self {
+                    Self {
+                        [<$stem _by_id>]: ::std::vec::Vec::new(),
+                        [<$stem _by_key>]: ::rustc_hash::FxHashMap::default(),
+                        allows_registering: true,
+                    }
+                }
+            }
+
+            $crate::impl_standard_methods!(
+                $Registry, [<$Entry Ref>],
+                [<$stem _by_id>], [<$stem _by_key>],
+                allows_registering
+            );
+
+            $crate::impl_registry!(
+                $Registry, $Entry,
+                [<$stem _by_id>], [<$stem _by_key>],
+                $global
+            );
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __define_tagged_registry {
+    ($Registry:ident, $Entry:ident, $stem:ident, $global:ident, $label:literal) => {
+        ::paste::paste! {
+            pub type [<$Entry Ref>] = &'static $Entry;
+
+            pub struct $Registry {
+                [<$stem _by_id>]: ::std::vec::Vec<[<$Entry Ref>]>,
+                [<$stem _by_key>]:
+                    ::rustc_hash::FxHashMap<::steel_utils::Identifier, usize>,
+                tags: ::rustc_hash::FxHashMap<
+                    ::steel_utils::Identifier,
+                    ::std::vec::Vec<::steel_utils::Identifier>,
+                >,
+                allows_registering: bool,
+            }
+
+            impl $Registry {
+                #[must_use]
+                pub fn new() -> Self {
+                    Self {
+                        [<$stem _by_id>]: ::std::vec::Vec::new(),
+                        [<$stem _by_key>]: ::rustc_hash::FxHashMap::default(),
+                        tags: ::rustc_hash::FxHashMap::default(),
+                        allows_registering: true,
+                    }
+                }
+            }
+
+            $crate::impl_standard_methods!(
+                $Registry, [<$Entry Ref>],
+                [<$stem _by_id>], [<$stem _by_key>],
+                allows_registering
+            );
+
+            $crate::impl_registry!(
+                $Registry, $Entry,
+                [<$stem _by_id>], [<$stem _by_key>],
+                $global
+            );
+
+            $crate::impl_tagged_registry!($Registry, [<$stem _by_key>], $label);
+        }
+    };
+}
+
 /// Implements `TaggedRegistryExt` for a registry with tag support.
 #[macro_export]
 macro_rules! impl_tagged_registry {

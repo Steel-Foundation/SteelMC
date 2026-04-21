@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -54,37 +53,4 @@ impl ToNbtTag for &WolfSoundVariant {
     }
 }
 
-pub type WolfSoundVariantRef = &'static WolfSoundVariant;
-
-pub struct WolfSoundVariantRegistry {
-    wolf_sound_variants_by_id: Vec<WolfSoundVariantRef>,
-    wolf_sound_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl WolfSoundVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            wolf_sound_variants_by_id: Vec::new(),
-            wolf_sound_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    WolfSoundVariantRegistry,
-    WolfSoundVariantRef,
-    wolf_sound_variants_by_id,
-    wolf_sound_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    WolfSoundVariantRegistry,
-    WolfSoundVariant,
-    wolf_sound_variants_by_id,
-    wolf_sound_variants_by_key,
-    wolf_sound_variants
-);
+crate::define_registry!(WolfSoundVariantRegistry, WolfSoundVariant, stem: wolf_sound_variants);

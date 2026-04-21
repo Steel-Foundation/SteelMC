@@ -30,6 +30,9 @@ text_components.workspace = true
 simdnbt.workspace = true
 tracing.workspace = true
 
+# Macros
+paste = "1"
+
 [build-dependencies]
 # Internal crates
 steel-utils = { workspace = true, features = ["codegen"] }

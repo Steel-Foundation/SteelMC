@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -79,37 +78,4 @@ impl ChatType {
     }
 }
 
-pub type ChatTypeRef = &'static ChatType;
-
-pub struct ChatTypeRegistry {
-    chat_types_by_id: Vec<ChatTypeRef>,
-    chat_types_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl ChatTypeRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            chat_types_by_id: Vec::new(),
-            chat_types_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    ChatTypeRegistry,
-    ChatTypeRef,
-    chat_types_by_id,
-    chat_types_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    ChatTypeRegistry,
-    ChatType,
-    chat_types_by_id,
-    chat_types_by_key,
-    chat_types
-);
+crate::define_registry!(ChatTypeRegistry, ChatType, stem: chat_types);

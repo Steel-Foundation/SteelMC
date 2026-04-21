@@ -1,5 +1,4 @@
 use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -40,37 +39,4 @@ impl ToNbtTag for &ChickenVariant {
     }
 }
 
-pub type ChickenVariantRef = &'static ChickenVariant;
-
-pub struct ChickenVariantRegistry {
-    chicken_variants_by_id: Vec<ChickenVariantRef>,
-    chicken_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl ChickenVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            chicken_variants_by_id: Vec::new(),
-            chicken_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    ChickenVariantRegistry,
-    ChickenVariantRef,
-    chicken_variants_by_id,
-    chicken_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    ChickenVariantRegistry,
-    ChickenVariant,
-    chicken_variants_by_id,
-    chicken_variants_by_key,
-    chicken_variants
-);
+crate::define_registry!(ChickenVariantRegistry, ChickenVariant, stem: chicken_variants);

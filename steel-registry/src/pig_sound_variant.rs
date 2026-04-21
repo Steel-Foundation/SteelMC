@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_utils::Identifier;
@@ -45,37 +44,4 @@ impl ToNbtTag for &PigSoundVariant {
     }
 }
 
-pub type PigSoundVariantRef = &'static PigSoundVariant;
-
-pub struct PigSoundVariantRegistry {
-    pig_sound_variants_by_id: Vec<PigSoundVariantRef>,
-    pig_sound_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl PigSoundVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            pig_sound_variants_by_id: Vec::new(),
-            pig_sound_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    PigSoundVariantRegistry,
-    PigSoundVariantRef,
-    pig_sound_variants_by_id,
-    pig_sound_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    PigSoundVariantRegistry,
-    PigSoundVariant,
-    pig_sound_variants_by_id,
-    pig_sound_variants_by_key,
-    pig_sound_variants
-);
+crate::define_registry!(PigSoundVariantRegistry, PigSoundVariant, stem: pig_sound_variants);

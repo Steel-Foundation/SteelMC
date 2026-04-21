@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -22,45 +21,9 @@ impl ToNbtTag for &BannerPattern {
     }
 }
 
-pub type BannerPatternRef = &'static BannerPattern;
-
-pub struct BannerPatternRegistry {
-    banner_patterns_by_id: Vec<BannerPatternRef>,
-    banner_patterns_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
-    allows_registering: bool,
-}
-
-impl BannerPatternRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            banner_patterns_by_id: Vec::new(),
-            banner_patterns_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    BannerPatternRegistry,
-    BannerPatternRef,
-    banner_patterns_by_id,
-    banner_patterns_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     BannerPatternRegistry,
     BannerPattern,
-    banner_patterns_by_id,
-    banner_patterns_by_key,
-    banner_patterns
-);
-
-crate::impl_tagged_registry!(
-    BannerPatternRegistry,
-    banner_patterns_by_key,
-    "banner pattern"
+    stem: banner_patterns,
+    tagged: "banner pattern",
 );

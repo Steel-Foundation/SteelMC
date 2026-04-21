@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -58,40 +57,9 @@ impl ToNbtTag for &Dialog {
     }
 }
 
-pub type DialogRef = &'static Dialog;
-
-pub struct DialogRegistry {
-    dialogs_by_id: Vec<DialogRef>,
-    dialogs_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
-    allows_registering: bool,
-}
-
-impl DialogRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            dialogs_by_id: Vec::new(),
-            dialogs_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    DialogRegistry,
-    DialogRef,
-    dialogs_by_id,
-    dialogs_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     DialogRegistry,
     Dialog,
-    dialogs_by_id,
-    dialogs_by_key,
-    dialogs
+    stem: dialogs,
+    tagged: "dialog",
 );
-crate::impl_tagged_registry!(DialogRegistry, dialogs_by_key, "dialog");

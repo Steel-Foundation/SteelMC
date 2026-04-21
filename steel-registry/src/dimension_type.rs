@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -282,7 +281,11 @@ impl ToNbtTag for &DimensionType {
     }
 }
 
-pub type DimensionTypeRef = &'static DimensionType;
+crate::define_registry!(
+    DimensionTypeRegistry,
+    DimensionType,
+    stem: dimension_types,
+);
 
 impl PartialEq for DimensionTypeRef {
     #[expect(clippy::disallowed_methods)] // This IS the PartialEq impl; ptr::eq is correct here
@@ -293,40 +296,9 @@ impl PartialEq for DimensionTypeRef {
 
 impl Eq for DimensionTypeRef {}
 
-pub struct DimensionTypeRegistry {
-    dimension_types_by_id: Vec<DimensionTypeRef>,
-    dimension_types_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
 impl DimensionTypeRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            dimension_types_by_id: Vec::new(),
-            dimension_types_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-
     #[must_use]
     pub fn get_ids(&self) -> Vec<Identifier> {
         self.dimension_types_by_key.keys().cloned().collect()
     }
 }
-
-crate::impl_standard_methods!(
-    DimensionTypeRegistry,
-    DimensionTypeRef,
-    dimension_types_by_id,
-    dimension_types_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    DimensionTypeRegistry,
-    DimensionType,
-    dimension_types_by_id,
-    dimension_types_by_key,
-    dimension_types
-);

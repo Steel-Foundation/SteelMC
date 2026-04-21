@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -121,40 +120,9 @@ impl ToNbtTag for &Timeline {
     }
 }
 
-pub type TimelineRef = &'static Timeline;
-
-pub struct TimelineRegistry {
-    timelines_by_id: Vec<TimelineRef>,
-    timelines_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
-    allows_registering: bool,
-}
-
-impl TimelineRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            timelines_by_id: Vec::new(),
-            timelines_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    TimelineRegistry,
-    TimelineRef,
-    timelines_by_id,
-    timelines_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     TimelineRegistry,
     Timeline,
-    timelines_by_id,
-    timelines_by_key,
-    timelines
+    stem: timelines,
+    tagged: "timeline",
 );
-crate::impl_tagged_registry!(TimelineRegistry, timelines_by_key, "timeline");

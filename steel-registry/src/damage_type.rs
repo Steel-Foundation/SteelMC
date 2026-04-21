@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -78,40 +77,9 @@ impl ToNbtTag for &DamageType {
     }
 }
 
-pub type DamageTypeRef = &'static DamageType;
-
-pub struct DamageTypeRegistry {
-    damage_types_by_id: Vec<DamageTypeRef>,
-    damage_types_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
-    allows_registering: bool,
-}
-
-impl DamageTypeRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            damage_types_by_id: Vec::new(),
-            damage_types_by_key: FxHashMap::default(),
-            allows_registering: true,
-            tags: FxHashMap::default(),
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    DamageTypeRegistry,
-    DamageTypeRef,
-    damage_types_by_id,
-    damage_types_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     DamageTypeRegistry,
     DamageType,
-    damage_types_by_id,
-    damage_types_by_key,
-    damage_types
+    stem: damage_types,
+    tagged: "damage type",
 );
-crate::impl_tagged_registry!(DamageTypeRegistry, damage_types_by_key, "damage type");

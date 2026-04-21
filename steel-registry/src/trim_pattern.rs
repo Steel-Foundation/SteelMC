@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -25,37 +24,4 @@ impl ToNbtTag for &TrimPattern {
     }
 }
 
-pub type TrimPatternRef = &'static TrimPattern;
-
-pub struct TrimPatternRegistry {
-    trim_patterns_by_id: Vec<TrimPatternRef>,
-    trim_patterns_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl TrimPatternRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            trim_patterns_by_id: Vec::new(),
-            trim_patterns_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    TrimPatternRegistry,
-    TrimPatternRef,
-    trim_patterns_by_id,
-    trim_patterns_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    TrimPatternRegistry,
-    TrimPattern,
-    trim_patterns_by_id,
-    trim_patterns_by_key,
-    trim_patterns
-);
+crate::define_registry!(TrimPatternRegistry, TrimPattern, stem: trim_patterns);

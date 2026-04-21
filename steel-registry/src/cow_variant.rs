@@ -1,5 +1,4 @@
 use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -42,37 +41,4 @@ impl ToNbtTag for &CowVariant {
     }
 }
 
-pub type CowVariantRef = &'static CowVariant;
-
-pub struct CowVariantRegistry {
-    cow_variants_by_id: Vec<CowVariantRef>,
-    cow_variants_by_key: FxHashMap<Identifier, usize>,
-    allows_registering: bool,
-}
-
-impl CowVariantRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            cow_variants_by_id: Vec::new(),
-            cow_variants_by_key: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    CowVariantRegistry,
-    CowVariantRef,
-    cow_variants_by_id,
-    cow_variants_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
-    CowVariantRegistry,
-    CowVariant,
-    cow_variants_by_id,
-    cow_variants_by_key,
-    cow_variants
-);
+crate::define_registry!(CowVariantRegistry, CowVariant, stem: cow_variants);

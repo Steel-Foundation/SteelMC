@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
@@ -28,41 +27,9 @@ impl ToNbtTag for &Instrument {
     }
 }
 
-pub type InstrumentRef = &'static Instrument;
-
-pub struct InstrumentRegistry {
-    instruments_by_id: Vec<InstrumentRef>,
-    instruments_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
-    allows_registering: bool,
-}
-
-impl InstrumentRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            instruments_by_id: Vec::new(),
-            instruments_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
-            allows_registering: true,
-        }
-    }
-}
-
-crate::impl_standard_methods!(
-    InstrumentRegistry,
-    InstrumentRef,
-    instruments_by_id,
-    instruments_by_key,
-    allows_registering
-);
-
-crate::impl_registry!(
+crate::define_registry!(
     InstrumentRegistry,
     Instrument,
-    instruments_by_id,
-    instruments_by_key,
-    instruments
+    stem: instruments,
+    tagged: "instrument",
 );
-
-crate::impl_tagged_registry!(InstrumentRegistry, instruments_by_key, "instrument");
