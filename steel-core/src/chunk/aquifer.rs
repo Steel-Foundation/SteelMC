@@ -27,7 +27,7 @@ pub struct LazyAquifer<'a, N: DimensionNoises> {
 impl<'a, N: DimensionNoises> LazyAquifer<'a, N> {
     /// Deferred aquifer for the given chunk.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         chunk_min_x: i32,
         chunk_min_z: i32,
         splitter: &'a RandomSplitter,
@@ -43,6 +43,9 @@ impl<'a, N: DimensionNoises> LazyAquifer<'a, N> {
     }
 
     /// Build on first call; `height_cache` is cloned into the aquifer's own cache.
+    ///
+    /// # Panics
+    /// Never — `inner` is initialised above if it was `None`.
     pub fn ensure(&mut self, height_cache: &N::ColumnCache) -> &mut Aquifer<N> {
         if self.inner.is_none() {
             self.inner = Some(Aquifer::<N>::new(

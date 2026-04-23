@@ -28,8 +28,7 @@ const PORTAL_SIZES: [(i32, i32, i32); 10] = [
 ];
 
 /// Template sizes for `giant_portal_1`..`giant_portal_3`.
-const GIANT_PORTAL_SIZES: [(i32, i32, i32); 3] =
-    [(11, 17, 16), (11, 16, 16), (16, 16, 16)];
+const GIANT_PORTAL_SIZES: [(i32, i32, i32); 3] = [(11, 17, 16), (11, 16, 16), (16, 16, 16)];
 
 /// Vertical placement type from the setup config.
 #[derive(Debug, Clone, Copy)]
@@ -100,6 +99,10 @@ pub struct PortalResult {
 }
 
 /// Matches vanilla's `RuinedPortalStructure.findGenerationPoint`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "inlines vanilla's setup → size → rotation → mirror → placement pipeline"
+)]
 pub fn find_generation_point(
     rng: &mut LegacyRandom,
     chunk_x: i32,

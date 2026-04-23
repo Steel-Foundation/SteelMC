@@ -53,12 +53,11 @@ impl<N: DimensionNoises> Structure<N> for SinglePieceStructure {
 
         if self.require_above_sea {
             let (x0, z0) = (ctx.chunk_min_x, ctx.chunk_min_z);
-            let lowest = [(x0, z0), (x0, z0 + d), (x0 + w, z0), (x0 + w, z0 + d)]
-                .into_iter()
-                .map(|(x, z)| ctx.base_height(x, z, false) - 1)
-                .min()
-                .unwrap();
-            if lowest < ctx.sea_level {
+            let h0 = ctx.base_height(x0, z0, false) - 1;
+            let h1 = ctx.base_height(x0, z0 + d, false) - 1;
+            let h2 = ctx.base_height(x0 + w, z0, false) - 1;
+            let h3 = ctx.base_height(x0 + w, z0 + d, false) - 1;
+            if h0.min(h1).min(h2).min(h3) < ctx.sea_level {
                 return None;
             }
         }

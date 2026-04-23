@@ -71,7 +71,9 @@ impl<N: DimensionNoises> Structure<N> for IglooStructure {
         let rotation = Rotation::get_random(rng);
         let (start_x, start_z) = (ctx.chunk_min_x, ctx.chunk_min_z);
         let mk = |off, depth, size, pivot| {
-            piece(make_piece_bb(start_x, start_z, rotation, off, depth, size, pivot))
+            piece(make_piece_bb(
+                start_x, start_z, rotation, off, depth, size, pivot,
+            ))
         };
 
         let mut pieces = Vec::new();

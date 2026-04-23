@@ -341,6 +341,10 @@ fn corridor_add_children(
     // End piece.
     let end_selection = rng.next_i32_bounded(4);
     let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
+    #[expect(
+        clippy::match_same_arms,
+        reason = "arms kept per-direction to mirror vanilla's switch dispatch"
+    )]
     let (fx, fz, d) = match (dir, end_selection) {
         (Dir::North, 0 | 1) => (bb.min_x, bb.min_z - 1, Dir::North),
         (Dir::North, 2) => (bb.min_x - 1, bb.min_z, Dir::West),
@@ -537,8 +541,8 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
             FxHashMap::default();
         let mut get_height = |x: i32, z: i32| -> i32 {
             let cw = N::Settings::CELL_WIDTH;
-            let aq_chunk_x = (x.div_euclid(cw) * cw >> 4) * 16;
-            let aq_chunk_z = (z.div_euclid(cw) * cw >> 4) * 16;
+            let aq_chunk_x = ((x.div_euclid(cw) * cw) >> 4) * 16;
+            let aq_chunk_z = ((z.div_euclid(cw) * cw) >> 4) * 16;
             let entry = height_query_cache
                 .entry((aq_chunk_x, aq_chunk_z))
                 .or_insert_with(|| {
@@ -555,14 +559,7 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
                     fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
                     (fresh_cache, fresh_aq)
                 });
-            iterate_noise_column_with_aquifer::<N>(
-                &mut entry.0,
-                noises,
-                &mut entry.1,
-                x,
-                z,
-                false,
-            )
+            iterate_noise_column_with_aquifer::<N>(&mut entry.0, noises, &mut entry.1, x, z, false)
         };
 
         let result = find_generation_point(

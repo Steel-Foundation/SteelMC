@@ -204,7 +204,10 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         reg("minecraft:nether_fossil", Box::new(NetherFossilStructure));
         reg("minecraft:fortress", Box::new(NetherFortressStructure));
         reg("minecraft:end_city", Box::new(EndCityStructure));
-        reg("minecraft:woodland_mansion", Box::new(WoodlandMansionStructure));
+        reg(
+            "minecraft:woodland_mansion",
+            Box::new(WoodlandMansionStructure),
+        );
         reg("minecraft:ocean_monument", Box::new(OceanMonumentStructure));
         reg("minecraft:mineshaft", Box::new(MineshaftStructure));
         reg(
@@ -231,13 +234,15 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
                 require_above_sea: false,
             }),
         );
-        reg("minecraft:buried_treasure", Box::new(BuriedTreasureStructure));
+        reg(
+            "minecraft:buried_treasure",
+            Box::new(BuriedTreasureStructure),
+        );
         reg("minecraft:shipwreck", Box::new(ShipwreckStructure));
         reg("minecraft:igloo", Box::new(IglooStructure));
         reg("minecraft:ocean_ruin", Box::new(OceanRuinStructure));
         reg("minecraft:stronghold", Box::new(StrongholdStructure));
         reg("minecraft:ruined_portal", Box::new(RuinedPortalStructure));
-        drop(reg);
 
         Self {
             biome_source,
@@ -601,8 +606,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // use their own caches, and the 1–4 column probes of the remainder
         // hit this cache's lazy single-entry mode cheaply. Eager 5×5 quart
         // init cost ~36µs per chunk with no payoff.
-        let mut aquifer =
-            LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
+        let mut aquifer = LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
         let mut surface_y_cache: Option<i32> = None;
         let mut height_cache_grid_ready = false;
 
@@ -815,7 +819,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         center_block_z,
                                         sea_level,
                                         surface_y_cache: &mut surface_y_cache,
-                height_cache_grid_ready: &mut height_cache_grid_ready,
+                                        height_cache_grid_ready: &mut height_cache_grid_ready,
                                         noises: &self.noises,
                                         splitter: &self.splitter,
                                         templates: &self.templates,
@@ -888,11 +892,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         N::ColumnCache::default(),
                                     );
                                     let mut fresh_cache = N::ColumnCache::default();
-                                    fresh_cache.init_grid(
-                                        aq_chunk_x,
-                                        aq_chunk_z,
-                                        &self.noises,
-                                    );
+                                    fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, &self.noises);
                                     (fresh_cache, fresh_aq)
                                 });
 

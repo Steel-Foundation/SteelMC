@@ -91,10 +91,12 @@ fn template_bb<N: DimensionNoises>(
         .map(|t| rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2]))
 }
 
-/// Vanilla's 8 candidate offsets around a parent ruin, as
-/// `(x_base_offset, z_base_offset, x_between, z_between)`.
+/// `(x_base, z_base, x_between, z_between)` for a single candidate.
+type ClusterOffset = (i32, i32, (i32, i32), (i32, i32));
+
+/// Vanilla's 8 candidate offsets around a parent ruin.
 #[rustfmt::skip]
-const CLUSTER_OFFSETS: [(i32, i32, (i32, i32), (i32, i32)); 8] = [
+const CLUSTER_OFFSETS: [ClusterOffset; 8] = [
     (-16,  16, (1, 8), (1, 7)),
     (-16,   0, (1, 8), (1, 7)),
     (-16, -16, (1, 8), (4, 8)),

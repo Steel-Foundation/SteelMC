@@ -221,10 +221,34 @@ impl MansionGrid {
         let entrance_y = 4;
         let mut base = SimpleGrid::new(11, 11, 5);
         base.set_range(entrance_x, entrance_y, entrance_x + 1, entrance_y + 1, 3);
-        base.set_range(entrance_x - 1, entrance_y, entrance_x - 1, entrance_y + 1, 2);
-        base.set_range(entrance_x + 2, entrance_y - 2, entrance_x + 3, entrance_y + 3, 5);
-        base.set_range(entrance_x + 1, entrance_y - 2, entrance_x + 1, entrance_y - 1, 1);
-        base.set_range(entrance_x + 1, entrance_y + 2, entrance_x + 1, entrance_y + 3, 1);
+        base.set_range(
+            entrance_x - 1,
+            entrance_y,
+            entrance_x - 1,
+            entrance_y + 1,
+            2,
+        );
+        base.set_range(
+            entrance_x + 2,
+            entrance_y - 2,
+            entrance_x + 3,
+            entrance_y + 3,
+            5,
+        );
+        base.set_range(
+            entrance_x + 1,
+            entrance_y - 2,
+            entrance_x + 1,
+            entrance_y - 1,
+            1,
+        );
+        base.set_range(
+            entrance_x + 1,
+            entrance_y + 2,
+            entrance_x + 1,
+            entrance_y + 3,
+            1,
+        );
         base.set_cell(entrance_x - 1, entrance_y - 1, 1);
         base.set_cell(entrance_x - 1, entrance_y + 2, 1);
         base.set_range(0, 0, 11, 1, 5);

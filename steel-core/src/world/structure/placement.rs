@@ -40,7 +40,7 @@ pub enum FrequencyReductionMethod {
     Default,
     /// Pillager outpost legacy.
     LegacyType1,
-    /// Hardcoded salt 10_387_320.
+    /// Hardcoded salt `10_387_320`.
     LegacyType2,
     /// Uses `next_f64` instead of `next_f32`.
     LegacyType3,

@@ -154,15 +154,15 @@ struct Piece {
     dir: Direction,
     depth: i32,
     pt: PT,
-    /// Straight: left/right child flags.
+    /// `Straight`: left/right child flags.
     left_child: bool,
     right_child: bool,
-    /// FiveCrossing: four door flags.
+    /// `FiveCrossing`: four door flags.
     left_low: bool,
     left_high: bool,
     right_low: bool,
     right_high: bool,
-    /// Library height variant.
+    /// `Library` height variant.
     is_tall: bool,
 }
 
@@ -485,12 +485,8 @@ fn left(
     z_off: i32,
 ) {
     let (fx, fz, d) = match dir {
-        Direction::North | Direction::South => {
-            (bb.min_x - 1, bb.min_z + z_off, Direction::West)
-        }
-        Direction::West | Direction::East => {
-            (bb.min_x + z_off, bb.min_z - 1, Direction::North)
-        }
+        Direction::North | Direction::South => (bb.min_x - 1, bb.min_z + z_off, Direction::West),
+        Direction::West | Direction::East => (bb.min_x + z_off, bb.min_z - 1, Direction::North),
         _ => return,
     };
     gen_and_add(s, rng, fx, bb.min_y + y_off, fz, d, depth + 1);
@@ -507,12 +503,8 @@ fn right(
     z_off: i32,
 ) {
     let (fx, fz, d) = match dir {
-        Direction::North | Direction::South => {
-            (bb.max_x + 1, bb.min_z + z_off, Direction::East)
-        }
-        Direction::West | Direction::East => {
-            (bb.min_x + z_off, bb.max_z + 1, Direction::South)
-        }
+        Direction::North | Direction::South => (bb.max_x + 1, bb.min_z + z_off, Direction::East),
+        Direction::West | Direction::East => (bb.min_x + z_off, bb.max_z + 1, Direction::South),
         _ => return,
     };
     gen_and_add(s, rng, fx, bb.min_y + y_off, fz, d, depth + 1);

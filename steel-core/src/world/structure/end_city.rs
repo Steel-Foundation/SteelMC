@@ -224,7 +224,8 @@ fn generate_tower(
     pieces.push(p.clone());
     last = p;
 
-    let mut bridge_piece: Option<EndCityPiece> = (rng.next_i32_bounded(3) == 0).then(|| last.clone());
+    let mut bridge_piece: Option<EndCityPiece> =
+        (rng.next_i32_bounded(3) == 0).then(|| last.clone());
     let tower_height = 1 + rng.next_i32_bounded(3);
     for i in 0..tower_height {
         let p = add_piece(&last, (0, 4, 0), "tower_piece", rotation);
@@ -446,11 +447,11 @@ impl<N: DimensionNoises> Structure<N> for EndCityStructure {
         let (bx, bz) = (ctx.chunk_min_x + 7, ctx.chunk_min_z + 7);
         // End uses `base_height_full`: `preliminary_surface_level = 0` makes the
         // capped variant miss islands at Y≥50.
-        let lowest = [(bx, bz), (bx, bz + off_z), (bx + off_x, bz), (bx + off_x, bz + off_z)]
-            .into_iter()
-            .map(|(x, z)| ctx.base_height_full(x, z, false) - 1)
-            .min()
-            .unwrap();
+        let h0 = ctx.base_height_full(bx, bz, false) - 1;
+        let h1 = ctx.base_height_full(bx, bz + off_z, false) - 1;
+        let h2 = ctx.base_height_full(bx + off_x, bz, false) - 1;
+        let h3 = ctx.base_height_full(bx + off_x, bz + off_z, false) - 1;
+        let lowest = h0.min(h1).min(h2).min(h3);
         if lowest < 60 {
             return None;
         }
