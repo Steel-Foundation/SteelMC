@@ -1,20 +1,23 @@
 use std::marker::PhantomData;
 
 use sha2::{Digest, Sha256};
-use steel_registry::RegistryEntry;
+use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::carver::ConfiguredCarverKind;
 use steel_registry::noise_parameters::get_noise_parameters;
-use steel_registry::vanilla_biomes;
-use steel_utils::BlockStateId;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::noise_math::lerp2;
 use steel_utils::random::{
     Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
 use steel_utils::surface::SurfaceRuleContext;
+use steel_utils::{BlockStateId, ChunkPos};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
 use crate::chunk::beardifier::Beardifier;
+use crate::chunk::carver::{CarverBlockIds, CarvingContext, canyon, cave};
+use crate::chunk::carving_mask::CarvingMask;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
 use crate::chunk::heightmap::HeightmapType;
@@ -47,6 +50,8 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     default_block_id: BlockStateId,
     /// Obfuscated seed for `BiomeManager` biome zoom fuzzing.
     biome_zoom_seed: i64,
+    /// Raw world seed — needed by carver seeding (`setLargeFeatureSeed`).
+    seed: u64,
     _phantom: PhantomData<N>,
 }
 
@@ -98,6 +103,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             surface_system,
             default_block_id,
             biome_zoom_seed,
+            seed,
             _phantom: PhantomData,
         }
     }
@@ -473,9 +479,202 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         }
     }
 
-    fn apply_carvers(&self, _chunk: &ChunkAccess) {}
+    fn apply_carvers(&self, chunk: &ChunkAccess) {
+        // Carvers only run on proto chunks.
+        let ChunkAccess::Proto(proto) = chunk else {
+            return;
+        };
+
+        let pos = chunk.pos();
+        let chunk_min_x = pos.0.x * 16;
+        let chunk_min_z = pos.0.y * 16;
+        let min_y = N::Settings::MIN_Y;
+        let height = N::Settings::HEIGHT;
+        let noises = &*self.noises;
+
+        // Fresh aquifer (vanilla caches NoiseChunk across stages; see TODO on
+        // ProtoChunk::carving_mask for why we rebuild instead).
+        let mut column_cache = N::ColumnCache::default();
+        column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+        let aquifer = Aquifer::<N>::new(
+            chunk_min_x,
+            chunk_min_z,
+            min_y,
+            height,
+            &self.splitter,
+            noises,
+            column_cache,
+        );
+
+        // Preliminary surface level at the chunk's 4 corners — used by
+        // top_material min_surface_level interpolation.
+        let mut psl_cache = N::ColumnCache::default();
+        let p00 = preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z);
+        let p10 =
+            preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x + 16, chunk_min_z);
+        let p01 =
+            preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z + 16);
+        let p11 = preliminary_surface_level::<N>(
+            noises,
+            &mut psl_cache,
+            chunk_min_x + 16,
+            chunk_min_z + 16,
+        );
+
+        let mut ctx = CarvingContext {
+            min_y,
+            gen_depth: height,
+            sea_level: N::Settings::SEA_LEVEL,
+            surface_system: &self.surface_system,
+            aquifer,
+            default_block_id: self.default_block_id,
+            psl_corners: (p00, p10, p01, p11),
+            chunk_min_x,
+            chunk_min_z,
+        };
+
+        let ids = CarverBlockIds::load();
+
+        // Pre-fetch the 17×17 source-chunk biomes. Done up front so we can
+        // later close over `biome_sampler` mutably inside `biome_getter`.
+        let mut biome_sampler = self.biome_source.chunk_sampler();
+        let mut source_biomes: Vec<(i32, i32, BiomeRef)> = Vec::with_capacity(17 * 17);
+        for dx in -8i32..=8 {
+            for dz in -8i32..=8 {
+                let sx = pos.0.x + dx;
+                let sz = pos.0.y + dz;
+                let qx = (sx * 16) >> 2;
+                let qz = (sz * 16) >> 2;
+                let biome = biome_sampler.sample(qx, 0, qz);
+                source_biomes.push((sx, sz, biome));
+            }
+        }
+
+        // Grab (and lazily create) the carving mask on the proto chunk.
+        let mut mask_guard = proto.get_or_create_carving_mask();
+        let mask = &mut *mask_guard;
+
+        // `WorldgenRandom(LegacyRandomSource(generateUniqueSeed()))` — initial
+        // seed is irrelevant; every carver overwrites it via
+        // `set_large_feature_seed` before its probability check.
+        let mut random = LegacyRandom::from_seed(0);
+        let seed_i64 = self.seed as i64;
+
+        let biome_zoom_seed = self.biome_zoom_seed;
+        // BiomeManager-fuzzed lookup — matches vanilla's `BiomeManager.getBiome`
+        // used by the carver's top-material path. An unfuzzed quart lookup
+        // would mismatch vanilla at quart-cell boundaries.
+        let biome_getter = |bx: i32, by: i32, bz: i32| -> u16 {
+            fuzzed_biome_at_block(biome_zoom_seed, bx, by, bz, |qx, qy, qz| {
+                biome_sampler.sample(qx, qy, qz).id() as u16
+            })
+        };
+
+        run_carvers(
+            &mut ctx,
+            noises,
+            chunk,
+            chunk_min_x,
+            chunk_min_z,
+            biome_getter,
+            mask,
+            ids,
+            &source_biomes,
+            seed_i64,
+            &mut random,
+        );
+    }
 
     fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+}
+
+/// Inner driver for the carver loop. Split out of `apply_carvers` so the
+/// `biome_getter` closure's borrow of `biome_sampler` doesn't overlap with
+/// the pre-fetch loop in the caller.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "splitting across another struct would add indirection for no gain"
+)]
+fn run_carvers<N, F>(
+    ctx: &mut CarvingContext<'_, N>,
+    noises: &N,
+    chunk: &ChunkAccess,
+    chunk_min_x: i32,
+    chunk_min_z: i32,
+    mut biome_getter: F,
+    mask: &mut CarvingMask,
+    ids: CarverBlockIds,
+    source_biomes: &[(i32, i32, BiomeRef)],
+    seed_i64: i64,
+    random: &mut LegacyRandom,
+) where
+    N: DimensionNoises,
+    F: FnMut(i32, i32, i32) -> u16,
+{
+    for &(source_x, source_z, biome) in source_biomes {
+        for (index, carver_key) in biome.carvers.iter().enumerate() {
+            let Some(carver) = REGISTRY.configured_carvers.by_key(carver_key) else {
+                continue;
+            };
+            let index_i64 = index as i64;
+            random.set_large_feature_seed(seed_i64 + index_i64, source_x, source_z);
+
+            let probability = carver.base().probability;
+            if random.next_f32() > probability {
+                continue;
+            }
+
+            match &carver.kind {
+                ConfiguredCarverKind::Cave(cfg) => {
+                    cave::carve_cave(
+                        ctx,
+                        noises,
+                        chunk,
+                        chunk_min_x,
+                        chunk_min_z,
+                        &mut biome_getter,
+                        mask,
+                        ids,
+                        cfg,
+                        cave::CaveKind::Overworld,
+                        ChunkPos::new(source_x, source_z),
+                        random,
+                    );
+                }
+                ConfiguredCarverKind::NetherCave(cfg) => {
+                    cave::carve_cave(
+                        ctx,
+                        noises,
+                        chunk,
+                        chunk_min_x,
+                        chunk_min_z,
+                        &mut biome_getter,
+                        mask,
+                        ids,
+                        cfg,
+                        cave::CaveKind::Nether,
+                        ChunkPos::new(source_x, source_z),
+                        random,
+                    );
+                }
+                ConfiguredCarverKind::Canyon(cfg) => {
+                    canyon::carve_canyon(
+                        ctx,
+                        noises,
+                        chunk,
+                        chunk_min_x,
+                        chunk_min_z,
+                        &mut biome_getter,
+                        mask,
+                        ids,
+                        cfg,
+                        ChunkPos::new(source_x, source_z),
+                        random,
+                    );
+                }
+            }
+        }
+    }
 }
 
 // ── BiomeManager biome zoom helpers ──────────────────────────────────────────
@@ -496,6 +695,86 @@ const fn lcg_next(mut rval: i64, c: i64) -> i64 {
 fn get_fiddle(rval: i64) -> f64 {
     let uniform = ((rval >> 24).rem_euclid(1024)) as f64 / 1024.0;
     (uniform - 0.5) * 0.9
+}
+
+/// Single-shot fuzzed biome lookup at a block position. Matches vanilla's
+/// `BiomeManager.getBiome(BlockPos)`: the block is shifted by `-2`, snapped to
+/// the enclosing quart cell, and the winning biome is chosen from the 8
+/// corners of that cell by `get_fiddle`-perturbed squared distance.
+///
+/// `quart_biome` returns the unfuzzed biome at a quart-coordinate — typically
+/// `biome_sampler.sample(qx, qy, qz).id()`.
+///
+/// Used by carver top-material lookups where a simple unfuzzed lookup would
+/// differ from vanilla at the quart-cell boundaries.
+pub(super) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
+    biome_zoom_seed: i64,
+    block_x: i32,
+    block_y: i32,
+    block_z: i32,
+    mut quart_biome: F,
+) -> u16 {
+    let abs_x = block_x - 2;
+    let abs_y = block_y - 2;
+    let abs_z = block_z - 2;
+    let parent_x = abs_x >> 2;
+    let parent_y = abs_y >> 2;
+    let parent_z = abs_z >> 2;
+    let fract_x = f64::from(abs_x & 3) / 4.0;
+    let fract_y = f64::from(abs_y & 3) / 4.0;
+    let fract_z = f64::from(abs_z & 3) / 4.0;
+
+    let mut min_i = 0usize;
+    let mut min_dist = f64::INFINITY;
+
+    for i in 0..8usize {
+        let x_even = (i & 4) == 0;
+        let y_even = (i & 2) == 0;
+        let z_even = (i & 1) == 0;
+        let cx = if x_even { parent_x } else { parent_x + 1 };
+        let cy = if y_even { parent_y } else { parent_y + 1 };
+        let cz = if z_even { parent_z } else { parent_z + 1 };
+        let dx = if x_even { fract_x } else { fract_x - 1.0 };
+        let dy = if y_even { fract_y } else { fract_y - 1.0 };
+        let dz = if z_even { fract_z } else { fract_z - 1.0 };
+
+        // BiomeManager.getFiddledDistance — identical sequence to
+        // FuzzedBiomeColumn::compute_cy_group but without the column cache.
+        let mut rval = lcg_next(biome_zoom_seed, i64::from(cx));
+        rval = lcg_next(rval, i64::from(cy));
+        rval = lcg_next(rval, i64::from(cz));
+        rval = lcg_next(rval, i64::from(cx));
+        rval = lcg_next(rval, i64::from(cy));
+        rval = lcg_next(rval, i64::from(cz));
+        let fx = get_fiddle(rval);
+        rval = lcg_next(rval, biome_zoom_seed);
+        let fy = get_fiddle(rval);
+        rval = lcg_next(rval, biome_zoom_seed);
+        let fz = get_fiddle(rval);
+
+        let dist = (dx + fx).powi(2) + (dy + fy).powi(2) + (dz + fz).powi(2);
+        if min_dist > dist {
+            min_i = i;
+            min_dist = dist;
+        }
+    }
+
+    let bx = if (min_i & 4) == 0 {
+        parent_x
+    } else {
+        parent_x + 1
+    };
+    let by = if (min_i & 2) == 0 {
+        parent_y
+    } else {
+        parent_y + 1
+    };
+    let bz = if (min_i & 1) == 0 {
+        parent_z
+    } else {
+        parent_z + 1
+    };
+    quart_biome(bx, by, bz)
 }
 
 /// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).

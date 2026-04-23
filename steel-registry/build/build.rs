@@ -6,6 +6,7 @@ mod biomes;
 mod block_entity_types;
 mod block_tags;
 mod blocks;
+mod carvers;
 mod cat_variants;
 mod chat_types;
 mod chicken_variants;
@@ -123,6 +124,7 @@ const SOUND_TYPES: &str = "sound_types";
 const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
 const WORLD_CLOCKS: &str = "world_clocks";
+const CARVERS: &str = "configured_carvers";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -194,6 +196,7 @@ pub fn main() {
         (poi_type_tags::build(), POI_TYPE_TAGS),
         (enchantment_tags::build(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
+        (carvers::build(), CARVERS),
     ];
 
     // Track which files we're generating this run

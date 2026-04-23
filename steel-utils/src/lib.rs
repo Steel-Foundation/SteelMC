@@ -41,6 +41,9 @@ pub mod text;
 pub mod types;
 /// UUID extension trait for Minecraft NBT serialization.
 pub mod uuid_ext;
+/// Vanilla-compatible value provider types (`VerticalAnchor`,
+/// `HeightProvider`, `FloatProvider`).
+pub mod value_providers;
 
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/ids.rs"]

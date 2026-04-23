@@ -2,11 +2,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam::atomic::AtomicCell;
+use parking_lot::{MappedRwLockWriteGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, types::UpdateFlags};
 
-use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
+use crate::chunk::{
+    carving_mask::CarvingMask, chunk_access::ChunkStatus, heightmap::ProtoHeightmaps,
+    section::Sections,
+};
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 
 /// A chunk that is still being generated.
@@ -32,6 +36,16 @@ pub struct ProtoChunk {
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks.
     pub structure_references: SyncRwLock<StructureReferenceMap>,
+    /// Bitset of positions visited by carvers (lazily initialized).
+    pub carving_mask: SyncRwLock<Option<CarvingMask>>,
+    // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
+    // does. Vanilla caches `NoiseChunk` on `ChunkAccess` so noise, surface,
+    // and carvers share one instance; we currently rebuild per stage. Blocked
+    // by the type-erasure question — `NoiseChunk<N: DimensionNoises>` is
+    // generic, `ProtoChunk` is not, and `Any` is forbidden by CLAUDE.md.
+    // Options to evaluate: (1) object-safe trait returning carver-needed
+    // values, (2) generic `ProtoChunk<N>` (big ripple), (3) stay as-is if
+    // rebuild cost stays negligible.
 }
 
 impl ProtoChunk {
@@ -48,6 +62,7 @@ impl ProtoChunk {
             height,
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
+            carving_mask: SyncRwLock::new(None),
         }
     }
 
@@ -73,6 +88,7 @@ impl ProtoChunk {
             height,
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
+            carving_mask: SyncRwLock::new(None),
         }
     }
 
@@ -97,6 +113,22 @@ impl ProtoChunk {
     /// Sets the generation status of this chunk.
     pub fn set_status(&self, status: ChunkStatus) {
         self.status.store(status);
+    }
+
+    /// Returns a write guard to this chunk's carving mask, initialising it on
+    /// first access. Mirrors vanilla's `ProtoChunk.getOrCreateCarvingMask`.
+    ///
+    /// # Panics
+    /// Never — the mask is populated immediately before projecting the guard.
+    pub fn get_or_create_carving_mask(&self) -> MappedRwLockWriteGuard<'_, CarvingMask> {
+        let mut guard = self.carving_mask.write();
+        if guard.is_none() {
+            *guard = Some(CarvingMask::new(self.height, self.min_y));
+        }
+        RwLockWriteGuard::map(guard, |opt| {
+            opt.as_mut()
+                .expect("carving mask initialised immediately above")
+        })
     }
 
     /// Gets the section index for a given Y coordinate.

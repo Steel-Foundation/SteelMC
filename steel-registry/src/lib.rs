@@ -7,6 +7,7 @@ use crate::{
     biome::BiomeRegistry,
     block_entity_type::BlockEntityTypeRegistry,
     blocks::BlockRegistry,
+    carver::ConfiguredCarverRegistry,
     cat_sound_variant::CatSoundVariantRegistry,
     cat_variant::CatVariantRegistry,
     chat_type::ChatTypeRegistry,
@@ -49,6 +50,7 @@ pub mod banner_pattern;
 pub mod biome;
 pub mod block_entity_type;
 pub mod blocks;
+pub mod carver;
 pub mod cat_sound_variant;
 pub mod cat_variant;
 pub mod chat_type;
@@ -372,6 +374,11 @@ pub mod density_functions;
 #[path = "generated/vanilla_world_clocks.rs"]
 pub mod vanilla_world_clocks;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_configured_carvers.rs"]
+pub mod vanilla_configured_carvers;
+
 pub struct RegistryLock(OnceLock<Registry>);
 
 impl RegistryLock {
@@ -658,6 +665,8 @@ pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
+pub const CONFIGURED_CARVER_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/configured_carver");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -699,6 +708,7 @@ pub struct Registry {
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
+    pub configured_carvers: ConfiguredCarverRegistry,
 }
 
 impl Debug for Registry {
@@ -783,6 +793,8 @@ impl Registry {
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
 
+        vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
+
         registry
     }
 
@@ -826,6 +838,7 @@ impl Registry {
         self.poi_types.freeze();
         self.enchantments.freeze();
         self.world_clocks.freeze();
+        self.configured_carvers.freeze();
     }
 
     #[must_use]
@@ -870,6 +883,7 @@ impl Registry {
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
+            configured_carvers: ConfiguredCarverRegistry::new(),
         }
     }
 }

@@ -1,6 +1,8 @@
 //! This module contains math related utilities.
 /// An axis implementation
 pub mod axis;
+/// Vanilla-compatible trig lookup tables (`Mth.sin` / `Mth.cos`).
+pub mod mth;
 pub mod noise_math;
 
 pub use axis::Axis;

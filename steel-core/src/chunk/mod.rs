@@ -4,6 +4,10 @@
 pub mod aquifer;
 /// Terrain density modification around structure pieces.
 pub mod beardifier;
+/// World-carving: runtime context + carver implementations.
+pub mod carver;
+/// Per-chunk bitset marking positions already visited by a carver.
+pub mod carving_mask;
 pub mod chunk_access;
 pub mod chunk_generation_task;
 pub mod chunk_generator;
