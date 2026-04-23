@@ -115,7 +115,7 @@ impl ProtoChunk {
         self.status.store(status);
     }
 
-    /// Returns a write guard to this chunk's carving mask, initialising it on
+    /// Returns a write guard to this chunk's carving mask, initializing it on
     /// first access. Mirrors vanilla's `ProtoChunk.getOrCreateCarvingMask`.
     ///
     /// # Panics
@@ -127,7 +127,7 @@ impl ProtoChunk {
         }
         RwLockWriteGuard::map(guard, |opt| {
             opt.as_mut()
-                .expect("carving mask initialised immediately above")
+                .expect("carving mask initialized immediately above")
         })
     }
 

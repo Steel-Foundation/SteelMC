@@ -195,8 +195,8 @@ impl CarverBlockIds {
 /// outside the carved shape for a given ellipsoid (cave floor cutoff, canyon
 /// width-by-height, etc). Matches vanilla's `WorldCarver.CarveSkipChecker`.
 pub trait CarveSkipChecker {
-    /// `xd`, `yd`, `zd` are the ellipsoid-normalised offsets from the carver
-    /// origin to this block's centre (see `carve_ellipsoid`); `world_y` is the
+    /// `xd`, `yd`, `zd` are the ellipsoid-normalized offsets from the carver
+    /// origin to this block's center (see `carve_ellipsoid`); `world_y` is the
     /// absolute Y coordinate of the current block.
     fn should_skip(&mut self, xd: f64, yd: f64, zd: f64, world_y: i32) -> bool;
 }

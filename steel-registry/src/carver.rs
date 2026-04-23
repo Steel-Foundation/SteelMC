@@ -45,7 +45,7 @@ pub struct CaveCarverConfiguration {
     pub horizontal_radius_multiplier: FloatProvider,
     /// Per-tunnel vertical-radius stretch factor.
     pub vertical_radius_multiplier: FloatProvider,
-    /// Shapes the cave floor — values in `[-1, 1]`. Blocks where the normalised
+    /// Shapes the cave floor — values in `[-1, 1]`. Blocks where the normalized
     /// vertical offset `yd` is below this value are skipped.
     pub floor_level: FloatProvider,
 }

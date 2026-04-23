@@ -78,7 +78,7 @@ mod test {
         assert!(!mask.get(5, 10, 7));
         mask.set(5, 10, 7);
         assert!(mask.get(5, 10, 7));
-        // Neighbours untouched
+        // Neighbors untouched
         assert!(!mask.get(4, 10, 7));
         assert!(!mask.get(5, 11, 7));
         assert!(!mask.get(5, 10, 8));

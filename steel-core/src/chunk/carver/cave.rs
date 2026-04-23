@@ -21,7 +21,7 @@ use crate::chunk::carver::{
 use crate::chunk::carving_mask::CarvingMask;
 use crate::chunk::chunk_access::ChunkAccess;
 
-/// Which cave carver flavour to run.
+/// Which cave carver flavor to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaveKind {
     /// `minecraft:cave` / `minecraft:cave_extra_underground`.
