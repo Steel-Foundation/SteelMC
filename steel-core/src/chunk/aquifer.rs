@@ -45,7 +45,7 @@ impl<'a, N: DimensionNoises> LazyAquifer<'a, N> {
     /// Build on first call; `height_cache` is cloned into the aquifer's own cache.
     ///
     /// # Panics
-    /// Never — `inner` is initialised above if it was `None`.
+    /// Never — `inner` is initialized above if it was `None`.
     pub fn ensure(&mut self, height_cache: &N::ColumnCache) -> &mut Aquifer<N> {
         if self.inner.is_none() {
             self.inner = Some(Aquifer::<N>::new(
