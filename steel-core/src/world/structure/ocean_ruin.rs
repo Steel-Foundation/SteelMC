@@ -1,11 +1,6 @@
-//! Ocean ruin piece generation.
-//!
-//! Vanilla `OceanRuinPieces.addPieces`: a base piece chosen from a warm/cold +
-//! small/large template pool, plus (when large AND a cluster check passes) a
-//! scatter of smaller ruins around the parent with collision checking.
-//!
-//! Warm → one piece. Cold → three stacked pieces (brick + cracked + mossy) at
-//! the same position, all from the same index.
+//! Ocean ruin: a base piece from a warm/cold × small/large pool, plus — when large
+//! and the cluster check passes — a scatter of smaller ruins with collision checks.
+//! Warm uses one piece; cold stacks three (brick + cracked + mossy) from the same index.
 
 use steel_utils::density::DimensionNoises;
 use steel_utils::random::Random;
@@ -96,22 +91,31 @@ fn template_bb<N: DimensionNoises>(
         .map(|t| rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2]))
 }
 
-/// `Structure` impl registered under `"minecraft:ocean_ruin"`. Warm/cold
-/// variants are distinguished via `entry.structure.path`.
+/// Vanilla's 8 candidate offsets around a parent ruin, as
+/// `(x_base_offset, z_base_offset, x_between, z_between)`.
+#[rustfmt::skip]
+const CLUSTER_OFFSETS: [(i32, i32, (i32, i32), (i32, i32)); 8] = [
+    (-16,  16, (1, 8), (1, 7)),
+    (-16,   0, (1, 8), (1, 7)),
+    (-16, -16, (1, 8), (4, 8)),
+    (  0,  16, (1, 7), (1, 7)),
+    (  0, -16, (1, 7), (4, 6)),
+    ( 16,  16, (1, 7), (3, 8)),
+    ( 16,   0, (1, 7), (1, 7)),
+    ( 16, -16, (1, 7), (4, 8)),
+];
+
+/// Registered under `"minecraft:ocean_ruin"`. Warm/cold are distinguished by
+/// `entry.structure.path`.
 pub struct OceanRuinStructure;
 
 impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "mirrors vanilla's OceanRuinStructure cluster-scatter piece emission"
-    )]
     fn find_generation_point(
         &self,
         ctx: &mut GenerationContext<'_, '_, N>,
         entry: &StructureSelectionEntry,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        // Biome check at chunk center, ocean-floor Y.
         let ocean_floor_y = ctx.base_height(ctx.center_block_x, ctx.center_block_z, true) - 1;
         let biome = ctx.biome_at(ctx.center_block_x, ocean_floor_y, ctx.center_block_z);
         if !entry.allowed_biomes.contains(&biome.key) {
@@ -121,38 +125,31 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
         let is_warm = entry.structure.path.contains("warm");
         let rotation = Rotation::get_random(rng);
         let is_large = rng.next_f32() <= LARGE_PROB;
+        let (pos_x, pos_z) = (ctx.chunk_min_x, ctx.chunk_min_z);
 
         let mut bbs: Vec<BoundingBox> = Vec::new();
-        let pos_x = ctx.chunk_min_x;
-        let pos_z = ctx.chunk_min_z;
+        let push_bb = |bbs: &mut Vec<BoundingBox>, name: &str, x, z, rot| {
+            if let Some(bb) = template_bb(ctx, name, x, z, rot) {
+                bbs.push(bb);
+            }
+        };
 
         if is_warm {
             let arr = if is_large { WARM_LARGE } else { WARM_SMALL };
             let idx = rng.next_i32_bounded(arr.len() as i32) as usize;
-            if let Some(bb) = template_bb(ctx, arr[idx], pos_x, pos_z, rotation) {
-                bbs.push(bb);
-            }
+            push_bb(&mut bbs, arr[idx], pos_x, pos_z, rotation);
         } else {
-            let bricks = if is_large { COLD_BIG_BRICK } else { COLD_BRICK };
-            let cracked = if is_large {
-                COLD_BIG_CRACKED
+            let (bricks, cracked, mossy) = if is_large {
+                (COLD_BIG_BRICK, COLD_BIG_CRACKED, COLD_BIG_MOSSY)
             } else {
-                COLD_CRACKED
+                (COLD_BRICK, COLD_CRACKED, COLD_MOSSY)
             };
-            let mossy = if is_large { COLD_BIG_MOSSY } else { COLD_MOSSY };
             let idx = rng.next_i32_bounded(bricks.len() as i32) as usize;
-            if let Some(bb) = template_bb(ctx, bricks[idx], pos_x, pos_z, rotation) {
-                bbs.push(bb);
-            }
-            if let Some(bb) = template_bb(ctx, cracked[idx], pos_x, pos_z, rotation) {
-                bbs.push(bb);
-            }
-            if let Some(bb) = template_bb(ctx, mossy[idx], pos_x, pos_z, rotation) {
-                bbs.push(bb);
-            }
+            push_bb(&mut bbs, bricks[idx], pos_x, pos_z, rotation);
+            push_bb(&mut bbs, cracked[idx], pos_x, pos_z, rotation);
+            push_bb(&mut bbs, mossy[idx], pos_x, pos_z, rotation);
         }
 
-        // Cluster scatter (only if large + cluster check passes).
         if is_large && rng.next_f32() <= CLUSTER_PROB {
             let (pc_x, _, pc_z) = rotation.transform_pos(15, 0, 15, 0, 0);
             let parent_corner_x = pos_x + pc_x;
@@ -165,53 +162,26 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
                 255,
                 pos_z.max(parent_corner_z),
             );
-            let bottom_left_x = pos_x.min(parent_corner_x);
-            let bottom_left_z = pos_z.min(parent_corner_z);
+            let bl_x = pos_x.min(parent_corner_x);
+            let bl_z = pos_z.min(parent_corner_z);
 
-            // 8 candidate positions around the parent.
-            let mut candidates = Vec::with_capacity(8);
-            candidates.push((
-                bottom_left_x - 16 + rng.next_i32_between(1, 8),
-                bottom_left_z + 16 + rng.next_i32_between(1, 7),
-            ));
-            candidates.push((
-                bottom_left_x - 16 + rng.next_i32_between(1, 8),
-                bottom_left_z + rng.next_i32_between(1, 7),
-            ));
-            candidates.push((
-                bottom_left_x - 16 + rng.next_i32_between(1, 8),
-                bottom_left_z - 16 + rng.next_i32_between(4, 8),
-            ));
-            candidates.push((
-                bottom_left_x + rng.next_i32_between(1, 7),
-                bottom_left_z + 16 + rng.next_i32_between(1, 7),
-            ));
-            candidates.push((
-                bottom_left_x + rng.next_i32_between(1, 7),
-                bottom_left_z - 16 + rng.next_i32_between(4, 6),
-            ));
-            candidates.push((
-                bottom_left_x + 16 + rng.next_i32_between(1, 7),
-                bottom_left_z + 16 + rng.next_i32_between(3, 8),
-            ));
-            candidates.push((
-                bottom_left_x + 16 + rng.next_i32_between(1, 7),
-                bottom_left_z + rng.next_i32_between(1, 7),
-            ));
-            candidates.push((
-                bottom_left_x + 16 + rng.next_i32_between(1, 7),
-                bottom_left_z - 16 + rng.next_i32_between(4, 8),
-            ));
+            let mut candidates: Vec<(i32, i32)> = CLUSTER_OFFSETS
+                .iter()
+                .map(|&(ox, oz, (xa, xb), (za, zb))| {
+                    (
+                        bl_x + ox + rng.next_i32_between(xa, xb),
+                        bl_z + oz + rng.next_i32_between(za, zb),
+                    )
+                })
+                .collect();
 
-            let ruins_count = rng.next_i32_between(4, 8);
-            for _ in 0..ruins_count {
+            for _ in 0..rng.next_i32_between(4, 8) {
                 if candidates.is_empty() {
                     break;
                 }
                 let idx = rng.next_i32_bounded(candidates.len() as i32) as usize;
                 let (cx, cz) = candidates.remove(idx);
                 let cluster_rot = Rotation::get_random(rng);
-                // Collision check with parent BB.
                 let (nc_x, _, nc_z) = cluster_rot.transform_pos(5, 0, 6, 0, 0);
                 let cluster_bb = BoundingBox::new(
                     cx.min(cx + nc_x),
@@ -222,31 +192,27 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
                     cz.max(cz + nc_z),
                 );
                 if !cluster_bb.intersects(&parent_bb) {
-                    let cluster_arr = if is_warm { WARM_SMALL } else { COLD_BRICK };
-                    let tidx = rng.next_i32_bounded(cluster_arr.len() as i32) as usize;
-                    if let Some(bb) = template_bb(ctx, cluster_arr[tidx], cx, cz, cluster_rot) {
-                        bbs.push(bb);
-                    }
+                    let arr = if is_warm { WARM_SMALL } else { COLD_BRICK };
+                    let tidx = rng.next_i32_bounded(arr.len() as i32) as usize;
+                    push_bb(&mut bbs, arr[tidx], cx, cz, cluster_rot);
                 }
             }
         }
 
-        let pieces = bbs
-            .into_iter()
-            .map(|bb| StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "orp"),
-                bounding_box: bb,
-                gen_depth: 0,
-                orientation: None,
-                nbt_data: Vec::new(),
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-            })
-            .collect();
-
         Some(GenerationStub {
             position: (ctx.center_block_x, ocean_floor_y, ctx.center_block_z),
-            pieces,
+            pieces: bbs
+                .into_iter()
+                .map(|bb| StructurePiece {
+                    piece_type: Identifier::new_static("minecraft", "orp"),
+                    bounding_box: bb,
+                    gen_depth: 0,
+                    orientation: None,
+                    nbt_data: Vec::new(),
+                    ground_level_delta: 0,
+                    junctions: Vec::new(),
+                })
+                .collect(),
         })
     }
 }

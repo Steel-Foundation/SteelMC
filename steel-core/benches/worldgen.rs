@@ -256,13 +256,9 @@ fn bench_end_surface(c: &mut Criterion) {
     });
 }
 
-// ── Structure-starts benchmarks ─────────────────────────────────────────────
-
-/// A 20×20 chunk grid exercises more structure-set placement outcomes than a
-/// single origin chunk: different spacings (villages at 32, shipwrecks at 24,
-/// mineshafts at 1, etc.) each land on different chunks of the grid, so the
-/// numbers include the real mix of cheap-reject, full-placement, and jigsaw
-/// paths.
+/// A 20×20 grid hits structure sets with different spacings (villages at 32,
+/// shipwrecks at 24, mineshafts at 1, …), so the timings include cheap-reject,
+/// full-placement, and jigsaw paths.
 const STRUCTURE_GRID_SIDE: i32 = 20;
 
 fn structure_grid_chunks(dim: &'static DimensionType) -> Vec<ChunkAccess> {
@@ -322,10 +318,7 @@ fn bench_end_structure_starts(c: &mut Criterion) {
     });
 }
 
-// ── Structure-references benchmarks ─────────────────────────────────────────
-
-/// No-op task used to populate `ChunkStep::task`; `generate_structure_references`
-/// never dispatches through it.
+/// No-op filler for `ChunkStep::task`; `generate_structure_references` never dispatches through it.
 fn noop_task(
     _ctx: Arc<WorldGenContext>,
     _step: &ChunkStep,

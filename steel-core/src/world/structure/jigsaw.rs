@@ -1,10 +1,5 @@
-//! Jigsaw structure assembly engine.
-//!
-//! Ports vanilla's `JigsawPlacement` BFS algorithm. Given a start pool and
-//! configuration, assembles structure pieces by connecting jigsaw blocks.
-//!
-//! The assembly determines which pieces exist and their bounding boxes.
-//! Actual block placement from templates is handled separately.
+//! Jigsaw assembly. Ports vanilla's `JigsawPlacement` BFS: connects pieces via
+//! jigsaw blocks given a start pool + config. Produces bounding boxes only.
 
 use std::cmp::Reverse;
 
@@ -20,42 +15,41 @@ use steel_utils::{BoundingBox, Identifier, Rotation};
 /// A placed piece produced by jigsaw assembly.
 #[derive(Debug, Clone)]
 pub struct PlacedPiece {
-    /// Which pool element this piece came from.
+    /// Source pool element.
     pub element_index: usize,
-    /// The template location (for Single/LegacySingle elements).
+    /// Template location (Single/LegacySingle).
     pub template_location: Option<Identifier>,
-    /// World position of the piece's origin.
+    /// World-space origin.
     pub position: (i32, i32, i32),
-    /// Rotation applied to this piece.
+    /// Rotation.
     pub rotation: Rotation,
-    /// World-space bounding box (template-sized, used for beardifier and world save).
+    /// Template-sized BB (used for beardifier + world save).
     pub bounding_box: BoundingBox,
-    /// Assembly-time bounding box, potentially expanded vertically by the expansion
-    /// hack to reserve space for children. Used for `is_inside` and collision checks
-    /// during assembly only — not persisted.
+    /// Assembly-time BB, possibly expanded vertically by the expansion hack.
+    /// Used only during assembly — not persisted.
     pub assembly_bb: BoundingBox,
-    /// Ground level delta for Beardifier terrain adaptation.
+    /// Ground-level delta for Beardifier.
     pub ground_level_delta: i32,
-    /// Projection mode (rigid or terrain matching).
+    /// Rigid or terrain-matching.
     pub projection: Projection,
-    /// Generation depth (distance from start piece in BFS tree).
+    /// BFS tree depth.
     pub depth: i32,
-    /// Junctions connecting this piece to neighbors.
+    /// Junctions to neighbors.
     pub junctions: Vec<JigsawJunction>,
 }
 
-/// A junction between two jigsaw pieces, used for terrain adaptation.
+/// Junction between two jigsaw pieces (terrain adaptation).
 #[derive(Debug, Clone)]
 pub struct JigsawJunction {
-    /// World X of the junction point.
+    /// World X.
     pub source_x: i32,
-    /// Ground-adjusted Y of the junction.
+    /// Ground-adjusted Y.
     pub source_ground_y: i32,
-    /// World Z of the junction point.
+    /// World Z.
     pub source_z: i32,
-    /// Y delta between source and target pieces.
+    /// Y delta between source and target.
     pub delta_y: i32,
-    /// Projection mode of the destination piece.
+    /// Destination projection.
     pub dest_projection: Projection,
 }
 
@@ -296,38 +290,32 @@ fn element_bounding_box(
     }
 }
 
-/// Builds the expanded weighted template list from a pool.
-///
-/// Vanilla's `StructureTemplatePool.getShuffledTemplates` expands weights
-/// then shuffles.
+fn expand_pool_weights(pool: &TemplatePoolData) -> Vec<&PoolElement> {
+    let mut expanded = Vec::with_capacity(pool.elements.iter().map(|(_, w)| *w as usize).sum());
+    for (element, weight) in &pool.elements {
+        for _ in 0..*weight {
+            expanded.push(element);
+        }
+    }
+    expanded
+}
+
+/// Vanilla's `StructureTemplatePool.getShuffledTemplates`.
 fn get_shuffled_templates<'a>(
     pool: &'a TemplatePoolData,
     rng: &mut LegacyRandom,
 ) -> Vec<&'a PoolElement> {
-    let mut expanded: Vec<&PoolElement> = Vec::new();
-    for (element, weight) in &pool.elements {
-        for _ in 0..*weight {
-            expanded.push(element);
-        }
-    }
+    let mut expanded = expand_pool_weights(pool);
     vanilla_shuffle(&mut expanded, rng);
     expanded
 }
 
-/// Picks a random template from a pool (weighted).
-///
 /// Vanilla's `StructureTemplatePool.getRandomTemplate`.
 fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -> &'a PoolElement {
-    let mut expanded: Vec<&PoolElement> = Vec::new();
-    for (element, weight) in &pool.elements {
-        for _ in 0..*weight {
-            expanded.push(element);
-        }
-    }
+    let expanded = expand_pool_weights(pool);
     if expanded.is_empty() {
-        // Return empty element sentinel. `PoolElement::Empty` is a unit variant
-        // with no interior mutability, so `&'static` sharing across threads is
-        // sound (the enum's `Identifier` variants aren't constructed here).
+        // `PoolElement::Empty` is a unit variant with no interior mutability,
+        // so `&'static` sharing is sound.
         static EMPTY: PoolElement = PoolElement::Empty;
         return &EMPTY;
     }
@@ -335,24 +323,17 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
     expanded[idx]
 }
 
-/// Collision domain tracking available space for piece placement.
-///
-/// Vanilla uses `MutableObject<VoxelShape>` to track free space hierarchically:
-/// each queued piece carries a reference to its parent's collision context.
-/// Internal children share the source piece's internal free space; external
-/// children share the parent's context. For integer-aligned bounding boxes,
-/// tracking a constraint + occupied list is equivalent to `VoxelShape` subtraction.
+/// Hierarchical free-space tracker. Vanilla uses `MutableObject<VoxelShape>`
+/// with subtraction; for integer-aligned BBs, `constraint + occupied` is
+/// equivalent. Internal children share the source's internal free space;
+/// external children share the parent's context.
 struct FreeSpace {
-    /// The outer boundary of this domain.
     constraint: BoundingBox,
-    /// Bounding boxes of pieces placed within this domain.
     occupied: Vec<BoundingBox>,
 }
 
 impl FreeSpace {
-    /// Checks if a bounding box fits within this domain without collisions.
     fn collides(&self, candidate: &BoundingBox) -> bool {
-        // Must fit within constraint
         if candidate.min_x < self.constraint.min_x
             || candidate.max_x > self.constraint.max_x
             || candidate.min_y < self.constraint.min_y
@@ -362,13 +343,7 @@ impl FreeSpace {
         {
             return true;
         }
-        // Must not intersect any placed piece in this domain
-        for placed in &self.occupied {
-            if candidate.intersects(placed) {
-                return true;
-            }
-        }
-        false
+        self.occupied.iter().any(|p| candidate.intersects(p))
     }
 }
 
@@ -380,21 +355,19 @@ pub struct AssemblyResult {
     pub biome_check_pos: (i32, i32, i32),
 }
 
-/// Assembles a jigsaw structure from the given configuration.
-///
-/// Returns the assembly result, or `None` if assembly fails
-/// (empty start pool, dimension padding violation, etc.).
+/// Vanilla's `JigsawPlacement.addPieces`. Returns `None` on failure (empty start
+/// pool, dimension padding violation, etc.).
 #[expect(
     clippy::too_many_arguments,
-    reason = "mirrors vanilla's JigsawPlacement.addPieces call surface"
+    reason = "matches vanilla's addPieces call surface"
 )]
 #[expect(
     clippy::implicit_hasher,
-    reason = "FxHashMap is intentional — we don't want SipHash overhead on Identifier lookups"
+    reason = "FxHashMap avoids SipHash overhead on Identifier lookups"
 )]
 #[expect(
     clippy::too_many_lines,
-    reason = "implements the full BFS assembly inline to mirror vanilla's addPieces"
+    reason = "inlined BFS mirrors vanilla's addPieces"
 )]
 pub fn assemble(
     config: &JigsawConfig,
@@ -408,34 +381,25 @@ pub fn assemble(
     min_y: i32,
     max_y: i32,
 ) -> Option<AssemblyResult> {
-    // Sample start height
     let start_y = match &config.start_height {
         StartHeight::Constant(y) => *y,
         StartHeight::Uniform { min, max } => rng.next_i32_between(*min, *max),
     };
-
     let start_x = chunk_x * 16;
     let start_z = chunk_z * 16;
-
-    // Pick random rotation
     let center_rotation = Rotation::get_random(rng);
 
-    // Resolve start pool through aliases
     let start_pool_key = alias_map
         .get(&config.start_pool)
         .unwrap_or(&config.start_pool);
     let start_pool = pools.get(start_pool_key)?;
-
-    // Pick random start template
     let center_element = get_random_template(start_pool, rng);
     if center_element.is_empty() {
         return None;
     }
 
-    // Handle start_jigsaw_name anchor
     let (anchor_offset_x, anchor_offset_y, anchor_offset_z) =
         if let Some(ref jigsaw_name) = config.start_jigsaw_name {
-            // Find the named jigsaw in the start piece
             let jigsaws = get_shuffled_jigsaws(center_element, templates, center_rotation, rng);
             let j = jigsaws.iter().find(|j| j.name == *jigsaw_name)?;
             (j.pos.0, j.pos.1, j.pos.2)
@@ -443,12 +407,11 @@ pub fn assemble(
             (0, 0, 0)
         };
 
-    // Adjusted position: move piece so anchor aligns with start position
+    // Move piece so anchor aligns with start position.
     let adjusted_x = start_x - anchor_offset_x;
     let adjusted_y = start_y - anchor_offset_y;
     let adjusted_z = start_z - anchor_offset_z;
 
-    // Compute center piece bounding box
     let center_bb = element_bounding_box(
         center_element,
         templates,
@@ -458,21 +421,17 @@ pub fn assemble(
         center_rotation,
     )?;
 
-    // Height projection
-    let bottom_y = if let Some(ref _heightmap) = config.project_start_to_heightmap {
+    let bottom_y = if config.project_start_to_heightmap.is_some() {
         let mid_x = i32::midpoint(center_bb.min_x, center_bb.max_x);
         let mid_z = i32::midpoint(center_bb.min_z, center_bb.max_z);
-        // Vanilla: start_y + getFirstFreeHeight(...)
-        let surface = get_height(mid_x, mid_z);
-        start_y + surface
+        start_y + get_height(mid_x, mid_z)
     } else {
         adjusted_y
     };
 
-    // Move center piece to projected height
+    // Move center piece to projected height.
     let ground_level_delta = center_element.projection().ground_level_delta();
-    let old_ground_y = center_bb.min_y + ground_level_delta;
-    let dy = bottom_y - old_ground_y;
+    let dy = bottom_y - (center_bb.min_y + ground_level_delta);
     let center_bb = BoundingBox::new(
         center_bb.min_x,
         center_bb.min_y + dy,
@@ -483,14 +442,12 @@ pub fn assemble(
     );
     let adjusted_y = adjusted_y + dy;
 
-    // Dimension padding check
+    // Dimension padding. Vanilla's `getMaxY()` is inclusive (= minY + height - 1).
     let padding = &config.dimension_padding;
-    // Vanilla uses getMaxY() = minY + height - 1 (inclusive), so max_y - 1 here
     if center_bb.min_y < min_y + padding.bottom || center_bb.max_y > max_y - 1 - padding.top {
         return None;
     }
 
-    // Create center piece
     let mut pieces = vec![PlacedPiece {
         element_index: 0,
         template_location: element_location(center_element).cloned(),
@@ -504,7 +461,7 @@ pub fn assemble(
         junctions: Vec::new(),
     }];
 
-    // Compute biome check position (vanilla's GenerationStub position)
+    // GenerationStub center.
     let center_stub_x = i32::midpoint(center_bb.min_x, center_bb.max_x);
     let center_stub_z = i32::midpoint(center_bb.min_z, center_bb.max_z);
     let center_stub_y = bottom_y + anchor_offset_y;
@@ -517,35 +474,31 @@ pub fn assemble(
         });
     }
 
-    // Create constraint bounding box — vanilla centers on (centerX, centerY, centerZ),
-    // NOT on the BB corners. Uses AABB with +1 on max side, but for integer BB collision
-    // the effective range is [center - maxDist, center + maxDist].
+    // Vanilla centers the constraint on `(centerX, centerY, centerZ)`, NOT on BB
+    // corners. Uses `+1` on the max side for AABB, but integer-BB collision with
+    // `[center - maxDist, center + maxDist]` is equivalent.
     let max_dist = config.max_distance_from_center;
-    let center_y = center_stub_y;
     let constraint_bb = BoundingBox::new(
         center_stub_x - max_dist,
-        (center_y - max_dist).max(min_y + config.dimension_padding.bottom),
+        (center_stub_y - max_dist).max(min_y + config.dimension_padding.bottom),
         center_stub_z - max_dist,
         center_stub_x + max_dist,
-        (center_y + max_dist).min(max_y - config.dimension_padding.top),
+        (center_stub_y + max_dist).min(max_y - config.dimension_padding.top),
         center_stub_z + max_dist,
     );
 
-    // Collision domains — vanilla's hierarchical free space tracking.
-    // Index 0 is the global context (constraint minus placed pieces).
+    // Index 0 = global collision context.
     let mut free_spaces: Vec<FreeSpace> = vec![FreeSpace {
         constraint: constraint_bb,
         occupied: vec![center_bb],
     }];
-
-    // BFS queue: (piece_index, depth, placement_priority, context_idx)
+    // (piece_index, depth, placement_priority, context_idx)
     let mut queue: Vec<(usize, i32, i32, usize)> = Vec::new();
 
-    // Seed queue with center piece (context 0 = global)
     try_placing_children(
-        0, // center piece index
-        0, // depth
-        0, // context_idx (global)
+        0,
+        0,
+        0,
         config,
         pools,
         templates,
@@ -557,12 +510,10 @@ pub fn assemble(
         get_height,
     );
 
-    // BFS loop
     while !queue.is_empty() {
-        // Sort by priority (higher first), stable for insertion order
+        // Stable sort keeps insertion order within equal priorities.
         queue.sort_by_key(|entry| Reverse(entry.2));
         let (piece_idx, depth, _priority, context_idx) = queue.remove(0);
-
         try_placing_children(
             piece_idx,
             depth,
@@ -585,21 +536,16 @@ pub fn assemble(
     })
 }
 
-/// Tries to place children for a source piece.
-///
-/// For each jigsaw on the source piece, attempts to find a matching target
-/// from the appropriate pool and place it.
-///
-/// `context_idx` is this piece's collision context in `free_spaces`:
-/// - If this piece was placed externally, it's the parent's context
-/// - If this piece was placed internally, it's the parent's internal free space
+/// Vanilla's `tryPlacingChildren`. `context_idx` is this piece's collision context
+/// in `free_spaces` — external children get the parent's context, internal
+/// children get the parent's internal free space.
 #[expect(
     clippy::too_many_arguments,
-    reason = "mirrors vanilla's JigsawPlacement.tryPlacingChildren signature"
+    reason = "matches vanilla's tryPlacingChildren signature"
 )]
 #[expect(
     clippy::too_many_lines,
-    reason = "inlines the source-jigsaw / child-pool match loop to mirror vanilla"
+    reason = "inlined to mirror vanilla's source-jigsaw/child-pool loop"
 )]
 fn try_placing_children(
     source_idx: usize,

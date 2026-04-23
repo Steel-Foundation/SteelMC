@@ -198,72 +198,46 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         let templates: FxHashMap<_, _> = vanilla_templates().into_iter().collect();
 
         let mut structures: FxHashMap<String, Box<dyn Structure<N>>> = FxHashMap::default();
-        structures.insert(
-            "minecraft:nether_fossil".to_string(),
-            Box::new(NetherFossilStructure),
-        );
-        structures.insert(
-            "minecraft:fortress".to_string(),
-            Box::new(NetherFortressStructure),
-        );
-        structures.insert("minecraft:end_city".to_string(), Box::new(EndCityStructure));
-        structures.insert(
-            "minecraft:woodland_mansion".to_string(),
-            Box::new(WoodlandMansionStructure),
-        );
-        structures.insert(
-            "minecraft:ocean_monument".to_string(),
-            Box::new(OceanMonumentStructure),
-        );
-        structures.insert(
-            "minecraft:mineshaft".to_string(),
-            Box::new(MineshaftStructure),
-        );
-        structures.insert(
-            "minecraft:desert_pyramid".to_string(),
+        let mut reg = |k: &str, s: Box<dyn Structure<N>>| {
+            structures.insert(k.to_string(), s);
+        };
+        reg("minecraft:nether_fossil", Box::new(NetherFossilStructure));
+        reg("minecraft:fortress", Box::new(NetherFortressStructure));
+        reg("minecraft:end_city", Box::new(EndCityStructure));
+        reg("minecraft:woodland_mansion", Box::new(WoodlandMansionStructure));
+        reg("minecraft:ocean_monument", Box::new(OceanMonumentStructure));
+        reg("minecraft:mineshaft", Box::new(MineshaftStructure));
+        reg(
+            "minecraft:desert_pyramid",
             Box::new(SinglePieceStructure {
                 size: (21, 15, 21),
                 piece_id: "tedp",
                 require_above_sea: true,
             }),
         );
-        structures.insert(
-            "minecraft:jungle_temple".to_string(),
+        reg(
+            "minecraft:jungle_temple",
             Box::new(SinglePieceStructure {
                 size: (12, 10, 15),
                 piece_id: "tejp",
                 require_above_sea: true,
             }),
         );
-        structures.insert(
-            "minecraft:swamp_hut".to_string(),
+        reg(
+            "minecraft:swamp_hut",
             Box::new(SinglePieceStructure {
                 size: (7, 7, 9),
                 piece_id: "tesh",
                 require_above_sea: false,
             }),
         );
-        structures.insert(
-            "minecraft:buried_treasure".to_string(),
-            Box::new(BuriedTreasureStructure),
-        );
-        structures.insert(
-            "minecraft:shipwreck".to_string(),
-            Box::new(ShipwreckStructure),
-        );
-        structures.insert("minecraft:igloo".to_string(), Box::new(IglooStructure));
-        structures.insert(
-            "minecraft:ocean_ruin".to_string(),
-            Box::new(OceanRuinStructure),
-        );
-        structures.insert(
-            "minecraft:stronghold".to_string(),
-            Box::new(StrongholdStructure),
-        );
-        structures.insert(
-            "minecraft:ruined_portal".to_string(),
-            Box::new(RuinedPortalStructure),
-        );
+        reg("minecraft:buried_treasure", Box::new(BuriedTreasureStructure));
+        reg("minecraft:shipwreck", Box::new(ShipwreckStructure));
+        reg("minecraft:igloo", Box::new(IglooStructure));
+        reg("minecraft:ocean_ruin", Box::new(OceanRuinStructure));
+        reg("minecraft:stronghold", Box::new(StrongholdStructure));
+        reg("minecraft:ruined_portal", Box::new(RuinedPortalStructure));
+        drop(reg);
 
         Self {
             biome_source,
@@ -284,10 +258,8 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
     }
 }
 
-/// Evaluates density using trilinear interpolation from cell corners,
-/// matching vanilla's `NoiseChunk` behavior.
-/// Vanilla inflates the structure BB by 12 when `terrain_adaptation != NONE`.
-/// Returns the inflate value for reference intersection checks.
+/// Vanilla inflates by 12 when `terrain_adaptation != NONE`; used for reference
+/// intersection checks.
 fn terrain_adapt_inflate(id: &Identifier) -> i32 {
     match id.path.as_ref() {
         "stronghold" | "trail_ruins" | "ancient_city" | "nether_fossil" | "pillager_outpost"
@@ -586,29 +558,23 @@ fn interpolated_density<N: DimensionNoises>(
     noises.combine_interpolated(&mut *cache, &interpolated[..interp_count], 0, y, 0)
 }
 
-/// Collected structure entries for a chunk during the first pass of
-/// `create_structures`. Kept separate from `StructureStart` because jigsaw sets
-/// defer assembly to a second pass that can retry across entries.
+/// First-pass selection. Jigsaw sets defer assembly to a second pass that can
+/// retry across entries.
 enum SelectedSet {
-    /// Non-jigsaw: selection already done. `cached_stub` holds the pieces
-    /// produced by `Structure::find_generation_point`; `None` means the entry
-    /// is a legacy/unknown type and piece-gen emits an empty start.
+    /// Non-jigsaw. `cached_stub=None` = legacy/unknown type → emit empty start.
     Single {
         structure: Identifier,
         cached_stub: Option<GenerationStub>,
     },
-    /// Jigsaw: needs assembly + biome check with retry in post-processing.
+    /// Needs assembly + biome check with retry.
     Jigsaw(Vec<StructureSelectionEntry>),
 }
 
-/// Result of a non-jigsaw entry evaluation during structure placement.
 enum CanGen {
     No,
-    /// Legacy path (currently only `minecraft:jigsaw` biome check — the outer
-    /// `is_jigsaw_set` branch handles those separately, so this fires only for
-    /// unknown/default types).
+    /// Unknown/legacy type — piece-gen emits an empty start.
     Legacy,
-    /// Structure trait ran successfully; stub can be reused in piece-gen.
+    /// Stub from the `Structure` trait; reusable in piece-gen.
     Trait(GenerationStub),
 }
 
@@ -631,30 +597,19 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let mut height_cache = N::ColumnCache::default();
         let sea_level = N::Settings::SEA_LEVEL;
 
-        // No `init_grid` here. After the biome prefilter the structures that
-        // run at most chunks (mineshaft, village) use their own caches — they
-        // never touch this one. For chunks that do reach `ctx.base_height` or
-        // `LazyAquifer::ensure`, the cache falls back to its single-entry lazy
-        // mode, which is fine for the 1–4 column probes those paths perform.
-        // Eagerly init-griding a 5×5 quart of the full density graph on
-        // every chunk was ~36 µs of pure waste.
+        // No eager `init_grid`: most chunks' structures (mineshaft, village)
+        // use their own caches, and the 1–4 column probes of the remainder
+        // hit this cache's lazy single-entry mode cheaply. Eager 5×5 quart
+        // init cost ~36µs per chunk with no payoff.
         let mut aquifer =
             LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
         let mut surface_y_cache: Option<i32> = None;
         let mut height_cache_grid_ready = false;
 
-        // Collect selected structures first (while can_generate borrows height_cache),
-        // then run jigsaw assembly afterward (which also needs height_cache).
-        //
-        // For jigsaw sets: store the full entry list so post-processing can do
-        // weighted selection + assembly + biome check with retry (matching vanilla).
-        // For non-jigsaw sets: store just the selected entry.
+        // First pass selects entries; second pass runs jigsaw assembly and
+        // biome-check retry (matches vanilla's tryGenerateStructure flow).
         let mut selected_sets: Vec<SelectedSet> = Vec::new();
 
-        // Evaluates a non-jigsaw entry. For registered structures runs
-        // `find_generation_point` and returns the stub so piece-gen can reuse
-        // it; for unknown types falls back to a center+surface_y biome check.
-        // (Jigsaw entries take a separate path via `SelectedSet::Jigsaw`.)
         let mut can_generate = |entry: &StructureSelectionEntry| -> CanGen {
             let mut ctx = GenerationContext::<'_, '_, N> {
                 seed: self.seed,
@@ -684,7 +639,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 };
             }
 
-            // Unknown / legacy types — do a simple center + surface-Y biome check.
+            // Unknown/legacy: center + surface-Y biome check.
             tracing::warn!(
                 "Unknown structure type {:?} for {}, using center biome check",
                 entry.structure_type,
@@ -705,11 +660,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 .iter()
                 .any(|e| e.structure_type == "minecraft:jigsaw");
 
-            // Placement check first — it's effectively free (a little RNG hashing)
-            // and rejects ~1 - 1/spacing² of chunks. Running `can_generate` first
-            // was catastrophic because `can_generate` for some structure types
-            // (e.g. mineshaft) runs full piece generation just to compute a biome
-            // check position.
+            // Placement check first — cheap RNG hashing rejects ~1-1/spacing² of chunks.
+            // Running `can_generate` first was catastrophic: some types (mineshaft)
+            // run full piece generation just to compute the biome-check position.
             let rings = self
                 .ring_positions
                 .iter()
@@ -723,20 +676,17 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 continue;
             }
 
-            // Skip if any structure in this set already has a valid start
             {
                 let starts = chunk.structure_starts();
-                let already_has = set.structures.iter().any(|entry| {
+                if set.structures.iter().any(|entry| {
                     starts
                         .get(&entry.structure)
                         .is_some_and(|s| !s.pieces.is_empty())
-                });
-                if already_has {
+                }) {
                     continue;
                 }
             }
 
-            // Exclusion zone: skip if another set has a structure chunk nearby
             if set.placement.is_excluded(
                 self.seed,
                 chunk_x,
@@ -748,14 +698,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             }
 
             if is_jigsaw_set {
-                // Jigsaw: defer weighted selection + assembly + biome check to post-processing.
-                // This matches vanilla's flow where tryGenerateStructure runs the full
-                // assembly before checking the biome at the stub position.
+                // Jigsaw sets defer weighted selection + assembly + biome check to
+                // post-processing, matching vanilla's tryGenerateStructure ordering.
                 selected_sets.push(SelectedSet::Jigsaw(set.structures.clone()));
             } else {
-                // Non-jigsaw: weighted selection. For registered structures
-                // `can_generate` produces the final stub — stash it so piece-gen
-                // doesn't re-run `find_generation_point`.
+                // Non-jigsaw: weighted selection. `can_generate` stashes the stub
+                // so piece-gen doesn't re-run `find_generation_point`.
                 let selected: Option<(&StructureSelectionEntry, Option<GenerationStub>)> =
                     if set.structures.len() == 1 {
                         let entry = &set.structures[0];
@@ -813,32 +761,24 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             }
         }
 
-        // can_generate is dropped here, releasing the height_cache borrow.
-        // Now process selected sets — run jigsaw assembly with retry for jigsaw structures.
+        // `can_generate` dropped here — height_cache borrow released.
         for selected in selected_sets {
             match selected {
                 SelectedSet::Single {
                     structure: structure_id,
                     cached_stub,
                 } => {
-                    // Cached stub from the selection pass. For registered
-                    // structures this is always `Some`; for unknown/legacy
-                    // types it's `None` and we emit an empty start.
                     let pieces = cached_stub.map(|s| s.pieces).unwrap_or_default();
-
-                    let bb_inflate = terrain_adapt_inflate(&structure_id);
                     let start = StructureStart::new(
                         structure_id.clone(),
                         ChunkPos::new(chunk_x, chunk_z),
                         pieces,
-                        bb_inflate,
+                        terrain_adapt_inflate(&structure_id),
                     );
                     chunk.structure_starts_mut().insert(structure_id, start);
                 }
                 SelectedSet::Jigsaw(entries) => {
-                    // Jigsaw: weighted selection with assembly + biome check retry.
-                    // Matches vanilla's flow in ChunkGenerator.createStructures:
-                    // pick entry → tryGenerateStructure (assembly + biome) → retry if fails.
+                    // Weighted pick → tryGenerateStructure (assemble + biome check) → retry.
                     let mut rng = LegacyRandom::from_seed(0);
                     rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
 
@@ -858,8 +798,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                         let candidate = remaining[selected_idx];
                         let Some(ref jigsaw_config) = candidate.jigsaw_config else {
-                            // Non-jigsaw entry in a mixed set (e.g. fortress in
-                            // nether_complexes). Dispatch via the Structure registry.
+                            // Non-jigsaw in mixed set (e.g. fortress in nether_complexes).
                             let stub_opt: Option<GenerationStub> = {
                                 if let Some(structure_impl) =
                                     self.structures.get(&candidate.structure_type)
@@ -911,7 +850,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             continue;
                         };
 
-                        // Run assembly for this candidate
                         let mut alias_rng = LegacyRandom::from_seed(0);
                         alias_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
                         let alias_map =
@@ -920,13 +858,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         let mut assembly_rng = LegacyRandom::from_seed(0);
                         assembly_rng.set_large_feature_seed(self.seed, chunk_x, chunk_z);
 
-                        // Vanilla creates a fresh NoiseChunk(1) per query (see
-                        // NoiseChunk:137-139: aquifer anchored to the 16-aligned
-                        // ChunkPos of the cell). Since both the aquifer and the
-                        // grid-inited cache are pure functions of
-                        // `(aq_chunk_x, aq_chunk_z)`, memoise them across the
-                        // assembly's 20–50 piece-placement queries — most land
-                        // in the same few chunks.
+                        // Vanilla builds a fresh NoiseChunk per query (NoiseChunk:137-139:
+                        // aquifer anchored to the 16-aligned ChunkPos of the cell). Both
+                        // aquifer and grid-inited cache are pure functions of
+                        // `(aq_chunk_x, aq_chunk_z)`, so memoise across the 20–50 piece
+                        // queries — most land in the same few chunks.
                         let mut height_query_cache: FxHashMap<
                             (i32, i32),
                             (N::ColumnCache, Aquifer<N>),
@@ -986,11 +922,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         if let Some(assembly) = result
                             && !assembly.pieces.is_empty()
                         {
-                            // Biome check at the stub position
                             let (bx, by, bz) = assembly.biome_check_pos;
                             let biome = sampler.sample(bx >> 2, by >> 2, bz >> 2);
                             if candidate.allowed_biomes.contains(&biome.key) {
-                                // Success — create the structure start
                                 let pieces = assembly
                                     .pieces
                                     .into_iter()
@@ -1013,11 +947,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                 chunk
                                     .structure_starts_mut()
                                     .insert(candidate.structure.clone(), start);
-                                break; // Done with this set
+                                break;
                             }
                         }
 
-                        // Assembly failed or biome mismatch — retry with next candidate
+                        // Assembly or biome check failed — retry.
                         total_weight -= candidate.weight;
                         remaining.remove(selected_idx);
                     }

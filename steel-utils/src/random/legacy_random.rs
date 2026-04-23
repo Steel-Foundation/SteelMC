@@ -40,28 +40,25 @@ impl LegacyRandom {
         self.next_gaussian = None;
     }
 
-    /// Seeds for large feature generation at a chunk position.
-    ///
     /// Matches vanilla's `WorldgenRandom.setLargeFeatureSeed`.
     pub fn set_large_feature_seed(&mut self, seed: i64, chunk_x: i32, chunk_z: i32) {
         self.set_seed(seed);
         let x_mul = self.next_i64();
         let z_mul = self.next_i64();
-        let result =
-            i64::from(chunk_x).wrapping_mul(x_mul) ^ i64::from(chunk_z).wrapping_mul(z_mul) ^ seed;
-        self.set_seed(result);
+        self.set_seed(
+            i64::from(chunk_x).wrapping_mul(x_mul) ^ i64::from(chunk_z).wrapping_mul(z_mul) ^ seed,
+        );
     }
 
-    /// Seeds for structure placement with a salt value.
-    ///
     /// Matches vanilla's `WorldgenRandom.setLargeFeatureWithSalt`.
     pub fn set_large_feature_with_salt(&mut self, seed: i64, x: i32, z: i32, salt: i32) {
-        let result = i64::from(x)
-            .wrapping_mul(341_873_128_712)
-            .wrapping_add(i64::from(z).wrapping_mul(132_897_987_541))
-            .wrapping_add(seed)
-            .wrapping_add(i64::from(salt));
-        self.set_seed(result);
+        self.set_seed(
+            i64::from(x)
+                .wrapping_mul(341_873_128_712)
+                .wrapping_add(i64::from(z).wrapping_mul(132_897_987_541))
+                .wrapping_add(seed)
+                .wrapping_add(i64::from(salt)),
+        );
     }
 
     const fn next(&mut self, bits: u64) -> i32 {
@@ -418,7 +415,6 @@ mod test {
 
     #[test]
     fn test_set_large_feature_with_salt_trivial() {
-        // salt-only: x=0, z=0 → result = seed + salt
         let mut rng = LegacyRandom::from_seed(0);
         rng.set_large_feature_with_salt(0, 0, 0, 10_387_312);
         let mut expected = LegacyRandom::from_seed(0);
@@ -432,10 +428,6 @@ mod test {
     fn test_set_large_feature_with_salt() {
         let mut rng = LegacyRandom::from_seed(0);
         rng.set_large_feature_with_salt(123_456_789, 5, -3, 10_387_312);
-        // result = 5*341873128712 + (-3)*132897987541 + 123456789 + 10387312
-        //        = 1709365643560 - 398693962623 + 133844101
-        //        = 1310805525038
-        // Verify the computation is deterministic by checking first output
         let expected_seed: i64 =
             5_i64 * 341_873_128_712 + (-3_i64) * 132_897_987_541 + 123_456_789 + 10_387_312;
         let mut expected = LegacyRandom::from_seed(0);
@@ -447,10 +439,6 @@ mod test {
 
     #[test]
     fn test_set_large_feature_seed() {
-        // Seed=0: nextLong() sequence is known from test_next_i64
-        // x_mul = -4962768465676381896, z_mul = 4437113781045784766
-        // For chunk (3, 5):
-        //   result = 3 * x_mul ^ 5 * z_mul ^ 0
         let x_mul = -4_962_768_465_676_381_896_i64;
         let z_mul = 4_437_113_781_045_784_766_i64;
         let expected_seed = 3_i64.wrapping_mul(x_mul) ^ 5_i64.wrapping_mul(z_mul);

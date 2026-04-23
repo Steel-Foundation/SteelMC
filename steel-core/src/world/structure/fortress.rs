@@ -1,11 +1,6 @@
-//! Nether fortress piece generation.
-//!
-//! Ports vanilla's `NetherFortressPieces`. A `StartPiece` (`BridgeCrossing`) is
-//! placed first, then a weighted BFS-like process picks pieces from either
-//! the bridge or castle pool, honoring placement limits, previous-piece
-//! constraints, and collision against already placed pieces. After all
-//! children are resolved the entire structure is randomly offset vertically
-//! into `Y ∈ [48, 70]` via `moveInsideHeights`.
+//! Nether fortress. Vanilla's `NetherFortressPieces`: start with a `BridgeCrossing`,
+//! then weighted BFS over bridge/castle pools honoring place-count, prev-piece, and
+//! collision constraints. Structure is vertically offset into `Y ∈ [48, 70]`.
 
 use steel_utils::BoundingBox;
 use steel_utils::Direction;
@@ -53,10 +48,9 @@ enum PieceKind {
 }
 
 impl PieceKind {
-    /// Returns the vanilla identifier path (without `minecraft:` prefix).
+    /// Vanilla's `StructurePieceType` registry path (lowercased, no namespace).
     pub const fn piece_id(self) -> &'static str {
         match self {
-            // Match vanilla's `StructurePieceType` registry (lowercased).
             PieceKind::BridgeCrossing => "nebcr",
             PieceKind::BridgeEndFiller => "nebef",
             PieceKind::BridgeStraight => "nebs",
@@ -74,7 +68,7 @@ impl PieceKind {
         }
     }
 
-    /// Returns `(offX, offY, offZ, width, height, depth)` for vanilla's `orientBox`.
+    /// `(offX, offY, offZ, width, height, depth)` for vanilla's `orientBox`.
     const fn geom(self) -> (i32, i32, i32, i32, i32, i32) {
         match self {
             PieceKind::BridgeCrossing => (-8, -3, 0, 19, 10, 19),
@@ -93,17 +87,16 @@ impl PieceKind {
         }
     }
 
-    /// Whether the piece's constructor consumes RNG after a successful
-    /// collision check.
+    /// RNG draws consumed by the constructor after a successful collision check.
+    /// `BridgeEndFiller` draws `nextInt()` for `selfSeed`; the small-corridor turns
+    /// draw `nextInt(3)` for `isNeedingChest`.
     #[expect(
         clippy::match_same_arms,
-        reason = "arms split by distinct vanilla RNG semantics (selfSeed vs chest-gate)"
+        reason = "arms split by distinct vanilla RNG semantics"
     )]
     const fn extra_rng_in_ctor(self) -> u32 {
         match self {
-            // BridgeEndFiller consumes `random.nextInt()` (unbounded) for selfSeed.
             PieceKind::BridgeEndFiller => 1,
-            // Left/right small-corridor turns consume `random.nextInt(3)` for isNeedingChest.
             PieceKind::CastleSmallCorridorLeftTurn | PieceKind::CastleSmallCorridorRightTurn => 1,
             _ => 0,
         }
@@ -171,53 +164,54 @@ pub struct FortressPiece {
     pub gen_depth: i32,
 }
 
+/// Matches `BoundingBox.orientBox`.
 fn orient_box(
     foot: (i32, i32, i32),
     off: (i32, i32, i32),
     size: (i32, i32, i32),
     dir: Direction,
 ) -> BoundingBox {
-    let (foot_x, foot_y, foot_z) = foot;
-    let (off_x, off_y, off_z) = off;
-    let (width, height, depth) = size;
-    // Matches `BoundingBox.orientBox`.
+    let (fx, fy, fz) = foot;
+    let (ox, oy, oz) = off;
+    let (w, h, d) = size;
     match dir {
         Direction::South => BoundingBox::new(
-            foot_x + off_x,
-            foot_y + off_y,
-            foot_z + off_z,
-            foot_x + width - 1 + off_x,
-            foot_y + height - 1 + off_y,
-            foot_z + depth - 1 + off_z,
+            fx + ox,
+            fy + oy,
+            fz + oz,
+            fx + w - 1 + ox,
+            fy + h - 1 + oy,
+            fz + d - 1 + oz,
         ),
         Direction::North => BoundingBox::new(
-            foot_x + off_x,
-            foot_y + off_y,
-            foot_z - depth + 1 + off_z,
-            foot_x + width - 1 + off_x,
-            foot_y + height - 1 + off_y,
-            foot_z + off_z,
+            fx + ox,
+            fy + oy,
+            fz - d + 1 + oz,
+            fx + w - 1 + ox,
+            fy + h - 1 + oy,
+            fz + oz,
         ),
         Direction::West => BoundingBox::new(
-            foot_x - depth + 1 + off_z,
-            foot_y + off_y,
-            foot_z + off_x,
-            foot_x + off_z,
-            foot_y + height - 1 + off_y,
-            foot_z + width - 1 + off_x,
+            fx - d + 1 + oz,
+            fy + oy,
+            fz + ox,
+            fx + oz,
+            fy + h - 1 + oy,
+            fz + w - 1 + ox,
         ),
         Direction::East => BoundingBox::new(
-            foot_x + off_z,
-            foot_y + off_y,
-            foot_z + off_x,
-            foot_x + depth - 1 + off_z,
-            foot_y + height - 1 + off_y,
-            foot_z + width - 1 + off_x,
+            fx + oz,
+            fy + oy,
+            fz + ox,
+            fx + d - 1 + oz,
+            fy + h - 1 + oy,
+            fz + w - 1 + ox,
         ),
-        _ => unreachable!("orient_box called with non-horizontal direction"),
+        _ => unreachable!("orient_box non-horizontal direction"),
     }
 }
 
+/// Matches `StructurePiece.makeBoundingBox`: width rotates with the direction axis.
 fn make_bounding_box(
     x: i32,
     y: i32,
@@ -227,7 +221,6 @@ fn make_bounding_box(
     height: i32,
     depth: i32,
 ) -> BoundingBox {
-    // Matches `StructurePiece.makeBoundingBox`: width rotates with direction axis.
     match dir {
         Direction::North | Direction::South => {
             BoundingBox::new(x, y, z, x + width - 1, y + height - 1, z + depth - 1)
@@ -247,33 +240,24 @@ fn find_collision<'a>(pieces: &'a [FortressPiece], bb: &BoundingBox) -> Option<&
     pieces.iter().find(|p| p.bounding_box.intersects(bb))
 }
 
-/// Record pushed onto the pending queue.
-#[derive(Debug, Clone, Copy)]
-struct Pending {
-    piece: FortressPiece,
-}
-
 struct Builder {
     pieces: Vec<FortressPiece>,
-    pending: Vec<Pending>,
+    pending: Vec<FortressPiece>,
     start_bb_min_x: i32,
     start_bb_min_z: i32,
     bridge_weights: Vec<PieceWeight>,
     castle_weights: Vec<PieceWeight>,
-    /// Index (by kind) of the last-placed weighted piece for in-row checks.
     previous_kind: Option<PieceKind>,
 }
 
 impl Builder {
     fn add_and_enqueue(&mut self, piece: FortressPiece) {
         self.pieces.push(piece);
-        self.pending.push(Pending { piece });
+        self.pending.push(piece);
     }
 }
 
-/// Creates a single piece given its kind at `foot` facing `dir`.
 /// Mirrors vanilla's `findAndCreateBridgePieceFactory` + `PIECE.createPiece`.
-/// Returns the built piece if the box passes `isOkBox` and has no collision.
 fn create_piece(
     kind: PieceKind,
     pieces: &[FortressPiece],
@@ -287,18 +271,13 @@ fn create_piece(
     if !is_ok_box(&bb) || find_collision(pieces, &bb).is_some() {
         return None;
     }
-
-    // Constructor-side RNG consumption.
     for _ in 0..kind.extra_rng_in_ctor() {
         if matches!(kind, PieceKind::BridgeEndFiller) {
-            // selfSeed = random.nextInt() (unbounded 32-bit)
-            let _ = rng.next_i32();
+            let _ = rng.next_i32(); // selfSeed (unbounded)
         } else {
-            // isNeedingChest = random.nextInt(3) == 0
-            let _ = rng.next_i32_bounded(3);
+            let _ = rng.next_i32_bounded(3); // isNeedingChest
         }
     }
-
     Some(FortressPiece {
         kind_id: kind.piece_id(),
         bounding_box: bb,
@@ -307,9 +286,9 @@ fn create_piece(
     })
 }
 
-/// Weighted piece selection matching vanilla's `generatePiece`. Always
-/// returns a piece — falls back to `BridgeEndFiller` if no weighted pick
-/// succeeds within 5 attempts.
+/// Vanilla's `generatePiece`. Falls back to `BridgeEndFiller` if no weighted pick
+/// succeeds within 5 attempts. On ineligible picks vanilla falls through to
+/// subsequent pieces in the list.
 fn generate_piece_weighted(
     is_castle: bool,
     builder: &mut Builder,
@@ -330,61 +309,49 @@ fn generate_piece_weighted(
         let sum: i32 = pool.iter().map(|p| p.weight).sum();
         if has_any { sum } else { -1 }
     };
-    let do_stuff = total_weight > 0 && depth <= MAX_DEPTH;
 
-    if do_stuff {
+    if total_weight > 0 && depth <= MAX_DEPTH {
         for _ in 0..5 {
-            let mut weight_selection = rng.next_i32_bounded(total_weight);
-
-            let mut iter_idx = 0;
+            let mut choice = rng.next_i32_bounded(total_weight);
+            let mut i = 0;
             loop {
-                let (piece_kind, piece_weight, piece_allow_in_row, piece_do_place) = {
+                let (kind, allow_in_row, do_place) = {
                     let pool = if is_castle {
                         &builder.castle_weights
                     } else {
                         &builder.bridge_weights
                     };
-                    if iter_idx >= pool.len() {
+                    if i >= pool.len() {
                         break;
                     }
-                    let p = &pool[iter_idx];
-                    (p.kind, p.weight, p.allow_in_row, p.do_place())
+                    choice -= pool[i].weight;
+                    (pool[i].kind, pool[i].allow_in_row, pool[i].do_place())
                 };
-                weight_selection -= piece_weight;
-                if weight_selection >= 0 {
-                    iter_idx += 1;
+                if choice >= 0 {
+                    i += 1;
                     continue;
                 }
-                // Hit a candidate.
-                if !piece_do_place
-                    || (Some(piece_kind) == builder.previous_kind && !piece_allow_in_row)
-                {
+                if !do_place || (Some(kind) == builder.previous_kind && !allow_in_row) {
                     break;
                 }
-
-                let made = create_piece(piece_kind, &builder.pieces, rng, foot, dir, depth);
-                if let Some(p) = made {
-                    // Update counters.
+                if let Some(p) = create_piece(kind, &builder.pieces, rng, foot, dir, depth) {
                     let pool = if is_castle {
                         &mut builder.castle_weights
                     } else {
                         &mut builder.bridge_weights
                     };
-                    pool[iter_idx].place_count += 1;
-                    builder.previous_kind = Some(piece_kind);
-                    if !pool[iter_idx].do_place() {
-                        pool.remove(iter_idx);
+                    pool[i].place_count += 1;
+                    builder.previous_kind = Some(kind);
+                    if !pool[i].do_place() {
+                        pool.remove(i);
                     }
                     return Some(p);
                 }
-                // Collision or invalid box — vanilla falls through and tries
-                // subsequent pieces in the for loop.
-                iter_idx += 1;
+                i += 1;
             }
         }
     }
 
-    // Fallback — BridgeEndFiller leaf piece.
     create_piece(
         PieceKind::BridgeEndFiller,
         &builder.pieces,
@@ -395,6 +362,8 @@ fn generate_piece_weighted(
     )
 }
 
+/// Out-of-range branch builds a `BridgeEndFiller` (consuming RNG for `selfSeed`)
+/// then discards it. We mirror vanilla: call `create_piece` for RNG sync, don't add.
 fn generate_and_add_piece(
     is_castle: bool,
     builder: &mut Builder,
@@ -403,12 +372,6 @@ fn generate_and_add_piece(
     dir: Direction,
     depth: i32,
 ) {
-    // Distance cap from the start piece. Vanilla's out-of-range branch builds
-    // a BridgeEndFiller (consuming RNG for its selfSeed) but then DISCARDS it
-    // — `generateAndAddPiece` returns the piece without calling `addPiece`,
-    // and the caller (`generateChildX` → `addChildren`) throws the result away.
-    // We mirror that: still call create_piece so RNG stays in sync, but don't
-    // add the piece to the placed set.
     if (foot.0 - builder.start_bb_min_x).abs() > DIST_LIMIT
         || (foot.2 - builder.start_bb_min_z).abs() > DIST_LIMIT
     {
@@ -422,15 +385,12 @@ fn generate_and_add_piece(
         );
         return;
     }
-
     if let Some(piece) = generate_piece_weighted(is_castle, builder, rng, foot, dir, depth + 1) {
         builder.add_and_enqueue(piece);
     }
 }
 
-/// Parent-piece context used by the `generate_child_*` helpers. Groups the
-/// bounding box, orientation, and generation depth threaded through vanilla's
-/// `generateChildForward/Left/Right` call surface.
+/// Parent context threaded through `generate_child_*`.
 #[derive(Clone, Copy)]
 struct ParentRef {
     bb: BoundingBox,
@@ -447,34 +407,21 @@ fn generate_child_forward(
     is_castle: bool,
 ) {
     let bb = parent.bb;
-    let (fx, fy, fz, dir) = match parent.orientation {
-        Direction::North => (
-            bb.min_x + x_off,
-            bb.min_y + y_off,
-            bb.min_z - 1,
-            Direction::North,
-        ),
-        Direction::South => (
-            bb.min_x + x_off,
-            bb.min_y + y_off,
-            bb.max_z + 1,
-            Direction::South,
-        ),
-        Direction::West => (
-            bb.min_x - 1,
-            bb.min_y + y_off,
-            bb.min_z + x_off,
-            Direction::West,
-        ),
-        Direction::East => (
-            bb.max_x + 1,
-            bb.min_y + y_off,
-            bb.min_z + x_off,
-            Direction::East,
-        ),
+    let (fx, fz) = match parent.orientation {
+        Direction::North => (bb.min_x + x_off, bb.min_z - 1),
+        Direction::South => (bb.min_x + x_off, bb.max_z + 1),
+        Direction::West => (bb.min_x - 1, bb.min_z + x_off),
+        Direction::East => (bb.max_x + 1, bb.min_z + x_off),
         _ => return,
     };
-    generate_and_add_piece(is_castle, builder, rng, (fx, fy, fz), dir, parent.gen_depth);
+    generate_and_add_piece(
+        is_castle,
+        builder,
+        rng,
+        (fx, bb.min_y + y_off, fz),
+        parent.orientation,
+        parent.gen_depth,
+    );
 }
 
 fn generate_child_left(
@@ -486,22 +433,19 @@ fn generate_child_left(
     is_castle: bool,
 ) {
     let bb = parent.bb;
-    let (fx, fy, fz, dir) = match parent.orientation {
-        Direction::North | Direction::South => (
-            bb.min_x - 1,
-            bb.min_y + y_off,
-            bb.min_z + z_off,
-            Direction::West,
-        ),
-        Direction::West | Direction::East => (
-            bb.min_x + z_off,
-            bb.min_y + y_off,
-            bb.min_z - 1,
-            Direction::North,
-        ),
+    let (fx, fz, dir) = match parent.orientation {
+        Direction::North | Direction::South => (bb.min_x - 1, bb.min_z + z_off, Direction::West),
+        Direction::West | Direction::East => (bb.min_x + z_off, bb.min_z - 1, Direction::North),
         _ => return,
     };
-    generate_and_add_piece(is_castle, builder, rng, (fx, fy, fz), dir, parent.gen_depth);
+    generate_and_add_piece(
+        is_castle,
+        builder,
+        rng,
+        (fx, bb.min_y + y_off, fz),
+        dir,
+        parent.gen_depth,
+    );
 }
 
 fn generate_child_right(
@@ -513,106 +457,82 @@ fn generate_child_right(
     is_castle: bool,
 ) {
     let bb = parent.bb;
-    let (fx, fy, fz, dir) = match parent.orientation {
-        Direction::North | Direction::South => (
-            bb.max_x + 1,
-            bb.min_y + y_off,
-            bb.min_z + z_off,
-            Direction::East,
-        ),
-        Direction::West | Direction::East => (
-            bb.min_x + z_off,
-            bb.min_y + y_off,
-            bb.max_z + 1,
-            Direction::South,
-        ),
+    let (fx, fz, dir) = match parent.orientation {
+        Direction::North | Direction::South => (bb.max_x + 1, bb.min_z + z_off, Direction::East),
+        Direction::West | Direction::East => (bb.min_x + z_off, bb.max_z + 1, Direction::South),
         _ => return,
     };
-    generate_and_add_piece(is_castle, builder, rng, (fx, fy, fz), dir, parent.gen_depth);
+    generate_and_add_piece(
+        is_castle,
+        builder,
+        rng,
+        (fx, bb.min_y + y_off, fz),
+        dir,
+        parent.gen_depth,
+    );
 }
 
 fn add_children(piece: FortressPiece, builder: &mut Builder, rng: &mut LegacyRandom) {
     let Some(orientation) = piece.orientation else {
         return;
     };
-    let bb = piece.bounding_box;
-    let gd = piece.gen_depth;
-
     let parent = ParentRef {
-        bb,
+        bb: piece.bounding_box,
         orientation,
-        gen_depth: gd,
+        gen_depth: piece.gen_depth,
     };
+    let fwd = PieceKind::BridgeStraight.piece_id();
+    let bcr = PieceKind::BridgeCrossing.piece_id();
+    let ccs = PieceKind::CastleCorridorStairs.piece_id();
+    let ctb = PieceKind::CastleCorridorTBalcony.piece_id();
+    let ce = PieceKind::CastleEntrance.piece_id();
+    let csc = PieceKind::CastleSmallCorridorCrossing.piece_id();
+    let clt = PieceKind::CastleSmallCorridorLeftTurn.piece_id();
+    let cs = PieceKind::CastleSmallCorridor.piece_id();
+    let crt = PieceKind::CastleSmallCorridorRightTurn.piece_id();
+    let csr = PieceKind::CastleStalkRoom.piece_id();
+    let rc = PieceKind::RoomCrossing.piece_id();
+    let sr = PieceKind::StairsRoom.piece_id();
+
     match piece.kind_id {
-        // BridgeCrossing (also the start piece).
-        id if id == PieceKind::BridgeCrossing.piece_id() => {
+        id if id == bcr => {
             generate_child_forward(parent, builder, rng, 8, 3, false);
             generate_child_left(parent, builder, rng, 3, 8, false);
             generate_child_right(parent, builder, rng, 3, 8, false);
         }
-        id if id == PieceKind::BridgeStraight.piece_id() => {
-            generate_child_forward(parent, builder, rng, 1, 3, false);
-        }
-        id if id == PieceKind::CastleCorridorStairs.piece_id() => {
-            generate_child_forward(parent, builder, rng, 1, 0, true);
-        }
-        id if id == PieceKind::CastleCorridorTBalcony.piece_id() => {
+        id if id == fwd => generate_child_forward(parent, builder, rng, 1, 3, false),
+        id if id == ccs => generate_child_forward(parent, builder, rng, 1, 0, true),
+        id if id == ctb => {
             let z_off = match orientation {
                 Direction::West | Direction::North => 5,
                 _ => 1,
             };
-            let left_is_castle = rng.next_i32_bounded(8) > 0;
-            generate_child_left(parent, builder, rng, 0, z_off, left_is_castle);
-            let right_is_castle = rng.next_i32_bounded(8) > 0;
-            generate_child_right(parent, builder, rng, 0, z_off, right_is_castle);
+            let l = rng.next_i32_bounded(8) > 0;
+            generate_child_left(parent, builder, rng, 0, z_off, l);
+            let r = rng.next_i32_bounded(8) > 0;
+            generate_child_right(parent, builder, rng, 0, z_off, r);
         }
-        id if id == PieceKind::CastleEntrance.piece_id() => {
-            generate_child_forward(parent, builder, rng, 5, 3, true);
-        }
-        id if id == PieceKind::CastleSmallCorridorCrossing.piece_id() => {
+        id if id == ce => generate_child_forward(parent, builder, rng, 5, 3, true),
+        id if id == csc => {
             generate_child_forward(parent, builder, rng, 1, 0, true);
             generate_child_left(parent, builder, rng, 0, 1, true);
             generate_child_right(parent, builder, rng, 0, 1, true);
         }
-        id if id == PieceKind::CastleSmallCorridorLeftTurn.piece_id() => {
-            generate_child_left(parent, builder, rng, 0, 1, true);
-        }
-        id if id == PieceKind::CastleSmallCorridor.piece_id() => {
-            generate_child_forward(parent, builder, rng, 1, 0, true);
-        }
-        id if id == PieceKind::CastleSmallCorridorRightTurn.piece_id() => {
-            generate_child_right(parent, builder, rng, 0, 1, true);
-        }
-        id if id == PieceKind::CastleStalkRoom.piece_id() => {
+        id if id == clt => generate_child_left(parent, builder, rng, 0, 1, true),
+        id if id == cs => generate_child_forward(parent, builder, rng, 1, 0, true),
+        id if id == crt => generate_child_right(parent, builder, rng, 0, 1, true),
+        id if id == csr => {
             generate_child_forward(parent, builder, rng, 5, 3, true);
             generate_child_forward(parent, builder, rng, 5, 11, true);
         }
-        id if id == PieceKind::RoomCrossing.piece_id() => {
+        id if id == rc => {
             generate_child_forward(parent, builder, rng, 2, 0, false);
             generate_child_left(parent, builder, rng, 0, 2, false);
             generate_child_right(parent, builder, rng, 0, 2, false);
         }
-        id if id == PieceKind::StairsRoom.piece_id() => {
-            generate_child_right(parent, builder, rng, 6, 2, false);
-        }
-        // Leaf pieces (MonsterThrone, BridgeEndFiller): no children.
+        id if id == sr => generate_child_right(parent, builder, rng, 6, 2, false),
+        // MonsterThrone, BridgeEndFiller: leaves.
         _ => {}
-    }
-}
-
-fn offset_vertically(pieces: &mut [FortressPiece], dy: i32) {
-    if dy == 0 {
-        return;
-    }
-    for p in pieces {
-        p.bounding_box = BoundingBox::new(
-            p.bounding_box.min_x,
-            p.bounding_box.min_y + dy,
-            p.bounding_box.min_z,
-            p.bounding_box.max_x,
-            p.bounding_box.max_y + dy,
-            p.bounding_box.max_z,
-        );
     }
 }
 
@@ -641,30 +561,38 @@ fn move_inside_heights(
         return;
     }
     let bb = overall_bb(pieces);
-    let y_span = bb.max_y - bb.min_y + 1;
-    let height_span = highest_allowed - lowest_allowed + 1 - y_span;
+    let height_span = highest_allowed - lowest_allowed + 1 - (bb.max_y - bb.min_y + 1);
     let y0 = if height_span > 1 {
         lowest_allowed + rng.next_i32_bounded(height_span)
     } else {
         lowest_allowed
     };
     let dy = y0 - bb.min_y;
-    offset_vertically(pieces, dy);
+    if dy == 0 {
+        return;
+    }
+    for p in pieces {
+        p.bounding_box = BoundingBox::new(
+            p.bounding_box.min_x,
+            p.bounding_box.min_y + dy,
+            p.bounding_box.min_z,
+            p.bounding_box.max_x,
+            p.bounding_box.max_y + dy,
+            p.bounding_box.max_z,
+        );
+    }
 }
 
-/// Generates all fortress pieces for the chunk. The returned pieces are
-/// vertically offset to sit within `Y ∈ [48, 70]` per vanilla.
+/// All fortress pieces for the chunk, vertically offset into `Y ∈ [48, 70]`.
 pub fn generate_fortress_pieces(
     chunk_x: i32,
     chunk_z: i32,
     rng: &mut LegacyRandom,
 ) -> Vec<FortressPiece> {
-    // StartPiece constructor: super(getRandomHorizontalDirection(random), west=2, north=2)
     let start_dir = HORIZONTAL_ORDER[rng.next_i32_bounded(4) as usize];
     let west = (chunk_x << 4) + START_X_OFFSET;
     let north = (chunk_z << 4) + START_Z_OFFSET;
     let start_bb = make_bounding_box(west, MAGIC_START_Y, north, start_dir, 19, 10, 19);
-
     let start_piece = FortressPiece {
         kind_id: PieceKind::BridgeCrossing.piece_id(),
         bounding_box: start_bb,
@@ -682,24 +610,19 @@ pub fn generate_fortress_pieces(
         previous_kind: None,
     };
 
-    // StartPiece.addChildren (= BridgeCrossing.addChildren)
     add_children(start_piece, &mut builder, rng);
-
-    // Pending queue: pick random entries until empty.
     while !builder.pending.is_empty() {
         let pos = rng.next_i32_bounded(builder.pending.len() as i32) as usize;
         let pending = builder.pending.remove(pos);
-        add_children(pending.piece, &mut builder, rng);
+        add_children(pending, &mut builder, rng);
     }
 
-    // Vertical adjustment.
     move_inside_heights(&mut builder.pieces, rng, Y_LOW_ALLOWED, Y_HIGH_ALLOWED);
     builder.pieces
 }
 
-/// `Structure` impl — registered under `"minecraft:fortress"`. Shares the
-/// `nether_complexes` set with `bastion_remnant` (a jigsaw entry), so it's
-/// dispatched from the jigsaw arm's non-jigsaw fallthrough.
+/// Registered under `"minecraft:fortress"`. Shares the `nether_complexes` set with
+/// `bastion_remnant` (jigsaw), so it's dispatched from the jigsaw arm's fallthrough.
 pub struct NetherFortressStructure;
 
 impl<N: DimensionNoises> Structure<N> for NetherFortressStructure {
@@ -710,8 +633,7 @@ impl<N: DimensionNoises> Structure<N> for NetherFortressStructure {
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         // Biome check at (chunkMinX, 64, chunkMinZ) per vanilla.
-        let biome_x = ctx.chunk_min_x;
-        let biome_z = ctx.chunk_min_z;
+        let (biome_x, biome_z) = (ctx.chunk_min_x, ctx.chunk_min_z);
         let biome = ctx.biome_at(biome_x, 64, biome_z);
         if !entry.allowed_biomes.contains(&biome.key) {
             return None;
@@ -722,22 +644,20 @@ impl<N: DimensionNoises> Structure<N> for NetherFortressStructure {
             return None;
         }
 
-        let pieces = pieces_out
-            .into_iter()
-            .map(|p| StructurePiece {
-                piece_type: Identifier::new_static("minecraft", p.kind_id),
-                bounding_box: p.bounding_box,
-                gen_depth: p.gen_depth,
-                orientation: p.orientation,
-                nbt_data: Vec::new(),
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-            })
-            .collect();
-
         Some(GenerationStub {
             position: (biome_x, 64, biome_z),
-            pieces,
+            pieces: pieces_out
+                .into_iter()
+                .map(|p| StructurePiece {
+                    piece_type: Identifier::new_static("minecraft", p.kind_id),
+                    bounding_box: p.bounding_box,
+                    gen_depth: p.gen_depth,
+                    orientation: p.orientation,
+                    nbt_data: Vec::new(),
+                    ground_level_delta: 0,
+                    junctions: Vec::new(),
+                })
+                .collect(),
         })
     }
 }

@@ -1,87 +1,64 @@
 //! Builder for [`BlockPattern`].
 //!
-//! Patterns are described as a stack of "aisles" (Y layers). Each aisle is a
-//! list of strings; chars in the string are X positions, strings within an
-//! aisle are Z positions. The first `aisle()` call fixes width (X) and depth (Z);
-//! every subsequent call adds another Y layer.
-//!
-//! Example (5×5 flat pattern, 1 Y layer):
-//! ```ignore
-//! BlockPatternBuilder::new()
-//!     .aisle(&["?vvv?", ">???<", ">???<", ">???<", "?^^^?"])
-//!     .symbol('?', BlockPredicate::Any)
-//!     .symbol('v', frame_eye(Direction::North))
-//!     // ...
-//!     .build()
-//!     .expect("valid pattern");
-//! ```
+//! A pattern is a stack of "aisles" (Y layers). Each aisle is a list of strings:
+//! chars index X, strings index Z. The first `aisle()` fixes width and depth;
+//! subsequent calls add Y layers.
 
 use rustc_hash::FxHashMap;
 
 use super::{BlockPattern, BlockPredicate};
 
-/// Builder for [`BlockPattern`]. See module docs for the layer/aisle convention.
+/// See module docs for the layer/aisle convention.
+#[derive(Default)]
 pub struct BlockPatternBuilder {
-    /// Each aisle is a Y layer; outer Vec indexes Y, inner Vec indexes Z, String chars index X.
     aisles: Vec<Vec<String>>,
-    /// Char → predicate map.
     symbols: FxHashMap<char, BlockPredicate>,
 }
 
-/// Errors that can occur while building a [`BlockPattern`].
+/// Errors produced by [`BlockPatternBuilder::build`].
 #[derive(Debug, thiserror::Error)]
 pub enum BlockPatternBuildError {
-    /// No aisles were added before [`BlockPatternBuilder::build`].
+    /// No aisles were added.
     #[error("pattern has no aisles")]
     Empty,
-    /// An aisle had inconsistent row widths or different depth than the first aisle.
+    /// An aisle has different dimensions than the first aisle.
     #[error(
         "aisle {aisle} has inconsistent dimensions (expected {expected_w}x{expected_d}, got {actual_w}x{actual_d})"
     )]
     InconsistentDimensions {
-        /// Index of the offending aisle.
+        /// Y index of the offending aisle.
         aisle: usize,
         /// Expected width (X).
         expected_w: usize,
         /// Expected depth (Z).
         expected_d: usize,
-        /// Actual width found.
+        /// Actual width.
         actual_w: usize,
-        /// Actual depth found.
+        /// Actual depth.
         actual_d: usize,
     },
-    /// A char appeared in an aisle but no [`BlockPatternBuilder::symbol`] was registered for it.
+    /// A char in an aisle has no registered symbol.
     #[error("char '{char}' (at aisle {aisle}, x={x}, z={z}) has no registered symbol")]
     UnknownSymbol {
         /// The unregistered char.
         char: char,
-        /// Y position of the offending cell.
+        /// Y index.
         aisle: usize,
-        /// X position of the offending cell.
+        /// X index.
         x: usize,
-        /// Z position of the offending cell.
+        /// Z index.
         z: usize,
     },
-}
-
-impl Default for BlockPatternBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl BlockPatternBuilder {
     /// Creates an empty builder.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            aisles: Vec::new(),
-            symbols: FxHashMap::default(),
-        }
+        Self::default()
     }
 
-    /// Adds one Y layer to the pattern. Each string is a row along Z; chars are X positions.
-    /// All aisles must have identical dimensions; this is validated at [`Self::build`] time.
+    /// Adds one Y layer. Strings index Z; chars index X. All aisles must share dimensions.
     #[must_use]
     pub fn aisle(mut self, rows: &[&str]) -> Self {
         self.aisles
@@ -89,7 +66,7 @@ impl BlockPatternBuilder {
         self
     }
 
-    /// Maps a char in the aisle grid to a predicate.
+    /// Maps a char to a predicate.
     #[must_use]
     pub fn symbol(mut self, char: char, predicate: BlockPredicate) -> Self {
         self.symbols.insert(char, predicate);
@@ -99,22 +76,16 @@ impl BlockPatternBuilder {
     /// Validates and finalizes the pattern.
     ///
     /// # Errors
-    /// Returns [`BlockPatternBuildError`] if the pattern is empty, has inconsistent
-    /// dimensions, or references an unregistered char.
+    /// See [`BlockPatternBuildError`].
     pub fn build(self) -> Result<BlockPattern, BlockPatternBuildError> {
-        if self.aisles.is_empty() {
-            return Err(BlockPatternBuildError::Empty);
-        }
-
-        let depth = self.aisles[0].len();
-        let width = self.aisles[0].first().map(|s| s.chars().count()).unwrap_or(0);
+        let first = self.aisles.first().ok_or(BlockPatternBuildError::Empty)?;
+        let depth = first.len();
+        let width = first.first().map_or(0, |s| s.chars().count());
 
         for (y, aisle) in self.aisles.iter().enumerate() {
             let aisle_d = aisle.len();
-            let aisle_w = aisle.first().map(|s| s.chars().count()).unwrap_or(0);
-            let consistent = aisle_d == depth
-                && aisle.iter().all(|row| row.chars().count() == width);
-            if !consistent {
+            let aisle_w = aisle.first().map_or(0, |s| s.chars().count());
+            if aisle_d != depth || aisle.iter().any(|r| r.chars().count() != width) {
                 return Err(BlockPatternBuildError::InconsistentDimensions {
                     aisle: y,
                     expected_w: width,
@@ -127,19 +98,12 @@ impl BlockPatternBuilder {
 
         let height = self.aisles.len();
         let mut cells: Vec<BlockPredicate> = Vec::with_capacity(width * height * depth);
-
         for (y, aisle) in self.aisles.iter().enumerate() {
             for (z, row) in aisle.iter().enumerate() {
                 for (x, c) in row.chars().enumerate() {
-                    let predicate = self.symbols.get(&c).cloned().ok_or(
-                        BlockPatternBuildError::UnknownSymbol {
-                            char: c,
-                            aisle: y,
-                            x,
-                            z,
-                        },
-                    )?;
-                    cells.push(predicate);
+                    cells.push(self.symbols.get(&c).cloned().ok_or(
+                        BlockPatternBuildError::UnknownSymbol { char: c, aisle: y, x, z },
+                    )?);
                 }
             }
         }

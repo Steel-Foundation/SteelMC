@@ -1,7 +1,5 @@
-//! Structure placement algorithms.
-//!
-//! Determines which chunks are valid for structure generation. Corresponds to
-//! vanilla's `StructurePlacement` hierarchy.
+//! Structure placement. Determines which chunks are valid for structure
+//! generation — vanilla's `StructurePlacement` hierarchy.
 
 use steel_registry::structure_set::JigsawConfig;
 use steel_utils::ChunkPos;
@@ -9,53 +7,47 @@ use steel_utils::Identifier;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
-/// How structures are spread within their grid cell.
-///
-/// Vanilla's `RandomSpreadType`.
+/// How structures are spread within their grid cell. Vanilla's `RandomSpreadType`.
 #[derive(Debug, Clone, Copy)]
 pub enum SpreadType {
     /// Uniform random within range.
     Linear,
-    /// Average of two uniform samples — biased toward center.
+    /// Average of two uniform samples (center-biased).
     Triangular,
 }
 
 impl SpreadType {
-    /// Evaluates the spread, returning an offset in `[0, limit)`.
+    /// Offset in `[0, limit)`.
     pub fn evaluate(self, rng: &mut LegacyRandom, limit: i32) -> i32 {
         match self {
             Self::Linear => rng.next_i32_bounded(limit),
-            // Matches vanilla: `(nextInt(limit) + nextInt(limit)) / 2`
+            // Vanilla: `(nextInt(limit) + nextInt(limit)) / 2`.
             #[expect(
                 clippy::manual_midpoint,
-                reason = "preserves vanilla's two-sample average — midpoint would change overflow"
+                reason = "midpoint would change overflow vs vanilla"
             )]
             Self::Triangular => (rng.next_i32_bounded(limit) + rng.next_i32_bounded(limit)) / 2,
         }
     }
 }
 
-/// Method used to reduce structure frequency below 1.0.
-///
-/// Vanilla's `StructurePlacement.FrequencyReductionMethod`. Each variant
-/// uses a different seeding/RNG strategy for historical compatibility.
+/// Vanilla's `StructurePlacement.FrequencyReductionMethod`. Variants differ in
+/// seeding/RNG strategy for historical compatibility.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum FrequencyReductionMethod {
-    /// Standard method: seeds with salt and uses `next_f32`.
+    /// Seeds with salt, uses `next_f32`.
     #[default]
     Default,
-    /// Pillager outpost legacy method.
+    /// Pillager outpost legacy.
     LegacyType1,
-    /// Uses a hardcoded salt (10387320) instead of the placement's salt.
+    /// Hardcoded salt 10_387_320.
     LegacyType2,
     /// Uses `next_f64` instead of `next_f32`.
     LegacyType3,
 }
 
 impl FrequencyReductionMethod {
-    /// Returns whether a structure should generate given the probability.
-    ///
-    /// Arguments match vanilla's `FrequencyReducer` interface:
+    /// Args match vanilla's `FrequencyReducer`:
     /// `(levelSeed, placementSalt, chunkX, chunkZ, frequency)`.
     #[must_use]
     pub fn should_generate(
@@ -76,10 +68,10 @@ impl FrequencyReductionMethod {
                 let cx = source_x >> 4;
                 let cz = source_z >> 4;
                 rng.set_seed(i64::from(cx ^ (cz << 4)) ^ seed);
-                rng.next_i32(); // consume one
+                rng.next_i32();
                 #[expect(
                     clippy::cast_possible_truncation,
-                    reason = "vanilla pattern: truncating reciprocal probability to int bound"
+                    reason = "vanilla: truncates reciprocal probability to i32 bound"
                 )]
                 let bound = (1.0_f32 / probability) as i32;
                 rng.next_i32_bounded(bound) == 0
@@ -96,35 +88,24 @@ impl FrequencyReductionMethod {
     }
 }
 
-/// Exclusion zone that prevents a structure from generating near another structure set.
-///
 /// Vanilla's `StructurePlacement.ExclusionZone`.
 #[derive(Debug, Clone)]
 pub struct ExclusionZone {
-    /// The other structure set to check against.
+    /// Structure set to check against.
     pub other_set: Identifier,
-    /// Radius in chunks to check for the other structure.
+    /// Radius in chunks.
     pub chunk_count: i32,
 }
 
-/// Java-compatible rounding: `(long)Math.floor(v + 0.5)`, i.e. half-up
-/// toward positive infinity (see Java's
-/// [`Math.round(double)`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Math.html#round(double))).
-///
-/// Differs from Rust's `f64::round()` for negative half-integers:
-/// Java rounds -0.5 → 0, Rust rounds -0.5 → -1.
+/// Java's `Math.round(double)` — half-up toward +∞. Rust's `f64::round()` rounds
+/// -0.5 → -1; Java rounds -0.5 → 0.
 fn java_round(v: f64) -> i32 {
     (v + 0.5).floor() as i32
 }
 
-/// Pre-computes concentric ring positions for a `ConcentricRings` placement.
-///
-/// Matches vanilla's `ChunkGeneratorStructureState.generateRingPositions`.
-/// Positions are in chunk coordinates. If `snap_biome` is provided, each
-/// position is snapped to the nearest preferred biome within 112 blocks.
-///
-/// `snap_biome` receives `(block_x, block_z, &mut LegacyRandom)` and returns
-/// `Some((snapped_block_x, snapped_block_z))` or `None` to keep the raw position.
+/// Vanilla's `ChunkGeneratorStructureState.generateRingPositions`. Positions in
+/// chunk coords. If `snap_biome` is provided it gets `(block_x, block_z, &mut rng)`
+/// and returns `Some((snapped_block_x, snapped_block_z))` to snap, or `None` to keep raw.
 #[must_use]
 pub fn generate_ring_positions<F>(
     seed: i64,
@@ -157,25 +138,18 @@ where
         let initial_x = java_round(angle.cos() * dist);
         let initial_z = java_round(angle.sin() * dist);
 
-        // Vanilla forks the RNG for the async biome search.
-        // We use the fork for the biome snap search.
+        // Vanilla forks the RNG for async biome search; we use the fork for the snap.
         let mut forked = rng.fork();
-
-        // Snap to preferred biome if a search function is provided.
-        // Vanilla: SectionPos.sectionToBlockCoord(initialX, 8) = initialX * 16 + 8
         let chunk_pos = if let Some(snap) = snap_biome.as_deref_mut() {
-            let block_x = initial_x * 16 + 8;
-            let block_z = initial_z * 16 + 8;
-            if let Some((snapped_x, snapped_z)) = snap(block_x, block_z, &mut forked) {
-                // Convert back: SectionPos.blockToSectionCoord = >> 4
-                ChunkPos::new(snapped_x >> 4, snapped_z >> 4)
+            // sectionToBlockCoord(x, 8) = x * 16 + 8; snap result is blocks → >> 4.
+            if let Some((sx, sz)) = snap(initial_x * 16 + 8, initial_z * 16 + 8, &mut forked) {
+                ChunkPos::new(sx >> 4, sz >> 4)
             } else {
                 ChunkPos::new(initial_x, initial_z)
             }
         } else {
             ChunkPos::new(initial_x, initial_z)
         };
-
         positions.push(chunk_pos);
 
         angle += TAU / f64::from(spread);
@@ -195,56 +169,46 @@ where
 /// Kind-specific placement parameters.
 #[derive(Debug, Clone)]
 pub enum PlacementKind {
-    /// Deterministic grid-based placement with random spread.
-    ///
     /// Vanilla's `RandomSpreadStructurePlacement`.
     RandomSpread {
-        /// Chunk spacing between grid cell centers.
+        /// Chunk spacing between grid-cell centers.
         spacing: i32,
-        /// Minimum chunk separation within a grid cell.
+        /// Minimum chunk separation within a cell.
         separation: i32,
-        /// How the offset within the cell is computed.
+        /// Offset computation within the cell.
         spread_type: SpreadType,
     },
-    /// Ring-based placement around the world origin.
-    ///
-    /// Vanilla's `ConcentricRingsStructurePlacement`. Used for strongholds.
+    /// Vanilla's `ConcentricRingsStructurePlacement` (strongholds).
     ConcentricRings {
-        /// Base distance between rings (in chunks).
+        /// Base distance between rings (chunks).
         distance: i32,
-        /// Number of positions spread per ring.
+        /// Positions per ring.
         spread: i32,
-        /// Total number of structure positions.
+        /// Total structure positions.
         count: i32,
-        /// Biomes where ring positions prefer to snap to.
+        /// Preferred snap biomes.
         preferred_biomes: Vec<Identifier>,
     },
 }
 
 /// Structure placement configuration.
-///
-/// Determines which chunks are eligible for a structure. Common fields are
-/// shared; kind-specific parameters are in [`PlacementKind`].
 #[derive(Debug, Clone)]
 pub struct StructurePlacement {
-    /// Unique seed modifier for this placement.
+    /// Unique seed modifier.
     pub salt: i32,
-    /// Probability of generating when placement check passes. 1.0 = always.
+    /// Probability of generating on a placement-chunk. 1.0 = always.
     pub frequency: f32,
-    /// Method for applying frequency reduction.
+    /// Frequency-reduction method.
     pub frequency_reduction_method: FrequencyReductionMethod,
-    /// Optional zone that prevents generation near another structure set.
+    /// Optional exclusion zone against another structure set.
     pub exclusion_zone: Option<ExclusionZone>,
-    /// Kind-specific placement parameters.
+    /// Kind-specific parameters.
     pub kind: PlacementKind,
 }
 
 impl StructurePlacement {
-    /// Checks if a chunk is a valid structure placement chunk.
-    ///
-    /// Combines the placement-specific check with frequency reduction.
-    ///
-    /// For `ConcentricRings`, `ring_positions` must be pre-computed and passed in.
+    /// Valid placement chunk + frequency check. For `ConcentricRings`,
+    /// `ring_positions` must be pre-computed.
     #[must_use]
     pub fn is_structure_chunk(
         &self,
@@ -256,7 +220,6 @@ impl StructurePlacement {
         if !self.is_placement_chunk(seed, source_x, source_z, ring_positions) {
             return false;
         }
-
         if self.frequency < 1.0
             && !self.frequency_reduction_method.should_generate(
                 seed,
@@ -268,14 +231,11 @@ impl StructurePlacement {
         {
             return false;
         }
-
         true
     }
 
-    /// Checks the exclusion zone against another structure set's placement.
-    ///
-    /// Returns `true` if this placement is **forbidden** at (`source_x`, `source_z`)
-    /// because the other set has a structure chunk within range.
+    /// `true` if `(source_x, source_z)` is forbidden because another set has a
+    /// structure chunk within the exclusion radius.
     #[must_use]
     pub fn is_excluded(
         &self,
@@ -288,16 +248,13 @@ impl StructurePlacement {
         let Some(ez) = &self.exclusion_zone else {
             return false;
         };
-
         let Some((_, other_set)) = all_sets.iter().find(|(k, _)| *k == ez.other_set) else {
             return false;
         };
-
         let other_rings = ring_positions
             .iter()
             .find(|(k, _)| *k == ez.other_set)
             .map(|(_, pos)| pos.as_slice());
-
         for dx in (source_x - ez.chunk_count)..=(source_x + ez.chunk_count) {
             for dz in (source_z - ez.chunk_count)..=(source_z + ez.chunk_count) {
                 if other_set
@@ -308,7 +265,6 @@ impl StructurePlacement {
                 }
             }
         }
-
         false
     }
 
@@ -336,18 +292,12 @@ impl StructurePlacement {
                 );
                 potential.0.x == source_x && potential.0.y == source_z
             }
-            PlacementKind::ConcentricRings { .. } => {
-                // Ring positions must be pre-computed by the caller
-                ring_positions
-                    .is_some_and(|positions| positions.contains(&ChunkPos::new(source_x, source_z)))
-            }
+            PlacementKind::ConcentricRings { .. } => ring_positions
+                .is_some_and(|positions| positions.contains(&ChunkPos::new(source_x, source_z))),
         }
     }
 
-    /// Computes the potential structure chunk position for a grid cell.
-    ///
-    /// Given a source chunk, finds which grid cell it belongs to, then
-    /// deterministically picks the structure position within that cell.
+    /// Deterministic structure chunk for the grid cell containing `(source_x, source_z)`.
     #[must_use]
     pub fn get_potential_structure_chunk(
         seed: i64,
@@ -367,7 +317,6 @@ impl StructurePlacement {
         let limit = spacing - separation;
         let spread_x = spread_type.evaluate(&mut rng, limit);
         let spread_z = spread_type.evaluate(&mut rng, limit);
-
         ChunkPos::new(grid_x * spacing + spread_x, grid_z * spacing + spread_z)
     }
 }
@@ -375,34 +324,28 @@ impl StructurePlacement {
 /// A weighted entry in a structure set.
 #[derive(Debug, Clone)]
 pub struct StructureSelectionEntry {
-    /// The structure identifier (e.g., `minecraft:village_plains`).
+    /// Structure id (e.g., `minecraft:village_plains`).
     pub structure: Identifier,
-    /// Weight for random selection among entries.
+    /// Weight.
     pub weight: i32,
-    /// Biomes where this structure can generate (resolved from biome tags).
+    /// Allowed biomes (resolved from tags).
     pub allowed_biomes: Vec<Identifier>,
-    /// Y level for biome checking. `None` means use surface height.
+    /// Biome-check Y, or `None` for surface height.
     pub biome_check_y: Option<i32>,
-    /// Structure type (e.g., `"minecraft:jigsaw"`, `"minecraft:mineshaft"`).
+    /// Structure type (e.g., `"minecraft:jigsaw"`).
     pub structure_type: String,
-    /// Jigsaw-specific configuration. Present only for `minecraft:jigsaw` structures.
+    /// Jigsaw-specific config (only for `minecraft:jigsaw`).
     pub jigsaw_config: Option<JigsawConfig>,
 }
 
-/// A set of structures sharing a placement strategy.
-///
-/// Vanilla's `StructureSet`. Each set combines one or more weighted
-/// structures with a single [`StructurePlacement`] that determines
-/// which chunks are eligible.
+/// Vanilla's `StructureSet`: weighted structures + one placement.
 #[derive(Debug, Clone)]
 pub struct StructureSet {
-    /// Weighted list of structures that can generate at this placement.
+    /// Weighted list of structures.
     pub structures: Vec<StructureSelectionEntry>,
-    /// Placement strategy determining eligible chunks.
+    /// Placement strategy.
     pub placement: StructurePlacement,
 }
-
-// --- Conversions from generated registry data ---
 
 use steel_registry::structure_set::{
     FrequencyMethodData, PlacementData, SpreadTypeData, StructureSetData,

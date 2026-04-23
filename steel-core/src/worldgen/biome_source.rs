@@ -68,11 +68,8 @@ impl BiomeSourceKind {
         Self::End(Box::new(EndBiomeSource::new(seed)))
     }
 
-    /// Every biome identifier this source can produce.
-    ///
-    /// Used for dimension-filtering structure sets whose resolved
-    /// `allowed_biomes` are all from another dimension (e.g. nether_fossil
-    /// should never be evaluated in the overworld).
+    /// Every biome this source can produce. Used to filter structure sets whose
+    /// resolved `allowed_biomes` are from a different dimension.
     #[must_use]
     pub fn possible_biomes(&self) -> FxHashSet<Identifier> {
         match self {
@@ -112,14 +109,8 @@ impl BiomeSourceKind {
         }
     }
 
-    /// Searches for a biome matching `allowed` within `search_radius` blocks
-    /// of the given block position, sampling at y=0.
-    ///
-    /// Matches vanilla's `BiomeSource.findBiomeHorizontal` with
-    /// `findClosest=false`, `skipSteps=1`. Uses reservoir sampling to pick
-    /// uniformly among all matching positions.
-    ///
-    /// Returns `Some((block_x, block_z))` if found, `None` otherwise.
+    /// Vanilla's `BiomeSource.findBiomeHorizontal(findClosest=false, skipSteps=1)`.
+    /// Reservoir-samples at y=0. Returns `Some((block_x, block_z))` if found.
     #[must_use]
     pub fn find_biome_horizontal(
         &self,
@@ -130,33 +121,26 @@ impl BiomeSourceKind {
         rng: &mut LegacyRandom,
     ) -> Option<(i32, i32)> {
         let mut sampler = self.chunk_sampler();
-
-        let noise_center_x = origin_x >> 2; // QuartPos.fromBlock
+        // QuartPos.fromBlock; origin_y = 0 so noise_y = 0.
+        let noise_center_x = origin_x >> 2;
         let noise_center_z = origin_z >> 2;
         let noise_radius = search_radius >> 2;
-        let noise_y = 0; // originY=0 >> 2 = 0
 
         let mut result: Option<(i32, i32)> = None;
         let mut found = 0;
-
         for z in -noise_radius..=noise_radius {
             for x in -noise_radius..=noise_radius {
-                let noise_x = noise_center_x + x;
-                let noise_z = noise_center_z + z;
-                let biome = sampler.sample(noise_x, noise_y, noise_z);
-
-                if allowed(biome) {
-                    // Reservoir sampling: replace with probability 1/(found+1)
+                let nx = noise_center_x + x;
+                let nz = noise_center_z + z;
+                if allowed(sampler.sample(nx, 0, nz)) {
+                    // Reservoir: replace with probability 1/(found+1).
                     if result.is_none() || rng.next_i32_bounded(found + 1) == 0 {
-                        let block_x = noise_x << 2; // QuartPos.toBlock
-                        let block_z = noise_z << 2;
-                        result = Some((block_x, block_z));
+                        result = Some((nx << 2, nz << 2));
                     }
                     found += 1;
                 }
             }
         }
-
         result
     }
 }

@@ -33,7 +33,6 @@ pub mod noise;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;
-/// Rotation enum for structure template placement.
 pub mod rotation;
 pub mod serial;
 /// Surface rule context types for generated code.

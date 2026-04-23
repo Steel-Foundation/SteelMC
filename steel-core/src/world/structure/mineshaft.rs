@@ -1,10 +1,6 @@
-//! Mineshaft piece generation for structure starts.
-//!
-//! Implements vanilla's `MineshaftPieces` logic to generate piece bounding boxes
-//! and compute the Y offset for biome checking. Does not place actual blocks.
-//!
-//! Matches vanilla's DFS recursion: each child's `addChildren` is called
-//! immediately after creation, before processing the next sibling.
+//! Mineshaft. Vanilla's `MineshaftPieces` DFS: each child's `addChildren` runs
+//! immediately after creation, before processing the next sibling. Produces
+//! bounding boxes and the Y offset for biome checking (no block placement).
 
 use rustc_hash::FxHashMap;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -99,16 +95,11 @@ pub fn find_generation_point(
     min_y: i32,
     get_surface_height: &mut dyn FnMut(i32, i32) -> i32,
 ) -> MineshaftResult {
-    // Vanilla: context.random().nextDouble() — consumed but unused
-    rng.next_f64();
+    rng.next_f64(); // vanilla: consumed but unused
 
     let middle_x = chunk_x * 16 + 8;
     let min_z = chunk_z * 16;
-
-    // Create the starting room at chunkPos.getBlockX(2), chunkPos.getBlockZ(2)
-    let room_x = chunk_x * 16 + 2;
-    let room_z = chunk_z * 16 + 2;
-    let room_bb = create_room_bb(rng, room_x, room_z);
+    let room_bb = create_room_bb(rng, chunk_x * 16 + 2, chunk_z * 16 + 2);
 
     let mut pieces = Pieces {
         bbs: vec![room_bb],
@@ -118,19 +109,15 @@ pub fn find_generation_point(
         }],
         start_bb: room_bb,
     };
-
-    // Room's addChildren — DFS
     room_add_children(&mut pieces, rng, room_bb);
 
-    // Compute overall bounding box
     let mut overall = pieces.bbs[0];
     for bb in &pieces.bbs[1..] {
         overall = union_bb(overall, *bb);
     }
 
-    // Apply vertical adjustment
     let y_offset = if mtype == MineshaftType::Mesa {
-        // Vanilla's BoundingBox.getCenter(): min + (max - min + 1) / 2
+        // Vanilla's BoundingBox.getCenter(): min + (max - min + 1) / 2.
         let center_x = overall.min_x + (overall.max_x - overall.min_x + 1) / 2;
         let center_z = overall.min_z + (overall.max_z - overall.min_z + 1) / 2;
         let surface_height = get_surface_height(center_x, center_z);
@@ -142,36 +129,34 @@ pub fn find_generation_point(
         let center_y = overall.min_y + (overall.max_y - overall.min_y + 1) / 2;
         target - center_y
     } else {
-        // moveBelowSeaLevel(seaLevel=63, minY=-64, random, offset=10)
+        // moveBelowSeaLevel(seaLevel, minY, offset=10).
         let max_y = sea_level - 10;
-        let y_span = overall.max_y - overall.min_y + 1;
-        let mut y1_pos = y_span + min_y + 1;
+        let mut y1_pos = (overall.max_y - overall.min_y + 1) + min_y + 1;
         if y1_pos < max_y {
             y1_pos += rng.next_i32_bounded(max_y - y1_pos);
         }
         y1_pos - overall.max_y
     };
 
-    // Offset all piece bounding boxes by y_offset, pairing each with its kind.
-    let out_pieces = pieces
-        .infos
-        .iter()
-        .map(|info| {
-            let bb = BoundingBox::new(
-                info.bb.min_x,
-                info.bb.min_y + y_offset,
-                info.bb.min_z,
-                info.bb.max_x,
-                info.bb.max_y + y_offset,
-                info.bb.max_z,
-            );
-            (info.kind, bb)
-        })
-        .collect();
-
     MineshaftResult {
         biome_check_pos: (middle_x, 50 + y_offset, min_z),
-        pieces: out_pieces,
+        pieces: pieces
+            .infos
+            .iter()
+            .map(|info| {
+                (
+                    info.kind,
+                    BoundingBox::new(
+                        info.bb.min_x,
+                        info.bb.min_y + y_offset,
+                        info.bb.min_z,
+                        info.bb.max_x,
+                        info.bb.max_y + y_offset,
+                        info.bb.max_z,
+                    ),
+                )
+            })
+            .collect(),
     }
 }
 
@@ -186,100 +171,40 @@ fn create_room_bb(rng: &mut LegacyRandom, west: i32, north: i32) -> BoundingBox 
     )
 }
 
-// Matches vanilla MineShaftRoom.addChildren exactly.
-// When `checkpoints` is Some, stores nextInt() after each wall's DFS completes.
+/// Matches vanilla `MineShaftRoom.addChildren` exactly.
 fn room_add_children(pieces: &mut Pieces, rng: &mut LegacyRandom, bb: BoundingBox) {
-    let depth = 0; // room is always depth 0
     let x_span = bb.max_x - bb.min_x + 1;
     let z_span = bb.max_z - bb.min_z + 1;
-    let mut height_space = (bb.max_y - bb.min_y + 1) - 3 - 1;
-    if height_space <= 0 {
-        height_space = 1;
-    }
+    let height_space = ((bb.max_y - bb.min_y + 1) - 3 - 1).max(1);
 
-    // North wall (iterate over X span)
-    let mut pos = 0;
-    while pos < x_span {
-        pos += rng.next_i32_bounded(x_span);
-        if pos + 3 > x_span {
-            break;
+    // Each of the 4 walls: iterate over the relevant span, drop openings.
+    for (dir, span) in [
+        (Dir::North, x_span),
+        (Dir::South, x_span),
+        (Dir::West, z_span),
+        (Dir::East, z_span),
+    ] {
+        let mut pos = 0;
+        while pos < span {
+            pos += rng.next_i32_bounded(span);
+            if pos + 3 > span {
+                break;
+            }
+            let fy = bb.min_y + rng.next_i32_bounded(height_space) + 1;
+            let (fx, fz) = match dir {
+                Dir::North => (bb.min_x + pos, bb.min_z - 1),
+                Dir::South => (bb.min_x + pos, bb.max_z + 1),
+                Dir::West => (bb.min_x - 1, bb.min_z + pos),
+                Dir::East => (bb.max_x + 1, bb.min_z + pos),
+            };
+            generate_and_add(pieces, rng, fx, fy, fz, dir, 0);
+            pos += 4;
         }
-        let fy = bb.min_y + rng.next_i32_bounded(height_space) + 1;
-        generate_and_add(
-            pieces,
-            rng,
-            bb.min_x + pos,
-            fy,
-            bb.min_z - 1,
-            Dir::North,
-            depth,
-        );
-        pos += 4;
-    }
-
-    // South wall (iterate over X span)
-    pos = 0;
-    while pos < x_span {
-        pos += rng.next_i32_bounded(x_span);
-        if pos + 3 > x_span {
-            break;
-        }
-        let fy = bb.min_y + rng.next_i32_bounded(height_space) + 1;
-        generate_and_add(
-            pieces,
-            rng,
-            bb.min_x + pos,
-            fy,
-            bb.max_z + 1,
-            Dir::South,
-            depth,
-        );
-        pos += 4;
-    }
-
-    // West wall (iterate over Z span)
-    pos = 0;
-    while pos < z_span {
-        pos += rng.next_i32_bounded(z_span);
-        if pos + 3 > z_span {
-            break;
-        }
-        let fy = bb.min_y + rng.next_i32_bounded(height_space) + 1;
-        generate_and_add(
-            pieces,
-            rng,
-            bb.min_x - 1,
-            fy,
-            bb.min_z + pos,
-            Dir::West,
-            depth,
-        );
-        pos += 4;
-    }
-
-    // East wall (iterate over Z span)
-    pos = 0;
-    while pos < z_span {
-        pos += rng.next_i32_bounded(z_span);
-        if pos + 3 > z_span {
-            break;
-        }
-        let fy = bb.min_y + rng.next_i32_bounded(height_space) + 1;
-        generate_and_add(
-            pieces,
-            rng,
-            bb.max_x + 1,
-            fy,
-            bb.min_z + pos,
-            Dir::East,
-            depth,
-        );
-        pos += 4;
     }
 }
 
-/// Vanilla's `generateAndAddPiece` — creates a piece, adds it, and
-/// immediately calls addChildren (DFS recursion).
+/// Vanilla's `generateAndAddPiece` — DFS: create a piece, add it, recurse.
+/// `createRandomShaftPiece` is if/else if/else (no fallthrough).
 fn generate_and_add(
     pieces: &mut Pieces,
     rng: &mut LegacyRandom,
@@ -289,19 +214,13 @@ fn generate_and_add(
     dir: Dir,
     depth: i32,
 ) {
-    if depth > MAX_DEPTH {
+    if depth > MAX_DEPTH
+        || (foot_x - pieces.start_bb.min_x).abs() > MAX_DISTANCE
+        || (foot_z - pieces.start_bb.min_z).abs() > MAX_DISTANCE
+    {
         return;
     }
-    if (foot_x - pieces.start_bb.min_x).abs() > MAX_DISTANCE {
-        return;
-    }
-    if (foot_z - pieces.start_bb.min_z).abs() > MAX_DISTANCE {
-        return;
-    }
-
-    // createRandomShaftPiece — vanilla uses if/else if/else (no fallthrough!)
     let roll = rng.next_i32_bounded(100);
-
     if roll >= 80 {
         try_add_crossing(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
     } else if roll >= 70 {
@@ -309,6 +228,11 @@ fn generate_and_add(
     } else {
         try_add_corridor(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
     }
+}
+
+fn push_piece(pieces: &mut Pieces, bb: BoundingBox, kind: PieceType) {
+    pieces.bbs.push(bb);
+    pieces.infos.push(PieceInfo { bb, kind });
 }
 
 fn try_add_corridor(
@@ -320,28 +244,25 @@ fn try_add_corridor(
     dir: Dir,
     gen_depth: i32,
 ) -> bool {
-    // Vanilla tries decreasing lengths until one fits
     let mut corridor_length = rng.next_i32_bounded(3) + 2;
     while corridor_length > 0 {
         let block_length = corridor_length * 5;
-        let mut bb = match dir {
-            Dir::North => BoundingBox::new(0, 0, -(block_length - 1), 2, 2, 0),
-            Dir::South => BoundingBox::new(0, 0, 0, 2, 2, block_length - 1),
-            Dir::West => BoundingBox::new(-(block_length - 1), 0, 0, 0, 2, 2),
-            Dir::East => BoundingBox::new(0, 0, 0, block_length - 1, 2, 2),
-        };
-        bb = move_bb(bb, foot_x, foot_y, foot_z);
-
+        let bb = move_bb(
+            match dir {
+                Dir::North => BoundingBox::new(0, 0, -(block_length - 1), 2, 2, 0),
+                Dir::South => BoundingBox::new(0, 0, 0, 2, 2, block_length - 1),
+                Dir::West => BoundingBox::new(-(block_length - 1), 0, 0, 0, 2, 2),
+                Dir::East => BoundingBox::new(0, 0, 0, block_length - 1, 2, 2),
+            },
+            foot_x,
+            foot_y,
+            foot_z,
+        );
         if !pieces.has_collision(&bb) {
-            pieces.bbs.push(bb);
-            pieces.infos.push(PieceInfo {
-                bb,
-                kind: PieceType::Corridor,
-            });
-            // MineShaftCorridor constructor consumes random state:
-            let has_rails = rng.next_i32_bounded(3) == 0;
-            if !has_rails {
-                rng.next_i32_bounded(23); // spiderCorridor check
+            push_piece(pieces, bb, PieceType::Corridor);
+            // MineShaftCorridor constructor RNG.
+            if rng.next_i32_bounded(3) != 0 {
+                rng.next_i32_bounded(23); // spiderCorridor
             }
             corridor_add_children(pieces, rng, bb, dir, gen_depth);
             return true;
@@ -362,24 +283,21 @@ fn try_add_crossing(
 ) -> bool {
     let is_two_floored = rng.next_i32_bounded(4) == 0;
     let y1 = if is_two_floored { 6 } else { 2 };
-
-    let mut bb = match dir {
-        Dir::North => BoundingBox::new(-1, 0, -4, 3, y1, 0),
-        Dir::South => BoundingBox::new(-1, 0, 0, 3, y1, 4),
-        Dir::West => BoundingBox::new(-4, 0, -1, 0, y1, 3),
-        Dir::East => BoundingBox::new(0, 0, -1, 4, y1, 3),
-    };
-    bb = move_bb(bb, foot_x, foot_y, foot_z);
-
+    let bb = move_bb(
+        match dir {
+            Dir::North => BoundingBox::new(-1, 0, -4, 3, y1, 0),
+            Dir::South => BoundingBox::new(-1, 0, 0, 3, y1, 4),
+            Dir::West => BoundingBox::new(-4, 0, -1, 0, y1, 3),
+            Dir::East => BoundingBox::new(0, 0, -1, 4, y1, 3),
+        },
+        foot_x,
+        foot_y,
+        foot_z,
+    );
     if pieces.has_collision(&bb) {
         return false;
     }
-
-    pieces.bbs.push(bb);
-    pieces.infos.push(PieceInfo {
-        bb,
-        kind: PieceType::Crossing,
-    });
+    push_piece(pieces, bb, PieceType::Crossing);
     crossing_add_children(pieces, rng, bb, dir, gen_depth, is_two_floored);
     true
 }
@@ -393,32 +311,26 @@ fn try_add_stairs(
     dir: Dir,
     gen_depth: i32,
 ) -> bool {
-    let mut bb = match dir {
-        Dir::North => BoundingBox::new(0, -5, -8, 2, 2, 0),
-        Dir::South => BoundingBox::new(0, -5, 0, 2, 2, 8),
-        Dir::West => BoundingBox::new(-8, -5, 0, 0, 2, 2),
-        Dir::East => BoundingBox::new(0, -5, 0, 8, 2, 2),
-    };
-    bb = move_bb(bb, foot_x, foot_y, foot_z);
-
+    let bb = move_bb(
+        match dir {
+            Dir::North => BoundingBox::new(0, -5, -8, 2, 2, 0),
+            Dir::South => BoundingBox::new(0, -5, 0, 2, 2, 8),
+            Dir::West => BoundingBox::new(-8, -5, 0, 0, 2, 2),
+            Dir::East => BoundingBox::new(0, -5, 0, 8, 2, 2),
+        },
+        foot_x,
+        foot_y,
+        foot_z,
+    );
     if pieces.has_collision(&bb) {
         return false;
     }
-
-    pieces.bbs.push(bb);
-    pieces.infos.push(PieceInfo {
-        bb,
-        kind: PieceType::Stairs,
-    });
+    push_piece(pieces, bb, PieceType::Stairs);
     stairs_add_children(pieces, rng, bb, dir, gen_depth);
     true
 }
 
-// Matches vanilla MineShaftCorridor.addChildren exactly.
-#[expect(
-    clippy::too_many_lines,
-    reason = "mirrors vanilla's MineShaftCorridor.addChildren directional dispatch"
-)]
+/// Matches vanilla `MineShaftCorridor.addChildren` exactly.
 fn corridor_add_children(
     pieces: &mut Pieces,
     rng: &mut LegacyRandom,
@@ -426,159 +338,88 @@ fn corridor_add_children(
     dir: Dir,
     depth: i32,
 ) {
+    // End piece.
     let end_selection = rng.next_i32_bounded(4);
+    let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
+    let (fx, fz, d) = match (dir, end_selection) {
+        (Dir::North, 0 | 1) => (bb.min_x, bb.min_z - 1, Dir::North),
+        (Dir::North, 2) => (bb.min_x - 1, bb.min_z, Dir::West),
+        (Dir::North, _) => (bb.max_x + 1, bb.min_z, Dir::East),
+        (Dir::South, 0 | 1) => (bb.min_x, bb.max_z + 1, Dir::South),
+        (Dir::South, 2) => (bb.min_x - 1, bb.max_z - 3, Dir::West),
+        (Dir::South, _) => (bb.max_x + 1, bb.max_z - 3, Dir::East),
+        (Dir::West, 0 | 1) => (bb.min_x - 1, bb.min_z, Dir::West),
+        (Dir::West, 2) => (bb.min_x, bb.min_z - 1, Dir::North),
+        (Dir::West, _) => (bb.min_x, bb.max_z + 1, Dir::South),
+        (Dir::East, 0 | 1) => (bb.max_x + 1, bb.min_z, Dir::East),
+        (Dir::East, 2) => (bb.max_x - 3, bb.min_z - 1, Dir::North),
+        (Dir::East, _) => (bb.max_x - 3, bb.max_z + 1, Dir::South),
+    };
+    generate_and_add(pieces, rng, fx, fy, fz, d, depth);
 
-    match dir {
-        Dir::North => {
-            if end_selection <= 1 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.min_x, fy, bb.min_z - 1, Dir::North, depth);
-            } else if end_selection == 2 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.min_x - 1, fy, bb.min_z, Dir::West, depth);
-            } else {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.max_x + 1, fy, bb.min_z, Dir::East, depth);
-            }
-        }
-        Dir::South => {
-            if end_selection <= 1 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.min_x, fy, bb.max_z + 1, Dir::South, depth);
-            } else if end_selection == 2 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(
-                    pieces,
-                    rng,
-                    bb.min_x - 1,
-                    fy,
-                    bb.max_z - 3,
-                    Dir::West,
-                    depth,
-                );
-            } else {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(
-                    pieces,
-                    rng,
-                    bb.max_x + 1,
-                    fy,
-                    bb.max_z - 3,
-                    Dir::East,
-                    depth,
-                );
-            }
-        }
-        Dir::West => {
-            if end_selection <= 1 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.min_x - 1, fy, bb.min_z, Dir::West, depth);
-            } else if end_selection == 2 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.min_x, fy, bb.min_z - 1, Dir::North, depth);
-            } else {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.min_x, fy, bb.max_z + 1, Dir::South, depth);
-            }
-        }
-        Dir::East => {
-            if end_selection <= 1 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(pieces, rng, bb.max_x + 1, fy, bb.min_z, Dir::East, depth);
-            } else if end_selection == 2 {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(
-                    pieces,
-                    rng,
-                    bb.max_x - 3,
-                    fy,
-                    bb.min_z - 1,
-                    Dir::North,
-                    depth,
-                );
-            } else {
-                let fy = bb.min_y - 1 + rng.next_i32_bounded(3);
-                generate_and_add(
-                    pieces,
-                    rng,
-                    bb.max_x - 3,
-                    fy,
-                    bb.max_z + 1,
-                    Dir::South,
-                    depth,
-                );
-            }
-        }
+    // Perpendicular branches along the corridor.
+    if depth >= MAX_DEPTH {
+        return;
     }
-
-    // Perpendicular branches along corridor
-    if depth < MAX_DEPTH {
-        match dir {
-            Dir::North | Dir::South => {
-                let mut z = bb.min_z + 3;
-                while z + 3 <= bb.max_z {
-                    let selection = rng.next_i32_bounded(5);
-                    if selection == 0 {
-                        generate_and_add(
-                            pieces,
-                            rng,
-                            bb.min_x - 1,
-                            bb.min_y,
-                            z,
-                            Dir::West,
-                            depth + 1,
-                        );
-                    } else if selection == 1 {
-                        generate_and_add(
-                            pieces,
-                            rng,
-                            bb.max_x + 1,
-                            bb.min_y,
-                            z,
-                            Dir::East,
-                            depth + 1,
-                        );
-                    }
-                    z += 5;
+    match dir {
+        Dir::North | Dir::South => {
+            let mut z = bb.min_z + 3;
+            while z + 3 <= bb.max_z {
+                match rng.next_i32_bounded(5) {
+                    0 => generate_and_add(
+                        pieces,
+                        rng,
+                        bb.min_x - 1,
+                        bb.min_y,
+                        z,
+                        Dir::West,
+                        depth + 1,
+                    ),
+                    1 => generate_and_add(
+                        pieces,
+                        rng,
+                        bb.max_x + 1,
+                        bb.min_y,
+                        z,
+                        Dir::East,
+                        depth + 1,
+                    ),
+                    _ => {}
                 }
+                z += 5;
             }
-            Dir::West | Dir::East => {
-                let mut x = bb.min_x + 3;
-                while x + 3 <= bb.max_x {
-                    let selection = rng.next_i32_bounded(5);
-                    if selection == 0 {
-                        generate_and_add(
-                            pieces,
-                            rng,
-                            x,
-                            bb.min_y,
-                            bb.min_z - 1,
-                            Dir::North,
-                            depth + 1,
-                        );
-                    } else if selection == 1 {
-                        generate_and_add(
-                            pieces,
-                            rng,
-                            x,
-                            bb.min_y,
-                            bb.max_z + 1,
-                            Dir::South,
-                            depth + 1,
-                        );
-                    }
-                    x += 5;
+        }
+        Dir::West | Dir::East => {
+            let mut x = bb.min_x + 3;
+            while x + 3 <= bb.max_x {
+                match rng.next_i32_bounded(5) {
+                    0 => generate_and_add(
+                        pieces,
+                        rng,
+                        x,
+                        bb.min_y,
+                        bb.min_z - 1,
+                        Dir::North,
+                        depth + 1,
+                    ),
+                    1 => generate_and_add(
+                        pieces,
+                        rng,
+                        x,
+                        bb.min_y,
+                        bb.max_z + 1,
+                        Dir::South,
+                        depth + 1,
+                    ),
+                    _ => {}
                 }
+                x += 5;
             }
         }
     }
 }
 
-// Matches vanilla MineShaftCrossing.addChildren exactly.
-#[expect(
-    clippy::too_many_lines,
-    reason = "mirrors vanilla's MineShaftCrossing.addChildren directional dispatch"
-)]
+/// Matches vanilla `MineShaftCrossing.addChildren` exactly.
 fn crossing_add_children(
     pieces: &mut Pieces,
     rng: &mut LegacyRandom,
@@ -587,174 +428,49 @@ fn crossing_add_children(
     depth: i32,
     is_two_floored: bool,
 ) {
-    match dir {
-        Dir::North => {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y,
-                bb.min_z - 1,
-                Dir::North,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x - 1,
-                bb.min_y,
-                bb.min_z + 1,
-                Dir::West,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.max_x + 1,
-                bb.min_y,
-                bb.min_z + 1,
-                Dir::East,
-                depth,
-            );
-        }
-        Dir::South => {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y,
-                bb.max_z + 1,
-                Dir::South,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x - 1,
-                bb.min_y,
-                bb.min_z + 1,
-                Dir::West,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.max_x + 1,
-                bb.min_y,
-                bb.min_z + 1,
-                Dir::East,
-                depth,
-            );
-        }
-        Dir::West => {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y,
-                bb.min_z - 1,
-                Dir::North,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y,
-                bb.max_z + 1,
-                Dir::South,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x - 1,
-                bb.min_y,
-                bb.min_z + 1,
-                Dir::West,
-                depth,
-            );
-        }
-        Dir::East => {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y,
-                bb.min_z - 1,
-                Dir::North,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y,
-                bb.max_z + 1,
-                Dir::South,
-                depth,
-            );
-            generate_and_add(
-                pieces,
-                rng,
-                bb.max_x + 1,
-                bb.min_y,
-                bb.min_z + 1,
-                Dir::East,
-                depth,
-            );
-        }
+    // Three outgoing branches at y = bb.min_y per direction.
+    let outs: [(i32, i32, Dir); 3] = match dir {
+        Dir::North => [
+            (bb.min_x + 1, bb.min_z - 1, Dir::North),
+            (bb.min_x - 1, bb.min_z + 1, Dir::West),
+            (bb.max_x + 1, bb.min_z + 1, Dir::East),
+        ],
+        Dir::South => [
+            (bb.min_x + 1, bb.max_z + 1, Dir::South),
+            (bb.min_x - 1, bb.min_z + 1, Dir::West),
+            (bb.max_x + 1, bb.min_z + 1, Dir::East),
+        ],
+        Dir::West => [
+            (bb.min_x + 1, bb.min_z - 1, Dir::North),
+            (bb.min_x + 1, bb.max_z + 1, Dir::South),
+            (bb.min_x - 1, bb.min_z + 1, Dir::West),
+        ],
+        Dir::East => [
+            (bb.min_x + 1, bb.min_z - 1, Dir::North),
+            (bb.min_x + 1, bb.max_z + 1, Dir::South),
+            (bb.max_x + 1, bb.min_z + 1, Dir::East),
+        ],
+    };
+    for (x, z, d) in outs {
+        generate_and_add(pieces, rng, x, bb.min_y, z, d, depth);
     }
 
     if is_two_floored {
-        if rng.next_bool() {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y + 4,
-                bb.min_z - 1,
-                Dir::North,
-                depth,
-            );
-        }
-        if rng.next_bool() {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x - 1,
-                bb.min_y + 4,
-                bb.min_z + 1,
-                Dir::West,
-                depth,
-            );
-        }
-        if rng.next_bool() {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.max_x + 1,
-                bb.min_y + 4,
-                bb.min_z + 1,
-                Dir::East,
-                depth,
-            );
-        }
-        if rng.next_bool() {
-            generate_and_add(
-                pieces,
-                rng,
-                bb.min_x + 1,
-                bb.min_y + 4,
-                bb.max_z + 1,
-                Dir::South,
-                depth,
-            );
+        // Each branch consumes a next_bool in order (N, W, E, S).
+        for (x, z, d) in [
+            (bb.min_x + 1, bb.min_z - 1, Dir::North),
+            (bb.min_x - 1, bb.min_z + 1, Dir::West),
+            (bb.max_x + 1, bb.min_z + 1, Dir::East),
+            (bb.min_x + 1, bb.max_z + 1, Dir::South),
+        ] {
+            if rng.next_bool() {
+                generate_and_add(pieces, rng, x, bb.min_y + 4, z, d, depth);
+            }
         }
     }
 }
 
-// Matches vanilla MineShaftStairs.addChildren exactly.
+/// Matches vanilla `MineShaftStairs.addChildren` exactly.
 fn stairs_add_children(
     pieces: &mut Pieces,
     rng: &mut LegacyRandom,
@@ -762,44 +478,13 @@ fn stairs_add_children(
     dir: Dir,
     depth: i32,
 ) {
-    match dir {
-        Dir::North => generate_and_add(
-            pieces,
-            rng,
-            bb.min_x,
-            bb.min_y,
-            bb.min_z - 1,
-            Dir::North,
-            depth,
-        ),
-        Dir::South => generate_and_add(
-            pieces,
-            rng,
-            bb.min_x,
-            bb.min_y,
-            bb.max_z + 1,
-            Dir::South,
-            depth,
-        ),
-        Dir::West => generate_and_add(
-            pieces,
-            rng,
-            bb.min_x - 1,
-            bb.min_y,
-            bb.min_z,
-            Dir::West,
-            depth,
-        ),
-        Dir::East => generate_and_add(
-            pieces,
-            rng,
-            bb.max_x + 1,
-            bb.min_y,
-            bb.min_z,
-            Dir::East,
-            depth,
-        ),
-    }
+    let (x, z) = match dir {
+        Dir::North => (bb.min_x, bb.min_z - 1),
+        Dir::South => (bb.min_x, bb.max_z + 1),
+        Dir::West => (bb.min_x - 1, bb.min_z),
+        Dir::East => (bb.max_x + 1, bb.min_z),
+    };
+    generate_and_add(pieces, rng, x, bb.min_y, z, dir, depth);
 }
 
 // --- Helpers ---
@@ -826,8 +511,8 @@ fn union_bb(a: BoundingBox, b: BoundingBox) -> BoundingBox {
     )
 }
 
-/// `Structure` impl — registered under `"minecraft:mineshaft"`. Variant
-/// (Normal / Mesa) is resolved from `entry.structure.path`.
+/// Registered under `"minecraft:mineshaft"`. Variant (Normal / Mesa) is resolved
+/// from `entry.structure.path`.
 pub struct MineshaftStructure;
 
 impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
@@ -843,23 +528,17 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
             MineshaftType::Normal
         };
 
-        // Mineshaft pieces can span far outside this chunk — the get_height
-        // closure needs aquifer-aware columns anchored at each queried cell's
-        // chunk. Outputs are a pure function of (aq_chunk_x, aq_chunk_z), so
-        // memoise the (cache, aquifer) across the DFS's many per-piece
-        // queries — mineshafts place dozens of pieces clustered across a few
-        // chunks.
+        // Mineshaft pieces span far outside this chunk; the height closure needs
+        // per-cell-chunk aquifer-aware columns. Memoise (cache, aquifer) across
+        // the DFS — dozens of pieces cluster across a few chunks.
         let noises = ctx.noises;
         let splitter = ctx.splitter;
         let mut height_query_cache: FxHashMap<(i32, i32), (N::ColumnCache, Aquifer<N>)> =
             FxHashMap::default();
         let mut get_height = |x: i32, z: i32| -> i32 {
             let cw = N::Settings::CELL_WIDTH;
-            let cell_x = x.div_euclid(cw) * cw;
-            let cell_z = z.div_euclid(cw) * cw;
-            let aq_chunk_x = (cell_x >> 4) * 16;
-            let aq_chunk_z = (cell_z >> 4) * 16;
-
+            let aq_chunk_x = (x.div_euclid(cw) * cw >> 4) * 16;
+            let aq_chunk_z = (z.div_euclid(cw) * cw >> 4) * 16;
             let entry = height_query_cache
                 .entry((aq_chunk_x, aq_chunk_z))
                 .or_insert_with(|| {
@@ -876,7 +555,6 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
                     fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
                     (fresh_cache, fresh_aq)
                 });
-
             iterate_noise_column_with_aquifer::<N>(
                 &mut entry.0,
                 noises,
@@ -903,23 +581,21 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
             return None;
         }
 
-        let pieces = result
-            .pieces
-            .into_iter()
-            .map(|(kind, bb)| StructurePiece {
-                piece_type: Identifier::new_static("minecraft", kind.piece_id()),
-                bounding_box: bb,
-                gen_depth: 0,
-                orientation: None,
-                nbt_data: Vec::new(),
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-            })
-            .collect();
-
         Some(GenerationStub {
             position: result.biome_check_pos,
-            pieces,
+            pieces: result
+                .pieces
+                .into_iter()
+                .map(|(kind, bb)| StructurePiece {
+                    piece_type: Identifier::new_static("minecraft", kind.piece_id()),
+                    bounding_box: bb,
+                    gen_depth: 0,
+                    orientation: None,
+                    nbt_data: Vec::new(),
+                    ground_level_delta: 0,
+                    junctions: Vec::new(),
+                })
+                .collect(),
         })
     }
 }
@@ -928,15 +604,13 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
 mod tests {
     use super::*;
 
-    /// Verifies mineshaft piece generation matches vanilla for seed 13579, chunk (0,0).
+    /// Seed 13579 at chunk (0, 0): 92 pieces, overall BB, Y-offset = -70.
     /// Vanilla values from the extractor mixin trace.
     #[test]
     fn mineshaft_matches_vanilla_seed_13579_chunk_0_0() {
-        let seed: i64 = 13579;
-
         let mut rng = LegacyRandom::from_seed(0);
-        rng.set_large_feature_seed(seed, 0, 0);
-        rng.next_f64(); // consumed by findGenerationPoint
+        rng.set_large_feature_seed(13579, 0, 0);
+        rng.next_f64();
 
         let room_bb = create_room_bb(&mut rng, 2, 2);
         assert_eq!(room_bb, BoundingBox::new(2, 50, 2, 13, 56, 9));
@@ -950,26 +624,21 @@ mod tests {
             start_bb: room_bb,
         };
         room_add_children(&mut pieces, &mut rng, room_bb);
-
-        // Vanilla produces exactly 92 pieces
         assert_eq!(pieces.bbs.len(), 92);
 
-        // Vanilla's overall bounding box
         let mut overall = pieces.bbs[0];
         for bb in &pieces.bbs[1..] {
             overall = union_bb(overall, *bb);
         }
         assert_eq!(overall, BoundingBox::new(-45, 42, -74, 60, 59, 41));
 
-        // moveBelowSeaLevel produces y_offset = -70 → biome check at Y = -20
-        let max_y = 63 - 10; // sea_level - 10
-        let y_span = overall.max_y - overall.min_y + 1;
-        let mut y1_pos = y_span + (-64) + 1;
+        let max_y = 63 - 10;
+        let mut y1_pos = (overall.max_y - overall.min_y + 1) + (-64) + 1;
         if y1_pos < max_y {
             y1_pos += rng.next_i32_bounded(max_y - y1_pos);
         }
         let y_offset = y1_pos - overall.max_y;
         assert_eq!(y_offset, -70);
-        assert_eq!(50 + y_offset, -20); // biome check Y
+        assert_eq!(50 + y_offset, -20);
     }
 }

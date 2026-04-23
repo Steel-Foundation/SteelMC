@@ -1,10 +1,7 @@
 //! Predicates for matching individual cells in a [`BlockPattern`](super::BlockPattern).
 //!
-//! Vanilla parity: `BlockInWorld` + `BlockStatePredicate` collapsed into a single
-//! predicate type. Vanilla evaluates predicates against a `BlockInWorld` (lazy block
-//! entity loading); we only need the state for current use cases (end portal frame,
-//! wither/golem spawning, beacon base) so we evaluate against [`BlockStateId`] directly.
-//! If a future predicate needs the block entity, add a new variant.
+//! Vanilla collapses `BlockInWorld` + `BlockStatePredicate` into a single type here.
+//! Our use cases (end portal frame, wither/golem, beacon base) only need the state.
 
 use std::sync::Arc;
 
@@ -13,20 +10,16 @@ use steel_registry::blocks::BlockRef;
 use steel_utils::BlockStateId;
 
 /// Predicate for a single cell in a [`BlockPattern`](super::BlockPattern).
-///
-/// `#[non_exhaustive]` so we can add FFI-safe variants (e.g. an opcode-based
-/// `Encoded` form for cdylib plugins) without breaking consumers that `match`
-/// on this enum.
 #[non_exhaustive]
 #[derive(Clone)]
 pub enum BlockPredicate {
-    /// Matches any block state, including air. Equivalent to vanilla's `?` cell.
+    /// Matches any state (vanilla's `?`).
     Any,
     /// Matches any state of the given block.
     Block(BlockRef),
-    /// Matches one specific block state.
+    /// Matches one specific state.
     State(BlockStateId),
-    /// Matches via an arbitrary closure. Use [`BlockPredicate::custom`] to construct.
+    /// Arbitrary closure. See [`BlockPredicate::custom`].
     Fn(Arc<dyn Fn(BlockStateId) -> bool + Send + Sync>),
 }
 
@@ -40,7 +33,6 @@ impl BlockPredicate {
         Self::Fn(Arc::new(f))
     }
 
-    /// Evaluates the predicate against a world block state.
     #[must_use]
     pub fn matches(&self, state: BlockStateId) -> bool {
         match self {

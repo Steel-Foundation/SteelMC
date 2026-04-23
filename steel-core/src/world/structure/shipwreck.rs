@@ -1,8 +1,5 @@
-//! Shipwreck piece generation.
-//!
-//! Picks a random template from either the beached (11 templates) or the
-//! underwater (20 templates) pool, then places it at `(chunkMinX, 90, chunkMinZ)`
-//! with a random horizontal rotation and the shipwreck pivot `(4, 15)`.
+//! Shipwreck: picks a random template from the beached (11) or underwater (20) pool,
+//! places at `(chunkMinX, 90, chunkMinZ)` with random rotation and pivot `(4, 15)`.
 
 use steel_utils::density::DimensionNoises;
 use steel_utils::random::Random;
@@ -49,8 +46,8 @@ static OCEAN: &[&str] = &[
     "shipwreck/rightsideup_backhalf_degraded",
 ];
 
-/// `Structure` impl registered under `"minecraft:shipwreck"`. Distinguishes
-/// between beached and underwater shipwrecks via `entry.structure.path`.
+/// Registered under `"minecraft:shipwreck"`. Beached vs underwater is distinguished by
+/// `entry.structure.path`.
 pub struct ShipwreckStructure;
 
 impl<N: DimensionNoises> Structure<N> for ShipwreckStructure {
@@ -60,34 +57,33 @@ impl<N: DimensionNoises> Structure<N> for ShipwreckStructure {
         entry: &StructureSelectionEntry,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        // Biome check at chunk center, surface Y.
         let surface_y = ctx.surface_y();
         let biome = ctx.biome_at(ctx.center_block_x, surface_y, ctx.center_block_z);
         if !entry.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
-        let is_beached = &*entry.structure.path == "shipwreck_beached";
-        let templates_arr = if is_beached { BEACHED } else { OCEAN };
+        let templates_arr = if &*entry.structure.path == "shipwreck_beached" {
+            BEACHED
+        } else {
+            OCEAN
+        };
 
         let rotation = Rotation::get_random(rng);
         let idx = rng.next_i32_bounded(templates_arr.len() as i32) as usize;
-        let template_name = templates_arr[idx];
-
-        let template_id = Identifier::new("minecraft", template_name.to_string());
+        let template_id = Identifier::new("minecraft", templates_arr[idx].to_string());
         let tmpl = ctx.templates.get(&template_id)?;
-        let bb = rotation.get_bounding_box_with_pivot(
-            (ctx.chunk_min_x, 90, ctx.chunk_min_z),
-            (tmpl.size[0], tmpl.size[1], tmpl.size[2]),
-            4,
-            15,
-        );
 
         Some(GenerationStub {
             position: (ctx.center_block_x, surface_y, ctx.center_block_z),
             pieces: vec![StructurePiece {
                 piece_type: Identifier::new_static("minecraft", "shipwreck"),
-                bounding_box: bb,
+                bounding_box: rotation.get_bounding_box_with_pivot(
+                    (ctx.chunk_min_x, 90, ctx.chunk_min_z),
+                    (tmpl.size[0], tmpl.size[1], tmpl.size[2]),
+                    4,
+                    15,
+                ),
                 gen_depth: 0,
                 orientation: None,
                 nbt_data: Vec::new(),

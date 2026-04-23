@@ -80,8 +80,7 @@ impl ChunkStatusTasks {
         let target_block_z = target_z * 16;
         drop(chunk);
 
-        // Scan radius 8 around the target chunk for structure starts
-        // whose bounding boxes intersect this chunk's area.
+        // Radius-8 scan for starts whose BB intersects this chunk.
         for source_x in (target_x - 8)..=(target_x + 8) {
             for source_z in (target_z - 8)..=(target_z + 8) {
                 let source_holder = cache.get(source_x, source_z);
@@ -90,14 +89,12 @@ impl ChunkStatusTasks {
                     continue;
                 };
 
-                let starts = source_chunk.structure_starts();
-                for (structure_id, start) in starts.iter() {
-                    // Empty-pieces starts have no bounding box (legacy/unknown types).
+                for (structure_id, start) in source_chunk.structure_starts().iter() {
+                    // Empty-pieces starts have no BB (legacy/unknown types).
                     let Some(bb) = start.bounding_box else {
                         continue;
                     };
-
-                    // Vanilla inflates the BB when terrain_adaptation != NONE
+                    // Vanilla inflates when terrain_adaptation != NONE.
                     let inflate = start.bb_inflate;
                     if bb.intersects_xz(
                         target_block_x - inflate,
@@ -113,9 +110,7 @@ impl ChunkStatusTasks {
                             .entry(structure_id.clone())
                             .or_default()
                             .push(steel_utils::ChunkPos::new(source_x, source_z));
-
-                        // Reference count updates on the source chunk's start
-                        // are handled during serialization.
+                        // Source-start reference counts are updated at serialization time.
                     }
                 }
             }

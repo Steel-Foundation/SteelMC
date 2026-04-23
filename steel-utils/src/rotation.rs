@@ -1,5 +1,3 @@
-//! Rotation enum for structure template placement.
-//!
 //! Vanilla's `Rotation` — horizontal rotations around the Y axis.
 
 use crate::random::Random;
@@ -7,11 +5,9 @@ use crate::random::legacy_random::LegacyRandom;
 use crate::{BoundingBox, Direction};
 
 /// Horizontal rotation around the Y axis.
-///
-/// Vanilla's `Rotation` enum. Used for structure template placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rotation {
-    /// No rotation (0°).
+    /// 0°.
     None,
     /// 90° clockwise.
     Clockwise90,
@@ -21,7 +17,6 @@ pub enum Rotation {
     CounterClockwise90,
 }
 
-/// All rotation variants in vanilla's ordinal order.
 const ALL_ROTATIONS: [Rotation; 4] = [
     Rotation::None,
     Rotation::Clockwise90,
@@ -30,20 +25,16 @@ const ALL_ROTATIONS: [Rotation; 4] = [
 ];
 
 impl Rotation {
-    /// Picks a random rotation. Matches `Rotation.getRandom(random)`.
+    /// Matches vanilla's `Rotation.getRandom(random)`.
     #[must_use]
     pub fn get_random(rng: &mut LegacyRandom) -> Self {
         ALL_ROTATIONS[rng.next_i32_bounded(4) as usize]
     }
 
-    /// Returns a shuffled copy of all rotations.
-    ///
-    /// Matches vanilla's `Rotation.getShuffled(random)` which calls
-    /// `Util.shuffledCopy(values(), random)`.
+    /// Matches vanilla's `Util.shuffledCopy(values(), random)` (reverse Fisher-Yates).
     #[must_use]
     pub fn get_shuffled(rng: &mut LegacyRandom) -> [Rotation; 4] {
         let mut rotations = ALL_ROTATIONS;
-        // Vanilla's Util.shuffle: reverse Fisher-Yates
         for i in (1..4).rev() {
             let j = rng.next_i32_bounded((i + 1) as i32) as usize;
             rotations.swap(i, j);
@@ -51,8 +42,6 @@ impl Rotation {
         rotations
     }
 
-    /// Rotates a horizontal direction by this rotation.
-    ///
     /// Vertical directions (Up/Down) are unchanged.
     #[must_use]
     pub const fn rotate(self, dir: Direction) -> Direction {
@@ -64,15 +53,12 @@ impl Rotation {
         }
     }
 
-    /// Composes two rotations. `self.then(other)` = apply self first, then other.
+    /// `self.then(other)` = apply self first, then other.
     #[must_use]
     pub const fn then(self, other: Self) -> Self {
-        let total = (self as u8 + other as u8) % 4;
-        ALL_ROTATIONS[total as usize]
+        ALL_ROTATIONS[((self as u8 + other as u8) % 4) as usize]
     }
 
-    /// Transforms a position by this rotation around a pivot point.
-    ///
     /// Matches vanilla's `StructureTemplate.transform(pos, Mirror.NONE, rotation, pivot)`.
     #[must_use]
     pub const fn transform_pos(
@@ -91,9 +77,7 @@ impl Rotation {
         }
     }
 
-    /// Returns the template size after applying this rotation.
-    ///
-    /// 90° and 270° rotations swap the X and Z dimensions.
+    /// 90°/270° swap the X and Z dimensions.
     #[must_use]
     pub const fn rotate_size(self, size_x: i32, size_y: i32, size_z: i32) -> (i32, i32, i32) {
         match self {
@@ -102,8 +86,6 @@ impl Rotation {
         }
     }
 
-    /// Transforms a position with mirror (`FRONT_BACK`) then rotation around a pivot.
-    ///
     /// Matches vanilla's `StructureTemplate.transform(pos, Mirror.FRONT_BACK, rotation, pivot)`.
     #[must_use]
     pub const fn transform_pos_mirrored(
@@ -119,8 +101,6 @@ impl Rotation {
         self.transform_pos(mx, y, z, pivot_x, pivot_z)
     }
 
-    /// Computes the bounding box with mirror + rotation + pivot.
-    ///
     /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror, size)`.
     #[must_use]
     pub const fn get_bounding_box_full(
@@ -131,31 +111,27 @@ impl Rotation {
         pivot_z: i32,
         mirror_front_back: bool,
     ) -> BoundingBox {
-        let (pos_x, pos_y, pos_z) = pos;
-        let (size_x, size_y, size_z) = size;
-        let dx = size_x - 1;
-        let dy = size_y - 1;
-        let dz = size_z - 1;
-
         let (c1x, c1y, c1z) =
             self.transform_pos_mirrored(0, 0, 0, pivot_x, pivot_z, mirror_front_back);
-        let (c2x, c2y, c2z) =
-            self.transform_pos_mirrored(dx, dy, dz, pivot_x, pivot_z, mirror_front_back);
-
+        let (c2x, c2y, c2z) = self.transform_pos_mirrored(
+            size.0 - 1,
+            size.1 - 1,
+            size.2 - 1,
+            pivot_x,
+            pivot_z,
+            mirror_front_back,
+        );
         BoundingBox::new(
-            c1x.min(c2x) + pos_x,
-            c1y.min(c2y) + pos_y,
-            c1z.min(c2z) + pos_z,
-            c1x.max(c2x) + pos_x,
-            c1y.max(c2y) + pos_y,
-            c1z.max(c2z) + pos_z,
+            c1x.min(c2x) + pos.0,
+            c1y.min(c2y) + pos.1,
+            c1z.min(c2z) + pos.2,
+            c1x.max(c2x) + pos.0,
+            c1y.max(c2y) + pos.1,
+            c1z.max(c2z) + pos.2,
         )
     }
 
-    /// Computes the bounding box for a structure template placed at `position`
-    /// with this rotation and a custom pivot point.
-    ///
-    /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot, mirror=NONE, size)`.
+    /// [`get_bounding_box_full`] with `mirror=NONE`.
     #[must_use]
     pub const fn get_bounding_box_with_pivot(
         self,
@@ -164,29 +140,10 @@ impl Rotation {
         pivot_x: i32,
         pivot_z: i32,
     ) -> BoundingBox {
-        let (pos_x, pos_y, pos_z) = pos;
-        let (size_x, size_y, size_z) = size;
-        let dx = size_x - 1;
-        let dy = size_y - 1;
-        let dz = size_z - 1;
-
-        let (c1x, c1y, c1z) = self.transform_pos(0, 0, 0, pivot_x, pivot_z);
-        let (c2x, c2y, c2z) = self.transform_pos(dx, dy, dz, pivot_x, pivot_z);
-
-        BoundingBox::new(
-            c1x.min(c2x) + pos_x,
-            c1y.min(c2y) + pos_y,
-            c1z.min(c2z) + pos_z,
-            c1x.max(c2x) + pos_x,
-            c1y.max(c2y) + pos_y,
-            c1z.max(c2z) + pos_z,
-        )
+        self.get_bounding_box_full(pos, size, pivot_x, pivot_z, false)
     }
 
-    /// Computes the bounding box for a structure template placed at `position` with this rotation.
-    ///
-    /// Matches vanilla's `StructureTemplate.getBoundingBox(position, rotation, pivot=ZERO, mirror=NONE, size)`.
-    /// Jigsaw pool elements always use pivot=ZERO and mirror=NONE.
+    /// [`get_bounding_box_full`] with `pivot=ZERO` and `mirror=NONE`. Used by jigsaw pool elements.
     #[must_use]
     pub const fn get_bounding_box(
         self,
@@ -197,23 +154,7 @@ impl Rotation {
         size_y: i32,
         size_z: i32,
     ) -> BoundingBox {
-        let dx = size_x - 1;
-        let dy = size_y - 1;
-        let dz = size_z - 1;
-
-        // Transform corners with pivot=(0,0,0)
-        let (c1x, c1y, c1z) = self.transform_pos(0, 0, 0, 0, 0);
-        let (c2x, c2y, c2z) = self.transform_pos(dx, dy, dz, 0, 0);
-
-        // fromCorners takes min/max, then move by position
-        BoundingBox::new(
-            c1x.min(c2x) + pos_x,
-            c1y.min(c2y) + pos_y,
-            c1z.min(c2z) + pos_z,
-            c1x.max(c2x) + pos_x,
-            c1y.max(c2y) + pos_y,
-            c1z.max(c2z) + pos_z,
-        )
+        self.get_bounding_box_full((pos_x, pos_y, pos_z), (size_x, size_y, size_z), 0, 0, false)
     }
 }
 
@@ -265,19 +206,15 @@ mod tests {
 
     #[test]
     fn transform_pos_pivot_zero() {
-        // NONE: identity
         assert_eq!(Rotation::None.transform_pos(3, 5, 7, 0, 0), (3, 5, 7));
-        // CW_90: (px + pz - z, y, pz - px + x) = (0+0-7, 5, 0-0+3) = (-7, 5, 3)
         assert_eq!(
             Rotation::Clockwise90.transform_pos(3, 5, 7, 0, 0),
             (-7, 5, 3)
         );
-        // CW_180: (2px - x, y, 2pz - z) = (-3, 5, -7)
         assert_eq!(
             Rotation::Clockwise180.transform_pos(3, 5, 7, 0, 0),
             (-3, 5, -7)
         );
-        // CCW_90: (px - pz + z, y, px + pz - x) = (7, 5, -3)
         assert_eq!(
             Rotation::CounterClockwise90.transform_pos(3, 5, 7, 0, 0),
             (7, 5, -3)
@@ -286,8 +223,6 @@ mod tests {
 
     #[test]
     fn bounding_box_none() {
-        // Size (6, 10, 6), position (0,0,0), rotation NONE
-        // delta = (5, 9, 5), corners: (0,0,0) and (5,9,5)
         let bb = Rotation::None.get_bounding_box(0, 0, 0, 6, 10, 6);
         assert_eq!((bb.min_x, bb.min_y, bb.min_z), (0, 0, 0));
         assert_eq!((bb.max_x, bb.max_y, bb.max_z), (5, 9, 5));
@@ -295,11 +230,6 @@ mod tests {
 
     #[test]
     fn bounding_box_cw90() {
-        // Size (6, 10, 8), position (100, 50, 200), rotation CW_90
-        // delta = (5, 9, 7)
-        // corner1 = transform(0,0,0) = (0,0,0)
-        // corner2 = transform(5,9,7) = (0+0-7, 9, 0-0+5) = (-7, 9, 5)
-        // min = (-7, 0, 0), max = (0, 9, 5), moved by (100, 50, 200)
         let bb = Rotation::Clockwise90.get_bounding_box(100, 50, 200, 6, 10, 8);
         assert_eq!((bb.min_x, bb.min_y, bb.min_z), (93, 50, 200));
         assert_eq!((bb.max_x, bb.max_y, bb.max_z), (100, 59, 205));
@@ -307,9 +237,6 @@ mod tests {
 
     #[test]
     fn bounding_box_cw180() {
-        // Size (6, 10, 8), position (0, 0, 0), rotation CW_180
-        // delta = (5, 9, 7)
-        // corner1 = (0,0,0), corner2 = (-5, 9, -7)
         let bb = Rotation::Clockwise180.get_bounding_box(0, 0, 0, 6, 10, 8);
         assert_eq!((bb.min_x, bb.min_y, bb.min_z), (-5, 0, -7));
         assert_eq!((bb.max_x, bb.max_y, bb.max_z), (0, 9, 0));

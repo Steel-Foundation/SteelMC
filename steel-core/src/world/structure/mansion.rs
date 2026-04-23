@@ -1,8 +1,5 @@
-//! Woodland mansion piece generation.
-//!
-//! Ports vanilla's `WoodlandMansionPieces`: grid-based layout with template
-//! pieces for walls, corridors, rooms, and roofs. Only computes bounding boxes
-//! for structure starts — actual block placement is separate.
+//! Woodland mansion. Vanilla's `WoodlandMansionPieces`: grid-based layout with
+//! template pieces for walls, corridors, rooms, roofs. Produces bounding boxes only.
 
 use steel_utils::density::DimensionNoises;
 use steel_utils::random::Random;
@@ -12,9 +9,7 @@ use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
-// ── Template sizes ──
-
-/// Returns (sizeX, sizeY, sizeZ) for a `woodland_mansion` template.
+/// (sizeX, sizeY, sizeZ) for a `woodland_mansion` template.
 fn template_size(name: &str) -> [i32; 3] {
     match name {
         "entrance" => [21, 19, 16],
@@ -55,16 +50,12 @@ fn template_size(name: &str) -> [i32; 3] {
     }
 }
 
-// ── Mirror ──
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mirror {
     None,
     LeftRight,
     FrontBack,
 }
-
-// ── Bounding box with mirror ──
 
 fn piece_bb(
     pos: (i32, i32, i32),
@@ -95,9 +86,7 @@ const fn apply_mirror(x: i32, z: i32, mirror: Mirror) -> (i32, i32) {
     }
 }
 
-// ── Position helpers ──
-
-/// `pos.relative(rotation.rotate(direction), amount)`
+/// `pos.relative(rotation.rotate(direction), amount)`.
 const fn relative(
     pos: (i32, i32, i32),
     rotation: Rotation,
@@ -117,7 +106,7 @@ const fn above(pos: (i32, i32, i32), amount: i32) -> (i32, i32, i32) {
     (pos.0, pos.1 + amount, pos.2)
 }
 
-/// Vanilla's `getZeroPositionWithTransform(zeroPos, Mirror.NONE, rotation, 7, 7)`
+/// Vanilla's `getZeroPositionWithTransform(zeroPos, Mirror.NONE, rotation, sx, sz)`.
 const fn zero_pos_transform(
     zero: (i32, i32, i32),
     rotation: Rotation,
@@ -135,12 +124,12 @@ const fn zero_pos_transform(
     (zero.0 + dx, zero.1, zero.2 + dz)
 }
 
-/// Vanilla's Rotation.getRotated — compose two rotations.
+/// Vanilla's `Rotation.getRotated`.
 const fn compose_rotation(base: Rotation, add: Rotation) -> Rotation {
     base.then(add)
 }
 
-/// Vanilla's `Direction.from2DDataValue`: 0=S, 1=W, 2=N, 3=E
+/// Vanilla's `Direction.from2DDataValue`: 0=S, 1=W, 2=N, 3=E.
 const fn dir_from_2d(value: i32) -> Direction {
     match value & 3 {
         0 => Direction::South,
@@ -149,8 +138,6 @@ const fn dir_from_2d(value: i32) -> Direction {
         _ => Direction::East,
     }
 }
-
-// ── SimpleGrid ──
 
 struct SimpleGrid {
     grid: Vec<Vec<i32>>,
@@ -210,8 +197,6 @@ fn is_house(grid: &SimpleGrid, x: i32, y: i32) -> bool {
     v == 1 || v == 2 || v == 3 || v == 4
 }
 
-// ── Grid constants ──
-
 const ROOM_1X1: i32 = 65_536;
 const ROOM_1X2: i32 = 131_072;
 const ROOM_2X2: i32 = 262_144;
@@ -221,8 +206,6 @@ const ROOM_STAIRS_FLAG: i32 = 4_194_304;
 const ROOM_CORRIDOR_FLAG: i32 = 8_388_608;
 const ROOM_TYPE_MASK: i32 = 983_040;
 const ROOM_ID_MASK: i32 = 65_535;
-
-// ── MansionGrid ──
 
 struct MansionGrid {
     base_grid: SimpleGrid,
@@ -238,70 +221,22 @@ impl MansionGrid {
         let entrance_y = 4;
         let mut base = SimpleGrid::new(11, 11, 5);
         base.set_range(entrance_x, entrance_y, entrance_x + 1, entrance_y + 1, 3);
-        base.set_range(
-            entrance_x - 1,
-            entrance_y,
-            entrance_x - 1,
-            entrance_y + 1,
-            2,
-        );
-        base.set_range(
-            entrance_x + 2,
-            entrance_y - 2,
-            entrance_x + 3,
-            entrance_y + 3,
-            5,
-        );
-        base.set_range(
-            entrance_x + 1,
-            entrance_y - 2,
-            entrance_x + 1,
-            entrance_y - 1,
-            1,
-        );
-        base.set_range(
-            entrance_x + 1,
-            entrance_y + 2,
-            entrance_x + 1,
-            entrance_y + 3,
-            1,
-        );
+        base.set_range(entrance_x - 1, entrance_y, entrance_x - 1, entrance_y + 1, 2);
+        base.set_range(entrance_x + 2, entrance_y - 2, entrance_x + 3, entrance_y + 3, 5);
+        base.set_range(entrance_x + 1, entrance_y - 2, entrance_x + 1, entrance_y - 1, 1);
+        base.set_range(entrance_x + 1, entrance_y + 2, entrance_x + 1, entrance_y + 3, 1);
         base.set_cell(entrance_x - 1, entrance_y - 1, 1);
         base.set_cell(entrance_x - 1, entrance_y + 2, 1);
         base.set_range(0, 0, 11, 1, 5);
         base.set_range(0, 9, 11, 11, 5);
-        Self::recursive_corridor(
-            &mut base,
-            rng,
-            entrance_x,
-            entrance_y - 2,
-            Direction::West,
-            6,
-        );
-        Self::recursive_corridor(
-            &mut base,
-            rng,
-            entrance_x,
-            entrance_y + 3,
-            Direction::West,
-            6,
-        );
-        Self::recursive_corridor(
-            &mut base,
-            rng,
-            entrance_x - 2,
-            entrance_y - 1,
-            Direction::West,
-            3,
-        );
-        Self::recursive_corridor(
-            &mut base,
-            rng,
-            entrance_x - 2,
-            entrance_y + 2,
-            Direction::West,
-            3,
-        );
+        for (x, y, depth) in [
+            (entrance_x, entrance_y - 2, 6),
+            (entrance_x, entrance_y + 3, 6),
+            (entrance_x - 2, entrance_y - 1, 3),
+            (entrance_x - 2, entrance_y + 2, 3),
+        ] {
+            Self::recursive_corridor(&mut base, rng, x, y, Direction::West, depth);
+        }
         while Self::clean_edges(&mut base) {}
 
         let mut floor_rooms = [
@@ -311,20 +246,15 @@ impl MansionGrid {
         ];
         Self::identify_rooms(&base, &mut floor_rooms[0], rng);
         Self::identify_rooms(&base, &mut floor_rooms[1], rng);
-        floor_rooms[0].set_range(
-            entrance_x + 1,
-            entrance_y,
-            entrance_x + 1,
-            entrance_y + 1,
-            ROOM_CORRIDOR_FLAG,
-        );
-        floor_rooms[1].set_range(
-            entrance_x + 1,
-            entrance_y,
-            entrance_x + 1,
-            entrance_y + 1,
-            ROOM_CORRIDOR_FLAG,
-        );
+        for room in &mut floor_rooms[0..2] {
+            room.set_range(
+                entrance_x + 1,
+                entrance_y,
+                entrance_x + 1,
+                entrance_y + 1,
+                ROOM_CORRIDOR_FLAG,
+            );
+        }
 
         let mut third = SimpleGrid::new(base.width, base.height, 5);
         Self::setup_third_floor(&base, &mut third, &mut floor_rooms, rng);
@@ -635,8 +565,6 @@ impl MansionGrid {
     }
 }
 
-// ── Floor room collections ──
-
 #[expect(
     clippy::match_same_arms,
     reason = "table kept one-per-case to match vanilla's FirstFloorRoomCollection / SecondFloor / ThirdFloor dispatch"
@@ -674,19 +602,16 @@ fn get_room_name(rng: &mut LegacyRandom, floor: usize, kind: &str, is_stairs: bo
     }
 }
 
-// ── Piece placement ──
-
 struct PlacementData {
     position: (i32, i32, i32),
     rotation: Rotation,
     wall_type: &'static str,
 }
 
-/// Generates all mansion piece bounding boxes.
-/// Returns Vec of (`BoundingBox`, `template_name`).
+/// All mansion piece bounding boxes.
 #[expect(
     clippy::too_many_lines,
-    reason = "mirrors vanilla's MansionPiecePlacer.placementData traversal and mutation order"
+    reason = "mirrors vanilla's MansionPiecePlacer traversal order"
 )]
 pub fn generate_mansion_pieces(
     origin: (i32, i32, i32),
@@ -706,18 +631,15 @@ pub fn generate_mansion_pieces(
         rotation,
         wall_type: "wall_flat",
     };
-
-    // Entrance — advances data.position south 16
     place_entrance(&mut pieces, &mut data);
 
-    // Capture second-floor placement BEFORE floor-0 traversal modifies data
+    // Capture second-floor placement BEFORE floor-0 traversal mutates `data`.
     let mut second = PlacementData {
         position: above(data.position, 8),
         rotation: data.rotation,
         wall_type: "wall_window",
     };
 
-    // Floor 0 outer walls (modifies data)
     traverse_outer_walls(
         &mut pieces,
         &mut data,
@@ -728,7 +650,6 @@ pub fn generate_mansion_pieces(
         end_x,
         end_y,
     );
-    // Floor 1 outer walls
     traverse_outer_walls(
         &mut pieces,
         &mut second,
@@ -740,15 +661,13 @@ pub fn generate_mansion_pieces(
         end_y,
     );
 
-    // Third floor walls — vanilla: thirdData.position = data.position.above(19),
-    // using data.position AFTER floor-0 traversal.
+    // Third floor uses data.position.above(19) AFTER floor-0 traversal.
     let mut third_data = PlacementData {
         position: above(data.position, 19),
         rotation: data.rotation,
         wall_type: "wall_window",
     };
 
-    // Third floor: find first house cell in thirdGrid
     let mut done = false;
     for y in 0..mansion.third_floor_grid.height {
         if done {
