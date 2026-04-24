@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
+use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_utils::value_providers::{FloatProvider, HeightProvider, VerticalAnchor};
 
 /// Shared per-carver configuration fields present on every carver type.
@@ -68,6 +69,45 @@ pub struct CanyonShapeConfiguration {
     pub vertical_radius_default_factor: f32,
     /// Extra vertical-radius multiplier that peaks at the tunnel midpoint.
     pub vertical_radius_center_factor: f32,
+}
+
+impl CanyonShapeConfiguration {
+    /// Mirrors vanilla `CanyonWorldCarver.initWidthFactors` — fresh squared
+    /// width factor at every `width_smoothness`-th Y level, otherwise
+    /// repeating the previous value.
+    #[must_use]
+    pub fn init_width_factors(&self, gen_depth: i32, random: &mut LegacyRandom) -> Vec<f32> {
+        let depth = gen_depth as usize;
+        let mut factors = vec![0.0_f32; depth];
+        let mut current = 1.0_f32;
+        for (y_index, slot) in factors.iter_mut().enumerate() {
+            if y_index == 0 || random.next_i32_bounded(self.width_smoothness) == 0 {
+                current = 1.0 + random.next_f32() * random.next_f32();
+            }
+            *slot = current * current;
+        }
+        factors
+    }
+
+    /// Mirrors vanilla `CanyonWorldCarver.updateVerticalRadius` — applies the
+    /// shape's default/center factors plus a `Mth.randomBetween(0.75, 1.0)`
+    /// jitter.
+    #[must_use]
+    pub fn update_vertical_radius(
+        &self,
+        random: &mut LegacyRandom,
+        vertical_radius: f64,
+        distance: f32,
+        current_step: f32,
+    ) -> f64 {
+        // Vanilla: `Mth.abs(0.5F - currentStep/distance)` — float arithmetic.
+        let vertical_multiplier = 1.0_f32 - (0.5 - current_step / distance).abs() * 2.0;
+        let factor = self.vertical_radius_default_factor
+            + self.vertical_radius_center_factor * vertical_multiplier;
+        // `Mth.randomBetween(random, 0.75F, 1.0F)` = 0.75 + nextFloat()*0.25.
+        let jitter = 0.75 + random.next_f32() * 0.25;
+        f64::from(factor) * vertical_radius * f64::from(jitter)
+    }
 }
 
 /// Canyon (ravine) configuration.

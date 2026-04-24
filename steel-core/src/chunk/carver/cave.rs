@@ -1,10 +1,10 @@
 //! Cave carver (overworld + nether variants).
 //!
 //! Mirrors vanilla's `CaveWorldCarver` + `NetherWorldCarver`. Single entry
-//! point `carve_cave` dispatched off a [`CaveKind`] — vanilla's overrides
-//! for nether (cave bound, thickness multiplier, y scale, per-block
-//! placement) are captured as kind-specific constants so the tunnel
-//! recursion logic stays shared.
+//! point [`CarveRun::carve_cave`] dispatched off a [`CaveKind`] — vanilla's
+//! overrides for nether (cave bound, thickness multiplier, y scale,
+//! per-block placement) are captured as kind-specific constants so the
+//! tunnel recursion logic stays shared.
 
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
@@ -14,12 +14,7 @@ use steel_utils::density::DimensionNoises;
 use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 
-use crate::chunk::carver::{
-    CarveParams, CarveSkipChecker, CarverBlockIds, CarverStyle, CarvingContext, can_reach,
-    carve_ellipsoid,
-};
-use crate::chunk::carving_mask::CarvingMask;
-use crate::chunk::chunk_access::ChunkAccess;
+use crate::chunk::carver::{CarveParams, CarveRun, CarveSkipChecker, CarverStyle, can_reach};
 
 /// Which cave carver flavor to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,346 +74,270 @@ impl CaveKind {
     }
 }
 
-/// Runs one cave-carver pass rooted in `source_pos`. `random` must have
-/// been seeded by the caller via
-/// `LegacyRandom::set_large_feature_seed(seed + carver_index, cx, cz)` and
-/// the `isStartChunk` probability check must have already passed.
-///
-/// Mirrors vanilla's `CaveWorldCarver.carve` / `NetherWorldCarver.carve`
-/// (which inherits the cave variant).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "matches vanilla CaveWorldCarver.carve signature closely"
-)]
-pub fn carve_cave<N, F>(
-    ctx: &mut CarvingContext<'_, N>,
-    noises: &N,
-    chunk: &ChunkAccess,
-    chunk_min_x: i32,
-    chunk_min_z: i32,
-    mut biome_getter: F,
-    mask: &mut CarvingMask,
-    ids: CarverBlockIds,
-    config: &CaveCarverConfiguration,
-    kind: CaveKind,
-    source_pos: ChunkPos,
-    random: &mut LegacyRandom,
-) where
-    N: DimensionNoises,
-    F: FnMut(i32, i32, i32) -> u16,
-{
-    // Vanilla: `SectionPos.sectionToBlockCoord(this.getRange() * 2 - 1)`
-    //        = (4 * 2 - 1) * 16 = 112
-    let max_distance = (carver_range() * 2 - 1) * 16;
+/// Vanilla `WorldCarver.getRange()` — range in chunks. 4 each direction.
+const CARVER_RANGE: i32 = 4;
+/// Vanilla `SectionPos.sectionToBlockCoord(getRange() * 2 - 1)` = 112.
+const MAX_TUNNEL_DISTANCE: i32 = (CARVER_RANGE * 2 - 1) * 16;
 
-    // Triple-nested `random.nextInt(random.nextInt(...)+1)+1` gives a heavily
-    // right-skewed distribution of starts per chunk. Split into locals so the
-    // Java-style nesting doesn't overlap `&mut random` borrows.
-    let bound = kind.cave_bound();
-    let inner = random.next_i32_bounded(bound);
-    let mid = random.next_i32_bounded(inner + 1);
-    let cave_count = random.next_i32_bounded(mid + 1);
-
-    let source_min_x = source_pos.0.x * 16;
-    let source_min_z = source_pos.0.y * 16;
-
-    let lava_level_y = config.base.lava_level.resolve_y(ctx.min_y, ctx.gen_depth);
-    let params = CarveParams {
-        replaceable_tag: &config.base.replaceable_tag,
-        lava_level_y,
-        style: kind.style(),
-        ids,
-    };
-
-    for _ in 0..cave_count {
-        let x = f64::from(source_min_x + random.next_i32_bounded(16));
-        let y = f64::from(config.base.y.sample(random, ctx.min_y, ctx.gen_depth));
-        let z = f64::from(source_min_z + random.next_i32_bounded(16));
-
-        let horizontal_radius_multiplier =
-            f64::from(config.horizontal_radius_multiplier.sample(random));
-        let vertical_radius_multiplier =
-            f64::from(config.vertical_radius_multiplier.sample(random));
-        let floor_level = f64::from(config.floor_level.sample(random));
-
-        // Vanilla `CaveWorldCarver.shouldSkip`: skip blocks below the noisy
-        // floor OR outside the unit sphere in ellipsoid-local coords (xd²+yd²+zd² ≥ 1).
-        // Without the sphere test we'd carve cylinders, not ellipsoids — badly
-        // visible as a circular over-carve at each tunnel Y level.
-        let skip_checker = move |xd: f64, yd: f64, zd: f64, _world_y: i32| {
-            yd <= floor_level || xd * xd + yd * yd + zd * zd >= 1.0
-        };
-
-        let mut tunnels = 1i32;
-        if random.next_i32_bounded(4) == 0 {
-            let y_scale = f64::from(config.base.y_scale.sample(random));
-            let thickness = 1.0 + random.next_f32() * 6.0;
-            create_room(
-                ctx,
-                noises,
-                chunk,
-                chunk_min_x,
-                chunk_min_z,
-                &mut biome_getter,
-                mask,
-                &params,
-                x,
-                y,
-                z,
-                thickness,
-                y_scale,
-                &skip_checker,
-            );
-            tunnels += random.next_i32_bounded(4);
-        }
-
-        for _ in 0..tunnels {
-            let horizontal_rotation = random.next_f32() * TAU;
-            let vertical_rotation = (random.next_f32() - 0.5) / 4.0;
-            let thickness = kind.thickness(random);
-            let distance = max_distance - random.next_i32_bounded(max_distance / 4);
-            let tunnel_seed = random.next_i64();
-            create_tunnel(
-                ctx,
-                noises,
-                chunk,
-                chunk_min_x,
-                chunk_min_z,
-                &mut biome_getter,
-                mask,
-                &params,
-                tunnel_seed,
-                x,
-                y,
-                z,
-                horizontal_radius_multiplier,
-                vertical_radius_multiplier,
-                thickness,
-                horizontal_rotation,
-                vertical_rotation,
-                0,
-                distance,
-                kind.y_scale(),
-                skip_checker,
-            );
-        }
-    }
-}
-
-/// Vanilla `WorldCarver.getRange()` — range in chunks. Used by both cave
-/// and canyon carvers. 4 chunks in each direction.
-const fn carver_range() -> i32 {
-    4
-}
-
-/// Vanilla `CaveWorldCarver.createRoom`. Carves a single ellipsoid at the
-/// tunnel origin, offset by +1 on X.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "port of vanilla createRoom parameter list"
-)]
-fn create_room<N, F, S>(
-    ctx: &mut CarvingContext<'_, N>,
-    noises: &N,
-    chunk: &ChunkAccess,
-    chunk_min_x: i32,
-    chunk_min_z: i32,
-    biome_getter: &mut F,
-    mask: &mut CarvingMask,
-    params: &CarveParams<'_>,
+/// Position + rotation state that evolves along a tunnel's length.
+#[derive(Debug, Clone, Copy)]
+struct TunnelState {
     x: f64,
     y: f64,
     z: f64,
-    thickness: f32,
-    y_scale: f64,
-    skip_checker: S,
-) where
-    N: DimensionNoises,
-    F: FnMut(i32, i32, i32) -> u16,
-    S: CarveSkipChecker,
-{
-    // Vanilla: `1.5 + Mth.sin((float)(Math.PI / 2)) * thickness`. The argument
-    // is a float (π/2 cast to f32), looked up in the SIN table; the result
-    // equals 1.0f exactly, so the table detour doesn't matter here.
-    let horizontal_radius = 1.5 + f64::from(mth::sin(f64::from(FRAC_PI_2))) * f64::from(thickness);
-    let vertical_radius = horizontal_radius * y_scale;
-    carve_ellipsoid(
-        ctx,
-        noises,
-        chunk,
-        chunk_min_x,
-        chunk_min_z,
-        biome_getter,
-        mask,
-        params,
-        x + 1.0,
-        y,
-        z,
-        horizontal_radius,
-        vertical_radius,
-        skip_checker,
-    );
+    /// Yaw.
+    horizontal_rotation: f32,
+    /// Pitch.
+    vertical_rotation: f32,
 }
 
-/// Vanilla `CaveWorldCarver.createTunnel`. Steps along a curve, carving an
-/// ellipsoid per step, with occasional mid-tunnel splits.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "port of vanilla createTunnel parameter list"
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "faithful port; splitting would obscure the carver-state coupling"
-)]
-#[expect(
-    clippy::similar_names,
-    reason = "x_rota / y_rota / vertical_rotation / horizontal_rotation mirror vanilla"
-)]
-fn create_tunnel<N, F, S>(
-    ctx: &mut CarvingContext<'_, N>,
-    noises: &N,
-    chunk: &ChunkAccess,
-    chunk_min_x: i32,
-    chunk_min_z: i32,
-    biome_getter: &mut F,
-    mask: &mut CarvingMask,
-    params: &CarveParams<'_>,
+/// Static per-tunnel configuration passed through `create_tunnel` recursion
+/// unchanged between iterations.
+#[derive(Debug, Clone, Copy)]
+struct TunnelParams {
     tunnel_seed: i64,
-    mut x: f64,
-    mut y: f64,
-    mut z: f64,
     horizontal_radius_multiplier: f64,
     vertical_radius_multiplier: f64,
     thickness: f32,
-    mut horizontal_rotation: f32,
-    mut vertical_rotation: f32,
     step: i32,
     dist: i32,
     y_scale: f64,
-    skip_checker: S,
-) where
+}
+
+impl<N, F> CarveRun<'_, '_, N, F>
+where
     N: DimensionNoises,
     F: FnMut(i32, i32, i32) -> u16,
-    S: CarveSkipChecker + Copy,
 {
-    let mut random = LegacyRandom::from_seed(tunnel_seed as u64);
-    let split_point = random.next_i32_bounded(dist / 2) + dist / 4;
-    let steep = random.next_i32_bounded(6) == 0;
-    let mut y_rota: f32 = 0.0;
-    let mut x_rota: f32 = 0.0;
+    /// Runs one cave-carver pass rooted in `source_pos`. `random` must have
+    /// been seeded by the caller via
+    /// `LegacyRandom::set_large_feature_seed(seed + carver_index, cx, cz)`
+    /// and the `isStartChunk` probability check must have already passed.
+    ///
+    /// Mirrors vanilla's `CaveWorldCarver.carve` / `NetherWorldCarver.carve`
+    /// (which inherits the cave variant).
+    pub fn carve_cave(
+        &mut self,
+        config: &CaveCarverConfiguration,
+        kind: CaveKind,
+        source_pos: ChunkPos,
+        random: &mut LegacyRandom,
+    ) {
+        // Triple-nested `random.nextInt(random.nextInt(...)+1)+1` gives a
+        // heavily right-skewed distribution of starts per chunk. Split into
+        // locals so the Java-style nesting doesn't overlap `&mut random`.
+        let bound = kind.cave_bound();
+        let inner = random.next_i32_bounded(bound);
+        let mid = random.next_i32_bounded(inner + 1);
+        let cave_count = random.next_i32_bounded(mid + 1);
 
-    for current_step in step..dist {
-        // Vanilla: `Mth.sin((float)Math.PI * currentStep / dist) * thickness`.
-        // The `(float)Math.PI * currentStep / dist` term keeps float precision
-        // through to the `Mth.sin` argument before widening to double.
-        let progress_arg = PI * current_step as f32 / dist as f32;
+        let source_min_x = source_pos.0.x * 16;
+        let source_min_z = source_pos.0.y * 16;
+
+        let lava_level_y = config
+            .base
+            .lava_level
+            .resolve_y(self.ctx.min_y, self.ctx.gen_depth);
+        let params = CarveParams {
+            replaceable_tag: &config.base.replaceable_tag,
+            lava_level_y,
+            style: kind.style(),
+        };
+
+        for _ in 0..cave_count {
+            let x = f64::from(source_min_x + random.next_i32_bounded(16));
+            let y = f64::from(
+                config
+                    .base
+                    .y
+                    .sample(random, self.ctx.min_y, self.ctx.gen_depth),
+            );
+            let z = f64::from(source_min_z + random.next_i32_bounded(16));
+
+            let horizontal_radius_multiplier =
+                f64::from(config.horizontal_radius_multiplier.sample(random));
+            let vertical_radius_multiplier =
+                f64::from(config.vertical_radius_multiplier.sample(random));
+            let floor_level = f64::from(config.floor_level.sample(random));
+
+            // Vanilla `CaveWorldCarver.shouldSkip`: skip blocks below the
+            // noisy floor OR outside the unit sphere in ellipsoid-local
+            // coords (xd²+yd²+zd² ≥ 1). Without the sphere test we'd carve
+            // cylinders, not ellipsoids.
+            let skip_checker = move |xd: f64, yd: f64, zd: f64, _world_y: i32| {
+                yd <= floor_level || xd * xd + yd * yd + zd * zd >= 1.0
+            };
+
+            let mut tunnels = 1i32;
+            if random.next_i32_bounded(4) == 0 {
+                let y_scale = f64::from(config.base.y_scale.sample(random));
+                let thickness = 1.0 + random.next_f32() * 6.0;
+                self.create_room(&params, x, y, z, thickness, y_scale, &skip_checker);
+                tunnels += random.next_i32_bounded(4);
+            }
+
+            for _ in 0..tunnels {
+                let state = TunnelState {
+                    x,
+                    y,
+                    z,
+                    horizontal_rotation: random.next_f32() * TAU,
+                    vertical_rotation: (random.next_f32() - 0.5) / 4.0,
+                };
+                let tunnel = TunnelParams {
+                    tunnel_seed: 0, // filled below to preserve vanilla draw order
+                    horizontal_radius_multiplier,
+                    vertical_radius_multiplier,
+                    thickness: kind.thickness(random),
+                    step: 0,
+                    dist: MAX_TUNNEL_DISTANCE - random.next_i32_bounded(MAX_TUNNEL_DISTANCE / 4),
+                    y_scale: kind.y_scale(),
+                };
+                // `tunnel_seed = nextLong()` draws 2 i32s — must be last to
+                // match vanilla's arg evaluation order.
+                let tunnel = TunnelParams {
+                    tunnel_seed: random.next_i64(),
+                    ..tunnel
+                };
+                self.create_tunnel(&params, state, tunnel, skip_checker);
+            }
+        }
+    }
+
+    /// Vanilla `CaveWorldCarver.createRoom`. Single ellipsoid at the tunnel
+    /// origin, offset by +1 on X.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla CaveWorldCarver.createRoom"
+    )]
+    fn create_room<S: CarveSkipChecker>(
+        &mut self,
+        params: &CarveParams<'_>,
+        x: f64,
+        y: f64,
+        z: f64,
+        thickness: f32,
+        y_scale: f64,
+        skip_checker: S,
+    ) {
+        // Vanilla: `1.5 + Mth.sin((float)(Math.PI / 2)) * thickness`. The
+        // argument is a float (π/2 cast to f32), looked up in the SIN table;
+        // the result equals 1.0f exactly, so the table detour doesn't
+        // matter here.
         let horizontal_radius =
-            1.5 + f64::from(mth::sin(f64::from(progress_arg))) * f64::from(thickness);
+            1.5 + f64::from(mth::sin(f64::from(FRAC_PI_2))) * f64::from(thickness);
         let vertical_radius = horizontal_radius * y_scale;
-        let cos_x = mth::cos(f64::from(vertical_rotation));
-        x += f64::from(mth::cos(f64::from(horizontal_rotation)) * cos_x);
-        y += f64::from(mth::sin(f64::from(vertical_rotation)));
-        z += f64::from(mth::sin(f64::from(horizontal_rotation)) * cos_x);
-        vertical_rotation *= if steep { 0.92 } else { 0.7 };
-        vertical_rotation += x_rota * 0.1;
-        horizontal_rotation += y_rota * 0.1;
-        x_rota *= 0.9;
-        y_rota *= 0.75;
-        x_rota += (random.next_f32() - random.next_f32()) * random.next_f32() * 2.0;
-        y_rota += (random.next_f32() - random.next_f32()) * random.next_f32() * 4.0;
-
-        if current_step == split_point && thickness > 1.0 {
-            // Vanilla evaluates args left-to-right: `nextLong()` (seed) is
-            // arg 5, `nextFloat() * 0.5 + 0.5` (thickness) is arg 11 — so the
-            // seed is drawn before the thickness.
-            let sub_seed_a = random.next_i64();
-            let sub_thickness_a = random.next_f32() * 0.5 + 0.5;
-            let sub_rotation_a = horizontal_rotation - FRAC_PI_2;
-            let sub_vert_a = vertical_rotation / 3.0;
-            let sub_seed_b = random.next_i64();
-            let sub_thickness_b = random.next_f32() * 0.5 + 0.5;
-            let sub_rotation_b = horizontal_rotation + FRAC_PI_2;
-            let sub_vert_b = vertical_rotation / 3.0;
-            create_tunnel(
-                ctx,
-                noises,
-                chunk,
-                chunk_min_x,
-                chunk_min_z,
-                biome_getter,
-                mask,
-                params,
-                sub_seed_a,
-                x,
-                y,
-                z,
-                horizontal_radius_multiplier,
-                vertical_radius_multiplier,
-                sub_thickness_a,
-                sub_rotation_a,
-                sub_vert_a,
-                current_step,
-                dist,
-                1.0,
-                skip_checker,
-            );
-            create_tunnel(
-                ctx,
-                noises,
-                chunk,
-                chunk_min_x,
-                chunk_min_z,
-                biome_getter,
-                mask,
-                params,
-                sub_seed_b,
-                x,
-                y,
-                z,
-                horizontal_radius_multiplier,
-                vertical_radius_multiplier,
-                sub_thickness_b,
-                sub_rotation_b,
-                sub_vert_b,
-                current_step,
-                dist,
-                1.0,
-                skip_checker,
-            );
-            return;
-        }
-
-        if random.next_i32_bounded(4) == 0 {
-            continue;
-        }
-
-        if !can_reach(
-            chunk_min_x,
-            chunk_min_z,
-            x,
-            z,
-            current_step,
-            dist,
-            thickness,
-        ) {
-            return;
-        }
-
-        carve_ellipsoid(
-            ctx,
-            noises,
-            chunk,
-            chunk_min_x,
-            chunk_min_z,
-            &mut *biome_getter,
-            mask,
+        self.carve_ellipsoid(
             params,
-            x,
+            x + 1.0,
             y,
             z,
-            horizontal_radius * horizontal_radius_multiplier,
-            vertical_radius * vertical_radius_multiplier,
+            horizontal_radius,
+            vertical_radius,
             skip_checker,
         );
+    }
+
+    /// Vanilla `CaveWorldCarver.createTunnel`. Steps along a curve, carving
+    /// an ellipsoid per step, with occasional mid-tunnel splits.
+    fn create_tunnel<S>(
+        &mut self,
+        params: &CarveParams<'_>,
+        mut state: TunnelState,
+        tunnel: TunnelParams,
+        skip_checker: S,
+    ) where
+        S: CarveSkipChecker + Copy,
+    {
+        let mut random = LegacyRandom::from_seed(tunnel.tunnel_seed as u64);
+        let split_point = random.next_i32_bounded(tunnel.dist / 2) + tunnel.dist / 4;
+        let steep = random.next_i32_bounded(6) == 0;
+        let mut y_rota: f32 = 0.0;
+        let mut x_rota: f32 = 0.0;
+
+        for current_step in tunnel.step..tunnel.dist {
+            // Vanilla: `Mth.sin((float)Math.PI * currentStep / dist) *
+            // thickness`. The `(float)Math.PI * currentStep / dist` term
+            // keeps float precision through to the `Mth.sin` argument before
+            // widening to double.
+            let progress_arg = PI * current_step as f32 / tunnel.dist as f32;
+            let horizontal_radius =
+                1.5 + f64::from(mth::sin(f64::from(progress_arg))) * f64::from(tunnel.thickness);
+            let vertical_radius = horizontal_radius * tunnel.y_scale;
+            let cos_x = mth::cos(f64::from(state.vertical_rotation));
+            state.x += f64::from(mth::cos(f64::from(state.horizontal_rotation)) * cos_x);
+            state.y += f64::from(mth::sin(f64::from(state.vertical_rotation)));
+            state.z += f64::from(mth::sin(f64::from(state.horizontal_rotation)) * cos_x);
+            state.vertical_rotation *= if steep { 0.92 } else { 0.7 };
+            state.vertical_rotation += x_rota * 0.1;
+            state.horizontal_rotation += y_rota * 0.1;
+            x_rota *= 0.9;
+            y_rota *= 0.75;
+            x_rota += (random.next_f32() - random.next_f32()) * random.next_f32() * 2.0;
+            y_rota += (random.next_f32() - random.next_f32()) * random.next_f32() * 4.0;
+
+            if current_step == split_point && tunnel.thickness > 1.0 {
+                // Vanilla evaluates args left-to-right: `nextLong()` (seed)
+                // is arg 5, `nextFloat() * 0.5 + 0.5` (thickness) is arg 11
+                // — so the seed is drawn before the thickness.
+                let sub_seed_a = random.next_i64();
+                let sub_thickness_a = random.next_f32() * 0.5 + 0.5;
+                let sub_state_a = TunnelState {
+                    horizontal_rotation: state.horizontal_rotation - FRAC_PI_2,
+                    vertical_rotation: state.vertical_rotation / 3.0,
+                    ..state
+                };
+                let sub_seed_b = random.next_i64();
+                let sub_thickness_b = random.next_f32() * 0.5 + 0.5;
+                let sub_state_b = TunnelState {
+                    horizontal_rotation: state.horizontal_rotation + FRAC_PI_2,
+                    vertical_rotation: state.vertical_rotation / 3.0,
+                    ..state
+                };
+                let sub_tunnel_a = TunnelParams {
+                    tunnel_seed: sub_seed_a,
+                    thickness: sub_thickness_a,
+                    step: current_step,
+                    y_scale: 1.0,
+                    ..tunnel
+                };
+                let sub_tunnel_b = TunnelParams {
+                    tunnel_seed: sub_seed_b,
+                    thickness: sub_thickness_b,
+                    step: current_step,
+                    y_scale: 1.0,
+                    ..tunnel
+                };
+                self.create_tunnel(params, sub_state_a, sub_tunnel_a, skip_checker);
+                self.create_tunnel(params, sub_state_b, sub_tunnel_b, skip_checker);
+                return;
+            }
+
+            if random.next_i32_bounded(4) == 0 {
+                continue;
+            }
+
+            if !can_reach(
+                self.chunk_min_x,
+                self.chunk_min_z,
+                state.x,
+                state.z,
+                current_step,
+                tunnel.dist,
+                tunnel.thickness,
+            ) {
+                return;
+            }
+
+            self.carve_ellipsoid(
+                params,
+                state.x,
+                state.y,
+                state.z,
+                horizontal_radius * tunnel.horizontal_radius_multiplier,
+                vertical_radius * tunnel.vertical_radius_multiplier,
+                skip_checker,
+            );
+        }
     }
 }

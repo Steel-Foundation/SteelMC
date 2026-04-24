@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use sha2::{Digest, Sha256};
-use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::carver::ConfiguredCarverKind;
 use steel_registry::noise_parameters::get_noise_parameters;
@@ -16,8 +15,9 @@ use steel_utils::{BlockStateId, ChunkPos};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
 use crate::chunk::beardifier::Beardifier;
-use crate::chunk::carver::{CarverBlockIds, CarvingContext, canyon, cave};
-use crate::chunk::carving_mask::CarvingMask;
+use crate::chunk::carver::{
+    CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
+};
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
 use crate::chunk::heightmap::HeightmapType;
@@ -509,26 +509,35 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // Preliminary surface level at the chunk's 4 corners — used by
         // top_material min_surface_level interpolation.
         let mut psl_cache = N::ColumnCache::default();
-        let p00 = preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z);
-        let p10 =
-            preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x + 16, chunk_min_z);
-        let p01 =
-            preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z + 16);
-        let p11 = preliminary_surface_level::<N>(
-            noises,
-            &mut psl_cache,
-            chunk_min_x + 16,
-            chunk_min_z + 16,
-        );
+        let psl_corners = PreliminarySurfaceCorners {
+            nw: preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z),
+            ne: preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x + 16,
+                chunk_min_z,
+            ),
+            sw: preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x,
+                chunk_min_z + 16,
+            ),
+            se: preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x + 16,
+                chunk_min_z + 16,
+            ),
+        };
 
         let mut ctx = CarvingContext {
             min_y,
             gen_depth: height,
-            sea_level: N::Settings::SEA_LEVEL,
             surface_system: &self.surface_system,
             aquifer,
             default_block_id: self.default_block_id,
-            psl_corners: (p00, p10, p01, p11),
+            psl_corners,
             chunk_min_x,
             chunk_min_z,
         };
@@ -538,7 +547,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // Pre-fetch the 17×17 source-chunk biomes. Done up front so we can
         // later close over `biome_sampler` mutably inside `biome_getter`.
         let mut biome_sampler = self.biome_source.chunk_sampler();
-        let mut source_biomes: Vec<(i32, i32, BiomeRef)> = Vec::with_capacity(17 * 17);
+        let mut source_biomes: Vec<SourceChunk> = Vec::with_capacity(17 * 17);
         for dx in -8i32..=8 {
             for dz in -8i32..=8 {
                 let sx = pos.0.x + dx;
@@ -546,7 +555,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let qx = (sx * 16) >> 2;
                 let qz = (sz * 16) >> 2;
                 let biome = biome_sampler.sample(qx, 0, qz);
-                source_biomes.push((sx, sz, biome));
+                source_biomes.push(SourceChunk {
+                    pos: ChunkPos::new(sx, sz),
+                    biome,
+                });
             }
         }
 
@@ -564,113 +576,61 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // BiomeManager-fuzzed lookup — matches vanilla's `BiomeManager.getBiome`
         // used by the carver's top-material path. An unfuzzed quart lookup
         // would mismatch vanilla at quart-cell boundaries.
-        let biome_getter = |bx: i32, by: i32, bz: i32| -> u16 {
+        let mut biome_getter = |bx: i32, by: i32, bz: i32| -> u16 {
             fuzzed_biome_at_block(biome_zoom_seed, bx, by, bz, |qx, qy, qz| {
                 biome_sampler.sample(qx, qy, qz).id() as u16
             })
         };
 
-        run_carvers(
-            &mut ctx,
+        let mut run = CarveRun {
+            ctx: &mut ctx,
             noises,
             chunk,
             chunk_min_x,
             chunk_min_z,
-            biome_getter,
+            biome_getter: &mut biome_getter,
             mask,
             ids,
-            &source_biomes,
-            seed_i64,
-            &mut random,
-        );
+        };
+
+        run.run_all(&source_biomes, seed_i64, &mut random);
     }
 
     fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
 }
 
-/// Inner driver for the carver loop. Split out of `apply_carvers` so the
-/// `biome_getter` closure's borrow of `biome_sampler` doesn't overlap with
-/// the pre-fetch loop in the caller.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "splitting across another struct would add indirection for no gain"
-)]
-fn run_carvers<N, F>(
-    ctx: &mut CarvingContext<'_, N>,
-    noises: &N,
-    chunk: &ChunkAccess,
-    chunk_min_x: i32,
-    chunk_min_z: i32,
-    mut biome_getter: F,
-    mask: &mut CarvingMask,
-    ids: CarverBlockIds,
-    source_biomes: &[(i32, i32, BiomeRef)],
-    seed_i64: i64,
-    random: &mut LegacyRandom,
-) where
+impl<N, F> CarveRun<'_, '_, N, F>
+where
     N: DimensionNoises,
     F: FnMut(i32, i32, i32) -> u16,
 {
-    for &(source_x, source_z, biome) in source_biomes {
-        for (index, carver_key) in biome.carvers.iter().enumerate() {
-            let Some(carver) = REGISTRY.configured_carvers.by_key(carver_key) else {
-                continue;
-            };
-            let index_i64 = index as i64;
-            random.set_large_feature_seed(seed_i64 + index_i64, source_x, source_z);
+    /// Drive the 17×17 source-chunk carver loop. Each carver in each source
+    /// biome is seeded via `set_large_feature_seed`, probability-checked,
+    /// then dispatched to the appropriate `carve_*` method.
+    fn run_all(&mut self, source_biomes: &[SourceChunk], seed_i64: i64, random: &mut LegacyRandom) {
+        for source in source_biomes {
+            for (index, carver_key) in source.biome.carvers.iter().enumerate() {
+                let Some(carver) = REGISTRY.configured_carvers.by_key(carver_key) else {
+                    continue;
+                };
+                let index_i64 = index as i64;
+                random.set_large_feature_seed(seed_i64 + index_i64, source.pos.0.x, source.pos.0.y);
 
-            let probability = carver.base().probability;
-            if random.next_f32() > probability {
-                continue;
-            }
+                let probability = carver.base().probability;
+                if random.next_f32() > probability {
+                    continue;
+                }
 
-            match &carver.kind {
-                ConfiguredCarverKind::Cave(cfg) => {
-                    cave::carve_cave(
-                        ctx,
-                        noises,
-                        chunk,
-                        chunk_min_x,
-                        chunk_min_z,
-                        &mut biome_getter,
-                        mask,
-                        ids,
-                        cfg,
-                        cave::CaveKind::Overworld,
-                        ChunkPos::new(source_x, source_z),
-                        random,
-                    );
-                }
-                ConfiguredCarverKind::NetherCave(cfg) => {
-                    cave::carve_cave(
-                        ctx,
-                        noises,
-                        chunk,
-                        chunk_min_x,
-                        chunk_min_z,
-                        &mut biome_getter,
-                        mask,
-                        ids,
-                        cfg,
-                        cave::CaveKind::Nether,
-                        ChunkPos::new(source_x, source_z),
-                        random,
-                    );
-                }
-                ConfiguredCarverKind::Canyon(cfg) => {
-                    canyon::carve_canyon(
-                        ctx,
-                        noises,
-                        chunk,
-                        chunk_min_x,
-                        chunk_min_z,
-                        &mut biome_getter,
-                        mask,
-                        ids,
-                        cfg,
-                        ChunkPos::new(source_x, source_z),
-                        random,
-                    );
+                match &carver.kind {
+                    ConfiguredCarverKind::Cave(cfg) => {
+                        self.carve_cave(cfg, cave::CaveKind::Overworld, source.pos, random);
+                    }
+                    ConfiguredCarverKind::NetherCave(cfg) => {
+                        self.carve_cave(cfg, cave::CaveKind::Nether, source.pos, random);
+                    }
+                    ConfiguredCarverKind::Canyon(cfg) => {
+                        self.carve_canyon(cfg, source.pos, random);
+                    }
                 }
             }
         }

@@ -250,6 +250,86 @@ fn bench_end_surface(c: &mut Criterion) {
     });
 }
 
+// ── Carvers benchmarks ──────────────────────────────────────────────────────
+
+fn bench_overworld_carvers(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let source = BiomeSourceKind::overworld(0);
+    let generator = OverworldGenerator::new(source, 0);
+
+    c.bench_function("overworld_apply_carvers", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                {
+                    let neighbor_biomes = self_neighbor_biomes(&chunk);
+                    generator.build_surface(&chunk, &neighbor_biomes);
+                }
+                chunk
+            },
+            |chunk| {
+                generator.apply_carvers(black_box(&chunk));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_nether_carvers(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
+
+    c.bench_function("nether_apply_carvers", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                {
+                    let neighbor_biomes = self_neighbor_biomes(&chunk);
+                    generator.build_surface(&chunk, &neighbor_biomes);
+                }
+                chunk
+            },
+            |chunk| {
+                generator.apply_carvers(black_box(&chunk));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_end_carvers(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
+
+    c.bench_function("end_apply_carvers", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                {
+                    let neighbor_biomes = self_neighbor_biomes(&chunk);
+                    generator.build_surface(&chunk, &neighbor_biomes);
+                }
+                chunk
+            },
+            |chunk| {
+                generator.apply_carvers(black_box(&chunk));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -264,5 +344,9 @@ criterion_group!(
     bench_overworld_surface,
     bench_nether_surface,
     bench_end_surface,
+    // Carvers
+    bench_overworld_carvers,
+    bench_nether_carvers,
+    bench_end_carvers,
 );
 criterion_main!(benches);
