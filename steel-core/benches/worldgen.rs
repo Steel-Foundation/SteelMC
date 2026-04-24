@@ -330,6 +330,68 @@ fn bench_end_carvers(c: &mut Criterion) {
     });
 }
 
+// ── Full-pipeline benchmarks (biomes + noise + surface + carvers) ──────────
+
+fn bench_overworld_full(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let source = BiomeSourceKind::overworld(0);
+    let generator = OverworldGenerator::new(source, 0);
+
+    c.bench_function("overworld_full_through_carvers", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_biomes(&chunk);
+            generator.fill_from_noise(&chunk);
+            {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(&chunk, &neighbor_biomes);
+            }
+            generator.apply_carvers(&chunk);
+        });
+    });
+}
+
+fn bench_nether_full(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
+
+    c.bench_function("nether_full_through_carvers", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_biomes(&chunk);
+            generator.fill_from_noise(&chunk);
+            {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(&chunk, &neighbor_biomes);
+            }
+            generator.apply_carvers(&chunk);
+        });
+    });
+}
+
+fn bench_end_full(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
+
+    c.bench_function("end_full_through_carvers", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_biomes(&chunk);
+            generator.fill_from_noise(&chunk);
+            {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(&chunk, &neighbor_biomes);
+            }
+            generator.apply_carvers(&chunk);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -348,5 +410,9 @@ criterion_group!(
     bench_overworld_carvers,
     bench_nether_carvers,
     bench_end_carvers,
+    // Full pipeline (biomes → noise → surface → carvers)
+    bench_overworld_full,
+    bench_nether_full,
+    bench_end_full,
 );
 criterion_main!(benches);
