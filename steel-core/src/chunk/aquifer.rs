@@ -83,6 +83,47 @@ pub enum AquiferResult {
     Fluid(BlockStateId),
 }
 
+/// One of the 12 aquifer-neighborhood cells, cached across a Y-column scan.
+///
+/// `compute_substance` is called many times with the same `(world_x, world_z)`
+/// and decreasing `world_y` (innermost loop in `noise_chunk::fill`). Within a
+/// stable `y_anchor` window (`Y_SPACING` blocks tall) the 12 cells of the
+/// neighborhood don't change, and `dx*dx + dz*dz` only depends on x/z — only
+/// `dy = loc_y - world_y` varies per call. Caching avoids the 12 repeated
+/// `get_index` lookups, `location_cache` reads, and i64-pos unpacks.
+#[derive(Clone, Copy, Default)]
+struct AquiferColumnCell {
+    /// Index into `location_cache` / `status_cache`. `u32` keeps the cell at
+    /// 12 bytes (vs 16 with `usize`); `location_cache` is bounded by the
+    /// chunk grid (≪ `u32::MAX`).
+    idx: u32,
+    /// Unpacked Y of this cell's jittered center (constant while cached).
+    loc_y: i32,
+    /// `dx*dx + dz*dz` — the Y-independent component of `new_dist`.
+    xz_dist_sq: i32,
+}
+
+/// Column-scan state for the 12 aquifer-neighborhood cells.
+///
+/// `y_anchor = i32::MIN` marks the cache as invalid (forces a refill).
+struct AquiferColumnCache {
+    world_x: i32,
+    world_z: i32,
+    y_anchor: i32,
+    cells: [AquiferColumnCell; 12],
+}
+
+impl Default for AquiferColumnCache {
+    fn default() -> Self {
+        Self {
+            world_x: 0,
+            world_z: 0,
+            y_anchor: i32::MIN,
+            cells: [AquiferColumnCell::default(); 12],
+        }
+    }
+}
+
 /// Noise-based aquifer for a single chunk.
 ///
 /// Constructed once per chunk, used throughout the fill loop.
@@ -111,6 +152,10 @@ pub struct Aquifer<N: DimensionNoises> {
     lava_id: BlockStateId,
     /// The dimension's default fluid (water for overworld, lava for nether).
     default_fluid_id: BlockStateId,
+    /// 12-cell neighborhood snapshot for the current Y-column.
+    /// Placed at the end so dimensions with disabled aquifers (nether/end)
+    /// keep the hot fluid-id fields earlier in the struct's cache lines.
+    col_cache: AquiferColumnCache,
 }
 
 // Grid coordinate conversions
@@ -248,6 +293,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                 status_cache: Vec::new(),
                 splitter,
                 cache,
+                col_cache: AquiferColumnCache::default(),
                 min_grid_x: 0,
                 min_grid_y: 0,
                 min_grid_z: 0,
@@ -298,6 +344,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             status_cache,
             splitter,
             cache,
+            col_cache: AquiferColumnCache::default(),
             min_grid_x,
             min_grid_y,
             min_grid_z,
@@ -344,6 +391,57 @@ impl<N: DimensionNoises> Aquifer<N> {
         ((y * self.grid_size_z + z) * self.grid_size_x + x) as usize
     }
 
+    /// Refill the 12-cell column cache for the current `(world_x, world_z, y_anchor)`.
+    ///
+    /// Iterates the same `(x1, y1, z1)` order as the inline scan so cells are
+    /// stored at consistent indices, preserving tie-breaking when the per-Y
+    /// `new_dist` values are compared in `compute_substance`.
+    fn refill_col_cache(&mut self, world_x: i32, world_y: i32, world_z: i32) -> i32 {
+        let x_anchor = grid_x(world_x + SAMPLE_OFFSET_X);
+        let y_anchor = grid_y(world_y + SAMPLE_OFFSET_Y);
+        let z_anchor = grid_z(world_z + SAMPLE_OFFSET_Z);
+
+        let mut i = 0;
+        for x1 in 0..=1i32 {
+            for y1 in -1..=1i32 {
+                for z1 in 0..=1i32 {
+                    let gx = x_anchor + x1;
+                    let gy = y_anchor + y1;
+                    let gz = z_anchor + z1;
+                    let idx = self.get_index(gx, gy, gz);
+
+                    let loc = self.location_cache[idx];
+                    let loc = if loc == i64::MAX {
+                        let mut rng = self.splitter.at(gx, gy, gz);
+                        let packed = pack_pos(
+                            from_grid_x(gx, rng.next_i32_bounded(X_RANGE)),
+                            from_grid_y(gy, rng.next_i32_bounded(Y_RANGE)),
+                            from_grid_z(gz, rng.next_i32_bounded(Z_RANGE)),
+                        );
+                        self.location_cache[idx] = packed;
+                        packed
+                    } else {
+                        loc
+                    };
+
+                    let dx = unpack_x(loc) - world_x;
+                    let dz = unpack_z(loc) - world_z;
+                    self.col_cache.cells[i] = AquiferColumnCell {
+                        idx: idx as u32,
+                        loc_y: unpack_y(loc),
+                        xz_dist_sq: dx * dx + dz * dz,
+                    };
+                    i += 1;
+                }
+            }
+        }
+
+        self.col_cache.world_x = world_x;
+        self.col_cache.world_z = world_z;
+        self.col_cache.y_anchor = y_anchor;
+        y_anchor
+    }
+
     /// Compute what block to place at this position given the interpolated density.
     #[expect(
         clippy::too_many_lines,
@@ -387,69 +485,51 @@ impl<N: DimensionNoises> Aquifer<N> {
             return AquiferResult::Fluid(self.lava_id);
         }
 
-        // Find 4 nearest aquifer cell centers from 2×3×2 neighborhood
-        let x_anchor = grid_x(world_x + SAMPLE_OFFSET_X);
+        // Find 4 nearest aquifer cell centers from the 2×3×2 neighborhood.
+        // Within a Y-column scan, the 12 cells and their `xz_dist_sq` values
+        // are constant for a given `y_anchor`; only `dy` varies. The column
+        // cache amortizes location lookup, splitter calls, and i64 unpacking.
         let y_anchor = grid_y(world_y + SAMPLE_OFFSET_Y);
-        let z_anchor = grid_z(world_z + SAMPLE_OFFSET_Z);
+        if self.col_cache.world_x != world_x
+            || self.col_cache.world_z != world_z
+            || self.col_cache.y_anchor != y_anchor
+        {
+            self.refill_col_cache(world_x, world_y, world_z);
+        }
 
         let mut dist_sq = [i32::MAX; 4];
         let mut closest_idx = [0usize; 4];
 
-        for x1 in 0..=1 {
-            for y1 in -1..=1 {
-                for z1 in 0..=1 {
-                    let gx = x_anchor + x1;
-                    let gy = y_anchor + y1;
-                    let gz = z_anchor + z1;
-                    let index = self.get_index(gx, gy, gz);
+        for cell in &self.col_cache.cells {
+            let dy = cell.loc_y - world_y;
+            let new_dist = cell.xz_dist_sq + dy * dy;
+            let index = cell.idx as usize;
 
-                    // Get or compute cell center location
-                    let loc = self.location_cache[index];
-                    let loc = if loc == i64::MAX {
-                        let mut rng = self.splitter.at(gx, gy, gz);
-                        let packed = pack_pos(
-                            from_grid_x(gx, rng.next_i32_bounded(X_RANGE)),
-                            from_grid_y(gy, rng.next_i32_bounded(Y_RANGE)),
-                            from_grid_z(gz, rng.next_i32_bounded(Z_RANGE)),
-                        );
-                        self.location_cache[index] = packed;
-                        packed
-                    } else {
-                        loc
-                    };
-
-                    let dx = unpack_x(loc) - world_x;
-                    let dy = unpack_y(loc) - world_y;
-                    let dz = unpack_z(loc) - world_z;
-                    let new_dist = dx * dx + dy * dy + dz * dz;
-
-                    // Insert into sorted top-4
-                    if dist_sq[0] >= new_dist {
-                        dist_sq[3] = dist_sq[2];
-                        closest_idx[3] = closest_idx[2];
-                        dist_sq[2] = dist_sq[1];
-                        closest_idx[2] = closest_idx[1];
-                        dist_sq[1] = dist_sq[0];
-                        closest_idx[1] = closest_idx[0];
-                        dist_sq[0] = new_dist;
-                        closest_idx[0] = index;
-                    } else if dist_sq[1] >= new_dist {
-                        dist_sq[3] = dist_sq[2];
-                        closest_idx[3] = closest_idx[2];
-                        dist_sq[2] = dist_sq[1];
-                        closest_idx[2] = closest_idx[1];
-                        dist_sq[1] = new_dist;
-                        closest_idx[1] = index;
-                    } else if dist_sq[2] >= new_dist {
-                        dist_sq[3] = dist_sq[2];
-                        closest_idx[3] = closest_idx[2];
-                        dist_sq[2] = new_dist;
-                        closest_idx[2] = index;
-                    } else if dist_sq[3] >= new_dist {
-                        dist_sq[3] = new_dist;
-                        closest_idx[3] = index;
-                    }
-                }
+            // Insert into sorted top-4
+            if dist_sq[0] >= new_dist {
+                dist_sq[3] = dist_sq[2];
+                closest_idx[3] = closest_idx[2];
+                dist_sq[2] = dist_sq[1];
+                closest_idx[2] = closest_idx[1];
+                dist_sq[1] = dist_sq[0];
+                closest_idx[1] = closest_idx[0];
+                dist_sq[0] = new_dist;
+                closest_idx[0] = index;
+            } else if dist_sq[1] >= new_dist {
+                dist_sq[3] = dist_sq[2];
+                closest_idx[3] = closest_idx[2];
+                dist_sq[2] = dist_sq[1];
+                closest_idx[2] = closest_idx[1];
+                dist_sq[1] = new_dist;
+                closest_idx[1] = index;
+            } else if dist_sq[2] >= new_dist {
+                dist_sq[3] = dist_sq[2];
+                closest_idx[3] = closest_idx[2];
+                dist_sq[2] = new_dist;
+                closest_idx[2] = index;
+            } else if dist_sq[3] >= new_dist {
+                dist_sq[3] = new_dist;
+                closest_idx[3] = index;
             }
         }
 
