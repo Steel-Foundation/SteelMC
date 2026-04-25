@@ -179,6 +179,62 @@ fn bench_end_noise(c: &mut Criterion) {
     });
 }
 
+// ── Setup benchmarks ────────────────────────────────────────────────────────
+
+fn bench_overworld_biome_source_new(c: &mut Criterion) {
+    c.bench_function("overworld_biome_source_new", |b| {
+        b.iter(|| {
+            black_box(BiomeSourceKind::overworld(black_box(0)));
+        });
+    });
+}
+
+fn bench_nether_biome_source_new(c: &mut Criterion) {
+    c.bench_function("nether_biome_source_new", |b| {
+        b.iter(|| {
+            black_box(BiomeSourceKind::nether(black_box(0)));
+        });
+    });
+}
+
+fn bench_end_biome_source_new(c: &mut Criterion) {
+    c.bench_function("end_biome_source_new", |b| {
+        b.iter(|| {
+            black_box(BiomeSourceKind::end(black_box(0)));
+        });
+    });
+}
+
+fn bench_overworld_generator_new(c: &mut Criterion) {
+    ensure_registry();
+    c.bench_function("overworld_generator_new", |b| {
+        b.iter(|| {
+            let source = BiomeSourceKind::overworld(black_box(0));
+            black_box(OverworldGenerator::new(source, black_box(0)));
+        });
+    });
+}
+
+fn bench_nether_generator_new(c: &mut Criterion) {
+    ensure_registry();
+    c.bench_function("nether_generator_new", |b| {
+        b.iter(|| {
+            let source = BiomeSourceKind::nether(black_box(0));
+            black_box(NetherGenerator::new(source, black_box(0)));
+        });
+    });
+}
+
+fn bench_end_generator_new(c: &mut Criterion) {
+    ensure_registry();
+    c.bench_function("end_generator_new", |b| {
+        b.iter(|| {
+            let source = BiomeSourceKind::end(black_box(0));
+            black_box(EndGenerator::new(source, black_box(0)));
+        });
+    });
+}
+
 // ── Surface benchmarks ──────────────────────────────────────────────────────
 
 fn bench_overworld_surface(c: &mut Criterion) {
@@ -256,6 +312,13 @@ criterion_group!(
     bench_overworld_biome,
     bench_nether_biome,
     bench_end_biome,
+    // Setup
+    bench_overworld_biome_source_new,
+    bench_nether_biome_source_new,
+    bench_end_biome_source_new,
+    bench_overworld_generator_new,
+    bench_nether_generator_new,
+    bench_end_generator_new,
     // Noise
     bench_overworld_noise,
     bench_nether_noise,

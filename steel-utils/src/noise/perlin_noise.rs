@@ -105,24 +105,15 @@ impl PerlinNoise {
 
         let mut noise_levels = vec![None; octaves];
 
-        // Create the zero-octave noise level first (directly from random)
-        let zero_octave = ImprovedNoise::new(random);
         if zero_octave_index < octaves && amplitudes[zero_octave_index] != 0.0 {
-            noise_levels[zero_octave_index] = Some(zero_octave);
+            noise_levels[zero_octave_index] = Some(ImprovedNoise::new(random));
+        } else {
+            random.consume_count(262);
         }
 
-        // Walk backwards from zero-octave, creating or skipping octaves
         for ix in (0..zero_octave_index).rev() {
-            if ix < octaves {
-                if amplitudes[ix] == 0.0 {
-                    // Skip: consume 262 values to advance random state.
-                    // 262 = ImprovedNoise::new() consumption: 3 nextDouble() calls (offsets)
-                    // + 256 nextInt() calls (Fisher-Yates shuffle) + 3 loop iterations that
-                    // call nextInt() for the final swaps = 262 total random advances.
-                    random.consume_count(262);
-                } else {
-                    noise_levels[ix] = Some(ImprovedNoise::new(random));
-                }
+            if ix < octaves && amplitudes[ix] != 0.0 {
+                noise_levels[ix] = Some(ImprovedNoise::new(random));
             } else {
                 random.consume_count(262);
             }
