@@ -1,4 +1,4 @@
-#![feature(const_trait_impl, const_cmp, derive_const)]
+#![feature(const_trait_impl, const_cmp, derive_const, portable_simd)]
 
 use crate::world_clock::WorldClockRegistry;
 use crate::{

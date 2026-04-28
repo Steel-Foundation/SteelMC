@@ -136,6 +136,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             .map(|cy| (cy as i32 + self.cell_min_y) * cell_height)
             .collect();
 
+        // Scratch buffer for the 4-Y SIMD batch. Lane-major SoA: lane `i`'s
+        // `interp_count` channels live at `values_4x[i * interp_count..]`.
+        let mut values_4x = [0.0f64; 4 * MAX_INTERP];
+
         for cz in 0..=self.cell_count_xz {
             let cell_z = self.first_cell_z + cz as i32;
             let block_z = cell_z * cell_width;
@@ -147,10 +151,54 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             let mut blended_column = vec![0.0f64; corners_y];
             noises.compute_noise_column(block_x, &block_ys, block_z, &mut blended_column);
 
-            for cy in 0..corners_y {
+            // 4-Y SIMD-batched corner fill. Tail is handled by the scalar
+            // loop below for any remaining `corners_y % 4` corners.
+            let mut cy = 0;
+            while cy + 4 <= corners_y {
+                let ys_v = f64x4::from_array([
+                    f64::from(block_ys[cy]),
+                    f64::from(block_ys[cy + 1]),
+                    f64::from(block_ys[cy + 2]),
+                    f64::from(block_ys[cy + 3]),
+                ]);
+                let blended_v = f64x4::from_array([
+                    blended_column[cy],
+                    blended_column[cy + 1],
+                    blended_column[cy + 2],
+                    blended_column[cy + 3],
+                ]);
+
+                noises.fill_cell_corner_densities_4x(
+                    cache,
+                    block_x,
+                    ys_v,
+                    block_z,
+                    blended_v,
+                    &mut values_4x[..4 * interp_count],
+                );
+
+                let slice = if use_slice0 {
+                    &mut *self.slice0
+                } else {
+                    &mut *self.slice1
+                };
+                for lane in 0..4 {
+                    let lane_cy = cy + lane;
+                    let src = &values_4x[lane * interp_count..(lane + 1) * interp_count];
+                    let corner_idx = cz * corners_y + lane_cy;
+                    let base = corner_idx * MAX_INTERP;
+                    slice[base..base + interp_count].copy_from_slice(src);
+                    if let Some(beard) = beardifier {
+                        slice[base] += beard.compute(block_x, block_ys[lane_cy], block_z);
+                    }
+                }
+
+                cy += 4;
+            }
+
+            while cy < corners_y {
                 let block_y = block_ys[cy];
 
-                // Evaluate all inner functions at this cell corner
                 noises.fill_cell_corner_densities(
                     cache,
                     block_x,
@@ -160,13 +208,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     &mut values[..interp_count],
                 );
 
-                // Beardifier contributes to channel 0 (main terrain density)
                 if let Some(beard) = beardifier {
                     values[0] += beard.compute(block_x, block_y, block_z);
                 }
 
-                // Store all channel values for this corner contiguously.
-                // Layout: `slice[corner_idx * MAX_INTERP + ch]`.
                 let corner_idx = cz * corners_y + cy;
                 let base = corner_idx * MAX_INTERP;
                 let slice = if use_slice0 {
@@ -175,6 +220,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     &mut *self.slice1
                 };
                 slice[base..base + interp_count].copy_from_slice(&values[..interp_count]);
+
+                cy += 1;
             }
         }
     }

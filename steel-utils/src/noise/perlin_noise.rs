@@ -3,6 +3,8 @@
 //! This combines multiple `ImprovedNoise` instances at different frequencies (octaves)
 //! to create more natural-looking noise with detail at multiple scales.
 
+use std::simd::f64x4;
+
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
 
@@ -249,6 +251,49 @@ impl PerlinNoise {
         value
     }
 
+    /// SIMD form of [`Self::get_value_with_y_params`] that processes 4 Y values
+    /// at a fixed `(x, z)` per call. Used by transpiled density-function trees
+    /// that batch 4 cell-corner Ys in one pass.
+    ///
+    /// Per-lane math is identical to the scalar path — same operation order,
+    /// same wrapping, same octave loop — so the 4 returned lanes are
+    /// bit-identical to four scalar calls at the same Y values.
+    #[must_use]
+    pub fn get_value_with_y_params_4x(
+        &self,
+        x: f64,
+        ys: f64x4,
+        z: f64,
+        y_scale: f64,
+        y_fudge: f64,
+        y_flat_hack: bool,
+    ) -> f64x4 {
+        let mut value = f64x4::splat(0.0);
+
+        for octave in &self.active_octaves {
+            let input_factor = octave.input_factor;
+            let noise = &octave.noise;
+            let x_w = wrap(x * input_factor);
+            let z_w = wrap(z * input_factor);
+            let ys_for_call = if y_flat_hack {
+                f64x4::splat(-noise.yo)
+            } else {
+                wrap_4x(ys * f64x4::splat(input_factor))
+            };
+            let y_fudges = f64x4::splat(y_fudge * input_factor);
+            let noise_val = noise.noise_with_y_scale_4x(
+                x_w,
+                ys_for_call,
+                z_w,
+                y_scale * input_factor,
+                y_fudges,
+            );
+            value += f64x4::splat(octave.output_factor) * noise_val;
+        }
+
+        value
+    }
+
     /// Get the maximum possible output value.
     #[inline]
     #[must_use]
@@ -290,6 +335,16 @@ impl PerlinNoise {
 #[must_use]
 pub fn wrap(x: f64) -> f64 {
     x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
+}
+
+/// SIMD form of [`wrap`]. Per-lane math identical to the scalar version, so
+/// `wrap_4x(splat(v))[i] == wrap(v)` for any finite `v`.
+#[inline]
+#[must_use]
+pub fn wrap_4x(x: f64x4) -> f64x4 {
+    use std::simd::StdFloat;
+    let round_off = f64x4::splat(ROUND_OFF);
+    x - (x / round_off + f64x4::splat(0.5)).floor() * round_off
 }
 
 #[cfg(test)]
