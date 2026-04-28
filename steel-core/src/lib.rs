@@ -2,6 +2,8 @@
 //!
 //! The core library for the Steel Minecraft server. Handles everything related to the PLAY state.
 
+#![feature(portable_simd)]
+
 use crate::chunk::chunk_map::ChunkMap;
 
 pub mod behavior;

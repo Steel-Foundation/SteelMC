@@ -7,6 +7,8 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
+use std::simd::i32x4;
+
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -83,34 +85,28 @@ pub enum AquiferResult {
     Fluid(BlockStateId),
 }
 
-/// One of the 12 aquifer-neighborhood cells, cached across a Y-column scan.
+/// Column-scan state for the 12 aquifer-neighborhood cells, stored SoA so the
+/// per-Y distance computation can be SIMD-batched as 3× `i32x4`.
 ///
 /// `compute_substance` is called many times with the same `(world_x, world_z)`
 /// and decreasing `world_y` (innermost loop in `noise_chunk::fill`). Within a
 /// stable `y_anchor` window (`Y_SPACING` blocks tall) the 12 cells of the
 /// neighborhood don't change, and `dx*dx + dz*dz` only depends on x/z — only
-/// `dy = loc_y - world_y` varies per call. Caching avoids the 12 repeated
-/// `get_index` lookups, `location_cache` reads, and i64-pos unpacks.
-#[derive(Clone, Copy, Default)]
-struct AquiferColumnCell {
-    /// Index into `location_cache` / `status_cache`. `u32` keeps the cell at
-    /// 12 bytes (vs 16 with `usize`); `location_cache` is bounded by the
-    /// chunk grid (≪ `u32::MAX`).
-    idx: u32,
-    /// Unpacked Y of this cell's jittered center (constant while cached).
-    loc_y: i32,
-    /// `dx*dx + dz*dz` — the Y-independent component of `new_dist`.
-    xz_dist_sq: i32,
-}
-
-/// Column-scan state for the 12 aquifer-neighborhood cells.
+/// `dy = loc_y - world_y` varies per call.
 ///
 /// `y_anchor = i32::MIN` marks the cache as invalid (forces a refill).
 struct AquiferColumnCache {
     world_x: i32,
     world_z: i32,
     y_anchor: i32,
-    cells: [AquiferColumnCell; 12],
+    /// Per-cell unpacked Y of the aquifer-cell center (constant while cached).
+    /// Padded to 16 entries so the 12 valid cells fit cleanly into 3× i32x4
+    /// SIMD batches; trailing slots stay at default `0`.
+    cell_loc_y: [i32; 16],
+    /// Per-cell `(dx + fx)² + (dz + fz)²` (Y-independent component of distance).
+    cell_xz_dist_sq: [i32; 16],
+    /// Per-cell index into `location_cache` / `status_cache`.
+    cell_idx: [u32; 12],
 }
 
 impl Default for AquiferColumnCache {
@@ -119,7 +115,9 @@ impl Default for AquiferColumnCache {
             world_x: 0,
             world_z: 0,
             y_anchor: i32::MIN,
-            cells: [AquiferColumnCell::default(); 12],
+            cell_loc_y: [0; 16],
+            cell_xz_dist_sq: [0; 16],
+            cell_idx: [0; 12],
         }
     }
 }
@@ -426,11 +424,9 @@ impl<N: DimensionNoises> Aquifer<N> {
 
                     let dx = unpack_x(loc) - world_x;
                     let dz = unpack_z(loc) - world_z;
-                    self.col_cache.cells[i] = AquiferColumnCell {
-                        idx: idx as u32,
-                        loc_y: unpack_y(loc),
-                        xz_dist_sq: dx * dx + dz * dz,
-                    };
+                    self.col_cache.cell_loc_y[i] = unpack_y(loc);
+                    self.col_cache.cell_xz_dist_sq[i] = dx * dx + dz * dz;
+                    self.col_cache.cell_idx[i] = idx as u32;
                     i += 1;
                 }
             }
@@ -497,13 +493,27 @@ impl<N: DimensionNoises> Aquifer<N> {
             self.refill_col_cache(world_x, world_y, world_z);
         }
 
+        // SIMD-batch the per-cell distance computation: `loc_y - world_y` then
+        // `xz_dist_sq + dy²`, processing 4 cells per `i32x4` op. The 12 valid
+        // cells fit in 3 batches; the 4-slot tail of `cell_loc_y` /
+        // `cell_xz_dist_sq` is harmless padding (we ignore the trailing slot).
+        let world_y_v = i32x4::splat(world_y);
+        let mut dists = [0i32; 12];
+        for batch in 0..3 {
+            let base = batch * 4;
+            let loc_y_v = i32x4::from_slice(&self.col_cache.cell_loc_y[base..base + 4]);
+            let xz_v = i32x4::from_slice(&self.col_cache.cell_xz_dist_sq[base..base + 4]);
+            let dy = loc_y_v - world_y_v;
+            let dist_v = xz_v + dy * dy;
+            dists[base..base + 4].copy_from_slice(&dist_v.to_array());
+        }
+
         let mut dist_sq = [i32::MAX; 4];
         let mut closest_idx = [0usize; 4];
 
-        for cell in &self.col_cache.cells {
-            let dy = cell.loc_y - world_y;
-            let new_dist = cell.xz_dist_sq + dy * dy;
-            let index = cell.idx as usize;
+        for i in 0..12 {
+            let new_dist = dists[i];
+            let index = self.col_cache.cell_idx[i] as usize;
 
             // Insert into sorted top-4
             if dist_sq[0] >= new_dist {

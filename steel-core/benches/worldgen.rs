@@ -20,6 +20,7 @@ fn ensure_registry() {
         let mut registry = Registry::new_vanilla();
         registry.freeze();
         let _ = REGISTRY.init(registry);
+        steel_core::behavior::init_behaviors();
     });
 }
 
@@ -306,6 +307,36 @@ fn bench_end_surface(c: &mut Criterion) {
     });
 }
 
+// ── Recalculate-counts benchmarks ──────────────────────────────────────────
+
+/// `recalculate_counts` is run on every chunk section after generation and on
+/// load from disk. The implementation iterates the palette (`O(palette_size)`)
+/// rather than every cube cell (`O(4096)`) — this bench captures the cost of
+/// running it for a full overworld chunk's worth of sections.
+fn bench_overworld_recalculate_counts(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let source = BiomeSourceKind::overworld(0);
+    let generator = OverworldGenerator::new(source, 0);
+
+    c.bench_function("overworld_recalculate_counts", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk);
+                chunk
+            },
+            |chunk| {
+                for section in &chunk.sections().sections {
+                    section.write().recalculate_counts();
+                }
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -327,5 +358,7 @@ criterion_group!(
     bench_overworld_surface,
     bench_nether_surface,
     bench_end_surface,
+    // Recalc counts (chunk-finalize / chunk-load path)
+    bench_overworld_recalculate_counts,
 );
 criterion_main!(benches);

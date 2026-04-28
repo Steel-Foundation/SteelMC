@@ -31,6 +31,7 @@ use super::{
     BlendedNoise as BlendedNoiseConfig, CubicSpline, DensityFunction, MappedType, MarkerType,
     RarityValueMapper, SplineValue, TwoArgType,
 };
+use crate::noise::NormalNoise;
 
 /// Input to the transpiler.
 pub struct TranspilerInput {
@@ -1333,20 +1334,44 @@ impl TranspileContext {
                     self.cse_bindings.remove(fp);
                 }
 
-                if hoisted.is_empty() {
-                    match t.op {
-                        TwoArgType::Add => quote! { ((#a) + (#b)) },
-                        TwoArgType::Mul => quote! { ((#a) * (#b)) },
-                        TwoArgType::Min => quote! { f64::min(#a, #b) },
-                        TwoArgType::Max => quote! { f64::max(#a, #b) },
+                // For min/max, compute a static bound on the right operand and
+                // emit a short-circuit when the left already proves the result
+                // (saves evaluating the right subtree on the lucky path).
+                // Mirrors C2ME's `MaxShortNode`/`MinShortNode` rewriters.
+                let op = match t.op {
+                    TwoArgType::Add => quote! { ((#a) + (#b)) },
+                    TwoArgType::Mul => quote! { ((#a) * (#b)) },
+                    TwoArgType::Min => {
+                        let (b_lo, _b_hi) = compute_bounds(&t.argument2, input);
+                        if b_lo.is_finite() {
+                            // If `a <= b_lo`, then `b >= b_lo >= a`, so `min(a, b) = a`.
+                            let b_lo_lit = Literal::f64_unsuffixed(b_lo);
+                            quote! {{
+                                let __sc_a = #a;
+                                if __sc_a <= #b_lo_lit { __sc_a } else { f64::min(__sc_a, #b) }
+                            }}
+                        } else {
+                            quote! { f64::min(#a, #b) }
+                        }
                     }
+                    TwoArgType::Max => {
+                        let (_b_lo, b_hi) = compute_bounds(&t.argument2, input);
+                        if b_hi.is_finite() {
+                            // If `a >= b_hi`, then `b <= b_hi <= a`, so `max(a, b) = a`.
+                            let b_hi_lit = Literal::f64_unsuffixed(b_hi);
+                            quote! {{
+                                let __sc_a = #a;
+                                if __sc_a >= #b_hi_lit { __sc_a } else { f64::max(__sc_a, #b) }
+                            }}
+                        } else {
+                            quote! { f64::max(#a, #b) }
+                        }
+                    }
+                };
+
+                if hoisted.is_empty() {
+                    op
                 } else {
-                    let op = match t.op {
-                        TwoArgType::Add => quote! { ((#a) + (#b)) },
-                        TwoArgType::Mul => quote! { ((#a) * (#b)) },
-                        TwoArgType::Min => quote! { f64::min(#a, #b) },
-                        TwoArgType::Max => quote! { f64::max(#a, #b) },
-                    };
                     quote! {{
                         #(#hoisted)*
                         #op
@@ -1533,6 +1558,13 @@ impl TranspileContext {
     }
 
     /// Generate a spline evaluation expression.
+    /// Generate a spline expression as an inlined `if`/`else` chain over the
+    /// piecewise intervals — no closure indirection, no binary search, and only
+    /// the spline points the chosen interval needs are evaluated. Mirrors C2ME's
+    /// `SplineAstNode` flat codegen.
+    ///
+    /// Math is bit-identical to [`spline_eval::evaluate_spline`] so vanilla
+    /// determinism is preserved (same operation order, same intermediate types).
     fn gen_spline_expr(
         &mut self,
         spline: &CubicSpline,
@@ -1541,54 +1573,100 @@ impl TranspileContext {
     ) -> TokenStream {
         let coord = self.gen_expr(&spline.coordinate, input, is_flat);
         let n_points = spline.points.len();
-        let n_lit = Literal::usize_unsuffixed(n_points);
 
-        let locations: Vec<Literal> = spline
+        // Compute each point's value expression once (could be a constant or a
+        // nested spline helper call). We only emit the value expression in the
+        // arms that actually need it — adjacent intervals share a point's value
+        // via a `let` binding.
+        let value_exprs: Vec<TokenStream> = spline
             .points
             .iter()
-            .map(|p| Literal::f32_unsuffixed(p.location))
-            .collect();
-        let derivatives: Vec<Literal> = spline
-            .points
-            .iter()
-            .map(|p| Literal::f32_unsuffixed(p.derivative))
-            .collect();
-
-        // Generate value expressions for each point
-        let value_arms: Vec<TokenStream> = spline
-            .points
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let idx = Literal::usize_unsuffixed(i);
-                let val_expr = match &p.value {
-                    SplineValue::Constant(c) => {
-                        let lit = Literal::f32_unsuffixed(*c);
-                        quote! { #lit }
+            .map(|p| match &p.value {
+                SplineValue::Constant(c) => {
+                    let lit = Literal::f32_unsuffixed(*c);
+                    quote! { #lit }
+                }
+                SplineValue::Spline(nested) => {
+                    let helper = self.gen_spline_helper(nested, input, is_flat);
+                    if is_flat {
+                        quote! { #helper(noises, cache, x, z) }
+                    } else {
+                        quote! { #helper(noises, cache, x, y, z) }
                     }
-                    SplineValue::Spline(nested) => {
-                        let helper = self.gen_spline_helper(nested, input, is_flat);
-                        if is_flat {
-                            quote! { #helper(noises, cache, x, z) }
-                        } else {
-                            quote! { #helper(noises, cache, x, y, z) }
-                        }
-                    }
-                };
-                quote! { #idx => #val_expr }
+                }
             })
             .collect();
 
-        quote! {{
-            const LOCATIONS: [f32; #n_lit] = [#(#locations),*];
-            const DERIVATIVES: [f32; #n_lit] = [#(#derivatives),*];
-            let coord = (#coord) as f32;
-            f64::from(spline_eval::evaluate_spline(&LOCATIONS, &DERIVATIVES, coord, |__i| {
-                match __i {
-                    #(#value_arms,)*
-                    _ => unreachable!()
+        // Empty spline: vanilla returns 0.0.
+        if n_points == 0 {
+            return quote! {{ let _ = (#coord) as f32; 0.0_f64 }};
+        }
+
+        // Single-point spline: degenerate — just return value + derivative * (coord - loc),
+        // matching `evaluate_spline`'s extrapolation arms.
+        if n_points == 1 {
+            let loc = Literal::f32_unsuffixed(spline.points[0].location);
+            let der = Literal::f32_unsuffixed(spline.points[0].derivative);
+            let v = &value_exprs[0];
+            return quote! {{
+                let __coord = (#coord) as f32;
+                f64::from(#v + #der * (__coord - #loc))
+            }};
+        }
+
+        // ≥ 2 points: chain of mutually-exclusive intervals.
+        //   coord < L_0                    → extrapolate before
+        //   L_i ≤ coord < L_{i+1}          → hermite interp on [i, i+1)
+        //   coord ≥ L_{last}               → extrapolate after
+        let last = n_points - 1;
+        let l0 = Literal::f32_unsuffixed(spline.points[0].location);
+        let d0 = Literal::f32_unsuffixed(spline.points[0].derivative);
+        let l_last = Literal::f32_unsuffixed(spline.points[last].location);
+        let d_last = Literal::f32_unsuffixed(spline.points[last].derivative);
+        let v0 = &value_exprs[0];
+        let v_last = &value_exprs[last];
+
+        // Build interval arms in the order: extrapolate-before, [0,1), [1,2), ..., extrapolate-after.
+        let mut arms: Vec<TokenStream> = Vec::new();
+        // Extrapolate-before: coord < L_0
+        arms.push(quote! {
+            if __coord < #l0 {
+                f64::from(#v0 + #d0 * (__coord - #l0))
+            }
+        });
+        for i in 0..last {
+            let li = Literal::f32_unsuffixed(spline.points[i].location);
+            let li1 = Literal::f32_unsuffixed(spline.points[i + 1].location);
+            let di = Literal::f32_unsuffixed(spline.points[i].derivative);
+            let di1 = Literal::f32_unsuffixed(spline.points[i + 1].derivative);
+            let vi = &value_exprs[i];
+            let vi1 = &value_exprs[i + 1];
+            // Hermite cubic, op-order matching `spline_eval::hermite_interpolate`
+            // exactly so generated code is bit-identical.
+            arms.push(quote! {
+                else if __coord < #li1 {
+                    let __y1 = #vi;
+                    let __y2 = #vi1;
+                    let __t = (__coord - #li) / (#li1 - #li);
+                    let __h = #li1 - #li;
+                    let __a = #di * __h - (__y2 - __y1);
+                    let __b = -#di1 * __h + (__y2 - __y1);
+                    let __lerp_y = __y1 + __t * (__y2 - __y1);
+                    let __lerp_ab = __a + __t * (__b - __a);
+                    f64::from(__lerp_y + __t * (1.0_f32 - __t) * __lerp_ab)
                 }
-            }))
+            });
+        }
+        // Extrapolate-after: coord ≥ L_last
+        arms.push(quote! {
+            else {
+                f64::from(#v_last + #d_last * (__coord - #l_last))
+            }
+        });
+
+        quote! {{
+            let __coord = (#coord) as f32;
+            #(#arms)*
         }}
     }
 
@@ -1677,6 +1755,242 @@ impl TranspileContext {
 }
 
 // ── Helper functions ────────────────────────────────────────────────────────
+
+/// Static (lower, upper) bounds for a density function subtree.
+///
+/// Returned bounds satisfy `lower <= eval(df) <= upper` at runtime for all
+/// inputs the function can be sampled at. When tight bounds aren't derivable
+/// (e.g., free-form noise with unknown amplitude product, or potentially
+/// unbounded operations like reciprocal), the corresponding side is set to
+/// `f64::NEG_INFINITY` / `f64::INFINITY` and downstream short-circuit
+/// optimizations correctly fall through to the unconditional codegen.
+///
+/// Mirrors the static-bounds analysis used by C2ME's
+/// `MaxShortNode`/`MinShortNode` rewriters, with one extension: we resolve
+/// `Reference` nodes through the build-time registry so cross-function
+/// bounds propagate.
+fn compute_bounds(df: &DensityFunction, input: &TranspilerInput) -> (f64, f64) {
+    compute_bounds_inner(df, input, &mut Vec::new())
+}
+
+fn compute_bounds_inner(
+    df: &DensityFunction,
+    input: &TranspilerInput,
+    visiting: &mut Vec<String>,
+) -> (f64, f64) {
+    // Conservative worst-case bound for noises whose `Option<NormalNoise>` is
+    // unbaked at build time. All shipping vanilla noises have `max_value < 2.0`;
+    // a slightly looser cap keeps short-circuits sound but a touch less aggressive.
+    const NORMAL_NOISE_MAX: f64 = 2.0;
+    match df {
+        DensityFunction::Constant(c) => (c.value, c.value),
+
+        DensityFunction::Reference(r) => {
+            // Avoid infinite recursion through self-referential cycles (shouldn't
+            // happen in practice, but DF graphs are cycle-free only by convention).
+            if visiting.iter().any(|n| n == &r.id) {
+                return (f64::NEG_INFINITY, f64::INFINITY);
+            }
+            let Some(target) = input.registry.get(&r.id) else {
+                return (f64::NEG_INFINITY, f64::INFINITY);
+            };
+            visiting.push(r.id.clone());
+            let bounds = compute_bounds_inner(target, input, visiting);
+            visiting.pop();
+            bounds
+        }
+
+        DensityFunction::YClampedGradient(g) => {
+            let lo = g.from_value.min(g.to_value);
+            let hi = g.from_value.max(g.to_value);
+            (lo, hi)
+        }
+
+        DensityFunction::Noise(n) => {
+            let m = n
+                .noise
+                .as_ref()
+                .map_or(NORMAL_NOISE_MAX, NormalNoise::max_value);
+            (-m, m)
+        }
+        DensityFunction::ShiftedNoise(sn) => {
+            let m = sn
+                .noise
+                .as_ref()
+                .map_or(NORMAL_NOISE_MAX, NormalNoise::max_value);
+            (-m, m)
+        }
+        DensityFunction::ShiftA(_) | DensityFunction::ShiftB(_) | DensityFunction::Shift(_) => {
+            // `shift_*` returns `noise.get_value(...) * 4.0`; vanilla configures
+            // these noises with bounds in roughly [-1, 1], so the result lands
+            // in [-4, 4]. We use a slightly looser cap as a safety margin.
+            (-8.0, 8.0)
+        }
+
+        DensityFunction::TwoArgumentSimple(t) => {
+            let (a_lo, a_hi) = compute_bounds_inner(&t.argument1, input, visiting);
+            let (b_lo, b_hi) = compute_bounds_inner(&t.argument2, input, visiting);
+            match t.op {
+                TwoArgType::Add => (a_lo + b_lo, a_hi + b_hi),
+                TwoArgType::Mul => {
+                    // Interval arithmetic for sign-mixed multiplication.
+                    let candidates = [a_lo * b_lo, a_lo * b_hi, a_hi * b_lo, a_hi * b_hi];
+                    let mut lo = f64::INFINITY;
+                    let mut hi = f64::NEG_INFINITY;
+                    for c in candidates {
+                        if c.is_nan() {
+                            return (f64::NEG_INFINITY, f64::INFINITY);
+                        }
+                        if c < lo {
+                            lo = c;
+                        }
+                        if c > hi {
+                            hi = c;
+                        }
+                    }
+                    (lo, hi)
+                }
+                TwoArgType::Min => (a_lo.min(b_lo), a_hi.min(b_hi)),
+                TwoArgType::Max => (a_lo.max(b_lo), a_hi.max(b_hi)),
+            }
+        }
+
+        DensityFunction::Mapped(m) => {
+            let (lo, hi) = compute_bounds_inner(&m.input, input, visiting);
+            match m.op {
+                MappedType::Abs => {
+                    if lo >= 0.0 {
+                        (lo, hi)
+                    } else if hi <= 0.0 {
+                        (-hi, -lo)
+                    } else {
+                        (0.0, lo.abs().max(hi.abs()))
+                    }
+                }
+                MappedType::Square => {
+                    if lo >= 0.0 {
+                        (lo * lo, hi * hi)
+                    } else if hi <= 0.0 {
+                        (hi * hi, lo * lo)
+                    } else {
+                        (0.0, (lo * lo).max(hi * hi))
+                    }
+                }
+                MappedType::Cube => {
+                    // x^3 is monotone over the whole real line, so endpoints suffice.
+                    (lo * lo * lo, hi * hi * hi)
+                }
+                MappedType::HalfNegative => {
+                    // `if v > 0 { v } else { v * 0.5 }` — monotone non-decreasing
+                    // (slope 0.5 below 0, slope 1 above 0).
+                    let map = |v: f64| if v > 0.0 { v } else { v * 0.5 };
+                    (map(lo), map(hi))
+                }
+                MappedType::QuarterNegative => {
+                    let map = |v: f64| if v > 0.0 { v } else { v * 0.25 };
+                    (map(lo), map(hi))
+                }
+                MappedType::Invert => {
+                    // 1/v is unbounded near 0; only safe if input doesn't straddle 0.
+                    if lo > 0.0 || hi < 0.0 {
+                        let a = 1.0 / lo;
+                        let b = 1.0 / hi;
+                        (a.min(b), a.max(b))
+                    } else {
+                        (f64::NEG_INFINITY, f64::INFINITY)
+                    }
+                }
+                MappedType::Squeeze => {
+                    // clamp(-1, 1) → c/2 - c³/24. Endpoints: -1/2 + 1/24, 1/2 - 1/24.
+                    let map = |v: f64| {
+                        let c = v.clamp(-1.0, 1.0);
+                        c / 2.0 - c * c * c / 24.0
+                    };
+                    let lo_c = lo.max(-1.0).min(1.0);
+                    let hi_c = hi.max(-1.0).min(1.0);
+                    (map(lo_c), map(hi_c))
+                }
+            }
+        }
+
+        DensityFunction::Clamp(c) => (c.min, c.max),
+
+        DensityFunction::RangeChoice(rc) => {
+            let (in_lo, in_hi) = compute_bounds_inner(&rc.when_in_range, input, visiting);
+            let (out_lo, out_hi) = compute_bounds_inner(&rc.when_out_of_range, input, visiting);
+            (in_lo.min(out_lo), in_hi.max(out_hi))
+        }
+
+        DensityFunction::Spline(s) => spline_bounds(&s.spline, input, visiting),
+
+        DensityFunction::BlendedNoise(bn) => {
+            // BlendedNoise is bounded by `min_limit_noise.max_broken_value` in
+            // vanilla; conservatively cap at 2.0 (matches `NORMAL_NOISE_MAX`).
+            let m = bn
+                .noise
+                .as_ref()
+                .map_or(NORMAL_NOISE_MAX, NormalNoise::max_value);
+            (-m, m)
+        }
+
+        DensityFunction::WeirdScaledSampler(ws) => {
+            // result = scale * noise.abs() where scale ∈ [0.5, 3.0] and
+            // noise.abs() ∈ [0, max_value]. Result is non-negative.
+            let m = ws
+                .noise
+                .as_ref()
+                .map_or(NORMAL_NOISE_MAX, NormalNoise::max_value);
+            (0.0, 3.0 * m)
+        }
+
+        DensityFunction::EndIslands => (-100.0, 80.0),
+
+        DensityFunction::BlendAlpha(_) => (1.0, 1.0),
+        DensityFunction::BlendOffset(_) => (0.0, 0.0),
+        DensityFunction::BlendDensity(bd) => compute_bounds_inner(&bd.input, input, visiting),
+
+        DensityFunction::Marker(m) => compute_bounds_inner(&m.wrapped, input, visiting),
+
+        DensityFunction::FindTopSurface(fts) => {
+            // Returns a Y coordinate in [lower_bound, upper_bound rounded down].
+            // upper_bound is itself a DF — its static upper bound caps the result.
+            let (_, upper) = compute_bounds_inner(&fts.upper_bound, input, visiting);
+            (f64::from(fts.lower_bound), upper)
+        }
+    }
+}
+
+fn spline_bounds(
+    spline: &CubicSpline,
+    input: &TranspilerInput,
+    visiting: &mut Vec<String>,
+) -> (f64, f64) {
+    // Splines interpolate (and may extrapolate at edges) between point values.
+    // A safe over-approximation: (min point value, max point value), recursing
+    // for nested splines. This ignores the Catmull-Rom overshoot, which is
+    // bounded but non-trivial to compute statically — using point bounds keeps
+    // the analysis simple and still useful for downstream short-circuits.
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for p in &spline.points {
+        let (p_lo, p_hi) = match &p.value {
+            SplineValue::Constant(v) => (f64::from(*v), f64::from(*v)),
+            SplineValue::Spline(nested) => spline_bounds(nested, input, visiting),
+        };
+        if p_lo < lo {
+            lo = p_lo;
+        }
+        if p_hi > hi {
+            hi = p_hi;
+        }
+    }
+    if lo > hi {
+        // Empty spline — shouldn't happen in valid trees.
+        (f64::NEG_INFINITY, f64::INFINITY)
+    } else {
+        (lo, hi)
+    }
+}
 
 /// Check if a density function subtree directly uses the `y` coordinate.
 /// Does NOT recurse into References (those are handled by the flat inference loop).

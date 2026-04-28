@@ -20,7 +20,7 @@ use crate::chunk::chunk_generator::ChunkGenerator;
 use crate::chunk::heightmap::HeightmapType;
 use crate::chunk::noise_chunk::NoiseChunk;
 use crate::chunk::ore_veinifier::OreVeinifier;
-use crate::chunk::surface_system::SurfaceSystem;
+use crate::chunk::surface_system::{SurfaceSystem, TemperatureXzCache};
 use crate::worldgen::BiomeSourceKind;
 
 /// A chunk generator for vanilla (normal) world generation.
@@ -374,6 +374,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let mut next_ceiling_stone_y: i32 = i32::MAX;
                 pending_writes.clear();
 
+                // Lazy XZ cache for temperature noise — reused across every Y
+                // in this column so the 2D noise samples in
+                // `cold_enough_to_snow` are computed at most once per (x, z).
+                let mut temp_xz = TemperatureXzCache::new(block_x, block_z);
+
                 for y in (min_y..=start_height).rev() {
                     let relative_y = (y - min_y) as usize;
                     let state = column_buf[relative_y];
@@ -421,7 +426,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                         let cold_enough_to_snow = self
                             .surface_system
-                            .cold_enough_to_snow(biome_id, block_x, y, block_z);
+                            .cold_enough_to_snow(biome_id, y, &mut temp_xz);
 
                         let ctx = SurfaceRuleContext {
                             block_x,

@@ -288,26 +288,41 @@ impl ChunkSection {
     }
 
     /// Recalculates all cached counters using the provided behavior registry.
+    ///
+    /// Iterates the palette (`O(palette_size)`) rather than every cube cell
+    /// (`O(4096)`): each block-state appears at most once in the palette and
+    /// carries its own occurrence count, so we just classify each unique state
+    /// and multiply by its count. Mirrors Moonrise's `BlockCountingBitStorage`.
+    /// For a `Homogeneous` section that's a single classify; for typical
+    /// `Heterogeneous` sections palette is well under 16 entries.
     pub fn recalculate_counts_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
         let mut non_empty: u16 = 0;
         let mut fluid: u16 = 0;
         let mut ticking: u16 = 0;
 
-        for y in 0..16 {
-            for z in 0..16 {
-                for x in 0..16 {
-                    let state = self.states.get(x, y, z);
-                    if !state.is_air() {
-                        non_empty += 1;
-                        let block = state.get_block();
-                        let behavior = block_behaviors.get_behavior(block);
-                        if behavior.is_randomly_ticking(state) {
-                            ticking += 1;
-                        }
-                    }
-                    if !get_fluid_state_from_block(state).is_empty() {
-                        fluid += 1;
-                    }
+        let mut classify = |state: BlockStateId, count: u16| {
+            if !state.is_air() {
+                non_empty += count;
+                let block = state.get_block();
+                if block_behaviors
+                    .get_behavior(block)
+                    .is_randomly_ticking(state)
+                {
+                    ticking += count;
+                }
+            }
+            if !get_fluid_state_from_block(state).is_empty() {
+                fluid += count;
+            }
+        };
+
+        match &self.states {
+            BlockPalette::Homogeneous(state) => {
+                classify(*state, BlockPalette::VOLUME as u16);
+            }
+            BlockPalette::Heterogeneous(data) => {
+                for (state, count) in &data.palette {
+                    classify(*state, *count);
                 }
             }
         }
