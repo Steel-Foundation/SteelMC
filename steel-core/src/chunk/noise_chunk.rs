@@ -10,7 +10,7 @@
 //! Cell dimensions depend on the dimension's noise settings.
 
 use std::marker::PhantomData;
-use std::mem;
+use std::simd::f64x4;
 
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::lerp;
@@ -31,10 +31,20 @@ const MAX_SLICE_LEN: usize = 256;
 /// Supports multiple interpolation channels matching vanilla's multi-interpolator
 /// system. Each `Interpolated` marker in the density function tree gets its own
 /// channel, filled at cell corners and interpolated independently.
+///
+/// Storage is per-corner SoA — `slice[corner_idx * MAX_INTERP + ch]` — so 4
+/// adjacent channels' values at a given corner sit in contiguous memory,
+/// enabling a single `f64x4` load and SIMD-batched trilinear interpolation
+/// across 4 channels per block.
 pub struct NoiseChunk<N: DimensionNoises> {
-    /// Density values at cell corners per interpolation channel.
-    /// Flat layout: `channels[ch].slice[z * corners_y + y]` for current and next X.
-    channels: Vec<ChannelSlices>,
+    /// Density values for the "current X" face. Indexed as
+    /// `slice0[corner_idx * MAX_INTERP + ch]` where
+    /// `corner_idx = z_corner * corners_y + y_corner` (range `[0, slice_len)`)
+    /// and `ch` is the interpolation channel (range `[0, interp_count)`).
+    /// Boxed to keep the 32 KB slab off the stack.
+    slice0: Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>,
+    /// Density values for the "next X" face. Same layout as `slice0`.
+    slice1: Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>,
     /// Number of active interpolation channels.
     interp_count: usize,
     /// Number of Y corners per Z column (`cell_count_y` + 1).
@@ -51,13 +61,6 @@ pub struct NoiseChunk<N: DimensionNoises> {
     cell_count_xz: usize,
 
     _phantom: PhantomData<N>,
-}
-
-/// Two slices (current X and next X) for one interpolation channel.
-/// Flat layout: index with `z * corners_y + y`.
-struct ChannelSlices {
-    slice0: [f64; MAX_SLICE_LEN],
-    slice1: [f64; MAX_SLICE_LEN],
 }
 
 impl<N: DimensionNoises> NoiseChunk<N> {
@@ -91,15 +94,14 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             slice_len <= MAX_SLICE_LEN,
             "slice_len {slice_len} exceeds MAX_SLICE_LEN {MAX_SLICE_LEN}"
         );
-        let channels = (0..interp_count)
-            .map(|_| ChannelSlices {
-                slice0: [0.0; MAX_SLICE_LEN],
-                slice1: [0.0; MAX_SLICE_LEN],
-            })
-            .collect();
+        assert!(
+            interp_count <= MAX_INTERP,
+            "interp_count {interp_count} exceeds MAX_INTERP {MAX_INTERP}"
+        );
 
         Self {
-            channels,
+            slice0: Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]),
+            slice1: Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]),
             interp_count,
             corners_y,
             first_cell_x,
@@ -112,10 +114,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     }
 
     /// Fill all interpolation channel slices at the given cell X coordinate.
-    #[expect(
-        clippy::needless_range_loop,
-        reason = "index ch is used to index both values[] and channels[]"
-    )]
     fn fill_slice(
         &mut self,
         use_slice0: bool,
@@ -167,16 +165,16 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     values[0] += beard.compute(block_x, block_y, block_z);
                 }
 
-                // Store in each channel's slice
-                let flat_idx = cz * corners_y + cy;
-                for ch in 0..interp_count {
-                    let slice = if use_slice0 {
-                        &mut self.channels[ch].slice0
-                    } else {
-                        &mut self.channels[ch].slice1
-                    };
-                    slice[flat_idx] = values[ch];
-                }
+                // Store all channel values for this corner contiguously.
+                // Layout: `slice[corner_idx * MAX_INTERP + ch]`.
+                let corner_idx = cz * corners_y + cy;
+                let base = corner_idx * MAX_INTERP;
+                let slice = if use_slice0 {
+                    &mut *self.slice0
+                } else {
+                    &mut *self.slice1
+                };
+                slice[base..base + interp_count].copy_from_slice(&values[..interp_count]);
             }
         }
     }
@@ -239,32 +237,85 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 let world_y =
                                     (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
 
-                                // Trilinearly interpolate each channel independently
-                                // SAFETY: All indices are in bounds:
-                                // - ch < interp_count <= channels.len()
-                                // - z1_base + cell_y_idx + 1 is the max index:
-                                //   (cell_z_idx+1)*corners_y + cell_count_y
-                                //   ≤ cell_count_xz*corners_y + (corners_y-1)
-                                //   = (cell_count_xz+1)*corners_y - 1
-                                //   = slice_len - 1 < MAX_SLICE_LEN
-                                for ch in 0..interp_count {
-                                    // SAFETY: ch < interp_count <= channels.len()
-                                    let s0 = unsafe { &self.channels.get_unchecked(ch).slice0 };
-                                    // SAFETY: ch < interp_count <= channels.len()
-                                    let s1 = unsafe { &self.channels.get_unchecked(ch).slice1 };
+                                // Trilinearly interpolate each channel.
+                                //
+                                // SoA layout puts the 4 (or fewer) channel
+                                // values for one corner in contiguous memory,
+                                // so a single `f64x4` load per corner replaces
+                                // four scattered scalar loads in the legacy
+                                // AoS path. Math is per-lane independent and
+                                // matches the scalar order exactly, so the
+                                // result is bit-identical to vanilla.
+                                //
+                                // SAFETY: max index = (z1_base + cell_y_idx + 1) * MAX_INTERP + (ch_batch+3)
+                                //         ≤ ((cell_count_xz+1)*corners_y - 1) * MAX_INTERP + MAX_INTERP - 1
+                                //         < MAX_SLICE_LEN * MAX_INTERP
+                                let i0_base = (z0_base + cell_y_idx) * MAX_INTERP;
+                                let i1_base = (z1_base + cell_y_idx) * MAX_INTERP;
+                                let i0_next = i0_base + MAX_INTERP;
+                                let i1_next = i1_base + MAX_INTERP;
+                                let s0 = &*self.slice0;
+                                let s1 = &*self.slice1;
+                                let factor_y_v = f64x4::splat(factor_y);
+                                let factor_x_v = f64x4::splat(factor_x);
+                                let factor_z_v = f64x4::splat(factor_z);
 
-                                    let i0 = z0_base + cell_y_idx;
-                                    let i1 = z1_base + cell_y_idx;
-                                    // SAFETY: see bounds proof above
+                                let mut ch_batch = 0;
+                                while ch_batch + 4 <= interp_count {
+                                    // SAFETY: ch_batch+3 < interp_count ≤ MAX_INTERP, all base indices in bounds.
                                     unsafe {
-                                        let n000 = *s0.get_unchecked(i0);
-                                        let n001 = *s0.get_unchecked(i1);
-                                        let n100 = *s1.get_unchecked(i0);
-                                        let n101 = *s1.get_unchecked(i1);
-                                        let n010 = *s0.get_unchecked(i0 + 1);
-                                        let n011 = *s0.get_unchecked(i1 + 1);
-                                        let n110 = *s1.get_unchecked(i0 + 1);
-                                        let n111 = *s1.get_unchecked(i1 + 1);
+                                        let n000 = f64x4::from_slice(
+                                            s0.get_unchecked(i0_base + ch_batch..i0_base + ch_batch + 4),
+                                        );
+                                        let n001 = f64x4::from_slice(
+                                            s0.get_unchecked(i1_base + ch_batch..i1_base + ch_batch + 4),
+                                        );
+                                        let n100 = f64x4::from_slice(
+                                            s1.get_unchecked(i0_base + ch_batch..i0_base + ch_batch + 4),
+                                        );
+                                        let n101 = f64x4::from_slice(
+                                            s1.get_unchecked(i1_base + ch_batch..i1_base + ch_batch + 4),
+                                        );
+                                        let n010 = f64x4::from_slice(
+                                            s0.get_unchecked(i0_next + ch_batch..i0_next + ch_batch + 4),
+                                        );
+                                        let n011 = f64x4::from_slice(
+                                            s0.get_unchecked(i1_next + ch_batch..i1_next + ch_batch + 4),
+                                        );
+                                        let n110 = f64x4::from_slice(
+                                            s1.get_unchecked(i0_next + ch_batch..i0_next + ch_batch + 4),
+                                        );
+                                        let n111 = f64x4::from_slice(
+                                            s1.get_unchecked(i1_next + ch_batch..i1_next + ch_batch + 4),
+                                        );
+
+                                        let d00 = n000 + factor_y_v * (n010 - n000);
+                                        let d10 = n100 + factor_y_v * (n110 - n100);
+                                        let d01 = n001 + factor_y_v * (n011 - n001);
+                                        let d11 = n101 + factor_y_v * (n111 - n101);
+                                        let d0 = d00 + factor_x_v * (d10 - d00);
+                                        let d1 = d01 + factor_x_v * (d11 - d01);
+                                        let result = d0 + factor_z_v * (d1 - d0);
+                                        let arr = result.to_array();
+                                        let dst = interpolated
+                                            .get_unchecked_mut(ch_batch..ch_batch + 4);
+                                        dst.copy_from_slice(&arr);
+                                    }
+                                    ch_batch += 4;
+                                }
+                                // Scalar tail (when interp_count is not a multiple of 4).
+                                while ch_batch < interp_count {
+                                    let ch = ch_batch;
+                                    // SAFETY: ch < interp_count ≤ MAX_INTERP; indices in bounds (see comment above).
+                                    unsafe {
+                                        let n000 = *s0.get_unchecked(i0_base + ch);
+                                        let n001 = *s0.get_unchecked(i1_base + ch);
+                                        let n100 = *s1.get_unchecked(i0_base + ch);
+                                        let n101 = *s1.get_unchecked(i1_base + ch);
+                                        let n010 = *s0.get_unchecked(i0_next + ch);
+                                        let n011 = *s0.get_unchecked(i1_next + ch);
+                                        let n110 = *s1.get_unchecked(i0_next + ch);
+                                        let n111 = *s1.get_unchecked(i1_next + ch);
 
                                         let d00 = lerp(factor_y, n000, n010);
                                         let d10 = lerp(factor_y, n100, n110);
@@ -275,6 +326,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                         *interpolated.get_unchecked_mut(ch) =
                                             lerp(factor_z, d0, d1);
                                     }
+                                    ch_batch += 1;
                                 }
 
                                 // Apply outer operations per-block.
@@ -303,10 +355,9 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 }
             }
 
-            // Swap slices: current next becomes current for the next iteration
-            for ch in &mut self.channels {
-                mem::swap(&mut ch.slice0, &mut ch.slice1);
-            }
+            // Swap slices: "next X" becomes "current X" for the next iteration.
+            // Boxed slabs swap as pointer rotation (no memcpy).
+            std::mem::swap(&mut self.slice0, &mut self.slice1);
         }
     }
 }
