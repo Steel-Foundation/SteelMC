@@ -145,6 +145,10 @@ pub struct Aquifer<N: DimensionNoises> {
     skip_sampling_above_y: i32,
     /// Sea level for this dimension.
     sea_level: i32,
+    /// Precomputed `min(LAVA_LEVEL, sea_level)`. Hoisted out of `global_fluid`
+    /// (which is on the per-block hot path) so we don't recompute it millions
+    /// of times per chunk.
+    lava_floor: i32,
     /// Block state IDs.
     water_id: BlockStateId,
     lava_id: BlockStateId,
@@ -238,11 +242,12 @@ fn is_deep_dark_region<N: DimensionNoises>(
 /// default fluid at sea level (water for overworld, lava for nether).
 fn global_fluid(
     y: i32,
+    lava_floor: i32,
     sea_level: i32,
     lava_id: BlockStateId,
     default_fluid_id: BlockStateId,
 ) -> FluidStatus {
-    if y < LAVA_LEVEL.min(sea_level) {
+    if y < lava_floor {
         FluidStatus {
             fluid_level: LAVA_LEVEL,
             fluid_type: lava_id,
@@ -299,6 +304,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                 grid_size_z: 0,
                 skip_sampling_above_y: 0,
                 sea_level,
+                lava_floor: LAVA_LEVEL.min(sea_level),
                 water_id,
                 lava_id,
                 default_fluid_id,
@@ -350,6 +356,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             grid_size_z,
             skip_sampling_above_y,
             sea_level,
+            lava_floor: LAVA_LEVEL.min(sea_level),
             water_id,
             lava_id,
             default_fluid_id,
@@ -459,14 +466,14 @@ impl<N: DimensionNoises> Aquifer<N> {
         // Disabled aquifers (nether/end): use global fluid picker directly,
         // matching vanilla's `Aquifer.createDisabled`.
         if !N::Settings::AQUIFERS_ENABLED {
-            let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
+            let gf = global_fluid(world_y, self.lava_floor, self.sea_level, self.lava_id, self.default_fluid_id);
             return match gf.at(world_y) {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
             };
         }
 
-        let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
+        let gf = global_fluid(world_y, self.lava_floor, self.sea_level, self.lava_id, self.default_fluid_id);
 
         // Above the skip threshold: use global fluid directly
         if world_y > self.skip_sampling_above_y {
@@ -544,17 +551,18 @@ impl<N: DimensionNoises> Aquifer<N> {
         }
 
         let status1 = self.get_aquifer_status(closest_idx[0], noises);
-        let sim12 = similarity(dist_sq[0], dist_sq[1]);
-
         let fluid_at = status1.at(world_y);
 
-        if sim12 <= 0.0 {
-            // Not near a boundary — return closest fluid
+        // `similarity(d1, d2) = 1 - (d2 - d1) / 25`, so `sim12 <= 0.0` is exactly
+        // `d2 - d1 >= 25` in i32. Defer the f64 conversion + divide until after
+        // the early-return check — most blocks aren't near an aquifer boundary.
+        if dist_sq[1] - dist_sq[0] >= 25 {
             return match fluid_at {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
             };
         }
+        let sim12 = similarity(dist_sq[0], dist_sq[1]);
 
         // Water adjacent to global lava below → return water
         if let Some(id) = fluid_at
@@ -562,6 +570,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         {
             let below = global_fluid(
                 world_y - 1,
+                self.lava_floor,
                 self.sea_level,
                 self.lava_id,
                 self.default_fluid_id,
@@ -589,8 +598,10 @@ impl<N: DimensionNoises> Aquifer<N> {
         }
 
         let status3 = self.get_aquifer_status(closest_idx[2], noises);
-        let sim13 = similarity(dist_sq[0], dist_sq[2]);
-        if sim13 > 0.0 {
+        // `sim13 > 0.0` ⟺ `dist_sq[2] - dist_sq[0] < 25` in i32; skip the
+        // similarity divide when it would compute to a non-positive value.
+        if dist_sq[2] - dist_sq[0] < 25 {
+            let sim13 = similarity(dist_sq[0], dist_sq[2]);
             let barrier13 = sim12
                 * sim13
                 * self.calculate_pressure(
@@ -607,8 +618,8 @@ impl<N: DimensionNoises> Aquifer<N> {
             }
         }
 
-        let sim23 = similarity(dist_sq[1], dist_sq[2]);
-        if sim23 > 0.0 {
+        if dist_sq[2] - dist_sq[1] < 25 {
+            let sim23 = similarity(dist_sq[1], dist_sq[2]);
             let barrier23 = sim12
                 * sim23
                 * self.calculate_pressure(
@@ -649,7 +660,7 @@ impl<N: DimensionNoises> Aquifer<N> {
 
     /// Compute the fluid status for an aquifer cell centered at (x, y, z).
     fn compute_fluid(&mut self, x: i32, y: i32, z: i32, noises: &N) -> FluidStatus {
-        let gf = global_fluid(y, self.sea_level, self.lava_id, self.default_fluid_id);
+        let gf = global_fluid(y, self.lava_floor, self.sea_level, self.lava_id, self.default_fluid_id);
         let mut lowest_surface = i32::MAX;
         let top_of_cell = y + Y_SPACING;
         let bottom_of_cell = y - Y_SPACING;
@@ -672,6 +683,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             if top_pokes_above || is_center {
                 let gf_at_surface = global_fluid(
                     adjusted,
+                    self.lava_floor,
                     self.sea_level,
                     self.lava_id,
                     self.default_fluid_id,

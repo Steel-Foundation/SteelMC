@@ -1435,6 +1435,14 @@ impl TranspileContext {
                 // emit a short-circuit when the left already proves the result
                 // (saves evaluating the right subtree on the lucky path).
                 // Mirrors C2ME's `MaxShortNode`/`MinShortNode` rewriters.
+                //
+                // Inner min/max emitted as `if a < b { a } else { b }` (and `>`
+                // for max), not `f64::min`/`f64::max`. The stdlib calls lower to
+                // an IEEE-minNum intrinsic with explicit NaN handling (~5 x86
+                // insns); the comparison form lowers to a single `vminsd`/cmov.
+                // Density functions never produce NaN in vanilla parameter
+                // ranges (verified by `chunk_stage_hashes`), so the two are
+                // bit-identical here.
                 let op = match t.op {
                     TwoArgType::Add => quote! { ((#a) + (#b)) },
                     TwoArgType::Mul => quote! { ((#a) * (#b)) },
@@ -1445,10 +1453,19 @@ impl TranspileContext {
                             let b_lo_lit = Literal::f64_unsuffixed(b_lo);
                             quote! {{
                                 let __sc_a = #a;
-                                if __sc_a <= #b_lo_lit { __sc_a } else { f64::min(__sc_a, #b) }
+                                if __sc_a <= #b_lo_lit {
+                                    __sc_a
+                                } else {
+                                    let __sc_b = #b;
+                                    if __sc_a < __sc_b { __sc_a } else { __sc_b }
+                                }
                             }}
                         } else {
-                            quote! { f64::min(#a, #b) }
+                            quote! {{
+                                let __sc_a = #a;
+                                let __sc_b = #b;
+                                if __sc_a < __sc_b { __sc_a } else { __sc_b }
+                            }}
                         }
                     }
                     TwoArgType::Max => {
@@ -1458,10 +1475,19 @@ impl TranspileContext {
                             let b_hi_lit = Literal::f64_unsuffixed(b_hi);
                             quote! {{
                                 let __sc_a = #a;
-                                if __sc_a >= #b_hi_lit { __sc_a } else { f64::max(__sc_a, #b) }
+                                if __sc_a >= #b_hi_lit {
+                                    __sc_a
+                                } else {
+                                    let __sc_b = #b;
+                                    if __sc_a > __sc_b { __sc_a } else { __sc_b }
+                                }
                             }}
                         } else {
-                            quote! { f64::max(#a, #b) }
+                            quote! {{
+                                let __sc_a = #a;
+                                let __sc_b = #b;
+                                if __sc_a > __sc_b { __sc_a } else { __sc_b }
+                            }}
                         }
                     }
                 };
@@ -1539,10 +1565,24 @@ impl TranspileContext {
                     self.cse_bindings.remove(fp);
                 }
 
+                // Drop bound checks proven dead by static input bounds — vanilla
+                // RangeChoice often uses sentinel bounds like `-1_000_000` for
+                // "unbounded below" that the input's actual range never violates.
+                let (in_lo, in_hi) = compute_bounds(&rc.input, input);
+                let lower_dead = in_lo >= rc.min_inclusive;
+                let upper_dead = in_hi < rc.max_exclusive;
+
+                let cond = match (lower_dead, upper_dead) {
+                    (true, true) => quote! { true },
+                    (true, false) => quote! { v < #max },
+                    (false, true) => quote! { v >= #min },
+                    (false, false) => quote! { v >= #min && v < #max },
+                };
+
                 quote! {{
                     #(#hoisted)*
                     let v = #input_expr;
-                    if v >= #min && v < #max { #in_range } else { #out_range }
+                    if #cond { #in_range } else { #out_range }
                 }}
             }
 
