@@ -224,6 +224,18 @@ impl ChunkStorage {
             return None;
         }
 
+        // Finalize any sections still in worldgen Building mode. Proto chunks
+        // can be saved before being upgraded to `LevelChunk::from_proto`
+        // (which is where `recalculate_counts` normally runs and implicitly
+        // finalizes). Without this, `section_to_persistent` would panic on
+        // the Building variant.
+        for section_holder in &chunk.sections().sections {
+            let mut guard = section_holder.write();
+            if matches!(&guard.states, PalettedContainer::Building(_)) {
+                guard.recalculate_counts();
+            }
+        }
+
         let pos = chunk.pos();
 
         // Get block entities if this is a full chunk
