@@ -433,6 +433,10 @@ impl ChunkStorage {
                     biomes,
                 }
             }
+            PalettedContainer::Building(_) => panic!(
+                "section_to_persistent called on a section still in worldgen Building mode; \
+                 finalize_building must be called before serialization"
+            ),
         }
     }
 
@@ -477,6 +481,10 @@ impl ChunkStorage {
                     biome_data,
                 }
             }
+            PalettedContainer::Building(_) => panic!(
+                "biomes_to_persistent called on a section still in worldgen Building mode; \
+                 finalize_building must be called before serialization"
+            ),
         }
     }
 

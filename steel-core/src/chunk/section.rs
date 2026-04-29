@@ -140,16 +140,24 @@ impl Sections {
     /// across all writes to that section. Most efficient when blocks are grouped
     /// by section (e.g. descending `relative_y` from a top-to-bottom scan).
     pub fn write_column_blocks(&self, x: usize, z: usize, blocks: &[(usize, BlockStateId)]) {
-        debug_assert!(x < BlockPalette::SIZE);
-        debug_assert!(z < BlockPalette::SIZE);
+        const DIM: usize = BlockPalette::SIZE;
+        debug_assert!(x < DIM);
+        debug_assert!(z < DIM);
 
         let mut i = 0;
         while i < blocks.len() {
-            let section_idx = blocks[i].0 / BlockPalette::SIZE;
+            let section_idx = blocks[i].0 / DIM;
             let mut guard = self.sections[section_idx].write();
-            while i < blocks.len() && blocks[i].0 / BlockPalette::SIZE == section_idx {
+            guard.states.enter_building_mode();
+            let cube = guard
+                .states
+                .as_building_slice_mut()
+                .expect("just entered building mode");
+            let xz_base = z * DIM + x;
+            while i < blocks.len() && blocks[i].0 / DIM == section_idx {
                 let (rel_y, value) = blocks[i];
-                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                let local_y = rel_y % DIM;
+                cube[local_y * DIM * DIM + xz_base] = value;
                 i += 1;
             }
         }
@@ -158,14 +166,27 @@ impl Sections {
     /// Writes a batch of blocks at arbitrary positions, holding each section's
     /// write guard across consecutive entries in the same section. Blocks should
     /// be roughly grouped by section index for best performance.
+    ///
+    /// Each touched section enters worldgen Building mode (raw cube, no palette
+    /// tracking) so writes are O(1) stores. Per-write goes through a flat
+    /// `&mut [V]` view of the cube — bypasses the 3-arm `set` match and the
+    /// unused old-value load. `recalculate_counts_with` finalizes.
     pub fn write_block_batch(&self, blocks: &[(usize, usize, usize, BlockStateId)]) {
+        const DIM: usize = BlockPalette::SIZE;
         let mut i = 0;
         while i < blocks.len() {
-            let section_idx = blocks[i].1 / BlockPalette::SIZE;
+            let section_idx = blocks[i].1 / DIM;
             let mut guard = self.sections[section_idx].write();
-            while i < blocks.len() && blocks[i].1 / BlockPalette::SIZE == section_idx {
+            guard.states.enter_building_mode();
+            // Safe: enter_building_mode just transitioned to Building.
+            let cube = guard
+                .states
+                .as_building_slice_mut()
+                .expect("just entered building mode");
+            while i < blocks.len() && blocks[i].1 / DIM == section_idx {
                 let (x, rel_y, z, value) = blocks[i];
-                guard.states.set(x, rel_y % BlockPalette::SIZE, z, value);
+                let local_y = rel_y % DIM;
+                cube[local_y * DIM * DIM + z * DIM + x] = value;
                 i += 1;
             }
         }
@@ -184,8 +205,9 @@ impl Sections {
 
         let idx = relative_y / BlockPalette::SIZE;
         let relative_y = relative_y % BlockPalette::SIZE;
-        self.sections[idx]
-            .write()
+        let mut guard = self.sections[idx].write();
+        guard.states.enter_building_mode();
+        guard
             .states
             .set(relative_x, relative_y, relative_z, value);
     }
@@ -296,6 +318,10 @@ impl ChunkSection {
     /// For a `Homogeneous` section that's a single classify; for typical
     /// `Heterogeneous` sections palette is well under 16 entries.
     pub fn recalculate_counts_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
+        // Convert any worldgen Building cube back to a paletted container.
+        // No-op if already finalized.
+        self.states.finalize_building();
+
         let mut non_empty: u16 = 0;
         let mut fluid: u16 = 0;
         let mut ticking: u16 = 0;
@@ -325,6 +351,7 @@ impl ChunkSection {
                     classify(*state, *count);
                 }
             }
+            BlockPalette::Building(_) => unreachable!("finalize_building was just called"),
         }
 
         self.non_empty_block_count = non_empty;

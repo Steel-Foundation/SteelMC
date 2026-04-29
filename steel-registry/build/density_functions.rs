@@ -652,6 +652,15 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
     let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
     let cache_struct = Ident::new(&format!("{prefix}ColumnCache"), Span::call_site());
 
+    // Detect "trivial default" surface rules — a single Block node whose
+    // result is the dimension's default block. Applying such a rule is a
+    // no-op because the noise-fill default already wrote that block.
+    let surface_rule_trivial_default = matches!(
+        &settings.surface_rule,
+        Some(crate::surface_rules::SurfaceRuleJson::Block { result_state })
+            if result_state.name == settings.default_block.name
+    );
+
     // Generate surface rule function and noise IDs
     let (surface_rule_body, surface_noise_ids_tokens) =
         if let Some(rule) = settings.surface_rule.take() {
@@ -924,6 +933,8 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             ) -> Option<steel_utils::BlockStateId> {
                 Self::apply_surface_rule_impl(ctx)
             }
+
+            const SURFACE_RULE_TRIVIAL_DEFAULT: bool = #surface_rule_trivial_default;
         }
 
         impl #noises_struct {

@@ -245,6 +245,18 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
     #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
+        // Heightmap priming is needed regardless — `fill_from_noise` doesn't
+        // update heightmaps, and they're consulted post-surface (e.g. by
+        // structure placement).
+        chunk.prime_worldgen_heightmaps();
+
+        // Trivial surface rule (e.g. End: write end_stone where end_stone
+        // already is) — every per-Y rule application is a no-op write back to
+        // the default block. Skip the entire column scan; bit-identical.
+        if N::SURFACE_RULE_TRIVIAL_DEFAULT {
+            return;
+        }
+
         let min_y = N::Settings::MIN_Y;
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
@@ -253,10 +265,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let noises = &*self.noises;
         let chunk_quart_x = pos.0.x * 4;
         let chunk_quart_z = pos.0.y * 4;
-
-        // Ensure worldgen heightmaps are primed (fill_from_noise uses set_relative_block
-        // which doesn't update heightmaps).
-        chunk.prime_worldgen_heightmaps();
 
         // Pre-compute the 4 preliminary surface level corners for the 16-block cell.
         // Vanilla uses bilinear interpolation across these 4 corners (SurfaceRules.Context).

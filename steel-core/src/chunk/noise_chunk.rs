@@ -37,18 +37,26 @@ const MAX_SLICE_LEN: usize = 256;
 /// enabling a single `f64x4` load and SIMD-batched trilinear interpolation
 /// across 4 channels per block.
 pub struct NoiseChunk<N: DimensionNoises> {
-    /// Density values for the "current X" face. Indexed as
-    /// `slice0[corner_idx * MAX_INTERP + ch]` where
+    /// One slice per cell-X boundary, holding density values at the cell
+    /// corners on that X-plane. Length is `cell_count_xz + 1`. Indexed as
+    /// `slices[cx][corner_idx * MAX_INTERP + ch]` where
     /// `corner_idx = z_corner * corners_y + y_corner` (range `[0, slice_len)`)
     /// and `ch` is the interpolation channel (range `[0, interp_count)`).
-    /// Boxed to keep the 32 KB slab off the stack.
-    slice0: Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>,
-    /// Density values for the "next X" face. Same layout as `slice0`.
-    slice1: Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>,
+    ///
+    /// We keep all slices materialized rather than alternating two buffers so
+    /// the slice-fill phase can run in parallel: each `cx` boundary's noise
+    /// tree evaluation is independent. The per-block trilerp loop then
+    /// indexes `slices[cx]` and `slices[cx + 1]` sequentially.
+    slices: Vec<Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>>,
     /// Number of active interpolation channels.
     interp_count: usize,
     /// Number of Y corners per Z column (`cell_count_y` + 1).
     corners_y: usize,
+
+    /// Per-corner block-Y values, precomputed once at construction.
+    /// Same for every slice fill (depends only on `cell_min_y`,
+    /// `cell_height`, and `corners_y`).
+    block_ys: Vec<i32>,
 
     /// First cell X/Z in world coordinates (cell index, not block).
     first_cell_x: i32,
@@ -99,11 +107,21 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             "interp_count {interp_count} exceeds MAX_INTERP {MAX_INTERP}"
         );
 
+        let block_ys: Vec<i32> = (0..corners_y)
+            .map(|cy| (cy as i32 + cell_min_y) * cell_height)
+            .collect();
+
+        let n_slices = cell_count_xz + 1;
+        let mut slices = Vec::with_capacity(n_slices);
+        for _ in 0..n_slices {
+            slices.push(Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]));
+        }
+
         Self {
-            slice0: Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]),
-            slice1: Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]),
+            slices,
             interp_count,
             corners_y,
+            block_ys,
             first_cell_x,
             first_cell_z,
             cell_min_y,
@@ -113,43 +131,42 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         }
     }
 
-    /// Fill all interpolation channel slices at the given cell X coordinate.
-    fn fill_slice(
-        &mut self,
-        use_slice0: bool,
+    /// Fill the slice buffer for the given cell X. Free-standing function so
+    /// each parallel slice-fill can run on its own thread with its own
+    /// `ColumnCache` clone.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_slice_into(
+        slice: &mut [f64; MAX_INTERP * MAX_SLICE_LEN],
         cell_x: i32,
+        block_ys: &[i32],
+        blended_column: &mut [f64],
+        interp_count: usize,
+        corners_y: usize,
+        cell_count_xz: usize,
+        first_cell_z: i32,
         noises: &N,
         cache: &mut N::ColumnCache,
         beardifier: Option<&Beardifier>,
     ) {
         let cell_width = N::Settings::CELL_WIDTH;
-        let cell_height = N::Settings::CELL_HEIGHT;
-        let corners_y = self.corners_y;
-        let interp_count = self.interp_count;
 
         let block_x = cell_x * cell_width;
 
         let mut values = [0.0f64; MAX_INTERP];
 
-        // Collect Y values for SIMD precomputation
-        let block_ys: Vec<i32> = (0..corners_y)
-            .map(|cy| (cy as i32 + self.cell_min_y) * cell_height)
-            .collect();
-
         // Scratch buffer for the 4-Y SIMD batch. Lane-major SoA: lane `i`'s
         // `interp_count` channels live at `values_4x[i * interp_count..]`.
         let mut values_4x = [0.0f64; 4 * MAX_INTERP];
 
-        for cz in 0..=self.cell_count_xz {
-            let cell_z = self.first_cell_z + cz as i32;
+        for cz in 0..=cell_count_xz {
+            let cell_z = first_cell_z + cz as i32;
             let block_z = cell_z * cell_width;
 
             // Ensure column cache for this (x, z)
             cache.ensure(block_x, block_z, noises);
 
-            // SIMD-batch blended noise for the entire Y column
-            let mut blended_column = vec![0.0f64; corners_y];
-            noises.compute_noise_column(block_x, &block_ys, block_z, &mut blended_column);
+            // SIMD-batch blended noise for the entire Y column.
+            noises.compute_noise_column(block_x, block_ys, block_z, blended_column);
 
             // 4-Y SIMD-batched corner fill. Tail is handled by the scalar
             // loop below for any remaining `corners_y % 4` corners.
@@ -177,11 +194,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     &mut values_4x[..4 * interp_count],
                 );
 
-                let slice = if use_slice0 {
-                    &mut *self.slice0
-                } else {
-                    &mut *self.slice1
-                };
                 for lane in 0..4 {
                     let lane_cy = cy + lane;
                     let src = &values_4x[lane * interp_count..(lane + 1) * interp_count];
@@ -214,11 +226,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
                 let corner_idx = cz * corners_y + cy;
                 let base = corner_idx * MAX_INTERP;
-                let slice = if use_slice0 {
-                    &mut *self.slice0
-                } else {
-                    &mut *self.slice1
-                };
                 slice[base..base + interp_count].copy_from_slice(&values[..interp_count]);
 
                 cy += 1;
@@ -247,22 +254,43 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let cell_count_y = self.cell_count_y;
         let interp_count = self.interp_count;
         let corners_y = self.corners_y;
+        let first_cell_x = self.first_cell_x;
+        let first_cell_z = self.first_cell_z;
+        let block_ys: &[i32] = &self.block_ys;
 
-        // Fill initial X slice (slice0)
-        self.fill_slice(true, self.first_cell_x, noises, cache, beardifier);
+        // Pre-fill ALL slices in parallel. Each `(cell_x boundary)` slice is
+        // an independent noise-tree evaluation, so they can run concurrently
+        // with their own `ColumnCache` clones. The grid in `cache` is set up
+        // by the caller via `init_grid`; cloning copies it, and each thread
+        // mutates only its own active fields.
+        use rayon::prelude::*;
+        let n_slices = cell_count_xz + 1;
+        let cache_template = cache.clone();
+        self.slices[..n_slices]
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(cx_off, slice)| {
+                let mut local_cache = cache_template.clone();
+                let mut local_blended = vec![0.0f64; corners_y];
+                let cell_x = first_cell_x + cx_off as i32;
+                Self::fill_slice_into(
+                    slice,
+                    cell_x,
+                    block_ys,
+                    &mut local_blended,
+                    interp_count,
+                    corners_y,
+                    cell_count_xz,
+                    first_cell_z,
+                    noises,
+                    &mut local_cache,
+                    beardifier,
+                );
+            });
 
         let mut interpolated = [0.0f64; MAX_INTERP];
 
         for cell_x_idx in 0..cell_count_xz {
-            // Fill next X slice (slice1)
-            self.fill_slice(
-                false,
-                self.first_cell_x + cell_x_idx as i32 + 1,
-                noises,
-                cache,
-                beardifier,
-            );
-
             for cell_z_idx in 0..cell_count_xz {
                 for x_in_cell in 0..cell_width {
                     let factor_x = f64::from(x_in_cell) / f64::from(cell_width);
@@ -301,8 +329,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 let i1_base = (z1_base + cell_y_idx) * MAX_INTERP;
                                 let i0_next = i0_base + MAX_INTERP;
                                 let i1_next = i1_base + MAX_INTERP;
-                                let s0 = &*self.slice0;
-                                let s1 = &*self.slice1;
+                                let s0 = &*self.slices[cell_x_idx];
+                                let s1 = &*self.slices[cell_x_idx + 1];
                                 let factor_y_v = f64x4::splat(factor_y);
                                 let factor_x_v = f64x4::splat(factor_x);
                                 let factor_z_v = f64x4::splat(factor_z);
@@ -402,9 +430,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 }
             }
 
-            // Swap slices: "next X" becomes "current X" for the next iteration.
-            // Boxed slabs swap as pointer rotation (no memcpy).
-            std::mem::swap(&mut self.slice0, &mut self.slice1);
+            // No swap needed: all slices are pre-filled and indexed directly
+            // via `self.slices[cell_x_idx]` / `[cell_x_idx + 1]`.
         }
     }
 }

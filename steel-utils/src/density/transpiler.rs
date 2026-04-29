@@ -2058,6 +2058,47 @@ impl TranspileContext {
                 }
             }
 
+            DensityFunction::WeirdScaledSampler(ws) => {
+                // Hybrid SIMD: the rarity input is batched 4-wide (it's
+                // typically a Y-dependent Noise, so 4 scalar samples → 1 SIMD
+                // sample). The outer `noise.get_value(x/scale, y/scale,
+                // z/scale)` is per-lane scalar because each lane's scale —
+                // derived from its own rarity — produces a different scaled
+                // position, which can't be batched without changing the noise
+                // API. Per-lane math is identical to the scalar fallback;
+                // only the input evaluation moves from 4× scalar to 1× SIMD.
+                let input_simd = self.gen_expr_simd(&ws.input, input, is_flat);
+                let field = noise_field_ident(&ws.noise_id);
+                let mapper = match ws.rarity_value_mapper {
+                    RarityValueMapper::Tunnels => quote! { RarityValueMapper::Tunnels },
+                    RarityValueMapper::Caves => quote! { RarityValueMapper::Caves },
+                };
+                let lane = |i: usize| -> TokenStream {
+                    let i_lit = Literal::usize_unsuffixed(i);
+                    quote! {{
+                        let rarity = __rarity_arr[#i_lit];
+                        let scale = #mapper.get_values(rarity);
+                        #[allow(clippy::cast_possible_truncation)]
+                        let y = __ys_arr[#i_lit] as i32;
+                        scale * noises.#field.get_value(
+                            f64::from(x) / scale,
+                            f64::from(y) / scale,
+                            f64::from(z) / scale,
+                        ).abs()
+                    }}
+                };
+                let r0 = lane(0);
+                let r1 = lane(1);
+                let r2 = lane(2);
+                let r3 = lane(3);
+                quote! {{
+                    let __rarity_v = #input_simd;
+                    let __rarity_arr = __rarity_v.to_array();
+                    let __ys_arr = ys.to_array();
+                    f64x4::from_array([#r0, #r1, #r2, #r3])
+                }}
+            }
+
             DensityFunction::TwoArgumentSimple(t) => {
                 // Add/Mul are uncontroversial — they just become SIMD ops.
                 // Min/Max keep their static-bound short-circuit (the SIMD form
@@ -2114,6 +2155,14 @@ impl TranspileContext {
                         }
                     }
                 }
+            }
+
+            DensityFunction::EndIslands => {
+                // EndIslands ignores its `block_y` argument — the result depends
+                // only on (block_x, block_z). All 4 lanes get the same value, so
+                // we evaluate scalar once and splat. This skips the 25×25
+                // simplex-noise neighborhood scan three out of four times.
+                quote! { f64x4::splat(noises.end_islands.sample(x, 0, z)) }
             }
 
             DensityFunction::RangeChoice(rc) => {

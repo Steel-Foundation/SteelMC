@@ -259,4 +259,14 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     /// Apply the transpiled surface rule at the given context position.
     fn try_apply_surface_rule(ctx: &SurfaceRuleContext<'_>) -> Option<BlockStateId>;
+
+    /// `true` when the dimension's surface rule is "always write the default
+    /// block" — applying it to a chunk that already had its default block
+    /// written by noise fill is a no-op. Lets the chunk generator skip the
+    /// entire `build_surface` column scan. Bit-identical to vanilla because
+    /// the rule's only output is the block already there.
+    ///
+    /// Default: `false`. Override to `true` for End (whose surface rule is
+    /// just `block(end_stone)`).
+    const SURFACE_RULE_TRIVIAL_DEFAULT: bool = false;
 }
