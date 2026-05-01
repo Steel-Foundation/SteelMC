@@ -112,6 +112,12 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     }
 
     /// Fill all interpolation channel slices at the given cell X coordinate.
+    ///
+    /// Beardifier is intentionally **not** applied here. Vanilla wraps the entire
+    /// `add(final_density, beardifier)` in `cacheAllInCell`, which evaluates the
+    /// beardifier per-block (after all interpolation and outer ops on `final_density`).
+    /// We mirror that by applying the beardifier in [`Self::fill`] after
+    /// `combine_interpolated`.
     #[expect(
         clippy::needless_range_loop,
         reason = "index ch is used to index both values[] and channels[]"
@@ -122,7 +128,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         cell_x: i32,
         noises: &N,
         cache: &mut N::ColumnCache,
-        beardifier: Option<&Beardifier>,
     ) {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
@@ -162,11 +167,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                     &mut values[..interp_count],
                 );
 
-                // Beardifier contributes to channel 0 (main terrain density)
-                if let Some(beard) = beardifier {
-                    values[0] += beard.compute(block_x, block_y, block_z);
-                }
-
                 // Store in each channel's slice
                 let flat_idx = cz * corners_y + cy;
                 for ch in 0..interp_count {
@@ -204,7 +204,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let corners_y = self.corners_y;
 
         // Fill initial X slice (slice0)
-        self.fill_slice(true, self.first_cell_x, noises, cache, beardifier);
+        self.fill_slice(true, self.first_cell_x, noises, cache);
 
         let mut interpolated = [0.0f64; MAX_INTERP];
 
@@ -215,7 +215,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 self.first_cell_x + cell_x_idx as i32 + 1,
                 noises,
                 cache,
-                beardifier,
             );
 
             for cell_z_idx in 0..cell_count_xz {
@@ -281,13 +280,29 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 // x/z are 0 because vanilla's outer operations (squeeze, add, mul,
                                 // quarter_negative, blend_alpha, blend_offset) are x/z-independent;
                                 // only Y matters for YClampedGradient.
-                                let density = noises.combine_interpolated(
+                                let mut density = noises.combine_interpolated(
                                     cache,
                                     &interpolated[..interp_count],
                                     0,
                                     world_y,
                                     0,
                                 );
+
+                                // Vanilla integrates beardifier as `add(final_density, beardifier)`
+                                // wrapped in `cacheAllInCell` — i.e. evaluated per-block, after the
+                                // outer ops on `final_density` have run. Adding it at cell corners
+                                // would put it inside the squeeze and trilerp it linearly across
+                                // the cell, both of which diverge from vanilla for large beardifier
+                                // values inside a structure's pieces.
+                                let world_x = cell_x_idx as i32 * cell_width
+                                    + x_in_cell
+                                    + self.first_cell_x * cell_width;
+                                let world_z = cell_z_idx as i32 * cell_width
+                                    + z_in_cell
+                                    + self.first_cell_z * cell_width;
+                                if let Some(beard) = beardifier {
+                                    density += beard.compute(world_x, world_y, world_z);
+                                }
 
                                 place_block(
                                     local_x,

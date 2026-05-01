@@ -656,6 +656,7 @@ impl<N: DimensionNoises> Structure<N> for NetherFortressStructure {
                     nbt_data: Vec::new(),
                     ground_level_delta: 0,
                     junctions: Vec::new(),
+                    projection: None,
                 })
                 .collect(),
         })

@@ -49,6 +49,7 @@ const fn piece(bb: BoundingBox) -> StructurePiece {
         nbt_data: Vec::new(),
         ground_level_delta: 0,
         junctions: Vec::new(),
+        projection: None,
     }
 }
 

@@ -329,6 +329,7 @@ impl<N: DimensionNoises> Structure<N> for RuinedPortalStructure {
                 nbt_data: Vec::new(),
                 ground_level_delta: 0,
                 junctions: Vec::new(),
+                projection: None,
             }],
         })
     }

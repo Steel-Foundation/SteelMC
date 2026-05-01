@@ -903,6 +903,11 @@ impl ChunkStorage {
                         nbt_data: pp.nbt_data.clone(),
                         ground_level_delta: 0,
                         junctions: Vec::new(),
+                        // Persistent format doesn't store projection; on reload, treat
+                        // every piece as non-jigsaw (matches vanilla's `else` branch in
+                        // beardifier — adds as rigid with ground_level_delta=0).
+                        // TODO: persist projection so reloaded chunks beardify correctly.
+                        projection: None,
                     })
                     .collect();
 

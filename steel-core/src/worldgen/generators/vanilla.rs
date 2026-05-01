@@ -950,6 +950,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                         nbt_data: Vec::new(),
                                         ground_level_delta: pp.ground_level_delta,
                                         junctions: pp.junctions,
+                                        projection: Some(pp.projection),
                                     })
                                     .collect();
                                 let start = StructureStart::new(
@@ -1019,7 +1020,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         chunk.mark_dirty();
     }
 
-    fn fill_from_noise(&self, chunk: &ChunkAccess) {
+    fn fill_from_noise(&self, chunk: &ChunkAccess, beardifier: Option<&Beardifier>) {
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
         let chunk_min_z = pos.0.y * 16;
@@ -1046,14 +1047,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             column_cache.clone(),
         );
 
-        let structure_starts = chunk.structure_starts();
-        let beardifier = Beardifier::for_structures_in_chunk(&structure_starts, pos.0.x, pos.0.y);
-        let beard_opt = if beardifier.is_empty() {
-            None
-        } else {
-            Some(&beardifier)
-        };
-
         // Collect writes per (x,z) column and flush in batch to avoid per-block
         // write lock acquisition on sections.
         let mut pending_writes: Vec<(usize, usize, usize, BlockStateId)> = Vec::new();
@@ -1064,7 +1057,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         noise_chunk.fill(
             noises,
             &mut column_cache,
-            beard_opt,
+            beardifier,
             |local_x, world_y, local_z, density, interpolated, cache| {
                 // Flush when we move to a new column
                 if local_x != prev_x || local_z != prev_z {

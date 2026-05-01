@@ -88,6 +88,7 @@ impl<N: DimensionNoises> Structure<N> for SinglePieceStructure {
                 nbt_data: Vec::new(),
                 ground_level_delta: 0,
                 junctions: Vec::new(),
+                projection: None,
             }],
         })
     }
@@ -120,6 +121,7 @@ impl<N: DimensionNoises> Structure<N> for BuriedTreasureStructure {
                 nbt_data: Vec::new(),
                 ground_level_delta: 0,
                 junctions: Vec::new(),
+                projection: None,
             }],
         })
     }

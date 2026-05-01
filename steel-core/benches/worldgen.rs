@@ -151,7 +151,7 @@ fn bench_overworld_noise(c: &mut Criterion) {
     c.bench_function("overworld_fill_from_noise", |b| {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.fill_from_noise(&chunk);
+            generator.fill_from_noise(&chunk, None);
         });
     });
 }
@@ -165,7 +165,7 @@ fn bench_nether_noise(c: &mut Criterion) {
     c.bench_function("nether_fill_from_noise", |b| {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.fill_from_noise(&chunk);
+            generator.fill_from_noise(&chunk, None);
         });
     });
 }
@@ -179,7 +179,7 @@ fn bench_end_noise(c: &mut Criterion) {
     c.bench_function("end_fill_from_noise", |b| {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.fill_from_noise(&chunk);
+            generator.fill_from_noise(&chunk, None);
         });
     });
 }
@@ -197,7 +197,7 @@ fn bench_overworld_surface(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk);
+                generator.fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {
@@ -220,7 +220,7 @@ fn bench_nether_surface(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk);
+                generator.fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {
@@ -243,7 +243,7 @@ fn bench_end_surface(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk);
+                generator.fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {

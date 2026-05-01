@@ -3,6 +3,7 @@ use steel_utils::{BlockStateId, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::noise::beardifier::Beardifier;
 
 /// A chunk generator that generates a flat world.
 ///
@@ -66,7 +67,7 @@ impl ChunkGenerator for FlatChunkGenerator {
         chunk.mark_dirty();
     }
 
-    fn fill_from_noise(&self, chunk: &ChunkAccess) {
+    fn fill_from_noise(&self, chunk: &ChunkAccess, _beardifier: Option<&Beardifier>) {
         let max_relative_y = chunk.sections().sections.len() * 16;
 
         for x in 0..16 {

@@ -27,7 +27,7 @@ use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
-use steel_registry::template_pool::TemplateData;
+use steel_registry::template_pool::{Projection, TemplateData};
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::worldgen::ChunkBiomeSampler;
@@ -117,6 +117,12 @@ pub struct StructurePiece {
     pub ground_level_delta: i32,
     /// Junctions for Beardifier terrain adaptation.
     pub junctions: Vec<jigsaw::JigsawJunction>,
+    /// Jigsaw projection. `None` for non-jigsaw pieces.
+    ///
+    /// Beardifier treats `Some(Rigid)` and `None` as terrain-adapting, but skips
+    /// `Some(TerrainMatching)` from the rigid set (still collecting junctions).
+    /// Mirrors vanilla's `piece instanceof PoolElementStructurePiece` + `Projection.RIGID` check.
+    pub projection: Option<Projection>,
 }
 
 /// Structure starts keyed by structure id.
