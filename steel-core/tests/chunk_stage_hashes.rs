@@ -533,15 +533,16 @@ fn chunk_stage_hashes_inner() {
                     };
                     let starts = source_chunk.structure_starts();
                     for (structure_id, start) in starts.iter() {
+                        // `start.bounding_box` is already inflated by `bb_inflate`,
+                        // matching `worldgen::stages::structures::generate_references`.
                         let Some(bb) = start.bounding_box else {
                             continue;
                         };
-                        let inflate = start.bb_inflate;
                         if bb.intersects_xz(
-                            target_block_x - inflate,
-                            target_block_z - inflate,
-                            target_block_x + 15 + inflate,
-                            target_block_z + 15 + inflate,
+                            target_block_x,
+                            target_block_z,
+                            target_block_x + 15,
+                            target_block_z + 15,
                         ) {
                             chunks[&(target_x, target_z)]
                                 .structure_references_mut()
