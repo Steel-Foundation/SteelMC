@@ -510,9 +510,16 @@ fn right(
     gen_and_add(s, rng, fx, bb.min_y + y_off, fz, d, depth + 1);
 }
 
-/// All stronghold pieces for a chunk as `(bounding_box, vanilla_piece_id)`.
+/// All stronghold pieces for a chunk as
+/// `(bounding_box, vanilla_piece_id, orientation, gen_depth)`. Vanilla calls
+/// `setOrientation(direction)` on every stronghold piece, and threads
+/// `genDepth` through the DFS via each subclass's `createPiece` helper.
 #[must_use]
-pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<(BoundingBox, &'static str)> {
+pub fn generate_pieces(
+    seed: i64,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Vec<(BoundingBox, &'static str, Direction, i32)> {
     let west = chunk_x * 16 + 2;
     let north = chunk_z * 16 + 2;
 
@@ -582,6 +589,8 @@ pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<(BoundingBo
                         p.bb.max_z,
                     ),
                     p.pt.vanilla_id(p.depth),
+                    p.dir,
+                    p.depth,
                 )
             })
             .collect();
@@ -608,11 +617,11 @@ impl<N: DimensionNoises> Structure<N> for StrongholdStructure {
             position: (ctx.center_block_x, surface_y, ctx.center_block_z),
             pieces: generate_pieces(ctx.seed, ctx.chunk_x, ctx.chunk_z)
                 .into_iter()
-                .map(|(bb, piece_id)| StructurePiece {
+                .map(|(bb, piece_id, dir, depth)| StructurePiece {
                     piece_type: Identifier::new_static("minecraft", piece_id),
                     bounding_box: bb,
-                    gen_depth: 0,
-                    orientation: None,
+                    gen_depth: depth,
+                    orientation: Some(dir),
                     nbt_data: Vec::new(),
                     ground_level_delta: 0,
                     junctions: Vec::new(),

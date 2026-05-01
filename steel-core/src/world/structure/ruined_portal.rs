@@ -3,7 +3,7 @@
 
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use crate::world::structure::placement::StructureSelectionEntry;
@@ -325,7 +325,7 @@ impl<N: DimensionNoises> Structure<N> for RuinedPortalStructure {
                 piece_type: Identifier::new_static("minecraft", "rupo"),
                 bounding_box: result.bounding_box,
                 gen_depth: 0,
-                orientation: None,
+                orientation: Some(Direction::North),
                 nbt_data: Vec::new(),
                 ground_level_delta: 0,
                 junctions: Vec::new(),

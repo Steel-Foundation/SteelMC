@@ -54,16 +54,15 @@ pub(crate) fn generate_references(
 
             for (structure_id, start) in source_chunk.structure_starts().iter() {
                 // Empty-pieces starts have no BB (legacy/unknown types).
+                // `start.bounding_box` is already inflated by `bb_inflate`.
                 let Some(bb) = start.bounding_box else {
                     continue;
                 };
-                // Vanilla inflates when terrain_adaptation != NONE.
-                let inflate = start.bb_inflate;
                 if bb.intersects_xz(
-                    target_block_x - inflate,
-                    target_block_z - inflate,
-                    target_block_x + 15 + inflate,
-                    target_block_z + 15 + inflate,
+                    target_block_x,
+                    target_block_z,
+                    target_block_x + 15,
+                    target_block_z + 15,
                 ) {
                     let target_chunk = holder
                         .try_chunk(ChunkStatus::StructureStarts)

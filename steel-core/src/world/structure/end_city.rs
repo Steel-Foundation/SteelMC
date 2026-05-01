@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use steel_registry::template_pool::TemplateData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
@@ -479,8 +479,8 @@ impl<N: DimensionNoises> Structure<N> for EndCityStructure {
                             size[1],
                             size[2],
                         ),
-                        gen_depth: 0,
-                        orientation: None,
+                        gen_depth: p.gen_depth,
+                        orientation: Some(Direction::North),
                         nbt_data: Vec::new(),
                         ground_level_delta: 0,
                         junctions: Vec::new(),

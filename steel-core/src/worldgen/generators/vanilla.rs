@@ -936,8 +936,16 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                                     .into_iter()
                                     .map(|pp| StructurePiece {
                                         piece_type: Identifier::new_static("minecraft", "jigsaw"),
-                                        bounding_box: pp.bounding_box,
-                                        gen_depth: pp.depth,
+                                        // Vanilla's `JigsawPlacement.tryPlacingChildren`
+                                        // mutates `targetBB` in place via the expansion
+                                        // hack, then stores it on `PoolElementStructurePiece`.
+                                        // `assembly_bb` mirrors that final value (it equals
+                                        // `bounding_box` for the unexpanded center piece).
+                                        bounding_box: pp.assembly_bb,
+                                        // Vanilla's `PoolElementStructurePiece` constructor
+                                        // hardcodes `genDepth = 0` for every jigsaw piece,
+                                        // independent of tree depth.
+                                        gen_depth: 0,
                                         orientation: None,
                                         nbt_data: Vec::new(),
                                         ground_level_delta: pp.ground_level_delta,

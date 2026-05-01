@@ -48,17 +48,18 @@ pub struct StructureStart {
     pub references: i32,
     /// Pieces composing this structure.
     pub pieces: Vec<StructurePiece>,
-    /// Bounding-box inflation for reference intersection. Vanilla inflates by 12
-    /// when `terrain_adaptation != NONE`.
+    /// Bounding-box inflation applied at construction. Vanilla inflates by 12
+    /// when `terrain_adaptation != NONE`. Stored for serialization parity; the
+    /// inflation is already baked into [`bounding_box`](Self::bounding_box).
     pub bb_inflate: i32,
-    /// Cached union of piece bounding boxes. `None` iff `pieces` is empty.
-    /// Reference scans do up to 17×17 lookups per target chunk; caching avoids
-    /// rebuilding this union for every visiting neighbor.
+    /// Cached bounding box matching vanilla's `StructureStart.getBoundingBox()`:
+    /// the union of piece bounding boxes, then `inflatedBy(bb_inflate)`.
+    /// `None` iff `pieces` is empty.
     pub bounding_box: Option<BoundingBox>,
 }
 
 impl StructureStart {
-    /// Creates a start, computing the piece-union bounding box up-front.
+    /// Creates a start, computing the inflated piece-union bounding box up-front.
     #[must_use]
     pub fn new(
         structure: Identifier,
@@ -66,7 +67,7 @@ impl StructureStart {
         pieces: Vec<StructurePiece>,
         bb_inflate: i32,
     ) -> Self {
-        let bounding_box = Self::compute_bounding_box(&pieces);
+        let bounding_box = Self::compute_bounding_box(&pieces, bb_inflate);
         Self {
             structure,
             chunk_pos,
@@ -77,9 +78,11 @@ impl StructureStart {
         }
     }
 
-    /// Union of all pieces' bounding boxes, or `None` if empty.
+    /// Union of all pieces' bounding boxes, inflated by `bb_inflate` on every
+    /// axis. Returns `None` if `pieces` is empty. Mirrors vanilla's
+    /// `StructureStart.getBoundingBox()` (= `adjustBoundingBox(union)`).
     #[must_use]
-    pub fn compute_bounding_box(pieces: &[StructurePiece]) -> Option<BoundingBox> {
+    pub fn compute_bounding_box(pieces: &[StructurePiece], bb_inflate: i32) -> Option<BoundingBox> {
         let (first, rest) = pieces.split_first()?;
         let mut bb = first.bounding_box;
         for piece in rest {
@@ -92,7 +95,7 @@ impl StructureStart {
                 bb.max_z.max(piece.bounding_box.max_z),
             );
         }
-        Some(bb)
+        Some(bb.inflated_by(bb_inflate, bb_inflate, bb_inflate))
     }
 }
 

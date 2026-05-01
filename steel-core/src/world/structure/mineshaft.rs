@@ -5,7 +5,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Identifier};
+use steel_utils::{BoundingBox, Direction, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use crate::world::structure::placement::StructureSelectionEntry;
@@ -31,6 +31,18 @@ enum Dir {
     South,
     West,
     East,
+}
+
+impl Dir {
+    /// Maps to the vanilla `Direction` set on `setOrientation`.
+    const fn to_vanilla(self) -> Direction {
+        match self {
+            Dir::North => Direction::North,
+            Dir::South => Direction::South,
+            Dir::West => Direction::West,
+            Dir::East => Direction::East,
+        }
+    }
 }
 
 /// Mineshaft piece kind — produced by the DFS and mapped back to vanilla's
@@ -63,6 +75,12 @@ impl PieceType {
 struct PieceInfo {
     bb: BoundingBox,
     kind: PieceType,
+    /// Distance from the start room in the DFS tree. Vanilla's `genDepth`.
+    gen_depth: i32,
+    /// Direction the piece was generated from. `None` for the start room.
+    /// Vanilla calls `setOrientation(direction)` only on `MineShaftCorridor` and
+    /// `MineShaftStairs`; rooms and crossings keep `orientation = null`.
+    dir: Option<Dir>,
 }
 
 struct Pieces {
@@ -77,12 +95,25 @@ impl Pieces {
     }
 }
 
+/// One mineshaft piece in the generated tree.
+pub struct MineshaftPieceData {
+    /// Vanilla piece kind (room/corridor/crossing/stairs).
+    pub kind: PieceType,
+    /// World-space bounding box, already offset to the final Y position.
+    pub bounding_box: BoundingBox,
+    /// Distance from the start room in the DFS tree (vanilla's `genDepth`).
+    pub gen_depth: i32,
+    /// Vanilla `setOrientation` value: `Some` for corridors and stairs, `None`
+    /// for the start room and crossings.
+    pub orientation: Option<Direction>,
+}
+
 /// Result of mineshaft generation.
 pub struct MineshaftResult {
     /// Biome check position `(block_x, block_y, block_z)`.
     pub biome_check_pos: (i32, i32, i32),
-    /// Pieces with their kind + BB, offset to final Y position.
-    pub pieces: Vec<(PieceType, BoundingBox)>,
+    /// Pieces in DFS order, offset to final Y position.
+    pub pieces: Vec<MineshaftPieceData>,
 }
 
 /// Generates mineshaft pieces and returns the biome check position + piece data.
@@ -106,6 +137,8 @@ pub fn find_generation_point(
         infos: vec![PieceInfo {
             bb: room_bb,
             kind: PieceType::Room,
+            gen_depth: 0,
+            dir: None,
         }],
         start_bb: room_bb,
     };
@@ -143,18 +176,18 @@ pub fn find_generation_point(
         pieces: pieces
             .infos
             .iter()
-            .map(|info| {
-                (
-                    info.kind,
-                    BoundingBox::new(
-                        info.bb.min_x,
-                        info.bb.min_y + y_offset,
-                        info.bb.min_z,
-                        info.bb.max_x,
-                        info.bb.max_y + y_offset,
-                        info.bb.max_z,
-                    ),
-                )
+            .map(|info| MineshaftPieceData {
+                kind: info.kind,
+                bounding_box: BoundingBox::new(
+                    info.bb.min_x,
+                    info.bb.min_y + y_offset,
+                    info.bb.min_z,
+                    info.bb.max_x,
+                    info.bb.max_y + y_offset,
+                    info.bb.max_z,
+                ),
+                gen_depth: info.gen_depth,
+                orientation: info.dir.map(Dir::to_vanilla),
             })
             .collect(),
     }
@@ -230,9 +263,21 @@ fn generate_and_add(
     }
 }
 
-fn push_piece(pieces: &mut Pieces, bb: BoundingBox, kind: PieceType) {
+fn push_piece(pieces: &mut Pieces, bb: BoundingBox, kind: PieceType, gen_depth: i32, dir: Dir) {
     pieces.bbs.push(bb);
-    pieces.infos.push(PieceInfo { bb, kind });
+    // Vanilla only calls `setOrientation` on corridors and stairs; rooms have
+    // no direction at all and crossings store it internally without setting
+    // orientation, so both serialize as `O = -1`.
+    let saved_dir = match kind {
+        PieceType::Corridor | PieceType::Stairs => Some(dir),
+        PieceType::Room | PieceType::Crossing => None,
+    };
+    pieces.infos.push(PieceInfo {
+        bb,
+        kind,
+        gen_depth,
+        dir: saved_dir,
+    });
 }
 
 fn try_add_corridor(
@@ -259,7 +304,7 @@ fn try_add_corridor(
             foot_z,
         );
         if !pieces.has_collision(&bb) {
-            push_piece(pieces, bb, PieceType::Corridor);
+            push_piece(pieces, bb, PieceType::Corridor, gen_depth, dir);
             // MineShaftCorridor constructor RNG.
             if rng.next_i32_bounded(3) != 0 {
                 rng.next_i32_bounded(23); // spiderCorridor
@@ -297,7 +342,7 @@ fn try_add_crossing(
     if pieces.has_collision(&bb) {
         return false;
     }
-    push_piece(pieces, bb, PieceType::Crossing);
+    push_piece(pieces, bb, PieceType::Crossing, gen_depth, dir);
     crossing_add_children(pieces, rng, bb, dir, gen_depth, is_two_floored);
     true
 }
@@ -325,7 +370,7 @@ fn try_add_stairs(
     if pieces.has_collision(&bb) {
         return false;
     }
-    push_piece(pieces, bb, PieceType::Stairs);
+    push_piece(pieces, bb, PieceType::Stairs, gen_depth, dir);
     stairs_add_children(pieces, rng, bb, dir, gen_depth);
     true
 }
@@ -583,11 +628,11 @@ impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
             pieces: result
                 .pieces
                 .into_iter()
-                .map(|(kind, bb)| StructurePiece {
-                    piece_type: Identifier::new_static("minecraft", kind.piece_id()),
-                    bounding_box: bb,
-                    gen_depth: 0,
-                    orientation: None,
+                .map(|p| StructurePiece {
+                    piece_type: Identifier::new_static("minecraft", p.kind.piece_id()),
+                    bounding_box: p.bounding_box,
+                    gen_depth: p.gen_depth,
+                    orientation: p.orientation,
                     nbt_data: Vec::new(),
                     ground_level_delta: 0,
                     junctions: Vec::new(),
@@ -617,6 +662,8 @@ mod tests {
             infos: vec![PieceInfo {
                 bb: room_bb,
                 kind: PieceType::Room,
+                gen_depth: 0,
+                dir: None,
             }],
             start_bb: room_bb,
         };

@@ -2,6 +2,7 @@
 //! the base-noise column down until we find air over solid. Fails if the walk
 //! reaches sea level.
 
+use steel_utils::Direction;
 use steel_utils::Identifier;
 use steel_utils::Rotation;
 use steel_utils::random::Random;
@@ -121,7 +122,7 @@ impl<N: DimensionNoises> Structure<N> for NetherFossilStructure {
                     tmpl.size[2],
                 ),
                 gen_depth: 0,
-                orientation: None,
+                orientation: Some(Direction::North),
                 nbt_data: Vec::new(),
                 ground_level_delta: 0,
                 junctions: Vec::new(),

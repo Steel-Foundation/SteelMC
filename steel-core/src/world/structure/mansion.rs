@@ -1747,7 +1747,7 @@ impl<N: DimensionNoises> Structure<N> for WoodlandMansionStructure {
                 piece_type: Identifier::new_static("minecraft", "wmp"),
                 bounding_box: bb,
                 gen_depth: 0,
-                orientation: None,
+                orientation: Some(Direction::North),
                 nbt_data: Vec::new(),
                 ground_level_delta: 0,
                 junctions: Vec::new(),

@@ -4,7 +4,7 @@
 
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
@@ -209,7 +209,7 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
                     piece_type: Identifier::new_static("minecraft", "orp"),
                     bounding_box: bb,
                     gen_depth: 0,
-                    orientation: None,
+                    orientation: Some(Direction::North),
                     nbt_data: Vec::new(),
                     ground_level_delta: 0,
                     junctions: Vec::new(),
