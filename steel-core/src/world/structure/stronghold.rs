@@ -1,10 +1,10 @@
 //! Stronghold piece generation. Vanilla's `StrongholdPieces` recursive BFS;
 //! produces bounding boxes only (no blocks).
 
-use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier};
+use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};

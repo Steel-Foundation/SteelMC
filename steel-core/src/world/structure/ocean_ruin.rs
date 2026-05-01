@@ -2,10 +2,10 @@
 //! and the cluster check passes — a scatter of smaller ruins with collision checks.
 //! Warm uses one piece; cold stacks three (brick + cracked + mossy) from the same index.
 
-use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};

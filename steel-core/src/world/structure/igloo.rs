@@ -1,10 +1,10 @@
 //! Igloo: one top piece always, 50% chance of a basement (laboratory + `depth-1`
 //! ladder segments, depth ∈ [4, 11]).
 
-use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};

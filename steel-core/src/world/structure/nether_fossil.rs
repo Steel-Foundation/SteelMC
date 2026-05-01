@@ -4,9 +4,9 @@
 
 use steel_utils::Identifier;
 use steel_utils::Rotation;
-use steel_worldgen::density::{DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_worldgen::density::{DimensionNoises, NoiseSettings};
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{

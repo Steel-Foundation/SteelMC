@@ -4,10 +4,10 @@
 
 use rustc_hash::FxHashMap;
 use steel_registry::template_pool::TemplateData;
-use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};

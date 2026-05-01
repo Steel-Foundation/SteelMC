@@ -1,10 +1,10 @@
 //! Shipwreck: picks a random template from the beached (11) or underwater (20) pool,
 //! places at `(chunkMinX, 90, chunkMinZ)` with random rotation and pivot `(4, 15)`.
 
-use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Identifier, Rotation};
+use steel_worldgen::density::DimensionNoises;
 
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};

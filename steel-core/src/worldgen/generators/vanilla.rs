@@ -40,7 +40,9 @@ use crate::world::structure::{
 };
 use crate::worldgen::BiomeSourceKind;
 use crate::worldgen::generator::ChunkGenerator;
-use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level};
+use crate::worldgen::noise::aquifer::{
+    Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level,
+};
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::noise::noise_chunk::NoiseChunk;
 use crate::worldgen::noise::ore_veinifier::OreVeinifier;

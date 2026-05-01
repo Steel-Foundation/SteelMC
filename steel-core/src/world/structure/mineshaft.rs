@@ -8,10 +8,10 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::worldgen::generators::vanilla::iterate_noise_column_with_aquifer;
-use crate::worldgen::noise::aquifer::Aquifer;
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::worldgen::generators::vanilla::iterate_noise_column_with_aquifer;
+use crate::worldgen::noise::aquifer::Aquifer;
 
 const MAX_DEPTH: i32 = 8;
 const MAX_DISTANCE: i32 = 80;

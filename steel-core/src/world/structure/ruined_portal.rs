@@ -6,12 +6,12 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
+use crate::world::structure::placement::StructureSelectionEntry;
+use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 use crate::worldgen::generators::vanilla::{
     column_interpolated_density, iterate_noise_column_with_aquifer,
 };
 use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult};
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 
 /// Template sizes for `portal_1`..`portal_10`.
 const PORTAL_SIZES: [(i32, i32, i32); 10] = [
