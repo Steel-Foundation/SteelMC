@@ -528,8 +528,9 @@ impl ChunkHeightmaps {
 
     /// Creates chunk heightmaps by taking final heightmaps from proto heightmaps.
     ///
-    /// Moves each final heightmap directly from the proto storage. Falls back to
-    /// a fresh (all-zero) heightmap for any type that doesn't exist in the proto.
+    /// Moves each final heightmap directly from the proto storage. Callers should
+    /// prime missing final heightmaps before conversion; the fallback only handles
+    /// malformed loaded data defensively.
     #[must_use]
     pub fn from_proto(proto: &mut ProtoHeightmaps, min_y: i32, height: i32) -> Self {
         Self {

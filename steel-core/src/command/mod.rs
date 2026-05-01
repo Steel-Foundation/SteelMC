@@ -30,6 +30,7 @@ impl CommandDispatcher {
     pub fn new() -> Self {
         let dispatcher = CommandDispatcher::new_empty();
         dispatcher.register(commands::clear::command_handler());
+        dispatcher.register(commands::domain::command_handler());
         dispatcher.register(commands::enchant::command_handler());
         dispatcher.register(commands::execute::command_handler());
         dispatcher.register(commands::fly::command_handler());

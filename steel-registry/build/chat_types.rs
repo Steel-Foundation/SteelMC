@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_option;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -34,19 +35,6 @@ pub struct ChatStyle {
     strikethrough: Option<bool>,
     #[serde(default)]
     obfuscated: Option<bool>,
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
 }
 
 fn generate_chat_style(style: &ChatStyle) -> TokenStream {

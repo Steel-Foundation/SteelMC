@@ -21,20 +21,20 @@ pub mod stronghold;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::RandomSplitter;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
+use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
 use steel_registry::template_pool::TemplateData;
 
-use crate::chunk::aquifer::{AquiferResult, LazyAquifer};
-use crate::chunk::vanilla_generator::{
-    column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
-};
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::worldgen::ChunkBiomeSampler;
+use crate::worldgen::generators::vanilla::{
+    column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
+};
+use crate::worldgen::noise::aquifer::{AquiferResult, LazyAquifer};
 
 /// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)
 /// starts are not stored.

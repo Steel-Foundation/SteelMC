@@ -25,7 +25,7 @@ pub struct Version {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
-    pub description: &'static str,
+    pub description: String,
     pub players: Option<Players>,
     pub version: Option<Version>,
     pub favicon: Option<String>,
@@ -41,7 +41,7 @@ pub struct CStatusResponse {
 
 impl CStatusResponse {
     #[must_use]
-    pub fn new(status: Status) -> Self {
+    pub const fn new(status: Status) -> Self {
         Self { status }
     }
 }

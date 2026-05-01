@@ -5,16 +5,15 @@ use std::hint::black_box;
 use std::sync::{Arc, Once, Weak};
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
-use steel_core::chunk::chunk_generator::ChunkGenerator;
 use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::chunk::world_gen_context::{
-    ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator, WorldGenContext,
+use steel_core::worldgen::{
+    BiomeSourceKind, ChunkBiomeSampler, ChunkGenerator, ChunkGeneratorType, EndGenerator,
+    NetherGenerator, OverworldGenerator, WorldGenContext,
 };
-use steel_core::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::ChunkPos;

@@ -2,7 +2,7 @@
 //! horizontal rotation. Desert pyramid (21×15×21), jungle temple (12×10×15),
 //! swamp hut (7×7×9), buried treasure (1×1×1 at `(chunkMinX+9, 90, chunkMinZ+9)`).
 
-use steel_utils::density::DimensionNoises;
+use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier};

@@ -8,7 +8,7 @@
 //! - `store` (store command results)
 //! - `facing` (face towards entity or coordinates)
 //! - `align` (align position to block grid)
-//! - `dimension` (execute in another dimension)
+//! - `in` (execute in another world; vanilla command docs call these dimensions)
 //! - `summon` (execute as newly summoned entity)
 //! - `on` (execute on related entities)
 use crate::command::arguments::anchor::AnchorArgument;

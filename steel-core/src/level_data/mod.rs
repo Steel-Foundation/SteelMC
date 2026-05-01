@@ -1,7 +1,7 @@
 //! Level data persistence module.
 //!
 //! This module handles saving and loading world-level data like game rules,
-//! time, weather, spawn point, and seed. This data is stored in `level.json`
+//! time, weather, spawn point, and seed. This data is stored in `level.toml`
 //! in each world's directory.
 
 use std::{
@@ -13,8 +13,8 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_registry::REGISTRY;
 use steel_registry::game_rules::{GameRuleValue, GameRuleValues};
-use steel_utils::BlockPos;
 use steel_utils::types::Difficulty;
+use steel_utils::{BlockPos, Identifier};
 use tokio::fs;
 
 /// Persistent level data that gets saved to disk.
@@ -43,6 +43,62 @@ pub struct LevelData {
     pub game_rules_values: GameRuleValues,
     /// Whether the world has been initialized.
     pub initialized: bool,
+    /// Generator settings this persisted world was created with.
+    #[serde(default)]
+    pub generation: Option<WorldGenerationSettings>,
+}
+
+/// Persisted generator metadata used to reject incompatible config changes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorldGenerationSettings {
+    /// Generator factory identifier.
+    pub generator: Identifier,
+    /// Generator config after applying generator defaults.
+    pub config: toml::Value,
+    /// Dimension type used by the generator output.
+    pub dimension_type: Identifier,
+    /// Minimum build Y for the dimension type.
+    pub min_y: i32,
+    /// Total build height for the dimension type.
+    pub height: i32,
+}
+
+impl WorldGenerationSettings {
+    /// Builds persisted generator metadata from the resolved startup config.
+    #[must_use]
+    pub fn from_generator_config(
+        generator: Identifier,
+        config: &toml::Value,
+        dimension_type: Identifier,
+        min_y: i32,
+        height: i32,
+    ) -> Self {
+        Self {
+            generator,
+            config: config.clone(),
+            dimension_type,
+            min_y,
+            height,
+        }
+    }
+}
+
+fn describe_generation_settings(settings: &WorldGenerationSettings) -> String {
+    format!(
+        "generator {}, dimension_type {}, min_y {}, height {}, config {}",
+        settings.generator,
+        settings.dimension_type,
+        settings.min_y,
+        settings.height,
+        generation_config_string(&settings.config),
+    )
+}
+
+fn generation_config_string(config: &toml::Value) -> String {
+    match toml::to_string(config) {
+        Ok(value) => value.trim().to_owned(),
+        Err(_) => "<invalid generator config>".to_owned(),
+    }
 }
 
 /// Spawn point data.
@@ -94,17 +150,48 @@ impl LevelData {
     /// Creates new level data with the given seed.
     #[must_use]
     pub fn new_with_seed(seed: i64) -> Self {
+        Self::new_with_seed_and_difficulty(seed, Difficulty::default())
+    }
+
+    /// Creates new level data with the given seed and difficulty.
+    #[must_use]
+    pub fn new_with_seed_and_difficulty(seed: i64, difficulty: Difficulty) -> Self {
         Self {
             seed,
             game_time: 0,
             day_time: 0,
             spawn: SpawnPoint::default(),
             weather: WeatherState::default(),
-            difficulty: Difficulty::default(),
+            difficulty,
             difficulty_locked: false,
             game_rules: FxHashMap::default(),
             game_rules_values: GameRuleValues::new(&REGISTRY.game_rules),
             initialized: false,
+            generation: None,
+        }
+    }
+
+    /// Verifies saved generator metadata against the current config.
+    ///
+    /// Returns whether missing metadata was adopted and should be saved.
+    pub fn validate_generation_settings(
+        &mut self,
+        expected: WorldGenerationSettings,
+    ) -> io::Result<bool> {
+        match self.generation.as_ref() {
+            Some(saved) if saved == &expected => Ok(false),
+            Some(saved) => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "world generation settings do not match saved level data: saved {}; configured {}. Delete or regenerate this world's saved chunks, or restore the previous generator config.",
+                    describe_generation_settings(saved),
+                    describe_generation_settings(&expected),
+                ),
+            )),
+            None => {
+                self.generation = Some(expected);
+                Ok(true)
+            }
         }
     }
 
@@ -143,7 +230,7 @@ impl LevelData {
 
 /// Manages level data persistence for a world.
 pub struct LevelDataManager {
-    /// Path to the level.json file.
+    /// Path to the level.toml file.
     path: Option<PathBuf>,
     /// Cached level data.
     data: LevelData,
@@ -154,39 +241,44 @@ pub struct LevelDataManager {
 impl LevelDataManager {
     /// Creates a new level data manager for the given world directory.
     ///
-    /// If `level.json` exists, it will be loaded (the provided seed is ignored).
+    /// If `level.toml` exists, it will be loaded (the provided seed is ignored).
     /// Otherwise, new data will be created with the provided seed.
-    pub async fn new(world_dir: Option<impl AsRef<Path>>, seed: i64) -> io::Result<Self> {
-        let (data, path) = match &world_dir {
-            Some(dir) => {
-                let path = dir.as_ref().join("level.json");
+    pub async fn new(
+        world_dir: Option<impl AsRef<Path>>,
+        seed: i64,
+        difficulty: Difficulty,
+        generation: WorldGenerationSettings,
+    ) -> io::Result<Self> {
+        let (data, path, dirty) = if let Some(dir) = &world_dir {
+            let path = dir.as_ref().join("level.toml");
 
-                let data = if path.exists() {
-                    // Load existing level data (seed from file takes precedence)
-                    let content = fs::read_to_string(&path).await?;
-                    let mut loaded: LevelData = serde_json::from_str(&content).map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("Invalid level.json: {e}"),
-                        )
-                    })?;
-                    // Initialize runtime game rules from serialized values
-                    loaded.load_game_rules();
-                    loaded
-                } else {
-                    // Create new level data with the provided seed
-                    LevelData::new_with_seed(seed)
-                };
-                (data, Some(path))
-            }
-            None => (LevelData::new_with_seed(seed), None),
+            let (data, dirty) = if path.exists() {
+                // Load existing level data (seed from file takes precedence)
+                let content = fs::read_to_string(&path).await?;
+                let mut loaded: LevelData = toml::from_str(&content).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Invalid level.toml: {e}"),
+                    )
+                })?;
+                // Initialize runtime game rules from serialized values
+                loaded.load_game_rules();
+                let adopted_generation = loaded.validate_generation_settings(generation)?;
+                (loaded, adopted_generation)
+            } else {
+                // Create new level data with the provided defaults.
+                let mut data = LevelData::new_with_seed_and_difficulty(seed, difficulty);
+                data.generation = Some(generation);
+                (data, true)
+            };
+            (data, Some(path), dirty)
+        } else {
+            let mut data = LevelData::new_with_seed_and_difficulty(seed, difficulty);
+            data.generation = Some(generation);
+            (data, None, false)
         };
 
-        Ok(Self {
-            path,
-            data,
-            dirty: false,
-        })
+        Ok(Self { path, data, dirty })
     }
 
     /// Gets a reference to the level data.
@@ -229,7 +321,7 @@ impl LevelDataManager {
         // Export runtime game rules to serializable format before saving
         self.data.save_game_rules();
 
-        let content = serde_json::to_string_pretty(&self.data)
+        let content = toml::to_string_pretty(&self.data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         fs::write(world_path, content).await?;
         self.dirty = false;
@@ -332,5 +424,64 @@ impl LevelDataManager {
     pub const fn set_thundering(&mut self, thundering: bool) {
         self.data.weather.thundering = thundering;
         self.dirty = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::Registry;
+    use toml::map::Map;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
+        let mut config = Map::new();
+        config.insert(
+            "dimension_type".to_owned(),
+            toml::Value::String(dimension_type.to_owned()),
+        );
+        WorldGenerationSettings {
+            generator: Identifier::vanilla_static("flat"),
+            config: toml::Value::Table(config),
+            dimension_type: dimension_type
+                .parse()
+                .expect("valid dimension type identifier"),
+            min_y: 0,
+            height,
+        }
+    }
+
+    #[test]
+    fn adopts_missing_generation_settings() {
+        init_registry();
+        let mut data = LevelData::new_with_seed(1);
+
+        let adopted = data
+            .validate_generation_settings(settings("minecraft:overworld", 384))
+            .expect("missing settings should be adopted");
+
+        assert!(adopted);
+        assert!(data.generation.is_some());
+    }
+
+    #[test]
+    fn rejects_mismatched_generation_settings() {
+        init_registry();
+        let mut data = LevelData::new_with_seed(1);
+        data.generation = Some(settings("minecraft:the_nether", 128));
+
+        let error = data
+            .validate_generation_settings(settings("minecraft:overworld", 384))
+            .expect_err("mismatched settings should be rejected");
+
+        let message = error.to_string();
+        assert!(message.contains("world generation settings do not match"));
+        assert!(message.contains("minecraft:the_nether"));
+        assert!(message.contains("minecraft:overworld"));
     }
 }

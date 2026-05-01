@@ -1,9 +1,11 @@
 //! Main entry point for the Steel Minecraft server.
 
 use std::num::NonZero;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 
+use steel::config::{self, LogConfig};
 use steel::logger::CommandLogger;
 use steel::spawn_progress::generate_spawn_chunks;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
@@ -59,8 +61,11 @@ where
         .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off"))
 }
 
-async fn init_tracing(cancel_token: CancellationToken) -> Arc<CommandLogger> {
-    let layer = LoggerLayer::new("./.tmp", cancel_token)
+async fn init_tracing(
+    cancel_token: CancellationToken,
+    log_config: Option<LogConfig>,
+) -> Arc<CommandLogger> {
+    let layer = LoggerLayer::new("./.tmp", cancel_token, log_config)
         .await
         .expect("Couldn't initialize the logger");
     let logger = layer.0.clone();
@@ -133,9 +138,20 @@ fn main() {
 
 async fn main_async(chunk_runtime: Arc<Runtime>) {
     let cancel_token = CancellationToken::new();
-    let logger = init_tracing(cancel_token.clone()).await;
 
-    run_server(chunk_runtime, cancel_token, &logger).await;
+    // Load config once at startup
+    let steel_config = match config::load_or_create(Path::new("config/config.toml")) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("Failed to load configuration: {error}");
+            return;
+        }
+    };
+    let logger = init_tracing(cancel_token.clone(), steel_config.log.clone()).await;
+
+    if let Err(error) = run_server(chunk_runtime, cancel_token, &logger, steel_config).await {
+        log::error!("Server startup failed: {error}");
+    }
 
     logger.stop().await;
 }
@@ -144,7 +160,8 @@ async fn run_server(
     chunk_runtime: Arc<Runtime>,
     cancel_token: CancellationToken,
     logger: &Arc<CommandLogger>,
-) {
+    steel_config: config::SteelConfig,
+) -> Result<(), String> {
     #[cfg(feature = "deadlock_detection")]
     {
         // only for #[cfg]
@@ -173,7 +190,9 @@ async fn run_server(
         });
     }
 
-    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone()).await;
+    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone(), steel_config)
+        .await
+        .map_err(|e| e.to_string())?;
 
     generate_spawn_chunks(&steel.server, logger).await;
 
@@ -217,4 +236,5 @@ async fn run_server(
     }
 
     log::info!("Server stopped");
+    Ok(())
 }

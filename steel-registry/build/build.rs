@@ -53,17 +53,14 @@ mod zombie_nautilus_variants;
 mod enchantment_tags;
 mod enchantments;
 
-mod density_functions;
-mod multi_noise;
-mod noise_parameters;
-mod surface_rules;
-
 mod banner_pattern_tags;
 mod damage_type_tags;
 mod entity_type_tags;
+mod generator_functions;
 mod instrument_tags;
 mod painting_variant_tags;
 mod poi_type_tags;
+mod shared_structs;
 mod tag_utils;
 
 const FMT: bool = cfg!(feature = "fmt");
@@ -122,8 +119,6 @@ const GAME_RULES: &str = "game_rules";
 const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
-const MULTI_NOISE: &str = "multi_noise";
-const NOISE_PARAMETERS: &str = "noise_parameters";
 const STRUCTURE_SETS: &str = "structure_sets";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
@@ -188,8 +183,6 @@ pub fn main() {
         (sound_events::build(), SOUND_EVENTS),
         (sound_types::build(), SOUND_TYPES),
         (world_clocks::build(), WORLD_CLOCKS),
-        (multi_noise::build(), MULTI_NOISE),
-        (noise_parameters::build(), NOISE_PARAMETERS),
         (poi_types::build(), POI_TYPES),
         (structure_sets::build(), STRUCTURE_SETS),
         (template_pools::build(), TEMPLATE_POOLS),
@@ -219,68 +212,20 @@ pub fn main() {
         fs::write(&path, content).unwrap();
     }
 
-    // Density functions are split into per-dimension files in a subdirectory
-    let df = density_functions::build();
-    let df_dir = out_dir.join("vanilla_density_functions");
-    fs::create_dir_all(&df_dir).unwrap();
-
-    let df_dimension_files = [
-        (df.overworld, "overworld"),
-        (df.nether, "nether"),
-        (df.end, "end"),
-    ];
-
-    let mut df_generated: Vec<std::path::PathBuf> = Vec::new();
-    for (content, name) in df_dimension_files {
-        let path = df_dir.join(format!("{name}.rs"));
-        let content = content.to_string();
-        df_generated.push(path.clone());
-        if let Ok(existing) = fs::read_to_string(&path)
-            && existing == content
-        {
-            continue;
-        }
-        fs::write(&path, content).unwrap();
-    }
-
-    // Density functions index (mod.rs inside the subdirectory)
-    {
-        let path = df_dir.join("mod.rs");
-        let content = df.index.to_string();
-        df_generated.push(path.clone());
-        if !(fs::read_to_string(&path).is_ok_and(|existing| existing == content)) {
-            fs::write(&path, &content).unwrap();
-        }
-    }
-
     // Remove any stale files not generated this run
     if let Ok(entries) = fs::read_dir(&out_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !generated_files.contains(&path) && path != df_dir {
+            if !generated_files.contains(&path) {
                 let _ = fs::remove_file(&path);
             }
         }
     }
 
-    // Remove stale density function dimension files
-    if let Ok(entries) = fs::read_dir(&df_dir) {
+    if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !df_generated.contains(&path) {
-                let _ = fs::remove_file(&path);
-            }
-        }
-    }
-
-    if FMT {
-        for dir in [&out_dir, &df_dir] {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let _ = Command::new("rustfmt").arg(path).output();
-                }
-            }
+            let _ = Command::new("rustfmt").arg(path).output();
         }
     }
 }

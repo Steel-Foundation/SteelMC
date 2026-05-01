@@ -1,7 +1,7 @@
 //! Woodland mansion. Vanilla's `WoodlandMansionPieces`: grid-based layout with
 //! template pieces for walls, corridors, rooms, roofs. Produces bounding boxes only.
 
-use steel_utils::density::DimensionNoises;
+use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};

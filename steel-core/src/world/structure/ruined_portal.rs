@@ -1,15 +1,15 @@
 //! Ruined portal. Mirrors vanilla's `RuinedPortalStructure.findGenerationPoint`
 //! RNG consumption to determine the biome-check Y. Produces bounding box only.
 
-use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
+use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::chunk::aquifer::{Aquifer, AquiferResult};
-use crate::chunk::vanilla_generator::{
+use crate::worldgen::generators::vanilla::{
     column_interpolated_density, iterate_noise_column_with_aquifer,
 };
+use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult};
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 

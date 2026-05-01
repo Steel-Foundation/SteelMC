@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SteelWorldsConfig",
+  "description": "World and domain configuration schema for Steel",
+  "type": "object",
+  "properties": {
+    "save_path": {
+      "type": "string",
+      "description": "Root directory for saves",
+      "default": "saves"
+    },
+    "seed": {
+      "type": "string",
+      "description": "Root seed default; empty means random",
+      "default": ""
+    },
+    "default_gamemode": {
+      "$ref": "#/definitions/gamemode"
+    },
+    "difficulty": {
+      "$ref": "#/definitions/difficulty"
+    },
+    "storage": {
+      "$ref": "#/definitions/storage"
+    },
+    "player_storage": {
+      "$ref": "#/definitions/player_storage"
+    },
+    "domains": {
+      "type": "object",
+      "description": "Domain declarations keyed by domain name",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/definitions/domain"
+      }
+    }
+  },
+  "required": ["domains"],
+  "additionalProperties": false,
+  "definitions": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_.-]+(/[a-z0-9_.-]+)*$"
+    },
+    "world_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+$"
+    },
+    "gamemode": {
+      "type": "string",
+      "enum": ["survival", "creative", "adventure", "spectator"],
+      "default": "survival"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["peaceful", "easy", "normal", "hard"],
+      "default": "normal"
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["steel:disk", "steel:ram"]
+        },
+        "config": {
+          "type": "object",
+          "description": "Storage-specific config. steel:disk supports optional relative path; steel:ram accepts no keys.",
+          "additionalProperties": true
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "player_storage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["steel:file"]
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "domain": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "boolean",
+          "default": false
+        },
+        "seed": {
+          "type": "string"
+        },
+        "default_gamemode": {
+          "$ref": "#/definitions/gamemode"
+        },
+        "difficulty": {
+          "$ref": "#/definitions/difficulty"
+        },
+        "storage": {
+          "$ref": "#/definitions/storage"
+        },
+        "worlds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/world"
+          }
+        }
+      },
+      "required": ["worlds"],
+      "additionalProperties": false
+    },
+    "world": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/world_name"
+        },
+        "generator": {
+          "$ref": "#/definitions/identifier"
+        },
+        "default": {
+          "type": "boolean",
+          "default": false
+        },
+        "seed": {
+          "type": "string"
+        },
+        "default_gamemode": {
+          "$ref": "#/definitions/gamemode"
+        },
+        "difficulty": {
+          "$ref": "#/definitions/difficulty"
+        },
+        "storage": {
+          "$ref": "#/definitions/storage"
+        },
+        "config": {
+          "type": "object",
+          "description": "Generator-specific config validated by the selected generator",
+          "additionalProperties": true
+        }
+      },
+      "required": ["name", "generator"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -19,14 +19,14 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
-    packet_traits::{ClientPacket, EncodedPacket},
+    packet_traits::{ClientPacket, CompressionInfo, EncodedPacket},
     packets::game::CSetTime,
 };
 
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::{AABBd, VoxelShape};
+use steel_registry::blocks::shapes::{AABBd, VoxelShape, is_face_full};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
@@ -55,7 +55,10 @@ pub enum RaytraceAction {
 }
 
 use glam::DVec3;
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos,
+    types::{Difficulty, GameType, UpdateFlags},
+};
 use tokio::{runtime::Runtime, time::Instant};
 
 use crate::{
@@ -63,11 +66,11 @@ use crate::{
     behavior::BlockStateBehaviorExt,
     behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS},
     block_entity::SharedBlockEntity,
+    chunk::heightmap::HeightmapType,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
-    config::STEEL_CONFIG,
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     fluid::fluid_state_to_block,
-    level_data::LevelDataManager,
+    level_data::{LevelDataManager, WorldGenerationSettings},
     player::{LastSeen, Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
@@ -79,8 +82,8 @@ pub mod tick_scheduler;
 mod weather;
 mod world_entities;
 
-use crate::chunk::world_gen_context::ChunkGeneratorType;
 pub use crate::config::WorldStorageConfig;
+use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
 pub use tick_scheduler::ScheduledTick;
@@ -91,6 +94,22 @@ pub use tick_scheduler::ScheduledTick;
 /// Produces values centered around `mode` with a spread of `deviation`.
 fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
+}
+
+const fn chunk_min_block_x(pos: ChunkPos) -> i32 {
+    pos.0.x << 4
+}
+
+const fn chunk_min_block_z(pos: ChunkPos) -> i32 {
+    pos.0.y << 4
+}
+
+const fn chunk_max_block_x(pos: ChunkPos) -> i32 {
+    (pos.0.x << 4) + 15
+}
+
+const fn chunk_max_block_z(pos: ChunkPos) -> i32 {
+    (pos.0.y << 4) + 15
 }
 
 /// Timing information for a world game tick.
@@ -113,8 +132,26 @@ const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 pub struct WorldConfig {
     /// Storage configuration for chunk persistence.
     pub storage: WorldStorageConfig,
+    /// Directory for level data. `None` means level data is ephemeral.
+    pub level_data_path: Option<String>,
     /// World generator.
     pub generator: Arc<ChunkGeneratorType>,
+    /// Generator metadata persisted for startup compatibility checks.
+    pub generation_settings: WorldGenerationSettings,
+    /// Server view distance (maximum chunk radius).
+    pub view_distance: u8,
+    /// Server simulation distance.
+    pub simulation_distance: u8,
+    /// Compression settings for encoding broadcast packets.
+    pub compression: Option<CompressionInfo>,
+    /// Whether the world should be marked as flat in login/respawn packets.
+    pub is_flat: bool,
+    /// Sea level sent in login/respawn packets.
+    pub sea_level: i32,
+    /// Default game mode for first-visit player data.
+    pub default_gamemode: GameType,
+    /// Difficulty used when creating new level data.
+    pub difficulty: Difficulty,
 }
 
 /// A struct that represents a world.
@@ -125,10 +162,28 @@ pub struct World {
     pub players: PlayerMap,
     /// Spatial index for player proximity queries.
     pub player_area_map: PlayerAreaMap,
-    /// The dimension of the world.
-    pub dimension: DimensionTypeRef,
+    /// Loaded world identifier (`domain:world`).
+    pub key: Identifier,
+    /// Vanilla dimension type for this loaded world.
+    ///
+    /// Vanilla often calls loaded worlds "dimensions". In Steel, `World` is the
+    /// loaded world instance and `dimension_type` is the vanilla registry entry
+    /// controlling height, skylight, ceiling, water evaporation, etc.
+    pub dimension_type: DimensionTypeRef,
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
+    /// Server view distance (maximum chunk radius).
+    pub view_distance: u8,
+    /// Server simulation distance.
+    pub simulation_distance: u8,
+    /// Compression settings for encoding broadcast packets.
+    pub compression: Option<CompressionInfo>,
+    /// Whether the world should be marked as flat in login/respawn packets.
+    pub is_flat: bool,
+    /// Sea level sent in login/respawn packets.
+    pub sea_level: i32,
+    /// Default game mode for first-visit player data.
+    pub default_gamemode: GameType,
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
@@ -156,16 +211,23 @@ impl World {
     ///
     /// # Arguments
     /// * `chunk_runtime` - The Tokio runtime for chunk operations
-    /// * `dimension` - The dimension type (overworld, nether, end)
+    /// * `dimension_type` - Vanilla dimension type (overworld, nether, end)
     /// * `seed` - The world seed
     /// * `config` - World configuration including storage options
     pub async fn new_with_config(
         chunk_runtime: Arc<Runtime>,
-        dimension: DimensionTypeRef,
+        key: Identifier,
+        dimension_type: DimensionTypeRef,
         seed: i64,
         config: WorldConfig,
         generation_pool: Arc<rayon::ThreadPool>,
     ) -> io::Result<Arc<Self>> {
+        let view_distance = config.view_distance;
+        let simulation_distance = config.simulation_distance;
+        let compression = config.compression;
+        let is_flat = config.is_flat;
+        let sea_level = config.sea_level;
+        let default_gamemode = config.default_gamemode;
         // Create storage backend based on config
         let storage: Arc<ChunkStorage> = match &config.storage {
             WorldStorageConfig::Disk { path } => {
@@ -178,11 +240,13 @@ impl World {
 
         // Create or skip level data based on config
 
-        let path = match &config.storage {
-            WorldStorageConfig::Disk { path } => Some(Path::new(path)),
-            WorldStorageConfig::RamOnly => None,
-        };
-        let level_data = LevelDataManager::new(path, seed).await?;
+        let path = config.level_data_path.as_deref().map(Path::new);
+        let mut level_data =
+            LevelDataManager::new(path, seed, config.difficulty, config.generation_settings)
+                .await?;
+        if level_data.is_dirty() {
+            level_data.save().await?;
+        }
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
         //     REGISTRY
         //         .blocks
@@ -205,15 +269,22 @@ impl World {
             chunk_map: Arc::new(ChunkMap::new_with_storage(
                 chunk_runtime,
                 weak_self.clone(),
-                dimension,
+                dimension_type,
                 storage,
                 config.generator,
                 generation_pool,
             )),
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),
-            dimension,
+            key,
+            dimension_type,
             level_data: SyncRwLock::new(level_data),
+            view_distance,
+            simulation_distance,
+            compression,
+            is_flat,
+            sea_level,
+            default_gamemode,
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
@@ -230,10 +301,7 @@ impl World {
     )]
     pub async fn cleanup(&self, total_saved: &mut usize) {
         match self.level_data.write().save().await {
-            Ok(()) => log::info!(
-                "World {} level data saved successfully",
-                self.dimension.key.path
-            ),
+            Ok(()) => log::info!("World {} level data saved successfully", self.key),
             Err(e) => log::error!("Failed to save world level data: {e}"),
         }
 
@@ -243,14 +311,20 @@ impl World {
         }
     }
 
+    /// Returns the domain this loaded world belongs to.
+    #[must_use]
+    pub fn domain(&self) -> &str {
+        self.key.namespace.as_ref()
+    }
+
     /// Returns the total height of the world in blocks.
     pub const fn get_height(&self) -> i32 {
-        self.dimension.height
+        self.dimension_type.height
     }
 
     /// Returns the minimum Y coordinate of the world.
     pub const fn get_min_y(&self) -> i32 {
-        self.dimension.min_y
+        self.dimension_type.min_y
     }
 
     /// Returns the maximum Y coordinate of the world.
@@ -282,6 +356,165 @@ impl World {
     #[must_use]
     pub const fn max_build_height(&self) -> i32 {
         self.get_min_y() + self.get_height()
+    }
+
+    /// Initializes this world's default spawn using vanilla's first-world spawn search.
+    pub async fn initialize_spawn_if_needed(self: &Arc<Self>) -> Result<(), String> {
+        if self.level_data.read().data().initialized {
+            return Ok(());
+        }
+
+        if self.dimension_type.key != vanilla_dimension_types::OVERWORLD.key {
+            self.level_data.write().data_mut().initialized = true;
+            return Ok(());
+        }
+
+        log::info!("Selecting global world spawn for {}...", self.key);
+
+        let origin = self
+            .chunk_map
+            .world_gen_context
+            .generator
+            .initial_spawn_search_origin();
+        let spawn_chunk = ChunkPos::new(
+            SectionPos::block_to_section_coord(origin.x()),
+            SectionPos::block_to_section_coord(origin.z()),
+        );
+
+        let mut spawn_y = self
+            .chunk_map
+            .world_gen_context
+            .generator
+            .spawn_height(self.get_min_y(), self.get_height());
+        if spawn_y < self.get_min_y() {
+            let x = chunk_min_block_x(spawn_chunk) + 8;
+            let z = chunk_min_block_z(spawn_chunk) + 8;
+            spawn_y = self
+                .height_at(HeightmapType::WorldSurface, x, z)
+                .unwrap_or(self.get_min_y());
+        }
+
+        let mut spawn_pos = BlockPos::new(
+            chunk_min_block_x(spawn_chunk) + 8,
+            spawn_y,
+            chunk_min_block_z(spawn_chunk) + 8,
+        );
+
+        spawn_pos = self
+            .chunk_map
+            .with_full_chunks_in_radius(spawn_chunk, 5, || {
+                self.find_spawn_in_loaded_radius(spawn_chunk)
+                    .unwrap_or(spawn_pos)
+            })
+            .await
+            .unwrap_or(spawn_pos);
+
+        {
+            let mut level_data = self.level_data.write();
+            let data = level_data.data_mut();
+            data.set_spawn_pos(spawn_pos);
+            data.spawn.angle = 0.0;
+            data.initialized = true;
+        }
+
+        log::info!("World {} spawn initialized at {spawn_pos:?}", self.key);
+        Ok(())
+    }
+
+    #[expect(
+        clippy::similar_names,
+        reason = "dx_chunk/dz_chunk mirror vanilla's dXChunk/dZChunk"
+    )]
+    fn find_spawn_in_loaded_radius(&self, spawn_chunk: ChunkPos) -> Option<BlockPos> {
+        let mut x_chunk_offset = 0;
+        let mut z_chunk_offset = 0;
+        let mut dx_chunk = 0;
+        let mut dz_chunk = -1;
+
+        for _ in 0..(11 * 11) {
+            if (-5..=5).contains(&x_chunk_offset) && (-5..=5).contains(&z_chunk_offset) {
+                let candidate_chunk = ChunkPos::new(
+                    spawn_chunk.0.x + x_chunk_offset,
+                    spawn_chunk.0.y + z_chunk_offset,
+                );
+                if let Some(candidate) = self.spawn_pos_in_chunk(candidate_chunk) {
+                    return Some(candidate);
+                }
+            }
+
+            if x_chunk_offset == z_chunk_offset
+                || (x_chunk_offset < 0 && x_chunk_offset == -z_chunk_offset)
+                || (x_chunk_offset > 0 && x_chunk_offset == 1 - z_chunk_offset)
+            {
+                let old_dx = dx_chunk;
+                dx_chunk = -dz_chunk;
+                dz_chunk = old_dx;
+            }
+
+            x_chunk_offset += dx_chunk;
+            z_chunk_offset += dz_chunk;
+        }
+
+        None
+    }
+
+    fn spawn_pos_in_chunk(&self, chunk_pos: ChunkPos) -> Option<BlockPos> {
+        for x in chunk_min_block_x(chunk_pos)..=chunk_max_block_x(chunk_pos) {
+            for z in chunk_min_block_z(chunk_pos)..=chunk_max_block_z(chunk_pos) {
+                if let Some(pos) = self.overworld_respawn_pos(x, z) {
+                    return Some(pos);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn overworld_respawn_pos(&self, x: i32, z: i32) -> Option<BlockPos> {
+        let top_y = if self.dimension_type.has_ceiling {
+            self.chunk_map
+                .world_gen_context
+                .generator
+                .spawn_height(self.get_min_y(), self.get_height())
+        } else {
+            self.height_at(HeightmapType::MotionBlocking, x, z)?
+        };
+
+        if top_y < self.get_min_y() {
+            return None;
+        }
+
+        let surface = self.height_at(HeightmapType::WorldSurface, x, z)?;
+        let ocean_floor = self.height_at(HeightmapType::OceanFloor, x, z)?;
+        if surface <= top_y && surface > ocean_floor {
+            return None;
+        }
+
+        for y in (self.get_min_y()..=top_y + 1).rev() {
+            let pos = BlockPos::new(x, y, z);
+            let state = self.get_block_state(pos);
+            if state.has_fluid() {
+                break;
+            }
+
+            if is_face_full(state.get_collision_shape(), Direction::Up) {
+                return Some(BlockPos::new(x, y + 1, z));
+            }
+        }
+
+        None
+    }
+
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> Option<i32> {
+        let chunk_pos = ChunkPos::new(
+            SectionPos::block_to_section_coord(x),
+            SectionPos::block_to_section_coord(z),
+        );
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
+            chunk_access
+                .as_full()
+                .map(|chunk| chunk.get_height(heightmap_type, (x & 15) as usize, (z & 15) as usize))
+        })?
     }
 
     /// Checks if a player may interact with the world at the given position.
@@ -883,9 +1116,9 @@ impl World {
 
     /// Checks whether the world can have weather.
     pub fn can_have_weather(&self) -> bool {
-        self.dimension.has_skylight
-            && !self.dimension.has_ceiling
-            && self.dimension.key != vanilla_dimension_types::THE_END.key
+        self.dimension_type.has_skylight
+            && !self.dimension_type.has_ceiling
+            && self.dimension_type.key != vanilla_dimension_types::THE_END.key
     }
 
     /// Schedules a block tick at the given position.
@@ -1101,7 +1334,7 @@ impl World {
     /// Broadcasts a packet to all players in the world.
     pub fn broadcast_to_all<P: ClientPacket>(&self, packet: P) {
         let Ok(encoded) =
-            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
             return;
         };
@@ -1111,7 +1344,7 @@ impl World {
     /// Broadcasts a packet to all players in the world except one (identified by entity ID).
     pub fn broadcast_to_all_except<P: ClientPacket>(&self, packet: P, exclude: i32) {
         let Ok(encoded) =
-            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
             return;
         };
@@ -1125,7 +1358,7 @@ impl World {
         self.players.iter_players(|_, player| {
             let Ok(encoded) = EncodedPacket::from_bare(
                 packet(player),
-                STEEL_CONFIG.compression,
+                self.compression,
                 ConnectionProtocol::Play,
             ) else {
                 return false;
@@ -1175,7 +1408,7 @@ impl World {
         exclude: Option<i32>,
     ) {
         let Ok(encoded) =
-            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
             return;
         };
@@ -1600,7 +1833,7 @@ impl World {
         );
         let packet = CLevelEvent::new(event_type, pos, data, false);
         let Ok(encoded) =
-            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
             log::warn!("Failed to encode level event packet");
             return;
@@ -1759,7 +1992,7 @@ impl World {
         );
         let packet = CBlockEvent::new(pos, action_id, action_param, block_id);
         let Ok(encoded) =
-            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
             log::warn!("Failed to encode block event packet");
             return;
@@ -1830,7 +2063,7 @@ impl World {
             seed,
         );
         let Ok(encoded) =
-            EncodedPacket::from_bare(packet, STEEL_CONFIG.compression, ConnectionProtocol::Play)
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {
             log::warn!("Failed to encode sound packet");
             return;

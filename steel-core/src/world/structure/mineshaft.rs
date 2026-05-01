@@ -3,13 +3,13 @@
 //! bounding boxes and the Y offset for biome checking (no block placement).
 
 use rustc_hash::FxHashMap;
-use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier};
+use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::chunk::aquifer::Aquifer;
-use crate::chunk::vanilla_generator::iterate_noise_column_with_aquifer;
+use crate::worldgen::generators::vanilla::iterate_noise_column_with_aquifer;
+use crate::worldgen::noise::aquifer::Aquifer;
 use crate::world::structure::placement::StructureSelectionEntry;
 use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
 

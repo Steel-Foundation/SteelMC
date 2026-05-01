@@ -4,7 +4,7 @@
 //! Special biome check: every biome in a 29-block (3D) radius around
 //! `(chunkMinX+9, seaLevel, chunkMinZ+9)` must be in `#required_ocean_monument_surrounding`.
 
-use steel_utils::density::DimensionNoises;
+use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier};
 

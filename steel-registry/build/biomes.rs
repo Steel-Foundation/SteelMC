@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use std::fs;
 
+use crate::generator_functions::{generate_identifier, generate_option, generate_vec};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -323,33 +324,6 @@ fn generate_grass_color_modifier(modifier: &GrassColorModifier) -> TokenStream {
         GrassColorModifier::DarkForest => quote! { GrassColorModifier::DarkForest },
         GrassColorModifier::Swamp => quote! { GrassColorModifier::Swamp },
     }
-}
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
-}
-
-fn generate_vec<T, F>(vec: &[T], f: F) -> TokenStream
-where
-    F: Fn(&T) -> TokenStream,
-{
-    let items: Vec<_> = vec.iter().map(f).collect();
-    quote! { vec![#(#items),*] }
 }
 
 fn generate_hashmap_string<T, F>(map: &FxHashMap<String, T>, f: F) -> TokenStream

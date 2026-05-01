@@ -15,7 +15,7 @@ pub struct CommandContext {
     pub sender: CommandSender,
     /// The player targeted by the command.
     pub player: Option<Arc<Player>>,
-    /// The world/dimension of the command.
+    /// The world the command is executing in.
     pub world: Arc<World>,
     /// The server where the command has been run.
     pub server: Arc<Server>,

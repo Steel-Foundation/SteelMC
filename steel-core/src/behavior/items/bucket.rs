@@ -221,10 +221,10 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             return None;
         }
 
-        // Vanilla parity: in dimensions where water evaporates (e.g. the Nether),
+        // Vanilla parity: in worlds where water evaporates (e.g. the Nether),
         // water buckets fizz out without placing any fluid.
         // TODO: Per-position environment attributes (vanilla uses EnvironmentAttributes.WATER_EVAPORATES per-pos)
-        if is_water_bucket && context.world.dimension.water_evaporates {
+        if is_water_bucket && context.world.dimension_type.water_evaporates {
             context
                 .world
                 .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);

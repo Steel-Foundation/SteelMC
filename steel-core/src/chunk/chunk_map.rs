@@ -31,18 +31,14 @@ use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::chunk::world_gen_context::ChunkGeneratorType;
 use crate::chunk::{chunk_access::ChunkAccess, chunk_ticket_manager::is_ticked};
-use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask,
-    world_gen_context::WorldGenContext,
-};
+use crate::chunk::{chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask};
 use crate::chunk_saver::ChunkStorage;
-use crate::config::STEEL_CONFIG;
 use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
+use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
 
 /// Timing information for the game tick portion of chunk map operations.
 #[derive(Debug, Default)]
@@ -115,7 +111,7 @@ impl ChunkMap {
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
-        _dimension: DimensionTypeRef,
+        _dimension_type: DimensionTypeRef,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
@@ -145,6 +141,56 @@ impl ChunkMap {
         let chunk_holder = self.chunks.read_sync(&pos, |_, chunk| chunk.clone())?;
         let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
         Some(f(&guard))
+    }
+
+    /// Loads full chunks in a square radius, runs `f`, then removes the temporary ticket.
+    pub async fn with_full_chunks_in_radius<F, R>(
+        self: &Arc<Self>,
+        center: ChunkPos,
+        radius: u8,
+        f: F,
+    ) -> Option<R>
+    where
+        F: FnOnce() -> R,
+    {
+        let ticket_level = MAX_VIEW_DISTANCE.saturating_sub(radius);
+
+        self.chunk_tickets.lock().add_ticket(center, ticket_level);
+        self.tick_scheduling();
+
+        let mut holders = Vec::new();
+        let radius = i32::from(radius);
+        for dz in -radius..=radius {
+            for dx in -radius..=radius {
+                let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
+                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
+                    self.chunk_tickets
+                        .lock()
+                        .remove_ticket(center, ticket_level);
+                    self.tick_scheduling();
+                    return None;
+                };
+                holders.push(holder);
+            }
+        }
+
+        for holder in holders {
+            if holder.await_chunk(ChunkStatus::Full).await.is_none() {
+                self.chunk_tickets
+                    .lock()
+                    .remove_ticket(center, ticket_level);
+                self.tick_scheduling();
+                return None;
+            }
+        }
+
+        let result = f();
+        self.chunk_tickets
+            .lock()
+            .remove_ticket(center, ticket_level);
+        self.tick_scheduling();
+
+        Some(result)
     }
 
     /// Records a block change at the given position.
@@ -220,7 +266,7 @@ impl ChunkMap {
 
                     let Ok(encoded) = EncodedPacket::from_bare(
                         update_packet,
-                        STEEL_CONFIG.compression,
+                        world.compression,
                         ConnectionProtocol::Play,
                     ) else {
                         log::warn!("Failed to encode block update packet");
@@ -260,7 +306,7 @@ impl ChunkMap {
 
                     let Ok(encoded) = EncodedPacket::from_bare(
                         packet,
-                        STEEL_CONFIG.compression,
+                        world.compression,
                         ConnectionProtocol::Play,
                     ) else {
                         log::warn!("Failed to encode section block update packet");
@@ -423,7 +469,7 @@ impl ChunkMap {
             self.chunks.iter_sync(|_, holder| {
                 total_chunks += 1;
                 let level = holder.ticket_level.load(Ordering::Relaxed);
-                if is_ticked(level) {
+                if is_ticked(level, world.view_distance, world.simulation_distance) {
                     tickable_chunks.push(holder.clone());
                 }
                 true

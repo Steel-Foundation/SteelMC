@@ -4,7 +4,7 @@
 
 use rustc_hash::FxHashMap;
 use steel_registry::template_pool::TemplateData;
-use steel_utils::density::DimensionNoises;
+use steel_worldgen::density::DimensionNoises;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
