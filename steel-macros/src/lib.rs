@@ -406,7 +406,7 @@ fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> 
         let Some((_, value)) = &v.discriminant else {
             panic!(
                 "Read only supports enum variants with explicit discriminant\n(Ej. {} = 0)",
-                &v.ident
+                v.ident
             )
         };
         let v_name = &v.ident;
