@@ -19,6 +19,8 @@ pub mod shipwreck;
 pub mod single_piece;
 pub mod stronghold;
 
+use std::cell::RefCell;
+
 use rustc_hash::FxHashMap;
 
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -204,6 +206,31 @@ where
     pub height_cache: &'ctx mut N::ColumnCache,
     /// Aquifer built on first query; skipped on chunks where no structure needs it.
     pub aquifer: &'ctx mut LazyAquifer<'src, N>,
+    pub(crate) terrain_height_cache: RefCell<FxHashMap<(i32, i32, bool), i32>>,
+    pub(crate) terrain_opaque_cache: RefCell<FxHashMap<(i32, i32, i32, bool), bool>>,
+    pub(crate) terrain_probes: RefCell<FxHashMap<(i32, i32), TerrainProbe<N>>>,
+}
+
+pub(crate) struct TerrainProbe<N: DimensionNoises> {
+    cache: N::ColumnCache,
+    aquifer: Aquifer<N>,
+}
+
+impl<N: DimensionNoises> TerrainProbe<N> {
+    fn new(chunk_min_x: i32, chunk_min_z: i32, splitter: &RandomSplitter, noises: &N) -> Self {
+        let mut cache = N::ColumnCache::default();
+        cache.init_grid(chunk_min_x, chunk_min_z, noises);
+        let aquifer = Aquifer::<N>::new(
+            chunk_min_x,
+            chunk_min_z,
+            N::Settings::MIN_Y,
+            N::Settings::HEIGHT,
+            splitter,
+            noises,
+            cache.clone(),
+        );
+        Self { cache, aquifer }
+    }
 }
 
 /// Result of a successful `Structure::find_generation_point`.
@@ -419,63 +446,82 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
     }
 
     fn terrain_surface_height(&self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        if let Some(height) = self
+            .terrain_height_cache
+            .borrow()
+            .get(&(x, z, ocean_floor))
+            .copied()
+        {
+            return height;
+        }
+
         let cell_w = N::Settings::CELL_WIDTH;
         let cell_x = x.div_euclid(cell_w) * cell_w;
         let cell_z = z.div_euclid(cell_w) * cell_w;
         let aq_chunk_x = (cell_x >> 4) * 16;
         let aq_chunk_z = (cell_z >> 4) * 16;
-        let mut fresh_aq = Aquifer::<N>::new(
-            aq_chunk_x,
-            aq_chunk_z,
-            N::Settings::MIN_Y,
-            N::Settings::HEIGHT,
-            self.splitter,
-            self.noises,
-            N::ColumnCache::default(),
-        );
-        let mut fresh_cache = N::ColumnCache::default();
-        fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, self.noises);
-        iterate_noise_column_with_aquifer::<N>(
-            &mut fresh_cache,
-            self.noises,
-            &mut fresh_aq,
-            x,
-            z,
-            ocean_floor,
-        )
+        let height = {
+            let mut probes = self.terrain_probes.borrow_mut();
+            let probe = probes.entry((aq_chunk_x, aq_chunk_z)).or_insert_with(|| {
+                TerrainProbe::<N>::new(aq_chunk_x, aq_chunk_z, self.splitter, self.noises)
+            });
+            iterate_noise_column_with_aquifer::<N>(
+                &mut probe.cache,
+                self.noises,
+                &mut probe.aquifer,
+                x,
+                z,
+                ocean_floor,
+            )
+        };
+        self.terrain_height_cache
+            .borrow_mut()
+            .insert((x, z, ocean_floor), height);
+        height
     }
 
     fn terrain_is_opaque(&self, x: i32, y: i32, z: i32, ocean_floor: bool) -> bool {
+        if let Some(opaque) = self
+            .terrain_opaque_cache
+            .borrow()
+            .get(&(x, y, z, ocean_floor))
+            .copied()
+        {
+            return opaque;
+        }
+
         let cell_w = N::Settings::CELL_WIDTH;
         let cell_h = N::Settings::CELL_HEIGHT;
         let cell_x = x.div_euclid(cell_w) * cell_w;
         let cell_z = z.div_euclid(cell_w) * cell_w;
         let aq_chunk_x = (cell_x >> 4) * 16;
         let aq_chunk_z = (cell_z >> 4) * 16;
-        let mut fresh_aq = Aquifer::<N>::new(
-            aq_chunk_x,
-            aq_chunk_z,
-            N::Settings::MIN_Y,
-            N::Settings::HEIGHT,
-            self.splitter,
-            self.noises,
-            N::ColumnCache::default(),
-        );
-        let mut fresh_cache = N::ColumnCache::default();
-        fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, self.noises);
-        let density = column_interpolated_density::<N>(
-            &mut fresh_cache,
-            self.noises,
-            x,
-            y,
-            z,
-            cell_w,
-            cell_h,
-        );
-        match fresh_aq.compute_substance(self.noises, x, y, z, density) {
-            AquiferResult::Solid => true,
-            AquiferResult::Fluid(_) => !ocean_floor,
-            AquiferResult::Air => false,
-        }
+        let opaque = {
+            let mut probes = self.terrain_probes.borrow_mut();
+            let probe = probes.entry((aq_chunk_x, aq_chunk_z)).or_insert_with(|| {
+                TerrainProbe::<N>::new(aq_chunk_x, aq_chunk_z, self.splitter, self.noises)
+            });
+            let density = column_interpolated_density::<N>(
+                &mut probe.cache,
+                self.noises,
+                x,
+                y,
+                z,
+                cell_w,
+                cell_h,
+            );
+            match probe
+                .aquifer
+                .compute_substance(self.noises, x, y, z, density)
+            {
+                AquiferResult::Solid => true,
+                AquiferResult::Fluid(_) => !ocean_floor,
+                AquiferResult::Air => false,
+            }
+        };
+        self.terrain_opaque_cache
+            .borrow_mut()
+            .insert((x, y, z, ocean_floor), opaque);
+        opaque
     }
 }

@@ -448,6 +448,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             biome_sampler: &mut sampler,
             height_cache: &mut height_cache,
             aquifer: &mut aquifer,
+            terrain_height_cache: Default::default(),
+            terrain_opaque_cache: Default::default(),
+            terrain_probes: Default::default(),
         };
 
         self.structure_generator.create_structures(chunk, &mut ctx);
