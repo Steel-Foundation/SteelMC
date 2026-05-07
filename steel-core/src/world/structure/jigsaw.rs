@@ -1,10 +1,13 @@
 //! Jigsaw assembly. Ports vanilla's `JigsawPlacement` BFS: connects pieces via
-//! jigsaw blocks given a start pool + config. Produces bounding boxes only.
+//! jigsaw blocks given a start pool + config. Produces typed piece state;
+//! block placement runs in a later worldgen stage.
 
 use std::cmp::Reverse;
 
 use rustc_hash::FxHashMap;
-use steel_registry::structure::{JigsawConfig, PoolAlias, StartHeight, StructureData};
+use steel_registry::structure::{
+    JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
+};
 use steel_registry::template_pool::{
     JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
 };
@@ -19,8 +22,8 @@ use crate::world::structure::{
 /// A placed piece produced by jigsaw assembly.
 #[derive(Debug, Clone)]
 pub struct PlacedPiece {
-    /// Source pool element.
-    pub element_index: usize,
+    /// Selected pool element.
+    pub element: PoolElement,
     /// Template location (Single/LegacySingle).
     pub template_location: Option<Identifier>,
     /// World-space origin.
@@ -40,6 +43,19 @@ pub struct PlacedPiece {
     pub depth: i32,
     /// Junctions to neighbors.
     pub junctions: Vec<JigsawJunction>,
+}
+
+/// Typed state needed to place or compare a vanilla jigsaw piece.
+#[derive(Debug, Clone)]
+pub struct JigsawPieceData {
+    /// Selected pool element.
+    pub pool_element: PoolElement,
+    /// World-space template origin.
+    pub position: (i32, i32, i32),
+    /// Template rotation.
+    pub rotation: Rotation,
+    /// Liquid handling mode for block placement.
+    pub liquid_settings: LiquidSettingsData,
 }
 
 /// Junction between two jigsaw pieces (terrain adaptation).
@@ -462,7 +478,7 @@ pub fn assemble(
     }
 
     let mut pieces = vec![PlacedPiece {
-        element_index: 0,
+        element: center_element.clone(),
         template_location: element_location(center_element).cloned(),
         position: (adjusted_x, adjusted_y, adjusted_z),
         rotation: center_rotation,
@@ -613,6 +629,12 @@ impl Structure for JigsawStructure {
                 gen_depth: 0,
                 orientation: None,
                 nbt_data: Vec::new(),
+                jigsaw: Some(JigsawPieceData {
+                    pool_element: piece.element,
+                    position: piece.position,
+                    rotation: piece.rotation,
+                    liquid_settings: config.liquid_settings,
+                }),
                 ground_level_delta: piece.ground_level_delta,
                 junctions: piece.junctions,
                 projection: Some(piece.projection),
@@ -652,7 +674,6 @@ fn try_placing_children(
     get_height: &mut dyn FnMut(i32, i32) -> i32,
 ) {
     let source_piece = pieces[source_idx].clone();
-    let source_element_loc = source_piece.template_location.as_ref();
     let source_bb = source_piece.assembly_bb;
     let source_box_y = source_bb.min_y;
     let source_rigid = source_piece.projection == Projection::Rigid;
@@ -662,18 +683,11 @@ fn try_placing_children(
     // vanilla's `MutableObject<VoxelShape>` that starts null).
     let mut internal_ctx_idx: Option<usize> = None;
 
-    // Get the pool element to retrieve jigsaws
-    let source_pool_element = source_element_loc.and_then(|loc| {
-        // Reconstruct element type — for jigsaw we only need Single/LegacySingle
-        templates.get(loc).map(|_| loc)
-    });
-
-    let Some(source_loc) = source_pool_element else {
-        return;
-    };
-
     // Get shuffled jigsaws from source piece
     let source_jigsaws = {
+        let Some(source_loc) = element_location(&source_piece.element) else {
+            return;
+        };
         let Some(template) = templates.get(source_loc) else {
             return;
         };
@@ -754,7 +768,7 @@ fn try_placing_children(
         let mut source_jigsaw_base_height: Option<i32> = None;
 
         // Try each candidate
-        for candidate_element in &candidates {
+        for &candidate_element in &candidates {
             if candidate_element.is_empty() {
                 break;
             }
@@ -947,7 +961,7 @@ fn try_placing_children(
 
                     // Create target piece
                     let mut target_piece = PlacedPiece {
-                        element_index: 0,
+                        element: candidate_element.clone(),
                         template_location: element_location(candidate_element).cloned(),
                         position: target_position,
                         rotation: candidate_rotation,

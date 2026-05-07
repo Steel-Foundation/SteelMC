@@ -103,8 +103,7 @@ impl StructureStart {
     }
 }
 
-/// Vanilla's `StructurePiece`. Type-specific data is stored as an NBT blob
-/// (56+ piece types in vanilla).
+/// Vanilla's `StructurePiece` runtime state.
 #[derive(Debug, Clone)]
 pub struct StructurePiece {
     /// Piece type id (e.g., `minecraft:jigsaw`).
@@ -117,6 +116,8 @@ pub struct StructurePiece {
     pub orientation: Option<Direction>,
     /// Type-specific NBT (simdnbt binary).
     pub nbt_data: Vec<u8>,
+    /// Typed jigsaw placement data. `None` for non-jigsaw pieces.
+    pub jigsaw: Option<jigsaw::JigsawPieceData>,
     /// Offset from piece minY to ground level. Used by Beardifier. Default 0 for non-jigsaw.
     pub ground_level_delta: i32,
     /// Junctions for Beardifier terrain adaptation.

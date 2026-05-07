@@ -4,6 +4,7 @@ use std::io::Read;
 use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
+use serde_json::Value;
 
 // ── JSON structures ──
 
@@ -25,11 +26,20 @@ struct ElementJson {
     #[serde(default)]
     location: Option<String>,
     #[serde(default)]
+    processors: Option<ProcessorsJson>,
+    #[serde(default)]
     projection: Option<String>,
     #[serde(default)]
     feature: Option<String>,
     #[serde(default)]
     elements: Option<Vec<ElementJson>>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum ProcessorsJson {
+    Registry(String),
+    Direct { processors: Vec<Value> },
 }
 
 // ── NBT jigsaw extraction ──
@@ -198,17 +208,35 @@ fn gen_projection(proj: &Option<String>) -> TokenStream {
     }
 }
 
+fn gen_processors(processors: Option<&ProcessorsJson>) -> TokenStream {
+    match processors {
+        Some(ProcessorsJson::Registry(id)) => {
+            let id = gen_identifier(id);
+            quote! { ProcessorList::Registry(#id) }
+        }
+        Some(ProcessorsJson::Direct { processors }) => {
+            if !processors.is_empty() {
+                panic!("Direct non-empty processor lists are not generated yet");
+            }
+            quote! { ProcessorList::Empty }
+        }
+        None => quote! { ProcessorList::Empty },
+    }
+}
+
 fn gen_element(elem: &ElementJson) -> TokenStream {
     match elem.element_type.as_str() {
         "minecraft:single_pool_element" => {
             let location = gen_identifier(elem.location.as_deref().unwrap_or(""));
+            let processors = gen_processors(elem.processors.as_ref());
             let projection = gen_projection(&elem.projection);
-            quote! { PoolElement::Single { location: #location, projection: #projection } }
+            quote! { PoolElement::Single { location: #location, processors: #processors, projection: #projection } }
         }
         "minecraft:legacy_single_pool_element" => {
             let location = gen_identifier(elem.location.as_deref().unwrap_or(""));
+            let processors = gen_processors(elem.processors.as_ref());
             let projection = gen_projection(&elem.projection);
-            quote! { PoolElement::LegacySingle { location: #location, projection: #projection } }
+            quote! { PoolElement::LegacySingle { location: #location, processors: #processors, projection: #projection } }
         }
         "minecraft:empty_pool_element" => {
             quote! { PoolElement::Empty }
@@ -355,7 +383,7 @@ pub(crate) fn build() -> TokenStream {
 
     quote! {
         use crate::template_pool::{
-            TemplatePoolData, PoolElement, Projection, TemplateData,
+            TemplatePoolData, PoolElement, ProcessorList, Projection, TemplateData,
             JigsawBlock, JigsawOrientation, JointType,
         };
         use steel_utils::Identifier;

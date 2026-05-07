@@ -76,6 +76,7 @@ impl Structure for OceanMonumentStructure {
                 gen_depth: 0,
                 orientation: None,
                 nbt_data: Vec::new(),
+                jigsaw: None,
                 ground_level_delta: 0,
                 junctions: Vec::new(),
                 projection: None,

@@ -4,27 +4,27 @@
 //! seed in `test_assets/structure_starts.json`. For each chunk that vanilla
 //! recorded as having starts, runs structure generation and compares structure
 //! ids, references, structure-reference maps, bounding boxes, piece types, gen
-//! depths, orientations, piece bounding boxes, and per-piece NBT.
+//! depths, orientations, piece bounding boxes, and typed jigsaw piece state.
 //!
 //! The JSON lists chunks with starts or references. It still does not validate
 //! completely empty chunks, so pair with the chunk-stage hashes test for noise
 //! coverage (noise depends on structure starts via Beardifier).
 
 use std::fmt::Write as _;
-use std::io::Cursor;
 use std::mem::take;
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use simdnbt::owned::read_compound;
+use serde::Deserialize;
+use serde_json::{Value, json};
 use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::world::structure::{
     StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
 };
-use steel_registry::template_pool::Projection;
+use steel_registry::structure::LiquidSettingsData;
+use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
+use steel_utils::Rotation;
 use steel_utils::{ChunkPos, Direction, Identifier};
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,22 +56,26 @@ struct ExpectedPiece {
     orientation: i32,
     bounding_box: ExpectedBoundingBox,
     #[serde(default)]
-    nbt: Option<ExpectedPieceNbt>,
+    piece_data: Option<ExpectedPieceData>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-struct ExpectedPieceNbt {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+#[derive(Deserialize, Debug)]
+struct ExpectedPieceData {
+    #[serde(default)]
+    position: Option<[i32; 3]>,
+    #[serde(default)]
     ground_level_delta: Option<i32>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     junctions: Vec<ExpectedJunction>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    liquid_settings: Option<String>,
+    #[serde(default)]
     pool_element: Option<ExpectedPoolElement>,
-    #[serde(flatten)]
-    extra: serde_json::Map<String, Value>,
+    #[serde(default)]
+    rotation: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
 struct ExpectedJunction {
     source_x: i32,
     source_ground_y: i32,
@@ -80,9 +84,18 @@ struct ExpectedJunction {
     dest_proj: String,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Debug)]
 struct ExpectedPoolElement {
+    element_type: String,
+    #[serde(default)]
+    location: Option<String>,
+    #[serde(default)]
+    feature: Option<String>,
+    #[serde(default)]
+    processors: Option<Value>,
     projection: String,
+    #[serde(default)]
+    elements: Vec<ExpectedPoolElement>,
     #[serde(flatten)]
     extra: serde_json::Map<String, Value>,
 }
@@ -588,7 +601,7 @@ fn compare_start(expected: &ExpectedStart, actual: &StructureStart) -> Option<St
             ));
         }
 
-        compare_piece_nbt(i, exp_piece.nbt.as_ref(), act_piece, &mut diffs);
+        compare_piece_data(i, exp_piece.piece_data.as_ref(), act_piece, &mut diffs);
     }
 
     if diffs.is_empty() {
@@ -607,44 +620,185 @@ fn compare_start(expected: &ExpectedStart, actual: &StructureStart) -> Option<St
     Some(msg.trim_end().to_owned())
 }
 
-fn compare_piece_nbt(
+fn compare_piece_data(
     index: usize,
-    expected: Option<&ExpectedPieceNbt>,
+    expected: Option<&ExpectedPieceData>,
     actual: &StructurePiece,
     diffs: &mut Vec<String>,
 ) {
-    let Some(expected_nbt) = expected else {
-        if !actual.nbt_data.is_empty() {
-            diffs.push(format!(
-                "piece[{index}].nbt: expected no NBT, got {} bytes",
-                actual.nbt_data.len(),
-            ));
-        }
+    let Some(expected_data) = expected else {
         return;
     };
 
-    if let Some(expected_delta) = expected_nbt.ground_level_delta
+    if let Some(expected_delta) = expected_data.ground_level_delta
         && expected_delta != actual.ground_level_delta
     {
         diffs.push(format!(
-            "piece[{index}].nbt.ground_level_delta: expected {}, got {}",
+            "piece[{index}].piece_data.ground_level_delta: expected {}, got {}",
             expected_delta, actual.ground_level_delta,
         ));
     }
 
-    if let Some(pool_element) = &expected_nbt.pool_element {
-        let actual_projection = projection_to_name(actual.projection);
-        if Some(pool_element.projection.as_str()) != actual_projection {
+    compare_junctions(index, &expected_data.junctions, actual, diffs);
+    compare_jigsaw_state(index, expected_data, actual, diffs);
+}
+
+fn compare_jigsaw_state(
+    index: usize,
+    expected_data: &ExpectedPieceData,
+    actual: &StructurePiece,
+    diffs: &mut Vec<String>,
+) {
+    let has_jigsaw_state = expected_data.position.is_some()
+        || expected_data.pool_element.is_some()
+        || expected_data.rotation.is_some()
+        || expected_data.liquid_settings.is_some();
+
+    if !has_jigsaw_state {
+        return;
+    }
+
+    let Some(jigsaw) = &actual.jigsaw else {
+        diffs.push(format!(
+            "piece[{index}].piece_data: expected typed jigsaw state, got none",
+        ));
+        return;
+    };
+
+    if let Some(expected_position) = expected_data.position
+        && expected_position != [jigsaw.position.0, jigsaw.position.1, jigsaw.position.2]
+    {
+        diffs.push(format!(
+            "piece[{index}].piece_data.position: expected {:?}, got {:?}",
+            expected_position, jigsaw.position,
+        ));
+    }
+
+    if let Some(expected_rotation) = &expected_data.rotation {
+        let actual_rotation = rotation_to_name(jigsaw.rotation);
+        if expected_rotation != actual_rotation {
             diffs.push(format!(
-                "piece[{index}].nbt.pool_element.projection: expected `{}`, got {}",
-                pool_element.projection,
-                actual_projection.unwrap_or("none"),
+                "piece[{index}].piece_data.rotation: expected `{expected_rotation}`, got `{actual_rotation}`",
             ));
         }
     }
 
-    compare_junctions(index, &expected_nbt.junctions, actual, diffs);
-    compare_raw_nbt(index, expected_nbt, &actual.nbt_data, diffs);
+    if let Some(expected_liquid_settings) = &expected_data.liquid_settings {
+        let actual_liquid_settings = liquid_settings_to_name(jigsaw.liquid_settings);
+        if expected_liquid_settings != actual_liquid_settings {
+            diffs.push(format!(
+                "piece[{index}].piece_data.liquid_settings: expected `{expected_liquid_settings}`, got `{actual_liquid_settings}`",
+            ));
+        }
+    }
+
+    if let Some(expected_pool_element) = &expected_data.pool_element {
+        compare_pool_element(
+            index,
+            "pool_element",
+            expected_pool_element,
+            &jigsaw.pool_element,
+            diffs,
+        );
+    }
+}
+
+fn compare_pool_element(
+    index: usize,
+    path: &str,
+    expected: &ExpectedPoolElement,
+    actual: &PoolElement,
+    diffs: &mut Vec<String>,
+) {
+    let actual_type = pool_element_type_name(actual);
+    if expected.element_type != actual_type {
+        diffs.push(format!(
+            "piece[{index}].piece_data.{path}.element_type: expected `{}`, got `{actual_type}`",
+            expected.element_type,
+        ));
+    }
+
+    let actual_projection = projection_to_name(Some(actual.projection()));
+    if Some(expected.projection.as_str()) != actual_projection {
+        diffs.push(format!(
+            "piece[{index}].piece_data.{path}.projection: expected `{}`, got {}",
+            expected.projection,
+            actual_projection.unwrap_or("none"),
+        ));
+    }
+
+    if let Some(expected_location) = &expected.location {
+        let actual_location = pool_element_location(actual).map(ToString::to_string);
+        if actual_location.as_deref() != Some(expected_location.as_str()) {
+            diffs.push(format!(
+                "piece[{index}].piece_data.{path}.location: expected `{expected_location}`, got {}",
+                actual_location.as_deref().unwrap_or("none"),
+            ));
+        }
+    }
+
+    if let Some(expected_feature) = &expected.feature {
+        let actual_feature = pool_element_feature(actual).map(ToString::to_string);
+        if actual_feature.as_deref() != Some(expected_feature.as_str()) {
+            diffs.push(format!(
+                "piece[{index}].piece_data.{path}.feature: expected `{expected_feature}`, got {}",
+                actual_feature.as_deref().unwrap_or("none"),
+            ));
+        }
+    }
+
+    if let Some(expected_processors) = &expected.processors {
+        let Some(actual_processors) = pool_element_processors(actual) else {
+            diffs.push(format!(
+                "piece[{index}].piece_data.{path}.processors: expected {}, got none",
+                fmt_json_short(expected_processors),
+            ));
+            return;
+        };
+        let actual_processors = processors_to_value(actual_processors);
+        if expected_processors != &actual_processors {
+            diffs.push(format!(
+                "piece[{index}].piece_data.{path}.processors: expected {}, got {}",
+                fmt_json_short(expected_processors),
+                fmt_json_short(&actual_processors),
+            ));
+        }
+    }
+
+    if !expected.elements.is_empty() {
+        let PoolElement::List { elements, .. } = actual else {
+            diffs.push(format!(
+                "piece[{index}].piece_data.{path}.elements: expected {} elements, got none",
+                expected.elements.len(),
+            ));
+            return;
+        };
+        if expected.elements.len() != elements.len() {
+            diffs.push(format!(
+                "piece[{index}].piece_data.{path}.elements: expected {} elements, got {}",
+                expected.elements.len(),
+                elements.len(),
+            ));
+        }
+        for (element_index, (expected_element, actual_element)) in
+            expected.elements.iter().zip(elements.iter()).enumerate()
+        {
+            compare_pool_element(
+                index,
+                &format!("{path}.elements[{element_index}]"),
+                expected_element,
+                actual_element,
+                diffs,
+            );
+        }
+    }
+
+    if !expected.extra.is_empty() {
+        diffs.push(format!(
+            "piece[{index}].piece_data.{path}: unsupported expected fields {}",
+            fmt_json_short(&Value::Object(expected.extra.clone())),
+        ));
+    }
 }
 
 fn compare_junctions(
@@ -655,7 +809,7 @@ fn compare_junctions(
 ) {
     if expected.len() != actual.junctions.len() {
         diffs.push(format!(
-            "piece[{index}].nbt.junction count: expected {}, got {}",
+            "piece[{index}].piece_data.junction count: expected {}, got {}",
             expected.len(),
             actual.junctions.len(),
         ));
@@ -668,31 +822,31 @@ fn compare_junctions(
 
         if expected_junction.source_x != actual_junction.source_x {
             diffs.push(format!(
-                "piece[{index}].nbt.junctions[{junction_index}].source_x: expected {}, got {}",
+                "piece[{index}].piece_data.junctions[{junction_index}].source_x: expected {}, got {}",
                 expected_junction.source_x, actual_junction.source_x,
             ));
         }
         if expected_junction.source_ground_y != actual_junction.source_ground_y {
             diffs.push(format!(
-                "piece[{index}].nbt.junctions[{junction_index}].source_ground_y: expected {}, got {}",
+                "piece[{index}].piece_data.junctions[{junction_index}].source_ground_y: expected {}, got {}",
                 expected_junction.source_ground_y, actual_junction.source_ground_y,
             ));
         }
         if expected_junction.source_z != actual_junction.source_z {
             diffs.push(format!(
-                "piece[{index}].nbt.junctions[{junction_index}].source_z: expected {}, got {}",
+                "piece[{index}].piece_data.junctions[{junction_index}].source_z: expected {}, got {}",
                 expected_junction.source_z, actual_junction.source_z,
             ));
         }
         if expected_junction.delta_y != actual_junction.delta_y {
             diffs.push(format!(
-                "piece[{index}].nbt.junctions[{junction_index}].delta_y: expected {}, got {}",
+                "piece[{index}].piece_data.junctions[{junction_index}].delta_y: expected {}, got {}",
                 expected_junction.delta_y, actual_junction.delta_y,
             ));
         }
         if Some(expected_junction.dest_proj.as_str()) != actual_dest_projection {
             diffs.push(format!(
-                "piece[{index}].nbt.junctions[{junction_index}].dest_proj: expected `{}`, got {}",
+                "piece[{index}].piece_data.junctions[{junction_index}].dest_proj: expected `{}`, got {}",
                 expected_junction.dest_proj,
                 actual_dest_projection.unwrap_or("none"),
             ));
@@ -700,54 +854,62 @@ fn compare_junctions(
     }
 }
 
-fn compare_raw_nbt(
-    index: usize,
-    expected_nbt: &ExpectedPieceNbt,
-    actual_bytes: &[u8],
-    diffs: &mut Vec<String>,
-) {
-    let expected_value = match serde_json::to_value(expected_nbt) {
-        Ok(value) => value,
-        Err(err) => {
-            diffs.push(format!(
-                "piece[{index}].nbt: fixture NBT could not be converted to JSON: {err}",
-            ));
-            return;
-        }
-    };
-
-    if actual_bytes.is_empty() {
-        if expected_value != Value::Object(serde_json::Map::new()) {
-            diffs.push(format!(
-                "piece[{index}].nbt: expected {}, got empty nbt_data",
-                fmt_json_short(&expected_value),
-            ));
-        }
-        return;
-    }
-
-    let actual_value = match actual_nbt_to_json(actual_bytes) {
-        Ok(value) => value,
-        Err(err) => {
-            diffs.push(format!(
-                "piece[{index}].nbt: failed to parse actual nbt_data: {err}",
-            ));
-            return;
-        }
-    };
-
-    if expected_value != actual_value {
-        diffs.push(format!(
-            "piece[{index}].nbt: expected {}, got {}",
-            fmt_json_short(&expected_value),
-            fmt_json_short(&actual_value),
-        ));
+fn pool_element_type_name(element: &PoolElement) -> &'static str {
+    match element {
+        PoolElement::Single { .. } => "minecraft:single_pool_element",
+        PoolElement::LegacySingle { .. } => "minecraft:legacy_single_pool_element",
+        PoolElement::Empty => "minecraft:empty_pool_element",
+        PoolElement::Feature { .. } => "minecraft:feature_pool_element",
+        PoolElement::List { .. } => "minecraft:list_pool_element",
     }
 }
 
-fn actual_nbt_to_json(bytes: &[u8]) -> Result<Value, String> {
-    let nbt = read_compound(&mut Cursor::new(bytes)).map_err(|err| format!("{err:?}"))?;
-    serde_json::to_value(nbt).map_err(|err| err.to_string())
+fn pool_element_location(element: &PoolElement) -> Option<&Identifier> {
+    match element {
+        PoolElement::Single { location, .. } | PoolElement::LegacySingle { location, .. } => {
+            Some(location)
+        }
+        _ => None,
+    }
+}
+
+fn pool_element_feature(element: &PoolElement) -> Option<&Identifier> {
+    match element {
+        PoolElement::Feature { feature, .. } => Some(feature),
+        _ => None,
+    }
+}
+
+fn pool_element_processors(element: &PoolElement) -> Option<&ProcessorList> {
+    match element {
+        PoolElement::Single { processors, .. } | PoolElement::LegacySingle { processors, .. } => {
+            Some(processors)
+        }
+        _ => None,
+    }
+}
+
+fn processors_to_value(processors: &ProcessorList) -> Value {
+    match processors {
+        ProcessorList::Empty => json!({ "processors": [] }),
+        ProcessorList::Registry(id) => Value::String(id.to_string()),
+    }
+}
+
+const fn rotation_to_name(rotation: Rotation) -> &'static str {
+    match rotation {
+        Rotation::None => "NONE",
+        Rotation::Clockwise90 => "CLOCKWISE_90",
+        Rotation::Clockwise180 => "CLOCKWISE_180",
+        Rotation::CounterClockwise90 => "COUNTERCLOCKWISE_90",
+    }
+}
+
+const fn liquid_settings_to_name(settings: LiquidSettingsData) -> &'static str {
+    match settings {
+        LiquidSettingsData::ApplyWaterlogging => "apply_waterlogging",
+        LiquidSettingsData::IgnoreWaterlogging => "ignore_waterlogging",
+    }
 }
 
 fn fmt_json_short(value: &Value) -> String {

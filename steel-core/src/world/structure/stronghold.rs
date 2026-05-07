@@ -624,6 +624,7 @@ impl Structure for StrongholdStructure {
                     gen_depth: depth,
                     orientation: Some(dir),
                     nbt_data: Vec::new(),
+                    jigsaw: None,
                     ground_level_delta: 0,
                     junctions: Vec::new(),
                     projection: None,

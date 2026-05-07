@@ -164,6 +164,7 @@ impl Structure for NetherFossilStructure {
                 gen_depth: 0,
                 orientation: Some(Direction::North),
                 nbt_data: Vec::new(),
+                jigsaw: None,
                 ground_level_delta: 0,
                 junctions: Vec::new(),
                 projection: None,

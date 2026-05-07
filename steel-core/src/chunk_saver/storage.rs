@@ -15,12 +15,12 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::structure::TerrainAdjustment;
-use steel_registry::template_pool::Projection;
+use steel_registry::structure::{LiquidSettingsData, TerrainAdjustment};
+use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, Rotation};
 
-use crate::world::structure::jigsaw::JigsawJunction;
+use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
 use crate::world::structure::{
     StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
 };
@@ -71,13 +71,46 @@ const fn required_projection_from_persistent(value: i8) -> Projection {
     }
 }
 
+const fn rotation_to_persistent(rotation: Rotation) -> i8 {
+    match rotation {
+        Rotation::None => 0,
+        Rotation::Clockwise90 => 1,
+        Rotation::Clockwise180 => 2,
+        Rotation::CounterClockwise90 => 3,
+    }
+}
+
+const fn rotation_from_persistent(value: i8) -> Rotation {
+    match value {
+        1 => Rotation::Clockwise90,
+        2 => Rotation::Clockwise180,
+        3 => Rotation::CounterClockwise90,
+        _ => Rotation::None,
+    }
+}
+
+const fn liquid_settings_to_persistent(settings: LiquidSettingsData) -> i8 {
+    match settings {
+        LiquidSettingsData::ApplyWaterlogging => 0,
+        LiquidSettingsData::IgnoreWaterlogging => 1,
+    }
+}
+
+const fn liquid_settings_from_persistent(value: i8) -> LiquidSettingsData {
+    match value {
+        1 => LiquidSettingsData::IgnoreWaterlogging,
+        _ => LiquidSettingsData::ApplyWaterlogging,
+    }
+}
+
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
-    PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentPoi,
-    PersistentSection, PersistentStructurePiece, PersistentStructureReference,
-    PersistentStructureStart, PersistentTick, PreparedChunkSave,
+    PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentJigsawPieceData,
+    PersistentPoi, PersistentPoolElement, PersistentProcessorList, PersistentSection,
+    PersistentStructurePiece, PersistentStructureReference, PersistentStructureStart,
+    PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -875,6 +908,120 @@ impl ChunkStorage {
         heightmaps
     }
 
+    fn jigsaw_piece_data_to_persistent(data: &JigsawPieceData) -> PersistentJigsawPieceData {
+        PersistentJigsawPieceData {
+            pool_element: Self::pool_element_to_persistent(&data.pool_element),
+            position: [data.position.0, data.position.1, data.position.2],
+            rotation: rotation_to_persistent(data.rotation),
+            liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
+        }
+    }
+
+    fn persistent_to_jigsaw_piece_data(data: &PersistentJigsawPieceData) -> JigsawPieceData {
+        JigsawPieceData {
+            pool_element: Self::persistent_to_pool_element(&data.pool_element),
+            position: (data.position[0], data.position[1], data.position[2]),
+            rotation: rotation_from_persistent(data.rotation),
+            liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
+        }
+    }
+
+    fn pool_element_to_persistent(element: &PoolElement) -> PersistentPoolElement {
+        match element {
+            PoolElement::Single {
+                location,
+                processors,
+                projection,
+            } => PersistentPoolElement::Single {
+                location: location.clone(),
+                processors: Self::processors_to_persistent(processors),
+                projection: projection_to_persistent(Some(*projection)),
+            },
+            PoolElement::LegacySingle {
+                location,
+                processors,
+                projection,
+            } => PersistentPoolElement::LegacySingle {
+                location: location.clone(),
+                processors: Self::processors_to_persistent(processors),
+                projection: projection_to_persistent(Some(*projection)),
+            },
+            PoolElement::Empty => PersistentPoolElement::Empty,
+            PoolElement::Feature {
+                feature,
+                projection,
+            } => PersistentPoolElement::Feature {
+                feature: feature.clone(),
+                projection: projection_to_persistent(Some(*projection)),
+            },
+            PoolElement::List {
+                elements,
+                projection,
+            } => PersistentPoolElement::List {
+                elements: elements
+                    .iter()
+                    .map(Self::pool_element_to_persistent)
+                    .collect(),
+                projection: projection_to_persistent(Some(*projection)),
+            },
+        }
+    }
+
+    fn persistent_to_pool_element(element: &PersistentPoolElement) -> PoolElement {
+        match element {
+            PersistentPoolElement::Single {
+                location,
+                processors,
+                projection,
+            } => PoolElement::Single {
+                location: location.clone(),
+                processors: Self::persistent_to_processors(processors),
+                projection: required_projection_from_persistent(*projection),
+            },
+            PersistentPoolElement::LegacySingle {
+                location,
+                processors,
+                projection,
+            } => PoolElement::LegacySingle {
+                location: location.clone(),
+                processors: Self::persistent_to_processors(processors),
+                projection: required_projection_from_persistent(*projection),
+            },
+            PersistentPoolElement::Empty => PoolElement::Empty,
+            PersistentPoolElement::Feature {
+                feature,
+                projection,
+            } => PoolElement::Feature {
+                feature: feature.clone(),
+                projection: required_projection_from_persistent(*projection),
+            },
+            PersistentPoolElement::List {
+                elements,
+                projection,
+            } => PoolElement::List {
+                elements: elements
+                    .iter()
+                    .map(Self::persistent_to_pool_element)
+                    .collect(),
+                projection: required_projection_from_persistent(*projection),
+            },
+        }
+    }
+
+    fn processors_to_persistent(processors: &ProcessorList) -> PersistentProcessorList {
+        match processors {
+            ProcessorList::Empty => PersistentProcessorList::Empty,
+            ProcessorList::Registry(id) => PersistentProcessorList::Registry(id.clone()),
+        }
+    }
+
+    fn persistent_to_processors(processors: &PersistentProcessorList) -> ProcessorList {
+        match processors {
+            PersistentProcessorList::Empty => ProcessorList::Empty,
+            PersistentProcessorList::Registry(id) => ProcessorList::Registry(id.clone()),
+        }
+    }
+
     /// Converts structure starts to persistent format for saving.
     fn structure_starts_to_persistent(starts: &StructureStartMap) -> Vec<PersistentStructureStart> {
         starts
@@ -893,6 +1040,10 @@ impl ChunkStorage {
                         gen_depth: piece.gen_depth,
                         orientation: direction_to_2d(piece.orientation),
                         nbt_data: piece.nbt_data.clone(),
+                        jigsaw: piece
+                            .jigsaw
+                            .as_ref()
+                            .map(Self::jigsaw_piece_data_to_persistent),
                         ground_level_delta: piece.ground_level_delta,
                         projection: projection_to_persistent(piece.projection),
                         junctions: piece
@@ -942,6 +1093,10 @@ impl ChunkStorage {
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
                         nbt_data: pp.nbt_data.clone(),
+                        jigsaw: pp
+                            .jigsaw
+                            .as_ref()
+                            .map(Self::persistent_to_jigsaw_piece_data),
                         ground_level_delta: pp.ground_level_delta,
                         junctions: pp
                             .junctions
@@ -1111,5 +1266,139 @@ impl ChunkStorage {
             return id as u16;
         }
         vanilla_biomes::PLAINS.id() as u16
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustc_hash::FxHashMap;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
+        init_registry();
+
+        let structure_id = Identifier::new_static("steel", "test_jigsaw_structure");
+        let piece_type = Identifier::new_static("minecraft", "jigsaw");
+        let template_id = Identifier::new_static("minecraft", "village/plains/houses/test_house");
+        let processor_id = Identifier::new_static("minecraft", "street_plains");
+
+        let piece = StructurePiece {
+            piece_type: piece_type.clone(),
+            bounding_box: steel_utils::BoundingBox::new(10, 64, 20, 15, 70, 25),
+            gen_depth: 3,
+            orientation: Some(Direction::North),
+            nbt_data: vec![1, 2, 3],
+            jigsaw: Some(JigsawPieceData {
+                pool_element: PoolElement::List {
+                    elements: vec![
+                        PoolElement::LegacySingle {
+                            location: template_id.clone(),
+                            processors: ProcessorList::Registry(processor_id.clone()),
+                            projection: Projection::Rigid,
+                        },
+                        PoolElement::Feature {
+                            feature: Identifier::new_static("minecraft", "pile_hay"),
+                            projection: Projection::TerrainMatching,
+                        },
+                    ],
+                    projection: Projection::Rigid,
+                },
+                position: (10, 64, 20),
+                rotation: Rotation::Clockwise90,
+                liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+            }),
+            ground_level_delta: 1,
+            junctions: vec![JigsawJunction {
+                source_x: 12,
+                source_ground_y: 65,
+                source_z: 24,
+                delta_y: -1,
+                dest_projection: Projection::TerrainMatching,
+            }],
+            projection: Some(Projection::Rigid),
+        };
+        let start = StructureStart::new(
+            structure_id.clone(),
+            ChunkPos::new(4, -2),
+            vec![piece],
+            TerrainAdjustment::None,
+        );
+        let mut starts = FxHashMap::default();
+        starts.insert(structure_id.clone(), start);
+
+        let persistent = ChunkStorage::structure_starts_to_persistent(&starts);
+        let encoded = wincode::serialize(&persistent).expect("structure starts should serialize");
+        let decoded: Vec<PersistentStructureStart> =
+            wincode::deserialize(&encoded).expect("structure starts should deserialize");
+        let loaded = ChunkStorage::persistent_to_structure_starts(&decoded);
+
+        let loaded_start = loaded
+            .get(&structure_id)
+            .expect("structure start should roundtrip");
+        assert_eq!(loaded_start.chunk_pos, ChunkPos::new(4, -2));
+        assert_eq!(loaded_start.pieces.len(), 1);
+
+        let loaded_piece = &loaded_start.pieces[0];
+        assert_eq!(loaded_piece.piece_type, piece_type);
+        assert_eq!(loaded_piece.gen_depth, 3);
+        assert_eq!(loaded_piece.orientation, Some(Direction::North));
+        assert_eq!(loaded_piece.nbt_data, [1, 2, 3]);
+        assert_eq!(loaded_piece.ground_level_delta, 1);
+        assert_eq!(loaded_piece.projection, Some(Projection::Rigid));
+        assert_eq!(loaded_piece.junctions.len(), 1);
+        assert_eq!(
+            loaded_piece.junctions[0].dest_projection,
+            Projection::TerrainMatching
+        );
+
+        let jigsaw = loaded_piece
+            .jigsaw
+            .as_ref()
+            .expect("typed jigsaw state should roundtrip");
+        assert_eq!(jigsaw.position, (10, 64, 20));
+        assert_eq!(jigsaw.rotation, Rotation::Clockwise90);
+        assert_eq!(
+            jigsaw.liquid_settings,
+            LiquidSettingsData::IgnoreWaterlogging
+        );
+
+        let PoolElement::List {
+            elements,
+            projection,
+        } = &jigsaw.pool_element
+        else {
+            panic!("expected list pool element");
+        };
+        assert_eq!(*projection, Projection::Rigid);
+        assert_eq!(elements.len(), 2);
+
+        let PoolElement::LegacySingle {
+            location,
+            processors,
+            projection,
+        } = &elements[0]
+        else {
+            panic!("expected legacy single pool element");
+        };
+        assert_eq!(location, &template_id);
+        assert_eq!(processors, &ProcessorList::Registry(processor_id));
+        assert_eq!(*projection, Projection::Rigid);
+
+        let PoolElement::Feature {
+            feature,
+            projection,
+        } = &elements[1]
+        else {
+            panic!("expected feature pool element");
+        };
+        assert_eq!(feature, &Identifier::new_static("minecraft", "pile_hay"));
+        assert_eq!(*projection, Projection::TerrainMatching);
     }
 }

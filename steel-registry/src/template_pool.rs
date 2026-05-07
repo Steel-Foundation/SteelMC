@@ -178,6 +178,19 @@ impl Projection {
     }
 }
 
+/// Vanilla's `Holder<StructureProcessorList>` on single pool elements.
+///
+/// The generated vanilla datapack currently uses registry references plus direct
+/// empty lists. If direct non-empty lists show up, codegen should preserve their
+/// processor entries instead of flattening them into this enum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessorList {
+    /// Direct empty processor list: `{ "processors": [] }`.
+    Empty,
+    /// Registry-backed processor list, e.g. `minecraft:street_savanna`.
+    Registry(Identifier),
+}
+
 /// A pool element — one possible piece that can be drawn from a template pool.
 #[derive(Debug, Clone)]
 pub enum PoolElement {
@@ -185,6 +198,8 @@ pub enum PoolElement {
     Single {
         /// Template location (e.g., `minecraft:village/plains/houses/small_house_1`).
         location: Identifier,
+        /// Processors applied during block placement.
+        processors: ProcessorList,
         /// Vertical placement mode.
         projection: Projection,
     },
@@ -192,6 +207,8 @@ pub enum PoolElement {
     LegacySingle {
         /// Template location.
         location: Identifier,
+        /// Processors applied during block placement.
+        processors: ProcessorList,
         /// Vertical placement mode.
         projection: Projection,
     },

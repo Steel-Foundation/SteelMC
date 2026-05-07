@@ -655,6 +655,7 @@ impl Structure for NetherFortressStructure {
                     gen_depth: p.gen_depth,
                     orientation: p.orientation,
                     nbt_data: Vec::new(),
+                    jigsaw: None,
                     ground_level_delta: 0,
                     junctions: Vec::new(),
                     projection: None,

@@ -483,6 +483,7 @@ impl Structure for EndCityStructure {
                         gen_depth: p.gen_depth,
                         orientation: Some(Direction::North),
                         nbt_data: Vec::new(),
+                        jigsaw: None,
                         ground_level_delta: 0,
                         junctions: Vec::new(),
                         projection: None,
