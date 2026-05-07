@@ -3,12 +3,12 @@
 //! swamp hut (7×7×9), buried treasure (1×1×1 at `(chunkMinX+9, 90, chunkMinZ+9)`).
 
 use steel_registry::structure::StructureData;
-use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BoundingBox, Identifier};
+use steel_utils::{BoundingBox, Direction, Identifier};
 
 use crate::world::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    random_horizontal_direction,
 };
 
 /// Vanilla's `StructurePiece.makeBoundingBox`: N/S keep (w,d); E/W swap to (d,w).
@@ -69,8 +69,8 @@ impl Structure for SinglePieceStructure {
             return None;
         }
 
-        // Vanilla's getRandomHorizontalDirection: N=0, E=1, S=2, W=3.
-        let z_axis = matches!(rng.next_i32_bounded(4), 0 | 2);
+        let orientation = random_horizontal_direction(rng);
+        let z_axis = matches!(orientation, Direction::North | Direction::South);
         Some(GenerationStub {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
             pieces: vec![StructurePiece {
@@ -85,7 +85,7 @@ impl Structure for SinglePieceStructure {
                     d,
                 ),
                 gen_depth: 0,
-                orientation: None,
+                orientation: Some(orientation),
                 nbt_data: Vec::new(),
                 jigsaw: None,
                 ground_level_delta: 0,

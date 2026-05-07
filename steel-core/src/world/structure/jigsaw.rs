@@ -591,7 +591,7 @@ impl Structure for JigsawStructure {
         let mut assembly_rng = LegacyRandom::from_seed(0);
         assembly_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
 
-        let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z);
+        let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z, false);
         let assembly = assemble(
             config,
             &mut assembly_rng,

@@ -192,12 +192,12 @@ impl StructureGenerationContext for FlatGenerationContext<'_> {
         y
     }
 
-    fn terrain_surface_height(&self, _x: i32, _z: i32) -> i32 {
-        self.base_height_flat(false)
+    fn terrain_surface_height(&self, _x: i32, _z: i32, ocean_floor: bool) -> i32 {
+        self.base_height_flat(ocean_floor)
     }
 
-    fn terrain_is_opaque(&self, _x: i32, y: i32, _z: i32) -> bool {
-        self.is_opaque_at_y(y, false)
+    fn terrain_is_opaque(&self, _x: i32, y: i32, _z: i32, ocean_floor: bool) -> bool {
+        self.is_opaque_at_y(y, ocean_floor)
     }
 }
 

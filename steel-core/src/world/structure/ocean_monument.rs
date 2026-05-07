@@ -10,6 +10,7 @@ use steel_utils::{BoundingBox, Identifier};
 
 use crate::world::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    random_horizontal_direction,
 };
 
 /// `#minecraft:required_ocean_monument_surrounding`.
@@ -35,7 +36,7 @@ impl Structure for OceanMonumentStructure {
         &self,
         ctx: &mut dyn StructureGenerationContext,
         structure: &StructureData,
-        _rng: &mut LegacyRandom,
+        rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let check_x = ctx.chunk_min_x() + 9;
         let check_z = ctx.chunk_min_z() + 9;
@@ -68,13 +69,14 @@ impl Structure for OceanMonumentStructure {
 
         let west = ctx.chunk_min_x() - 29;
         let north = ctx.chunk_min_z() - 29;
+        let orientation = random_horizontal_direction(rng);
         Some(GenerationStub {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
             pieces: vec![StructurePiece {
                 piece_type: Identifier::new_static("minecraft", "omb"),
                 bounding_box: BoundingBox::new(west, 39, north, west + 57, 61, north + 57),
                 gen_depth: 0,
-                orientation: None,
+                orientation: Some(orientation),
                 nbt_data: Vec::new(),
                 jigsaw: None,
                 ground_level_delta: 0,

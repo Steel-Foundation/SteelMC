@@ -32,9 +32,25 @@ const GIANT_PORTAL_SIZES: [(i32, i32, i32); 3] = [(11, 17, 16), (11, 16, 16), (1
 /// Terrain query operations needed by the ruined portal generation.
 pub enum TerrainQuery {
     /// Get surface height at (x, z). Returns first solid Y from top.
-    SurfaceHeight(i32, i32),
-    /// Check if block at (x, y, z) is opaque for `WORLD_SURFACE_WG` heightmap.
-    IsOpaque(i32, i32, i32),
+    SurfaceHeight {
+        /// Block X.
+        x: i32,
+        /// Block Z.
+        z: i32,
+        /// `true` for `OCEAN_FLOOR_WG`, `false` for `WORLD_SURFACE_WG`.
+        ocean_floor: bool,
+    },
+    /// Check if block at (x, y, z) is opaque for the selected heightmap.
+    IsOpaque {
+        /// Block X.
+        x: i32,
+        /// Block Y.
+        y: i32,
+        /// Block Z.
+        z: i32,
+        /// `true` for `OCEAN_FLOOR_WG`, `false` for `WORLD_SURFACE_WG`.
+        ocean_floor: bool,
+    },
 }
 
 /// Result of a terrain query.
@@ -118,7 +134,12 @@ pub fn find_generation_point(
     // differs from (min + max) / 2 for even spans due to integer rounding.
     let bb_center_x = bb.min_x + (bb.max_x - bb.min_x + 1) / 2;
     let bb_center_z = bb.min_z + (bb.max_z - bb.min_z + 1) / 2;
-    let surface_y = match terrain(TerrainQuery::SurfaceHeight(bb_center_x, bb_center_z)) {
+    let ocean_floor = matches!(setup.placement, RuinedPortalPlacementData::OnOceanFloor);
+    let surface_y = match terrain(TerrainQuery::SurfaceHeight {
+        x: bb_center_x,
+        z: bb_center_z,
+        ocean_floor,
+    }) {
         TerrainResult::Height(h) => h,
         TerrainResult::Opaque(_) => unreachable!(),
     } - 1;
@@ -168,7 +189,12 @@ pub fn find_generation_point(
         let mut solid_count = 0;
         for &(cx, cz) in &corners {
             if matches!(
-                terrain(TerrainQuery::IsOpaque(cx, projected_y, cz)),
+                terrain(TerrainQuery::IsOpaque {
+                    x: cx,
+                    y: projected_y,
+                    z: cz,
+                    ocean_floor,
+                }),
                 TerrainResult::Opaque(true)
             ) {
                 solid_count += 1;
@@ -207,12 +233,15 @@ impl Structure for RuinedPortalStructure {
     ) -> Option<GenerationStub> {
         let mut terrain = |q: TerrainQuery| -> TerrainResult {
             match q {
-                TerrainQuery::SurfaceHeight(x, z) => {
-                    TerrainResult::Height(ctx.terrain_surface_height(x, z))
+                TerrainQuery::SurfaceHeight { x, z, ocean_floor } => {
+                    TerrainResult::Height(ctx.terrain_surface_height(x, z, ocean_floor))
                 }
-                TerrainQuery::IsOpaque(x, y, z) => {
-                    TerrainResult::Opaque(ctx.terrain_is_opaque(x, y, z))
-                }
+                TerrainQuery::IsOpaque {
+                    x,
+                    y,
+                    z,
+                    ocean_floor,
+                } => TerrainResult::Opaque(ctx.terrain_is_opaque(x, y, z, ocean_floor)),
             }
         };
 

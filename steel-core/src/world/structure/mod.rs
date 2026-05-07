@@ -21,8 +21,8 @@ pub mod stronghold;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::random::RandomSplitter;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::{Random, RandomSplitter};
 use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
@@ -35,6 +35,18 @@ use crate::worldgen::generators::vanilla::{
     column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
 };
 use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, LazyAquifer};
+
+const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
+    Direction::North,
+    Direction::East,
+    Direction::South,
+    Direction::West,
+];
+
+/// Matches vanilla's `Direction.Plane.HORIZONTAL.getRandomDirection`.
+pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
+    VANILLA_HORIZONTAL_DIRECTIONS[rng.next_i32_bounded(4) as usize]
+}
 
 /// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)
 /// starts are not stored.
@@ -247,9 +259,9 @@ pub trait StructureGenerationContext {
     /// Chunk-center surface Y, memoised by the concrete context.
     fn surface_y(&mut self) -> i32;
     /// Surface height for off-chunk terrain queries used by piece placement.
-    fn terrain_surface_height(&self, x: i32, z: i32) -> i32;
+    fn terrain_surface_height(&self, x: i32, z: i32, ocean_floor: bool) -> i32;
     /// Opaque terrain test for off-chunk terrain queries used by piece placement.
-    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32) -> bool;
+    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32, ocean_floor: bool) -> bool;
 }
 
 /// Vanilla's `Structure::findValidGenerationPoint`. Impls own their RNG order,
@@ -406,7 +418,7 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
         GenerationContext::surface_y(self)
     }
 
-    fn terrain_surface_height(&self, x: i32, z: i32) -> i32 {
+    fn terrain_surface_height(&self, x: i32, z: i32, ocean_floor: bool) -> i32 {
         let cell_w = N::Settings::CELL_WIDTH;
         let cell_x = x.div_euclid(cell_w) * cell_w;
         let cell_z = z.div_euclid(cell_w) * cell_w;
@@ -429,11 +441,11 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
             &mut fresh_aq,
             x,
             z,
-            false,
+            ocean_floor,
         )
     }
 
-    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32) -> bool {
+    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32, ocean_floor: bool) -> bool {
         let cell_w = N::Settings::CELL_WIDTH;
         let cell_h = N::Settings::CELL_HEIGHT;
         let cell_x = x.div_euclid(cell_w) * cell_w;
@@ -460,9 +472,10 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
             cell_w,
             cell_h,
         );
-        !matches!(
-            fresh_aq.compute_substance(self.noises, x, y, z, density),
-            AquiferResult::Air
-        )
+        match fresh_aq.compute_substance(self.noises, x, y, z, density) {
+            AquiferResult::Solid => true,
+            AquiferResult::Fluid(_) => !ocean_floor,
+            AquiferResult::Air => false,
+        }
     }
 }

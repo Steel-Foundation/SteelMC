@@ -576,7 +576,7 @@ impl Structure for MineshaftStructure {
             MineshaftTypeData::Mesa => MineshaftType::Mesa,
         };
 
-        let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z);
+        let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z, false);
 
         let result = find_generation_point(
             rng,
