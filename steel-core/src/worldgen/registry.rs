@@ -1,14 +1,17 @@
 //! Runtime registry for world generator factories.
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
 use std::iter::repeat_n;
 use steel_registry::dimension_type::DimensionTypeRef;
+use steel_registry::vanilla_biomes;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use toml::map::Map;
 
+use crate::world::structure::placement::load_vanilla_structure_sets;
+use crate::worldgen::structure::{FixedStructureBiomeProvider, StructureGenerator};
 use crate::worldgen::{
     BiomeSourceKind, ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
 };
@@ -127,6 +130,8 @@ struct FlatGeneratorConfig {
     dimension_type: Identifier,
     #[serde(default = "default_flat_layers")]
     layers: Vec<FlatLayerConfig>,
+    #[serde(default)]
+    structure_overrides: Vec<Identifier>,
 }
 
 #[derive(Deserialize)]
@@ -192,6 +197,17 @@ fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
             ));
         }
     }
+    let available_structure_sets: FxHashSet<_> = load_vanilla_structure_sets()
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect();
+    for structure_set in &parsed.structure_overrides {
+        if !available_structure_sets.contains(structure_set) {
+            return Err(format!(
+                "unknown structure set {structure_set} in minecraft:flat structure_overrides"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -244,11 +260,12 @@ fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String
     })
 }
 
-fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, String> {
+fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String> {
     let parsed = parse_flat_config(config)?;
     validate_flat_config(config)?;
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     let normalized_config = normalized_flat_config(&parsed);
+    let structure_overrides = parsed.structure_overrides.clone();
     let mut layers = Vec::new();
     for layer in parsed.layers {
         let block = REGISTRY
@@ -259,10 +276,30 @@ fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, Stri
         layers.extend(repeat_n(state, layer.height));
     }
 
+    let structure_generator = if structure_overrides.is_empty() {
+        None
+    } else {
+        let structure_sets = load_vanilla_structure_sets()
+            .into_iter()
+            .filter(|(key, _)| structure_overrides.contains(key))
+            .collect();
+        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        Some(StructureGenerator::new(
+            seed,
+            &biome_provider,
+            structure_sets,
+        ))
+    };
+
     Ok(GeneratorOutput {
         dimension_type,
         config: normalized_config,
-        generator: ChunkGeneratorType::Flat(FlatChunkGenerator::new_layers(layers)),
+        generator: ChunkGeneratorType::Flat(FlatChunkGenerator::new_layers_with_structures(
+            layers,
+            seed,
+            sea_level_for_dimension_type(dimension_type),
+            structure_generator,
+        )),
         is_flat: true,
         sea_level: sea_level_for_dimension_type(dimension_type),
     })
@@ -319,6 +356,18 @@ fn normalized_flat_config(config: &FlatGeneratorConfig) -> toml::Value {
         })
         .collect();
     table.insert("layers".to_owned(), toml::Value::Array(layers));
+    if !config.structure_overrides.is_empty() {
+        table.insert(
+            "structure_overrides".to_owned(),
+            toml::Value::Array(
+                config
+                    .structure_overrides
+                    .iter()
+                    .map(|key| toml::Value::String(key.to_string()))
+                    .collect(),
+            ),
+        );
+    }
     toml::Value::Table(table)
 }
 

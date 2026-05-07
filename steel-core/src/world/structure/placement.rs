@@ -1,7 +1,6 @@
 //! Structure placement. Determines which chunks are valid for structure
 //! generation — vanilla's `StructurePlacement` hierarchy.
 
-use steel_registry::structure_set::JigsawConfig;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
@@ -328,14 +327,6 @@ pub struct StructureSelectionEntry {
     pub structure: Identifier,
     /// Weight.
     pub weight: i32,
-    /// Allowed biomes (resolved from tags).
-    pub allowed_biomes: Vec<Identifier>,
-    /// Biome-check Y, or `None` for surface height.
-    pub biome_check_y: Option<i32>,
-    /// Structure type (e.g., `"minecraft:jigsaw"`).
-    pub structure_type: String,
-    /// Jigsaw-specific config (only for `minecraft:jigsaw`).
-    pub jigsaw_config: Option<JigsawConfig>,
 }
 
 /// Vanilla's `StructureSet`: weighted structures + one placement.
@@ -378,10 +369,6 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
         .map(|e| StructureSelectionEntry {
             structure: e.structure,
             weight: e.weight,
-            allowed_biomes: e.allowed_biomes,
-            biome_check_y: e.biome_check_y,
-            structure_type: e.structure_type,
-            jigsaw_config: e.jigsaw_config,
         })
         .collect();
 
@@ -687,10 +674,6 @@ mod tests {
             structures: vec![StructureSelectionEntry {
                 structure: Identifier::new("minecraft", "village_plains"),
                 weight: 1,
-                allowed_biomes: vec![],
-                biome_check_y: None,
-                structure_type: String::new(),
-                jigsaw_config: None,
             }],
             placement: StructurePlacement {
                 salt: 10_387_312,

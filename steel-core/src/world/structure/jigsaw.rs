@@ -4,13 +4,17 @@
 use std::cmp::Reverse;
 
 use rustc_hash::FxHashMap;
-use steel_registry::structure_set::{JigsawConfig, PoolAlias, StartHeight};
+use steel_registry::structure::{JigsawConfig, PoolAlias, StartHeight, StructureData};
 use steel_registry::template_pool::{
     JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
 };
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier, Rotation};
+
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 /// A placed piece produced by jigsaw assembly.
 #[derive(Debug, Clone)]
@@ -534,6 +538,77 @@ pub fn assemble(
         pieces,
         biome_check_pos,
     })
+}
+
+/// Registered under `minecraft:jigsaw` for pool-based structures such as villages,
+/// bastions, ancient cities, and trail ruins.
+pub struct JigsawStructure;
+
+impl Structure for JigsawStructure {
+    fn find_generation_point(
+        &self,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
+        _rng: &mut LegacyRandom,
+    ) -> Option<GenerationStub> {
+        let config = structure.config.as_jigsaw()?;
+
+        let mut alias_rng = LegacyRandom::from_seed(0);
+        alias_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
+        let alias_map = resolve_aliases(&config.pool_aliases, &mut alias_rng);
+
+        let mut assembly_rng = LegacyRandom::from_seed(0);
+        assembly_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
+
+        let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z);
+        let assembly = assemble(
+            config,
+            &mut assembly_rng,
+            ctx.chunk_x(),
+            ctx.chunk_z(),
+            ctx.template_pools(),
+            ctx.templates(),
+            &alias_map,
+            &mut get_height,
+            ctx.min_y(),
+            ctx.max_y(),
+        )?;
+
+        if assembly.pieces.is_empty() {
+            return None;
+        }
+
+        let (bx, by, bz) = assembly.biome_check_pos;
+        let biome = ctx.biome_at(bx, by, bz);
+        if !structure.allowed_biomes.contains(&biome.key) {
+            return None;
+        }
+
+        let pieces = assembly
+            .pieces
+            .into_iter()
+            .map(|piece| StructurePiece {
+                piece_type: Identifier::new_static("minecraft", "jigsaw"),
+                // Vanilla's `JigsawPlacement.tryPlacingChildren` mutates
+                // `targetBB` in place via the expansion hack, then stores it on
+                // `PoolElementStructurePiece`.
+                bounding_box: piece.assembly_bb,
+                // Vanilla's `PoolElementStructurePiece` constructor hardcodes
+                // `genDepth = 0` for every jigsaw piece.
+                gen_depth: 0,
+                orientation: None,
+                nbt_data: Vec::new(),
+                ground_level_delta: piece.ground_level_delta,
+                junctions: piece.junctions,
+                projection: Some(piece.projection),
+            })
+            .collect();
+
+        Some(GenerationStub {
+            position: assembly.biome_check_pos,
+            pieces,
+        })
+    }
 }
 
 /// Vanilla's `tryPlacingChildren`. `context_idx` is this piece's collision context

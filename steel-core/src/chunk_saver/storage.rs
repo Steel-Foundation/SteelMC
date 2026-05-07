@@ -15,9 +15,12 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
+use steel_registry::structure::TerrainAdjustment;
+use steel_registry::template_pool::Projection;
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier};
 
+use crate::world::structure::jigsaw::JigsawJunction;
 use crate::world::structure::{
     StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
 };
@@ -45,13 +48,36 @@ const fn direction_from_2d(value: i8) -> Option<Direction> {
     }
 }
 
+const fn projection_to_persistent(projection: Option<Projection>) -> i8 {
+    match projection {
+        None => -1,
+        Some(Projection::Rigid) => 0,
+        Some(Projection::TerrainMatching) => 1,
+    }
+}
+
+const fn projection_from_persistent(value: i8) -> Option<Projection> {
+    match value {
+        0 => Some(Projection::Rigid),
+        1 => Some(Projection::TerrainMatching),
+        _ => None,
+    }
+}
+
+const fn required_projection_from_persistent(value: i8) -> Projection {
+    match value {
+        1 => Projection::TerrainMatching,
+        _ => Projection::Rigid,
+    }
+}
+
 use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
-    PersistentEntity, PersistentHeightmap, PersistentPoi, PersistentSection,
-    PersistentStructurePiece, PersistentStructureReference, PersistentStructureStart,
-    PersistentTick, PreparedChunkSave,
+    PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentPoi,
+    PersistentSection, PersistentStructurePiece, PersistentStructureReference,
+    PersistentStructureStart, PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -867,6 +893,21 @@ impl ChunkStorage {
                         gen_depth: piece.gen_depth,
                         orientation: direction_to_2d(piece.orientation),
                         nbt_data: piece.nbt_data.clone(),
+                        ground_level_delta: piece.ground_level_delta,
+                        projection: projection_to_persistent(piece.projection),
+                        junctions: piece
+                            .junctions
+                            .iter()
+                            .map(|junction| PersistentJigsawJunction {
+                                source_x: junction.source_x,
+                                source_ground_y: junction.source_ground_y,
+                                source_z: junction.source_z,
+                                delta_y: junction.delta_y,
+                                dest_projection: projection_to_persistent(Some(
+                                    junction.dest_projection,
+                                )),
+                            })
+                            .collect(),
                     })
                     .collect(),
             })
@@ -901,21 +942,35 @@ impl ChunkStorage {
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
                         nbt_data: pp.nbt_data.clone(),
-                        ground_level_delta: 0,
-                        junctions: Vec::new(),
-                        // Persistent format doesn't store projection; on reload, treat
-                        // every piece as non-jigsaw (matches vanilla's `else` branch in
-                        // beardifier — adds as rigid with ground_level_delta=0).
-                        // TODO: persist projection so reloaded chunks beardify correctly.
-                        projection: None,
+                        ground_level_delta: pp.ground_level_delta,
+                        junctions: pp
+                            .junctions
+                            .iter()
+                            .map(|junction| JigsawJunction {
+                                source_x: junction.source_x,
+                                source_ground_y: junction.source_ground_y,
+                                source_z: junction.source_z,
+                                delta_y: junction.delta_y,
+                                dest_projection: required_projection_from_persistent(
+                                    junction.dest_projection,
+                                ),
+                            })
+                            .collect(),
+                        projection: projection_from_persistent(pp.projection),
                     })
                     .collect();
 
+                let terrain_adjustment = REGISTRY
+                    .structures
+                    .by_key(&ps.structure)
+                    .map_or(TerrainAdjustment::None, |structure| {
+                        structure.terrain_adjustment
+                    });
                 let mut start = StructureStart::new(
                     ps.structure.clone(),
                     ChunkPos::new(ps.chunk_x, ps.chunk_z),
                     pieces,
-                    0,
+                    terrain_adjustment,
                 );
                 start.references = ps.references;
                 (ps.structure.clone(), start)

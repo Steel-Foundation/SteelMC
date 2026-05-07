@@ -1,13 +1,14 @@
 //! Shipwreck: picks a random template from the beached (11) or underwater (20) pool,
 //! places at `(chunkMinX, 90, chunkMinZ)` with random rotation and pivot `(4, 15)`.
 
+use steel_registry::structure::{StructureConfigData, StructureData};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Direction, Identifier, Rotation};
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 static BEACHED: &[&str] = &[
     "shipwreck/with_mast",
@@ -50,36 +51,35 @@ static OCEAN: &[&str] = &[
 /// `entry.structure.path`.
 pub struct ShipwreckStructure;
 
-impl<N: DimensionNoises> Structure<N> for ShipwreckStructure {
+impl Structure for ShipwreckStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x, surface_y, ctx.center_block_z);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
-        let templates_arr = if &*entry.structure.path == "shipwreck_beached" {
-            BEACHED
-        } else {
-            OCEAN
+        let StructureConfigData::Shipwreck { is_beached } = &structure.config else {
+            return None;
         };
+        let templates_arr = if *is_beached { BEACHED } else { OCEAN };
 
         let rotation = Rotation::get_random(rng);
         let idx = rng.next_i32_bounded(templates_arr.len() as i32) as usize;
         let template_id = Identifier::new("minecraft", templates_arr[idx].to_string());
-        let tmpl = ctx.templates.get(&template_id)?;
+        let tmpl = ctx.templates().get(&template_id)?;
 
         Some(GenerationStub {
-            position: (ctx.center_block_x, surface_y, ctx.center_block_z),
+            position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
             pieces: vec![StructurePiece {
                 piece_type: Identifier::new_static("minecraft", "shipwreck"),
                 bounding_box: rotation.get_bounding_box_with_pivot(
-                    (ctx.chunk_min_x, 90, ctx.chunk_min_z),
+                    (ctx.chunk_min_x(), 90, ctx.chunk_min_z()),
                     (tmpl.size[0], tmpl.size[1], tmpl.size[2]),
                     4,
                     15,

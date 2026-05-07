@@ -7,10 +7,11 @@ use steel_registry::template_pool::TemplateData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
+use steel_registry::structure::StructureData;
 
 const MAX_GEN_DEPTH: i32 = 8;
 
@@ -430,11 +431,11 @@ pub fn start_house_tower(
 /// a rotation-dependent 5×5 `lowestY` (reject <60). Biome-checks at the final position.
 pub struct EndCityStructure;
 
-impl<N: DimensionNoises> Structure<N> for EndCityStructure {
+impl Structure for EndCityStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let rotation = Rotation::get_random(rng);
@@ -444,7 +445,7 @@ impl<N: DimensionNoises> Structure<N> for EndCityStructure {
             Rotation::Clockwise180 => (-5, -5),
             Rotation::CounterClockwise90 => (5, -5),
         };
-        let (bx, bz) = (ctx.chunk_min_x + 7, ctx.chunk_min_z + 7);
+        let (bx, bz) = (ctx.chunk_min_x() + 7, ctx.chunk_min_z() + 7);
         // End uses `base_height_full`: `preliminary_surface_level = 0` makes the
         // capped variant miss islands at Y≥50.
         let h0 = ctx.base_height_full(bx, bz, false) - 1;
@@ -457,18 +458,18 @@ impl<N: DimensionNoises> Structure<N> for EndCityStructure {
         }
 
         let biome = ctx.biome_at(bx, lowest, bz);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
         Some(GenerationStub {
             position: (bx, lowest, bz),
-            pieces: start_house_tower(ctx.templates, (bx, lowest, bz), rotation, rng)
+            pieces: start_house_tower(ctx.templates(), (bx, lowest, bz), rotation, rng)
                 .into_iter()
                 .map(|p| {
                     let tmpl_id =
                         Identifier::new("minecraft", format!("end_city/{}", p.template_name));
-                    let size = ctx.templates.get(&tmpl_id).map_or([1, 1, 1], |t| t.size);
+                    let size = ctx.templates().get(&tmpl_id).map_or([1, 1, 1], |t| t.size);
                     StructurePiece {
                         piece_type: Identifier::new_static("minecraft", "ecp"),
                         bounding_box: p.rotation.get_bounding_box(

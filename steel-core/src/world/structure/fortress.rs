@@ -2,15 +2,16 @@
 //! then weighted BFS over bridge/castle pools honoring place-count, prev-piece, and
 //! collision constraints. Structure is vertically offset into `Y ∈ [48, 70]`.
 
+use steel_registry::structure::StructureData;
 use steel_utils::BoundingBox;
 use steel_utils::Direction;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 const MAX_DEPTH: i32 = 30;
 const LOWEST_Y: i32 = 10;
@@ -625,21 +626,21 @@ pub fn generate_fortress_pieces(
 /// `bastion_remnant` (jigsaw), so it's dispatched from the jigsaw arm's fallthrough.
 pub struct NetherFortressStructure;
 
-impl<N: DimensionNoises> Structure<N> for NetherFortressStructure {
+impl Structure for NetherFortressStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         // Biome check at (chunkMinX, 64, chunkMinZ) per vanilla.
-        let (biome_x, biome_z) = (ctx.chunk_min_x, ctx.chunk_min_z);
+        let (biome_x, biome_z) = (ctx.chunk_min_x(), ctx.chunk_min_z());
         let biome = ctx.biome_at(biome_x, 64, biome_z);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
-        let pieces_out = generate_fortress_pieces(ctx.chunk_x, ctx.chunk_z, rng);
+        let pieces_out = generate_fortress_pieces(ctx.chunk_x(), ctx.chunk_z(), rng);
         if pieces_out.is_empty() {
             return None;
         }

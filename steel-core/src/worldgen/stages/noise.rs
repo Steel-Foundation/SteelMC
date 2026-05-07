@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use rustc_hash::FxHashSet;
+use steel_registry::structure::TerrainAdjustment;
 use steel_utils::ChunkPos;
 
 use crate::chunk::{
@@ -10,7 +11,7 @@ use crate::chunk::{
 use crate::world::structure::StructureStart;
 use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::generator::ChunkGenerator;
-use crate::worldgen::noise::beardifier::{Beardifier, TerrainAdjustment};
+use crate::worldgen::noise::beardifier::Beardifier;
 
 pub(crate) fn generate(
     context: Arc<WorldGenContext>,
@@ -57,13 +58,11 @@ pub(crate) fn generate(
         // The starts_guards keep the underlying maps alive across this collection.
         let mut starts: Vec<&StructureStart> = Vec::new();
         for (structure_id, source_chunks_ref) in references.iter() {
-            if TerrainAdjustment::for_structure(structure_id) == TerrainAdjustment::None {
-                continue;
-            }
             for &source_pos in source_chunks_ref {
                 for guard in &starts_guards {
                     if let Some(start) = guard.get(structure_id)
                         && start.chunk_pos == source_pos
+                        && start.terrain_adjustment != TerrainAdjustment::None
                     {
                         starts.push(start);
                         break;

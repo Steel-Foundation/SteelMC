@@ -458,6 +458,27 @@ pub struct PersistentStructurePiece {
     pub orientation: i8,
     /// Type-specific NBT data (simdnbt binary format).
     pub nbt_data: Vec<u8>,
+    /// Offset from piece minY to terrain ground level.
+    pub ground_level_delta: i32,
+    /// Projection mode: -1 = none, 0 = rigid, 1 = terrain matching.
+    pub projection: i8,
+    /// Jigsaw junctions used by terrain adaptation.
+    pub junctions: Vec<PersistentJigsawJunction>,
+}
+
+/// A persisted jigsaw junction used by Beardifier terrain adaptation.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJigsawJunction {
+    /// World X.
+    pub source_x: i32,
+    /// Ground-adjusted Y.
+    pub source_ground_y: i32,
+    /// World Z.
+    pub source_z: i32,
+    /// Y delta between source and target.
+    pub delta_y: i32,
+    /// Destination projection: 0 = rigid, 1 = terrain matching.
+    pub dest_projection: i8,
 }
 
 /// A structure reference entry stored with a chunk.

@@ -2,16 +2,14 @@
 //! immediately after creation, before processing the next sibling. Produces
 //! bounding boxes and the Y offset for biome checking (no block placement).
 
-use rustc_hash::FxHashMap;
+use steel_registry::structure::{MineshaftTypeData, StructureConfigData, StructureData};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier};
-use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
-use crate::worldgen::generators::vanilla::iterate_noise_column_with_aquifer;
-use crate::worldgen::noise::aquifer::Aquifer;
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 const MAX_DEPTH: i32 = 8;
 const MAX_DISTANCE: i32 = 80;
@@ -560,66 +558,39 @@ fn union_bb(a: BoundingBox, b: BoundingBox) -> BoundingBox {
     )
 }
 
-/// Registered under `"minecraft:mineshaft"`. Variant (Normal / Mesa) is resolved
-/// from `entry.structure.path`.
+/// Registered under `"minecraft:mineshaft"`.
 pub struct MineshaftStructure;
 
-impl<N: DimensionNoises> Structure<N> for MineshaftStructure {
+impl Structure for MineshaftStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        let mtype = if &*entry.structure.path == "mineshaft_mesa" {
-            MineshaftType::Mesa
-        } else {
-            MineshaftType::Normal
+        let StructureConfigData::Mineshaft { mineshaft_type } = &structure.config else {
+            return None;
+        };
+        let mtype = match mineshaft_type {
+            MineshaftTypeData::Normal => MineshaftType::Normal,
+            MineshaftTypeData::Mesa => MineshaftType::Mesa,
         };
 
-        // Mineshaft pieces span far outside this chunk; the height closure needs
-        // per-cell-chunk aquifer-aware columns. Memoise (cache, aquifer) across
-        // the DFS — dozens of pieces cluster across a few chunks.
-        let noises = ctx.noises;
-        let splitter = ctx.splitter;
-        let mut height_query_cache: FxHashMap<(i32, i32), (N::ColumnCache, Aquifer<N>)> =
-            FxHashMap::default();
-        let mut get_height = |x: i32, z: i32| -> i32 {
-            let cw = N::Settings::CELL_WIDTH;
-            let aq_chunk_x = ((x.div_euclid(cw) * cw) >> 4) * 16;
-            let aq_chunk_z = ((z.div_euclid(cw) * cw) >> 4) * 16;
-            let entry = height_query_cache
-                .entry((aq_chunk_x, aq_chunk_z))
-                .or_insert_with(|| {
-                    let fresh_aq = Aquifer::<N>::new(
-                        aq_chunk_x,
-                        aq_chunk_z,
-                        N::Settings::MIN_Y,
-                        N::Settings::HEIGHT,
-                        splitter,
-                        noises,
-                        N::ColumnCache::default(),
-                    );
-                    let mut fresh_cache = N::ColumnCache::default();
-                    fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
-                    (fresh_cache, fresh_aq)
-                });
-            iterate_noise_column_with_aquifer::<N>(&mut entry.0, noises, &mut entry.1, x, z, false)
-        };
+        let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z);
 
         let result = find_generation_point(
             rng,
-            ctx.chunk_x,
-            ctx.chunk_z,
+            ctx.chunk_x(),
+            ctx.chunk_z(),
             mtype,
-            ctx.sea_level,
-            N::Settings::MIN_Y,
+            ctx.sea_level(),
+            ctx.min_y(),
             &mut get_height,
         );
 
         let (bx, by, bz) = result.biome_check_pos;
         let biome = ctx.biome_at(bx, by, bz);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 

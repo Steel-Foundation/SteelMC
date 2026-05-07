@@ -27,14 +27,14 @@ use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
-use steel_registry::template_pool::{Projection, TemplateData};
+use steel_registry::structure::{StructureData, TerrainAdjustment};
+use steel_registry::template_pool::{Projection, TemplateData, TemplatePoolData};
 
-use crate::world::structure::placement::StructureSelectionEntry;
 use crate::worldgen::ChunkBiomeSampler;
 use crate::worldgen::generators::vanilla::{
     column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
 };
-use crate::worldgen::noise::aquifer::{AquiferResult, LazyAquifer};
+use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, LazyAquifer};
 
 /// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)
 /// starts are not stored.
@@ -52,6 +52,8 @@ pub struct StructureStart {
     /// when `terrain_adaptation != NONE`. Stored for serialization parity; the
     /// inflation is already baked into [`bounding_box`](Self::bounding_box).
     pub bb_inflate: i32,
+    /// Terrain adaptation mode from the structure registry. Used by Beardifier.
+    pub terrain_adjustment: TerrainAdjustment,
     /// Cached bounding box matching vanilla's `StructureStart.getBoundingBox()`:
     /// the union of piece bounding boxes, then `inflatedBy(bb_inflate)`.
     /// `None` iff `pieces` is empty.
@@ -65,8 +67,9 @@ impl StructureStart {
         structure: Identifier,
         chunk_pos: ChunkPos,
         pieces: Vec<StructurePiece>,
-        bb_inflate: i32,
+        terrain_adjustment: TerrainAdjustment,
     ) -> Self {
+        let bb_inflate = terrain_adjustment.bb_inflate();
         let bounding_box = Self::compute_bounding_box(&pieces, bb_inflate);
         Self {
             structure,
@@ -74,6 +77,7 @@ impl StructureStart {
             references: 0,
             pieces,
             bb_inflate,
+            terrain_adjustment,
             bounding_box,
         }
     }
@@ -176,6 +180,8 @@ where
     pub noises: &'src N,
     /// Positional splitter for per-chunk RNG.
     pub splitter: &'src RandomSplitter,
+    /// Template pool registry for jigsaw assembly.
+    pub template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
     /// Structure templates (piece definitions + sizes).
     pub templates: &'src FxHashMap<Identifier, TemplateData>,
 
@@ -195,21 +201,65 @@ pub struct GenerationStub {
     pub pieces: Vec<StructurePiece>,
 }
 
+/// Terrain, biome, and template queries exposed to structure algorithms.
+///
+/// Vanilla calls these through `ChunkGenerator`/`WorldGenLevel`; keeping the
+/// interface here lets structure algorithms stay independent of a concrete
+/// chunk generator while preserving their vanilla query order.
+pub trait StructureGenerationContext {
+    /// World seed.
+    fn seed(&self) -> i64;
+    /// Chunk X being populated.
+    fn chunk_x(&self) -> i32;
+    /// Chunk Z being populated.
+    fn chunk_z(&self) -> i32;
+    /// Minimum block X of the chunk.
+    fn chunk_min_x(&self) -> i32;
+    /// Minimum block Z of the chunk.
+    fn chunk_min_z(&self) -> i32;
+    /// Center block X of the chunk.
+    fn center_block_x(&self) -> i32;
+    /// Center block Z of the chunk.
+    fn center_block_z(&self) -> i32;
+    /// Sea level for this generator/dimension.
+    fn sea_level(&self) -> i32;
+    /// Minimum build Y.
+    fn min_y(&self) -> i32;
+    /// Total build height.
+    fn height(&self) -> i32;
+    /// One-past-maximum build Y.
+    fn max_y(&self) -> i32 {
+        self.min_y() + self.height()
+    }
+    /// Template pool registry for jigsaw assembly.
+    fn template_pools(&self) -> &FxHashMap<Identifier, TemplatePoolData>;
+    /// Structure templates (piece definitions + sizes).
+    fn templates(&self) -> &FxHashMap<Identifier, TemplateData>;
+    /// Base height at a column.
+    fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32;
+    /// Full-column base height scan.
+    fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32;
+    /// Biome at a block position.
+    fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef;
+    /// Classify a block in the generator's base terrain.
+    fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock;
+    /// Chunk-center surface Y, memoised by the concrete context.
+    fn surface_y(&mut self) -> i32;
+    /// Surface height for off-chunk terrain queries used by piece placement.
+    fn terrain_surface_height(&self, x: i32, z: i32) -> i32;
+    /// Opaque terrain test for off-chunk terrain queries used by piece placement.
+    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32) -> bool;
+}
+
 /// Vanilla's `Structure::findValidGenerationPoint`. Impls own their RNG order,
 /// collision checks, and biome check.
-pub trait Structure<N: DimensionNoises>: Send + Sync {
-    /// Bounding-box inflation for reference intersection. Vanilla uses 12 when
-    /// `terrain_adaptation != NONE`.
-    fn bb_inflate(&self) -> i32 {
-        0
-    }
-
-    /// `entry` carries per-set metadata (weight, biomes, jigsaw config).
+pub trait Structure: Send + Sync {
+    /// `structure` carries registry data; per-set metadata stays in placement.
     /// `rng` is a fresh `LegacyRandom` seeded with `setLargeFeatureSeed`.
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub>;
 }
@@ -283,5 +333,135 @@ where
         self.height_cache
             .init_grid(self.chunk_min_x, self.chunk_min_z, self.noises);
         *self.height_cache_grid_ready = true;
+    }
+}
+
+impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_, N> {
+    fn seed(&self) -> i64 {
+        self.seed
+    }
+
+    fn chunk_x(&self) -> i32 {
+        self.chunk_x
+    }
+
+    fn chunk_z(&self) -> i32 {
+        self.chunk_z
+    }
+
+    fn chunk_min_x(&self) -> i32 {
+        self.chunk_min_x
+    }
+
+    fn chunk_min_z(&self) -> i32 {
+        self.chunk_min_z
+    }
+
+    fn center_block_x(&self) -> i32 {
+        self.center_block_x
+    }
+
+    fn center_block_z(&self) -> i32 {
+        self.center_block_z
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
+
+    fn min_y(&self) -> i32 {
+        N::Settings::MIN_Y
+    }
+
+    fn height(&self) -> i32 {
+        N::Settings::HEIGHT
+    }
+
+    fn template_pools(&self) -> &FxHashMap<Identifier, TemplatePoolData> {
+        self.template_pools
+    }
+
+    fn templates(&self) -> &FxHashMap<Identifier, TemplateData> {
+        self.templates
+    }
+
+    fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        GenerationContext::base_height(self, x, z, ocean_floor)
+    }
+
+    fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
+        GenerationContext::base_height_full(self, x, z, ocean_floor)
+    }
+
+    fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef {
+        GenerationContext::biome_at(self, block_x, block_y, block_z)
+    }
+
+    fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
+        GenerationContext::column_state(self, x, y, z)
+    }
+
+    fn surface_y(&mut self) -> i32 {
+        GenerationContext::surface_y(self)
+    }
+
+    fn terrain_surface_height(&self, x: i32, z: i32) -> i32 {
+        let cell_w = N::Settings::CELL_WIDTH;
+        let cell_x = x.div_euclid(cell_w) * cell_w;
+        let cell_z = z.div_euclid(cell_w) * cell_w;
+        let aq_chunk_x = (cell_x >> 4) * 16;
+        let aq_chunk_z = (cell_z >> 4) * 16;
+        let mut fresh_aq = Aquifer::<N>::new(
+            aq_chunk_x,
+            aq_chunk_z,
+            N::Settings::MIN_Y,
+            N::Settings::HEIGHT,
+            self.splitter,
+            self.noises,
+            N::ColumnCache::default(),
+        );
+        let mut fresh_cache = N::ColumnCache::default();
+        fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, self.noises);
+        iterate_noise_column_with_aquifer::<N>(
+            &mut fresh_cache,
+            self.noises,
+            &mut fresh_aq,
+            x,
+            z,
+            false,
+        )
+    }
+
+    fn terrain_is_opaque(&self, x: i32, y: i32, z: i32) -> bool {
+        let cell_w = N::Settings::CELL_WIDTH;
+        let cell_h = N::Settings::CELL_HEIGHT;
+        let cell_x = x.div_euclid(cell_w) * cell_w;
+        let cell_z = z.div_euclid(cell_w) * cell_w;
+        let aq_chunk_x = (cell_x >> 4) * 16;
+        let aq_chunk_z = (cell_z >> 4) * 16;
+        let mut fresh_aq = Aquifer::<N>::new(
+            aq_chunk_x,
+            aq_chunk_z,
+            N::Settings::MIN_Y,
+            N::Settings::HEIGHT,
+            self.splitter,
+            self.noises,
+            N::ColumnCache::default(),
+        );
+        let mut fresh_cache = N::ColumnCache::default();
+        fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, self.noises);
+        let density = column_interpolated_density::<N>(
+            &mut fresh_cache,
+            self.noises,
+            x,
+            y,
+            z,
+            cell_w,
+            cell_h,
+        );
+        !matches!(
+            fresh_aq.compute_substance(self.noises, x, y, z, density),
+            AquiferResult::Air
+        )
     }
 }

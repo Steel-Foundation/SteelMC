@@ -1,13 +1,14 @@
 //! Stronghold piece generation. Vanilla's `StrongholdPieces` recursive BFS;
 //! produces bounding boxes only (no blocks).
 
+use steel_registry::structure::StructureData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier};
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 const MAX_DEPTH: i32 = 50;
 const MAX_DISTANCE: i32 = 112;
@@ -600,22 +601,22 @@ pub fn generate_pieces(
 /// Registered under `"minecraft:stronghold"`. Biome check at chunk center, surface Y.
 pub struct StrongholdStructure;
 
-impl<N: DimensionNoises> Structure<N> for StrongholdStructure {
+impl Structure for StrongholdStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         _rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x, surface_y, ctx.center_block_z);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
         Some(GenerationStub {
-            position: (ctx.center_block_x, surface_y, ctx.center_block_z),
-            pieces: generate_pieces(ctx.seed, ctx.chunk_x, ctx.chunk_z)
+            position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
+            pieces: generate_pieces(ctx.seed(), ctx.chunk_x(), ctx.chunk_z())
                 .into_iter()
                 .map(|(bb, piece_id, dir, depth)| StructurePiece {
                     piece_type: Identifier::new_static("minecraft", piece_id),

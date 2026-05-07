@@ -1,13 +1,14 @@
 //! Woodland mansion. Vanilla's `WoodlandMansionPieces`: grid-based layout with
 //! template pieces for walls, corridors, rooms, roofs. Produces bounding boxes only.
 
+use steel_registry::structure::StructureData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 /// (sizeX, sizeY, sizeZ) for a `woodland_mansion` template.
 fn template_size(name: &str) -> [i32; 3] {
@@ -1709,11 +1710,11 @@ fn add_room_2x2_secret(
 /// if `< 60`, then runs `generate_mansion_pieces`.
 pub struct WoodlandMansionStructure;
 
-impl<N: DimensionNoises> Structure<N> for WoodlandMansionStructure {
+impl Structure for WoodlandMansionStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let rotation = Rotation::get_random(rng);
@@ -1724,8 +1725,8 @@ impl<N: DimensionNoises> Structure<N> for WoodlandMansionStructure {
             Rotation::Clockwise180 => (-5, -5),
             Rotation::CounterClockwise90 => (5, -5),
         };
-        let bx = ctx.chunk_min_x + 7;
-        let bz = ctx.chunk_min_z + 7;
+        let bx = ctx.chunk_min_x() + 7;
+        let bz = ctx.chunk_min_z() + 7;
         let h0 = ctx.base_height(bx, bz, false) - 1;
         let h1 = ctx.base_height(bx, bz + off_z, false) - 1;
         let h2 = ctx.base_height(bx + off_x, bz, false) - 1;
@@ -1736,11 +1737,11 @@ impl<N: DimensionNoises> Structure<N> for WoodlandMansionStructure {
         }
 
         let biome = ctx.biome_at(bx, lowest, bz);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
-        let bbs = generate_mansion_pieces((ctx.chunk_min_x, 0, ctx.chunk_min_z), rotation, rng);
+        let bbs = generate_mansion_pieces((ctx.chunk_min_x(), 0, ctx.chunk_min_z()), rotation, rng);
         let pieces = bbs
             .into_iter()
             .map(|bb| StructurePiece {

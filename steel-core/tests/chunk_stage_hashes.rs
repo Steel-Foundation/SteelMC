@@ -17,7 +17,8 @@ use serde::Deserialize;
 use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::section::Sections;
 use steel_core::world::structure::StructureStart;
-use steel_core::worldgen::noise::beardifier::{Beardifier, TerrainAdjustment};
+use steel_core::worldgen::noise::beardifier::Beardifier;
+use steel_registry::structure::TerrainAdjustment;
 use steel_utils::ChunkPos;
 
 #[derive(Deserialize, Debug)]
@@ -369,13 +370,11 @@ fn build_test_beardifier(
 
     let mut starts: Vec<&StructureStart> = Vec::new();
     for (structure_id, source_chunks_ref) in references.iter() {
-        if TerrainAdjustment::for_structure(structure_id) == TerrainAdjustment::None {
-            continue;
-        }
         for &source_pos in source_chunks_ref {
             for guard in &starts_guards {
                 if let Some(start) = guard.get(structure_id)
                     && start.chunk_pos == source_pos
+                    && start.terrain_adjustment != TerrainAdjustment::None
                 {
                     starts.push(start);
                     break;

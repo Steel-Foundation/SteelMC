@@ -1,17 +1,16 @@
 //! Ruined portal. Mirrors vanilla's `RuinedPortalStructure.findGenerationPoint`
 //! RNG consumption to determine the biome-check Y. Produces bounding box only.
 
+use steel_registry::structure::{
+    RuinedPortalPlacementData, RuinedPortalSetupData, StructureConfigData, StructureData,
+};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
-use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
-use crate::worldgen::generators::vanilla::{
-    column_interpolated_density, iterate_noise_column_with_aquifer,
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
 };
-use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult};
 
 /// Template sizes for `portal_1`..`portal_10`.
 const PORTAL_SIZES: [(i32, i32, i32); 10] = [
@@ -29,50 +28,6 @@ const PORTAL_SIZES: [(i32, i32, i32); 10] = [
 
 /// Template sizes for `giant_portal_1`..`giant_portal_3`.
 const GIANT_PORTAL_SIZES: [(i32, i32, i32); 3] = [(11, 17, 16), (11, 16, 16), (16, 16, 16)];
-
-/// Vertical placement type from the setup config.
-#[derive(Debug, Clone, Copy)]
-enum Placement {
-    OnLandSurface,
-    PartlyBuried,
-    Underground,
-    InMountain,
-    OnOceanFloor,
-    InNether,
-}
-
-/// A setup entry from the structure JSON.
-struct Setup {
-    placement: Placement,
-    weight: f32,
-    air_pocket_prob: f32,
-}
-
-/// Setups for a given ruined portal variant.
-fn get_setups(structure_path: &str) -> Vec<Setup> {
-    let mk = |placement, weight, air_pocket_prob| Setup {
-        placement,
-        weight,
-        air_pocket_prob,
-    };
-    match structure_path {
-        "ruined_portal" => vec![
-            mk(Placement::Underground, 0.5, 1.0),
-            mk(Placement::OnLandSurface, 0.5, 0.5),
-        ],
-        "ruined_portal_desert" => vec![mk(Placement::PartlyBuried, 1.0, 0.0)],
-        "ruined_portal_jungle" => vec![mk(Placement::OnLandSurface, 1.0, 0.5)],
-        "ruined_portal_mountain" => vec![
-            mk(Placement::InMountain, 0.5, 1.0),
-            mk(Placement::OnLandSurface, 0.5, 0.5),
-        ],
-        "ruined_portal_ocean" | "ruined_portal_swamp" => {
-            vec![mk(Placement::OnOceanFloor, 1.0, 0.0)]
-        }
-        "ruined_portal_nether" => vec![mk(Placement::InNether, 1.0, 0.5)],
-        _ => vec![mk(Placement::OnLandSurface, 1.0, 0.0)],
-    }
-}
 
 /// Terrain query operations needed by the ruined portal generation.
 pub enum TerrainQuery {
@@ -107,13 +62,12 @@ pub fn find_generation_point(
     rng: &mut LegacyRandom,
     chunk_x: i32,
     chunk_z: i32,
-    structure_path: &str,
+    setups: &[RuinedPortalSetupData],
     min_y: i32,
     terrain: &mut dyn FnMut(TerrainQuery) -> TerrainResult,
 ) -> PortalResult {
     let base_x = chunk_x * 16;
     let base_z = chunk_z * 16;
-    let setups = get_setups(structure_path);
 
     // Weighted selection via nextFloat.
     let setup = if setups.len() > 1 {
@@ -134,12 +88,12 @@ pub fn find_generation_point(
 
     // Vanilla `sample(rng, p)` short-circuits at 0.0/1.0; we keep the guard so
     // out-of-range values added later don't unexpectedly draw RNG.
-    let air_pocket = if setup.air_pocket_prob <= 0.0 {
+    let air_pocket = if setup.air_pocket_probability <= 0.0 {
         false
-    } else if setup.air_pocket_prob >= 1.0 {
+    } else if setup.air_pocket_probability >= 1.0 {
         true
     } else {
-        rng.next_f32() < setup.air_pocket_prob
+        rng.next_f32() < setup.air_pocket_probability
     };
 
     // 5% giant, 95% regular.
@@ -171,8 +125,10 @@ pub fn find_generation_point(
 
     let min_y_threshold = min_y + 15;
     let new_y = match setup.placement {
-        Placement::OnLandSurface | Placement::OnOceanFloor => surface_y,
-        Placement::Underground => {
+        RuinedPortalPlacementData::OnLandSurface | RuinedPortalPlacementData::OnOceanFloor => {
+            surface_y
+        }
+        RuinedPortalPlacementData::Underground => {
             let max_y = surface_y - sy;
             if min_y_threshold < max_y {
                 rng.next_i32_between(min_y_threshold, max_y)
@@ -180,7 +136,7 @@ pub fn find_generation_point(
                 max_y
             }
         }
-        Placement::InMountain => {
+        RuinedPortalPlacementData::InMountain => {
             let max_y = surface_y - sy;
             if 70 < max_y {
                 rng.next_i32_between(70, max_y)
@@ -188,8 +144,8 @@ pub fn find_generation_point(
                 max_y
             }
         }
-        Placement::PartlyBuried => surface_y - sy + rng.next_i32_between(2, 8),
-        Placement::InNether => {
+        RuinedPortalPlacementData::PartlyBuried => surface_y - sy + rng.next_i32_between(2, 8),
+        RuinedPortalPlacementData::InNether => {
             if air_pocket {
                 rng.next_i32_between(32, 100)
             } else if rng.next_f32() < 0.5 {
@@ -242,80 +198,43 @@ pub fn find_generation_point(
 /// outside this chunk.
 pub struct RuinedPortalStructure;
 
-impl<N: DimensionNoises> Structure<N> for RuinedPortalStructure {
+impl Structure for RuinedPortalStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        let noises = ctx.noises;
-        let splitter = ctx.splitter;
-        let cell_w = N::Settings::CELL_WIDTH;
-        let cell_h = N::Settings::CELL_HEIGHT;
-
         let mut terrain = |q: TerrainQuery| -> TerrainResult {
-            let (qx, qz) = match q {
-                TerrainQuery::SurfaceHeight(x, z) | TerrainQuery::IsOpaque(x, _, z) => (x, z),
-            };
-            let cell_x = qx.div_euclid(cell_w) * cell_w;
-            let cell_z = qz.div_euclid(cell_w) * cell_w;
-            let aq_chunk_x = (cell_x >> 4) * 16;
-            let aq_chunk_z = (cell_z >> 4) * 16;
-            let aq_cache = N::ColumnCache::default();
-            let mut fresh_aq = Aquifer::<N>::new(
-                aq_chunk_x,
-                aq_chunk_z,
-                N::Settings::MIN_Y,
-                N::Settings::HEIGHT,
-                splitter,
-                noises,
-                aq_cache,
-            );
-            let mut fresh_cache = N::ColumnCache::default();
-            fresh_cache.init_grid(aq_chunk_x, aq_chunk_z, noises);
             match q {
                 TerrainQuery::SurfaceHeight(x, z) => {
-                    TerrainResult::Height(iterate_noise_column_with_aquifer::<N>(
-                        &mut fresh_cache,
-                        noises,
-                        &mut fresh_aq,
-                        x,
-                        z,
-                        false,
-                    ))
+                    TerrainResult::Height(ctx.terrain_surface_height(x, z))
                 }
                 TerrainQuery::IsOpaque(x, y, z) => {
-                    let density = column_interpolated_density::<N>(
-                        &mut fresh_cache,
-                        noises,
-                        x,
-                        y,
-                        z,
-                        cell_w,
-                        cell_h,
-                    );
-                    let opaque = match fresh_aq.compute_substance(noises, x, y, z, density) {
-                        AquiferResult::Solid | AquiferResult::Fluid(_) => true,
-                        AquiferResult::Air => false,
-                    };
-                    TerrainResult::Opaque(opaque)
+                    TerrainResult::Opaque(ctx.terrain_is_opaque(x, y, z))
                 }
             }
         };
 
+        let StructureConfigData::RuinedPortal { setups } = &structure.config else {
+            return None;
+        };
+        if setups.is_empty() {
+            return None;
+        }
+
         let result = find_generation_point(
             rng,
-            ctx.chunk_x,
-            ctx.chunk_z,
-            &entry.structure.path,
-            N::Settings::MIN_Y,
+            ctx.chunk_x(),
+            ctx.chunk_z(),
+            setups,
+            ctx.min_y(),
             &mut terrain,
         );
 
         let (bx, by, bz) = result.biome_check_pos;
         let biome = ctx.biome_at(bx, by, bz);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 

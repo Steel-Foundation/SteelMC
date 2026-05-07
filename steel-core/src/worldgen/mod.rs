@@ -12,6 +12,7 @@ pub mod generators;
 pub mod noise;
 pub mod registry;
 pub(crate) mod stages;
+pub(crate) mod structure;
 pub mod surface;
 
 pub use biomes::{

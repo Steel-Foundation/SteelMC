@@ -1,13 +1,14 @@
 //! Igloo: one top piece always, 50% chance of a basement (laboratory + `depth-1`
 //! ladder segments, depth ∈ [4, 11]).
 
+use steel_registry::structure::StructureData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 const TOP_SIZE: [i32; 3] = [7, 5, 8];
 const MID_SIZE: [i32; 3] = [3, 3, 3];
@@ -56,21 +57,21 @@ const fn piece(bb: BoundingBox) -> StructurePiece {
 /// Registered under `"minecraft:igloo"`.
 pub struct IglooStructure;
 
-impl<N: DimensionNoises> Structure<N> for IglooStructure {
+impl Structure for IglooStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
         let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x, surface_y, ctx.center_block_z);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
         let rotation = Rotation::get_random(rng);
-        let (start_x, start_z) = (ctx.chunk_min_x, ctx.chunk_min_z);
+        let (start_x, start_z) = (ctx.chunk_min_x(), ctx.chunk_min_z());
         let mk = |off, depth, size, pivot| {
             piece(make_piece_bb(
                 start_x, start_z, rotation, off, depth, size, pivot,
@@ -88,7 +89,7 @@ impl<N: DimensionNoises> Structure<N> for IglooStructure {
         pieces.push(mk(TOP_OFF, 0, TOP_SIZE, TOP_PIVOT));
 
         Some(GenerationStub {
-            position: (ctx.center_block_x, surface_y, ctx.center_block_z),
+            position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
             pieces,
         })
     }

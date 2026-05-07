@@ -7,57 +7,13 @@
 
 use std::sync::LazyLock;
 
+use steel_registry::structure::TerrainAdjustment;
 use steel_registry::template_pool::Projection;
-use steel_utils::{BoundingBox, Identifier};
+use steel_utils::BoundingBox;
 use steel_worldgen::math::map_clamped;
 
 use crate::world::structure::StructureStart;
 use crate::world::structure::jigsaw::JigsawJunction;
-
-/// How a structure modifies the surrounding terrain.
-///
-/// Corresponds to vanilla's `TerrainAdjustment` enum.
-// TODO: This should be data-driven from the structure registry, not hardcoded.
-// In vanilla, `TerrainAdjustment` is a codec field on `Structure.StructureSettings`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TerrainAdjustment {
-    /// No terrain adaptation.
-    None,
-    /// Fill in terrain around and above the structure (e.g. ancient city).
-    Bury,
-    /// Carve thin beard below structure (e.g. village).
-    BeardThin,
-    /// Carve box-shaped beard below structure (e.g. bastion remnant).
-    BeardBox,
-    /// Encapsulate structure in terrain (e.g. trial chambers).
-    Encapsulate,
-}
-
-impl TerrainAdjustment {
-    /// Look up the terrain adjustment for a vanilla structure identifier.
-    ///
-    /// Hardcoded to match the `terrain_adaptation` field on each vanilla
-    /// `worldgen/structure/*.json`. The structure JSON is already loaded by the
-    /// registry build, but the field is currently only retained on `JigsawConfig`
-    /// and lost for non-jigsaw structures (e.g. `stronghold`, `nether_fossil`),
-    /// so we mirror the JSON values here.
-    // TODO: Plumb `terrain_adaptation` onto every `StructureData` (not just jigsaw)
-    // and look it up via the registry instead of this match.
-    #[must_use]
-    pub fn for_structure(id: &Identifier) -> Self {
-        if id.namespace != Identifier::VANILLA_NAMESPACE {
-            return Self::None;
-        }
-        match id.path.as_ref() {
-            "village_desert" | "village_plains" | "village_savanna" | "village_snowy"
-            | "village_taiga" | "pillager_outpost" | "nether_fossil" => Self::BeardThin,
-            "ancient_city" => Self::BeardBox,
-            "stronghold" | "trail_ruins" => Self::Bury,
-            "trial_chambers" => Self::Encapsulate,
-            _ => Self::None,
-        }
-    }
-}
 
 /// A rigid structure piece that modifies terrain density.
 #[derive(Debug)]
@@ -177,7 +133,7 @@ impl Beardifier {
         let mut encompassing: Option<BoundingBox> = None;
 
         for start in starts {
-            let terrain_adj = TerrainAdjustment::for_structure(&start.structure);
+            let terrain_adj = start.terrain_adjustment;
             if terrain_adj == TerrainAdjustment::None {
                 continue;
             }

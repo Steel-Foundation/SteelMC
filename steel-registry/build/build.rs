@@ -120,6 +120,7 @@ const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
 const STRUCTURE_SETS: &str = "structure_sets";
+const STRUCTURES: &str = "structures";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
 
@@ -184,6 +185,7 @@ pub fn main() {
         (sound_types::build(), SOUND_TYPES),
         (world_clocks::build(), WORLD_CLOCKS),
         (poi_types::build(), POI_TYPES),
+        (structure_sets::build_structures(), STRUCTURES),
         (structure_sets::build(), STRUCTURE_SETS),
         (template_pools::build(), TEMPLATE_POOLS),
         (banner_pattern_tags::build(), BANNER_PATTERN_TAGS),

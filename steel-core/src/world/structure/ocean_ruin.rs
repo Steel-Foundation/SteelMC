@@ -2,16 +2,14 @@
 //! and the cluster check passes — a scatter of smaller ruins with collision checks.
 //! Warm uses one piece; cold stacks three (brick + cracked + mossy) from the same index.
 
+use steel_registry::structure::{OceanRuinBiomeTempData, StructureConfigData, StructureData};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
-use steel_worldgen::density::DimensionNoises;
 
-use crate::world::structure::placement::StructureSelectionEntry;
-use crate::world::structure::{GenerationContext, GenerationStub, Structure, StructurePiece};
-
-const LARGE_PROB: f32 = 0.3;
-const CLUSTER_PROB: f32 = 0.9;
+use crate::world::structure::{
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+};
 
 static WARM_SMALL: &[&str] = &[
     "underwater_ruin/warm_1",
@@ -78,15 +76,15 @@ static COLD_BIG_MOSSY: &[&str] = &[
     "underwater_ruin/big_mossy_8",
 ];
 
-fn template_bb<N: DimensionNoises>(
-    ctx: &GenerationContext<'_, '_, N>,
+fn template_bb(
+    ctx: &dyn StructureGenerationContext,
     name: &str,
     px: i32,
     pz: i32,
     rot: Rotation,
 ) -> Option<BoundingBox> {
     let key = Identifier::new("minecraft", name.to_string());
-    ctx.templates
+    ctx.templates()
         .get(&key)
         .map(|t| rot.get_bounding_box(px, 90, pz, t.size[0], t.size[1], t.size[2]))
 }
@@ -111,23 +109,31 @@ const CLUSTER_OFFSETS: [ClusterOffset; 8] = [
 /// `entry.structure.path`.
 pub struct OceanRuinStructure;
 
-impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
+impl Structure for OceanRuinStructure {
     fn find_generation_point(
         &self,
-        ctx: &mut GenerationContext<'_, '_, N>,
-        entry: &StructureSelectionEntry,
+        ctx: &mut dyn StructureGenerationContext,
+        structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        let ocean_floor_y = ctx.base_height(ctx.center_block_x, ctx.center_block_z, true) - 1;
-        let biome = ctx.biome_at(ctx.center_block_x, ocean_floor_y, ctx.center_block_z);
-        if !entry.allowed_biomes.contains(&biome.key) {
+        let ocean_floor_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), true) - 1;
+        let biome = ctx.biome_at(ctx.center_block_x(), ocean_floor_y, ctx.center_block_z());
+        if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
-        let is_warm = entry.structure.path.contains("warm");
+        let StructureConfigData::OceanRuin {
+            biome_temp,
+            large_probability,
+            cluster_probability,
+        } = &structure.config
+        else {
+            return None;
+        };
+        let is_warm = matches!(biome_temp, OceanRuinBiomeTempData::Warm);
         let rotation = Rotation::get_random(rng);
-        let is_large = rng.next_f32() <= LARGE_PROB;
-        let (pos_x, pos_z) = (ctx.chunk_min_x, ctx.chunk_min_z);
+        let is_large = rng.next_f32() <= *large_probability;
+        let (pos_x, pos_z) = (ctx.chunk_min_x(), ctx.chunk_min_z());
 
         let mut bbs: Vec<BoundingBox> = Vec::new();
         let push_bb = |bbs: &mut Vec<BoundingBox>, name: &str, x, z, rot| {
@@ -152,7 +158,7 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
             push_bb(&mut bbs, mossy[idx], pos_x, pos_z, rotation);
         }
 
-        if is_large && rng.next_f32() <= CLUSTER_PROB {
+        if is_large && rng.next_f32() <= *cluster_probability {
             let (pc_x, _, pc_z) = rotation.transform_pos(15, 0, 15, 0, 0);
             let parent_corner_x = pos_x + pc_x;
             let parent_corner_z = pos_z + pc_z;
@@ -202,7 +208,7 @@ impl<N: DimensionNoises> Structure<N> for OceanRuinStructure {
         }
 
         Some(GenerationStub {
-            position: (ctx.center_block_x, ocean_floor_y, ctx.center_block_z),
+            position: (ctx.center_block_x(), ocean_floor_y, ctx.center_block_z()),
             pieces: bbs
                 .into_iter()
                 .map(|bb| StructurePiece {
