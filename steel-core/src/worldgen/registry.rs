@@ -130,8 +130,7 @@ struct FlatGeneratorConfig {
     dimension_type: Identifier,
     #[serde(default = "default_flat_layers")]
     layers: Vec<FlatLayerConfig>,
-    #[serde(default)]
-    structure_overrides: Vec<Identifier>,
+    structure_overrides: Option<Vec<Identifier>>,
 }
 
 #[derive(Deserialize)]
@@ -197,15 +196,17 @@ fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
             ));
         }
     }
-    let available_structure_sets: FxHashSet<_> = load_vanilla_structure_sets()
-        .into_iter()
-        .map(|(key, _)| key)
-        .collect();
-    for structure_set in &parsed.structure_overrides {
-        if !available_structure_sets.contains(structure_set) {
-            return Err(format!(
-                "unknown structure set {structure_set} in minecraft:flat structure_overrides"
-            ));
+    if let Some(structure_overrides) = &parsed.structure_overrides {
+        let available_structure_sets: FxHashSet<_> = load_vanilla_structure_sets()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        for structure_set in structure_overrides {
+            if !available_structure_sets.contains(structure_set) {
+                return Err(format!(
+                    "unknown structure set {structure_set} in minecraft:flat structure_overrides"
+                ));
+            }
         }
     }
     Ok(())
@@ -265,9 +266,13 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
     validate_flat_config(config)?;
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     let normalized_config = normalized_flat_config(&parsed);
-    let structure_overrides = parsed.structure_overrides.clone();
+    let FlatGeneratorConfig {
+        layers: layer_configs,
+        structure_overrides,
+        ..
+    } = parsed;
     let mut layers = Vec::new();
-    for layer in parsed.layers {
+    for layer in layer_configs {
         let block = REGISTRY
             .blocks
             .by_key(&layer.block)
@@ -276,19 +281,28 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
         layers.extend(repeat_n(state, layer.height));
     }
 
-    let structure_generator = if structure_overrides.is_empty() {
-        None
-    } else {
-        let structure_sets = load_vanilla_structure_sets()
-            .into_iter()
-            .filter(|(key, _)| structure_overrides.contains(key))
-            .collect();
-        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
-        Some(StructureGenerator::new(
-            seed,
-            &biome_provider,
-            structure_sets,
-        ))
+    let structure_generator = match structure_overrides {
+        None => {
+            let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+            Some(StructureGenerator::new(
+                seed,
+                &biome_provider,
+                load_vanilla_structure_sets(),
+            ))
+        }
+        Some(overrides) if overrides.is_empty() => None,
+        Some(overrides) => {
+            let structure_sets = load_vanilla_structure_sets()
+                .into_iter()
+                .filter(|(key, _)| overrides.contains(key))
+                .collect();
+            let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+            Some(StructureGenerator::new(
+                seed,
+                &biome_provider,
+                structure_sets,
+            ))
+        }
     };
 
     Ok(GeneratorOutput {
@@ -356,12 +370,11 @@ fn normalized_flat_config(config: &FlatGeneratorConfig) -> toml::Value {
         })
         .collect();
     table.insert("layers".to_owned(), toml::Value::Array(layers));
-    if !config.structure_overrides.is_empty() {
+    if let Some(structure_overrides) = &config.structure_overrides {
         table.insert(
             "structure_overrides".to_owned(),
             toml::Value::Array(
-                config
-                    .structure_overrides
+                structure_overrides
                     .iter()
                     .map(|key| toml::Value::String(key.to_string()))
                     .collect(),

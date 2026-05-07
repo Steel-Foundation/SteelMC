@@ -8,8 +8,8 @@ use steel_registry::structure::{JigsawConfig, PoolAlias, StartHeight, StructureD
 use steel_registry::template_pool::{
     JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
 };
-use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
 use crate::world::structure::{
@@ -60,7 +60,7 @@ pub struct JigsawJunction {
 /// Resolves pool aliases for a specific structure instance.
 pub fn resolve_aliases(
     aliases: &[PoolAlias],
-    rng: &mut LegacyRandom,
+    rng: &mut impl Random,
 ) -> FxHashMap<Identifier, Identifier> {
     let mut map = FxHashMap::default();
     for alias in aliases {
@@ -99,6 +99,18 @@ pub fn resolve_aliases(
         }
     }
     map
+}
+
+fn sample_start_height(config: &JigsawConfig, rng: &mut impl Random) -> i32 {
+    match &config.start_height {
+        StartHeight::Constant(y) => *y,
+        StartHeight::Uniform { min, max } => rng.next_i32_between(*min, *max),
+    }
+}
+
+/// Java integer midpoint used by vanilla jigsaw placement: `(min + max) / 2`.
+fn java_center(min: i32, max: i32) -> i32 {
+    min.wrapping_add(max) / 2
 }
 
 /// Vanilla-matching shuffle (reverse Fisher-Yates).
@@ -385,10 +397,7 @@ pub fn assemble(
     min_y: i32,
     max_y: i32,
 ) -> Option<AssemblyResult> {
-    let start_y = match &config.start_height {
-        StartHeight::Constant(y) => *y,
-        StartHeight::Uniform { min, max } => rng.next_i32_between(*min, *max),
-    };
+    let start_y = sample_start_height(config, rng);
     let start_x = chunk_x * 16;
     let start_z = chunk_z * 16;
     let center_rotation = Rotation::get_random(rng);
@@ -426,8 +435,8 @@ pub fn assemble(
     )?;
 
     let bottom_y = if config.project_start_to_heightmap.is_some() {
-        let mid_x = i32::midpoint(center_bb.min_x, center_bb.max_x);
-        let mid_z = i32::midpoint(center_bb.min_z, center_bb.max_z);
+        let mid_x = java_center(center_bb.min_x, center_bb.max_x);
+        let mid_z = java_center(center_bb.min_z, center_bb.max_z);
         start_y + get_height(mid_x, mid_z)
     } else {
         adjusted_y
@@ -466,8 +475,8 @@ pub fn assemble(
     }];
 
     // GenerationStub center.
-    let center_stub_x = i32::midpoint(center_bb.min_x, center_bb.max_x);
-    let center_stub_z = i32::midpoint(center_bb.min_z, center_bb.max_z);
+    let center_stub_x = java_center(center_bb.min_x, center_bb.max_x);
+    let center_stub_z = java_center(center_bb.min_z, center_bb.max_z);
     let center_stub_y = bottom_y + anchor_offset_y;
     let biome_check_pos = (center_stub_x, center_stub_y, center_stub_z);
 
@@ -487,7 +496,7 @@ pub fn assemble(
         (center_stub_y - max_dist).max(min_y + config.dimension_padding.bottom),
         center_stub_z - max_dist,
         center_stub_x + max_dist,
-        (center_stub_y + max_dist).min(max_y - config.dimension_padding.top),
+        (center_stub_y + max_dist).min(max_y - 1 - config.dimension_padding.top),
         center_stub_z + max_dist,
     );
 
@@ -553,8 +562,14 @@ impl Structure for JigsawStructure {
     ) -> Option<GenerationStub> {
         let config = structure.config.as_jigsaw()?;
 
-        let mut alias_rng = LegacyRandom::from_seed(0);
-        alias_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
+        let mut alias_position_rng = LegacyRandom::from_seed(0);
+        alias_position_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
+        let start_y = sample_start_height(config, &mut alias_position_rng);
+        let mut alias_source = LegacyRandom::from_seed(ctx.seed() as u64);
+        let mut alias_rng =
+            alias_source
+                .next_positional()
+                .at(ctx.chunk_min_x(), start_y, ctx.chunk_min_z());
         let alias_map = resolve_aliases(&config.pool_aliases, &mut alias_rng);
 
         let mut assembly_rng = LegacyRandom::from_seed(0);
