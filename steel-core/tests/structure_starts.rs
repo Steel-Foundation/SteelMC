@@ -854,7 +854,7 @@ fn compare_junctions(
     }
 }
 
-fn pool_element_type_name(element: &PoolElement) -> &'static str {
+const fn pool_element_type_name(element: &PoolElement) -> &'static str {
     match element {
         PoolElement::Single { .. } => "minecraft:single_pool_element",
         PoolElement::LegacySingle { .. } => "minecraft:legacy_single_pool_element",
@@ -864,7 +864,7 @@ fn pool_element_type_name(element: &PoolElement) -> &'static str {
     }
 }
 
-fn pool_element_location(element: &PoolElement) -> Option<&Identifier> {
+const fn pool_element_location(element: &PoolElement) -> Option<&Identifier> {
     match element {
         PoolElement::Single { location, .. } | PoolElement::LegacySingle { location, .. } => {
             Some(location)
@@ -873,14 +873,14 @@ fn pool_element_location(element: &PoolElement) -> Option<&Identifier> {
     }
 }
 
-fn pool_element_feature(element: &PoolElement) -> Option<&Identifier> {
+const fn pool_element_feature(element: &PoolElement) -> Option<&Identifier> {
     match element {
         PoolElement::Feature { feature, .. } => Some(feature),
         _ => None,
     }
 }
 
-fn pool_element_processors(element: &PoolElement) -> Option<&ProcessorList> {
+const fn pool_element_processors(element: &PoolElement) -> Option<&ProcessorList> {
     match element {
         PoolElement::Single { processors, .. } | PoolElement::LegacySingle { processors, .. } => {
             Some(processors)

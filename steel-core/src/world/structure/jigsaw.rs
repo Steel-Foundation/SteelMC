@@ -125,7 +125,7 @@ fn sample_start_height(config: &JigsawConfig, rng: &mut impl Random) -> i32 {
 }
 
 /// Java integer midpoint used by vanilla jigsaw placement: `(min + max) / 2`.
-fn java_center(min: i32, max: i32) -> i32 {
+const fn java_center(min: i32, max: i32) -> i32 {
     min.wrapping_add(max) / 2
 }
 

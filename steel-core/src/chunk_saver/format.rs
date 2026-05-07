@@ -476,9 +476,9 @@ pub struct PersistentJigsawPieceData {
     pub pool_element: PersistentPoolElement,
     /// World-space template origin.
     pub position: [i32; 3],
-    /// Rotation: 0=none, 1=clockwise_90, 2=clockwise_180, 3=counterclockwise_90.
+    /// Rotation: 0=none, `1=clockwise_90`, `2=clockwise_180`, `3=counterclockwise_90`.
     pub rotation: i8,
-    /// Liquid settings: 0=apply_waterlogging, 1=ignore_waterlogging.
+    /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
     pub liquid_settings: i8,
 }
 
