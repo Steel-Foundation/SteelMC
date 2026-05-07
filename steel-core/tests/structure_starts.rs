@@ -3,23 +3,29 @@
 //! Verifies that Steel's `create_structures` matches vanilla Minecraft for the
 //! seed in `test_assets/structure_starts.json`. For each chunk that vanilla
 //! recorded as having starts, runs structure generation and compares structure
-//! ids, references, bounding boxes, piece types, gen depths, orientations, and
-//! piece bounding boxes.
+//! ids, references, structure-reference maps, bounding boxes, piece types, gen
+//! depths, orientations, piece bounding boxes, and per-piece NBT.
 //!
-//! The JSON only lists chunks that contain at least one start, so this test
-//! validates positive cases only — it cannot directly catch false positives in
-//! chunks vanilla left empty. Pair with the chunk-stage hashes test for noise
+//! The JSON lists chunks with starts or references. It still does not validate
+//! completely empty chunks, so pair with the chunk-stage hashes test for noise
 //! coverage (noise depends on structure starts via Beardifier).
-//!
-//! `nbt_data`, `ground_level_delta`, `junctions`, and `bb_inflate` are not in
-//! the JSON and are not compared.
 
 use std::fmt::Write as _;
+use std::io::Cursor;
+use std::mem::take;
 
-use rustc_hash::FxHashMap;
-use serde::Deserialize;
-use steel_core::world::structure::StructureStart;
-use steel_utils::{Direction, Identifier};
+use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use simdnbt::owned::read_compound;
+use steel_core::chunk::chunk_access::ChunkAccess;
+use steel_core::chunk::proto_chunk::ProtoChunk;
+use steel_core::chunk::section::{ChunkSection, Sections};
+use steel_core::world::structure::{
+    StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
+};
+use steel_registry::template_pool::Projection;
+use steel_utils::{ChunkPos, Direction, Identifier};
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 struct ExpectedBoundingBox {
@@ -49,6 +55,36 @@ struct ExpectedPiece {
     gen_depth: i32,
     orientation: i32,
     bounding_box: ExpectedBoundingBox,
+    #[serde(default)]
+    nbt: Option<ExpectedPieceNbt>,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct ExpectedPieceNbt {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ground_level_delta: Option<i32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    junctions: Vec<ExpectedJunction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pool_element: Option<ExpectedPoolElement>,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, Value>,
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
+struct ExpectedJunction {
+    source_x: i32,
+    source_ground_y: i32,
+    source_z: i32,
+    delta_y: i32,
+    dest_proj: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct ExpectedPoolElement {
+    projection: String,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, Value>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -66,13 +102,23 @@ struct ExpectedChunk {
     x: i32,
     z: i32,
     starts: Vec<ExpectedStart>,
+    #[serde(default)]
+    references: Vec<ExpectedReference>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ExpectedReference {
+    structure: String,
+    source_chunks: Vec<[i32; 2]>,
 }
 
 #[derive(Deserialize, Debug)]
 struct ExpectedDimension {
     chunks_with_starts: u32,
+    chunks_with_references: u32,
     total_starts: u32,
     total_pieces: u32,
+    total_references: u32,
     chunks: Vec<ExpectedChunk>,
 }
 
@@ -116,6 +162,20 @@ fn fmt_bb_expected(bb: &ExpectedBoundingBox) -> String {
     )
 }
 
+fn make_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: i32) -> ChunkAccess {
+    let sections: Box<[ChunkSection]> = (0..section_count)
+        .map(|_| ChunkSection::new_empty())
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    let proto = ProtoChunk::new(
+        Sections::from_owned(sections),
+        ChunkPos::new(pos.0, pos.1),
+        min_y,
+        height,
+    );
+    ChunkAccess::Proto(proto)
+}
+
 #[test]
 #[ignore = "This test takes too long to run for normal testing"]
 fn structure_starts() {
@@ -142,15 +202,11 @@ const DIMENSION_ORDER: &[&str] = &["overworld", "the_nether", "the_end"];
     reason = "large test with per-dimension setup and per-chunk assertions"
 )]
 fn structure_starts_inner() {
-    use steel_core::chunk::chunk_access::ChunkAccess;
-    use steel_core::chunk::proto_chunk::ProtoChunk;
-    use steel_core::chunk::section::{ChunkSection, Sections};
     use steel_core::worldgen::{
         BiomeSourceKind, ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator,
         OverworldGenerator,
     };
     use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
-    use steel_utils::ChunkPos;
 
     let mut registry = Registry::new_vanilla();
     registry.freeze();
@@ -199,34 +255,55 @@ fn structure_starts_inner() {
         };
 
         eprintln!(
-            "=== {dim_short} ({} chunks, {} starts, {} pieces) ===",
-            dim_data.chunks_with_starts, dim_data.total_starts, dim_data.total_pieces,
+            "=== {dim_short} ({} start chunks, {} reference chunks, {} starts, {} pieces, {} references) ===",
+            dim_data.chunks_with_starts,
+            dim_data.chunks_with_references,
+            dim_data.total_starts,
+            dim_data.total_pieces,
+            dim_data.total_references,
         );
 
         let mut chunks_sorted: Vec<&ExpectedChunk> = dim_data.chunks.iter().collect();
         chunks_sorted.sort_by_key(|c| (c.x, c.z));
+
+        let mut source_positions = FxHashSet::default();
+        for chunk_data in &chunks_sorted {
+            for dx in -8i32..=8 {
+                for dz in -8i32..=8 {
+                    source_positions.insert((chunk_data.x + dx, chunk_data.z + dz));
+                }
+            }
+        }
+
+        let mut actual_starts_by_pos: FxHashMap<(i32, i32), StructureStartMap> =
+            FxHashMap::default();
+        for pos in source_positions {
+            let chunk = make_proto_chunk(pos, section_count, min_y, height);
+            generator.create_structures(&chunk);
+
+            let mut starts = chunk.structure_starts_mut();
+            if !starts.is_empty() {
+                actual_starts_by_pos.insert(pos, take(&mut *starts));
+            }
+        }
+
+        eprintln!(
+            "[{dim_short}] Generated non-empty starts for {} chunks",
+            actual_starts_by_pos.len(),
+        );
 
         let total = chunks_sorted.len();
         let mut dim_failures = 0usize;
         let mut dim_report = String::new();
 
         for (i, chunk_data) in chunks_sorted.iter().enumerate() {
-            let sections: Box<[ChunkSection]> = (0..section_count)
-                .map(|_| ChunkSection::new_empty())
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
-            let proto = ProtoChunk::new(
-                Sections::from_owned(sections),
-                ChunkPos::new(chunk_data.x, chunk_data.z),
-                min_y,
-                height,
-            );
-            let chunk = ChunkAccess::Proto(proto);
-
-            generator.create_structures(&chunk);
-
-            let actual_starts = chunk.structure_starts();
-            let chunk_errors = compare_chunk(chunk_data, &actual_starts);
+            let actual_references =
+                collect_references_for_chunk(chunk_data.x, chunk_data.z, &actual_starts_by_pos);
+            let empty_starts = StructureStartMap::default();
+            let actual_starts = actual_starts_by_pos
+                .get(&(chunk_data.x, chunk_data.z))
+                .unwrap_or(&empty_starts);
+            let chunk_errors = compare_chunk(chunk_data, actual_starts, &actual_references);
 
             if (i + 1) % 25 == 0 || i + 1 == total || !chunk_errors.is_empty() {
                 let status = if chunk_errors.is_empty() {
@@ -266,12 +343,49 @@ fn structure_starts_inner() {
     assert!(total_failures == 0, "structure starts mismatch:\n{report}");
 }
 
-/// Compare the actual structure-start map for a chunk against the JSON
-/// expectations. Returns one human-readable error string per mismatched
-/// structure.
+fn collect_references_for_chunk(
+    target_x: i32,
+    target_z: i32,
+    starts_by_pos: &FxHashMap<(i32, i32), StructureStartMap>,
+) -> StructureReferenceMap {
+    let mut references = StructureReferenceMap::default();
+    let target_block_x = target_x * 16;
+    let target_block_z = target_z * 16;
+
+    for source_x in (target_x - 8)..=(target_x + 8) {
+        for source_z in (target_z - 8)..=(target_z + 8) {
+            let Some(starts) = starts_by_pos.get(&(source_x, source_z)) else {
+                continue;
+            };
+
+            for (structure_id, start) in starts {
+                let Some(bb) = start.bounding_box else {
+                    continue;
+                };
+                if bb.intersects_xz(
+                    target_block_x,
+                    target_block_z,
+                    target_block_x + 15,
+                    target_block_z + 15,
+                ) {
+                    references
+                        .entry(structure_id.clone())
+                        .or_default()
+                        .push(ChunkPos::new(source_x, source_z));
+                }
+            }
+        }
+    }
+
+    references
+}
+
+/// Compare the actual structure maps for a chunk against the JSON expectations.
+/// Returns one human-readable error string per mismatched structure/reference.
 fn compare_chunk(
     expected: &ExpectedChunk,
-    actual: &FxHashMap<Identifier, StructureStart>,
+    actual_starts: &FxHashMap<Identifier, StructureStart>,
+    actual_references: &StructureReferenceMap,
 ) -> Vec<String> {
     let mut errors = Vec::new();
 
@@ -281,7 +395,7 @@ fn compare_chunk(
     }
 
     let mut actual_by_id: FxHashMap<String, &StructureStart> = FxHashMap::default();
-    for (id, start) in actual {
+    for (id, start) in actual_starts {
         actual_by_id.insert(format!("{id}"), start);
     }
 
@@ -312,7 +426,88 @@ fn compare_chunk(
         }
     }
 
+    errors.extend(compare_references(&expected.references, actual_references));
+
     errors
+}
+
+fn compare_references(
+    expected: &[ExpectedReference],
+    actual: &StructureReferenceMap,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    let mut expected_by_id: FxHashMap<&str, Vec<(i32, i32)>> = FxHashMap::default();
+    for reference in expected {
+        let mut source_chunks: Vec<(i32, i32)> = reference
+            .source_chunks
+            .iter()
+            .map(|chunk| (chunk[0], chunk[1]))
+            .collect();
+        source_chunks.sort_unstable();
+        expected_by_id.insert(reference.structure.as_str(), source_chunks);
+    }
+
+    let mut actual_by_id: FxHashMap<String, Vec<(i32, i32)>> = FxHashMap::default();
+    for (id, source_chunks) in actual {
+        let mut sorted: Vec<(i32, i32)> = source_chunks
+            .iter()
+            .map(|chunk| (chunk.0.x, chunk.0.y))
+            .collect();
+        sorted.sort_unstable();
+        actual_by_id.insert(format!("{id}"), sorted);
+    }
+
+    let mut expected_keys: Vec<&str> = expected_by_id.keys().copied().collect();
+    expected_keys.sort_unstable();
+    for key in expected_keys {
+        let expected_sources = &expected_by_id[key];
+        let Some(actual_sources) = actual_by_id.get(key) else {
+            errors.push(format!(
+                "missing references `{key}`: expected {} source chunks",
+                expected_sources.len(),
+            ));
+            continue;
+        };
+
+        if expected_sources != actual_sources {
+            errors.push(format!(
+                "references `{key}`: expected {}, got {}",
+                fmt_chunk_list(expected_sources),
+                fmt_chunk_list(actual_sources),
+            ));
+        }
+    }
+
+    let mut actual_keys: Vec<&String> = actual_by_id.keys().collect();
+    actual_keys.sort();
+    for key in actual_keys {
+        if !expected_by_id.contains_key(key.as_str()) {
+            errors.push(format!(
+                "unexpected references `{key}`: got {}",
+                fmt_chunk_list(&actual_by_id[key]),
+            ));
+        }
+    }
+
+    errors
+}
+
+fn fmt_chunk_list(chunks: &[(i32, i32)]) -> String {
+    const MAX_CHUNKS_SHOWN: usize = 8;
+
+    let mut out = String::from("[");
+    for (i, (x, z)) in chunks.iter().take(MAX_CHUNKS_SHOWN).enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        let _ = write!(out, "({x},{z})");
+    }
+    if chunks.len() > MAX_CHUNKS_SHOWN {
+        let _ = write!(out, ", ... +{} more", chunks.len() - MAX_CHUNKS_SHOWN);
+    }
+    out.push(']');
+    out
 }
 
 fn compare_start(expected: &ExpectedStart, actual: &StructureStart) -> Option<String> {
@@ -392,6 +587,8 @@ fn compare_start(expected: &ExpectedStart, actual: &StructureStart) -> Option<St
                 fmt_bb_actual(&act_piece.bounding_box),
             ));
         }
+
+        compare_piece_nbt(i, exp_piece.nbt.as_ref(), act_piece, &mut diffs);
     }
 
     if diffs.is_empty() {
@@ -408,6 +605,171 @@ fn compare_start(expected: &ExpectedStart, actual: &StructureStart) -> Option<St
         let _ = writeln!(msg, "  ... and {} more diffs", total - shown);
     }
     Some(msg.trim_end().to_owned())
+}
+
+fn compare_piece_nbt(
+    index: usize,
+    expected: Option<&ExpectedPieceNbt>,
+    actual: &StructurePiece,
+    diffs: &mut Vec<String>,
+) {
+    let Some(expected_nbt) = expected else {
+        if !actual.nbt_data.is_empty() {
+            diffs.push(format!(
+                "piece[{index}].nbt: expected no NBT, got {} bytes",
+                actual.nbt_data.len(),
+            ));
+        }
+        return;
+    };
+
+    if let Some(expected_delta) = expected_nbt.ground_level_delta
+        && expected_delta != actual.ground_level_delta
+    {
+        diffs.push(format!(
+            "piece[{index}].nbt.ground_level_delta: expected {}, got {}",
+            expected_delta, actual.ground_level_delta,
+        ));
+    }
+
+    if let Some(pool_element) = &expected_nbt.pool_element {
+        let actual_projection = projection_to_name(actual.projection);
+        if Some(pool_element.projection.as_str()) != actual_projection {
+            diffs.push(format!(
+                "piece[{index}].nbt.pool_element.projection: expected `{}`, got {}",
+                pool_element.projection,
+                actual_projection.unwrap_or("none"),
+            ));
+        }
+    }
+
+    compare_junctions(index, &expected_nbt.junctions, actual, diffs);
+    compare_raw_nbt(index, expected_nbt, &actual.nbt_data, diffs);
+}
+
+fn compare_junctions(
+    index: usize,
+    expected: &[ExpectedJunction],
+    actual: &StructurePiece,
+    diffs: &mut Vec<String>,
+) {
+    if expected.len() != actual.junctions.len() {
+        diffs.push(format!(
+            "piece[{index}].nbt.junction count: expected {}, got {}",
+            expected.len(),
+            actual.junctions.len(),
+        ));
+    }
+
+    let common = expected.len().min(actual.junctions.len());
+    for (junction_index, expected_junction) in expected.iter().take(common).enumerate() {
+        let actual_junction = &actual.junctions[junction_index];
+        let actual_dest_projection = projection_to_name(Some(actual_junction.dest_projection));
+
+        if expected_junction.source_x != actual_junction.source_x {
+            diffs.push(format!(
+                "piece[{index}].nbt.junctions[{junction_index}].source_x: expected {}, got {}",
+                expected_junction.source_x, actual_junction.source_x,
+            ));
+        }
+        if expected_junction.source_ground_y != actual_junction.source_ground_y {
+            diffs.push(format!(
+                "piece[{index}].nbt.junctions[{junction_index}].source_ground_y: expected {}, got {}",
+                expected_junction.source_ground_y, actual_junction.source_ground_y,
+            ));
+        }
+        if expected_junction.source_z != actual_junction.source_z {
+            diffs.push(format!(
+                "piece[{index}].nbt.junctions[{junction_index}].source_z: expected {}, got {}",
+                expected_junction.source_z, actual_junction.source_z,
+            ));
+        }
+        if expected_junction.delta_y != actual_junction.delta_y {
+            diffs.push(format!(
+                "piece[{index}].nbt.junctions[{junction_index}].delta_y: expected {}, got {}",
+                expected_junction.delta_y, actual_junction.delta_y,
+            ));
+        }
+        if Some(expected_junction.dest_proj.as_str()) != actual_dest_projection {
+            diffs.push(format!(
+                "piece[{index}].nbt.junctions[{junction_index}].dest_proj: expected `{}`, got {}",
+                expected_junction.dest_proj,
+                actual_dest_projection.unwrap_or("none"),
+            ));
+        }
+    }
+}
+
+fn compare_raw_nbt(
+    index: usize,
+    expected_nbt: &ExpectedPieceNbt,
+    actual_bytes: &[u8],
+    diffs: &mut Vec<String>,
+) {
+    let expected_value = match serde_json::to_value(expected_nbt) {
+        Ok(value) => value,
+        Err(err) => {
+            diffs.push(format!(
+                "piece[{index}].nbt: fixture NBT could not be converted to JSON: {err}",
+            ));
+            return;
+        }
+    };
+
+    if actual_bytes.is_empty() {
+        if expected_value != Value::Object(serde_json::Map::new()) {
+            diffs.push(format!(
+                "piece[{index}].nbt: expected {}, got empty nbt_data",
+                fmt_json_short(&expected_value),
+            ));
+        }
+        return;
+    }
+
+    let actual_value = match actual_nbt_to_json(actual_bytes) {
+        Ok(value) => value,
+        Err(err) => {
+            diffs.push(format!(
+                "piece[{index}].nbt: failed to parse actual nbt_data: {err}",
+            ));
+            return;
+        }
+    };
+
+    if expected_value != actual_value {
+        diffs.push(format!(
+            "piece[{index}].nbt: expected {}, got {}",
+            fmt_json_short(&expected_value),
+            fmt_json_short(&actual_value),
+        ));
+    }
+}
+
+fn actual_nbt_to_json(bytes: &[u8]) -> Result<Value, String> {
+    let nbt = read_compound(&mut Cursor::new(bytes)).map_err(|err| format!("{err:?}"))?;
+    serde_json::to_value(nbt).map_err(|err| err.to_string())
+}
+
+fn fmt_json_short(value: &Value) -> String {
+    const MAX_CHARS: usize = 240;
+
+    let text = match serde_json::to_string(value) {
+        Ok(text) => text,
+        Err(err) => return format!("<failed to format JSON: {err}>"),
+    };
+    let mut truncated: String = text.chars().take(MAX_CHARS).collect();
+    if text.chars().count() > MAX_CHARS {
+        truncated.push_str("...");
+    }
+    truncated
+}
+
+const fn projection_to_name(projection: Option<Projection>) -> Option<&'static str> {
+    match projection {
+        Some(Projection::Rigid) => Some("rigid"),
+        Some(Projection::TerrainMatching) => Some("terrain_matching"),
+        None => None,
+    }
 }
 
 /// Maximum diffs shown per `StructureStart` before truncating. Matches the
