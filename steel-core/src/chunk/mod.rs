@@ -6,6 +6,7 @@ pub mod chunk_holder;
 /// The chunk map manages chunk loading, generation, and lifecycle.
 pub mod chunk_map;
 pub mod chunk_pyramid;
+pub mod chunk_request;
 pub mod chunk_status_tasks;
 /// Tracks chunk levels based on ticket propagation.
 pub mod chunk_ticket_manager;
