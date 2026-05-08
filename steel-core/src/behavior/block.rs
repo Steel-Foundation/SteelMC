@@ -15,10 +15,11 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
+use crate::entity::damage::DamageSource;
 use crate::fluid::is_water_fluid;
 use crate::player::Player;
 use crate::world::World;
-use steel_registry::vanilla_fluids;
+use steel_registry::{vanilla_damage_types, vanilla_fluids};
 
 pub struct PickupResult {
     pub filled_bucket: ItemRef,
@@ -440,6 +441,84 @@ pub trait BlockBehavior: Send + Sync {
             .tick_delay(world);
         world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
         true
+    }
+
+    // === Falling Block / Fallable Methods ===
+    // Vanilla: `FallingBlock.falling()` and the `Fallable` interface.
+    // These methods are no-ops by default and are overridden by blocks that fall.
+
+    /// Returns configuration applied to the FallingBlockEntity just before it is spawned.
+    ///
+    /// Vanilla: `FallingBlock.falling(FallingBlockEntity)` — used by `AnvilBlock`
+    /// to enable entity damage on impact.
+    fn falling_entity_config(&self) -> FallingEntityConfig {
+        FallingEntityConfig::default()
+    }
+
+    /// Called when the falling block successfully lands and is placed in the world.
+    ///
+    /// Vanilla: `Fallable.onLand(Level, BlockPos, BlockState, BlockState, FallingBlockEntity)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn on_land(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        placed_state: BlockStateId,
+        replaced_state: BlockStateId,
+        entity: &dyn Entity,
+    ) {
+        // Default: no-op
+    }
+
+    /// Called when the falling block cannot be placed and breaks (drops as item).
+    ///
+    /// Vanilla: `Fallable.onBrokenAfterFall(Level, BlockPos, FallingBlockEntity)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn on_broken_after_fall(&self, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+        // Default: no-op
+    }
+
+    /// Returns the damage source used when this falling block hurts an entity.
+    ///
+    /// Override in blocks like anvils to use the `falling_anvil` damage type.
+    /// Vanilla: `Fallable.getFallDamageSource(Entity)`.
+    fn fall_damage_source(&self, direct_entity_id: i32) -> DamageSource {
+        DamageSource {
+            damage_type: &vanilla_damage_types::FALLING_BLOCK,
+            direct_entity_id: Some(direct_entity_id),
+            causing_entity_id: None,
+            source_position: None,
+        }
+    }
+}
+
+/// Configuration for a `FallingBlockEntity` set at spawn time.
+///
+/// Returned by `BlockBehavior::falling_entity_config()`. The entity applies
+/// these values immediately after construction, before being added to the world.
+/// Mirrors vanilla's `FallingBlock.falling(FallingBlockEntity)` callback pattern.
+pub struct FallingEntityConfig {
+    /// Whether this falling block damages entities on impact (e.g. anvils).
+    pub hurt_entities: bool,
+    /// Damage per block fallen (used when `hurt_entities` is true).
+    pub fall_damage_per_distance: f32,
+    /// Maximum fall damage cap (used when `hurt_entities` is true).
+    pub fall_damage_max: i32,
+}
+
+impl Default for FallingEntityConfig {
+    fn default() -> Self {
+        Self {
+            hurt_entities: false,
+            fall_damage_per_distance: 0.0,
+            fall_damage_max: 40,
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
 use uuid::Uuid;
 
-use super::entities::{BlockDisplayEntity, ItemEntity};
+use super::entities::{BlockDisplayEntity, FallingBlockEntity, ItemEntity};
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
 
@@ -207,6 +207,28 @@ pub fn init_entities() {
         &vanilla_entities::ITEM,
         |id, pos, uuid, velocity, rotation, on_ground, world| {
             Arc::new(ItemEntity::from_saved(
+                id, pos, uuid, velocity, rotation, on_ground, world,
+            ))
+        },
+    );
+
+    // Register falling block entity factory
+    // Note: spawn factory without a block state creates a sand entity as placeholder;
+    // actual spawning goes through FallingBlockEntity::fall() directly.
+    registry.register(&vanilla_entities::FALLING_BLOCK, |id, pos, world| {
+        use steel_registry::{REGISTRY, RegistryExt};
+        use steel_utils::Identifier;
+        let sand = REGISTRY
+            .blocks
+            .by_key(&Identifier::new("minecraft", "sand"))
+            .map(|b| b.default_state())
+            .unwrap_or_default();
+        Arc::new(FallingBlockEntity::new(id, pos, world, sand))
+    });
+    registry.register_load(
+        &vanilla_entities::FALLING_BLOCK,
+        |id, pos, uuid, velocity, rotation, on_ground, world| {
+            Arc::new(FallingBlockEntity::from_saved(
                 id, pos, uuid, velocity, rotation, on_ground, world,
             ))
         },

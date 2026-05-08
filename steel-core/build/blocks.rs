@@ -103,8 +103,11 @@ pub fn build(blocks: &[BlockClass]) -> String {
         })
         .collect();
 
+    // vanilla_blocks is always included as the base import in the use statement below,
+    // so skip it here to avoid a duplicate import error.
     let registry_import_tokens: Vec<_> = registry_modules_used
         .iter()
+        .filter(|m| m.as_str() != "vanilla_blocks")
         .map(|module| {
             let module_ident = Ident::new(module, Span::call_site());
             quote! { , #module_ident }

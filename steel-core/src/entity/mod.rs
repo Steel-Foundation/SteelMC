@@ -155,6 +155,14 @@ pub trait Entity: Send + Sync {
         Vec::new()
     }
 
+    /// Returns the entity-type-specific integer sent in `CAddEntity.data`.
+    ///
+    /// Vanilla: `Entity.getEntityData()` used in `AddEntityPacket`.
+    /// Most entities return 0; falling blocks return their block state ID.
+    fn spawn_data(&self) -> i32 {
+        0
+    }
+
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
         self.base().is_some_and(EntityBase::is_removed)
