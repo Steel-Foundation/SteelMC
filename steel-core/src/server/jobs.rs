@@ -1,6 +1,9 @@
 //! Tick-polled server jobs.
 
-use std::{mem, sync::Weak};
+use std::{
+    mem,
+    sync::{Arc, Weak},
+};
 
 use crate::{
     chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState, ReadyChunks},
@@ -27,7 +30,7 @@ pub struct ServerJobContext {
 }
 
 impl ServerJobContext {
-    fn for_server(server: Weak<Server>, tick_count: u64, runs_normally: bool) -> Self {
+    const fn for_server(server: Weak<Server>, tick_count: u64, runs_normally: bool) -> Self {
         Self {
             server: Some(server),
             tick_count,
@@ -37,12 +40,12 @@ impl ServerJobContext {
 
     /// Returns the server if it is still alive.
     #[must_use]
-    pub fn server(&self) -> Option<std::sync::Arc<Server>> {
+    pub fn server(&self) -> Option<Arc<Server>> {
         self.server.as_ref().and_then(Weak::upgrade)
     }
 
     #[cfg(test)]
-    fn for_test(tick_count: u64, runs_normally: bool) -> Self {
+    const fn for_test(tick_count: u64, runs_normally: bool) -> Self {
         Self {
             server: None,
             tick_count,

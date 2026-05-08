@@ -2,7 +2,7 @@
 //! jigsaw blocks given a start pool + config. Produces typed piece state;
 //! block placement runs in a later worldgen stage.
 
-use std::cmp::Reverse;
+use std::{cmp::Reverse, mem};
 
 use rustc_hash::FxHashMap;
 use steel_registry::structure::{
@@ -207,7 +207,7 @@ fn order_jigsaw_indices_by_priorities(
         return;
     }
 
-    let original = std::mem::take(indices);
+    let original = mem::take(indices);
     let mut ordered = Vec::with_capacity(original.len());
     for &priority in &cached.priorities_desc {
         ordered.extend(
@@ -566,14 +566,6 @@ struct StartedAssembly {
     clippy::too_many_arguments,
     reason = "matches vanilla's addPieces call surface"
 )]
-#[expect(
-    clippy::implicit_hasher,
-    reason = "FxHashMap avoids SipHash overhead on Identifier lookups"
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "inlined center-piece setup mirrors vanilla's addPieces"
-)]
 fn start_assembly(
     config: &JigsawConfig,
     rng: &mut LegacyRandom,
@@ -678,10 +670,6 @@ fn start_assembly(
 #[expect(
     clippy::too_many_arguments,
     reason = "matches vanilla's addPieces child-builder call surface"
-)]
-#[expect(
-    clippy::implicit_hasher,
-    reason = "FxHashMap avoids SipHash overhead on Identifier lookups"
 )]
 fn finish_assembly<'a>(
     mut started: StartedAssembly,

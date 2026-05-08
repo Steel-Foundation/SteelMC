@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData};
 
 use sha2::{Digest, Sha256};
 use steel_registry::RegistryEntry;
@@ -452,9 +452,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             biome_sampler: &mut sampler,
             height_cache: &mut height_cache,
             aquifer: &mut aquifer,
-            terrain_height_cache: Default::default(),
-            terrain_opaque_cache: Default::default(),
-            terrain_probes: Default::default(),
+            terrain_height_cache: RefCell::default(),
+            terrain_opaque_cache: RefCell::default(),
+            terrain_probes: RefCell::default(),
         };
 
         self.structure_generator.create_structures(chunk, &mut ctx);

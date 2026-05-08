@@ -61,19 +61,13 @@ fn locate_structure(
     let query_name = structure.query_name();
     let Some(plan) = structure_generator.locate_plan_for_structures(&structure_keys) else {
         return Err(CommandError::CommandFailed(Box::new(TextComponent::plain(
-            format!(
-                "Could not find any configured placements for {}",
-                query_name
-            ),
+            format!("Could not find any configured placements for {query_name}"),
         ))));
     };
 
     if plan.is_empty() {
         return Err(CommandError::CommandFailed(Box::new(TextComponent::plain(
-            format!(
-                "Could not find any configured placements for {}",
-                query_name
-            ),
+            format!("Could not find any configured placements for {query_name}"),
         ))));
     }
 
@@ -285,17 +279,12 @@ impl LocateStructureJob {
         &self,
         candidate: StructureLocateCandidate,
     ) -> Option<Identifier> {
-        let Some(holder) = self
+        let holder = self
             .world
             .chunk_map
             .chunks
-            .read_sync(&candidate.chunk_pos, |_, holder| holder.clone())
-        else {
-            return None;
-        };
-        let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts) else {
-            return None;
-        };
+            .read_sync(&candidate.chunk_pos, |_, holder| holder.clone())?;
+        let chunk = holder.try_chunk(ChunkStatus::StructureStarts)?;
         let starts = chunk.structure_starts();
         self.structures.iter().find_map(|structure| {
             starts

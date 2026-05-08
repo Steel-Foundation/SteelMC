@@ -56,8 +56,8 @@ pub(crate) fn generate_references(
             };
 
             for (structure_id, start) in source_chunk.structure_starts().iter() {
-                // Empty-pieces starts have no BB (legacy/unknown types).
-                // `start.bounding_box` is already inflated by `bb_inflate`.
+                // Empty-pieces starts have no BB and are not valid. `start.bounding_box`
+                // is already inflated by `bb_inflate`.
                 let Some(bb) = start.bounding_box else {
                     continue;
                 };

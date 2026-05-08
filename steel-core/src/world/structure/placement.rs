@@ -211,7 +211,7 @@ pub struct StructurePlacement {
 impl StructurePlacement {
     /// Locate result block position for a valid placement chunk.
     #[must_use]
-    pub fn locate_pos(&self, chunk_pos: ChunkPos) -> BlockPos {
+    pub const fn locate_pos(&self, chunk_pos: ChunkPos) -> BlockPos {
         BlockPos::new(
             chunk_pos.0.x * 16 + self.locate_offset[0],
             self.locate_offset[1],

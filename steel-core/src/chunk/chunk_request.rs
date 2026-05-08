@@ -121,6 +121,7 @@ impl ChunkRequestHandle {
 
     /// Polls request readiness and schedules target-status generation for
     /// holders that already exist and are allowed by ticket propagation.
+    #[must_use]
     pub fn poll(&self) -> ChunkRequestState {
         let Some(inner) = &self.inner else {
             return ChunkRequestState::Cancelled;
@@ -170,8 +171,8 @@ impl ChunkRequestHandle {
                 .chunk_map
                 .chunks
                 .read_sync(&pos, |_, holder| holder.clone())?;
-            if holder.try_chunk(inner.status).is_none() {
-                return None;
+            {
+                let _chunk = holder.try_chunk(inner.status)?;
             }
             holders.push(holder);
         }

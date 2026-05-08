@@ -11,6 +11,7 @@ use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
+use std::cmp::Ordering as CmpOrdering;
 use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -101,6 +102,12 @@ const fn liquid_settings_from_persistent(value: i8) -> LiquidSettingsData {
         1 => LiquidSettingsData::IgnoreWaterlogging,
         _ => LiquidSettingsData::ApplyWaterlogging,
     }
+}
+
+fn compare_identifiers(a: &Identifier, b: &Identifier) -> CmpOrdering {
+    a.namespace
+        .cmp(&b.namespace)
+        .then_with(|| a.path.cmp(&b.path))
 }
 
 use super::ram_only::RamOnlyStorage;
@@ -1024,8 +1031,9 @@ impl ChunkStorage {
 
     /// Converts structure starts to persistent format for saving.
     fn structure_starts_to_persistent(starts: &StructureStartMap) -> Vec<PersistentStructureStart> {
-        starts
+        let mut persistent: Vec<_> = starts
             .values()
+            .filter(|start| !start.pieces.is_empty())
             .map(|start| PersistentStructureStart {
                 structure: start.structure.clone(),
                 chunk_x: start.chunk_pos.0.x,
@@ -1062,14 +1070,19 @@ impl ChunkStorage {
                     })
                     .collect(),
             })
-            .collect()
+            .collect();
+
+        persistent.sort_by(|a, b| compare_identifiers(&a.structure, &b.structure));
+        persistent
     }
 
     /// Converts structure references to persistent format for saving.
     fn structure_references_to_persistent(
         refs: &StructureReferenceMap,
     ) -> Vec<PersistentStructureReference> {
-        refs.iter()
+        let mut persistent: Vec<_> = refs
+            .iter()
+            .filter(|(_, positions)| !positions.is_empty())
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
                 references: {
@@ -1078,7 +1091,10 @@ impl ChunkStorage {
                     packed
                 },
             })
-            .collect()
+            .collect();
+
+        persistent.sort_by(|a, b| compare_identifiers(&a.structure, &b.structure));
+        persistent
     }
 
     /// Reconstructs structure starts from persistent data.
@@ -1276,7 +1292,7 @@ impl ChunkStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustc_hash::FxHashMap;
+    use rustc_hash::{FxHashMap, FxHashSet};
 
     fn init_registry() {
         let mut registry = Registry::new_vanilla();
@@ -1284,7 +1300,97 @@ mod tests {
         let _ = REGISTRY.init(registry);
     }
 
+    fn test_structure_piece() -> StructurePiece {
+        StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "mscorridor"),
+            bounding_box: steel_utils::BoundingBox::new(0, 64, 0, 1, 65, 1),
+            gen_depth: 0,
+            orientation: None,
+            nbt_data: Vec::new(),
+            jigsaw: None,
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        }
+    }
+
     #[test]
+    fn structure_persistence_filters_empty_starts_and_sorts_entries() {
+        let alpha = Identifier::new_static("minecraft", "alpha");
+        let empty = Identifier::new_static("minecraft", "empty");
+        let zeta = Identifier::new_static("minecraft", "zeta");
+
+        let mut starts = FxHashMap::default();
+        starts.insert(
+            zeta.clone(),
+            StructureStart::new(
+                zeta.clone(),
+                ChunkPos::new(2, 0),
+                vec![test_structure_piece()],
+                TerrainAdjustment::None,
+            ),
+        );
+        starts.insert(
+            empty.clone(),
+            StructureStart::new(
+                empty,
+                ChunkPos::new(1, 0),
+                Vec::new(),
+                TerrainAdjustment::None,
+            ),
+        );
+        starts.insert(
+            alpha.clone(),
+            StructureStart::new(
+                alpha.clone(),
+                ChunkPos::new(0, 0),
+                vec![test_structure_piece()],
+                TerrainAdjustment::None,
+            ),
+        );
+
+        let persistent_starts = ChunkStorage::structure_starts_to_persistent(&starts);
+        assert_eq!(persistent_starts.len(), 2);
+        assert_eq!(persistent_starts[0].structure, alpha);
+        assert_eq!(persistent_starts[1].structure, zeta);
+
+        let mut references = StructureReferenceMap::default();
+        references.insert(
+            Identifier::new_static("minecraft", "zeta"),
+            [ChunkPos::new(2, 0), ChunkPos::new(1, 0)]
+                .into_iter()
+                .collect(),
+        );
+        references.insert(
+            Identifier::new_static("minecraft", "alpha"),
+            [ChunkPos::new(4, 0)].into_iter().collect(),
+        );
+        references.insert(
+            Identifier::new_static("minecraft", "empty"),
+            FxHashSet::default(),
+        );
+
+        let persistent_references = ChunkStorage::structure_references_to_persistent(&references);
+        assert_eq!(persistent_references.len(), 2);
+        assert_eq!(
+            persistent_references[0].structure,
+            Identifier::new_static("minecraft", "alpha")
+        );
+        assert_eq!(
+            persistent_references[1].structure,
+            Identifier::new_static("minecraft", "zeta")
+        );
+        assert_eq!(
+            persistent_references[1].references,
+            vec![ChunkPos::new(1, 0).as_i64(), ChunkPos::new(2, 0).as_i64()]
+        );
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single fixture verifies every persisted jigsaw field roundtrips together"
+    )]
     fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
         init_registry();
 

@@ -1,5 +1,7 @@
 //! Shared structure placement/selection engine.
 
+use std::slice;
+
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::REGISTRY;
 use steel_registry::biome::BiomeRef;
@@ -161,7 +163,7 @@ pub struct StructureLocateCandidate {
 impl StructureLocatePlan {
     /// Returns `true` if this plan has no placements to scan.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.placements.is_empty()
     }
 
@@ -259,7 +261,7 @@ impl StructureLocatePlan {
 }
 
 impl StructureLocateCandidate {
-    fn new(scan_id: usize, locate_pos: BlockPos, chunk_pos: ChunkPos) -> Self {
+    const fn new(scan_id: usize, locate_pos: BlockPos, chunk_pos: ChunkPos) -> Self {
         Self {
             chunk_pos,
             locate_pos,
@@ -268,7 +270,7 @@ impl StructureLocateCandidate {
         }
     }
 
-    fn new_ring(scan_id: usize, locate_pos: BlockPos, chunk_pos: ChunkPos) -> Self {
+    const fn new_ring(scan_id: usize, locate_pos: BlockPos, chunk_pos: ChunkPos) -> Self {
         Self {
             chunk_pos,
             locate_pos,
@@ -399,7 +401,7 @@ impl StructureGenerator {
     /// Builds a detached locate plan for one structure id.
     #[must_use]
     pub fn locate_plan_for_structure(&self, structure: &Identifier) -> Option<StructureLocatePlan> {
-        self.locate_plan_for_structures(std::slice::from_ref(structure))
+        self.locate_plan_for_structures(slice::from_ref(structure))
     }
 
     /// Builds a detached locate plan for one or more structure ids.
@@ -561,23 +563,11 @@ impl StructureGenerator {
         }
 
         tracing::warn!(
-            "Unknown structure type {:?} for {}, using center biome check",
+            "Unknown structure type {:?} for {}, skipping structure start",
             structure.structure_type,
             structure.key
         );
-        let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
-        if structure.allowed_biomes.contains(&biome.key) {
-            Some((
-                structure,
-                GenerationStub {
-                    position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
-                    pieces: Vec::new(),
-                },
-            ))
-        } else {
-            None
-        }
+        None
     }
 }
 

@@ -105,6 +105,20 @@ const CLUSTER_OFFSETS: [ClusterOffset; 8] = [
     ( 16, -16, (1, 7), (4, 8)),
 ];
 
+const fn ocean_ruin_piece(bb: BoundingBox) -> StructurePiece {
+    StructurePiece {
+        piece_type: Identifier::new_static("minecraft", "orp"),
+        bounding_box: bb,
+        gen_depth: 0,
+        orientation: Some(Direction::North),
+        nbt_data: Vec::new(),
+        jigsaw: None,
+        ground_level_delta: 0,
+        junctions: Vec::new(),
+        projection: None,
+    }
+}
+
 /// Registered under `"minecraft:ocean_ruin"`. Warm/cold are distinguished by
 /// `entry.structure.path`.
 pub struct OceanRuinStructure;
@@ -209,20 +223,7 @@ impl Structure for OceanRuinStructure {
 
         Some(GenerationStub {
             position: (ctx.center_block_x(), ocean_floor_y, ctx.center_block_z()),
-            pieces: bbs
-                .into_iter()
-                .map(|bb| StructurePiece {
-                    piece_type: Identifier::new_static("minecraft", "orp"),
-                    bounding_box: bb,
-                    gen_depth: 0,
-                    orientation: Some(Direction::North),
-                    nbt_data: Vec::new(),
-                    jigsaw: None,
-                    ground_level_delta: 0,
-                    junctions: Vec::new(),
-                    projection: None,
-                })
-                .collect(),
+            pieces: bbs.into_iter().map(ocean_ruin_piece).collect(),
         })
     }
 }
