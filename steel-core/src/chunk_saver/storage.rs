@@ -1072,7 +1072,11 @@ impl ChunkStorage {
         refs.iter()
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
-                references: positions.iter().map(|pos| pos.as_i64()).collect(),
+                references: {
+                    let mut packed: Vec<_> = positions.iter().map(|pos| pos.as_i64()).collect();
+                    packed.sort_unstable();
+                    packed
+                },
             })
             .collect()
     }

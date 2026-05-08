@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::structure::TerrainAdjustment;
 use steel_utils::ChunkPos;
 
@@ -52,21 +52,28 @@ pub(crate) fn generate(
             .iter()
             .filter_map(|h| h.try_chunk(ChunkStatus::StructureStarts))
             .collect();
-        let starts_guards: Vec<_> = source_chunks.iter().map(|c| c.structure_starts()).collect();
+        let mut source_indices: FxHashMap<ChunkPos, usize> = FxHashMap::default();
+        let mut starts_guards = Vec::with_capacity(source_chunks.len());
+        for source_chunk in &source_chunks {
+            let source_pos = source_chunk.pos();
+            source_indices.insert(source_pos, starts_guards.len());
+            starts_guards.push(source_chunk.structure_starts());
+        }
 
         // Resolve each (structure_id, source_pos) pair to a borrowed `&StructureStart`.
         // The starts_guards keep the underlying maps alive across this collection.
         let mut starts: Vec<&StructureStart> = Vec::new();
         for (structure_id, source_chunks_ref) in references.iter() {
             for &source_pos in source_chunks_ref {
-                for guard in &starts_guards {
-                    if let Some(start) = guard.get(structure_id)
-                        && start.chunk_pos == source_pos
-                        && start.terrain_adjustment != TerrainAdjustment::None
-                    {
-                        starts.push(start);
-                        break;
-                    }
+                let Some(&guard_index) = source_indices.get(&source_pos) else {
+                    continue;
+                };
+                let guard = &starts_guards[guard_index];
+                if let Some(start) = guard.get(structure_id)
+                    && start.chunk_pos == source_pos
+                    && start.terrain_adjustment != TerrainAdjustment::None
+                {
+                    starts.push(start);
                 }
             }
         }

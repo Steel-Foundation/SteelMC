@@ -363,22 +363,26 @@ fn build_test_beardifier(
         .iter()
         .filter_map(|p| chunks.get(&(p.0.x, p.0.y)))
         .collect();
-    let starts_guards: Vec<_> = source_chunk_refs
-        .iter()
-        .map(|c| c.structure_starts())
-        .collect();
+    let mut source_indices: FxHashMap<ChunkPos, usize> = FxHashMap::default();
+    let mut starts_guards = Vec::with_capacity(source_chunk_refs.len());
+    for source_chunk in &source_chunk_refs {
+        let source_pos = source_chunk.pos();
+        source_indices.insert(source_pos, starts_guards.len());
+        starts_guards.push(source_chunk.structure_starts());
+    }
 
     let mut starts: Vec<&StructureStart> = Vec::new();
     for (structure_id, source_chunks_ref) in references.iter() {
         for &source_pos in source_chunks_ref {
-            for guard in &starts_guards {
-                if let Some(start) = guard.get(structure_id)
-                    && start.chunk_pos == source_pos
-                    && start.terrain_adjustment != TerrainAdjustment::None
-                {
-                    starts.push(start);
-                    break;
-                }
+            let Some(&guard_index) = source_indices.get(&source_pos) else {
+                continue;
+            };
+            let guard = &starts_guards[guard_index];
+            if let Some(start) = guard.get(structure_id)
+                && start.chunk_pos == source_pos
+                && start.terrain_adjustment != TerrainAdjustment::None
+            {
+                starts.push(start);
             }
         }
     }
@@ -547,7 +551,7 @@ fn chunk_stage_hashes_inner() {
                                 .structure_references_mut()
                                 .entry(structure_id.clone())
                                 .or_default()
-                                .push(ChunkPos::new(source_x, source_z));
+                                .insert(ChunkPos::new(source_x, source_z));
                         }
                     }
                 }

@@ -21,8 +21,8 @@ use crate::world::structure::nether_fossil::NetherFossilStructure;
 use crate::world::structure::ocean_monument::OceanMonumentStructure;
 use crate::world::structure::ocean_ruin::OceanRuinStructure;
 use crate::world::structure::placement::{
-    PlacementKind, StructureSelectionEntry, StructureSet, generate_ring_positions,
-    load_vanilla_structure_sets,
+    PlacementKind, StructurePlacement, StructureSelectionEntry, StructureSet,
+    generate_ring_positions, load_vanilla_structure_sets,
 };
 use crate::world::structure::ruined_portal::RuinedPortalStructure;
 use crate::world::structure::shipwreck::ShipwreckStructure;
@@ -125,8 +125,9 @@ impl StructureBiomeProvider for FixedStructureBiomeProvider {
 pub struct StructureGenerator {
     seed: i64,
     structure_sets: Vec<(Identifier, StructureSet)>,
+    structure_set_indices: FxHashMap<Identifier, usize>,
     structure_data: FxHashMap<Identifier, StructureRef>,
-    ring_positions: Vec<(Identifier, Vec<ChunkPos>)>,
+    ring_positions: FxHashMap<Identifier, Vec<ChunkPos>>,
     template_pools: FxHashMap<Identifier, TemplatePoolData>,
     templates: FxHashMap<Identifier, TemplateData>,
     structures: FxHashMap<Identifier, Box<dyn Structure>>,
@@ -170,7 +171,13 @@ impl StructureGenerator {
             })
             .collect();
 
-        let mut ring_positions = Vec::new();
+        let structure_set_indices: FxHashMap<Identifier, usize> = structure_sets
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (key.clone(), index))
+            .collect();
+
+        let mut ring_positions = FxHashMap::default();
         for (key, set) in &structure_sets {
             if let PlacementKind::ConcentricRings {
                 distance,
@@ -191,7 +198,7 @@ impl StructureGenerator {
                     };
                 let positions =
                     generate_ring_positions(seed, *distance, *spread, *count, Some(&mut snap));
-                ring_positions.push((key.clone(), positions));
+                ring_positions.insert(key.clone(), positions);
             }
         }
 
@@ -204,6 +211,7 @@ impl StructureGenerator {
         Self {
             seed,
             structure_sets,
+            structure_set_indices,
             structure_data,
             ring_positions,
             template_pools,
@@ -230,11 +238,7 @@ impl StructureGenerator {
         let chunk_z = ctx.chunk_z();
 
         for (set_key, set) in &self.structure_sets {
-            let rings = self
-                .ring_positions
-                .iter()
-                .find(|(key, _)| key == set_key)
-                .map(|(_, positions)| positions.as_slice());
+            let rings = self.rings_for_set(set_key);
 
             if !set
                 .placement
@@ -254,13 +258,7 @@ impl StructureGenerator {
                 }
             }
 
-            if set.placement.is_excluded(
-                self.seed,
-                chunk_x,
-                chunk_z,
-                &self.structure_sets,
-                &self.ring_positions,
-            ) {
+            if self.is_excluded(&set.placement, chunk_x, chunk_z) {
                 continue;
             }
 
@@ -278,6 +276,33 @@ impl StructureGenerator {
                 .structure_starts_mut()
                 .insert(structure.key.clone(), start);
         }
+    }
+
+    fn rings_for_set(&self, set_key: &Identifier) -> Option<&[ChunkPos]> {
+        self.ring_positions.get(set_key).map(Vec::as_slice)
+    }
+
+    fn is_excluded(&self, placement: &StructurePlacement, source_x: i32, source_z: i32) -> bool {
+        let Some(exclusion) = &placement.exclusion_zone else {
+            return false;
+        };
+        let Some(&other_set_index) = self.structure_set_indices.get(&exclusion.other_set) else {
+            return false;
+        };
+
+        let other_set = &self.structure_sets[other_set_index].1;
+        let other_rings = self.rings_for_set(&exclusion.other_set);
+        for dx in (source_x - exclusion.chunk_count)..=(source_x + exclusion.chunk_count) {
+            for dz in (source_z - exclusion.chunk_count)..=(source_z + exclusion.chunk_count) {
+                if other_set
+                    .placement
+                    .is_structure_chunk(self.seed, dx, dz, other_rings)
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn select_structure(

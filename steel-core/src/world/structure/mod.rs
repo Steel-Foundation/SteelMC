@@ -21,7 +21,7 @@ pub mod stronghold;
 
 use std::cell::RefCell;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSplitter};
@@ -148,7 +148,9 @@ pub struct StructurePiece {
 pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;
 
 /// Structure references → origin chunk positions.
-pub type StructureReferenceMap = FxHashMap<Identifier, Vec<ChunkPos>>;
+///
+/// Vanilla stores these as a `LongSet`, so duplicates are ignored by construction.
+pub type StructureReferenceMap = FxHashMap<Identifier, FxHashSet<ChunkPos>>;
 
 /// Block classification in the base-noise column (no surface rules).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -384,7 +384,7 @@ fn collect_references_for_chunk(
                     references
                         .entry(structure_id.clone())
                         .or_default()
-                        .push(ChunkPos::new(source_x, source_z));
+                        .insert(ChunkPos::new(source_x, source_z));
                 }
             }
         }

@@ -4,6 +4,7 @@ use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
 };
+use crate::world::structure::StructureReferenceMap;
 use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::generator::ChunkGenerator;
 
@@ -44,6 +45,8 @@ pub(crate) fn generate_references(
     let target_block_z = target_z * 16;
     drop(chunk);
 
+    let mut references = StructureReferenceMap::default();
+
     // Radius-8 scan for starts whose BB intersects this chunk.
     for source_x in (target_x - 8)..=(target_x + 8) {
         for source_z in (target_z - 8)..=(target_z + 8) {
@@ -64,18 +67,28 @@ pub(crate) fn generate_references(
                     target_block_x + 15,
                     target_block_z + 15,
                 ) {
-                    let target_chunk = holder
-                        .try_chunk(ChunkStatus::StructureStarts)
-                        .expect("Chunk not found");
-                    target_chunk
-                        .structure_references_mut()
+                    references
                         .entry(structure_id.clone())
                         .or_default()
-                        .push(steel_utils::ChunkPos::new(source_x, source_z));
+                        .insert(steel_utils::ChunkPos::new(source_x, source_z));
                     // Source-start reference counts are updated at serialization time.
                 }
             }
         }
+    }
+
+    if !references.is_empty() {
+        let target_chunk = holder
+            .try_chunk(ChunkStatus::StructureStarts)
+            .expect("Chunk not found");
+        let mut target_references = target_chunk.structure_references_mut();
+        for (structure_id, source_chunks) in references {
+            target_references
+                .entry(structure_id)
+                .or_default()
+                .extend(source_chunks);
+        }
+        target_chunk.mark_dirty();
     }
 }
 
