@@ -3,8 +3,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use steel_utils::{BlockPos, ChunkPos, Identifier};
-use text_components::TextComponent;
+use steel_utils::{BlockPos, ChunkPos, Identifier, translations};
+use text_components::format::Color;
+use text_components::interactivity::{ClickEvent, HoverEvent};
+use text_components::{Modifier, TextComponent};
 
 use crate::chunk::chunk_access::ChunkStatus;
 use crate::chunk::chunk_request::{
@@ -319,10 +321,11 @@ impl LocateStructureJob {
         let pos = best.candidate.locate_pos;
         let distance = horizontal_distance(self.origin, pos);
         let structure_name = self.query.printable_name(&best.found_structure);
-        self.sender.send_message(&TextComponent::plain(format!(
-            "The nearest {} is at [{} ~ {}] ({} blocks away)",
-            structure_name, pos.0.x, pos.0.z, distance
-        )));
+        self.sender.send_message(&locate_success_component(
+            structure_name.clone(),
+            pos,
+            distance,
+        ));
         tracing::info!(
             "Locating structure {} took {} ms",
             structure_name,
@@ -331,10 +334,11 @@ impl LocateStructureJob {
     }
 
     fn send_not_found(&self) {
-        self.sender.send_message(&TextComponent::plain(format!(
-            "Could not find structure {}",
-            self.query.query_name()
-        )));
+        self.sender.send_message(
+            &translations::COMMANDS_LOCATE_STRUCTURE_NOT_FOUND
+                .message([TextComponent::from(self.query.query_name())])
+                .component(),
+        );
         tracing::info!(
             "Locating structure {} failed after {} ms",
             self.query.query_name(),
@@ -353,4 +357,58 @@ fn horizontal_distance(a: BlockPos, b: BlockPos) -> i32 {
     let dx = (i64::from(a.0.x) - i64::from(b.0.x)) as f64;
     let dz = (i64::from(a.0.z) - i64::from(b.0.z)) as f64;
     (dx.mul_add(dx, dz * dz).sqrt().floor()) as i32
+}
+
+fn locate_success_component(structure_name: String, pos: BlockPos, distance: i32) -> TextComponent {
+    translations::COMMANDS_LOCATE_STRUCTURE_SUCCESS
+        .message([
+            TextComponent::from(structure_name),
+            locate_coordinates_component(pos),
+            TextComponent::from(distance.to_string()),
+        ])
+        .component()
+}
+
+fn locate_coordinates_component(pos: BlockPos) -> TextComponent {
+    let displayed_y = "~";
+    TextComponent::plain("[")
+        .add_child(
+            translations::CHAT_COORDINATES
+                .message([
+                    TextComponent::from(pos.0.x.to_string()),
+                    TextComponent::from(displayed_y),
+                    TextComponent::from(pos.0.z.to_string()),
+                ])
+                .component(),
+        )
+        .add_child(TextComponent::plain("]"))
+        .color(Color::Green)
+        .hover_event(HoverEvent::show_text(
+            &translations::CHAT_COORDINATES_TOOLTIP,
+        ))
+        .click_event(ClickEvent::suggest_command(format!(
+            "/tp @s {} {} {}",
+            pos.0.x, displayed_y, pos.0.z
+        )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locate_coordinates_component_matches_vanilla_interactivity() {
+        let component = locate_coordinates_component(BlockPos::new(12, 0, -34));
+
+        assert_eq!(component.format.color, Some(Color::Green));
+        assert!(matches!(
+            component.interactions.click,
+            Some(ClickEvent::SuggestCommand { ref command })
+                if command.as_ref() == "/tp @s 12 ~ -34"
+        ));
+        assert!(matches!(
+            component.interactions.hover,
+            Some(HoverEvent::ShowText { .. })
+        ));
+    }
 }
