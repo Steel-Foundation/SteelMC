@@ -1,6 +1,7 @@
 //! Structure placement. Determines which chunks are valid for structure
 //! generation — vanilla's `StructurePlacement` hierarchy.
 
+use steel_utils::BlockPos;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
@@ -201,11 +202,23 @@ pub struct StructurePlacement {
     pub frequency_reduction_method: FrequencyReductionMethod,
     /// Optional exclusion zone against another structure set.
     pub exclusion_zone: Option<ExclusionZone>,
+    /// Block offset from the placement chunk used by `/locate`.
+    pub locate_offset: [i32; 3],
     /// Kind-specific parameters.
     pub kind: PlacementKind,
 }
 
 impl StructurePlacement {
+    /// Locate result block position for a valid placement chunk.
+    #[must_use]
+    pub fn locate_pos(&self, chunk_pos: ChunkPos) -> BlockPos {
+        BlockPos::new(
+            chunk_pos.0.x * 16 + self.locate_offset[0],
+            self.locate_offset[1],
+            chunk_pos.0.y * 16 + self.locate_offset[2],
+        )
+    }
+
     /// Valid placement chunk + frequency check. For `ConcentricRings`,
     /// `ring_positions` must be pre-computed.
     #[must_use]
@@ -381,6 +394,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             frequency,
             frequency_reduction_method,
             exclusion_zone,
+            locate_offset,
         } => StructurePlacement {
             salt,
             frequency,
@@ -389,6 +403,7 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
                 other_set: ez.other_set,
                 chunk_count: ez.chunk_count,
             }),
+            locate_offset,
             kind: PlacementKind::RandomSpread {
                 spacing,
                 separation,
@@ -403,11 +418,13 @@ fn convert_structure_set(data: StructureSetData) -> (Identifier, StructureSet) {
             salt,
             frequency,
             frequency_reduction_method,
+            locate_offset,
         } => StructurePlacement {
             salt,
             frequency,
             frequency_reduction_method: frequency_reduction_method.into(),
             exclusion_zone: None,
+            locate_offset,
             kind: PlacementKind::ConcentricRings {
                 distance,
                 spread,
@@ -465,6 +482,7 @@ mod tests {
             frequency: 1.0,
             frequency_reduction_method: FrequencyReductionMethod::Default,
             exclusion_zone: None,
+            locate_offset: [0, 0, 0],
             kind: PlacementKind::RandomSpread {
                 spacing: 34,
                 separation: 8,
@@ -528,6 +546,7 @@ mod tests {
             frequency: 1.0,
             frequency_reduction_method: FrequencyReductionMethod::Default,
             exclusion_zone: None,
+            locate_offset: [0, 0, 0],
             kind: PlacementKind::RandomSpread {
                 spacing: 32,
                 separation: 8,
@@ -574,6 +593,13 @@ mod tests {
         }
         assert_eq!(villages.placement.salt, 10_387_312);
 
+        // Buried treasure is the vanilla placement that uses a non-zero locate offset.
+        let (_, buried_treasures) = sets
+            .iter()
+            .find(|(k, _)| &*k.path == "buried_treasures")
+            .expect("buried_treasures structure set must be present");
+        assert_eq!(buried_treasures.placement.locate_offset, [9, 0, 9]);
+
         // Verify strongholds use ConcentricRings
         let (_, strongholds) = sets
             .iter()
@@ -605,6 +631,7 @@ mod tests {
             frequency: 1.0,
             frequency_reduction_method: FrequencyReductionMethod::Default,
             exclusion_zone: None,
+            locate_offset: [0, 0, 0],
             kind: PlacementKind::ConcentricRings {
                 distance: 32,
                 spread: 3,
@@ -680,6 +707,7 @@ mod tests {
                 frequency: 1.0,
                 frequency_reduction_method: FrequencyReductionMethod::Default,
                 exclusion_zone: None,
+                locate_offset: [0, 0, 0],
                 kind: PlacementKind::RandomSpread {
                     spacing: 34,
                     separation: 8,
@@ -707,6 +735,7 @@ mod tests {
                 other_set: village_id.clone(),
                 chunk_count: 10,
             }),
+            locate_offset: [0, 0, 0],
             kind: PlacementKind::RandomSpread {
                 spacing: 32,
                 separation: 8,

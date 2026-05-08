@@ -46,6 +46,8 @@ pub enum PlacementData {
         frequency_reduction_method: FrequencyMethodData,
         /// Exclusion zone: (other_set key, chunk_count).
         exclusion_zone: Option<ExclusionZoneData>,
+        /// Block offset from the placement chunk used by `/locate`.
+        locate_offset: [i32; 3],
     },
     /// Ring-based placement (`minecraft:concentric_rings`).
     ConcentricRings {
@@ -63,6 +65,8 @@ pub enum PlacementData {
         frequency: f32,
         /// Frequency reduction method name.
         frequency_reduction_method: FrequencyMethodData,
+        /// Block offset from the placement chunk used by `/locate`.
+        locate_offset: [i32; 3],
     },
 }
 

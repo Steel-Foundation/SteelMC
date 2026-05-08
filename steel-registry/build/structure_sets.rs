@@ -29,6 +29,8 @@ struct PlacementJson {
     frequency_reduction_method: Option<String>,
     #[serde(default)]
     exclusion_zone: Option<ExclusionZoneJson>,
+    #[serde(default)]
+    locate_offset: Option<[i32; 3]>,
     // RandomSpread fields
     #[serde(default)]
     spacing: Option<i32>,
@@ -968,6 +970,7 @@ pub(crate) fn build() -> TokenStream {
 
         let freq = set.placement.frequency;
         let freq_method = generate_frequency_method(&set.placement.frequency_reduction_method);
+        let [locate_x, locate_y, locate_z] = set.placement.locate_offset.unwrap_or([0, 0, 0]);
 
         let placement = match set.placement.placement_type.as_str() {
             "minecraft:random_spread" => {
@@ -998,6 +1001,7 @@ pub(crate) fn build() -> TokenStream {
                         frequency: #freq,
                         frequency_reduction_method: #freq_method,
                         exclusion_zone: #exclusion,
+                        locate_offset: [#locate_x, #locate_y, #locate_z],
                     }
                 }
             }
@@ -1033,6 +1037,7 @@ pub(crate) fn build() -> TokenStream {
                         salt: #salt,
                         frequency: #freq,
                         frequency_reduction_method: #freq_method,
+                        locate_offset: [#locate_x, #locate_y, #locate_z],
                     }
                 }
             }

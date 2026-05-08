@@ -42,6 +42,7 @@ pub type StructureRef = &'static StructureData;
 pub struct StructureRegistry {
     structures_by_id: Vec<StructureRef>,
     structures_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -51,6 +52,7 @@ impl StructureRegistry {
         Self {
             structures_by_id: Vec::new(),
             structures_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -88,6 +90,7 @@ crate::impl_registry_ext!(
     structures_by_id,
     structures_by_key
 );
+crate::impl_tagged_registry!(StructureRegistry, structures_by_key, "structure");
 
 impl crate::RegistryEntry for StructureData {
     fn key(&self) -> &Identifier {
@@ -145,6 +148,25 @@ pub enum StructureSpawnBoundingBox {
     Full,
     /// Applies only when inside one of the pieces.
     Piece,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Registry, TaggedRegistryExt};
+
+    use super::*;
+
+    #[test]
+    fn vanilla_structure_tags_are_registered() {
+        let registry = Registry::new_vanilla();
+        let village_tag = Identifier::vanilla_static("village");
+        let villages = registry.structures.get_tag(&village_tag);
+        assert!(villages.as_ref().is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|structure| structure.key == Identifier::vanilla_static("village_plains"))
+        }));
+    }
 }
 
 /// A structure mob spawn override for one mob category.

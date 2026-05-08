@@ -206,6 +206,10 @@ impl ChunkGenerator for FlatChunkGenerator {
         min_y + height.min(self.layers.len() as i32)
     }
 
+    fn structure_generator(&self) -> Option<&StructureGenerator> {
+        self.structure_generator.as_ref()
+    }
+
     fn create_structures(&self, chunk: &ChunkAccess) {
         let Some(structure_generator) = &self.structure_generator else {
             return;

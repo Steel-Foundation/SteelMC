@@ -355,6 +355,11 @@ pub mod vanilla_structures;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_structure_tags.rs"]
+pub mod vanilla_structure_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_structure_sets.rs"]
 pub mod vanilla_structure_sets;
 
@@ -598,6 +603,7 @@ impl Registry {
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
         vanilla_structures::register_structures(&mut registry.structures);
+        vanilla_structure_tags::register_structure_tags(&mut registry.structures);
 
         registry
     }

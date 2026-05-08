@@ -9,6 +9,7 @@ use crate::worldgen::context::{
 };
 use crate::worldgen::generators::{EmptyChunkGenerator, FlatChunkGenerator};
 use crate::worldgen::noise::beardifier::Beardifier;
+use crate::worldgen::structure::StructureGenerator;
 
 /// A trait for generating chunks.
 #[enum_dispatch]
@@ -22,6 +23,11 @@ pub trait ChunkGenerator: Send + Sync {
     fn spawn_height(&self, min_y: i32, _height: i32) -> i32 {
         let _ = min_y;
         64
+    }
+
+    /// Returns the structure generator used for placement and locate queries.
+    fn structure_generator(&self) -> Option<&StructureGenerator> {
+        None
     }
 
     /// Creates the structures in a chunk.

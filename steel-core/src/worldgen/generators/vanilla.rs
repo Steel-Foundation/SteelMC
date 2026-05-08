@@ -409,6 +409,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         self.biome_source.initial_spawn_search_origin()
     }
 
+    fn structure_generator(&self) -> Option<&StructureGenerator> {
+        Some(&self.structure_generator)
+    }
+
     fn create_structures(&self, chunk: &ChunkAccess) {
         let pos = chunk.pos();
         let chunk_x = pos.0.x;

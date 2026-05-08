@@ -8,7 +8,7 @@ use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{ChunkPos, Identifier};
+use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::world::structure::end_city::EndCityStructure;
@@ -133,6 +133,170 @@ pub struct StructureGenerator {
     structures: FxHashMap<Identifier, Box<dyn Structure>>,
 }
 
+/// Search plan for vanilla `/locate structure` queries.
+#[derive(Debug, Clone)]
+pub struct StructureLocatePlan {
+    seed: i64,
+    placements: Vec<StructureLocatePlacement>,
+}
+
+/// A structure placement that can produce the requested structure.
+#[derive(Debug, Clone)]
+pub struct StructureLocatePlacement {
+    placement: StructurePlacement,
+    ring_positions: Option<Vec<ChunkPos>>,
+}
+
+/// Candidate chunk and locate position for a structure search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StructureLocateCandidate {
+    /// Chunk that must be generated through `StructureStarts`.
+    pub chunk_pos: ChunkPos,
+    /// Position reported if the structure is present.
+    pub locate_pos: BlockPos,
+    scan_id: usize,
+    ring_distance_pos: BlockPos,
+}
+
+impl StructureLocatePlan {
+    /// Returns `true` if this plan has no placements to scan.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.placements.is_empty()
+    }
+
+    /// Returns `true` if the plan has any random-spread placements.
+    #[must_use]
+    pub fn has_random_spread(&self) -> bool {
+        self.placements.iter().any(|placement| {
+            matches!(
+                &placement.placement.kind,
+                PlacementKind::RandomSpread { .. }
+            )
+        })
+    }
+
+    /// Ring-placement candidates ordered by vanilla's stronghold distance pre-check.
+    #[must_use]
+    pub fn ring_candidates(&self, origin: BlockPos) -> Vec<StructureLocateCandidate> {
+        let mut candidates = Vec::new();
+        for (scan_id, placement) in self.placements.iter().enumerate() {
+            let Some(ring_positions) = &placement.ring_positions else {
+                continue;
+            };
+            for &chunk_pos in ring_positions {
+                candidates.push(StructureLocateCandidate::new_ring(
+                    scan_id,
+                    placement.placement.locate_pos(chunk_pos),
+                    chunk_pos,
+                ));
+            }
+        }
+        candidates.sort_by_key(|candidate| candidate.ring_distance_squared(origin));
+        candidates
+    }
+
+    /// Random-spread candidates on the square shell at `radius` around `origin`.
+    ///
+    /// This matches vanilla's `ChunkGenerator.getNearestGeneratedStructure` scan:
+    /// each shell step moves by the placement spacing before resolving the
+    /// potential structure chunk inside that placement cell.
+    #[must_use]
+    pub fn random_spread_candidates_at_radius(
+        &self,
+        origin: BlockPos,
+        radius: i32,
+    ) -> Vec<StructureLocateCandidate> {
+        if radius < 0 {
+            return Vec::new();
+        }
+
+        let chunk_origin_x = origin.0.x >> 4;
+        let chunk_origin_z = origin.0.z >> 4;
+        let mut candidates = Vec::new();
+
+        for (scan_id, locate_placement) in self.placements.iter().enumerate() {
+            let PlacementKind::RandomSpread {
+                spacing,
+                separation,
+                spread_type,
+            } = &locate_placement.placement.kind
+            else {
+                continue;
+            };
+
+            for x in -radius..=radius {
+                let x_edge = x == -radius || x == radius;
+                for z in -radius..=radius {
+                    let z_edge = z == -radius || z == radius;
+                    if !x_edge && !z_edge {
+                        continue;
+                    }
+
+                    let sector_x = chunk_origin_x + *spacing * x;
+                    let sector_z = chunk_origin_z + *spacing * z;
+                    let chunk_pos = StructurePlacement::get_potential_structure_chunk(
+                        self.seed,
+                        locate_placement.placement.salt,
+                        sector_x,
+                        sector_z,
+                        *spacing,
+                        *separation,
+                        *spread_type,
+                    );
+                    let candidate = StructureLocateCandidate::new(
+                        scan_id,
+                        locate_placement.placement.locate_pos(chunk_pos),
+                        chunk_pos,
+                    );
+                    candidates.push(candidate);
+                }
+            }
+        }
+
+        candidates
+    }
+}
+
+impl StructureLocateCandidate {
+    fn new(scan_id: usize, locate_pos: BlockPos, chunk_pos: ChunkPos) -> Self {
+        Self {
+            chunk_pos,
+            locate_pos,
+            scan_id,
+            ring_distance_pos: locate_pos,
+        }
+    }
+
+    fn new_ring(scan_id: usize, locate_pos: BlockPos, chunk_pos: ChunkPos) -> Self {
+        Self {
+            chunk_pos,
+            locate_pos,
+            scan_id,
+            ring_distance_pos: BlockPos::new(chunk_pos.0.x * 16 + 8, 32, chunk_pos.0.y * 16 + 8),
+        }
+    }
+
+    /// Group id matching one structure placement scan.
+    #[must_use]
+    pub const fn scan_id(self) -> usize {
+        self.scan_id
+    }
+
+    fn ring_distance_squared(&self, origin: BlockPos) -> i64 {
+        squared_distance(self.ring_distance_pos, origin)
+    }
+}
+
+/// Squared block distance using vanilla's three-dimensional `BlockPos.distSqr`.
+#[must_use]
+pub fn squared_distance(a: BlockPos, b: BlockPos) -> i64 {
+    let dx = i64::from(a.0.x) - i64::from(b.0.x);
+    let dy = i64::from(a.0.y) - i64::from(b.0.y);
+    let dz = i64::from(a.0.z) - i64::from(b.0.z);
+    dx * dx + dy * dy + dz * dz
+}
+
 impl StructureGenerator {
     /// Creates a structure generator over all vanilla structure sets.
     #[must_use]
@@ -230,6 +394,41 @@ impl StructureGenerator {
     #[must_use]
     pub const fn templates(&self) -> &FxHashMap<Identifier, TemplateData> {
         &self.templates
+    }
+
+    /// Builds a detached locate plan for one structure id.
+    #[must_use]
+    pub fn locate_plan_for_structure(&self, structure: &Identifier) -> Option<StructureLocatePlan> {
+        self.locate_plan_for_structures(std::slice::from_ref(structure))
+    }
+
+    /// Builds a detached locate plan for one or more structure ids.
+    #[must_use]
+    pub fn locate_plan_for_structures(
+        &self,
+        structures: &[Identifier],
+    ) -> Option<StructureLocatePlan> {
+        let structures: FxHashSet<Identifier> = structures.iter().cloned().collect();
+        let mut placements = Vec::new();
+        for (set_key, set) in &self.structure_sets {
+            if !set
+                .structures
+                .iter()
+                .any(|entry| structures.contains(&entry.structure))
+            {
+                continue;
+            }
+
+            placements.push(StructureLocatePlacement {
+                placement: set.placement.clone(),
+                ring_positions: self.ring_positions.get(set_key).cloned(),
+            });
+        }
+
+        (!placements.is_empty()).then_some(StructureLocatePlan {
+            seed: self.seed,
+            placements,
+        })
     }
 
     /// Generates structure starts for one chunk.
@@ -427,4 +626,107 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
     reg("ruined_portal", Box::new(RuinedPortalStructure));
 
     structures
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::structure::placement::{FrequencyReductionMethod, PlacementKind, SpreadType};
+
+    use super::*;
+
+    fn random_spread_plan(locate_offset: [i32; 3]) -> StructureLocatePlan {
+        StructureLocatePlan {
+            seed: 0,
+            placements: vec![StructureLocatePlacement {
+                placement: StructurePlacement {
+                    salt: 10_387_312,
+                    frequency: 1.0,
+                    frequency_reduction_method: FrequencyReductionMethod::Default,
+                    exclusion_zone: None,
+                    locate_offset,
+                    kind: PlacementKind::RandomSpread {
+                        spacing: 32,
+                        separation: 8,
+                        spread_type: SpreadType::Linear,
+                    },
+                },
+                ring_positions: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn random_spread_candidates_follow_vanilla_shell_order() {
+        let plan = random_spread_plan([0, 0, 0]);
+        let origin = BlockPos::new(8, 64, 8);
+        let candidates = plan.random_spread_candidates_at_radius(origin, 1);
+
+        let expected: Vec<ChunkPos> = (-1..=1)
+            .flat_map(|x| {
+                (-1..=1).filter_map(move |z| {
+                    let is_edge = x == -1 || x == 1 || z == -1 || z == 1;
+                    is_edge.then(|| {
+                        StructurePlacement::get_potential_structure_chunk(
+                            0,
+                            10_387_312,
+                            x * 32,
+                            z * 32,
+                            32,
+                            8,
+                            SpreadType::Linear,
+                        )
+                    })
+                })
+            })
+            .collect();
+
+        let actual: Vec<ChunkPos> = candidates
+            .iter()
+            .map(|candidate| candidate.chunk_pos)
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn random_spread_candidates_use_locate_offset() {
+        let plan = random_spread_plan([9, 0, 9]);
+        let origin = BlockPos::new(0, 64, 0);
+        let candidate = plan.random_spread_candidates_at_radius(origin, 0)[0];
+
+        assert_eq!(
+            candidate.locate_pos,
+            BlockPos::new(
+                candidate.chunk_pos.0.x * 16 + 9,
+                0,
+                candidate.chunk_pos.0.y * 16 + 9
+            )
+        );
+    }
+
+    #[test]
+    fn ring_candidates_are_ordered_by_vanilla_distance_probe() {
+        let plan = StructureLocatePlan {
+            seed: 0,
+            placements: vec![StructureLocatePlacement {
+                placement: StructurePlacement {
+                    salt: 0,
+                    frequency: 1.0,
+                    frequency_reduction_method: FrequencyReductionMethod::Default,
+                    exclusion_zone: None,
+                    locate_offset: [0, 0, 0],
+                    kind: PlacementKind::ConcentricRings {
+                        distance: 32,
+                        spread: 3,
+                        count: 2,
+                        preferred_biomes: Vec::new(),
+                    },
+                },
+                ring_positions: Some(vec![ChunkPos::new(10, 0), ChunkPos::new(1, 0)]),
+            }],
+        };
+
+        let candidates = plan.ring_candidates(BlockPos::new(0, 64, 0));
+        assert_eq!(candidates[0].chunk_pos, ChunkPos::new(1, 0));
+        assert_eq!(candidates[1].chunk_pos, ChunkPos::new(10, 0));
+    }
 }
