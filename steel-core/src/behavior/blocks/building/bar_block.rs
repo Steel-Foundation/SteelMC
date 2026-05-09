@@ -7,13 +7,14 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::vanilla_block_tags::{BARS_TAG, C_GLASS_BLOCKS_TAG, WALLS_TAG};
+use steel_registry::vanilla_block_tags::{BARS_TAG, C_GLASS_PANES_TAG, WALLS_TAG};
 use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::WeatherState;
 use crate::behavior::blocks::building::WeatheringCopper;
+use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -126,13 +127,16 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
 /// Checks if this bar should connect to the given neighbor state.
 fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
     let neighbor_block = neighbor_state.get_block();
-
-    // Check if it's a bar (same tag)
-    if REGISTRY
-        .blocks
-        .is_in_tag(neighbor_block, &C_GLASS_BLOCKS_TAG)
+    let excluded = is_excluded_for_connection(neighbor_block);
+    if excluded {
+        return false;
+    }
+    if !excluded && neighbor_state.is_face_sturdy(direction)
         || REGISTRY.blocks.is_in_tag(neighbor_block, &BARS_TAG)
         || REGISTRY.blocks.is_in_tag(neighbor_block, &WALLS_TAG)
+        || REGISTRY
+            .blocks
+            .is_in_tag(neighbor_block, &C_GLASS_PANES_TAG)
     {
         return true;
     }

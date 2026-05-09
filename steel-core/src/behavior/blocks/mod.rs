@@ -10,6 +10,7 @@ mod farming;
 mod fluid;
 mod portal;
 mod redstone;
+mod utils;
 
 pub use building::{
     FenceBlock, IronBarsBlock, RotatedPillarBlock, WeatherState, WeatheringCopper,
