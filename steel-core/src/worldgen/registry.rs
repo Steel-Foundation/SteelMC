@@ -281,6 +281,9 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
         layers.extend(repeat_n(state, layer.height));
     }
 
+    // TODO: Vanilla superflat uses the level seed for structure placement, but
+    // seeds concentric-ring positions with 0L. Steel currently uses `seed` for
+    // both because parity coverage is focused on non-superflat worlds.
     let structure_generator = match structure_overrides {
         None => {
             let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
