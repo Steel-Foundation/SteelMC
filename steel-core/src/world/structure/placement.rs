@@ -246,40 +246,6 @@ impl StructurePlacement {
         true
     }
 
-    /// `true` if `(source_x, source_z)` is forbidden because another set has a
-    /// structure chunk within the exclusion radius.
-    #[must_use]
-    pub fn is_excluded(
-        &self,
-        seed: i64,
-        source_x: i32,
-        source_z: i32,
-        all_sets: &[(Identifier, StructureSet)],
-        ring_positions: &[(Identifier, Vec<ChunkPos>)],
-    ) -> bool {
-        let Some(ez) = &self.exclusion_zone else {
-            return false;
-        };
-        let Some((_, other_set)) = all_sets.iter().find(|(k, _)| *k == ez.other_set) else {
-            return false;
-        };
-        let other_rings = ring_positions
-            .iter()
-            .find(|(k, _)| *k == ez.other_set)
-            .map(|(_, pos)| pos.as_slice());
-        for dx in (source_x - ez.chunk_count)..=(source_x + ez.chunk_count) {
-            for dz in (source_z - ez.chunk_count)..=(source_z + ez.chunk_count) {
-                if other_set
-                    .placement
-                    .is_structure_chunk(seed, dx, dz, other_rings)
-                {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     fn is_placement_chunk(
         &self,
         seed: i64,
@@ -690,91 +656,6 @@ mod tests {
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
         >(0, 32, 3, 0, None);
         assert!(positions.is_empty());
-    }
-
-    #[test]
-    fn test_exclusion_zone() {
-        let village_id = Identifier::new("minecraft", "villages");
-        let outpost_id = Identifier::new("minecraft", "pillager_outposts");
-
-        let village_set = StructureSet {
-            structures: vec![StructureSelectionEntry {
-                structure: Identifier::new("minecraft", "village_plains"),
-                weight: 1,
-            }],
-            placement: StructurePlacement {
-                salt: 10_387_312,
-                frequency: 1.0,
-                frequency_reduction_method: FrequencyReductionMethod::Default,
-                exclusion_zone: None,
-                locate_offset: [0, 0, 0],
-                kind: PlacementKind::RandomSpread {
-                    spacing: 34,
-                    separation: 8,
-                    spread_type: SpreadType::Linear,
-                },
-            },
-        };
-
-        // Find a village chunk position
-        let village_chunk = StructurePlacement::get_potential_structure_chunk(
-            0,
-            10_387_312,
-            0,
-            0,
-            34,
-            8,
-            SpreadType::Linear,
-        );
-
-        let outpost_placement = StructurePlacement {
-            salt: 165_745_296,
-            frequency: 1.0, // Ignore frequency for this test
-            frequency_reduction_method: FrequencyReductionMethod::Default,
-            exclusion_zone: Some(ExclusionZone {
-                other_set: village_id.clone(),
-                chunk_count: 10,
-            }),
-            locate_offset: [0, 0, 0],
-            kind: PlacementKind::RandomSpread {
-                spacing: 32,
-                separation: 8,
-                spread_type: SpreadType::Linear,
-            },
-        };
-
-        let all_sets = vec![
-            (village_id, village_set),
-            (
-                outpost_id,
-                StructureSet {
-                    structures: vec![],
-                    placement: outpost_placement.clone(),
-                },
-            ),
-        ];
-        let ring_positions = vec![];
-
-        // The village chunk itself should be excluded for outposts
-        let excluded = outpost_placement.is_excluded(
-            0,
-            village_chunk.0.x,
-            village_chunk.0.y,
-            &all_sets,
-            &ring_positions,
-        );
-        assert!(
-            excluded,
-            "Outpost should be excluded at village chunk position"
-        );
-
-        // A chunk far from any village should not be excluded
-        let not_excluded =
-            outpost_placement.is_excluded(0, 10000, 10000, &all_sets, &ring_positions);
-        assert!(
-            !not_excluded,
-            "Outpost should not be excluded far from villages"
-        );
     }
 
     #[test]

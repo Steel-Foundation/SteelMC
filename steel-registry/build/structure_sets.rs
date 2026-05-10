@@ -124,7 +124,7 @@ struct SpawnerJson {
     max_count: i32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct RuinedPortalSetupJson {
     placement: String,
     weight: f32,
@@ -163,9 +163,8 @@ fn load_biome_tags() -> HashMap<String, Vec<String>> {
 }
 
 fn load_tags_from_dir(dir: &str, prefix: &str, tags: &mut HashMap<String, Vec<String>>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
+    let entries = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("Failed to read biome tag directory {dir}: {e}"));
     for entry in entries {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -210,7 +209,7 @@ fn resolve_tag(
 
     let Some(values) = raw_tags.get(tag_name) else {
         stack.pop();
-        return vec![];
+        panic!("Missing biome tag {tag_name} referenced while resolving biome tags");
     };
 
     let mut result = Vec::new();
@@ -303,70 +302,188 @@ enum HeightProviderData {
     },
 }
 
-fn parse_start_height_full(value: &serde_json::Value) -> StartHeightData {
+fn required<T>(value: Option<T>, context: &str, field: &str) -> T {
+    value.unwrap_or_else(|| panic!("Missing required field {field} in {context}"))
+}
+
+fn required_value<'a>(
+    value: Option<&'a serde_json::Value>,
+    context: &str,
+    field: &str,
+) -> &'a serde_json::Value {
+    value.unwrap_or_else(|| panic!("Missing required field {field} in {context}"))
+}
+
+fn required_str<'a>(value: &'a serde_json::Value, context: &str, field: &str) -> &'a str {
+    value
+        .get(field)
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| panic!("Missing required string field {field} in {context}: {value}"))
+}
+
+fn required_array<'a>(
+    value: &'a serde_json::Value,
+    context: &str,
+    field: &str,
+) -> &'a [serde_json::Value] {
+    value
+        .get(field)
+        .and_then(|v| v.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or_else(|| panic!("Missing required array field {field} in {context}: {value}"))
+}
+
+fn i64_to_i32(value: i64, context: &str) -> i32 {
+    match i32::try_from(value) {
+        Ok(value) => value,
+        Err(_) => panic!("Integer value {value} in {context} does not fit i32"),
+    }
+}
+
+fn required_i32(value: Option<i64>, context: &str, field: &str) -> i32 {
+    i64_to_i32(
+        value.unwrap_or_else(|| panic!("Missing required integer field {field} in {context}")),
+        context,
+    )
+}
+
+fn non_negative_i32(value: i32, context: &str) -> i32 {
+    if value < 0 {
+        panic!("Expected non-negative integer in {context}, got {value}");
+    }
+    value
+}
+
+fn parse_absolute_start_anchor(value: &serde_json::Value, context: &str) -> i32 {
+    if let Some(n) = value.as_i64() {
+        return i64_to_i32(n, context);
+    }
+    if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
+        return i64_to_i32(n, context);
+    }
+    panic!("Unsupported jigsaw start_height anchor in {context}: {value}");
+}
+
+fn parse_start_height_full(value: &serde_json::Value, context: &str) -> StartHeightData {
     // {"absolute": N}
     if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
-        return StartHeightData::Constant(n as i32);
+        return StartHeightData::Constant(i64_to_i32(n, context));
     }
-    // {"type": "minecraft:uniform", ...}
-    if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:uniform") {
-        let min = value
-            .get("min_inclusive")
-            .and_then(|v| v.get("absolute"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i32;
-        let max = value
-            .get("max_inclusive")
-            .and_then(|v| v.get("absolute"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i32;
-        return StartHeightData::Uniform { min, max };
-    }
-    // {"type": "minecraft:constant", "value": ...}
-    if let Some(v) = value.get("value") {
-        if let Some(n) = v.as_i64() {
-            return StartHeightData::Constant(n as i32);
+
+    match value.get("type").and_then(|v| v.as_str()) {
+        Some("minecraft:uniform") => {
+            let min = parse_absolute_start_anchor(
+                required_value(
+                    value.get("min_inclusive"),
+                    context,
+                    "start_height.min_inclusive",
+                ),
+                context,
+            );
+            let max = parse_absolute_start_anchor(
+                required_value(
+                    value.get("max_inclusive"),
+                    context,
+                    "start_height.max_inclusive",
+                ),
+                context,
+            );
+            StartHeightData::Uniform { min, max }
         }
-        if let Some(n) = v.get("absolute").and_then(|v| v.as_i64()) {
-            return StartHeightData::Constant(n as i32);
+        Some("minecraft:constant") => StartHeightData::Constant(parse_absolute_start_anchor(
+            required_value(value.get("value"), context, "start_height.value"),
+            context,
+        )),
+        None if value.get("value").is_some() => {
+            StartHeightData::Constant(parse_absolute_start_anchor(
+                required_value(value.get("value"), context, "start_height.value"),
+                context,
+            ))
         }
+        None => panic!("Unsupported jigsaw start_height shape in {context}: {value}"),
+        Some(other) => panic!("Unsupported jigsaw start_height provider {other} in {context}"),
     }
-    StartHeightData::Constant(0)
 }
 
-fn parse_vertical_anchor(value: &serde_json::Value) -> VerticalAnchorData {
+fn parse_vertical_anchor(value: &serde_json::Value, context: &str) -> VerticalAnchorData {
+    if let Some(n) = value.as_i64() {
+        return VerticalAnchorData::Absolute(i64_to_i32(n, context));
+    }
     if let Some(n) = value.get("absolute").and_then(|v| v.as_i64()) {
-        return VerticalAnchorData::Absolute(n as i32);
+        return VerticalAnchorData::Absolute(i64_to_i32(n, context));
     }
     if let Some(n) = value.get("above_bottom").and_then(|v| v.as_i64()) {
-        return VerticalAnchorData::AboveBottom(n as i32);
+        return VerticalAnchorData::AboveBottom(i64_to_i32(n, context));
     }
     if let Some(n) = value.get("below_top").and_then(|v| v.as_i64()) {
-        return VerticalAnchorData::BelowTop(n as i32);
+        return VerticalAnchorData::BelowTop(i64_to_i32(n, context));
     }
-    VerticalAnchorData::Absolute(0)
+    panic!("Unsupported vertical anchor in {context}: {value}");
 }
 
-fn parse_height_provider(value: &serde_json::Value) -> HeightProviderData {
-    if value.get("type").and_then(|v| v.as_str()) == Some("minecraft:uniform") {
-        let min = value
-            .get("min_inclusive")
-            .map(parse_vertical_anchor)
-            .unwrap_or(VerticalAnchorData::Absolute(0));
-        let max = value
-            .get("max_inclusive")
-            .map(parse_vertical_anchor)
-            .unwrap_or(VerticalAnchorData::Absolute(0));
-        return HeightProviderData::Uniform {
-            min_inclusive: min,
-            max_inclusive: max,
-        };
+fn parse_height_provider(value: &serde_json::Value, context: &str) -> HeightProviderData {
+    match value.get("type").and_then(|v| v.as_str()) {
+        Some("minecraft:uniform") => {
+            let min = parse_vertical_anchor(
+                required_value(value.get("min_inclusive"), context, "height.min_inclusive"),
+                context,
+            );
+            let max = parse_vertical_anchor(
+                required_value(value.get("max_inclusive"), context, "height.max_inclusive"),
+                context,
+            );
+            HeightProviderData::Uniform {
+                min_inclusive: min,
+                max_inclusive: max,
+            }
+        }
+        Some("minecraft:constant") => HeightProviderData::Constant(parse_vertical_anchor(
+            required_value(value.get("value"), context, "height.value"),
+            context,
+        )),
+        None if value.get("value").is_some() => {
+            HeightProviderData::Constant(parse_vertical_anchor(
+                required_value(value.get("value"), context, "height.value"),
+                context,
+            ))
+        }
+        None => HeightProviderData::Constant(parse_vertical_anchor(value, context)),
+        Some(other) => panic!("Unsupported height provider {other} in {context}"),
+    }
+}
+
+fn parse_dimension_padding(value: Option<&serde_json::Value>, context: &str) -> (i32, i32) {
+    let Some(value) = value else {
+        return (0, 0);
+    };
+    if let Some(n) = value.as_i64() {
+        let n = non_negative_i32(i64_to_i32(n, context), context);
+        return (n, n);
     }
 
-    if let Some(v) = value.get("value") {
-        return HeightProviderData::Constant(parse_vertical_anchor(v));
+    let Some(object) = value.as_object() else {
+        panic!("Unsupported dimension_padding shape in {context}: {value}");
+    };
+    let bottom = object
+        .get("bottom")
+        .and_then(|v| v.as_i64())
+        .map(|n| non_negative_i32(i64_to_i32(n, context), context))
+        .unwrap_or(0);
+    let top = object
+        .get("top")
+        .and_then(|v| v.as_i64())
+        .map(|n| non_negative_i32(i64_to_i32(n, context), context))
+        .unwrap_or(0);
+    (bottom, top)
+}
+
+fn parse_max_distance(value: &serde_json::Value, context: &str) -> i32 {
+    if let Some(n) = value.as_i64() {
+        return i64_to_i32(n, context);
     }
-    HeightProviderData::Constant(parse_vertical_anchor(value))
+    panic!(
+        "Unsupported max_distance_from_center object in {context}; Steel currently stores one distance for both axes: {value}"
+    );
 }
 
 /// Loads structure definitions and resolves biome tags for each structure.
@@ -376,7 +493,9 @@ fn load_structure_data(
     let structure_dir = "build_assets/builtin_datapacks/minecraft/worldgen/structure";
     let mut result = HashMap::default();
 
-    for entry in fs::read_dir(structure_dir).unwrap() {
+    for entry in fs::read_dir(structure_dir)
+        .unwrap_or_else(|e| panic!("Failed to read structure directory {structure_dir}: {e}"))
+    {
         let entry = entry.unwrap();
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -389,7 +508,12 @@ fn load_structure_data(
             .unwrap_or_else(|e| panic!("Failed to parse structure {full_name}: {e}"));
 
         let allowed_biomes = if let Some(tag_name) = structure.biomes.strip_prefix('#') {
-            biome_tags.get(tag_name).cloned().unwrap_or_default()
+            biome_tags
+                .get(tag_name)
+                .unwrap_or_else(|| {
+                    panic!("Missing biome tag {tag_name} referenced by structure {full_name}")
+                })
+                .clone()
         } else {
             vec![structure.biomes.clone()]
         };
@@ -406,32 +530,33 @@ fn load_structure_data(
 
         let config = match structure.structure_type.as_str() {
             "minecraft:jigsaw" => {
-                let start_pool = structure.start_pool.clone().unwrap_or_default();
-                let max_depth = structure.max_depth.unwrap_or(0);
-                let use_expansion_hack = structure.use_expansion_hack.unwrap_or(false);
+                let start_pool = required(structure.start_pool.clone(), &full_name, "start_pool");
+                let max_depth = required(structure.max_depth, &full_name, "size");
+                let use_expansion_hack = required(
+                    structure.use_expansion_hack,
+                    &full_name,
+                    "use_expansion_hack",
+                );
                 let start_height = structure
                     .start_height
                     .as_ref()
-                    .map(parse_start_height_full)
-                    .unwrap_or(StartHeightData::Constant(0));
+                    .map(|height| parse_start_height_full(height, &full_name))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Missing required field start_height in jigsaw structure {full_name}"
+                        )
+                    });
                 let max_distance_from_center = structure
                     .max_distance_from_center
                     .as_ref()
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(80) as i32;
-                let dim_pad = structure
-                    .dimension_padding
-                    .as_ref()
-                    .and_then(|v| v.as_i64().map(|n| (n as i32, n as i32)))
-                    .or_else(|| {
-                        structure.dimension_padding.as_ref().map(|v| {
-                            let bottom =
-                                v.get("bottom").and_then(|b| b.as_i64()).unwrap_or(0) as i32;
-                            let top = v.get("top").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
-                            (bottom, top)
-                        })
-                    })
-                    .unwrap_or((0, 0));
+                    .map(|distance| parse_max_distance(distance, &full_name))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Missing required field max_distance_from_center in jigsaw structure {full_name}"
+                        )
+                    });
+                let dim_pad =
+                    parse_dimension_padding(structure.dimension_padding.as_ref(), &full_name);
 
                 StructureConfigData::Jigsaw(JigsawConfigData {
                     start_pool,
@@ -447,35 +572,59 @@ fn load_structure_data(
                 })
             }
             "minecraft:mineshaft" => StructureConfigData::Mineshaft {
-                mineshaft_type: structure
-                    .mineshaft_type
-                    .clone()
-                    .unwrap_or_else(|| "normal".to_string()),
+                mineshaft_type: required(
+                    structure.mineshaft_type.clone(),
+                    &full_name,
+                    "mineshaft_type",
+                ),
             },
             "minecraft:shipwreck" => StructureConfigData::Shipwreck {
-                is_beached: structure.is_beached.unwrap_or(false),
+                is_beached: required(structure.is_beached, &full_name, "is_beached"),
             },
             "minecraft:ocean_ruin" => StructureConfigData::OceanRuin {
-                biome_temp: structure
-                    .biome_temp
-                    .clone()
-                    .unwrap_or_else(|| "cold".to_string()),
-                large_probability: structure.large_probability.unwrap_or(0.3),
-                cluster_probability: structure.cluster_probability.unwrap_or(0.9),
+                biome_temp: required(structure.biome_temp.clone(), &full_name, "biome_temp"),
+                large_probability: required(
+                    structure.large_probability,
+                    &full_name,
+                    "large_probability",
+                ),
+                cluster_probability: required(
+                    structure.cluster_probability,
+                    &full_name,
+                    "cluster_probability",
+                ),
             },
             "minecraft:ruined_portal" => StructureConfigData::RuinedPortal {
-                setups: structure.setups.unwrap_or_default(),
+                setups: {
+                    let setups = required(structure.setups.clone(), &full_name, "setups");
+                    if setups.is_empty() {
+                        panic!("Field setups must be non-empty in ruined portal {full_name}");
+                    }
+                    setups
+                },
             },
             "minecraft:nether_fossil" => StructureConfigData::NetherFossil {
                 height: structure
                     .height
                     .as_ref()
-                    .map(parse_height_provider)
-                    .unwrap_or(HeightProviderData::Constant(VerticalAnchorData::Absolute(
-                        0,
-                    ))),
+                    .map(|height| parse_height_provider(height, &full_name))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Missing required field height in nether fossil structure {full_name}"
+                        )
+                    }),
             },
-            _ => StructureConfigData::Empty,
+            "minecraft:buried_treasure"
+            | "minecraft:desert_pyramid"
+            | "minecraft:end_city"
+            | "minecraft:fortress"
+            | "minecraft:igloo"
+            | "minecraft:jungle_temple"
+            | "minecraft:ocean_monument"
+            | "minecraft:stronghold"
+            | "minecraft:swamp_hut"
+            | "minecraft:woodland_mansion" => StructureConfigData::Empty,
+            other => panic!("Unsupported structure type {other} in {full_name}"),
         };
 
         result.insert(
@@ -513,7 +662,13 @@ fn generate_spread_type(spread: &Option<String>) -> TokenStream {
 }
 
 fn generate_identifier(id: &str) -> TokenStream {
+    if id.is_empty() {
+        panic!("Cannot generate an empty identifier");
+    }
     if let Some((namespace, path)) = id.split_once(':') {
+        if namespace.is_empty() || path.is_empty() {
+            panic!("Invalid identifier {id}");
+        }
         quote! { Identifier::new(#namespace, #path) }
     } else {
         quote! { Identifier::vanilla(#id.to_string()) }
@@ -633,82 +788,100 @@ fn generate_height_provider(height: &HeightProviderData) -> TokenStream {
     }
 }
 
-fn generate_pool_aliases(aliases: &[serde_json::Value]) -> Vec<TokenStream> {
+fn generate_pool_aliases(aliases: &[serde_json::Value], context: &str) -> Vec<TokenStream> {
     aliases
         .iter()
-        .map(|alias| {
-            let alias_type = alias.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        .enumerate()
+        .map(|(index, alias)| {
+            let alias_context = format!("{context}.pool_aliases[{index}]");
+            let alias_type = required_str(alias, &alias_context, "type");
             match alias_type {
                 "minecraft:direct" => {
-                    let a = generate_identifier(
-                        alias.get("alias").and_then(|v| v.as_str()).unwrap_or(""),
-                    );
-                    let t = generate_identifier(
-                        alias.get("target").and_then(|v| v.as_str()).unwrap_or(""),
-                    );
+                    let a = generate_identifier(required_str(alias, &alias_context, "alias"));
+                    let t = generate_identifier(required_str(alias, &alias_context, "target"));
                     quote! { PoolAlias::Direct { alias: #a, target: #t } }
                 }
                 "minecraft:random" => {
-                    let a = generate_identifier(
-                        alias.get("alias").and_then(|v| v.as_str()).unwrap_or(""),
-                    );
-                    let targets: Vec<TokenStream> = alias
-                        .get("targets")
-                        .and_then(|t| t.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .map(|t| {
-                                    let data = generate_identifier(
-                                        t.get("data").and_then(|d| d.as_str()).unwrap_or(""),
-                                    );
-                                    let w = t.get("weight").and_then(|w| w.as_i64()).unwrap_or(1)
-                                        as i32;
-                                    quote! { (#data, #w) }
-                                })
-                                .collect()
+                    let a = generate_identifier(required_str(alias, &alias_context, "alias"));
+                    let target_values = required_array(alias, &alias_context, "targets");
+                    if target_values.is_empty() {
+                        panic!("Field targets must be non-empty in {alias_context}");
+                    }
+                    let targets: Vec<TokenStream> = target_values
+                        .iter()
+                        .enumerate()
+                        .map(|(target_index, target)| {
+                            let target_context =
+                                format!("{alias_context}.targets[{target_index}]");
+                            let data =
+                                generate_identifier(required_str(target, &target_context, "data"));
+                            let weight = required_i32(
+                                target.get("weight").and_then(|w| w.as_i64()),
+                                &target_context,
+                                "weight",
+                            );
+                            if weight <= 0 {
+                                panic!("Field weight must be positive in {target_context}");
+                            }
+                            quote! { (#data, #weight) }
                         })
-                        .unwrap_or_default();
+                        .collect();
                     quote! { PoolAlias::Random { alias: #a, targets: vec![#(#targets),*] } }
                 }
                 "minecraft:random_group" => {
-                    let groups: Vec<TokenStream> = alias
-                        .get("groups")
-                        .and_then(|g| g.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .map(|group| {
-                                    let w =
-                                        group.get("weight").and_then(|w| w.as_i64()).unwrap_or(1)
-                                            as i32;
-                                    let bindings: Vec<TokenStream> = group
-                                        .get("data")
-                                        .and_then(|d| d.as_array())
-                                        .map(|data| {
-                                            data.iter()
-                                                .map(|b| {
-                                                    let a = generate_identifier(
-                                                        b.get("alias")
-                                                            .and_then(|v| v.as_str())
-                                                            .unwrap_or(""),
-                                                    );
-                                                    let t = generate_identifier(
-                                                        b.get("target")
-                                                            .and_then(|v| v.as_str())
-                                                            .unwrap_or(""),
-                                                    );
-                                                    quote! { (#a, #t) }
-                                                })
-                                                .collect()
-                                        })
-                                        .unwrap_or_default();
-                                    quote! { (vec![#(#bindings),*], #w) }
+                    let group_values = required_array(alias, &alias_context, "groups");
+                    if group_values.is_empty() {
+                        panic!("Field groups must be non-empty in {alias_context}");
+                    }
+                    let groups: Vec<TokenStream> = group_values
+                        .iter()
+                        .enumerate()
+                        .map(|(group_index, group)| {
+                            let group_context = format!("{alias_context}.groups[{group_index}]");
+                            let weight = required_i32(
+                                group.get("weight").and_then(|w| w.as_i64()),
+                                &group_context,
+                                "weight",
+                            );
+                            if weight <= 0 {
+                                panic!("Field weight must be positive in {group_context}");
+                            }
+                            let data_values = required_array(group, &group_context, "data");
+                            if data_values.is_empty() {
+                                panic!("Field data must be non-empty in {group_context}");
+                            }
+                            let bindings: Vec<TokenStream> = data_values
+                                .iter()
+                                .enumerate()
+                                .map(|(binding_index, binding)| {
+                                    let binding_context =
+                                        format!("{group_context}.data[{binding_index}]");
+                                    let binding_type =
+                                        required_str(binding, &binding_context, "type");
+                                    if binding_type != "minecraft:direct" {
+                                        panic!(
+                                            "Unsupported random_group binding type {binding_type} in {binding_context}"
+                                        );
+                                    }
+                                    let a = generate_identifier(required_str(
+                                        binding,
+                                        &binding_context,
+                                        "alias",
+                                    ));
+                                    let t = generate_identifier(required_str(
+                                        binding,
+                                        &binding_context,
+                                        "target",
+                                    ));
+                                    quote! { (#a, #t) }
                                 })
-                                .collect()
+                                .collect();
+                            quote! { (vec![#(#bindings),*], #weight) }
                         })
-                        .unwrap_or_default();
+                        .collect();
                     quote! { PoolAlias::RandomGroup { groups: vec![#(#groups),*] } }
                 }
-                _ => quote! {},
+                other => panic!("Unsupported pool alias type {other} in {alias_context}"),
             }
         })
         .collect()
@@ -722,7 +895,7 @@ fn generate_liquid_settings(settings: Option<&str>) -> TokenStream {
     }
 }
 
-fn generate_jigsaw_config(config: &JigsawConfigData) -> TokenStream {
+fn generate_jigsaw_config(config: &JigsawConfigData, context: &str) -> TokenStream {
     let start_pool = generate_identifier(&config.start_pool);
     let max_depth = config.max_depth;
     let use_expansion_hack = config.use_expansion_hack;
@@ -741,7 +914,7 @@ fn generate_jigsaw_config(config: &JigsawConfigData) -> TokenStream {
     };
     let pad_bottom = config.dimension_padding.0;
     let pad_top = config.dimension_padding.1;
-    let aliases = generate_pool_aliases(&config.pool_aliases);
+    let aliases = generate_pool_aliases(&config.pool_aliases, context);
     let liquid_settings = generate_liquid_settings(config.liquid_settings.as_deref());
 
     quote! {
@@ -788,10 +961,10 @@ fn generate_ruined_portal_placement(placement: &str) -> TokenStream {
     }
 }
 
-fn generate_structure_config(config: &StructureConfigData) -> TokenStream {
+fn generate_structure_config(config: &StructureConfigData, context: &str) -> TokenStream {
     match config {
         StructureConfigData::Jigsaw(config) => {
-            let config = generate_jigsaw_config(config);
+            let config = generate_jigsaw_config(config, context);
             quote! { StructureConfigData::Jigsaw(#config) }
         }
         StructureConfigData::Mineshaft { mineshaft_type } => {
@@ -877,7 +1050,7 @@ pub(crate) fn build_structures() -> TokenStream {
         let step = generate_generation_step(&structure.step);
         let terrain_adjustment =
             generate_terrain_adjustment(structure.terrain_adaptation.as_deref());
-        let config = generate_structure_config(&structure.config);
+        let config = generate_structure_config(&structure.config, &key);
 
         statics.push(quote! {
             static #static_ident: LazyLock<StructureData> = LazyLock::new(|| StructureData {
@@ -931,7 +1104,9 @@ pub(crate) fn build() -> TokenStream {
     let set_dir = "build_assets/builtin_datapacks/minecraft/worldgen/structure_set";
     let mut sets = Vec::new();
 
-    for entry in fs::read_dir(set_dir).unwrap() {
+    for entry in fs::read_dir(set_dir)
+        .unwrap_or_else(|e| panic!("Failed to read structure set directory {set_dir}: {e}"))
+    {
         let entry = entry.unwrap();
         let path = entry.path();
 
@@ -951,11 +1126,18 @@ pub(crate) fn build() -> TokenStream {
 
     for (set_name, set) in &sets {
         let key = generate_identifier(&format!("minecraft:{set_name}"));
+        if set.structures.is_empty() {
+            panic!("Structure set {set_name} must have at least one structure");
+        }
 
         let structures: Vec<TokenStream> = set
             .structures
             .iter()
-            .map(|entry| {
+            .enumerate()
+            .map(|(entry_index, entry)| {
+                if entry.weight <= 0 {
+                    panic!("Structure set {set_name} entry {entry_index} has non-positive weight");
+                }
                 let structure = generate_identifier(&entry.structure);
                 let weight = entry.weight;
 
@@ -969,17 +1151,38 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         let freq = set.placement.frequency;
+        if !freq.is_finite() || !(0.0..=1.0).contains(&freq) {
+            panic!("Structure set {set_name} has invalid placement frequency {freq}");
+        }
         let freq_method = generate_frequency_method(&set.placement.frequency_reduction_method);
         let [locate_x, locate_y, locate_z] = set.placement.locate_offset.unwrap_or([0, 0, 0]);
 
         let placement = match set.placement.placement_type.as_str() {
             "minecraft:random_spread" => {
-                let spacing = set.placement.spacing.unwrap();
-                let separation = set.placement.separation.unwrap();
+                let spacing = required(set.placement.spacing, set_name, "placement.spacing");
+                let separation =
+                    required(set.placement.separation, set_name, "placement.separation");
+                if spacing <= 0 {
+                    panic!("Structure set {set_name} has non-positive spacing {spacing}");
+                }
+                if separation < 0 {
+                    panic!("Structure set {set_name} has negative separation {separation}");
+                }
+                if spacing <= separation {
+                    panic!(
+                        "Structure set {set_name} has spacing {spacing} <= separation {separation}"
+                    );
+                }
                 let salt = set.placement.salt;
                 let spread_type = generate_spread_type(&set.placement.spread_type);
 
                 let exclusion = if let Some(ez) = &set.placement.exclusion_zone {
+                    if ez.chunk_count < 0 {
+                        panic!(
+                            "Structure set {set_name} has negative exclusion chunk_count {}",
+                            ez.chunk_count
+                        );
+                    }
                     let other = generate_identifier(&ez.other_set);
                     let count = ez.chunk_count;
                     quote! {
@@ -1006,23 +1209,41 @@ pub(crate) fn build() -> TokenStream {
                 }
             }
             "minecraft:concentric_rings" => {
-                let distance = set.placement.distance.unwrap();
-                let spread = set.placement.spread.unwrap();
-                let count = set.placement.count.unwrap();
+                let distance = required(set.placement.distance, set_name, "placement.distance");
+                let spread = required(set.placement.spread, set_name, "placement.spread");
+                let count = required(set.placement.count, set_name, "placement.count");
+                if distance <= 0 {
+                    panic!("Structure set {set_name} has non-positive ring distance {distance}");
+                }
+                if spread <= 0 {
+                    panic!("Structure set {set_name} has non-positive ring spread {spread}");
+                }
+                if count < 0 {
+                    panic!("Structure set {set_name} has negative ring count {count}");
+                }
                 let salt = set.placement.salt;
 
                 // Resolve preferred biomes from tag reference (e.g., "#minecraft:stronghold_biased_to")
-                let preferred_biomes: Vec<String> =
-                    if let Some(ref tag_ref) = set.placement.preferred_biomes {
-                        if let Some(tag_name) = tag_ref.strip_prefix('#') {
-                            biome_tags.get(tag_name).cloned().unwrap_or_default()
-                        } else {
-                            // Direct biome identifier
-                            vec![tag_ref.clone()]
-                        }
-                    } else {
-                        vec![]
-                    };
+                let tag_ref = required(
+                    set.placement.preferred_biomes.clone(),
+                    set_name,
+                    "placement.preferred_biomes",
+                );
+                let preferred_biomes: Vec<String> = if let Some(tag_name) =
+                    tag_ref.strip_prefix('#')
+                {
+                    biome_tags
+                        .get(tag_name)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Missing biome tag {tag_name} referenced by structure set {set_name}"
+                            )
+                        })
+                        .clone()
+                } else {
+                    // Direct biome identifier
+                    vec![tag_ref.clone()]
+                };
                 let biome_tokens: Vec<TokenStream> = preferred_biomes
                     .iter()
                     .map(|b| generate_identifier(b))

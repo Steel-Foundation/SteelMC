@@ -284,7 +284,7 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
     let structure_generator = match structure_overrides {
         None => {
             let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
-            Some(StructureGenerator::new(
+            Some(StructureGenerator::vanilla_with_structure_sets(
                 seed,
                 &biome_provider,
                 load_vanilla_structure_sets(),
@@ -297,7 +297,7 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
                 .filter(|(key, _)| overrides.contains(key))
                 .collect();
             let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
-            Some(StructureGenerator::new(
+            Some(StructureGenerator::vanilla_with_structure_sets(
                 seed,
                 &biome_provider,
                 structure_sets,

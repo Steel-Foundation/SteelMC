@@ -132,7 +132,52 @@ pub struct StructureGenerator {
     ring_positions: FxHashMap<Identifier, Vec<ChunkPos>>,
     template_pools: FxHashMap<Identifier, TemplatePoolData>,
     templates: FxHashMap<Identifier, TemplateData>,
-    structures: FxHashMap<Identifier, Box<dyn Structure>>,
+    structure_impls: FxHashMap<Identifier, Box<dyn Structure>>,
+}
+
+/// Runtime assets required by structure generation beyond the structure-set list.
+///
+/// Vanilla datapacks let structure sets, template pools, NBT templates, and
+/// structure implementation dispatch vary together. Use
+/// `StructureGenerator::vanilla_with_structure_sets` only when the set list is
+/// custom but all other assets are still vanilla.
+pub struct StructureGeneratorAssets {
+    template_pools: FxHashMap<Identifier, TemplatePoolData>,
+    templates: FxHashMap<Identifier, TemplateData>,
+    structure_impls: FxHashMap<Identifier, Box<dyn Structure>>,
+}
+
+impl StructureGeneratorAssets {
+    /// Creates an explicit structure asset bundle.
+    #[must_use]
+    pub fn new(
+        template_pools: FxHashMap<Identifier, TemplatePoolData>,
+        templates: FxHashMap<Identifier, TemplateData>,
+        structure_impls: FxHashMap<Identifier, Box<dyn Structure>>,
+    ) -> Self {
+        Self {
+            template_pools,
+            templates,
+            structure_impls,
+        }
+    }
+
+    /// Creates an asset bundle from generated vanilla registries and built-in
+    /// structure implementation dispatch.
+    #[must_use]
+    pub fn vanilla() -> Self {
+        let template_pools: FxHashMap<_, _> = vanilla_template_pools()
+            .into_iter()
+            .map(|pool| (pool.key.clone(), pool))
+            .collect();
+        let templates: FxHashMap<_, _> = vanilla_templates().into_iter().collect();
+
+        Self {
+            template_pools,
+            templates,
+            structure_impls: vanilla_structure_impls(),
+        }
+    }
 }
 
 /// Search plan for vanilla `/locate structure` queries.
@@ -299,25 +344,134 @@ pub fn squared_distance(a: BlockPos, b: BlockPos) -> i64 {
     dx * dx + dy * dy + dz * dz
 }
 
+fn validate_structure_sets(structure_sets: &[(Identifier, StructureSet)]) {
+    for (set_key, set) in structure_sets {
+        if set.structures.is_empty() {
+            panic!("Structure set {set_key} must have at least one structure");
+        }
+        for (entry_index, entry) in set.structures.iter().enumerate() {
+            if entry.weight <= 0 {
+                panic!(
+                    "Structure set {set_key} entry {entry_index} has non-positive weight {}",
+                    entry.weight
+                );
+            }
+        }
+        if !set.placement.frequency.is_finite() || !(0.0..=1.0).contains(&set.placement.frequency) {
+            panic!(
+                "Structure set {set_key} has invalid placement frequency {}",
+                set.placement.frequency
+            );
+        }
+        if let Some(exclusion) = &set.placement.exclusion_zone
+            && exclusion.chunk_count < 0
+        {
+            panic!(
+                "Structure set {set_key} has negative exclusion chunk_count {}",
+                exclusion.chunk_count
+            );
+        }
+
+        match &set.placement.kind {
+            PlacementKind::RandomSpread {
+                spacing,
+                separation,
+                ..
+            } => {
+                if *spacing <= 0 {
+                    panic!("Structure set {set_key} has non-positive spacing {spacing}");
+                }
+                if *separation < 0 {
+                    panic!("Structure set {set_key} has negative separation {separation}");
+                }
+                if spacing <= separation {
+                    panic!(
+                        "Structure set {set_key} has spacing {spacing} <= separation {separation}"
+                    );
+                }
+            }
+            PlacementKind::ConcentricRings {
+                distance,
+                spread,
+                count,
+                ..
+            } => {
+                if *distance <= 0 {
+                    panic!("Structure set {set_key} has non-positive ring distance {distance}");
+                }
+                if *spread <= 0 {
+                    panic!("Structure set {set_key} has non-positive ring spread {spread}");
+                }
+                if *count < 0 {
+                    panic!("Structure set {set_key} has negative ring count {count}");
+                }
+            }
+        }
+    }
+}
+
+fn validate_structure_assets(
+    structure_sets: &[(Identifier, StructureSet)],
+    structure_data: &FxHashMap<Identifier, StructureRef>,
+    structure_impls: &FxHashMap<Identifier, Box<dyn Structure>>,
+) {
+    for (set_key, set) in structure_sets {
+        for entry in &set.structures {
+            let structure = structure_data.get(&entry.structure).unwrap_or_else(|| {
+                panic!(
+                    "Structure set {set_key} references unknown structure {}",
+                    entry.structure
+                )
+            });
+            if !structure_impls.contains_key(&structure.structure_type) {
+                panic!(
+                    "Structure set {set_key} references {} with unsupported structure type {}",
+                    structure.key, structure.structure_type
+                );
+            }
+        }
+    }
+}
+
 impl StructureGenerator {
     /// Creates a structure generator over all vanilla structure sets.
     #[must_use]
     pub fn vanilla(seed: i64, biome_provider: &impl StructureBiomeProvider) -> Self {
-        Self::new(seed, biome_provider, load_vanilla_structure_sets())
+        Self::vanilla_with_structure_sets(seed, biome_provider, load_vanilla_structure_sets())
     }
 
-    /// Creates a structure generator over an explicit structure-set list.
+    /// Creates a generator over an explicit structure-set list while keeping all
+    /// template pools, templates, and structure implementation dispatch vanilla.
     #[must_use]
-    pub fn new(
+    pub fn vanilla_with_structure_sets(
         seed: i64,
         biome_provider: &impl StructureBiomeProvider,
         structure_sets: Vec<(Identifier, StructureSet)>,
     ) -> Self {
+        Self::with_assets(
+            seed,
+            biome_provider,
+            structure_sets,
+            StructureGeneratorAssets::vanilla(),
+        )
+    }
+
+    /// Creates a generator from explicit structure sets and explicit runtime assets.
+    #[must_use]
+    pub fn with_assets(
+        seed: i64,
+        biome_provider: &impl StructureBiomeProvider,
+        structure_sets: Vec<(Identifier, StructureSet)>,
+        assets: StructureGeneratorAssets,
+    ) -> Self {
+        validate_structure_sets(&structure_sets);
+
         let structure_data: FxHashMap<Identifier, StructureRef> = REGISTRY
             .structures
             .iter()
             .map(|(_, structure)| (structure.key.clone(), structure))
             .collect();
+        validate_structure_assets(&structure_sets, &structure_data, &assets.structure_impls);
 
         let possible_biomes = biome_provider.possible_biomes();
         let structure_sets: Vec<_> = structure_sets
@@ -368,21 +522,15 @@ impl StructureGenerator {
             }
         }
 
-        let template_pools: FxHashMap<_, _> = vanilla_template_pools()
-            .into_iter()
-            .map(|pool| (pool.key.clone(), pool))
-            .collect();
-        let templates: FxHashMap<_, _> = vanilla_templates().into_iter().collect();
-
         Self {
             seed,
             structure_sets,
             structure_set_indices,
             structure_data,
             ring_positions,
-            template_pools,
-            templates,
-            structures: vanilla_structure_impls(),
+            template_pools: assets.template_pools,
+            templates: assets.templates,
+            structure_impls: assets.structure_impls,
         }
     }
 
@@ -439,12 +587,7 @@ impl StructureGenerator {
         let chunk_z = ctx.chunk_z();
 
         for (set_key, set) in &self.structure_sets {
-            let rings = self.rings_for_set(set_key);
-
-            if !set
-                .placement
-                .is_structure_chunk(self.seed, chunk_x, chunk_z, rings)
-            {
+            if !self.is_structure_chunk_for_set(set_key, chunk_x, chunk_z, &mut Vec::new()) {
                 continue;
             }
 
@@ -457,10 +600,6 @@ impl StructureGenerator {
                 }) {
                     continue;
                 }
-            }
-
-            if self.is_excluded(&set.placement, chunk_x, chunk_z) {
-                continue;
             }
 
             let Some((structure, stub)) = self.select_structure(set, ctx) else {
@@ -483,22 +622,55 @@ impl StructureGenerator {
         self.ring_positions.get(set_key).map(Vec::as_slice)
     }
 
-    fn is_excluded(&self, placement: &StructurePlacement, source_x: i32, source_z: i32) -> bool {
+    fn is_structure_chunk_for_set(
+        &self,
+        set_key: &Identifier,
+        source_x: i32,
+        source_z: i32,
+        stack: &mut Vec<Identifier>,
+    ) -> bool {
+        if stack.iter().any(|key| key == set_key) {
+            let chain = stack
+                .iter()
+                .map(ToString::to_string)
+                .chain(std::iter::once(set_key.to_string()))
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            panic!("Circular structure exclusion zone: {chain}");
+        }
+
+        let Some(&set_index) = self.structure_set_indices.get(set_key) else {
+            return false;
+        };
+        let (_, set) = &self.structure_sets[set_index];
+        let rings = self.rings_for_set(set_key);
+        if !set
+            .placement
+            .is_structure_chunk(self.seed, source_x, source_z, rings)
+        {
+            return false;
+        }
+
+        stack.push(set_key.clone());
+        let excluded = self.is_excluded(&set.placement, source_x, source_z, stack);
+        stack.pop();
+        !excluded
+    }
+
+    fn is_excluded(
+        &self,
+        placement: &StructurePlacement,
+        source_x: i32,
+        source_z: i32,
+        stack: &mut Vec<Identifier>,
+    ) -> bool {
         let Some(exclusion) = &placement.exclusion_zone else {
             return false;
         };
-        let Some(&other_set_index) = self.structure_set_indices.get(&exclusion.other_set) else {
-            return false;
-        };
 
-        let other_set = &self.structure_sets[other_set_index].1;
-        let other_rings = self.rings_for_set(&exclusion.other_set);
         for dx in (source_x - exclusion.chunk_count)..=(source_x + exclusion.chunk_count) {
             for dz in (source_z - exclusion.chunk_count)..=(source_z + exclusion.chunk_count) {
-                if other_set
-                    .placement
-                    .is_structure_chunk(self.seed, dx, dz, other_rings)
-                {
+                if self.is_structure_chunk_for_set(&exclusion.other_set, dx, dz, stack) {
                     return true;
                 }
             }
@@ -554,7 +726,7 @@ impl StructureGenerator {
             return None;
         };
 
-        if let Some(structure_impl) = self.structures.get(&structure.structure_type) {
+        if let Some(structure_impl) = self.structure_impls.get(&structure.structure_type) {
             let mut rng = LegacyRandom::from_seed(0);
             rng.set_large_feature_seed(self.seed, ctx.chunk_x(), ctx.chunk_z());
             return structure_impl
@@ -620,7 +792,9 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::world::structure::placement::{FrequencyReductionMethod, PlacementKind, SpreadType};
+    use crate::world::structure::placement::{
+        ExclusionZone, FrequencyReductionMethod, PlacementKind, SpreadType,
+    };
 
     use super::*;
 
@@ -643,6 +817,144 @@ mod tests {
                 ring_positions: None,
             }],
         }
+    }
+
+    fn every_chunk_placement(excludes: Option<Identifier>) -> StructurePlacement {
+        StructurePlacement {
+            salt: 0,
+            frequency: 1.0,
+            frequency_reduction_method: FrequencyReductionMethod::Default,
+            exclusion_zone: excludes.map(|other_set| ExclusionZone {
+                other_set,
+                chunk_count: 0,
+            }),
+            locate_offset: [0, 0, 0],
+            kind: PlacementKind::RandomSpread {
+                spacing: 1,
+                separation: 0,
+                spread_type: SpreadType::Linear,
+            },
+        }
+    }
+
+    fn test_structure_set(placement: StructurePlacement) -> StructureSet {
+        StructureSet {
+            structures: vec![StructureSelectionEntry {
+                structure: Identifier::new("test", "placeholder"),
+                weight: 1,
+            }],
+            placement,
+        }
+    }
+
+    fn generator_with_sets(sets: Vec<(Identifier, StructureSet)>) -> StructureGenerator {
+        let structure_set_indices = sets
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (key.clone(), index))
+            .collect();
+
+        StructureGenerator {
+            seed: 0,
+            structure_sets: sets,
+            structure_set_indices,
+            structure_data: FxHashMap::default(),
+            ring_positions: FxHashMap::default(),
+            template_pools: FxHashMap::default(),
+            templates: FxHashMap::default(),
+            structure_impls: FxHashMap::default(),
+        }
+    }
+
+    #[test]
+    fn vanilla_assets_cover_vanilla_structure_sets() {
+        let _ = steel_registry::REGISTRY.init(steel_registry::Registry::new_vanilla());
+        let biome_provider =
+            FixedStructureBiomeProvider::new(&steel_registry::vanilla_biomes::PLAINS);
+        let _ = StructureGenerator::vanilla_with_structure_sets(
+            0,
+            &biome_provider,
+            load_vanilla_structure_sets(),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-positive spacing")]
+    fn constructor_rejects_invalid_random_spread_spacing() {
+        let biome_provider =
+            FixedStructureBiomeProvider::new(&steel_registry::vanilla_biomes::PLAINS);
+        let sets = vec![(
+            Identifier::new("test", "invalid"),
+            StructureSet {
+                structures: vec![StructureSelectionEntry {
+                    structure: Identifier::new("test", "placeholder"),
+                    weight: 1,
+                }],
+                placement: StructurePlacement {
+                    salt: 0,
+                    frequency: 1.0,
+                    frequency_reduction_method: FrequencyReductionMethod::Default,
+                    exclusion_zone: None,
+                    locate_offset: [0, 0, 0],
+                    kind: PlacementKind::RandomSpread {
+                        spacing: 0,
+                        separation: 0,
+                        spread_type: SpreadType::Linear,
+                    },
+                },
+            },
+        )];
+
+        let _ = StructureGenerator::with_assets(
+            0,
+            &biome_provider,
+            sets,
+            StructureGeneratorAssets::new(
+                FxHashMap::default(),
+                FxHashMap::default(),
+                FxHashMap::default(),
+            ),
+        );
+    }
+
+    #[test]
+    fn exclusion_zone_checks_other_set_interactions() {
+        let a_key = Identifier::new("test", "a");
+        let b_key = Identifier::new("test", "b");
+        let c_key = Identifier::new("test", "c");
+        let generator = generator_with_sets(vec![
+            (
+                a_key.clone(),
+                test_structure_set(every_chunk_placement(Some(b_key.clone()))),
+            ),
+            (
+                b_key.clone(),
+                test_structure_set(every_chunk_placement(Some(c_key.clone()))),
+            ),
+            (c_key, test_structure_set(every_chunk_placement(None))),
+        ]);
+
+        assert!(generator.is_structure_chunk_for_set(&a_key, 0, 0, &mut Vec::new()));
+        assert!(!generator.is_structure_chunk_for_set(&b_key, 0, 0, &mut Vec::new()));
+    }
+
+    #[test]
+    #[should_panic(expected = "Circular structure exclusion zone")]
+    fn circular_exclusion_zones_fail_loudly() {
+        let a_key = Identifier::new("test", "a");
+        let b_key = Identifier::new("test", "b");
+        let generator = generator_with_sets(vec![
+            (
+                a_key.clone(),
+                test_structure_set(every_chunk_placement(Some(b_key.clone()))),
+            ),
+            (
+                b_key,
+                test_structure_set(every_chunk_placement(Some(a_key.clone()))),
+            ),
+        ]);
+
+        let _ = generator.is_structure_chunk_for_set(&a_key, 0, 0, &mut Vec::new());
     }
 
     #[test]

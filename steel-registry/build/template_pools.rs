@@ -62,25 +62,35 @@ struct ExtractedJigsaw {
     placement_priority: i32,
 }
 
-fn extract_template(path: &str) -> Option<ExtractedTemplate> {
-    let compressed = fs::read(path).ok()?;
+fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
+    let compressed =
+        fs::read(path).map_err(|e| format!("Failed to read NBT template {path}: {e}"))?;
     let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
     let mut data = Vec::new();
-    decoder.read_to_end(&mut data).ok()?;
+    decoder
+        .read_to_end(&mut data)
+        .map_err(|e| format!("Failed to decompress NBT template {path}: {e}"))?;
 
-    let nbt = simdnbt::borrow::read(&mut std::io::Cursor::new(&data)).ok()?;
+    let nbt = simdnbt::borrow::read(&mut std::io::Cursor::new(&data))
+        .map_err(|e| format!("Failed to parse NBT template {path}: {e}"))?;
     let root = match nbt {
         simdnbt::borrow::Nbt::Some(base) => base,
-        simdnbt::borrow::Nbt::None => return None,
+        simdnbt::borrow::Nbt::None => return Err(format!("NBT template {path} is empty")),
     };
 
     let compound = root.as_compound();
 
     // Extract size
-    let size_list = compound.list("size")?;
-    let size_ints = size_list.ints()?;
+    let size_list = compound
+        .list("size")
+        .ok_or_else(|| format!("NBT template {path} is missing size"))?;
+    let size_ints = size_list
+        .ints()
+        .ok_or_else(|| format!("NBT template {path} has non-int size list"))?;
     if size_ints.len() < 3 {
-        return None;
+        return Err(format!(
+            "NBT template {path} size list has fewer than 3 entries"
+        ));
     }
     let size = [size_ints[0], size_ints[1], size_ints[2]];
 
@@ -96,83 +106,107 @@ fn extract_template(path: &str) -> Option<ExtractedTemplate> {
             Some(first_palette) => match first_palette.compounds() {
                 Some(c) => c,
                 None => {
-                    return Some(ExtractedTemplate {
-                        size,
-                        jigsaws: Vec::new(),
-                    });
+                    return Err(format!(
+                        "NBT template {path} palettes[0] is not a compound list"
+                    ));
                 }
             },
             None => {
-                return Some(ExtractedTemplate {
-                    size,
-                    jigsaws: Vec::new(),
-                });
+                return Err(format!("NBT template {path} has an empty palettes list"));
             }
         }
     } else {
-        return Some(ExtractedTemplate {
-            size,
-            jigsaws: Vec::new(),
-        });
+        return Err(format!(
+            "NBT template {path} is missing palette or palettes"
+        ));
     };
+    let palette_len = palette.len();
     let mut jigsaw_indices: Vec<(usize, String)> = Vec::new();
     for (i, entry) in palette.into_iter().enumerate() {
         let Some(name) = entry.string("Name") else {
             continue;
         };
         if name.to_str() == "minecraft:jigsaw" {
-            let orientation = entry
+            let Some(orientation) = entry
                 .compound("Properties")
                 .and_then(|p| p.string("orientation"))
                 .map(|s| s.to_str().to_string())
-                .unwrap_or_else(|| "north_up".to_string());
+            else {
+                return Err(format!(
+                    "Jigsaw block state in template {path} is missing orientation"
+                ));
+            };
             jigsaw_indices.push((i, orientation));
         }
     }
 
+    // Extract blocks, then collect jigsaw block entities when the palette has jigsaws.
+    let blocks = compound
+        .list("blocks")
+        .ok_or_else(|| format!("NBT template {path} is missing blocks"))?
+        .compounds()
+        .ok_or_else(|| format!("NBT template {path} has non-compound blocks list"))?;
+
     if jigsaw_indices.is_empty() {
-        return Some(ExtractedTemplate {
+        return Ok(ExtractedTemplate {
             size,
             jigsaws: Vec::new(),
         });
     }
 
-    // Extract jigsaw blocks
-    let blocks = compound.list("blocks")?.compounds()?;
     let mut jigsaws = Vec::new();
 
     for block in blocks {
-        let state = block.int("state")? as usize;
+        let state = block
+            .int("state")
+            .ok_or_else(|| format!("Block in template {path} is missing state"))?;
+        if state < 0 {
+            return Err(format!(
+                "Block in template {path} has negative state {state}"
+            ));
+        }
+        let state = usize::try_from(state)
+            .map_err(|_| format!("Block state {state} in template {path} does not fit usize"))?;
+        if state >= palette_len {
+            return Err(format!(
+                "Block state {state} in template {path} is outside palette length {palette_len}"
+            ));
+        }
         let matching = jigsaw_indices.iter().find(|(idx, _)| *idx == state);
         let Some((_, orientation)) = matching else {
             continue;
         };
 
-        let pos_list = block.list("pos")?.ints()?;
+        let pos_list = block
+            .list("pos")
+            .ok_or_else(|| format!("Jigsaw block in template {path} is missing pos"))?
+            .ints()
+            .ok_or_else(|| format!("Jigsaw block in template {path} has non-int pos list"))?;
         if pos_list.len() < 3 {
-            continue;
+            return Err(format!(
+                "Jigsaw block in template {path} has fewer than 3 pos entries"
+            ));
         }
 
-        let nbt_data = match block.compound("nbt") {
-            Some(c) => c,
-            None => continue,
-        };
+        let nbt_data = block
+            .compound("nbt")
+            .ok_or_else(|| format!("Jigsaw block in template {path} is missing nbt"))?;
 
-        let get_str = |key: &str| -> String {
+        let get_str = |key: &str| -> Result<String, String> {
             nbt_data
                 .string(key)
                 .map(|s| s.to_str().to_string())
-                .unwrap_or_default()
+                .ok_or_else(|| format!("Jigsaw block in template {path} is missing {key}"))
         };
 
         jigsaws.push(ExtractedJigsaw {
             pos: [pos_list[0], pos_list[1], pos_list[2]],
             orientation: orientation.clone(),
-            name: get_str("name"),
-            target: get_str("target"),
-            pool: get_str("pool"),
-            joint: get_str("joint"),
-            final_state: get_str("final_state"),
+            name: get_str("name")?,
+            target: get_str("target")?,
+            pool: get_str("pool")?,
+            joint: get_str("joint")?,
+            final_state: get_str("final_state")?,
             selection_priority: nbt_data.int("selection_priority").unwrap_or(0),
             placement_priority: nbt_data.int("placement_priority").unwrap_or(0),
         });
@@ -188,12 +222,15 @@ fn extract_template(path: &str) -> Option<ExtractedTemplate> {
             .then(a.pos[2].cmp(&b.pos[2]))
     });
 
-    Some(ExtractedTemplate { size, jigsaws })
+    Ok(ExtractedTemplate { size, jigsaws })
 }
 
 // ── Code generation helpers ──
 
 fn gen_identifier(id: &str) -> TokenStream {
+    if id.is_empty() {
+        panic!("Cannot generate an empty identifier");
+    }
     if let Some((namespace, path)) = id.split_once(':') {
         quote! { Identifier::new(#namespace, #path) }
     } else {
@@ -201,14 +238,20 @@ fn gen_identifier(id: &str) -> TokenStream {
     }
 }
 
-fn gen_projection(proj: &Option<String>) -> TokenStream {
+fn required<'a, T>(value: Option<T>, context: &str, field: &str) -> T {
+    value.unwrap_or_else(|| panic!("Missing required field {field} in {context}"))
+}
+
+fn gen_projection(proj: &Option<String>, context: &str) -> TokenStream {
     match proj.as_deref() {
+        Some("rigid") => quote! { Projection::Rigid },
         Some("terrain_matching") => quote! { Projection::TerrainMatching },
-        _ => quote! { Projection::Rigid },
+        Some(other) => panic!("Unknown projection {other} in {context}"),
+        None => panic!("Missing required field projection in {context}"),
     }
 }
 
-fn gen_processors(processors: Option<&ProcessorsJson>) -> TokenStream {
+fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
     match processors {
         Some(ProcessorsJson::Registry(id)) => {
             let id = gen_identifier(id);
@@ -216,43 +259,47 @@ fn gen_processors(processors: Option<&ProcessorsJson>) -> TokenStream {
         }
         Some(ProcessorsJson::Direct { processors }) => {
             if !processors.is_empty() {
-                panic!("Direct non-empty processor lists are not generated yet");
+                panic!("Direct non-empty processor lists are not generated yet in {context}");
             }
             quote! { ProcessorList::Empty }
         }
-        None => quote! { ProcessorList::Empty },
+        None => panic!("Missing required field processors in {context}"),
     }
 }
 
-fn gen_element(elem: &ElementJson) -> TokenStream {
+fn gen_element(elem: &ElementJson, context: &str) -> TokenStream {
     match elem.element_type.as_str() {
         "minecraft:single_pool_element" => {
-            let location = gen_identifier(elem.location.as_deref().unwrap_or(""));
-            let processors = gen_processors(elem.processors.as_ref());
-            let projection = gen_projection(&elem.projection);
+            let location = gen_identifier(required(elem.location.as_deref(), context, "location"));
+            let processors = gen_processors(elem.processors.as_ref(), context);
+            let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::Single { location: #location, processors: #processors, projection: #projection } }
         }
         "minecraft:legacy_single_pool_element" => {
-            let location = gen_identifier(elem.location.as_deref().unwrap_or(""));
-            let processors = gen_processors(elem.processors.as_ref());
-            let projection = gen_projection(&elem.projection);
+            let location = gen_identifier(required(elem.location.as_deref(), context, "location"));
+            let processors = gen_processors(elem.processors.as_ref(), context);
+            let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::LegacySingle { location: #location, processors: #processors, projection: #projection } }
         }
         "minecraft:empty_pool_element" => {
             quote! { PoolElement::Empty }
         }
         "minecraft:feature_pool_element" => {
-            let feature = gen_identifier(elem.feature.as_deref().unwrap_or(""));
-            let projection = gen_projection(&elem.projection);
+            let feature = gen_identifier(required(elem.feature.as_deref(), context, "feature"));
+            let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::Feature { feature: #feature, projection: #projection } }
         }
         "minecraft:list_pool_element" => {
-            let sub_elements: Vec<TokenStream> = elem
-                .elements
-                .as_ref()
-                .map(|elems| elems.iter().map(gen_element).collect())
-                .unwrap_or_default();
-            let projection = gen_projection(&elem.projection);
+            let elems = required(elem.elements.as_ref(), context, "elements");
+            if elems.is_empty() {
+                panic!("Field elements must be non-empty in {context}");
+            }
+            let sub_elements: Vec<TokenStream> = elems
+                .iter()
+                .enumerate()
+                .map(|(index, elem)| gen_element(elem, &format!("{context}.elements[{index}]")))
+                .collect();
+            let projection = gen_projection(&elem.projection, context);
             quote! { PoolElement::List { elements: vec![#(#sub_elements),*], projection: #projection } }
         }
         other => panic!("Unknown pool element type: {other}"),
@@ -280,7 +327,8 @@ fn gen_orientation(s: &str) -> TokenStream {
 fn gen_joint(s: &str) -> TokenStream {
     match s {
         "aligned" => quote! { JointType::Aligned },
-        _ => quote! { JointType::Rollable },
+        "rollable" => quote! { JointType::Rollable },
+        other => panic!("Unknown jigsaw joint type: {other}"),
     }
 }
 
@@ -309,8 +357,12 @@ pub(crate) fn build() -> TokenStream {
         let elements: Vec<TokenStream> = pool
             .elements
             .iter()
-            .map(|we| {
-                let elem = gen_element(&we.element);
+            .enumerate()
+            .map(|(index, we)| {
+                if we.weight <= 0 {
+                    panic!("Template pool {name} element {index} has non-positive weight");
+                }
+                let elem = gen_element(&we.element, &format!("{name}.elements[{index}]"));
                 let weight = we.weight;
                 quote! { (#elem, #weight) }
             })
@@ -409,9 +461,8 @@ pub(crate) fn build() -> TokenStream {
 }
 
 fn collect_pool_files(dir: &str, prefix: &str, out: &mut Vec<(String, PoolJson)>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
+    let entries = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("Failed to read template pool directory {dir}: {e}"));
     for entry in entries {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -439,9 +490,8 @@ fn collect_pool_files(dir: &str, prefix: &str, out: &mut Vec<(String, PoolJson)>
 }
 
 fn collect_nbt_files(dir: &str, prefix: &str, out: &mut Vec<(String, ExtractedTemplate)>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
+    let entries = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("Failed to read structure template directory {dir}: {e}"));
     for entry in entries {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -460,11 +510,9 @@ fn collect_nbt_files(dir: &str, prefix: &str, out: &mut Vec<(String, ExtractedTe
             } else {
                 format!("{prefix}/{file_name}")
             };
-            if let Some(template) = extract_template(path.to_str().unwrap()) {
-                out.push((full_name, template));
-            } else {
-                eprintln!("cargo:warning=Failed to parse NBT template: {full_name}");
-            }
+            let template = extract_template(path.to_str().unwrap())
+                .unwrap_or_else(|e| panic!("Failed to parse NBT template {full_name}: {e}"));
+            out.push((full_name, template));
         }
     }
 }
