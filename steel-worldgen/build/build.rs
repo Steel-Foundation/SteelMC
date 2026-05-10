@@ -4,13 +4,15 @@
     reason = "build-script modules include parser shapes and generated-code helpers"
 )]
 
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, process::Command};
 
 mod density;
 mod density_functions;
 mod multi_noise;
 mod noise_parameters;
 mod surface_rules;
+
+const FMT: bool = cfg!(feature = "fmt");
 
 const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
@@ -57,5 +59,12 @@ pub fn main() {
     let content = df.index.to_string();
     if !fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
         fs::write(&path, content).expect("failed to write generated density function index");
+    }
+
+    if FMT && let Ok(entries) = fs::read_dir(&df_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let _ = Command::new("rustfmt").arg(path).output();
+        }
     }
 }
