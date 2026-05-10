@@ -340,13 +340,12 @@ const DIMENSION_ORDER: &[&str] = &[
 )]
 fn chunk_stage_hashes_inner() {
     use steel_core::chunk::chunk_access::ChunkAccess;
-    use steel_core::chunk::chunk_generator::ChunkGenerator;
     use steel_core::chunk::proto_chunk::ProtoChunk;
     use steel_core::chunk::section::ChunkSection;
-    use steel_core::chunk::world_gen_context::{
-        ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
+    use steel_core::worldgen::{
+        BiomeSourceKind, ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator,
+        OverworldGenerator,
     };
-    use steel_core::worldgen::BiomeSourceKind;
     use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
     use steel_utils::ChunkPos;
 

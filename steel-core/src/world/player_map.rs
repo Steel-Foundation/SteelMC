@@ -64,7 +64,7 @@ impl PlayerMap {
     /// Removes a player by UUID from both maps synchronously.
     ///
     /// Returns the removed player if found. Use this when async is not available
-    /// (e.g., during dimension changes on the tick thread).
+    /// (e.g., during world changes on the tick thread).
     pub fn remove_sync(&self, uuid: &Uuid) -> Option<Arc<Player>> {
         if let Some((_, player)) = self.by_uuid.remove_sync(uuid) {
             let _ = self.by_entity_id.remove_sync(&player.id);

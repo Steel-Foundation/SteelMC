@@ -91,6 +91,10 @@ pub struct EntityType {
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,
+
+    /// Default attribute base values for this entity type
+    /// Empty for entities that don't have attributes (projectiles, items, displays, etc.)
+    pub default_attributes: &'static [(&'static str, f64)],
 }
 
 pub type EntityTypeRef = &'static EntityType;

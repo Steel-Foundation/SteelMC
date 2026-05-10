@@ -20,8 +20,8 @@ pub enum RemovalReason {
     Discarded,
     /// Entity unloaded with chunk.
     UnloadedToChunk,
-    /// Entity changed dimension.
-    ChangedDimension,
+    /// Entity moved to another loaded world.
+    ChangedWorld,
 }
 
 impl RemovalReason {
@@ -34,7 +34,7 @@ impl RemovalReason {
     /// Returns true if the entity should be saved when removed.
     ///
     /// In vanilla, only `UnloadedToChunk` saves - the entity persists in chunk storage.
-    /// `ChangedDimension` does NOT save because the entity moves to a different world
+    /// `ChangedWorld` does NOT save because the entity moves to a different world
     /// rather than being stored in the current world's entity storage.
     #[must_use]
     pub const fn should_save(self) -> bool {

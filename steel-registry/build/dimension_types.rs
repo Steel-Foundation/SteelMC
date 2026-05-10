@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_option;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -148,19 +149,6 @@ pub enum MonsterSpawnLightLevelJson {
         min_inclusive: i32,
         max_inclusive: i32,
     },
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
 }
 
 fn generate_monster_spawn_light_level(level: &MonsterSpawnLightLevelJson) -> TokenStream {

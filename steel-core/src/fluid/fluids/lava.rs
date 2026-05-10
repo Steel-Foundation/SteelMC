@@ -27,7 +27,7 @@ use crate::world::World;
 /// Lava fluid implementation.
 ///
 /// Implements [`FluidBehavior`] with lava-specific parameters and
-/// behaviors (dimension-dependent spread, uphill delay, lava/water chemistry,
+/// behaviors (world-dependent spread, uphill delay, lava/water chemistry,
 /// fizz sounds).
 pub struct LavaFluid;
 
@@ -35,7 +35,7 @@ impl LavaFluid {
     /// Returns true if this world uses fast lava (nether-like).
     // TODO: Vanilla uses EnvironmentAttributes.FAST_LAVA on the dimension type, not a hardcoded check
     fn is_fast_lava(world: &Arc<World>) -> bool {
-        world.dimension.key == vanilla_dimension_types::THE_NETHER.key
+        world.dimension_type.key == vanilla_dimension_types::THE_NETHER.key
     }
 }
 

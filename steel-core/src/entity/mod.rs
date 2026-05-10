@@ -10,9 +10,11 @@ use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_attributes;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
+use crate::entity::attribute::AttributeMap;
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
 };
@@ -36,6 +38,7 @@ pub fn next_entity_id() -> i32 {
     ENTITY_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+pub mod attribute;
 mod base;
 mod cache;
 mod callback;
@@ -386,13 +389,13 @@ pub trait Entity: Send + Sync {
         false
     }
 
-    /// Teleports an entity from one dimension to another.
+    /// Teleports an entity from one loaded world to another.
     ///
     /// The default implementation logs a warning — non-player entity teleportation
     /// is not yet implemented. Override in entity types that support it.
     fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
         log::warn!(
-            "change_world called on entity {} which does not implement dimension changes",
+            "change_world called on entity {} which does not implement world changes",
             self.id(),
         );
     }
@@ -406,14 +409,22 @@ pub trait Entity: Send + Sync {
 /// **Note:** All methods take `&self` (not `&mut self`) because living entities
 /// are shared via `Arc` and use interior mutability (atomics, `SyncMutex`, etc.).
 pub trait LivingEntity: Entity {
+    /// Returns a reference to this entity's attribute map.
+    fn attributes(&self) -> &SyncMutex<AttributeMap>;
+
     /// Gets the current health of the entity.
     fn get_health(&self) -> f32;
 
     /// Sets the health of the entity, clamped between 0 and max health.
     fn set_health(&self, health: f32);
 
-    /// Gets the maximum health of the entity.
-    fn get_max_health(&self) -> f32;
+    /// Gets the maximum health from the attribute system.
+    fn get_max_health(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::MAX_HEALTH)
+            .unwrap_or(20.0) as f32
+    }
 
     /// Heals the entity by the specified amount.
     fn heal(&self, amount: f32) {
@@ -443,8 +454,21 @@ pub trait LivingEntity: Entity {
     /// Sets the absorption amount.
     fn set_absorption_amount(&self, amount: f32);
 
-    /// Gets the entity's armor value.
-    fn get_armor_value(&self) -> i32;
+    /// Gets the entity's armor value from the attribute system.
+    fn get_armor_value(&self) -> i32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::ARMOR)
+            .unwrap_or(0.0) as i32
+    }
+
+    /// Gets the gravity value from the attribute system.
+    fn get_attribute_gravity(&self) -> f64 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::GRAVITY)
+            .unwrap_or(0.08)
+    }
 
     /// Checks if the entity can be affected by potions.
     fn is_affected_by_potions(&self) -> bool {
@@ -487,9 +511,33 @@ pub trait LivingEntity: Entity {
     /// Sets whether the entity is sprinting.
     fn set_sprinting(&self, sprinting: bool);
 
-    /// Gets the entity's speed attribute value.
+    /// Gets the entity's cached movement speed.
     fn get_speed(&self) -> f32;
 
-    /// Sets the entity's speed.
+    /// Sets the entity's cached movement speed.
     fn set_speed(&self, speed: f32);
+
+    /// Drains dirty attributes and applies server-side effects.
+    fn refresh_dirty_attributes(&self) {
+        let dirty = self.attributes().lock().drain_dirty_updates();
+        for attr in dirty {
+            if attr.key == vanilla_attributes::MAX_HEALTH.key {
+                let max = self.get_max_health();
+                if self.get_health() > max {
+                    self.set_health(max);
+                }
+            } else if attr.key == vanilla_attributes::MAX_ABSORPTION.key {
+                let max = self
+                    .attributes()
+                    .lock()
+                    .get_value(vanilla_attributes::MAX_ABSORPTION)
+                    .unwrap_or(0.0) as f32;
+                if self.get_absorption_amount() > max {
+                    self.set_absorption_amount(max);
+                }
+            }
+            // TODO: SCALE → refreshDimensions()
+            // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
+        }
+    }
 }

@@ -184,8 +184,16 @@ impl LevelChunk {
         height: i32,
         level: Weak<World>,
     ) -> Self {
-        // Move final heightmaps directly from proto chunk
+        // Ensure full chunks always have populated final heightmaps. Some stages
+        // may not touch blocks (carvers are currently empty), so lazy final
+        // heightmaps are not guaranteed to exist before promotion.
         let mut proto_heightmaps = proto_chunk.heightmaps.into_inner();
+        proto_heightmaps.prime_from_sections(
+            HeightmapType::final_types(),
+            min_y,
+            height,
+            &proto_chunk.sections.sections,
+        );
         let chunk_heightmaps = ChunkHeightmaps::from_proto(&mut proto_heightmaps, min_y, height);
 
         // Recalculate section counts for random tick optimization
@@ -315,6 +323,15 @@ impl LevelChunk {
     #[must_use]
     pub const fn height(&self) -> i32 {
         self.height
+    }
+
+    /// Gets the first available Y coordinate for a heightmap column.
+    #[must_use]
+    pub fn get_height(&self, heightmap_type: HeightmapType, local_x: usize, local_z: usize) -> i32 {
+        self.heightmaps
+            .read()
+            .get(heightmap_type)
+            .get_first_available(local_x, local_z)
     }
 
     /// Gets the section index for a given Y coordinate.

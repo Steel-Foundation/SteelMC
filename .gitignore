@@ -3,11 +3,13 @@
 /steel-registry/src/generated
 /steel-utils/src/generated
 /steel-core/src/behavior/generated
+/steel-worldgen/src/generated
 
 # Config
 /config
 /.tmp
 /world
+/saves
 /players
 
 # Misc
@@ -20,9 +22,11 @@ profile.json.gz
 *.gz
 *.class
 
+# ICE crash reports
+rustc-ice-*
+
 # IDE
 .vscode/settings.json
 .idea
 
 .DS_STORE
-rustc-ice-*.txt

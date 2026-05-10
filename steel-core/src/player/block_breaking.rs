@@ -8,6 +8,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::loot_table::LootContext;
+use steel_registry::vanilla_attributes;
 use steel_registry::{REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks};
 use steel_utils::Identifier;
 use steel_utils::{
@@ -15,6 +16,7 @@ use steel_utils::{
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
+use super::food_data::food_constants;
 use crate::behavior::BlockStateBehaviorExt;
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
@@ -329,6 +331,8 @@ impl BlockBreakingManager {
                 }
             }
 
+            player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
+
             // Handle drops (skip for creative/spectator)
             let game_mode = player.game_mode.load();
             if game_mode != GameType::Spectator
@@ -448,8 +452,13 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
 
     // Create loot context
     let mut rng = rand::rng();
-    // TODO: Get luck from player attributes
+    let luck = player
+        .attributes
+        .lock()
+        .get_value(vanilla_attributes::LUCK)
+        .unwrap_or(0.0) as f32;
     let mut ctx = LootContext::new(&mut rng)
+        .with_luck(luck)
         .with_block_state(state)
         .with_tool(&tool)
         .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));

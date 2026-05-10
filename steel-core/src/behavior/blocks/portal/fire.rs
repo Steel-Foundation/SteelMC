@@ -31,10 +31,13 @@ impl FireBlock {
         Self { block }
     }
 
-    /// Returns true if the dimension supports nether portal creation (Overworld or Nether).
-    pub(crate) fn in_portal_dimension(world: &World) -> bool {
-        world.dimension == &vanilla_dimension_types::OVERWORLD
-            || world.dimension == &vanilla_dimension_types::THE_NETHER
+    /// Returns true if the world supports nether portal creation.
+    ///
+    /// Vanilla expresses this in terms of dimensions; Steel checks the loaded
+    /// world's vanilla dimension type.
+    pub(crate) fn in_portal_world(world: &World) -> bool {
+        world.dimension_type == &vanilla_dimension_types::OVERWORLD
+            || world.dimension_type == &vanilla_dimension_types::THE_NETHER
     }
 
     /// Checks if fire can be placed at `pos`, matching vanilla's `BaseFireBlock.canBePlacedAt`.
@@ -60,9 +63,9 @@ impl FireBlock {
     }
 
     /// Matches vanilla's `BaseFireBlock.isPortal`: checks if placing fire here could form a portal.
-    /// Requires portal dimension, adjacent obsidian, and a valid empty portal shape.
+    /// Requires a portal-capable world, adjacent obsidian, and a valid empty portal shape.
     fn is_portal(world: &Arc<World>, pos: BlockPos, forward_dir: Direction) -> bool {
-        if !Self::in_portal_dimension(world) {
+        if !Self::in_portal_world(world) {
             return false;
         }
 
@@ -109,7 +112,7 @@ impl BlockBehavior for FireBlock {
             return;
         }
 
-        if Self::in_portal_dimension(world)
+        if Self::in_portal_world(world)
             && let Some(shape) =
                 PortalShape::find_empty_portal_shape(world, pos, &nether_portal_config())
         {

@@ -4,11 +4,12 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::sync::Once;
 use steel_core::chunk::chunk_access::ChunkAccess;
-use steel_core::chunk::chunk_generator::ChunkGenerator;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::chunk::world_gen_context::{EndGenerator, NetherGenerator, OverworldGenerator};
-use steel_core::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
+use steel_core::worldgen::{
+    BiomeSourceKind, ChunkBiomeSampler, ChunkGenerator, EndGenerator, NetherGenerator,
+    OverworldGenerator,
+};
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::ChunkPos;

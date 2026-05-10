@@ -3,6 +3,7 @@ use std::fs;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -22,6 +23,8 @@ struct EntityTypeEntry {
     can_serialize: bool,
     #[serde(default)]
     flags: Option<FlagsEntry>,
+    #[serde(default)]
+    attributes: Option<FxHashMap<String, f64>>,
 }
 
 fn default_can_serialize() -> bool {
@@ -108,6 +111,21 @@ pub(crate) fn build() -> TokenStream {
         let can_breathe_underwater = flags.is_some_and(|f| f.can_breathe_underwater);
         let can_be_seen_as_enemy = flags.is_some_and(|f| f.can_be_seen_as_enemy);
 
+        let default_attributes_tokens = if let Some(attrs) = &entity_type.attributes {
+            let mut sorted: Vec<(&String, &f64)> = attrs.iter().collect();
+            sorted.sort_by_key(|(k, _)| *k);
+            let entries: Vec<TokenStream> = sorted
+                .iter()
+                .map(|(name, value)| {
+                    let val = Literal::f64_suffixed(**value);
+                    quote! { (#name, #val) }
+                })
+                .collect();
+            quote! { &[#(#entries),*] }
+        } else {
+            quote! { &[] }
+        };
+
         stream.extend(quote! {
             pub static #entity_type_ident: EntityType = EntityType {
                 key: Identifier::vanilla_static(#entity_type_key),
@@ -132,6 +150,7 @@ pub(crate) fn build() -> TokenStream {
                     can_breathe_underwater: #can_breathe_underwater,
                     can_be_seen_as_enemy: #can_be_seen_as_enemy,
                 },
+                default_attributes: #default_attributes_tokens,
             };
         });
         register_stream.extend(quote! {

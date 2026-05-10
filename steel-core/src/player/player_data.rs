@@ -1,13 +1,7 @@
-//! Persistent player data structures and NBT serialization.
+//! Persistent player data structures.
 //!
 //! This module defines the data format for saving and loading player state.
-//! The format is designed to be vanilla-compatible where possible.
 
-use simdnbt::{
-    ToNbtTag,
-    borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView},
-    owned::{NbtCompound, NbtList, NbtTag},
-};
 use steel_registry::item_stack::ItemStack;
 
 use crate::inventory::container::Container;
@@ -18,90 +12,75 @@ use super::{Player, abilities::Abilities};
 /// Increment when making breaking changes to the format.
 pub const PLAYER_DATA_VERSION: i32 = 1;
 
-/// Persistent player data that can be serialized to/from NBT.
+/// Persistent player data saved by Steel's storage backend.
 ///
-/// This structure mirrors vanilla Minecraft's player data format where possible,
-/// allowing for potential compatibility with vanilla tools.
-///
-/// # TODO: Missing vanilla fields
-/// The following fields should be added once their systems are implemented:
-/// - Food data: `foodLevel`, `foodSaturationLevel`, `foodExhaustionLevel`, `foodTickTimer`
-/// - Experience: `XpSeed`
-/// - Active potion effects: `active_effects` (List)
-/// - Score: `Score` (Int)
-/// - Ender chest inventory: `EnderItems` (List)
-/// - Last death location: `LastDeathLocation` (`GlobalPos`)
-/// - Respawn position: `SpawnX`, `SpawnY`, `SpawnZ`, `SpawnDimension`, `SpawnForced`, `SpawnAngle`
+/// This is Steel's runtime save snapshot. Vanilla import/export should live outside
+/// server runtime storage so compatibility logic does not constrain the native format.
 #[derive(Debug, Clone)]
 pub struct PersistentPlayerData {
     /// Position (x, y, z) in absolute world coordinates.
-    /// NBT tag: `Pos` (`DoubleList`)
     pub pos: [f64; 3],
 
     /// Velocity (x, y, z) in blocks per tick.
-    /// NBT tag: `Motion` (`DoubleList`)
     pub motion: [f64; 3],
 
     /// Rotation (yaw, pitch) in degrees.
-    /// NBT tag: `Rotation` (`FloatList`)
     pub rotation: [f32; 2],
 
     /// Whether the player is on the ground.
-    /// NBT tag: `OnGround` (Byte)
     pub on_ground: bool,
 
     /// Whether the player is elytra gliding.
-    /// NBT tag: `FallFlying` (Byte)
     pub fall_flying: bool,
 
     /// Current health points.
-    /// NBT tag: `Health` (Float)
     pub health: f32,
 
     /// Current game mode (0=survival, 1=creative, 2=adventure, 3=spectator).
-    /// NBT tag: `playerGameType` (Int)
     pub game_mode: i32,
 
     /// Previous game mode of the player
-    /// NBT tag: `previousPlayerGameType` (Int)
     pub prev_game_mode: i32,
 
     /// Player abilities (flight, invulnerability, etc.).
-    /// NBT tag: `abilities` (Compound)
     pub abilities: PersistentAbilities,
 
     /// Inventory items with slot indices.
-    /// NBT tag: `Inventory` (List of Compounds)
     pub inventory: Vec<PersistentSlot>,
 
     /// Currently selected hotbar slot (0-8).
-    /// NBT tag: `SelectedItemSlot` (Int)
     pub selected_slot: i32,
 
-    /// Dimension identifier (e.g., "minecraft:overworld").
-    /// NBT tag: `Dimension` (String)
-    pub dimension: String,
+    /// Loaded world identifier (e.g., "minecraft:overworld").
+    pub world: String,
+
+    /// Current food level (0–20, default 20).
+    pub food_level: i32,
+
+    /// Food saturation level (0.0–`food_level`, default 5.0).
+    pub food_saturation_level: f32,
+
+    /// Accumulated food exhaustion (0.0–40.0, default 0.0).
+    pub food_exhaustion_level: f32,
+
+    /// Internal tick timer for regen/starvation (default 0).
+    pub food_tick_timer: i32,
 
     /// Data version for format migrations.
-    /// NBT tag: `DataVersion` (Int)
     pub data_version: i32,
 
     /// Current experience level
-    /// NBT tag: `XpLevel` (Int)
     pub experience_level: i32,
 
     /// To progress to the next experience level
-    /// NBT tag: `XpP` (Float)
     pub experience_progress: f32,
 
     /// The checked value of the Score, cannot decrease below 0 (???)
     /// TODO: what exactly is experienceTotal
-    /// NBT tag: `XpTotal` (Int)
     pub experience_total: i32,
 
     /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
     /// this value can be negative by using (/xp add ... -x)
-    /// NBT tag: `Score` (Int)
     pub score: i32,
 }
 
@@ -147,6 +126,7 @@ impl PersistentPlayerData {
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
         let entity_data = player.entity_data.lock();
+        let food_data = player.food_data.lock();
 
         // Collect non-empty inventory slots
         let mut slots = Vec::new();
@@ -191,202 +171,16 @@ impl PersistentPlayerData {
             },
             inventory: slots,
             selected_slot: i32::from(inventory.get_selected_slot()),
-            dimension: player.get_world().dimension.key.to_string(),
+            world: player.get_world().key.to_string(),
+            food_level: food_data.food_level,
+            food_saturation_level: food_data.saturation_level,
+            food_exhaustion_level: food_data.exhaustion_level,
+            food_tick_timer: food_data.tick_timer,
             data_version: PLAYER_DATA_VERSION,
             experience_level,
             experience_progress,
             experience_total,
             score,
-        }
-    }
-
-    /// Serializes the player data to an NBT compound.
-    #[must_use]
-    pub fn to_nbt(&self) -> NbtCompound {
-        let mut compound = NbtCompound::new();
-
-        // Position
-        let pos_list = NbtList::from(vec![
-            NbtTag::Double(self.pos[0]),
-            NbtTag::Double(self.pos[1]),
-            NbtTag::Double(self.pos[2]),
-        ]);
-        compound.insert("Pos", pos_list);
-
-        // Motion
-        let motion_list = NbtList::from(vec![
-            NbtTag::Double(self.motion[0]),
-            NbtTag::Double(self.motion[1]),
-            NbtTag::Double(self.motion[2]),
-        ]);
-        compound.insert("Motion", motion_list);
-
-        // Rotation
-        let rotation_list = NbtList::from(vec![
-            NbtTag::Float(self.rotation[0]),
-            NbtTag::Float(self.rotation[1]),
-        ]);
-        compound.insert("Rotation", rotation_list);
-
-        // Simple fields
-        compound.insert("OnGround", i8::from(self.on_ground));
-        compound.insert("FallFlying", i8::from(self.fall_flying));
-        compound.insert("Health", self.health);
-        compound.insert("playerGameType", self.game_mode);
-        compound.insert("SelectedItemSlot", self.selected_slot);
-        compound.insert("Dimension", self.dimension.clone());
-        compound.insert("DataVersion", self.data_version);
-
-        // Abilities compound
-        compound.insert("abilities", self.abilities.to_nbt());
-
-        // Inventory list
-        let inventory_list: Vec<NbtTag> = self
-            .inventory
-            .iter()
-            .map(|slot| {
-                let mut item_compound = match slot.item.clone().to_nbt_tag() {
-                    NbtTag::Compound(c) => c,
-                    _ => NbtCompound::new(),
-                };
-                item_compound.insert("Slot", slot.slot);
-                NbtTag::Compound(item_compound)
-            })
-            .collect();
-        compound.insert("Inventory", NbtList::from(inventory_list));
-
-        // Experience
-        compound.insert("XpLevel", self.experience_level);
-        compound.insert("XpP", self.experience_progress);
-        compound.insert("XpTotal", self.experience_total);
-        compound.insert("Score", self.score);
-
-        compound
-    }
-
-    /// Deserializes player data from an NBT compound.
-    ///
-    /// Returns `None` if required fields are missing or invalid.
-    #[must_use]
-    pub fn from_nbt(nbt: &BorrowedNbtCompound<'_>) -> Option<Self> {
-        // Convert to view type to access accessor methods
-        let nbt: NbtCompoundView<'_, '_> = nbt.into();
-        // Position
-        let pos_list = nbt.list("Pos")?;
-        let pos = [
-            pos_list.doubles()?.first().copied()?,
-            pos_list.doubles()?.get(1).copied()?,
-            pos_list.doubles()?.get(2).copied()?,
-        ];
-
-        // Motion (optional, default to zero)
-        let motion =
-            nbt.list("Motion")
-                .and_then(|l| l.doubles())
-                .map_or([0.0, 0.0, 0.0], |doubles| {
-                    [
-                        doubles.first().copied().unwrap_or(0.0),
-                        doubles.get(1).copied().unwrap_or(0.0),
-                        doubles.get(2).copied().unwrap_or(0.0),
-                    ]
-                });
-
-        // Rotation (optional, default to zero)
-        let rotation = nbt
-            .list("Rotation")
-            .and_then(|l| l.floats())
-            .map_or([0.0, 0.0], |floats| {
-                [
-                    floats.first().copied().unwrap_or(0.0),
-                    floats.get(1).copied().unwrap_or(0.0),
-                ]
-            });
-
-        // Simple fields with defaults
-        let on_ground = nbt.byte("OnGround") != Some(0);
-        let fall_flying = nbt.byte("FallFlying").is_some_and(|b| b != 0);
-        let health = nbt.float("Health").unwrap_or(20.0);
-        let game_mode = nbt.int("playerGameType").unwrap_or(0);
-        let prev_game_mode = nbt.int("previousPlayerGameType").unwrap_or(0);
-        let selected_slot = nbt.int("SelectedItemSlot").unwrap_or(0);
-        let dimension = nbt.string("Dimension").map_or_else(
-            || "minecraft:overworld".to_string(),
-            |s| s.to_str().to_string(),
-        );
-        let data_version = nbt.int("DataVersion").unwrap_or(0);
-
-        // Abilities
-        let abilities = nbt
-            .compound("abilities")
-            .map(|c| PersistentAbilities::from_nbt(&c))
-            .unwrap_or_default();
-
-        // Inventory
-        let mut inventory = Vec::new();
-        if let Some(inv_list) = nbt.list("Inventory")
-            && let Some(compounds) = inv_list.compounds()
-        {
-            for item_compound in compounds {
-                let slot = item_compound.byte("Slot").unwrap_or(0);
-                if let Some(item) = ItemStack::from_borrowed_compound(&item_compound) {
-                    inventory.push(PersistentSlot { slot, item });
-                }
-            }
-        }
-
-        let experience_level = nbt.int("XpLevel").unwrap_or(0);
-        let experience_progress = nbt.float("XpP").unwrap_or(0.0);
-        let experience_total = nbt.int("XpTotal").unwrap_or(0);
-        let score = nbt.int("Score").unwrap_or(0);
-
-        Some(Self {
-            pos,
-            motion,
-            rotation,
-            on_ground,
-            fall_flying,
-            health,
-            game_mode,
-            prev_game_mode,
-            abilities,
-            inventory,
-            selected_slot,
-            dimension,
-            data_version,
-            experience_level,
-            experience_progress,
-            experience_total,
-            score,
-        })
-    }
-}
-
-impl PersistentAbilities {
-    /// Serializes abilities to an NBT compound.
-    #[must_use]
-    pub fn to_nbt(&self) -> NbtCompound {
-        let mut compound = NbtCompound::new();
-        compound.insert("invulnerable", i8::from(self.invulnerable));
-        compound.insert("flying", i8::from(self.flying));
-        compound.insert("mayfly", i8::from(self.may_fly));
-        compound.insert("instabuild", i8::from(self.instabuild));
-        compound.insert("mayBuild", i8::from(self.may_build));
-        compound.insert("flySpeed", self.flying_speed);
-        compound.insert("walkSpeed", self.walking_speed);
-        compound
-    }
-
-    /// Deserializes abilities from an NBT compound.
-    #[must_use]
-    pub fn from_nbt(nbt: &NbtCompoundView<'_, '_>) -> Self {
-        Self {
-            invulnerable: nbt.byte("invulnerable").is_some_and(|b| b != 0),
-            flying: nbt.byte("flying").is_some_and(|b| b != 0),
-            may_fly: nbt.byte("mayfly").is_some_and(|b| b != 0),
-            instabuild: nbt.byte("instabuild").is_some_and(|b| b != 0),
-            may_build: nbt.byte("mayBuild") != Some(0),
-            flying_speed: nbt.float("flySpeed").unwrap_or(0.05),
-            walking_speed: nbt.float("walkSpeed").unwrap_or(0.1),
         }
     }
 }
@@ -438,23 +232,37 @@ impl PersistentPlayerData {
     ///
     /// This restores position, rotation, inventory, abilities, etc.
     pub fn apply_to_player(&self, player: &Player) {
+        self.apply_to_player_inner(player, true);
+    }
+
+    /// Applies saved gameplay state without restoring world-local location data.
+    ///
+    /// Used when the saved world no longer exists and the player must spawn at
+    /// the target world's default spawn instead of stale coordinates.
+    pub fn apply_to_player_without_location(&self, player: &Player) {
+        self.apply_to_player_inner(player, false);
+    }
+
+    fn apply_to_player_inner(&self, player: &Player, restore_location: bool) {
         use glam::DVec3;
 
-        // Position
-        *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
+        if restore_location {
+            // Position
+            *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
 
-        // Rotation
-        player.rotation.store((self.rotation[0], self.rotation[1]));
+            // Rotation
+            player.rotation.store((self.rotation[0], self.rotation[1]));
 
-        // Motion/velocity
-        player.movement.lock().delta_movement =
-            DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
+            // Motion/velocity
+            player.movement.lock().delta_movement =
+                DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
 
-        // Ground state
-        {
-            let mut es = player.entity_state.lock();
-            es.on_ground = self.on_ground;
-            es.fall_flying = self.fall_flying;
+            // Ground state
+            {
+                let mut es = player.entity_state.lock();
+                es.on_ground = self.on_ground;
+                es.fall_flying = self.fall_flying;
+            }
         }
 
         // Health
@@ -488,6 +296,15 @@ impl PersistentPlayerData {
             // Restore selected slot
             let selected = self.selected_slot.clamp(0, 8) as u8;
             inventory.set_selected_slot(selected);
+        }
+
+        // Food data
+        {
+            let mut food = player.food_data.lock();
+            food.food_level = self.food_level;
+            food.saturation_level = self.food_saturation_level;
+            food.exhaustion_level = self.food_exhaustion_level;
+            food.tick_timer = self.food_tick_timer;
         }
 
         {

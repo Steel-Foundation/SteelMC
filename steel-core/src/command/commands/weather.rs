@@ -12,7 +12,7 @@ use steel_utils::translations;
 pub fn command_handler() -> impl CommandHandlerDyn {
     CommandHandlerBuilder::new(
         &["weather"],
-        "Changes the weather in the current dimension.",
+        "Changes the weather in the current world.",
         "minecraft:command.weather",
     )
     .then(

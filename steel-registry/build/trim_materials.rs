@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use std::fs;
 
+use crate::generator_functions::{generate_identifier, generate_option};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -20,25 +21,6 @@ pub struct StyledTextComponent {
     translate: String,
     #[serde(default)]
     color: Option<String>,
-}
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
-
-fn generate_option<T, F>(opt: &Option<T>, f: F) -> TokenStream
-where
-    F: FnOnce(&T) -> TokenStream,
-{
-    match opt {
-        Some(val) => {
-            let inner = f(val);
-            quote! { Some(#inner) }
-        }
-        None => quote! { None },
-    }
 }
 
 fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> TokenStream {

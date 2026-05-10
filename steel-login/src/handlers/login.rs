@@ -3,7 +3,7 @@
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
-use steel_core::{config::STEEL_CONFIG, player::GameProfile};
+use steel_core::player::GameProfile;
 use steel_protocol::{
     packets::login::{CHello, CLoginCompression, CLoginFinished, SHello, SKey},
     utils::ConnectionProtocol,
@@ -27,7 +27,7 @@ impl JavaTcpClient {
             return;
         }
 
-        let id = if STEEL_CONFIG.online_mode {
+        let id = if self.server.config.online_mode {
             packet.profile_id
         } else {
             offline_uuid(&packet.name).expect("Failed to generate offline UUID")
@@ -43,7 +43,7 @@ impl JavaTcpClient {
             });
         }
 
-        if STEEL_CONFIG.encryption {
+        if self.server.config.encryption {
             let challenge: [u8; 4] = rand::random();
             self.challenge.store(challenge);
 
@@ -118,7 +118,7 @@ impl JavaTcpClient {
             return;
         };
 
-        if STEEL_CONFIG.online_mode {
+        if self.server.config.online_mode {
             let server_hash = &Sha1::new()
                 .chain_update(secret_key)
                 .chain_update(&self.server.key_store.public_key_der)
@@ -154,7 +154,7 @@ impl JavaTcpClient {
     /// # Panics
     /// This function will panic if the compression threshold cannot be converted to an i32.
     pub async fn finish_login(&self, profile: &GameProfile) {
-        if let Some(compression) = STEEL_CONFIG.compression {
+        if let Some(compression) = self.server.config.compression {
             self.send_bare_packet_now(CLoginCompression::new(
                 compression
                     .threshold

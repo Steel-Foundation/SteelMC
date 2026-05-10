@@ -1,3 +1,4 @@
+use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -20,23 +21,9 @@ pub struct WolfAssetInfo {
     pub angry: Identifier,
 }
 
-/// A single entry in the list of spawn conditions.
-#[derive(Debug)]
-pub struct SpawnConditionEntry {
-    pub priority: i32,
-    pub condition: Option<BiomeCondition>,
-}
-
-/// Defines a condition based on a biome or list of biomes.
-#[derive(Debug)]
-pub struct BiomeCondition {
-    pub condition_type: &'static str,
-    pub biomes: &'static str,
-}
-
 impl ToNbtTag for &WolfVariant {
     fn to_nbt_tag(self) -> NbtTag {
-        use simdnbt::owned::{NbtCompound, NbtList};
+        use simdnbt::owned::NbtCompound;
         let mut compound = NbtCompound::new();
         let mut assets = NbtCompound::new();
         let wild = self.assets.wild.to_string();
@@ -47,32 +34,14 @@ impl ToNbtTag for &WolfVariant {
         assets.insert("angry", angry.as_str());
         compound.insert("assets", NbtTag::Compound(assets));
         let mut baby_assets = NbtCompound::new();
-        let wild = self.assets.wild.to_string();
+        let wild = self.baby_assets.wild.to_string();
         baby_assets.insert("wild", wild.as_str());
-        let tame = self.assets.tame.to_string();
+        let tame = self.baby_assets.tame.to_string();
         baby_assets.insert("tame", tame.as_str());
-        let angry = self.assets.angry.to_string();
+        let angry = self.baby_assets.angry.to_string();
         baby_assets.insert("angry", angry.as_str());
         compound.insert("baby_assets", NbtTag::Compound(baby_assets));
-        let conditions: Vec<NbtCompound> = self
-            .spawn_conditions
-            .iter()
-            .map(|entry| {
-                let mut e = NbtCompound::new();
-                e.insert("priority", entry.priority);
-                if let Some(cond) = &entry.condition {
-                    let mut c = NbtCompound::new();
-                    c.insert("type", cond.condition_type);
-                    c.insert("biomes", cond.biomes);
-                    e.insert("condition", NbtTag::Compound(c));
-                }
-                e
-            })
-            .collect();
-        compound.insert(
-            "spawn_conditions",
-            NbtTag::List(NbtList::Compound(conditions)),
-        );
+        insert_spawn_conditions(&mut compound, self.spawn_conditions);
         NbtTag::Compound(compound)
     }
 }

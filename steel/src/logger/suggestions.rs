@@ -153,7 +153,7 @@ impl Completer {
             out,
             "{SavePosition}{}{}{RestorePosition}",
             SetForegroundColor(DarkGrey),
-            &self.completed
+            self.completed
         )?;
         out.flush()
     }

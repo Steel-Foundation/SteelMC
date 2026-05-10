@@ -3,14 +3,25 @@
 //! This module provides the integration between extracted vanilla worldgen data
 //! and the world generation pipeline.
 
-mod biome_source;
-mod climate_sampler;
-mod nether_climate_sampler;
+/// Biome sources and climate samplers.
+pub mod biomes;
+pub mod context;
+pub mod generator;
+/// Concrete chunk generator implementations.
+pub mod generators;
+pub mod noise;
+pub mod registry;
+pub(crate) mod stages;
+pub mod surface;
 
-pub use biome_source::{
+pub use biomes::{
     BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
 };
-pub use climate_sampler::OverworldClimateSampler;
-pub use nether_climate_sampler::NetherClimateSampler;
-pub use steel_registry::density_functions::overworld::OverworldColumnCache;
-pub use steel_utils::noise::EndIslands;
+pub use context::{
+    ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator, WorldGenContext,
+};
+pub use generator::ChunkGenerator;
+pub use generators::{EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator};
+pub use registry::{GeneratorOutput, WorldGeneratorRegistry};
+pub use steel_worldgen::density_functions::overworld::OverworldColumnCache;
+pub use steel_worldgen::noise::EndIslands;

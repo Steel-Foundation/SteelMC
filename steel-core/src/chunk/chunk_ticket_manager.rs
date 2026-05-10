@@ -7,10 +7,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::SmallVec;
 use steel_utils::ChunkPos;
 
-use crate::{
-    chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID},
-    config::STEEL_CONFIG,
-};
+use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
 
 /// The maximum view distance for players.
 pub const MAX_VIEW_DISTANCE: u8 = 32;
@@ -26,8 +23,8 @@ pub const fn is_full(level: u8) -> bool {
 }
 
 #[must_use]
-pub fn is_ticked(level: u8) -> bool {
-    level <= MAX_VIEW_DISTANCE - STEEL_CONFIG.view_distance + STEEL_CONFIG.simulation_distance
+pub const fn is_ticked(level: u8, view_distance: u8, simulation_distance: u8) -> bool {
+    level <= MAX_VIEW_DISTANCE - view_distance + simulation_distance
 }
 
 #[must_use]

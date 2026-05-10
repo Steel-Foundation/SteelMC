@@ -822,6 +822,84 @@ impl From<f32> for GameType {
     }
 }
 
+/// World difficulty level.
+///
+/// Controls starvation damage thresholds, mob spawning behavior,
+/// and various other gameplay tweaks.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Difficulty {
+    /// No hostile mobs, no starvation, health regenerates quickly.
+    Peaceful = 0,
+    /// Hostile mobs deal less damage, starvation stops at 10 HP.
+    Easy = 1,
+    /// Default difficulty, starvation stops at 1 HP.
+    #[default]
+    Normal = 2,
+    /// Hostile mobs deal more damage, starvation can kill.
+    Hard = 3,
+}
+
+#[expect(clippy::match_same_arms, reason = "cause it looks better")]
+impl From<u8> for Difficulty {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Difficulty::Peaceful,
+            1 => Difficulty::Easy,
+            2 => Difficulty::Normal,
+            3 => Difficulty::Hard,
+            _ => Difficulty::Normal,
+        }
+    }
+}
+
+impl From<Difficulty> for u8 {
+    fn from(value: Difficulty) -> Self {
+        value as u8
+    }
+}
+
+impl ReadFrom for Difficulty {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        let value = <u8 as ReadFrom>::read(data)?;
+        match value {
+            0 => Ok(Difficulty::Peaceful),
+            1 => Ok(Difficulty::Easy),
+            2 => Ok(Difficulty::Normal),
+            3 => Ok(Difficulty::Hard),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid Difficulty: {value}"),
+            )),
+        }
+    }
+}
+
+impl WriteTo for Difficulty {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        (*self as u8).write(writer)
+    }
+}
+
+impl Serialize for Difficulty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+impl<'de> Deserialize<'de> for Difficulty {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let id = u8::deserialize(deserializer)?;
+        Ok(Self::from(id))
+    }
+}
+
 /// An identifier used by Minecraft.
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Identifier {

@@ -1,17 +1,17 @@
-//! Steel server commands: /steel tp <targets> <dimension>
+//! Steel server commands: /steel tp <targets> <world>
 
 use std::sync::Arc;
 
 use text_components::TextComponent;
 
-use crate::command::arguments::dimension::DimensionArgument;
 use crate::command::arguments::player::PlayerArgument;
+use crate::command::arguments::world::WorldArgument;
 use crate::command::commands::{CommandHandlerBuilder, CommandHandlerDyn, argument, literal};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
 use crate::entity::SharedEntity;
 use crate::player::Player;
-use crate::portal::{DimensionChangeRequest, TeleportTransition};
+use crate::portal::WorldChangeRequest;
 use crate::world::World;
 
 /// Handler for the "steel" command group.
@@ -24,25 +24,43 @@ pub fn command_handler() -> impl CommandHandlerDyn {
     )
     .then(
         literal("tp").then(argument("targets", PlayerArgument::multiple()).then(
-            argument("dimension", DimensionArgument).executes(
+            argument("world", WorldArgument).executes(
                 |(((), targets), world): (((), Vec<Arc<Player>>), Arc<World>),
                  context: &mut CommandContext|
                  -> Result<(), CommandError> {
-                    let dim_name = &world.dimension.key;
+                    let dim_name = &world.key;
                     let count = targets.len();
 
                     for target in &targets {
-                        let pos = *target.position.lock();
-                        let rot = target.rotation.load();
-                        context.server.queue_dimension_change(
-                            target.clone() as SharedEntity,
-                            DimensionChangeRequest::Computed(TeleportTransition {
-                                target_world: world.clone(),
-                                position: pos,
-                                rotation: rot,
-                                portal_cooldown: 0,
-                            }),
-                        );
+                        if target.is_domain_switching() {
+                            return Err(CommandError::CommandFailed(Box::new(
+                                TextComponent::plain(format!(
+                                    "{} is already switching domains",
+                                    target.gameprofile.name
+                                )),
+                            )));
+                        }
+                    }
+
+                    for target in &targets {
+                        let current_world = target.get_world();
+                        if current_world.domain() == world.domain() {
+                            context.server.queue_world_change(
+                                target.clone() as SharedEntity,
+                                WorldChangeRequest::WorldSpawn {
+                                    target_world: world.clone(),
+                                },
+                            );
+                        } else {
+                            context
+                                .server
+                                .queue_domain_switch_to_world(target.clone(), world.clone())
+                                .map_err(|error| {
+                                    CommandError::CommandFailed(Box::new(TextComponent::plain(
+                                        error,
+                                    )))
+                                })?;
+                        }
                     }
 
                     let msg = if count == 1 {
