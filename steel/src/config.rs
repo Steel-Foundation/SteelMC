@@ -1,41 +1,101 @@
 //! Server configuration loading.
 //!
 //! This module handles loading the server configuration from disk.
-//! The `ServerConfig` struct is defined in `steel-core`, this module
-//! just handles the file I/O and initialization.
+//! The config is loaded once at startup, split into creation-time values
+//! (consumed by the server constructor) and a `RuntimeConfig` (stored on `Server`).
 
-use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Deserialize;
-use std::{fs, path::Path, sync::LazyLock};
-use steel_utils::MC_VERSION;
+use std::{collections::BTreeMap, fs, path::Path};
 
-// Re-export types from steel-core for convenience
-pub use steel_core::config::{ConfigLabel, ConfigLink, ServerConfig, ServerConfigRef, ServerLinks};
+use steel_core::config::{CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig};
 
 #[cfg(feature = "stand-alone")]
 const DEFAULT_FAVICON: &[u8] = include_bytes!("../../package-content/favicon.png");
-const ICON_PREFIX: &str = "data:image/png;base64,";
 
-const DEFAULT_CONFIG: &str = include_str!("../../package-content/steel_config.json5");
+const DEFAULT_CONFIG: &str = include_str!("../../package-content/config.toml");
+const DEFAULT_WORLDS: &str = include_str!("../../package-content/worlds.toml");
 
-/// The server configuration.
-///
-/// This is loaded from `config/steel_config.json5` or created if it doesn't exist.
-pub static STEEL_CONFIG: LazyLock<ExtendedConfig> =
-    LazyLock::new(|| load_or_create(Path::new("config/steel_config.json5")));
-
-/// A extended configuration for non-server features
+/// Top-level TOML deserialization target — used once at startup, not stored globally.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ExtendedConfig {
-    /// The full server configuration
-    #[serde(flatten)]
-    pub server_config: ServerConfig,
-    /// Logging configuration
+#[serde(deny_unknown_fields)]
+pub struct SteelConfig {
+    /// The full server configuration (`[server]` section)
+    pub server: ServerConfig,
+    /// Logging configuration (`[log]` section)
     pub log: Option<LogConfig>,
+    /// World and domain configuration from `worlds.toml`.
+    #[serde(skip, default = "empty_worlds_config")]
+    pub worlds: WorldsConfig,
+}
+
+const fn empty_worlds_config() -> WorldsConfig {
+    WorldsConfig {
+        save_path: String::new(),
+        seed: None,
+        default_gamemode: None,
+        difficulty: None,
+        storage: None,
+        player_storage: None,
+        domains: BTreeMap::new(),
+    }
+}
+
+/// The full server configuration as deserialized from TOML.
+///
+/// Contains both creation-time values (seed, world generator, storage)
+/// and runtime values that get moved into `RuntimeConfig`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerConfig {
+    /// The port the server will listen on.
+    pub server_port: u16,
+    /// The maximum number of players that can be on the server at once.
+    pub max_players: u32,
+    /// The view distance of the server.
+    pub view_distance: u8,
+    /// The simulation distance of the server.
+    pub simulation_distance: u8,
+    /// Whether the server is in online mode.
+    pub online_mode: bool,
+    /// Whether the server should use encryption.
+    pub encryption: bool,
+    /// The message of the day.
+    pub motd: String,
+    /// Whether to use a favicon.
+    pub use_favicon: bool,
+    /// The path to the favicon.
+    pub favicon: String,
+    /// Whether to enforce secure chat.
+    pub enforce_secure_chat: bool,
+    /// The compression settings for the server.
+    pub compression: Option<CompressionInfo>,
+    /// All settings and configurations for server links.
+    pub server_links: Option<ServerLinks>,
+}
+
+impl ServerConfig {
+    /// Extracts the `RuntimeConfig` from this full config.
+    #[must_use]
+    pub fn into_runtime_config(self) -> RuntimeConfig {
+        RuntimeConfig {
+            max_players: self.max_players,
+            view_distance: self.view_distance,
+            simulation_distance: self.simulation_distance,
+            online_mode: self.online_mode,
+            encryption: self.encryption,
+            motd: self.motd,
+            use_favicon: self.use_favicon,
+            favicon: self.favicon,
+            enforce_secure_chat: self.enforce_secure_chat,
+            compression: self.compression,
+            server_links: self.server_links,
+        }
+    }
 }
 
 /// Logging configuration
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LogConfig {
     /// Time display format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
     #[serde(default)]
@@ -61,38 +121,64 @@ pub enum LogTimeFormat {
 
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.
 ///
-/// # Panics
-/// This function will panic if the config file does not exist and the directory cannot be created,
-/// or if the config file cannot be read or written.
-#[must_use]
-fn load_or_create(path: &Path) -> ExtendedConfig {
+pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
     let mut config = if path.exists() {
-        let config_str = fs::read_to_string(path).expect("Failed to read config file");
-        let config: ExtendedConfig =
-            serde_json5::from_str(config_str.as_str()).expect("Failed to parse config");
-        validate(&config.server_config).expect("Failed to validate config");
+        let config_str = fs::read_to_string(path)
+            .map_err(|e| format!("failed to read config file {}: {e}", path.display()))?;
+        let config: SteelConfig = toml::from_str(config_str.as_str())
+            .map_err(|e| format!("failed to parse config: {e}"))?;
+        validate(&config.server).map_err(|e| format!("failed to validate config: {e}"))?;
         config
     } else {
-        fs::create_dir_all(path.parent().expect("Failed to get config directory"))
-            .expect("Failed to create config directory");
-        fs::write(path, DEFAULT_CONFIG).expect("Failed to write config file");
-        let config: ExtendedConfig =
-            serde_json5::from_str(DEFAULT_CONFIG).expect("Failed to parse config");
-        validate(&config.server_config).expect("Failed to validate config");
+        let parent = path
+            .parent()
+            .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "failed to create config directory {}: {e}",
+                parent.display()
+            )
+        })?;
+        fs::write(path, DEFAULT_CONFIG)
+            .map_err(|e| format!("failed to write config file {}: {e}", path.display()))?;
+        let config: SteelConfig = toml::from_str(DEFAULT_CONFIG)
+            .map_err(|e| format!("failed to parse default config: {e}"))?;
+        validate(&config.server).map_err(|e| format!("failed to validate default config: {e}"))?;
         config
     };
 
-    // Set the MC version (not loaded from config file)
-    config.server_config.mc_version = MC_VERSION;
+    let worlds_path = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
+        .join("worlds.toml");
+    config.worlds = load_or_create_worlds(&worlds_path)?;
 
     // If icon file doesnt exist, write it
     #[cfg(feature = "stand-alone")]
-    if config.server_config.use_favicon && !Path::new(&config.server_config.favicon).exists() {
-        fs::write(Path::new(&config.server_config.favicon), DEFAULT_FAVICON)
-            .expect("Failed to write favicon file");
+    if config.server.use_favicon && !Path::new(&config.server.favicon).exists() {
+        fs::write(Path::new(&config.server.favicon), DEFAULT_FAVICON).map_err(|e| {
+            format!(
+                "failed to write favicon file {}: {e}",
+                config.server.favicon
+            )
+        })?;
     }
 
-    config
+    Ok(config)
+}
+
+fn load_or_create_worlds(path: &Path) -> Result<WorldsConfig, String> {
+    if path.exists() {
+        let worlds_str = fs::read_to_string(path)
+            .map_err(|e| format!("failed to read worlds config file {}: {e}", path.display()))?;
+        toml::from_str(worlds_str.as_str())
+            .map_err(|e| format!("failed to parse worlds config {}: {e}", path.display()))
+    } else {
+        fs::write(path, DEFAULT_WORLDS)
+            .map_err(|e| format!("failed to write worlds config file {}: {e}", path.display()))?;
+        toml::from_str(DEFAULT_WORLDS)
+            .map_err(|e| format!("failed to parse default worlds config: {e}"))
+    }
 }
 
 /// Validates the server configuration.
@@ -125,48 +211,15 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Loads the favicon from the path specified in the config.
-/// If the favicon doesn't exist, it will use the default favicon.
-/// If `use_favicon` is false, this will return `None`.
-///
-/// The returned string is a base64 encoded png with the `data:image/png;base64,` prefix.
-#[must_use]
-pub fn load_favicon(config: &ServerConfig) -> Option<String> {
-    if config.use_favicon {
-        let path = Path::new(&config.favicon);
-        if path.exists() {
-            let icon = fs::read(path);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-            if let Ok(icon) = icon {
-                let cap = ICON_PREFIX.len() + icon.len().div_ceil(3) * 4;
-                let mut base64 = String::with_capacity(cap);
-
-                base64 += ICON_PREFIX;
-                BASE64_STANDARD.encode_string(icon, &mut base64);
-
-                return Some(base64);
-            }
-            #[cfg(feature = "stand-alone")]
-            {
-                let cap = ICON_PREFIX.len() + DEFAULT_FAVICON.len().div_ceil(3) * 4;
-                let mut base64 = String::with_capacity(cap);
-
-                base64 += ICON_PREFIX;
-                BASE64_STANDARD.encode_string(DEFAULT_FAVICON, &mut base64);
-
-                return Some(base64);
-            }
-            #[cfg(not(feature = "stand-alone"))]
-            return None;
-        }
+    #[test]
+    fn packaged_configs_parse() {
+        let config: SteelConfig = toml::from_str(DEFAULT_CONFIG).expect("default config parses");
+        validate(&config.server).expect("default config validates");
+        let worlds: WorldsConfig = toml::from_str(DEFAULT_WORLDS).expect("default worlds parses");
+        assert!(!worlds.domains.is_empty());
     }
-    None
-}
-
-/// Initializes the steel-core config reference.
-///
-/// This must be called before any steel-core code accesses `STEEL_CONFIG`.
-pub fn init_steel_core_config() {
-    // Force config to load, then initialize steel-core's reference
-    ServerConfigRef::init(&STEEL_CONFIG.server_config);
 }

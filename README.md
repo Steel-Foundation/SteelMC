@@ -17,7 +17,7 @@
 Steel is a lightweight Rust implementation of the Minecraft server.
 It focuses on clean code, performance, extensibility, and ease of use.
 
-![Demo](https://github.com/user-attachments/assets/ee656153-0660-4626-8295-37d3c96d8fd9)
+<img width="800" height="450" alt="showcase" src="https://github.com/user-attachments/assets/5b423815-3623-4d9d-868e-e6d93aad0b14" />
 
 
 </div>

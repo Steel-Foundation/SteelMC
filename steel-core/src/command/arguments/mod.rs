@@ -1,7 +1,7 @@
 //! This module contains types and utilities for parsing command arguments.
 pub mod anchor;
 pub mod bool;
-pub mod dimension;
+pub mod domain;
 pub mod enchantment;
 pub mod entity;
 pub mod float;
@@ -10,10 +10,12 @@ pub mod integer;
 pub mod item;
 pub mod player;
 pub mod rotation;
+pub mod structure;
 pub mod text_component;
 pub mod time;
 pub mod vector2;
 pub mod vector3;
+pub mod world;
 
 use std::sync::Arc;
 

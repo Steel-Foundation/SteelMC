@@ -7,10 +7,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::SmallVec;
 use steel_utils::ChunkPos;
 
-use crate::{
-    chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID},
-    config::STEEL_CONFIG,
-};
+use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
 
 /// The maximum view distance for players.
 pub const MAX_VIEW_DISTANCE: u8 = 32;
@@ -26,8 +23,8 @@ pub const fn is_full(level: u8) -> bool {
 }
 
 #[must_use]
-pub fn is_ticked(level: u8) -> bool {
-    level <= MAX_VIEW_DISTANCE - STEEL_CONFIG.view_distance + STEEL_CONFIG.simulation_distance
+pub const fn is_ticked(level: u8, view_distance: u8, simulation_distance: u8) -> bool {
+    level <= MAX_VIEW_DISTANCE - view_distance + simulation_distance
 }
 
 #[must_use]
@@ -46,6 +43,23 @@ pub const fn generation_status(level: Option<u8>) -> Option<ChunkStatus> {
                     .get(distance)
             }
         }
+    }
+}
+
+/// Returns the ticket level that permits a chunk to reach at least `status`.
+///
+/// This is derived from the full-chunk dependency pyramid so request tickets use
+/// the same propagation rules as player tickets.
+#[must_use]
+pub const fn ticket_level_for_status(status: ChunkStatus) -> u8 {
+    if matches!(status, ChunkStatus::Full) {
+        MAX_VIEW_DISTANCE
+    } else {
+        MAX_VIEW_DISTANCE
+            + GENERATION_PYRAMID
+                .get_step_to(ChunkStatus::Full)
+                .accumulated_dependencies
+                .get_radius_of(status) as u8
     }
 }
 
@@ -371,5 +385,36 @@ mod tests {
         assert!(!manager.is_dirty());
         manager.run_all_updates();
         assert!(!manager.is_dirty());
+    }
+
+    #[test]
+    fn ticket_level_for_status_allows_requested_status() {
+        for index in 0..=ChunkStatus::Full.get_index() {
+            let status = ChunkStatus::from_index(index).expect("index is in status range");
+            let ticket_level = ticket_level_for_status(status);
+            let allowed = generation_status(Some(ticket_level));
+            assert!(
+                allowed.is_some_and(|allowed| allowed >= status),
+                "{status:?} request mapped to level {ticket_level}, which allows {allowed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ticket_level_for_status_creates_required_dependency_holders() {
+        for index in 0..=ChunkStatus::Full.get_index() {
+            let status = ChunkStatus::from_index(index).expect("index is in status range");
+            let ticket_level = ticket_level_for_status(status);
+            let propagation_radius = usize::from(MAX_LEVEL - ticket_level);
+            let required_radius = GENERATION_PYRAMID
+                .get_step_to(status)
+                .accumulated_dependencies
+                .get_radius();
+
+            assert!(
+                propagation_radius >= required_radius,
+                "{status:?} request maps to level {ticket_level}, propagation radius {propagation_radius}, required radius {required_radius}"
+            );
+        }
     }
 }

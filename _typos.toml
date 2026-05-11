@@ -9,6 +9,8 @@ check-file = false
 flate = "flate"
 strat = "strat"
 axe = "axe"
+# Vanilla stronghold piece-type IDs (shs, shsd, shrc, ...).
+shs = "shs"
 
 [default]
 locale = "en-us"

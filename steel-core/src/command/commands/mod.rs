@@ -1,6 +1,7 @@
 //! This module contains the command building structs.
 pub mod clear;
 pub mod difficulty;
+pub mod domain;
 pub mod enchant;
 pub mod execute;
 pub mod fly;
@@ -8,6 +9,7 @@ pub mod gamemode;
 pub mod gamerule;
 pub mod give;
 pub mod kill;
+pub mod locate;
 pub mod seed;
 pub mod steel;
 pub mod stop;

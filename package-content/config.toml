@@ -1,0 +1,60 @@
+#:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/config.schema.json
+
+[server]
+# Server port
+server_port = 25565
+# Maximum number of players allowed on the server
+max_players = 20
+# Maximum view distance in chunks
+view_distance = 10
+# Maximum simulation distance in chunks
+simulation_distance = 10
+# Whether to use Mojang's authentication service
+online_mode = true
+# Whether to enable encryption for client-server communication
+encryption = true
+# Message of the day displayed in server lists
+motd = "A Steel Server"
+# Whether to use a custom favicon for the server
+use_favicon = true
+# Path to the favicon file (PNG format, 64x64 pixels)
+favicon = "config/favicon.png"
+# Whether to enforce secure chat
+enforce_secure_chat = false
+
+# Compression settings
+[server.compression]
+threshold = 256
+level = 4
+
+# Server links configuration
+[server.server_links]
+# Enable server links feature
+enable = true
+
+[[server.server_links.links]]
+label = "bug_report"
+url = "https://github.com/4lve/SteelMC/issues"
+
+[[server.server_links.links]]
+label = "website"
+url = "https://github.com/4lve/SteelMC"
+
+# The news channel on discord
+[[server.server_links.links]]
+label = "announcements"
+url = "https://discord.com/channels/1428487339759370322/1428487584966774795"
+
+# Custom TextComponent (object label with formatting)
+[[server.server_links.links]]
+label = { text = "Visit the SteelMC Discord", color = "blue", bold = true }
+url = "https://discord.gg/suSXXNdVSf"
+
+# Logging configuration
+[log]
+# Time format: "none", "date" (HH:MM:SS:mmm), or "uptime" (seconds since start)
+time = "uptime"
+# Whether the module_path of the log should be displayed
+module_path = false
+# Whether the extra data of the log should be displayed
+extra = false

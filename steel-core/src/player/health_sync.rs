@@ -5,6 +5,8 @@
 //!
 //! Vanilla: `ServerPlayer.lastSentHealth`, `lastSentFood`, `lastFoodSaturationZero`.
 
+use crate::player::Player;
+
 /// Tracks the last health/food/saturation values sent to the client.
 pub struct HealthSyncState {
     /// Last health value sent to the client.
@@ -56,5 +58,13 @@ impl HealthSyncState {
     pub const fn reset_for_respawn(&mut self) {
         self.last_health = -1.0;
         self.last_food = -1;
+    }
+}
+
+impl Player {
+    /// Invalidates the delta-tracking state so that the next `tick()` will send
+    /// `CSetHealth` to the client (vanilla: `resetSentInfo`).
+    pub fn reset_sent_info(&self) {
+        self.health_sync.lock().invalidate();
     }
 }

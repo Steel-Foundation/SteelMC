@@ -7,11 +7,9 @@ use rustc_hash::FxHashMap;
 use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, types::UpdateFlags};
 
-use crate::chunk::{
-    carving_mask::CarvingMask, chunk_access::ChunkStatus, heightmap::ProtoHeightmaps,
-    section::Sections,
-};
+use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
+use crate::worldgen::carving_mask::CarvingMask;
 
 /// A chunk that is still being generated.
 #[derive(Debug)]

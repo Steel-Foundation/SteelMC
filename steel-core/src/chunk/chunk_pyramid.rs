@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
-    chunk_status_tasks::ChunkStatusTasks, world_gen_context::WorldGenContext,
+    chunk_status_tasks::ChunkStatusTasks,
 };
+use crate::worldgen::context::WorldGenContext;
 
 /// Number of `ChunkStatus` variants.
 const STATUS_COUNT: usize = 12;

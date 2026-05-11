@@ -2,7 +2,6 @@
 use crate::command::commands::{CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
-use crate::config::STEEL_CONFIG;
 use steel_utils::translations;
 use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
@@ -23,14 +22,13 @@ struct SeedCommandExecutor;
 
 impl CommandExecutor<()> for SeedCommandExecutor {
     fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
+        let seed = context.world.seed().to_string();
         context.sender.send_message(
             &translations::COMMANDS_SEED_SUCCESS
-                .message([TextComponent::plain(&STEEL_CONFIG.seed)
+                .message([TextComponent::from(seed.clone())
                     .color(Color::Green)
                     .hover_event(HoverEvent::show_text(&translations::CHAT_COPY_CLICK))
-                    .click_event(ClickEvent::CopyToClipboard {
-                        value: (&STEEL_CONFIG.seed).into(),
-                    })])
+                    .click_event(ClickEvent::CopyToClipboard { value: seed.into() })])
                 .component(),
         );
         Ok(())

@@ -4,6 +4,8 @@
 
 **VANILLA FUNCTIONALITY** - We should keep 1:1 Vanilla functionality. If a compromise can be made you MUST present the issue at hand to the user first.
 
+**BIOME DETERMINISM** - Steel intentionally uses deterministic per-sampler biome caching instead of vanilla's `ThreadLocal` biome cache. Do not reproduce vanilla's generation-order-dependent biome tie-breaking; when a mismatch is caused only by that vanilla nondeterminism, document the exact case instead of adding thread locals.
+
 **SKETCHY WORKAROUND PROTOCOL** — Halt and ask permission before using:
 - `.clone()` to appease borrow checker, `.unwrap()`/`.expect()` in production, `unsafe`
 - `Any` (Any isn't abi safe and a bad workaround)
@@ -31,10 +33,11 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - If you haven't fully implemented a feature, make sure to add a // TODO: comment
  - Keep comments concise
  - After fixing something don't leave a comment
+ - Currently this project is in early development, we don't need to provide migrations
 
  **Testing**
   - Add tests for advanced systems, code using unsafe (Always use // SAFETY comments) or code that needs to match vanilla determinism (ItemComponent hashing or worldgen)
-  - Only #[allow] clippy lints with a justification comment unless obvious. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained.
+  - Suppress clippy lints with `#[expect(clippy::lint_name, reason = "...")]`. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained
 
 **GENERATED CODE** — Never modify generated files directly:
 - `steel-registry/src/generated/` → modify `steel-registry/build/build.rs`

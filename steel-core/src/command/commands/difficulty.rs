@@ -71,9 +71,13 @@ impl CommandExecutor<()> for SetExecutor {
     fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
         let difficulty = self.0;
 
-        let current = context.world.level_data.read().data().difficulty;
+        let domain = context.world.domain().to_owned();
+        let worlds = context.server.worlds.worlds_in_domain(&domain);
 
-        if current == difficulty {
+        if worlds
+            .iter()
+            .all(|world| world.level_data.read().data().difficulty == difficulty)
+        {
             return Err(CommandError::CommandFailed(Box::new(
                 translations::COMMANDS_DIFFICULTY_FAILURE
                     .message([TextComponent::plain(difficulty_key(difficulty))])
@@ -81,8 +85,7 @@ impl CommandExecutor<()> for SetExecutor {
             )));
         }
 
-        // Vanilla: difficulty is global across all dimensions
-        for world in context.server.worlds.values() {
+        for world in worlds {
             let mut level_data = world.level_data.write();
             level_data.data_mut().difficulty = difficulty;
             let locked = level_data.data().difficulty_locked;

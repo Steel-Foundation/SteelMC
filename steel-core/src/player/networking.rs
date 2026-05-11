@@ -236,6 +236,12 @@ impl JavaConnection {
     ) -> Result<(), PacketError> {
         let data = &mut Cursor::new(packet.payload.as_slice());
 
+        if player.is_domain_switching()
+            && !matches!(packet.id, play::S_KEEP_ALIVE | play::S_PING_REQUEST)
+        {
+            return Ok(());
+        }
+
         match packet.id {
             play::S_ACCEPT_TELEPORTATION => {
                 player.handle_accept_teleportation(SAcceptTeleportation::read_packet(data)?);

@@ -42,7 +42,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v5: Added heightmap persistence (`PersistentHeightmap`).
 /// v6: Added structure start and structure reference persistence.
 /// v7: Added POI persistence (`PersistentPoi`).
-pub const FORMAT_VERSION: u16 = 7;
+/// v8: Added typed jigsaw piece-state persistence.
+pub const FORMAT_VERSION: u16 = 8;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -458,6 +459,90 @@ pub struct PersistentStructurePiece {
     pub orientation: i8,
     /// Type-specific NBT data (simdnbt binary format).
     pub nbt_data: Vec<u8>,
+    /// Typed jigsaw placement data. Present only for `minecraft:jigsaw` pieces.
+    pub jigsaw: Option<PersistentJigsawPieceData>,
+    /// Offset from piece minY to terrain ground level.
+    pub ground_level_delta: i32,
+    /// Projection mode: -1 = none, 0 = rigid, 1 = terrain matching.
+    pub projection: i8,
+    /// Jigsaw junctions used by terrain adaptation.
+    pub junctions: Vec<PersistentJigsawJunction>,
+}
+
+/// Steel-native persistent state for a jigsaw pool piece.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJigsawPieceData {
+    /// Selected pool element.
+    pub pool_element: PersistentPoolElement,
+    /// World-space template origin.
+    pub position: [i32; 3],
+    /// Rotation: 0=none, `1=clockwise_90`, `2=clockwise_180`, `3=counterclockwise_90`.
+    pub rotation: i8,
+    /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
+    pub liquid_settings: i8,
+}
+
+/// Persisted pool element selected during jigsaw assembly.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentPoolElement {
+    /// Single structure template piece.
+    Single {
+        /// Template location.
+        location: Identifier,
+        /// Processors applied during block placement.
+        processors: PersistentProcessorList,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+    /// Legacy single piece.
+    LegacySingle {
+        /// Template location.
+        location: Identifier,
+        /// Processors applied during block placement.
+        processors: PersistentProcessorList,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+    /// Empty placeholder element.
+    Empty,
+    /// Placed feature element.
+    Feature {
+        /// Feature identifier.
+        feature: Identifier,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+    /// Group of sub-elements.
+    List {
+        /// Sub-elements.
+        elements: Vec<PersistentPoolElement>,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+}
+
+/// Persisted processor list holder for single pool elements.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentProcessorList {
+    /// Direct empty processor list.
+    Empty,
+    /// Registry-backed processor list.
+    Registry(Identifier),
+}
+
+/// A persisted jigsaw junction used by Beardifier terrain adaptation.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJigsawJunction {
+    /// World X.
+    pub source_x: i32,
+    /// Ground-adjusted Y.
+    pub source_ground_y: i32,
+    /// World Z.
+    pub source_z: i32,
+    /// Y delta between source and target.
+    pub delta_y: i32,
+    /// Destination projection: 0 = rigid, 1 = terrain matching.
+    pub dest_projection: i8,
 }
 
 /// A structure reference entry stored with a chunk.
