@@ -65,6 +65,22 @@ impl CarvingMask {
         self.bits[lane] |= 1u64 << bit;
     }
 
+    /// Marks `(x, y, z)` as carved if it was not already marked.
+    ///
+    /// Returns `true` when this call set the bit, or `false` when a previous
+    /// carver step had already visited the position.
+    #[inline]
+    pub fn set_if_unset(&mut self, x: i32, y: i32, z: i32) -> bool {
+        let idx = self.index(x, y, z);
+        let lane = idx / 64;
+        let bit = 1u64 << (idx % 64);
+        if self.bits[lane] & bit != 0 {
+            return false;
+        }
+        self.bits[lane] |= bit;
+        true
+    }
+
     /// Returns whether `(x, y, z)` has been carved.
     #[inline]
     #[must_use]
@@ -102,6 +118,14 @@ mod test {
         assert!(!mask.get(4, 10, 7));
         assert!(!mask.get(5, 11, 7));
         assert!(!mask.get(5, 10, 8));
+    }
+
+    #[test]
+    fn set_if_unset_reports_first_visit() {
+        let mut mask = CarvingMask::new(384, -64);
+        assert!(mask.set_if_unset(5, 10, 7));
+        assert!(!mask.set_if_unset(5, 10, 7));
+        assert!(mask.get(5, 10, 7));
     }
 
     #[test]

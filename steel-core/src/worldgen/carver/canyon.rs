@@ -13,7 +13,8 @@ use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 
 use crate::worldgen::carver::{
-    CarveParams, CarveRun, CarverStyle, can_reach, horizontal_tunnel_radius,
+    CarveParams, CarveRun, CarverStyle, cached_replaceable_states, can_reach,
+    horizontal_tunnel_radius,
 };
 
 /// Vanilla `WorldCarver.getRange()` — 4 chunks each direction. Shared with
@@ -70,6 +71,7 @@ where
             .resolve_y(self.ctx.min_y, self.ctx.gen_depth);
         let params = CarveParams {
             replaceable_tag: &config.base.replaceable_tag,
+            replaceable_states: cached_replaceable_states(&config.base.replaceable_tag),
             lava_level_y,
             style: CarverStyle::Overworld,
         };

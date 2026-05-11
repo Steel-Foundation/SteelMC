@@ -6,6 +6,9 @@
 //! bundles the per-chunk references that every carver method threads
 //! through.
 
+use std::sync::LazyLock;
+
+use rustc_hash::FxHashMap;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
@@ -39,14 +42,14 @@ pub struct PreliminarySurfaceCorners {
     pub se: i32,
 }
 
-/// A source chunk's position and biome — the unit of work in the 17×17
-/// `apply_carvers` loop. Each entry feeds one or more carver invocations
-/// from the biome's `carvers` list.
+/// A source chunk's position and carver-list biome — the unit of work in the
+/// 17×17 `apply_carvers` loop. Each entry feeds one or more carver
+/// invocations from the biome's `carvers` list.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceChunk {
     /// Chunk position of the carver's origin.
     pub pos: ChunkPos,
-    /// Biome at the chunk's quart-origin `(qx, 0, qz)`.
+    /// Biome providing the source chunk's carver list.
     pub biome: BiomeRef,
 }
 
@@ -165,6 +168,54 @@ pub fn can_replace_block(state: BlockStateId, tag: &Identifier) -> bool {
     REGISTRY.blocks.is_in_tag(block, tag)
 }
 
+/// Per-state membership cache for a carver's replaceable block tag.
+///
+/// Vanilla tests a block-state predicate for every candidate block. Steel's
+/// registry stores tags by block key, so resolving that predicate once into a
+/// state-id table avoids repeated tag/hash lookups in the carve loop while
+/// preserving the configured tag as the source of truth.
+#[derive(Debug)]
+pub struct CarverReplaceableStates {
+    states: Box<[bool]>,
+}
+
+impl CarverReplaceableStates {
+    fn build(tag: &Identifier) -> Self {
+        let states = REGISTRY
+            .blocks
+            .state_to_block_lookup
+            .iter()
+            .map(|&block| REGISTRY.blocks.is_in_tag(block, tag))
+            .collect();
+        Self { states }
+    }
+
+    /// Returns whether `state` belongs to this cached replaceable set.
+    #[inline]
+    #[must_use]
+    pub fn contains(&self, state: BlockStateId) -> bool {
+        self.states.get(state.0 as usize).copied().unwrap_or(false)
+    }
+}
+
+static CARVER_REPLACEABLE_STATES: LazyLock<FxHashMap<Identifier, CarverReplaceableStates>> =
+    LazyLock::new(|| {
+        let mut states_by_tag = FxHashMap::default();
+        for (_, carver) in REGISTRY.configured_carvers.iter() {
+            let tag = &carver.base().replaceable_tag;
+            if !states_by_tag.contains_key(tag) {
+                states_by_tag.insert(tag.clone(), CarverReplaceableStates::build(tag));
+            }
+        }
+        states_by_tag
+    });
+
+/// Returns the cached replaceable-state set for a configured carver tag.
+#[must_use]
+pub fn cached_replaceable_states(tag: &Identifier) -> Option<&'static CarverReplaceableStates> {
+    CARVER_REPLACEABLE_STATES.get(tag)
+}
+
 /// Which carver family dictates the per-block decision inside
 /// [`CarveRun::carve_ellipsoid`]. Overworld carvers (cave + canyon) use the
 /// aquifer to pick air / water / lava; the nether variant hardcodes lava
@@ -199,6 +250,11 @@ impl CarverBlockIds {
     /// Looks up the well-known block state IDs once from the registry.
     #[must_use]
     pub fn load() -> Self {
+        static IDS: LazyLock<CarverBlockIds> = LazyLock::new(CarverBlockIds::load_uncached);
+        *IDS
+    }
+
+    fn load_uncached() -> Self {
         use steel_registry::{REGISTRY, vanilla_blocks};
         Self {
             air: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
@@ -249,6 +305,8 @@ impl<F: FnMut(f64, f64, f64, i32) -> bool> CarveSkipChecker for F {
 pub struct CarveParams<'a> {
     /// Tag of blocks the carver is allowed to replace.
     pub replaceable_tag: &'a Identifier,
+    /// Cached state-id membership for `replaceable_tag` when available.
+    pub replaceable_states: Option<&'static CarverReplaceableStates>,
     /// Resolved lava level (world Y). At or below this, carved blocks become
     /// lava instead of air/water/etc.
     pub lava_level_y: i32,
@@ -366,10 +424,9 @@ where
                     if skip_checker.should_skip(xd, yd, zd, world_y) {
                         continue;
                     }
-                    if self.mask.get(x_idx, world_y, z_idx) {
+                    if !self.mask.set_if_unset(x_idx, world_y, z_idx) {
                         continue;
                     }
-                    self.mask.set(x_idx, world_y, z_idx);
                     if self.carve_block(params, world_x, world_y, world_z, &mut has_grass) {
                         carved = true;
                     }
@@ -398,7 +455,7 @@ where
             *has_grass = true;
         }
 
-        if !can_replace_block(existing, params.replaceable_tag) {
+        if !self.can_replace(params, existing) {
             return false;
         }
 
@@ -434,6 +491,17 @@ where
         }
 
         true
+    }
+
+    #[inline]
+    fn can_replace(&self, params: &CarveParams<'_>, state: BlockStateId) -> bool {
+        if state.is_air() {
+            return false;
+        }
+        if let Some(states) = params.replaceable_states {
+            return states.contains(state);
+        }
+        can_replace_block(state, params.replaceable_tag)
     }
 
     /// Vanilla's `WorldCarver.getCarveState` + the nether override dispatch.

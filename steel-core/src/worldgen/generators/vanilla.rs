@@ -1,6 +1,8 @@
 use std::{cell::RefCell, marker::PhantomData};
 
 use sha2::{Digest, Sha256};
+use smallvec::SmallVec;
+use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::carver::ConfiguredCarverKind;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_biomes};
@@ -30,6 +32,8 @@ use crate::worldgen::noise::ore_veinifier::OreVeinifier;
 use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::surface::SurfaceSystem;
 
+const CARVER_SOURCE_CHUNK_COUNT: usize = 17 * 17;
+
 /// A chunk generator for vanilla (normal) world generation.
 ///
 /// Matches vanilla's `NoiseBasedChunkGenerator`. The biome source is pluggable
@@ -41,6 +45,15 @@ use crate::worldgen::surface::SurfaceSystem;
 pub struct VanillaGenerator<N: DimensionNoises> {
     /// Biome source for this dimension. Determines biomes at each quart position.
     biome_source: BiomeSourceKind,
+    /// Representative biome for source-carver lookup when every possible
+    /// biome from `biome_source` has the same carver list.
+    ///
+    /// Vanilla still samples each source biome in `apply_carvers`; Steel skips
+    /// that sampling only when the source's full possible-biome set proves the
+    /// carver list is uniform. If future biome sources can produce mixed
+    /// carver lists this remains `None` and the vanilla per-source lookup is
+    /// used.
+    uniform_carver_biome: Option<BiomeRef>,
     /// Noise generators for this dimension's density functions.
     /// Boxed because noise structs can be large.
     noises: Box<N>,
@@ -102,9 +115,11 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         };
 
         let structure_generator = StructureGenerator::vanilla(seed as i64, &biome_source);
+        let uniform_carver_biome = Self::uniform_carver_biome(&biome_source);
 
         Self {
             biome_source,
+            uniform_carver_biome,
             noises: Box::new(noises),
             splitter,
             ore_veinifier,
@@ -115,6 +130,21 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             structure_generator,
             _phantom: PhantomData,
         }
+    }
+
+    fn uniform_carver_biome(biome_source: &BiomeSourceKind) -> Option<BiomeRef> {
+        let mut possible_biomes = biome_source.possible_biomes().into_iter();
+        let first_key = possible_biomes.next()?;
+        let first = REGISTRY.biomes.by_key(&first_key)?;
+
+        possible_biomes
+            .all(|key| {
+                REGISTRY
+                    .biomes
+                    .by_key(&key)
+                    .is_some_and(|biome| biome.carvers == first.carvers)
+            })
+            .then_some(first)
     }
 }
 
@@ -826,6 +856,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             return;
         };
 
+        if self
+            .uniform_carver_biome
+            .is_some_and(|biome| biome.carvers.is_empty())
+        {
+            return;
+        }
+
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
         let chunk_min_z = pos.0.y * 16;
@@ -885,17 +922,24 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
         let ids = CarverBlockIds::load();
 
-        // Pre-fetch the 17×17 source-chunk biomes. Done up front so we can
-        // later close over `biome_sampler` mutably inside `biome_getter`.
+        // Pre-fetch the 17×17 source-chunk carver lists. Done up front so we
+        // can later close over `biome_sampler` mutably inside `biome_getter`.
+        // Vanilla samples every source biome here; when this generator's full
+        // possible-biome set has a uniform carver list, the representative
+        // biome gives the same carver keys without 289 climate lookups.
         let mut biome_sampler = self.biome_source.chunk_sampler();
-        let mut source_biomes: Vec<SourceChunk> = Vec::with_capacity(17 * 17);
+        let mut source_biomes: SmallVec<[SourceChunk; CARVER_SOURCE_CHUNK_COUNT]> = SmallVec::new();
         for dx in -8i32..=8 {
             for dz in -8i32..=8 {
                 let sx = pos.0.x + dx;
                 let sz = pos.0.y + dz;
-                let qx = (sx * 16) >> 2;
-                let qz = (sz * 16) >> 2;
-                let biome = biome_sampler.sample(qx, 0, qz);
+                let biome = if let Some(biome) = self.uniform_carver_biome {
+                    biome
+                } else {
+                    let qx = (sx * 16) >> 2;
+                    let qz = (sz * 16) >> 2;
+                    biome_sampler.sample(qx, 0, qz)
+                };
                 source_biomes.push(SourceChunk {
                     pos: ChunkPos::new(sx, sz),
                     biome,

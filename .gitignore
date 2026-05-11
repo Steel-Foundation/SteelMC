@@ -19,6 +19,7 @@ AGENTS.md
 
 # Package
 profile.json.gz
+profile.json.syms.json
 *.gz
 *.class
 
