@@ -238,7 +238,7 @@ fn gen_identifier(id: &str) -> TokenStream {
     }
 }
 
-fn required<'a, T>(value: Option<T>, context: &str, field: &str) -> T {
+fn required<T>(value: Option<T>, context: &str, field: &str) -> T {
     value.unwrap_or_else(|| panic!("Missing required field {field} in {context}"))
 }
 

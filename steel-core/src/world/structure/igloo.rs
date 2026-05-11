@@ -42,17 +42,12 @@ const fn make_piece_bb(
 }
 
 const fn piece(bb: BoundingBox) -> StructurePiece {
-    StructurePiece {
-        piece_type: Identifier::new_static("minecraft", "iglu"),
-        bounding_box: bb,
-        gen_depth: 0,
-        orientation: Some(Direction::North),
-        nbt_data: Vec::new(),
-        jigsaw: None,
-        ground_level_delta: 0,
-        junctions: Vec::new(),
-        projection: None,
-    }
+    StructurePiece::non_jigsaw(
+        Identifier::new_static("minecraft", "iglu"),
+        bb,
+        0,
+        Some(Direction::North),
+    )
 }
 
 /// Registered under `"minecraft:igloo"`.

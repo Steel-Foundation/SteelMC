@@ -58,7 +58,9 @@ pub struct StructureStart {
     pub structure: Identifier,
     /// Origin chunk.
     pub chunk_pos: ChunkPos,
-    /// Reference count from neighboring chunks.
+    /// Vanilla's map/locate reference counter. This is distinct from
+    /// [`StructureReferenceMap`]; generating per-chunk structure references does
+    /// not increment this counter.
     pub references: i32,
     /// Pieces composing this structure.
     pub pieces: Vec<StructurePiece>,
@@ -142,6 +144,29 @@ pub struct StructurePiece {
     /// `Some(TerrainMatching)` from the rigid set (still collecting junctions).
     /// Mirrors vanilla's `piece instanceof PoolElementStructurePiece` + `Projection.RIGID` check.
     pub projection: Option<Projection>,
+}
+
+impl StructurePiece {
+    /// Creates a non-jigsaw piece with vanilla's default non-pool metadata.
+    #[must_use]
+    pub const fn non_jigsaw(
+        piece_type: Identifier,
+        bounding_box: BoundingBox,
+        gen_depth: i32,
+        orientation: Option<Direction>,
+    ) -> Self {
+        Self {
+            piece_type,
+            bounding_box,
+            gen_depth,
+            orientation,
+            nbt_data: Vec::new(),
+            jigsaw: None,
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        }
+    }
 }
 
 /// Structure starts keyed by structure id.

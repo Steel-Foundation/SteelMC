@@ -1744,16 +1744,13 @@ impl Structure for WoodlandMansionStructure {
         let bbs = generate_mansion_pieces((bx, lowest, bz), rotation, rng);
         let pieces = bbs
             .into_iter()
-            .map(|bb| StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "wmp"),
-                bounding_box: bb,
-                gen_depth: 0,
-                orientation: Some(Direction::North),
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
+            .map(|bb| {
+                StructurePiece::non_jigsaw(
+                    Identifier::new_static("minecraft", "wmp"),
+                    bb,
+                    0,
+                    Some(Direction::North),
+                )
             })
             .collect();
 

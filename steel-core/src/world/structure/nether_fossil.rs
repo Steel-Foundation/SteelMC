@@ -151,9 +151,9 @@ impl Structure for NetherFossilStructure {
             .get(&Identifier::new("minecraft", result.template_name.clone()))?;
         Some(GenerationStub {
             position: result.position,
-            pieces: vec![StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "nefos"),
-                bounding_box: result.rotation.get_bounding_box(
+            pieces: vec![StructurePiece::non_jigsaw(
+                Identifier::new_static("minecraft", "nefos"),
+                result.rotation.get_bounding_box(
                     result.position.0,
                     result.position.1,
                     result.position.2,
@@ -161,14 +161,9 @@ impl Structure for NetherFossilStructure {
                     tmpl.size[1],
                     tmpl.size[2],
                 ),
-                gen_depth: 0,
-                orientation: Some(Direction::North),
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
-            }],
+                0,
+                Some(Direction::North),
+            )],
         })
     }
 }

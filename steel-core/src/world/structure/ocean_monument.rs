@@ -72,17 +72,12 @@ impl Structure for OceanMonumentStructure {
         let orientation = random_horizontal_direction(rng);
         Some(GenerationStub {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
-            pieces: vec![StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "omb"),
-                bounding_box: BoundingBox::new(west, 39, north, west + 57, 61, north + 57),
-                gen_depth: 0,
-                orientation: Some(orientation),
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
-            }],
+            pieces: vec![StructurePiece::non_jigsaw(
+                Identifier::new_static("minecraft", "omb"),
+                BoundingBox::new(west, 39, north, west + 57, 61, north + 57),
+                0,
+                Some(orientation),
+            )],
         })
     }
 }

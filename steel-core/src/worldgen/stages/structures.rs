@@ -71,7 +71,6 @@ pub(crate) fn generate_references(
                         .entry(structure_id.clone())
                         .or_default()
                         .insert(steel_utils::ChunkPos::new(source_x, source_z));
-                    // Source-start reference counts are updated at serialization time.
                 }
             }
         }

@@ -470,9 +470,9 @@ impl Structure for EndCityStructure {
                     let tmpl_id =
                         Identifier::new("minecraft", format!("end_city/{}", p.template_name));
                     let size = ctx.templates().get(&tmpl_id).map_or([1, 1, 1], |t| t.size);
-                    StructurePiece {
-                        piece_type: Identifier::new_static("minecraft", "ecp"),
-                        bounding_box: p.rotation.get_bounding_box(
+                    StructurePiece::non_jigsaw(
+                        Identifier::new_static("minecraft", "ecp"),
+                        p.rotation.get_bounding_box(
                             p.template_position.0,
                             p.template_position.1,
                             p.template_position.2,
@@ -480,14 +480,9 @@ impl Structure for EndCityStructure {
                             size[1],
                             size[2],
                         ),
-                        gen_depth: p.gen_depth,
-                        orientation: Some(Direction::North),
-                        nbt_data: Vec::new(),
-                        jigsaw: None,
-                        ground_level_delta: 0,
-                        junctions: Vec::new(),
-                        projection: None,
-                    }
+                        p.gen_depth,
+                        Some(Direction::North),
+                    )
                 })
                 .collect(),
         })

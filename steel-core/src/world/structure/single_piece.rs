@@ -73,25 +73,12 @@ impl Structure for SinglePieceStructure {
         let z_axis = matches!(orientation, Direction::North | Direction::South);
         Some(GenerationStub {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
-            pieces: vec![StructurePiece {
-                piece_type: Identifier::new_static("minecraft", self.piece_id),
-                bounding_box: make_single_piece_bb(
-                    ctx.chunk_min_x(),
-                    64,
-                    ctx.chunk_min_z(),
-                    z_axis,
-                    w,
-                    h,
-                    d,
-                ),
-                gen_depth: 0,
-                orientation: Some(orientation),
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
-            }],
+            pieces: vec![StructurePiece::non_jigsaw(
+                Identifier::new_static("minecraft", self.piece_id),
+                make_single_piece_bb(ctx.chunk_min_x(), 64, ctx.chunk_min_z(), z_axis, w, h, d),
+                0,
+                Some(orientation),
+            )],
         })
     }
 }
@@ -115,17 +102,12 @@ impl Structure for BuriedTreasureStructure {
         let (x, z) = (ctx.chunk_min_x() + 9, ctx.chunk_min_z() + 9);
         Some(GenerationStub {
             position: (x, 90, z),
-            pieces: vec![StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "btp"),
-                bounding_box: BoundingBox::new(x, 90, z, x, 90, z),
-                gen_depth: 0,
-                orientation: None,
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
-            }],
+            pieces: vec![StructurePiece::non_jigsaw(
+                Identifier::new_static("minecraft", "btp"),
+                BoundingBox::new(x, 90, z, x, 90, z),
+                0,
+                None,
+            )],
         })
     }
 }

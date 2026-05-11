@@ -599,16 +599,13 @@ impl Structure for MineshaftStructure {
             pieces: result
                 .pieces
                 .into_iter()
-                .map(|p| StructurePiece {
-                    piece_type: Identifier::new_static("minecraft", p.kind.piece_id()),
-                    bounding_box: p.bounding_box,
-                    gen_depth: p.gen_depth,
-                    orientation: p.orientation,
-                    nbt_data: Vec::new(),
-                    jigsaw: None,
-                    ground_level_delta: 0,
-                    junctions: Vec::new(),
-                    projection: None,
+                .map(|p| {
+                    StructurePiece::non_jigsaw(
+                        Identifier::new_static("minecraft", p.kind.piece_id()),
+                        p.bounding_box,
+                        p.gen_depth,
+                        p.orientation,
+                    )
                 })
                 .collect(),
         })

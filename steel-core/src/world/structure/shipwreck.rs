@@ -76,22 +76,17 @@ impl Structure for ShipwreckStructure {
 
         Some(GenerationStub {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
-            pieces: vec![StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "shipwreck"),
-                bounding_box: rotation.get_bounding_box_with_pivot(
+            pieces: vec![StructurePiece::non_jigsaw(
+                Identifier::new_static("minecraft", "shipwreck"),
+                rotation.get_bounding_box_with_pivot(
                     (ctx.chunk_min_x(), 90, ctx.chunk_min_z()),
                     (tmpl.size[0], tmpl.size[1], tmpl.size[2]),
                     4,
                     15,
                 ),
-                gen_depth: 0,
-                orientation: Some(Direction::North),
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
-            }],
+                0,
+                Some(Direction::North),
+            )],
         })
     }
 }

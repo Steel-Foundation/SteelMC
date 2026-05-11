@@ -618,16 +618,13 @@ impl Structure for StrongholdStructure {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
             pieces: generate_pieces(ctx.seed(), ctx.chunk_x(), ctx.chunk_z())
                 .into_iter()
-                .map(|(bb, piece_id, dir, depth)| StructurePiece {
-                    piece_type: Identifier::new_static("minecraft", piece_id),
-                    bounding_box: bb,
-                    gen_depth: depth,
-                    orientation: Some(dir),
-                    nbt_data: Vec::new(),
-                    jigsaw: None,
-                    ground_level_delta: 0,
-                    junctions: Vec::new(),
-                    projection: None,
+                .map(|(bb, piece_id, dir, depth)| {
+                    StructurePiece::non_jigsaw(
+                        Identifier::new_static("minecraft", piece_id),
+                        bb,
+                        depth,
+                        Some(dir),
+                    )
                 })
                 .collect(),
         })

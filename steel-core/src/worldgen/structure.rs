@@ -1,6 +1,6 @@
 //! Shared structure placement/selection engine.
 
-use std::slice;
+use std::{iter, slice};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::REGISTRY;
@@ -34,6 +34,8 @@ use crate::world::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructureStart,
 };
 use crate::worldgen::BiomeSourceKind;
+
+const VANILLA_FLAT_RING_POSITION_SEED: i64 = 0;
 
 /// Biome operations needed while building `ChunkGeneratorStructureState`.
 pub trait StructureBiomeProvider {
@@ -346,23 +348,23 @@ pub fn squared_distance(a: BlockPos, b: BlockPos) -> i64 {
 
 fn validate_structure_sets(structure_sets: &[(Identifier, StructureSet)]) {
     for (set_key, set) in structure_sets {
-        if set.structures.is_empty() {
-            panic!("Structure set {set_key} must have at least one structure");
-        }
+        assert!(
+            !set.structures.is_empty(),
+            "Structure set {set_key} must have at least one structure"
+        );
         for (entry_index, entry) in set.structures.iter().enumerate() {
-            if entry.weight <= 0 {
-                panic!(
-                    "Structure set {set_key} entry {entry_index} has non-positive weight {}",
-                    entry.weight
-                );
-            }
-        }
-        if !set.placement.frequency.is_finite() || !(0.0..=1.0).contains(&set.placement.frequency) {
-            panic!(
-                "Structure set {set_key} has invalid placement frequency {}",
-                set.placement.frequency
+            assert!(
+                entry.weight > 0,
+                "Structure set {set_key} entry {entry_index} has non-positive weight {}",
+                entry.weight
             );
         }
+        assert!(
+            !(!set.placement.frequency.is_finite()
+                || !(0.0..=1.0).contains(&set.placement.frequency)),
+            "Structure set {set_key} has invalid placement frequency {}",
+            set.placement.frequency
+        );
         if let Some(exclusion) = &set.placement.exclusion_zone
             && exclusion.chunk_count < 0
         {
@@ -378,17 +380,18 @@ fn validate_structure_sets(structure_sets: &[(Identifier, StructureSet)]) {
                 separation,
                 ..
             } => {
-                if *spacing <= 0 {
-                    panic!("Structure set {set_key} has non-positive spacing {spacing}");
-                }
-                if *separation < 0 {
-                    panic!("Structure set {set_key} has negative separation {separation}");
-                }
-                if spacing <= separation {
-                    panic!(
-                        "Structure set {set_key} has spacing {spacing} <= separation {separation}"
-                    );
-                }
+                assert!(
+                    *spacing > 0,
+                    "Structure set {set_key} has non-positive spacing {spacing}"
+                );
+                assert!(
+                    *separation >= 0,
+                    "Structure set {set_key} has negative separation {separation}"
+                );
+                assert!(
+                    spacing > separation,
+                    "Structure set {set_key} has spacing {spacing} <= separation {separation}"
+                );
             }
             PlacementKind::ConcentricRings {
                 distance,
@@ -396,15 +399,18 @@ fn validate_structure_sets(structure_sets: &[(Identifier, StructureSet)]) {
                 count,
                 ..
             } => {
-                if *distance <= 0 {
-                    panic!("Structure set {set_key} has non-positive ring distance {distance}");
-                }
-                if *spread <= 0 {
-                    panic!("Structure set {set_key} has non-positive ring spread {spread}");
-                }
-                if *count < 0 {
-                    panic!("Structure set {set_key} has negative ring count {count}");
-                }
+                assert!(
+                    *distance > 0,
+                    "Structure set {set_key} has non-positive ring distance {distance}"
+                );
+                assert!(
+                    *spread > 0,
+                    "Structure set {set_key} has non-positive ring spread {spread}"
+                );
+                assert!(
+                    *count >= 0,
+                    "Structure set {set_key} has negative ring count {count}"
+                );
             }
         }
     }
@@ -423,12 +429,12 @@ fn validate_structure_assets(
                     entry.structure
                 )
             });
-            if !structure_impls.contains_key(&structure.structure_type) {
-                panic!(
-                    "Structure set {set_key} references {} with unsupported structure type {}",
-                    structure.key, structure.structure_type
-                );
-            }
+            assert!(
+                structure_impls.contains_key(&structure.structure_type),
+                "Structure set {set_key} references {} with unsupported structure type {}",
+                structure.key,
+                structure.structure_type
+            );
         }
     }
 }
@@ -448,8 +454,29 @@ impl StructureGenerator {
         biome_provider: &impl StructureBiomeProvider,
         structure_sets: Vec<(Identifier, StructureSet)>,
     ) -> Self {
-        Self::with_assets(
+        Self::with_assets_for_ring_seed(
             seed,
+            seed,
+            biome_provider,
+            structure_sets,
+            StructureGeneratorAssets::vanilla(),
+        )
+    }
+
+    /// Creates a vanilla superflat structure generator.
+    ///
+    /// Vanilla superflat uses the level seed for random-spread placement and
+    /// structure selection, but always seeds concentric-ring positions with
+    /// `0L`.
+    #[must_use]
+    pub fn vanilla_flat_with_structure_sets(
+        seed: i64,
+        biome_provider: &impl StructureBiomeProvider,
+        structure_sets: Vec<(Identifier, StructureSet)>,
+    ) -> Self {
+        Self::with_assets_for_ring_seed(
+            seed,
+            VANILLA_FLAT_RING_POSITION_SEED,
             biome_provider,
             structure_sets,
             StructureGeneratorAssets::vanilla(),
@@ -460,6 +487,16 @@ impl StructureGenerator {
     #[must_use]
     pub fn with_assets(
         seed: i64,
+        biome_provider: &impl StructureBiomeProvider,
+        structure_sets: Vec<(Identifier, StructureSet)>,
+        assets: StructureGeneratorAssets,
+    ) -> Self {
+        Self::with_assets_for_ring_seed(seed, seed, biome_provider, structure_sets, assets)
+    }
+
+    fn with_assets_for_ring_seed(
+        seed: i64,
+        ring_position_seed: i64,
         biome_provider: &impl StructureBiomeProvider,
         structure_sets: Vec<(Identifier, StructureSet)>,
         assets: StructureGeneratorAssets,
@@ -516,8 +553,13 @@ impl StructureGenerator {
                             rng,
                         )
                     };
-                let positions =
-                    generate_ring_positions(seed, *distance, *spread, *count, Some(&mut snap));
+                let positions = generate_ring_positions(
+                    ring_position_seed,
+                    *distance,
+                    *spread,
+                    *count,
+                    Some(&mut snap),
+                );
                 ring_positions.insert(key.clone(), positions);
             }
         }
@@ -612,9 +654,11 @@ impl StructureGenerator {
                 stub.pieces,
                 structure.terrain_adjustment,
             );
-            chunk
-                .structure_starts_mut()
-                .insert(structure.key.clone(), start);
+            {
+                let mut starts = chunk.structure_starts_mut();
+                starts.insert(structure.key.clone(), start);
+            }
+            chunk.mark_dirty();
         }
     }
 
@@ -633,7 +677,7 @@ impl StructureGenerator {
             let chain = stack
                 .iter()
                 .map(ToString::to_string)
-                .chain(std::iter::once(set_key.to_string()))
+                .chain(iter::once(set_key.to_string()))
                 .collect::<Vec<_>>()
                 .join(" -> ");
             panic!("Circular structure exclusion zone: {chain}");
@@ -792,6 +836,8 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_biomes};
+
     use crate::world::structure::placement::{
         ExclusionZone, FrequencyReductionMethod, PlacementKind, SpreadType,
     };
@@ -868,9 +914,8 @@ mod tests {
 
     #[test]
     fn vanilla_assets_cover_vanilla_structure_sets() {
-        let _ = steel_registry::REGISTRY.init(steel_registry::Registry::new_vanilla());
-        let biome_provider =
-            FixedStructureBiomeProvider::new(&steel_registry::vanilla_biomes::PLAINS);
+        let _ = REGISTRY.init(Registry::new_vanilla());
+        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let _ = StructureGenerator::vanilla_with_structure_sets(
             0,
             &biome_provider,
@@ -881,8 +926,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "non-positive spacing")]
     fn constructor_rejects_invalid_random_spread_spacing() {
-        let biome_provider =
-            FixedStructureBiomeProvider::new(&steel_registry::vanilla_biomes::PLAINS);
+        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let sets = vec![(
             Identifier::new("test", "invalid"),
             StructureSet {

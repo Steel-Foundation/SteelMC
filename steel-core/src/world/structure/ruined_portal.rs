@@ -269,17 +269,12 @@ impl Structure for RuinedPortalStructure {
 
         Some(GenerationStub {
             position: result.biome_check_pos,
-            pieces: vec![StructurePiece {
-                piece_type: Identifier::new_static("minecraft", "rupo"),
-                bounding_box: result.bounding_box,
-                gen_depth: 0,
-                orientation: Some(Direction::North),
-                nbt_data: Vec::new(),
-                jigsaw: None,
-                ground_level_delta: 0,
-                junctions: Vec::new(),
-                projection: None,
-            }],
+            pieces: vec![StructurePiece::non_jigsaw(
+                Identifier::new_static("minecraft", "rupo"),
+                result.bounding_box,
+                0,
+                Some(Direction::North),
+            )],
         })
     }
 }
