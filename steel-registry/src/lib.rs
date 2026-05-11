@@ -621,6 +621,8 @@ impl Registry {
     }
 
     pub fn freeze(&mut self) {
+        self.validate_references();
+
         self.attributes.freeze();
         self.blocks.freeze();
         self.data_components.freeze();
@@ -662,6 +664,19 @@ impl Registry {
         self.world_clocks.freeze();
         self.configured_carvers.freeze();
         self.structures.freeze();
+    }
+
+    fn validate_references(&self) {
+        for (_, biome) in self.biomes.iter() {
+            for carver_key in &biome.carvers {
+                assert!(
+                    self.configured_carvers.by_key(carver_key).is_some(),
+                    "biome {} references unknown configured carver {}",
+                    biome.key,
+                    carver_key
+                );
+            }
+        }
     }
 
     #[must_use]
@@ -709,5 +724,61 @@ impl Registry {
             configured_carvers: ConfiguredCarverRegistry::new(),
             structures: StructureRegistry::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::OnceLock;
+
+    use rustc_hash::FxHashMap;
+    use steel_utils::Identifier;
+
+    use crate::biome::{Biome, BiomeEffects, GrassColorModifier, TemperatureModifier};
+
+    use super::Registry;
+
+    fn biome_with_carvers(carvers: Vec<Identifier>) -> &'static Biome {
+        Box::leak(Box::new(Biome {
+            key: Identifier::new_static("test", "missing_carver_biome"),
+            has_precipitation: false,
+            temperature: 0.5,
+            downfall: 0.0,
+            temperature_modifier: TemperatureModifier::None,
+            effects: BiomeEffects {
+                fog_color: 0,
+                sky_color: 0,
+                water_color: 0,
+                water_fog_color: 0,
+                foliage_color: None,
+                grass_color: None,
+                dry_foliage_color: None,
+                grass_color_modifier: GrassColorModifier::None,
+                music: None,
+                ambient_sound: None,
+                additions_sound: None,
+                mood_sound: None,
+                particle: None,
+            },
+            creature_spawn_probability: 0.0,
+            spawners: FxHashMap::default(),
+            spawn_costs: FxHashMap::default(),
+            carvers,
+            features: Vec::new(),
+            id: OnceLock::new(),
+        }))
+    }
+
+    #[test]
+    #[should_panic(expected = "references unknown configured carver")]
+    fn freeze_rejects_missing_biome_carver_reference() {
+        let mut registry = Registry::new_empty();
+        registry
+            .biomes
+            .register(biome_with_carvers(vec![Identifier::vanilla_static(
+                "missing_carver",
+            )]));
+
+        registry.freeze();
     }
 }

@@ -65,8 +65,12 @@ impl ProtoChunk {
     }
 
     /// Creates a proto chunk that was loaded from disk.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "disk rehydration mirrors the persisted proto chunk fields"
+    )]
     #[must_use]
-    pub fn from_disk(
+    pub const fn from_disk(
         sections: Sections,
         pos: ChunkPos,
         status: ChunkStatus,

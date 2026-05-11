@@ -911,7 +911,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // seed is irrelevant; every carver overwrites it via
         // `set_large_feature_seed` before its probability check.
         let mut random = LegacyRandom::from_seed(0);
-        let seed_i64 = self.seed as i64;
+        let seed_i64 = self.seed;
 
         let biome_zoom_seed = self.biome_zoom_seed;
         // BiomeManager-fuzzed lookup — matches vanilla's `BiomeManager.getBiome`
@@ -952,7 +952,10 @@ where
         for source in source_biomes {
             for (index, carver_key) in source.biome.carvers.iter().enumerate() {
                 let Some(carver) = REGISTRY.configured_carvers.by_key(carver_key) else {
-                    continue;
+                    panic!(
+                        "biome {} references unknown configured carver {}",
+                        source.biome.key, carver_key
+                    );
                 };
                 let index_i64 = index as i64;
                 random.set_large_feature_seed(seed_i64 + index_i64, source.pos.0.x, source.pos.0.y);

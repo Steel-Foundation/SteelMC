@@ -147,13 +147,20 @@ mod tests {
     use super::*;
     use steel_utils::BlockPos;
 
+    fn packed(x: u8, y: u8, z: u8) -> PackedSectionBlockPos {
+        let Some(pos) = PackedSectionBlockPos::from_local_xyz(x, y, z) else {
+            panic!("valid local packed section block position was rejected");
+        };
+        pos
+    }
+
     #[test]
     fn test_pack_unpack() {
         for x in 0..16u8 {
             for y in 0..16u8 {
                 for z in 0..16u8 {
-                    let packed = PackedSectionBlockPos::from_local_xyz(x, y, z).unwrap();
-                    assert_eq!((x, y, z), (packed.x(), packed.y(), packed.z()));
+                    let pos = packed(x, y, z);
+                    assert_eq!((x, y, z), (pos.x(), pos.y(), pos.z()));
                 }
             }
         }
@@ -162,7 +169,7 @@ mod tests {
     #[test]
     fn test_add_remove_poi() {
         let mut set = PointOfInterestSet::new();
-        let packed = PackedSectionBlockPos::from_local_xyz(5, 10, 3).unwrap();
+        let packed = packed(5, 10, 3);
         let poi = PointOfInterest::new(BlockPos::new(5, 10, 3), 0, 1);
 
         assert!(set.add(packed, poi.clone()).is_some());
@@ -180,13 +187,13 @@ mod tests {
     fn test_get_by_type_and_occupation() {
         let mut set = PointOfInterestSet::new();
 
-        let p1 = PackedSectionBlockPos::from_local_xyz(0, 0, 0).unwrap();
+        let p1 = packed(0, 0, 0);
         set.add(p1, PointOfInterest::new(BlockPos::new(0, 0, 0), 0, 1));
 
-        let p2 = PackedSectionBlockPos::from_local_xyz(1, 0, 0).unwrap();
+        let p2 = packed(1, 0, 0);
         set.add(p2, PointOfInterest::new(BlockPos::new(1, 0, 0), 0, 1));
 
-        let p3 = PackedSectionBlockPos::from_local_xyz(2, 0, 0).unwrap();
+        let p3 = packed(2, 0, 0);
         set.add(p3, PointOfInterest::new(BlockPos::new(2, 0, 0), 1, 1));
 
         assert_eq!(set.get_by_type(0, OccupationStatus::Any, 1).len(), 2);

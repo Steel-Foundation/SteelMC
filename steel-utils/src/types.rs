@@ -2,6 +2,7 @@
 
 use std::{
     borrow::Cow,
+    error::Error,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
     io::{self, Cursor, Write},
@@ -856,7 +857,7 @@ impl Display for InvalidPackedSectionBlockPos {
     }
 }
 
-impl std::error::Error for InvalidPackedSectionBlockPos {}
+impl Error for InvalidPackedSectionBlockPos {}
 
 impl ReadFrom for SectionPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
@@ -1448,7 +1449,9 @@ mod tests {
     #[test]
     fn packed_section_block_pos_converts_to_absolute_block_pos() {
         let section = SectionPos::new(2, -4, -3);
-        let packed = PackedSectionBlockPos::from_local_xyz(1, 15, 2).unwrap();
+        let Some(packed) = PackedSectionBlockPos::from_local_xyz(1, 15, 2) else {
+            panic!("valid local packed section block position was rejected");
+        };
 
         assert_eq!(packed.to_block_pos(section), BlockPos::new(33, -49, -46));
         assert_eq!(

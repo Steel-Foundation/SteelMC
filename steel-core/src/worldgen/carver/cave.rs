@@ -14,7 +14,9 @@ use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 
-use crate::worldgen::carver::{CarveParams, CarveRun, CarveSkipChecker, CarverStyle, can_reach};
+use crate::worldgen::carver::{
+    CarveParams, CarveRun, CarveSkipChecker, CarverStyle, can_reach, horizontal_tunnel_radius,
+};
 
 /// Which cave carver flavor to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -261,8 +263,7 @@ where
             // keeps float precision through to the `Mth.sin` argument before
             // widening to double.
             let progress_arg = PI * current_step as f32 / tunnel.dist as f32;
-            let horizontal_radius =
-                1.5 + f64::from(mth::sin(f64::from(progress_arg))) * f64::from(tunnel.thickness);
+            let horizontal_radius = horizontal_tunnel_radius(progress_arg, tunnel.thickness);
             let vertical_radius = horizontal_radius * tunnel.y_scale;
             let cos_x = mth::cos(f64::from(state.vertical_rotation));
             state.x += f64::from(mth::cos(f64::from(state.horizontal_rotation)) * cos_x);

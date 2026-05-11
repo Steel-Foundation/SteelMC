@@ -10,6 +10,7 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::ChunkPos;
+use steel_utils::math::mth;
 use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::math::lerp2;
@@ -255,6 +256,14 @@ pub struct CarveParams<'a> {
     pub style: CarverStyle,
 }
 
+/// Vanilla cave/canyon tunnel radius calculation.
+#[inline]
+#[must_use]
+pub(super) fn horizontal_tunnel_radius(progress_arg: f32, thickness: f32) -> f64 {
+    let radius_offset = mth::sin(f64::from(progress_arg)) * thickness;
+    1.5 + f64::from(radius_offset)
+}
+
 /// Decision returned by the per-block carve-state computation.
 enum CarveState {
     /// Place this block.
@@ -473,6 +482,6 @@ pub fn can_reach(
     let xd = x - x_mid;
     let zd = z - z_mid;
     let remaining = f64::from(total_steps - current_step);
-    let rr = f64::from(thickness) + 2.0 + 16.0;
+    let rr = f64::from(thickness + 2.0_f32 + 16.0_f32);
     xd * xd + zd * zd - remaining * remaining <= rr * rr
 }

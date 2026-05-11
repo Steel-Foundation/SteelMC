@@ -12,7 +12,9 @@ use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 
-use crate::worldgen::carver::{CarveParams, CarveRun, CarverStyle, can_reach};
+use crate::worldgen::carver::{
+    CarveParams, CarveRun, CarverStyle, can_reach, horizontal_tunnel_radius,
+};
 
 /// Vanilla `WorldCarver.getRange()` — 4 chunks each direction. Shared with
 /// the cave carver.
@@ -88,8 +90,8 @@ where
         // Draw order: yScale, thickness, distance_factor→distance, tunnel_seed.
         let y_scale = f64::from(config.base.y_scale.sample(random));
         let thickness = config.shape.thickness.sample(random);
-        let distance = (f64::from(MAX_TUNNEL_DISTANCE)
-            * f64::from(config.shape.distance_factor.sample(random))) as i32;
+        let distance =
+            (MAX_TUNNEL_DISTANCE as f32 * config.shape.distance_factor.sample(random)) as i32;
         let tunnel_seed = random.next_i64();
 
         let tunnel = CanyonTunnel {
@@ -119,8 +121,7 @@ where
 
         for current_step in 0..tunnel.distance {
             let progress = PI * current_step as f32 / tunnel.distance as f32;
-            let mut horizontal_radius =
-                1.5 + f64::from(mth::sin(f64::from(progress))) * f64::from(tunnel.thickness);
+            let mut horizontal_radius = horizontal_tunnel_radius(progress, tunnel.thickness);
             let mut vertical_radius = horizontal_radius * tunnel.y_scale;
             horizontal_radius *=
                 f64::from(config.shape.horizontal_radius_factor.sample(&mut random));
