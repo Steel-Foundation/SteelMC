@@ -124,6 +124,7 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
         self.weathering.change_over_time(state, world, pos);
     }
 }
+
 /// Checks if this bar should connect to the given neighbor state.
 fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
     let neighbor_block = neighbor_state.get_block();
@@ -154,7 +155,7 @@ fn connects_to(neighbor_state: BlockStateId, direction: Direction) -> bool {
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.
-fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> BlockStateId {
+pub fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> BlockStateId {
     let mut state = block.default_state();
 
     // Check north
@@ -184,7 +185,7 @@ fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> Block
     state
 }
 
-fn update_shape(
+pub fn update_shape(
     state: BlockStateId,
     neighbor_state: BlockStateId,
     direction: Direction,

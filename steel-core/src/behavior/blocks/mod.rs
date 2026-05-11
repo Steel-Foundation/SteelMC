@@ -4,6 +4,7 @@
 //! See `src/generated/behaviors.rs` for the generated registration code.
 
 mod building;
+mod colored;
 mod container;
 mod decoration;
 mod farming;
@@ -16,6 +17,7 @@ pub use building::{
     FenceBlock, IronBarsBlock, RotatedPillarBlock, WeatherState, WeatheringCopper,
     WeatheringCopperBarsBlock, WeatheringCopperFullBlock,
 };
+pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, CraftingTableBlock};
 pub use decoration::{
     CandleBlock, CeilingHangingSignBlock, ChainBlock, StandingSignBlock, TorchBlock,
