@@ -1,7 +1,7 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_LEVEL_CHUNK_WITH_LIGHT;
-use steel_utils::codec::BitSet;
 use steel_utils::serial::OptionalNbt;
+use steel_utils::{PackedChunkLocalXZ, codec::BitSet};
 
 #[derive(WriteTo, Copy, Clone, Debug)]
 #[write(as = VarInt)]
@@ -18,7 +18,7 @@ pub struct Heightmaps {
 
 #[derive(Debug, Clone, WriteTo)]
 pub struct BlockEntityInfo {
-    pub packed_xz: u8,
+    pub packed_xz: PackedChunkLocalXZ,
     pub y: i16,
     #[write(as = VarInt)]
     pub type_id: i32,

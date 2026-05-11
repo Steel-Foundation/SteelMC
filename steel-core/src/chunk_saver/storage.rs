@@ -20,7 +20,9 @@ use std::{io, sync::Weak};
 use steel_registry::structure::{LiquidSettingsData, TerrainAdjustment};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, Rotation};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
+};
 
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
 use crate::world::structure::{
@@ -1108,7 +1110,11 @@ impl ChunkStorage {
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
                 references: {
-                    let mut packed: Vec<_> = positions.iter().map(|pos| pos.as_i64()).collect();
+                    let mut packed: Vec<_> = positions
+                        .iter()
+                        .copied()
+                        .map(PackedChunkPos::from)
+                        .collect();
                     packed.sort_unstable();
                     packed
                 },
@@ -1185,7 +1191,7 @@ impl ChunkStorage {
                 let positions = pr
                     .references
                     .iter()
-                    .map(|&l| ChunkPos::from_i64(l))
+                    .map(|&packed| packed.to_chunk_pos())
                     .collect();
                 (pr.structure.clone(), positions)
             })
@@ -1482,7 +1488,10 @@ mod tests {
         );
         assert_eq!(
             persistent_references[1].references,
-            vec![ChunkPos::new(1, 0).as_i64(), ChunkPos::new(2, 0).as_i64()]
+            vec![
+                PackedChunkPos::from(ChunkPos::new(1, 0)),
+                PackedChunkPos::from(ChunkPos::new(2, 0))
+            ]
         );
     }
 

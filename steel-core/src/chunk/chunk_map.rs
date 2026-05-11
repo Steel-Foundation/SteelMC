@@ -286,7 +286,7 @@ impl ChunkMap {
                             let block_pos = section_pos.relative_to_block_pos(packed);
                             let block_state = world.get_block_state(block_pos);
                             BlockChange {
-                                pos: block_pos,
+                                pos: packed,
                                 block_state,
                             }
                         })

@@ -7,7 +7,7 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use steel_utils::locks::SyncRwLock;
-use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
+use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::SyncMutex};
 use tokio::sync::{oneshot, watch};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
@@ -91,9 +91,9 @@ pub struct ChunkHolder {
     height: i32,
     /// Whether any sections have pending block changes.
     has_changed_sections: AtomicBool,
-    /// Per-section sets of changed block positions (section-relative packed shorts).
+    /// Per-section sets of changed block positions.
     /// Index is `(block_y - min_y) / 16`.
-    changed_blocks_per_section: Box<[SyncMutex<FxHashSet<i16>>]>,
+    changed_blocks_per_section: Box<[SyncMutex<FxHashSet<PackedSectionBlockPos>>]>,
 }
 
 impl ChunkHolder {
@@ -120,9 +120,9 @@ impl ChunkHolder {
             generation_status(Some(ticket_level)).map_or(STATUS_NONE, |s| s.get_index() as u8);
 
         let section_count = (height / 16) as usize;
-        let changed_blocks_per_section: Box<[SyncMutex<FxHashSet<i16>>]> = (0..section_count)
+        let changed_blocks_per_section = (0..section_count)
             .map(|_| SyncMutex::new(FxHashSet::default()))
-            .collect();
+            .collect::<Box<[_]>>();
 
         Self {
             data: ChunkGuard::new(ChunkAccess::Unloaded),
@@ -172,7 +172,7 @@ impl ChunkHolder {
 
     /// Takes all pending block changes, grouped by section index.
     /// Returns a vec of (`section_index`, set of packed positions).
-    pub fn take_changed_blocks(&self) -> Vec<(usize, FxHashSet<i16>)> {
+    pub fn take_changed_blocks(&self) -> Vec<(usize, FxHashSet<PackedSectionBlockPos>)> {
         if !self.has_changed_sections.swap(false, Ordering::AcqRel) {
             return Vec::new();
         }

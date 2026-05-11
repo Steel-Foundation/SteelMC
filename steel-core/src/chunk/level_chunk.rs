@@ -16,8 +16,8 @@ use steel_registry::{
     REGISTRY, RegistryEntry, blocks::block_state_ext::BlockStateExt, vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, SectionPos, codec::BitSet, locks::SyncRwLock,
-    types::UpdateFlags,
+    BlockPos, BlockStateId, ChunkPos, PackedChunkLocalXZ, SectionPos, codec::BitSet,
+    locks::SyncRwLock, types::UpdateFlags,
 };
 
 use steel_utils::locks::SyncMutex;
@@ -665,13 +665,8 @@ impl LevelChunk {
                 let type_id = guard.get_type().id() as i32;
                 let update_tag = guard.get_update_tag();
 
-                // Pack local X and Z coordinates into a single byte
-                let local_x = (pos.0.x & 15) as u8;
-                let local_z = (pos.0.z & 15) as u8;
-                let packed_xz = (local_x << 4) | local_z;
-
                 BlockEntityInfo {
-                    packed_xz,
+                    packed_xz: PackedChunkLocalXZ::from_block_pos(pos),
                     y: pos.0.y as i16,
                     type_id,
                     data: update_tag.into(),
