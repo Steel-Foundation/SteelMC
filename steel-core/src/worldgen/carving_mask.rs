@@ -27,6 +27,26 @@ impl CarvingMask {
         }
     }
 
+    /// Rebuilds a mask from vanilla's `BitSet.toLongArray` representation.
+    #[must_use]
+    pub fn from_words(height: i32, min_y: i32, words: &[u64]) -> Self {
+        let mut mask = Self::new(height, min_y);
+        let len = mask.bits.len().min(words.len());
+        mask.bits[..len].copy_from_slice(&words[..len]);
+        mask
+    }
+
+    /// Returns vanilla's `BitSet.toLongArray` representation.
+    #[must_use]
+    pub fn to_words(&self) -> Vec<u64> {
+        let len = self
+            .bits
+            .iter()
+            .rposition(|word| *word != 0)
+            .map_or(0, |idx| idx + 1);
+        self.bits[..len].to_vec()
+    }
+
     /// Vanilla's `getIndex`: `x & 15 | (z & 15) << 4 | (y - min_y) << 8`.
     #[inline]
     const fn index(&self, x: i32, y: i32, z: i32) -> usize {
@@ -104,5 +124,24 @@ mod test {
         mask.set(17, 0, 18);
         assert!(mask.get(1, 0, 2));
         assert!(mask.get(17, 0, 18));
+    }
+
+    #[test]
+    fn words_roundtrip_preserves_set_bits() {
+        let mut mask = CarvingMask::new(384, -64);
+        mask.set(3, -10, 5);
+        mask.set(15, 319, 15);
+
+        let restored = CarvingMask::from_words(384, -64, &mask.to_words());
+
+        assert!(restored.get(3, -10, 5));
+        assert!(restored.get(15, 319, 15));
+        assert!(!restored.get(4, -10, 5));
+    }
+
+    #[test]
+    fn empty_words_match_vanilla_bitset_array() {
+        let mask = CarvingMask::new(384, -64);
+        assert!(mask.to_words().is_empty());
     }
 }

@@ -330,7 +330,7 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
 }
 
 #[test]
-#[ignore = "This test takes too long to run for normal testing"]
+#[ignore = "This test takes too long to run for normal testing; run with --release"]
 fn chunk_stage_hashes() {
     use std::panic;
     use std::thread;

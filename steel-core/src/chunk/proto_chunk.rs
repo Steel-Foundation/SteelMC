@@ -66,7 +66,7 @@ impl ProtoChunk {
 
     /// Creates a proto chunk that was loaded from disk.
     #[must_use]
-    pub const fn from_disk(
+    pub fn from_disk(
         sections: Sections,
         pos: ChunkPos,
         status: ChunkStatus,
@@ -74,6 +74,7 @@ impl ProtoChunk {
         height: i32,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
+        carving_mask: Option<CarvingMask>,
     ) -> Self {
         Self {
             sections,
@@ -86,7 +87,7 @@ impl ProtoChunk {
             height,
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
-            carving_mask: SyncRwLock::new(None),
+            carving_mask: SyncRwLock::new(carving_mask),
         }
     }
 
@@ -123,9 +124,9 @@ impl ProtoChunk {
         if guard.is_none() {
             *guard = Some(CarvingMask::new(self.height, self.min_y));
         }
-        RwLockWriteGuard::map(guard, |opt| {
-            opt.as_mut()
-                .expect("carving mask initialized immediately above")
+        RwLockWriteGuard::map(guard, |opt| match opt {
+            Some(mask) => mask,
+            None => unreachable!("carving mask initialized immediately above"),
         })
     }
 

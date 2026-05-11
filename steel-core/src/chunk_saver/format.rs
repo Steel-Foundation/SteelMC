@@ -312,6 +312,8 @@ pub struct PersistentChunk {
     pub fluid_ticks: Vec<PersistentTick>,
     /// Final heightmaps for full chunks (empty for proto chunks).
     pub heightmaps: Vec<PersistentHeightmap>,
+    /// Proto chunk carving mask in vanilla `BitSet.toLongArray` layout.
+    pub carving_mask: Option<Vec<u64>>,
     /// Structure starts originating in this chunk.
     pub structure_starts: Vec<PersistentStructureStart>,
     /// References to structures from nearby origin chunks.

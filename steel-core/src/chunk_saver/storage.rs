@@ -9,6 +9,7 @@ use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_in
 use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
+use crate::worldgen::carving_mask::CarvingMask;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::cmp::Ordering as CmpOrdering;
@@ -331,6 +332,16 @@ impl ChunkStorage {
             .map(|c| Self::pois_to_persistent(c, pos))
             .unwrap_or_default();
 
+        let carving_mask = match chunk {
+            ChunkAccess::Proto(proto) => proto
+                .carving_mask
+                .read()
+                .as_ref()
+                .map(CarvingMask::to_words),
+            ChunkAccess::Full(_) => None,
+            ChunkAccess::Unloaded => unreachable!(),
+        };
+
         let persistent = Self::to_persistent(
             chunk.sections(),
             &block_entities,
@@ -338,6 +349,7 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            carving_mask,
             structure_starts,
             structure_references,
             pois,
@@ -360,6 +372,7 @@ impl ChunkStorage {
         block_ticks: Vec<PersistentTick>,
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
+        carving_mask: Option<Vec<u64>>,
         structure_starts: Vec<PersistentStructureStart>,
         structure_references: Vec<PersistentStructureReference>,
         pois: Vec<PersistentPoi>,
@@ -444,6 +457,7 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            carving_mask,
             structure_starts,
             structure_references,
             pois,
@@ -639,15 +653,23 @@ impl ChunkStorage {
 
                 ChunkAccess::Full(chunk)
             }
-            _ => ChunkAccess::Proto(ProtoChunk::from_disk(
-                Sections::from_owned(sections.into_boxed_slice()),
-                pos,
-                status,
-                min_y,
-                height,
-                structure_starts,
-                structure_references,
-            )),
+            _ => {
+                let carving_mask = persistent
+                    .carving_mask
+                    .as_deref()
+                    .map(|words| CarvingMask::from_words(height, min_y, words));
+
+                ChunkAccess::Proto(ProtoChunk::from_disk(
+                    Sections::from_owned(sections.into_boxed_slice()),
+                    pos,
+                    status,
+                    min_y,
+                    height,
+                    structure_starts,
+                    structure_references,
+                    carving_mask,
+                ))
+            }
         }
     }
 
@@ -1312,6 +1334,84 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         }
+    }
+
+    fn single_empty_section() -> Sections {
+        Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice())
+    }
+
+    #[test]
+    fn proto_carving_mask_presence_roundtrips_when_empty() {
+        init_registry();
+
+        let pos = ChunkPos::new(3, -4);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16);
+        proto.set_status(ChunkStatus::Carvers);
+        drop(proto.get_or_create_carving_mask());
+        let chunk = ChunkAccess::Proto(proto);
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.carving_mask, Some(Vec::new()));
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Carvers,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("carvers status should load as proto chunk");
+        };
+
+        assert!(loaded_proto.carving_mask.read().is_some());
+    }
+
+    #[test]
+    fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
+        init_registry();
+
+        let pos = ChunkPos::new(3, -4);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16);
+        proto.set_status(ChunkStatus::Carvers);
+        {
+            let mut mask = proto.get_or_create_carving_mask();
+            mask.set(7, 5, 11);
+        }
+        let chunk = ChunkAccess::Proto(proto);
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert!(
+            prepared
+                .persistent
+                .carving_mask
+                .as_ref()
+                .is_some_and(|words| !words.is_empty())
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Carvers,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("carvers status should load as proto chunk");
+        };
+
+        let mask_guard = loaded_proto.carving_mask.read();
+        let Some(mask) = mask_guard.as_ref() else {
+            panic!("carving mask should restore from persistent chunk");
+        };
+        assert!(mask.get(7, 5, 11));
+        assert!(!mask.get(8, 5, 11));
     }
 
     #[test]
