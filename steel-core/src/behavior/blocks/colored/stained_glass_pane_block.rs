@@ -24,6 +24,7 @@ pub struct StainedGlassPaneBlock {
         json = "color",
         module = "steel_registry::loot_table"
     )]
+    #[allow(unused)]
     color: DyeColor,
 }
 
