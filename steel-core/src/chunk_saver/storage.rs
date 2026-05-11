@@ -337,7 +337,7 @@ impl ChunkStorage {
                 .carving_mask
                 .read()
                 .as_ref()
-                .map(CarvingMask::to_words),
+                .map(CarvingMask::to_packed_u64s),
             ChunkAccess::Full(_) => None,
             ChunkAccess::Unloaded => unreachable!(),
         };
@@ -657,7 +657,7 @@ impl ChunkStorage {
                 let carving_mask = persistent
                     .carving_mask
                     .as_deref()
-                    .map(|words| CarvingMask::from_words(height, min_y, words));
+                    .map(|packed| CarvingMask::from_packed_u64s(height, min_y, packed));
 
                 ChunkAccess::Proto(ProtoChunk::from_disk(
                     Sections::from_owned(sections.into_boxed_slice()),
@@ -1391,7 +1391,7 @@ mod tests {
                 .persistent
                 .carving_mask
                 .as_ref()
-                .is_some_and(|words| !words.is_empty())
+                .is_some_and(|packed| !packed.is_empty())
         );
 
         let loaded = ChunkStorage::persistent_to_chunk(

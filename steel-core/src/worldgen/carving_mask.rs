@@ -19,30 +19,30 @@ impl CarvingMask {
     #[must_use]
     pub fn new(height: i32, min_y: i32) -> Self {
         let total_bits = (256 * height) as usize;
-        let words = total_bits.div_ceil(64);
+        let lanes = total_bits.div_ceil(64);
         Self {
             min_y,
             height,
-            bits: vec![0; words],
+            bits: vec![0; lanes],
         }
     }
 
-    /// Rebuilds a mask from vanilla's `BitSet.toLongArray` representation.
+    /// Rebuilds a mask from Steel's packed `u64` bitset representation.
     #[must_use]
-    pub fn from_words(height: i32, min_y: i32, words: &[u64]) -> Self {
+    pub fn from_packed_u64s(height: i32, min_y: i32, packed: &[u64]) -> Self {
         let mut mask = Self::new(height, min_y);
-        let len = mask.bits.len().min(words.len());
-        mask.bits[..len].copy_from_slice(&words[..len]);
+        let len = mask.bits.len().min(packed.len());
+        mask.bits[..len].copy_from_slice(&packed[..len]);
         mask
     }
 
-    /// Returns vanilla's `BitSet.toLongArray` representation.
+    /// Returns Steel's packed `u64` bitset representation, trimming trailing zeroes.
     #[must_use]
-    pub fn to_words(&self) -> Vec<u64> {
+    pub fn to_packed_u64s(&self) -> Vec<u64> {
         let len = self
             .bits
             .iter()
-            .rposition(|word| *word != 0)
+            .rposition(|lane| *lane != 0)
             .map_or(0, |idx| idx + 1);
         self.bits[..len].to_vec()
     }
@@ -60,9 +60,9 @@ impl CarvingMask {
     #[inline]
     pub fn set(&mut self, x: i32, y: i32, z: i32) {
         let idx = self.index(x, y, z);
-        let word = idx / 64;
+        let lane = idx / 64;
         let bit = idx % 64;
-        self.bits[word] |= 1u64 << bit;
+        self.bits[lane] |= 1u64 << bit;
     }
 
     /// Returns whether `(x, y, z)` has been carved.
@@ -70,9 +70,9 @@ impl CarvingMask {
     #[must_use]
     pub fn get(&self, x: i32, y: i32, z: i32) -> bool {
         let idx = self.index(x, y, z);
-        let word = idx / 64;
+        let lane = idx / 64;
         let bit = idx % 64;
-        (self.bits[word] >> bit) & 1 != 0
+        (self.bits[lane] >> bit) & 1 != 0
     }
 
     /// Y range bound at construction.
@@ -127,12 +127,12 @@ mod test {
     }
 
     #[test]
-    fn words_roundtrip_preserves_set_bits() {
+    fn packed_u64s_roundtrip_preserves_set_bits() {
         let mut mask = CarvingMask::new(384, -64);
         mask.set(3, -10, 5);
         mask.set(15, 319, 15);
 
-        let restored = CarvingMask::from_words(384, -64, &mask.to_words());
+        let restored = CarvingMask::from_packed_u64s(384, -64, &mask.to_packed_u64s());
 
         assert!(restored.get(3, -10, 5));
         assert!(restored.get(15, 319, 15));
@@ -140,8 +140,8 @@ mod test {
     }
 
     #[test]
-    fn empty_words_match_vanilla_bitset_array() {
+    fn empty_packed_u64s_are_omitted() {
         let mask = CarvingMask::new(384, -64);
-        assert!(mask.to_words().is_empty());
+        assert!(mask.to_packed_u64s().is_empty());
     }
 }

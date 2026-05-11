@@ -43,7 +43,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v6: Added structure start and structure reference persistence.
 /// v7: Added POI persistence (`PersistentPoi`).
 /// v8: Added typed jigsaw piece-state persistence.
-pub const FORMAT_VERSION: u16 = 8;
+/// v9: Added proto chunk carving mask persistence.
+pub const FORMAT_VERSION: u16 = 9;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -312,7 +313,7 @@ pub struct PersistentChunk {
     pub fluid_ticks: Vec<PersistentTick>,
     /// Final heightmaps for full chunks (empty for proto chunks).
     pub heightmaps: Vec<PersistentHeightmap>,
-    /// Proto chunk carving mask in vanilla `BitSet.toLongArray` layout.
+    /// Proto chunk carving mask as Steel's packed bitset layout.
     pub carving_mask: Option<Vec<u64>>,
     /// Structure starts originating in this chunk.
     pub structure_starts: Vec<PersistentStructureStart>,
