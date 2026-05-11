@@ -290,7 +290,10 @@ fn structure_starts_inner() {
 
         let mut actual_starts_by_pos: FxHashMap<(i32, i32), StructureStartMap> =
             FxHashMap::default();
-        for pos in source_positions {
+        let mut source_positions_sorted: Vec<(i32, i32)> = source_positions.into_iter().collect();
+        source_positions_sorted.sort_unstable();
+
+        for pos in source_positions_sorted {
             let chunk = make_proto_chunk(pos, section_count, min_y, height);
             generator.create_structures(&chunk);
 

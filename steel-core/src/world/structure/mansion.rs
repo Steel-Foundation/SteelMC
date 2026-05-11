@@ -35,11 +35,11 @@ fn template_size(name: &str) -> [i32; 3] {
         s if s.starts_with("1x1_b") => [7, 11, 7],
         // 1x2 rooms
         "1x2_c_stairs" | "1x2_d_stairs" => [7, 22, 15],
-        s if s.starts_with("1x2_a") || s.starts_with("1x2_b") || s.starts_with("1x2_s") => {
-            [7, 8, 15]
-        }
         s if s.starts_with("1x2_c") || s.starts_with("1x2_d") || s.starts_with("1x2_se") => {
             [7, 11, 15]
+        }
+        s if s.starts_with("1x2_a") || s.starts_with("1x2_b") || s.starts_with("1x2_s") => {
+            [7, 8, 15]
         }
         // 2x2 rooms
         s if s.starts_with("2x2_a") => [15, 8, 15],
@@ -1727,10 +1727,10 @@ impl Structure for WoodlandMansionStructure {
         };
         let bx = ctx.chunk_min_x() + 7;
         let bz = ctx.chunk_min_z() + 7;
-        let h0 = ctx.base_height(bx, bz, false) - 1;
-        let h1 = ctx.base_height(bx, bz + off_z, false) - 1;
-        let h2 = ctx.base_height(bx + off_x, bz, false) - 1;
-        let h3 = ctx.base_height(bx + off_x, bz + off_z, false) - 1;
+        let h0 = ctx.base_height(bx, bz, false);
+        let h1 = ctx.base_height(bx, bz + off_z, false);
+        let h2 = ctx.base_height(bx + off_x, bz, false);
+        let h3 = ctx.base_height(bx + off_x, bz + off_z, false);
         let lowest = h0.min(h1).min(h2).min(h3);
         if lowest < 60 {
             return None;
@@ -1741,7 +1741,7 @@ impl Structure for WoodlandMansionStructure {
             return None;
         }
 
-        let bbs = generate_mansion_pieces((ctx.chunk_min_x(), 0, ctx.chunk_min_z()), rotation, rng);
+        let bbs = generate_mansion_pieces((bx, lowest, bz), rotation, rng);
         let pieces = bbs
             .into_iter()
             .map(|bb| StructurePiece {

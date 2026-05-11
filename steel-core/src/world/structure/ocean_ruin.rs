@@ -214,9 +214,15 @@ impl Structure for OceanRuinStructure {
                     cz.max(cz + nc_z),
                 );
                 if !cluster_bb.intersects(&parent_bb) {
-                    let arr = if is_warm { WARM_SMALL } else { COLD_BRICK };
-                    let tidx = rng.next_i32_bounded(arr.len() as i32) as usize;
-                    push_bb(&mut bbs, arr[tidx], cx, cz, cluster_rot);
+                    if is_warm {
+                        let tidx = rng.next_i32_bounded(WARM_SMALL.len() as i32) as usize;
+                        push_bb(&mut bbs, WARM_SMALL[tidx], cx, cz, cluster_rot);
+                    } else {
+                        let tidx = rng.next_i32_bounded(COLD_BRICK.len() as i32) as usize;
+                        push_bb(&mut bbs, COLD_BRICK[tidx], cx, cz, cluster_rot);
+                        push_bb(&mut bbs, COLD_CRACKED[tidx], cx, cz, cluster_rot);
+                        push_bb(&mut bbs, COLD_MOSSY[tidx], cx, cz, cluster_rot);
+                    }
                 }
             }
         }
