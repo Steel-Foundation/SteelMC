@@ -19,7 +19,10 @@ use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::math::lerp2;
 use steel_worldgen::surface::SurfaceRuleContext;
 
-use crate::chunk::chunk_access::ChunkAccess;
+use crate::chunk::{
+    chunk_access::ChunkAccess,
+    heightmap::{Heightmap, HeightmapType},
+};
 use crate::worldgen::carving_mask::CarvingMask;
 use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult};
 use crate::worldgen::surface::SurfaceSystem;
@@ -120,6 +123,7 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
         block_x: i32,
         block_y: i32,
         block_z: i32,
+        steep: bool,
         under_fluid: bool,
     ) -> Option<BlockStateId> {
         // Surface noise inputs (same helpers build_surface uses per column).
@@ -138,10 +142,7 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
             surface_depth,
             surface_secondary,
             min_surface_level,
-            // Steep is only consulted by a narrow branch of vanilla's surface
-            // rules (mountains); a single-point carver lookup has no column
-            // scan so vanilla effectively defaults it to false.
-            steep: false,
+            steep,
             block_y,
             stone_depth_above: 1,
             stone_depth_below: 1,
@@ -455,7 +456,7 @@ where
             *has_grass = true;
         }
 
-        if !self.can_replace(params, existing) {
+        if !Self::can_replace(params, existing) {
             return false;
         }
 
@@ -478,11 +479,16 @@ where
             let below_pos = BlockPos::new(world_x, world_y - 1, world_z);
             if self.chunk.get_block_state(below_pos) == self.ids.dirt {
                 let under_fluid = !self.ids.is_air_like(state);
+                let steep = self.steep_material_condition(world_x, world_z);
                 let biome_id = (self.biome_getter)(world_x, world_y - 1, world_z);
-                if let Some(top) =
-                    self.ctx
-                        .top_material(biome_id, world_x, world_y - 1, world_z, under_fluid)
-                {
+                if let Some(top) = self.ctx.top_material(
+                    biome_id,
+                    world_x,
+                    world_y - 1,
+                    world_z,
+                    steep,
+                    under_fluid,
+                ) {
                     self.chunk
                         .set_block_state(below_pos, top, UpdateFlags::empty());
                     // TODO: markPosForPostprocessing when `top` has fluid state.
@@ -494,7 +500,7 @@ where
     }
 
     #[inline]
-    fn can_replace(&self, params: &CarveParams<'_>, state: BlockStateId) -> bool {
+    fn can_replace(params: &CarveParams<'_>, state: BlockStateId) -> bool {
         if state.is_air() {
             return false;
         }
@@ -502,6 +508,23 @@ where
             return states.contains(state);
         }
         can_replace_block(state, params.replaceable_tag)
+    }
+
+    fn steep_material_condition(&self, world_x: i32, world_z: i32) -> bool {
+        let heightmaps = self.chunk.proto_heightmaps();
+        if let Some(worldgen_surface) = heightmaps.get(HeightmapType::WorldSurfaceWg) {
+            return steep_material_condition(worldgen_surface, world_x, world_z);
+        }
+        drop(heightmaps);
+
+        self.chunk.prime_worldgen_heightmaps();
+        let heightmaps = self.chunk.proto_heightmaps();
+        if let Some(worldgen_surface) = heightmaps.get(HeightmapType::WorldSurfaceWg) {
+            return steep_material_condition(worldgen_surface, world_x, world_z);
+        }
+
+        log::error!("WorldSurfaceWg heightmap missing during carver top-material lookup");
+        false
     }
 
     /// Vanilla's `WorldCarver.getCarveState` + the nether override dispatch.
@@ -532,6 +555,28 @@ where
     }
 }
 
+/// Vanilla's `SurfaceRules.steep()` condition. It is asymmetric: only
+/// south-vs-north and west-vs-east deltas are checked.
+#[must_use]
+fn steep_material_condition(worldgen_surface: &Heightmap, block_x: i32, block_z: i32) -> bool {
+    let local_x = (block_x & 15) as usize;
+    let local_z = (block_z & 15) as usize;
+
+    let z_north = local_z.saturating_sub(1);
+    let z_south = (local_z + 1).min(15);
+    let h_north = worldgen_surface.get_highest_taken(local_x, z_north);
+    let h_south = worldgen_surface.get_highest_taken(local_x, z_south);
+    if h_south >= h_north + 4 {
+        return true;
+    }
+
+    let x_west = local_x.saturating_sub(1);
+    let x_east = (local_x + 1).min(15);
+    let h_west = worldgen_surface.get_highest_taken(x_west, local_z);
+    let h_east = worldgen_surface.get_highest_taken(x_east, local_z);
+    h_west >= h_east + 4
+}
+
 /// Vanilla's `WorldCarver.canReach` — prunes carver steps that can't touch
 /// any block in the given chunk (used by cave/canyon tunnel loops before
 /// carving an ellipsoid).
@@ -552,4 +597,44 @@ pub fn can_reach(
     let remaining = f64::from(total_steps - current_step);
     let rr = f64::from(thickness + 2.0_f32 + 16.0_f32);
     xd * xd + zd * zd - remaining * remaining <= rr * rr
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::chunk::heightmap::{Heightmap, HeightmapType};
+
+    use super::steep_material_condition;
+
+    fn flat_world_surface(highest_taken: i32) -> Heightmap {
+        let mut heightmap = Heightmap::new(HeightmapType::WorldSurfaceWg, 0, 384);
+        for x in 0..16 {
+            for z in 0..16 {
+                heightmap.set_height(x, z, highest_taken + 1);
+            }
+        }
+        heightmap
+    }
+
+    #[test]
+    fn steep_material_condition_matches_vanilla_asymmetry() {
+        let mut heightmap = flat_world_surface(63);
+        heightmap.set_height(5, 4, 61);
+        heightmap.set_height(5, 6, 65);
+        assert!(steep_material_condition(&heightmap, 5, 5));
+
+        let mut heightmap = flat_world_surface(63);
+        heightmap.set_height(5, 4, 65);
+        heightmap.set_height(5, 6, 61);
+        assert!(!steep_material_condition(&heightmap, 5, 5));
+
+        let mut heightmap = flat_world_surface(63);
+        heightmap.set_height(4, 5, 65);
+        heightmap.set_height(6, 5, 61);
+        assert!(steep_material_condition(&heightmap, 5, 5));
+
+        let mut heightmap = flat_world_surface(63);
+        heightmap.set_height(4, 5, 61);
+        heightmap.set_height(6, 5, 65);
+        assert!(!steep_material_condition(&heightmap, 5, 5));
+    }
 }

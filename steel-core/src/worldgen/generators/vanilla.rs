@@ -850,6 +850,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         }
     }
 
+    #[expect(clippy::too_many_lines, reason = "matches vanilla carver setup flow")]
     fn apply_carvers(&self, chunk: &ChunkAccess) {
         // Carvers only run on proto chunks.
         let ChunkAccess::Proto(proto) = chunk else {
@@ -862,6 +863,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         {
             return;
         }
+
+        // Carver top-material lookups run `SurfaceRules.steep()`, which reads
+        // the worldgen surface heightmap in vanilla's `Context.updateXZ`.
+        chunk.prime_worldgen_heightmaps();
 
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
