@@ -1,5 +1,6 @@
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::noise::beardifier::Beardifier;
 
 /// A chunk generator that generates an empty world.
 #[derive(Default)]
@@ -18,7 +19,7 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn create_biomes(&self, _chunk: &ChunkAccess) {}
 
-    fn fill_from_noise(&self, _chunk: &ChunkAccess) {}
+    fn fill_from_noise(&self, _chunk: &ChunkAccess, _beardifier: Option<&Beardifier>) {}
 
     fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
     }

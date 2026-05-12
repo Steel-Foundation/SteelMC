@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData};
 
 use sha2::{Digest, Sha256};
 use steel_registry::RegistryEntry;
@@ -9,18 +9,22 @@ use steel_utils::random::{
     Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
-use steel_worldgen::math::lerp2;
+use steel_worldgen::math::{lerp, lerp2};
 use steel_worldgen::noise_parameters::get_noise_parameters;
 use steel_worldgen::surface::SurfaceRuleContext;
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::heightmap::HeightmapType;
+use crate::world::structure::GenerationContext;
 use crate::worldgen::BiomeSourceKind;
 use crate::worldgen::generator::ChunkGenerator;
-use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, preliminary_surface_level};
+use crate::worldgen::noise::aquifer::{
+    Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level,
+};
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::noise::noise_chunk::NoiseChunk;
 use crate::worldgen::noise::ore_veinifier::OreVeinifier;
+use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::surface::SurfaceSystem;
 
 /// A chunk generator for vanilla (normal) world generation.
@@ -47,6 +51,10 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     default_block_id: BlockStateId,
     /// Obfuscated seed for `BiomeManager` biome zoom fuzzing.
     biome_zoom_seed: i64,
+    /// World seed as i64 (matching Java's long), used for structure placement.
+    seed: i64,
+    /// Shared structure placement/selection engine.
+    structure_generator: StructureGenerator,
     _phantom: PhantomData<N>,
 }
 
@@ -90,6 +98,8 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
         };
 
+        let structure_generator = StructureGenerator::vanilla(seed as i64, &biome_source);
+
         Self {
             biome_source,
             noises: Box::new(noises),
@@ -98,9 +108,300 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             surface_system,
             default_block_id,
             biome_zoom_seed,
+            seed: seed as i64,
+            structure_generator,
             _phantom: PhantomData,
         }
     }
+}
+
+/// Matches vanilla's `iterateNoiseColumn`: iterates by Y cells, evaluating
+/// inner density functions at 8 cell corners, trilinearly interpolating each
+/// channel independently, then applying outer operations (squeeze, min, etc.)
+/// per-block via `combine_interpolated`.
+///
+/// Returns getBaseHeight (= getFirstFreeHeight = first Y above surface).
+pub(crate) fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    aquifer: &mut Aquifer<N>,
+    block_x: i32,
+    block_z: i32,
+    ocean_floor: bool,
+) -> i32 {
+    let max_y = N::Settings::MIN_Y + N::Settings::HEIGHT - 1;
+    iterate_noise_column_capped::<N>(cache, noises, aquifer, block_x, block_z, max_y, ocean_floor)
+}
+
+/// `getBaseHeight(WORLD_SURFACE_WG)`-compatible height scan. Uses
+/// `preliminary_surface_level + 16` as an upper bound to avoid scanning empty
+/// upper atmosphere, and the cell-based iterator so 8-corner density
+/// evaluations are shared across Y values in each cell.
+///
+/// Exposed for `GenerationContext`.
+pub(crate) fn column_base_height<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    aquifer: &mut Aquifer<N>,
+    x: i32,
+    z: i32,
+    ocean_floor: bool,
+) -> i32 {
+    let estimate = preliminary_surface_level::<N>(noises, cache, x, z);
+    let max_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
+    iterate_noise_column_capped::<N>(cache, noises, aquifer, x, z, max_y, ocean_floor)
+}
+
+/// Single-point `getInterpolatedDensity`. Exposed for `GenerationContext`.
+pub(crate) fn column_interpolated_density<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    x: i32,
+    y: i32,
+    z: i32,
+    cell_w: i32,
+    cell_h: i32,
+) -> f64 {
+    interpolated_density::<N>(cache, noises, x, y, z, cell_w, cell_h)
+}
+
+/// Same as `iterate_noise_column_with_aquifer` but only scans Y values up to
+/// `max_y_inclusive`. Used by `base_height` with an estimate from
+/// `preliminary_surface_level + 16` to skip empty upper atmosphere — reducing
+/// cell-corner density evaluations from O(height) to `O(estimate_depth)`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "inlines 8-corner density buffers + interpolation to match vanilla's iterateNoiseColumn fast path"
+)]
+fn iterate_noise_column_capped<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    aquifer: &mut Aquifer<N>,
+    block_x: i32,
+    block_z: i32,
+    max_y_inclusive: i32,
+    ocean_floor: bool,
+) -> i32 {
+    // Corner channel buffers for 8 cell corners
+    const MAX_INTERP: usize = 16;
+
+    let cell_w = N::Settings::CELL_WIDTH;
+    let cell_h = N::Settings::CELL_HEIGHT;
+    let min_y = N::Settings::MIN_Y;
+    let height = N::Settings::HEIGHT;
+    let cell_min_y = min_y.div_euclid(cell_h);
+    let cell_count_y = height.div_euclid(cell_h);
+
+    let cell_x = block_x.div_euclid(cell_w);
+    let cell_z = block_z.div_euclid(cell_w);
+    let factor_x = f64::from(block_x.rem_euclid(cell_w)) / f64::from(cell_w);
+    let factor_z = f64::from(block_z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let x0 = cell_x * cell_w;
+    let x1 = x0 + cell_w;
+    let z0 = cell_z * cell_w;
+    let z1 = z0 + cell_w;
+
+    let interp_count = N::interpolated_count();
+
+    let mut c000 = [0.0f64; MAX_INTERP];
+    let mut c100 = [0.0f64; MAX_INTERP];
+    let mut c010 = [0.0f64; MAX_INTERP];
+    let mut c110 = [0.0f64; MAX_INTERP];
+    let mut c001 = [0.0f64; MAX_INTERP];
+    let mut c101 = [0.0f64; MAX_INTERP];
+    let mut c011 = [0.0f64; MAX_INTERP];
+    let mut c111 = [0.0f64; MAX_INTERP];
+    let mut interpolated = [0.0f64; MAX_INTERP];
+
+    macro_rules! fill {
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
+            cache.ensure($ex, $ez, noises);
+            noises.fill_cell_corner_densities(
+                &mut *cache,
+                $ex,
+                $ey,
+                $ez,
+                $blended,
+                &mut $out[..interp_count],
+            );
+        }};
+    }
+
+    // Topmost cell containing max_y_inclusive.
+    let max_cell_y_idx = {
+        let raw = max_y_inclusive.div_euclid(cell_h) - cell_min_y;
+        raw.clamp(0, cell_count_y - 1)
+    };
+    // Top Y-within-cell for the topmost cell.
+    let top_cell_top_y_in_cell =
+        (max_y_inclusive - (cell_min_y + max_cell_y_idx) * cell_h).clamp(0, cell_h - 1);
+
+    // Precompute blended noise per corner (x, z) × two Y levels per cell.
+    let mut blended_scratch = [0.0_f64; 2];
+    for cell_y_idx in (0..=max_cell_y_idx).rev() {
+        let y0 = (cell_min_y + cell_y_idx) * cell_h;
+        let y1 = y0 + cell_h;
+        let ys = [y0, y1];
+
+        // `compute_noise_column` gives us the blended noise values at (x0,z0),
+        // (x1,z0), (x0,z1), (x1,z1) for this Y pair. Query each corner once.
+        noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
+        let b000 = blended_scratch[0];
+        let b010 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
+        let b100 = blended_scratch[0];
+        let b110 = blended_scratch[1];
+        noises.compute_noise_column(x0, &ys, z1, &mut blended_scratch);
+        let b001 = blended_scratch[0];
+        let b011 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z1, &mut blended_scratch);
+        let b101 = blended_scratch[0];
+        let b111 = blended_scratch[1];
+
+        // Evaluate inner functions at 8 cell corners (all channels)
+        fill!(c000, x0, y0, z0, b000);
+        fill!(c100, x1, y0, z0, b100);
+        fill!(c010, x0, y1, z0, b010);
+        fill!(c110, x1, y1, z0, b110);
+        fill!(c001, x0, y0, z1, b001);
+        fill!(c101, x1, y0, z1, b101);
+        fill!(c011, x0, y1, z1, b011);
+        fill!(c111, x1, y1, z1, b111);
+
+        // For the topmost cell, start from the Y within cell that corresponds
+        // to `max_y_inclusive`. For lower cells, start at cell_h - 1.
+        let top_y_in_cell = if cell_y_idx == max_cell_y_idx {
+            top_cell_top_y_in_cell
+        } else {
+            cell_h - 1
+        };
+
+        // Iterate Y within cell from top to bottom
+        for y_in_cell in (0..=top_y_in_cell).rev() {
+            let pos_y = (cell_min_y + cell_y_idx) * cell_h + y_in_cell;
+            let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
+
+            // Trilinearly interpolate each channel independently
+            for ch in 0..interp_count {
+                let d00 = lerp(factor_y, c000[ch], c010[ch]);
+                let d10 = lerp(factor_y, c100[ch], c110[ch]);
+                let d01 = lerp(factor_y, c001[ch], c011[ch]);
+                let d11 = lerp(factor_y, c101[ch], c111[ch]);
+                let d0 = lerp(factor_x, d00, d10);
+                let d1 = lerp(factor_x, d01, d11);
+                interpolated[ch] = lerp(factor_z, d0, d1);
+            }
+
+            // Apply outer operations (squeeze, min, etc.) per-block
+            let density = noises.combine_interpolated(
+                &mut *cache,
+                &interpolated[..interp_count],
+                0,
+                pos_y,
+                0,
+            );
+
+            // Use aquifer to determine block state (matches vanilla's getInterpolatedState)
+            let opaque = match aquifer.compute_substance(noises, block_x, pos_y, block_z, density) {
+                AquiferResult::Solid => true,
+                AquiferResult::Fluid(_) => !ocean_floor,
+                AquiferResult::Air => false,
+            };
+
+            if opaque {
+                return pos_y + 1;
+            }
+        }
+    }
+    min_y
+}
+
+/// Evaluate terrain density at a single block position using cell-based
+/// interpolation matching vanilla's `NoiseChunk`: inner functions at 8 cell
+/// corners, trilinear interpolation per channel, then outer operations.
+fn interpolated_density<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    x: i32,
+    y: i32,
+    z: i32,
+    cell_w: i32,
+    cell_h: i32,
+) -> f64 {
+    const MAX_INTERP: usize = 16;
+
+    let cx = x.div_euclid(cell_w);
+    let cy = y.div_euclid(cell_h);
+    let cz = z.div_euclid(cell_w);
+    let fx = f64::from(x.rem_euclid(cell_w)) / f64::from(cell_w);
+    let fy = f64::from(y.rem_euclid(cell_h)) / f64::from(cell_h);
+    let fz = f64::from(z.rem_euclid(cell_w)) / f64::from(cell_w);
+
+    let x0 = cx * cell_w;
+    let x1 = x0 + cell_w;
+    let y0 = cy * cell_h;
+    let y1 = y0 + cell_h;
+    let z0 = cz * cell_w;
+    let z1 = z0 + cell_w;
+
+    let interp_count = N::interpolated_count();
+
+    let mut c000 = [0.0f64; MAX_INTERP];
+    let mut c100 = [0.0f64; MAX_INTERP];
+    let mut c010 = [0.0f64; MAX_INTERP];
+    let mut c110 = [0.0f64; MAX_INTERP];
+    let mut c001 = [0.0f64; MAX_INTERP];
+    let mut c101 = [0.0f64; MAX_INTERP];
+    let mut c011 = [0.0f64; MAX_INTERP];
+    let mut c111 = [0.0f64; MAX_INTERP];
+    let mut interpolated = [0.0f64; MAX_INTERP];
+
+    macro_rules! fill {
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
+            cache.ensure($ex, $ez, noises);
+            noises.fill_cell_corner_densities(
+                &mut *cache,
+                $ex,
+                $ey,
+                $ez,
+                $blended,
+                &mut $out[..interp_count],
+            );
+        }};
+    }
+
+    // Precompute blended noise at each corner (x, z) for the two cell Y levels.
+    let ys = [y0, y1];
+    let mut blended_scratch = [0.0_f64; 2];
+    noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
+    let (b000, b010) = (blended_scratch[0], blended_scratch[1]);
+    noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
+    let (b100, b110) = (blended_scratch[0], blended_scratch[1]);
+    noises.compute_noise_column(x0, &ys, z1, &mut blended_scratch);
+    let (b001, b011) = (blended_scratch[0], blended_scratch[1]);
+    noises.compute_noise_column(x1, &ys, z1, &mut blended_scratch);
+    let (b101, b111) = (blended_scratch[0], blended_scratch[1]);
+
+    fill!(c000, x0, y0, z0, b000);
+    fill!(c100, x1, y0, z0, b100);
+    fill!(c010, x0, y1, z0, b010);
+    fill!(c110, x1, y1, z0, b110);
+    fill!(c001, x0, y0, z1, b001);
+    fill!(c101, x1, y0, z1, b101);
+    fill!(c011, x0, y1, z1, b011);
+    fill!(c111, x1, y1, z1, b111);
+
+    for ch in 0..interp_count {
+        let d00 = lerp(fy, c000[ch], c010[ch]);
+        let d10 = lerp(fy, c100[ch], c110[ch]);
+        let d01 = lerp(fy, c001[ch], c011[ch]);
+        let d11 = lerp(fy, c101[ch], c111[ch]);
+        let d0 = lerp(fx, d00, d10);
+        let d1 = lerp(fx, d01, d11);
+        interpolated[ch] = lerp(fz, d0, d1);
+    }
+
+    noises.combine_interpolated(&mut *cache, &interpolated[..interp_count], 0, y, 0)
 }
 
 impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
@@ -108,7 +409,56 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         self.biome_source.initial_spawn_search_origin()
     }
 
-    fn create_structures(&self, _chunk: &ChunkAccess) {}
+    fn structure_generator(&self) -> Option<&StructureGenerator> {
+        Some(&self.structure_generator)
+    }
+
+    fn create_structures(&self, chunk: &ChunkAccess) {
+        let pos = chunk.pos();
+        let chunk_x = pos.0.x;
+        let chunk_z = pos.0.y;
+
+        let mut sampler = self.biome_source.chunk_sampler();
+        let chunk_min_x = chunk_x * 16;
+        let chunk_min_z = chunk_z * 16;
+        let center_block_x = chunk_min_x + 8;
+        let center_block_z = chunk_min_z + 8;
+
+        let mut height_cache = N::ColumnCache::default();
+        let sea_level = N::Settings::SEA_LEVEL;
+
+        // No eager `init_grid`: most chunks' structures (mineshaft, village)
+        // use their own caches, and the 1–4 column probes of the remainder
+        // hit this cache's lazy single-entry mode cheaply. Eager 5×5 quart
+        // init cost ~36µs per chunk with no payoff.
+        let mut aquifer = LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
+        let mut surface_y_cache: Option<i32> = None;
+        let mut height_cache_grid_ready = false;
+        let mut ctx = GenerationContext::<'_, '_, N> {
+            seed: self.seed,
+            chunk_x,
+            chunk_z,
+            chunk_min_x,
+            chunk_min_z,
+            center_block_x,
+            center_block_z,
+            sea_level,
+            surface_y_cache: &mut surface_y_cache,
+            height_cache_grid_ready: &mut height_cache_grid_ready,
+            noises: &self.noises,
+            splitter: &self.splitter,
+            template_pools: self.structure_generator.template_pools(),
+            templates: self.structure_generator.templates(),
+            biome_sampler: &mut sampler,
+            height_cache: &mut height_cache,
+            aquifer: &mut aquifer,
+            terrain_height_cache: RefCell::default(),
+            terrain_opaque_cache: RefCell::default(),
+            terrain_probes: RefCell::default(),
+        };
+
+        self.structure_generator.create_structures(chunk, &mut ctx);
+    }
 
     fn create_biomes(&self, chunk: &ChunkAccess) {
         let pos = chunk.pos();
@@ -155,7 +505,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         chunk.mark_dirty();
     }
 
-    fn fill_from_noise(&self, chunk: &ChunkAccess) {
+    fn fill_from_noise(&self, chunk: &ChunkAccess, beardifier: Option<&Beardifier>) {
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
         let chunk_min_z = pos.0.y * 16;
@@ -182,14 +532,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             column_cache.clone(),
         );
 
-        let structure_starts = chunk.structure_starts();
-        let beardifier = Beardifier::for_structures_in_chunk(&structure_starts, pos.0.x, pos.0.y);
-        let beard_opt = if beardifier.is_empty() {
-            None
-        } else {
-            Some(&beardifier)
-        };
-
         // Collect writes per (x,z) column and flush in batch to avoid per-block
         // write lock acquisition on sections.
         let mut pending_writes: Vec<(usize, usize, usize, BlockStateId)> = Vec::new();
@@ -200,7 +542,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         noise_chunk.fill(
             noises,
             &mut column_cache,
-            beard_opt,
+            beardifier,
             |local_x, world_y, local_z, density, interpolated, cache| {
                 // Flush when we move to a new column
                 if local_x != prev_x || local_z != prev_z {
@@ -283,9 +625,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             .get(HeightmapType::WorldSurfaceWg)
             .expect("WorldSurfaceWg heightmap not initialized");
 
-        let eroded_badlands_id = vanilla_biomes::ERODED_BADLANDS.id() as u16;
-        let frozen_ocean_id = vanilla_biomes::FROZEN_OCEAN.id() as u16;
-        let deep_frozen_ocean_id = vanilla_biomes::DEEP_FROZEN_OCEAN.id() as u16;
+        let eroded_badlands_id = (*vanilla_biomes::ERODED_BADLANDS).id() as u16;
+        let frozen_ocean_id = (*vanilla_biomes::FROZEN_OCEAN).id() as u16;
+        let deep_frozen_ocean_id = (*vanilla_biomes::DEEP_FROZEN_OCEAN).id() as u16;
 
         // Pre-extract all biome palette values to avoid per-read section locking.
         let biome_data = chunk.sections().read_all_biomes();
@@ -395,9 +737,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                         continue;
                     }
 
-                    // Solid block — scan for stone_depth_below (lookahead).
-                    // Range starts at `min_y - 1` as a sentinel: the first iteration
-                    // hits `la_y < min_y`, treating the world floor as a cavity boundary.
+                    // Solid block — scan for stone_depth_below (lookahead)
                     if next_ceiling_stone_y >= y {
                         next_ceiling_stone_y = i32::MIN;
                         for la_y in (min_y - 1..y).rev() {
