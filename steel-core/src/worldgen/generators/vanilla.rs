@@ -873,7 +873,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // Fresh aquifer (vanilla caches NoiseChunk across stages; see TODO on
         // ProtoChunk::carving_mask for why we rebuild instead).
         let mut column_cache = N::ColumnCache::default();
-        column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+        if N::Settings::AQUIFERS_ENABLED {
+            column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+        }
         let aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,
