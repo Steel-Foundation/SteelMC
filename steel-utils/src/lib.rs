@@ -23,6 +23,7 @@ pub mod math;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;
+pub mod rotation;
 pub mod serial;
 pub mod text;
 /// A module for common types.
@@ -45,6 +46,7 @@ pub mod entity_events;
 
 pub use direction::Direction;
 pub use front_vec::FrontVec;
+pub use rotation::Rotation;
 pub use types::BlockPos;
 pub use types::BlockStateId;
 pub use types::BoundingBox;

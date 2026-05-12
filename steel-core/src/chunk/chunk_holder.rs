@@ -386,8 +386,12 @@ impl ChunkHolder {
                 .await;
 
                 sender.send_modify(|chunk| {
-                    if let ChunkAccess::Proto(chunk) = &*self_clone2.data.read() {
-                        chunk.set_status(target_status);
+                    let stored_chunk = self_clone2.data.read();
+                    if let ChunkAccess::Proto(proto_chunk) = &*stored_chunk
+                        && proto_chunk.status() < target_status
+                    {
+                        proto_chunk.set_status(target_status);
+                        stored_chunk.mark_dirty();
                     }
                     if let ChunkResult::Ok(s) = chunk
                         && *s < target_status

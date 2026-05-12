@@ -34,6 +34,7 @@ use crate::{
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
+    structure::StructureRegistry,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
@@ -77,6 +78,9 @@ pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
+pub mod structure;
+pub mod structure_set;
+pub mod template_pool;
 pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
@@ -346,6 +350,25 @@ pub mod sound_types;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_structures.rs"]
+pub mod vanilla_structures;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_tags.rs"]
+pub mod vanilla_structure_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_sets.rs"]
+pub mod vanilla_structure_sets;
+
+#[rustfmt::skip]
+#[path = "generated/vanilla_template_pools.rs"]
+pub mod vanilla_template_pools;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_packets.rs"]
 pub mod packets;
 
@@ -453,6 +476,7 @@ pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
+pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -494,6 +518,7 @@ pub struct Registry {
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
+    pub structures: StructureRegistry,
 }
 
 impl Debug for Registry {
@@ -577,6 +602,8 @@ impl Registry {
         vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
+        vanilla_structures::register_structures(&mut registry.structures);
+        vanilla_structure_tags::register_structure_tags(&mut registry.structures);
 
         registry
     }
@@ -621,6 +648,7 @@ impl Registry {
         self.poi_types.freeze();
         self.enchantments.freeze();
         self.world_clocks.freeze();
+        self.structures.freeze();
     }
 
     #[must_use]
@@ -665,6 +693,7 @@ impl Registry {
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
+            structures: StructureRegistry::new(),
         }
     }
 }

@@ -12,9 +12,14 @@ use std::fs;
 use std::io::{BufReader, Cursor, Read as IoRead};
 
 use flate2::read::GzDecoder;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::Deserialize;
+use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::section::Sections;
+use steel_core::world::structure::StructureStart;
+use steel_core::worldgen::noise::beardifier::Beardifier;
+use steel_registry::structure::TerrainAdjustment;
+use steel_utils::ChunkPos;
 
 #[derive(Deserialize, Debug)]
 struct ChunkStageEntry {
@@ -333,13 +338,69 @@ const DIMENSION_ORDER: &[&str] = &[
     "minecraft:the_end",
 ];
 
+/// Build a beardifier for `chunk` using `chunks` as the chunk source. Mirrors the
+/// production logic in `worldgen::stages::noise` but reads from a `HashMap` instead
+/// of a chunk cache.
+fn build_test_beardifier(
+    chunk: &ChunkAccess,
+    chunks: &FxHashMap<(i32, i32), ChunkAccess>,
+) -> Option<Beardifier> {
+    let pos = chunk.pos();
+    let chunk_x = pos.0.x;
+    let chunk_z = pos.0.y;
+
+    let references = chunk.structure_references();
+
+    let mut source_positions: FxHashSet<ChunkPos> = FxHashSet::default();
+    for source_chunks in references.values() {
+        source_positions.extend(source_chunks.iter().copied());
+    }
+    if source_positions.is_empty() {
+        return None;
+    }
+
+    let source_chunk_refs: Vec<&ChunkAccess> = source_positions
+        .iter()
+        .filter_map(|p| chunks.get(&(p.0.x, p.0.y)))
+        .collect();
+    let mut source_indices: FxHashMap<ChunkPos, usize> = FxHashMap::default();
+    let mut starts_guards = Vec::with_capacity(source_chunk_refs.len());
+    for source_chunk in &source_chunk_refs {
+        let source_pos = source_chunk.pos();
+        source_indices.insert(source_pos, starts_guards.len());
+        starts_guards.push(source_chunk.structure_starts());
+    }
+
+    let mut starts: Vec<&StructureStart> = Vec::new();
+    for (structure_id, source_chunks_ref) in references.iter() {
+        for &source_pos in source_chunks_ref {
+            let Some(&guard_index) = source_indices.get(&source_pos) else {
+                continue;
+            };
+            let guard = &starts_guards[guard_index];
+            if let Some(start) = guard.get(structure_id)
+                && start.chunk_pos == source_pos
+                && start.terrain_adjustment != TerrainAdjustment::None
+            {
+                starts.push(start);
+            }
+        }
+    }
+
+    if starts.is_empty() {
+        return None;
+    }
+
+    let beardifier = Beardifier::for_structures_in_chunk(starts.iter().copied(), chunk_x, chunk_z);
+    (!beardifier.is_empty()).then_some(beardifier)
+}
+
 #[expect(
     clippy::too_many_lines,
     clippy::similar_names,
     reason = "large test with many hash assertions"
 )]
 fn chunk_stage_hashes_inner() {
-    use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::proto_chunk::ProtoChunk;
     use steel_core::chunk::section::ChunkSection;
     use steel_core::worldgen::{
@@ -347,7 +408,6 @@ fn chunk_stage_hashes_inner() {
         OverworldGenerator,
     };
     use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
-    use steel_utils::ChunkPos;
 
     let mut registry = Registry::new_vanilla();
     registry.freeze();
@@ -405,50 +465,109 @@ fn chunk_stage_hashes_inner() {
                 .collect()
         };
 
-        // Reuse chunks across stages — each stage builds on the previous
+        // === Pre-pass: replicate vanilla's STRUCTURE_STARTS → STRUCTURE_REFERENCES →
+        // BIOMES → NOISE pipeline before the per-stage hash loop. The beardifier in
+        // production reads structure starts from referenced neighbor chunks, so the
+        // test must populate those references the same way `generate_references` does
+        // in `worldgen::stages::structures`. ===
+
+        // 17×17 around each test chunk feeds STRUCTURE_REFERENCES; 3×3 feeds the
+        // surface stage's neighbor-biome lookup.
+        let mut starts_positions: FxHashSet<(i32, i32)> =
+            FxHashSet::with_capacity_and_hasher(test_entries.len() * 289, FxBuildHasher);
+        let mut biome_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
+        for entry in &test_entries {
+            for dx in -8i32..=8 {
+                for dz in -8i32..=8 {
+                    starts_positions.insert((entry.x + dx, entry.z + dz));
+                }
+            }
+            for dx in -1i32..=1 {
+                for dz in -1i32..=1 {
+                    biome_positions.insert((entry.x + dx, entry.z + dz));
+                }
+            }
+        }
+
         let mut chunks: FxHashMap<(i32, i32), ChunkAccess> =
-            FxHashMap::with_capacity_and_hasher(test_entries.len(), FxBuildHasher);
-        // Biome-only neighbors for surface and later stages (positions not in `chunks`)
-        let mut biome_neighbors: FxHashMap<(i32, i32), ChunkAccess> = FxHashMap::default();
-        let mut neighbors_built = false;
+            FxHashMap::with_capacity_and_hasher(starts_positions.len(), FxBuildHasher);
+        for &pos in &starts_positions {
+            let sections: Box<[ChunkSection]> = (0..section_count)
+                .map(|_| ChunkSection::new_empty())
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            let proto = ProtoChunk::new(
+                Sections::from_owned(sections),
+                ChunkPos::new(pos.0, pos.1),
+                min_y,
+                height,
+            );
+            chunks.insert(pos, ChunkAccess::Proto(proto));
+        }
+        eprintln!(
+            "[{dim_short}] Allocated {} proto chunks for structure neighborhood",
+            chunks.len()
+        );
+
+        // STRUCTURE_STARTS — per-chunk; uses biome_source directly (no chunk biomes
+        // required). Most chunks early-exit at `placement.is_structure_chunk`.
+        for chunk in chunks.values() {
+            generator.create_structures(chunk);
+        }
+
+        // BIOMES — only for the 3×3 around each test chunk (surface stage's lookup).
+        for &pos in &biome_positions {
+            generator.create_biomes(&chunks[&pos]);
+        }
+
+        // STRUCTURE_REFERENCES — mirror of `generate_references`: scan 17×17 for each
+        // test chunk, recording which neighbor chunks hold a start whose inflated BB
+        // intersects this chunk.
+        for entry in &test_entries {
+            let target_x = entry.x;
+            let target_z = entry.z;
+            let target_block_x = target_x * 16;
+            let target_block_z = target_z * 16;
+
+            for source_x in (target_x - 8)..=(target_x + 8) {
+                for source_z in (target_z - 8)..=(target_z + 8) {
+                    let Some(source_chunk) = chunks.get(&(source_x, source_z)) else {
+                        continue;
+                    };
+                    let starts = source_chunk.structure_starts();
+                    for (structure_id, start) in starts.iter() {
+                        // `start.bounding_box` is already inflated by `bb_inflate`,
+                        // matching `worldgen::stages::structures::generate_references`.
+                        let Some(bb) = start.bounding_box else {
+                            continue;
+                        };
+                        if bb.intersects_xz(
+                            target_block_x,
+                            target_block_z,
+                            target_block_x + 15,
+                            target_block_z + 15,
+                        ) {
+                            chunks[&(target_x, target_z)]
+                                .structure_references_mut()
+                                .entry(structure_id.clone())
+                                .or_default()
+                                .insert(ChunkPos::new(source_x, source_z));
+                        }
+                    }
+                }
+            }
+        }
+
+        // NOISE — fill_from_noise with per-chunk beardifier built from references.
+        for entry in &test_entries {
+            let chunk = &chunks[&(entry.x, entry.z)];
+            let beardifier = build_test_beardifier(chunk, &chunks);
+            generator.fill_from_noise(chunk, beardifier.as_ref());
+        }
 
         for &stage in STAGES {
             let reference_blocks = load_reference_blocks(stage, dim_short);
             let has_reference = reference_blocks.is_some();
-            let needs_neighbors = stage != "minecraft:noise";
-
-            // Generate biome-only neighbor chunks once before the first post-noise stage.
-            // Only creates chunks for 3x3 neighborhood positions not already in the test set.
-            if needs_neighbors && !neighbors_built {
-                for entry in &test_entries {
-                    for dx in -1i32..=1 {
-                        for dz in -1i32..=1 {
-                            let pos = (entry.x + dx, entry.z + dz);
-                            if chunks.contains_key(&pos) || biome_neighbors.contains_key(&pos) {
-                                continue;
-                            }
-                            let sections: Box<[ChunkSection]> = (0..section_count)
-                                .map(|_| ChunkSection::new_empty())
-                                .collect::<Vec<_>>()
-                                .into_boxed_slice();
-                            let proto = ProtoChunk::new(
-                                Sections::from_owned(sections),
-                                ChunkPos::new(pos.0, pos.1),
-                                min_y,
-                                height,
-                            );
-                            let chunk = ChunkAccess::Proto(proto);
-                            generator.create_biomes(&chunk);
-                            biome_neighbors.insert(pos, chunk);
-                        }
-                    }
-                }
-                eprintln!(
-                    "[{dim_short}] Generated {} biome-only neighbor chunks",
-                    biome_neighbors.len()
-                );
-                neighbors_built = true;
-            }
 
             let stage_entries: Vec<_> = test_entries
                 .iter()
@@ -458,37 +577,17 @@ fn chunk_stage_hashes_inner() {
             let mut mismatches = Vec::new();
 
             for (i, &(chunk_x, chunk_z, expected_hash)) in stage_entries.iter().enumerate() {
-                // Ensure chunk exists with biomes + noise applied
-                chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
-                    let sections: Box<[ChunkSection]> = (0..section_count)
-                        .map(|_| ChunkSection::new_empty())
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice();
-                    let proto = ProtoChunk::new(
-                        Sections::from_owned(sections),
-                        ChunkPos::new(chunk_x, chunk_z),
-                        min_y,
-                        height,
-                    );
-                    let chunk = ChunkAccess::Proto(proto);
-                    generator.create_biomes(&chunk);
-                    generator.fill_from_noise(&chunk);
-                    chunk
-                });
-
                 let chunk = &chunks[&(chunk_x, chunk_z)];
 
-                // Apply current stage (noise already applied during chunk creation)
+                // Apply current stage (structure_starts, references, biomes, noise
+                // already done by pre-pass).
                 if stage != "minecraft:noise" {
                     let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
                         let cx = qx >> 2;
                         let cz = qz >> 2;
-                        let neighbor = chunks
-                            .get(&(cx, cz))
-                            .or_else(|| biome_neighbors.get(&(cx, cz)))
-                            .unwrap_or_else(|| {
-                                panic!("Missing neighbor biome data for chunk ({cx}, {cz})")
-                            });
+                        let neighbor = chunks.get(&(cx, cz)).unwrap_or_else(|| {
+                            panic!("Missing neighbor biome data for chunk ({cx}, {cz})")
+                        });
                         let sections = neighbor.sections();
                         let local_qx = (qx - cx * 4) as usize;
                         let local_qz = (qz - cz * 4) as usize;

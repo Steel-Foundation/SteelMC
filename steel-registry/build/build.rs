@@ -39,6 +39,9 @@ mod poi_types;
 mod recipes;
 mod sound_events;
 mod sound_types;
+mod structure_sets;
+mod structure_tags;
+mod template_pools;
 mod timeline_tags;
 mod timelines;
 mod trim_materials;
@@ -117,6 +120,10 @@ const GAME_RULES: &str = "game_rules";
 const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
+const STRUCTURE_SETS: &str = "structure_sets";
+const STRUCTURE_TAGS: &str = "structure_tags";
+const STRUCTURES: &str = "structures";
+const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
 
 pub fn main() {
@@ -180,6 +187,10 @@ pub fn main() {
         (sound_types::build(), SOUND_TYPES),
         (world_clocks::build(), WORLD_CLOCKS),
         (poi_types::build(), POI_TYPES),
+        (structure_sets::build_structures(), STRUCTURES),
+        (structure_tags::build(), STRUCTURE_TAGS),
+        (structure_sets::build(), STRUCTURE_SETS),
+        (template_pools::build(), TEMPLATE_POOLS),
         (banner_pattern_tags::build(), BANNER_PATTERN_TAGS),
         (entity_type_tags::build(), ENTITY_TYPE_TAGS),
         (instrument_tags::build(), INSTRUMENT_TAGS),

@@ -14,6 +14,55 @@ use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::{clamp, map, map_clamped};
 
+/// Deferred [`Aquifer`]. Used by `create_structures` so chunks where no structure
+/// queries the aquifer skip its (expensive) `max_preliminary_surface_level` scan.
+pub struct LazyAquifer<'a, N: DimensionNoises> {
+    chunk_min_x: i32,
+    chunk_min_z: i32,
+    splitter: &'a RandomSplitter,
+    noises: &'a N,
+    inner: Option<Aquifer<N>>,
+}
+
+impl<'a, N: DimensionNoises> LazyAquifer<'a, N> {
+    /// Deferred aquifer for the given chunk.
+    #[must_use]
+    pub const fn new(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        splitter: &'a RandomSplitter,
+        noises: &'a N,
+    ) -> Self {
+        Self {
+            chunk_min_x,
+            chunk_min_z,
+            splitter,
+            noises,
+            inner: None,
+        }
+    }
+
+    /// Build on first call; `height_cache` is cloned into the aquifer's own cache.
+    ///
+    /// # Panics
+    /// Never — `inner` is initialized above if it was `None`.
+    pub fn ensure(&mut self, height_cache: &N::ColumnCache) -> &mut Aquifer<N> {
+        if self.inner.is_none() {
+            self.inner = Some(Aquifer::<N>::new(
+                self.chunk_min_x,
+                self.chunk_min_z,
+                <N::Settings as NoiseSettings>::MIN_Y,
+                <N::Settings as NoiseSettings>::HEIGHT,
+                self.splitter,
+                self.noises,
+                height_cache.clone(),
+            ));
+        }
+        #[expect(clippy::unwrap_used, reason = "just initialized above")]
+        self.inner.as_mut().unwrap()
+    }
+}
+
 // Grid spacing
 const Y_SPACING: i32 = 12;
 
@@ -213,7 +262,7 @@ fn global_fluid(
 }
 
 impl<N: DimensionNoises> Aquifer<N> {
-    /// Create a new aquifer for a chunk.
+    /// Create an aquifer for a full 16×16 chunk.
     ///
     /// `chunk_min_x/z` are the block coordinates of the chunk's NW corner.
     /// `min_block_y` and `y_block_size` define the vertical range.
@@ -224,6 +273,36 @@ impl<N: DimensionNoises> Aquifer<N> {
     pub fn new(
         chunk_min_x: i32,
         chunk_min_z: i32,
+        min_block_y: i32,
+        y_block_size: i32,
+        splitter: &RandomSplitter,
+        noises: &N,
+        cache: N::ColumnCache,
+    ) -> Self {
+        Self::new_sized(
+            chunk_min_x,
+            chunk_min_z,
+            16,
+            16,
+            min_block_y,
+            y_block_size,
+            splitter,
+            noises,
+            cache,
+        )
+    }
+
+    /// Create an aquifer with custom XZ extent (in blocks).
+    /// Vanilla's iterateNoiseColumn uses width=cellWidth (4) for single-column queries.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla's Aquifer constructor shape"
+    )]
+    pub fn new_sized(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        width_x: i32,
+        width_z: i32,
         min_block_y: i32,
         y_block_size: i32,
         splitter: &RandomSplitter,
@@ -261,8 +340,8 @@ impl<N: DimensionNoises> Aquifer<N> {
             };
         }
 
-        let chunk_max_x = chunk_min_x + 15;
-        let chunk_max_z = chunk_min_z + 15;
+        let chunk_max_x = chunk_min_x + width_x - 1;
+        let chunk_max_z = chunk_min_z + width_z - 1;
 
         let min_grid_x = grid_x(chunk_min_x + SAMPLE_OFFSET_X);
         let max_grid_x = grid_x(chunk_max_x + SAMPLE_OFFSET_X) + 1;

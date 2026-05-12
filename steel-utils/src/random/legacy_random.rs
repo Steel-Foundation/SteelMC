@@ -28,6 +28,39 @@ impl LegacyRandom {
         }
     }
 
+    /// Returns the internal seed (for debugging/checkpointing).
+    #[must_use]
+    pub const fn get_seed(&self) -> i64 {
+        self.seed
+    }
+
+    /// Re-seeds this generator, matching Java's `Random.setSeed`.
+    pub const fn set_seed(&mut self, seed: i64) {
+        self.seed = (seed ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF;
+        self.next_gaussian = None;
+    }
+
+    /// Matches vanilla's `WorldgenRandom.setLargeFeatureSeed`.
+    pub fn set_large_feature_seed(&mut self, seed: i64, chunk_x: i32, chunk_z: i32) {
+        self.set_seed(seed);
+        let x_mul = self.next_i64();
+        let z_mul = self.next_i64();
+        self.set_seed(
+            i64::from(chunk_x).wrapping_mul(x_mul) ^ i64::from(chunk_z).wrapping_mul(z_mul) ^ seed,
+        );
+    }
+
+    /// Matches vanilla's `WorldgenRandom.setLargeFeatureWithSalt`.
+    pub fn set_large_feature_with_salt(&mut self, seed: i64, x: i32, z: i32, salt: i32) {
+        self.set_seed(
+            i64::from(x)
+                .wrapping_mul(341_873_128_712)
+                .wrapping_add(i64::from(z).wrapping_mul(132_897_987_541))
+                .wrapping_add(seed)
+                .wrapping_add(i64::from(salt)),
+        );
+    }
+
     const fn next(&mut self, bits: u64) -> i32 {
         (self.next_random() >> (48 - bits)) as i32
     }
@@ -368,5 +401,54 @@ mod test {
 
         assert_eq!(original_rand.next_i32(), 1_033_096_058);
         assert_eq!(new_rand.next_i32(), -888_301_832);
+    }
+
+    #[test]
+    fn test_set_seed_matches_from_seed() {
+        let mut fresh = LegacyRandom::from_seed(12345);
+        let mut reseeded = LegacyRandom::from_seed(0);
+        reseeded.set_seed(12345);
+        for _ in 0..10 {
+            assert_eq!(fresh.next_i64(), reseeded.next_i64());
+        }
+    }
+
+    #[test]
+    fn test_set_large_feature_with_salt_trivial() {
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_with_salt(0, 0, 0, 10_387_312);
+        let mut expected = LegacyRandom::from_seed(0);
+        expected.set_seed(10_387_312);
+        for _ in 0..5 {
+            assert_eq!(rng.next_i32(), expected.next_i32());
+        }
+    }
+
+    #[test]
+    fn test_set_large_feature_with_salt() {
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_with_salt(123_456_789, 5, -3, 10_387_312);
+        let expected_seed: i64 =
+            5_i64 * 341_873_128_712 + (-3_i64) * 132_897_987_541 + 123_456_789 + 10_387_312;
+        let mut expected = LegacyRandom::from_seed(0);
+        expected.set_seed(expected_seed);
+        for _ in 0..5 {
+            assert_eq!(rng.next_i32(), expected.next_i32());
+        }
+    }
+
+    #[test]
+    fn test_set_large_feature_seed() {
+        let x_mul = -4_962_768_465_676_381_896_i64;
+        let z_mul = 4_437_113_781_045_784_766_i64;
+        let expected_seed = 3_i64.wrapping_mul(x_mul) ^ 5_i64.wrapping_mul(z_mul);
+
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_seed(0, 3, 5);
+        let mut expected = LegacyRandom::from_seed(0);
+        expected.set_seed(expected_seed);
+        for _ in 0..5 {
+            assert_eq!(rng.next_i32(), expected.next_i32());
+        }
     }
 }
