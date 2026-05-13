@@ -466,10 +466,12 @@ where
         };
 
         self.chunk.set_block_state(pos, state, UpdateFlags::empty());
-
-        // TODO: call markPosForPostprocessing when
-        // aquifer.shouldScheduleFluidUpdate and the placed block has a
-        // non-empty fluid state. Needs a postprocessing queue on ProtoChunk.
+        if params.style == CarverStyle::Overworld
+            && self.ctx.aquifer.should_schedule_fluid_update()
+            && state.has_fluid()
+        {
+            self.chunk.mark_pos_for_postprocessing(pos);
+        }
 
         // Top-material rewrite: only when we just turned a grass/mycelium
         // block into something carved, and the block directly below is plain
@@ -491,7 +493,9 @@ where
                 ) {
                     self.chunk
                         .set_block_state(below_pos, top, UpdateFlags::empty());
-                    // TODO: markPosForPostprocessing when `top` has fluid state.
+                    if top.has_fluid() {
+                        self.chunk.mark_pos_for_postprocessing(below_pos);
+                    }
                 }
             }
         }

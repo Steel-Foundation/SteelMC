@@ -344,6 +344,14 @@ impl ChunkStorage {
             ChunkAccess::Unloaded => unreachable!(),
         };
 
+        let postprocessing = match chunk {
+            ChunkAccess::Proto(proto) => {
+                proto.postprocessing.read().iter().map(Vec::clone).collect()
+            }
+            ChunkAccess::Full(_) => Vec::new(),
+            ChunkAccess::Unloaded => unreachable!(),
+        };
+
         let persistent = Self::to_persistent(
             chunk.sections(),
             &block_entities,
@@ -352,6 +360,7 @@ impl ChunkStorage {
             fluid_ticks,
             heightmaps,
             carving_mask,
+            postprocessing,
             structure_starts,
             structure_references,
             pois,
@@ -375,6 +384,7 @@ impl ChunkStorage {
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
         carving_mask: Option<Vec<u64>>,
+        postprocessing: Vec<Vec<u16>>,
         structure_starts: Vec<PersistentStructureStart>,
         structure_references: Vec<PersistentStructureReference>,
         pois: Vec<PersistentPoi>,
@@ -460,6 +470,7 @@ impl ChunkStorage {
             fluid_ticks,
             heightmaps,
             carving_mask,
+            postprocessing,
             structure_starts,
             structure_references,
             pois,
@@ -666,6 +677,7 @@ impl ChunkStorage {
                 structure_starts,
                 structure_references,
                 carving_mask,
+                persistent.postprocessing.iter().map(Vec::clone).collect(),
             ))
         }
     }
@@ -1413,6 +1425,39 @@ mod tests {
         };
         assert!(mask.get(7, 5, 11));
         assert!(!mask.get(8, 5, 11));
+    }
+
+    #[test]
+    fn proto_postprocessing_roundtrips_through_persistent_chunk() {
+        init_registry();
+
+        let pos = ChunkPos::new(-2, 1);
+        let marked = BlockPos::new(-17, -63, 31);
+        let proto = ProtoChunk::new(single_empty_section(), pos, -64, 16);
+        proto.set_status(ChunkStatus::Noise);
+        proto.mark_pos_for_postprocessing(marked);
+        let packed = ProtoChunk::pack_postprocessing_offset(marked);
+        let chunk = ChunkAccess::Proto(proto);
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+
+        assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Noise,
+            -64,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("noise status should load as proto chunk");
+        };
+
+        assert_eq!(loaded_proto.postprocessing.read()[0], vec![packed]);
     }
 
     #[test]

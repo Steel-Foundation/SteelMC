@@ -9,7 +9,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::random::{
     Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
-use steel_utils::{BlockStateId, ChunkPos};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::{lerp, lerp2};
 use steel_worldgen::noise_parameters::get_noise_parameters;
@@ -610,6 +610,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     }
                     AquiferResult::Fluid(id) => {
                         pending_writes.push((local_x, relative_y, local_z, id));
+                        if aquifer.should_schedule_fluid_update() && id.has_fluid() {
+                            chunk.mark_pos_for_postprocessing(BlockPos::new(
+                                world_x, world_y, world_z,
+                            ));
+                        }
                     }
                     AquiferResult::Air => {}
                 }
