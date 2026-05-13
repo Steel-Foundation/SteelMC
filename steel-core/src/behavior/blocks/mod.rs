@@ -10,6 +10,7 @@ mod farming;
 mod fluid;
 mod portal;
 mod redstone;
+mod vegetation;
 
 pub use building::{
     FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper, WeatheringCopperFullBlock,
@@ -21,5 +22,12 @@ pub use decoration::{
 };
 pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
 pub use fluid::LiquidBlock;
-pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock};
+pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
+pub use vegetation::{
+    AzaleaBlock, BushBlock, CarpetBlock, DoublePlantBlock, DryVegetationBlock, FireflyBushBlock,
+    FlowerBedBlock, FlowerBlock, LeafLitterBlock, LilyPadBlock, MossyCarpetBlock, MushroomBlock,
+    NetherFungusBlock, NetherRootsBlock, NetherSproutsBlock, ShortDryGrassBlock,
+    SmallDripleafBlock, SporeBlossomBlock, SweetBerryBushBlock, TallDryGrassBlock, TallFlowerBlock,
+    TallGrassBlock, WitherRoseBlock,
+};

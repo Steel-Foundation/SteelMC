@@ -12,20 +12,28 @@ use std::sync::LazyLock;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::biome::BiomeRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::feature::{
-    BlockPredicate, BlockStateData, ConfiguredFeatureKind, ConfiguredFeatureRef, FeatureHeightmap,
-    PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier,
+use steel_registry::blocks::{
+    BlockRef, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
+    properties::DoubleBlockHalf, properties::EnumProperty, properties::WallSide, shapes,
 };
+use steel_registry::feature::{
+    BlockPredicate, BlockStateData, BlockStateProvider, ConfiguredFeatureKind,
+    ConfiguredFeatureRef, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters,
+    NoiseProvider, NoiseThresholdProvider, PlacedFeatureData, PlacedFeatureEntryRef,
+    PlacedFeatureRef, PlacementModifier, SimpleBlockConfiguration,
+};
+use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::{
     Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _, vanilla_blocks,
 };
+use steel_utils::math::Axis;
 use steel_utils::random::{
     Random as _, RandomSource, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
+use steel_utils::types::UpdateFlags;
 use steel_utils::value_providers::IntProvider;
-use steel_utils::{BlockPos, SectionPos};
-use steel_worldgen::noise::PerlinSimplexNoise;
+use steel_utils::{BlockPos, BlockStateId, Direction, SectionPos};
+use steel_worldgen::noise::{NormalNoise, PerlinSimplexNoise};
 
 use crate::chunk::chunk_access::ChunkStatus;
 use crate::chunk::heightmap::HeightmapType;
@@ -724,11 +732,528 @@ impl FeatureDecorationRunner {
                     biome_zoom_seed,
                 )
             }
+            ConfiguredFeatureKind::SimpleBlock(config) => {
+                Self::place_simple_block_feature(region, registry, random, config, origin)
+            }
             _ => {
                 // TODO: Dispatch concrete block-mutating feature implementations as they are added.
                 false
             }
         }
+    }
+
+    fn place_simple_block_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &SimpleBlockConfiguration,
+        origin: BlockPos,
+    ) -> bool {
+        let Some(state_to_place) = Self::sample_block_state_provider_optional(
+            region,
+            registry,
+            random,
+            &config.to_place,
+            origin,
+        ) else {
+            return false;
+        };
+
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state_to_place.get_block());
+        if !behavior.can_survive(state_to_place, region, origin) {
+            return false;
+        }
+
+        if Self::is_double_plant_block(state_to_place.get_block()) {
+            if !region.block_state(origin.above()).is_air() {
+                return false;
+            }
+            Self::place_double_plant(region, state_to_place, origin);
+        } else if state_to_place.get_block() == &vanilla_blocks::PALE_MOSS_CARPET {
+            Self::place_mossy_carpet(region, random, origin);
+        } else {
+            let _ = region.set_block_state(origin, state_to_place, UpdateFlags::UPDATE_CLIENTS);
+        }
+
+        if config.schedule_tick {
+            let placed_state = region.block_state(origin);
+            let _ = region.schedule_block_tick_default(origin, placed_state.get_block(), 1);
+        }
+
+        true
+    }
+
+    fn sample_block_state_provider_optional(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &BlockStateProvider,
+        pos: BlockPos,
+    ) -> Option<BlockStateId> {
+        match provider {
+            BlockStateProvider::RuleBased { fallback, rules } => {
+                for rule in rules {
+                    if Self::test_block_predicate(region, registry, &rule.if_true, pos) {
+                        return Some(Self::sample_block_state_provider(
+                            region, registry, random, &rule.then, pos,
+                        ));
+                    }
+                }
+
+                fallback.as_ref().map(|fallback| {
+                    Self::sample_block_state_provider(region, registry, random, fallback, pos)
+                })
+            }
+            _ => Some(Self::sample_block_state_provider(
+                region, registry, random, provider, pos,
+            )),
+        }
+    }
+
+    fn sample_block_state_provider(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &BlockStateProvider,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        match provider {
+            BlockStateProvider::Simple { state } => Self::block_state_from_data(registry, state),
+            BlockStateProvider::Weighted { entries } => {
+                assert!(
+                    !entries.is_empty(),
+                    "weighted block-state provider must not be empty"
+                );
+                let total_weight = entries.iter().fold(0, |total, entry| {
+                    assert!(
+                        entry.weight > 0,
+                        "weighted block-state provider entry weight must be positive, got {}",
+                        entry.weight
+                    );
+                    total + entry.weight
+                });
+                let mut target = random.next_i32_bounded(total_weight);
+                for entry in entries {
+                    if target < entry.weight {
+                        return Self::block_state_from_data(registry, &entry.data);
+                    }
+                    target -= entry.weight;
+                }
+                panic!("weighted block-state provider failed to select an entry");
+            }
+            BlockStateProvider::RotatedBlock { state } => {
+                let state = Self::block_state_from_data(registry, state);
+                state.set_value(&BlockStateProperties::AXIS, Self::random_axis(random))
+            }
+            BlockStateProvider::RandomizedInt {
+                property,
+                source,
+                values,
+            } => {
+                let state =
+                    Self::sample_block_state_provider(region, registry, random, source, pos);
+                let value = values.sample(random);
+                Self::set_int_property_by_name(registry, state, property, value)
+            }
+            BlockStateProvider::RuleBased { .. } => {
+                if let Some(state) = Self::sample_block_state_provider_optional(
+                    region, registry, random, provider, pos,
+                ) {
+                    state
+                } else {
+                    region.block_state(pos)
+                }
+            }
+            BlockStateProvider::Noise(provider) => {
+                Self::sample_noise_provider(registry, provider, pos)
+            }
+            BlockStateProvider::NoiseThreshold(provider) => {
+                Self::sample_noise_threshold_provider(registry, random, provider, pos)
+            }
+            BlockStateProvider::DualNoise(provider) => {
+                Self::sample_dual_noise_provider(registry, provider, pos)
+            }
+        }
+    }
+
+    fn random_axis(random: &mut Xoroshiro) -> Axis {
+        match random.next_i32_bounded(3) {
+            0 => Axis::X,
+            1 => Axis::Y,
+            _ => Axis::Z,
+        }
+    }
+
+    fn set_int_property_by_name(
+        registry: &Registry,
+        state: BlockStateId,
+        property: &str,
+        value: i32,
+    ) -> BlockStateId {
+        let value_string = value.to_string();
+        let current_properties = registry.blocks.get_properties(state);
+        let mut found = false;
+        let properties = current_properties
+            .iter()
+            .map(|(name, existing)| {
+                if *name == property {
+                    found = true;
+                    (*name, value_string.as_str())
+                } else {
+                    (*name, *existing)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if !found {
+            return state;
+        }
+
+        let Some(new_state) = registry
+            .blocks
+            .state_id_from_properties(&state.get_block().key, &properties)
+        else {
+            panic!(
+                "randomized int provider produced invalid value {value} for property {property} on {}",
+                state.get_block().key
+            );
+        };
+        new_state
+    }
+
+    fn sample_noise_provider(
+        registry: &Registry,
+        provider: &NoiseProvider,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let noise = Self::normal_noise(&provider.noise, provider.seed);
+        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        Self::noise_state_by_value(registry, &provider.states, noise_value)
+    }
+
+    fn sample_noise_threshold_provider(
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &NoiseThresholdProvider,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let noise = Self::normal_noise(&provider.noise, provider.seed);
+        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        if noise_value < provider.threshold {
+            Self::random_block_state_from_data_list(registry, random, &provider.low_states)
+        } else if random.next_f32() < provider.high_chance {
+            Self::random_block_state_from_data_list(registry, random, &provider.high_states)
+        } else {
+            Self::block_state_from_data(registry, &provider.default_state)
+        }
+    }
+
+    fn sample_dual_noise_provider(
+        registry: &Registry,
+        provider: &DualNoiseProvider,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let slow_noise = Self::normal_noise(&provider.slow_noise, provider.seed);
+        let variety_noise = Self::noise_value(&slow_noise, pos, provider.slow_scale);
+        let local_variety = Self::clamped_map(
+            variety_noise,
+            -1.0,
+            1.0,
+            f64::from(provider.variety[0]),
+            f64::from(provider.variety[1] + 1),
+        ) as i32;
+        assert!(
+            local_variety > 0,
+            "dual-noise provider local variety must be positive, got {local_variety}"
+        );
+
+        let Ok(capacity) = usize::try_from(local_variety) else {
+            panic!("dual-noise provider local variety {local_variety} exceeds usize range");
+        };
+        let mut possible_states = Vec::with_capacity(capacity);
+        for i in 0..local_variety {
+            let offset_pos = pos.offset(i * 54_545, 0, i * 34_234);
+            let slow_value = Self::noise_value(&slow_noise, offset_pos, provider.slow_scale);
+            possible_states.push(Self::noise_state_by_value(
+                registry,
+                &provider.states,
+                slow_value,
+            ));
+        }
+
+        let noise = Self::normal_noise(&provider.noise, provider.seed);
+        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        Self::noise_state_by_resolved_value(&possible_states, noise_value)
+    }
+
+    fn normal_noise(parameters: &FeatureNoiseParameters, seed: i64) -> NormalNoise {
+        let mut random = RandomSource::Legacy(LegacyRandom::from_seed(seed as u64));
+        NormalNoise::create_from_random(
+            &mut random,
+            parameters.first_octave,
+            &parameters.amplitudes,
+        )
+    }
+
+    fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f64) -> f64 {
+        noise.get_value(
+            f64::from(pos.x()) * scale,
+            f64::from(pos.y()) * scale,
+            f64::from(pos.z()) * scale,
+        )
+    }
+
+    fn noise_state_by_value(
+        registry: &Registry,
+        states: &[BlockStateData],
+        noise_value: f64,
+    ) -> BlockStateId {
+        assert!(
+            !states.is_empty(),
+            "noise provider state list must not be empty"
+        );
+        let index = Self::noise_state_index(states.len(), noise_value);
+        Self::block_state_from_data(registry, &states[index])
+    }
+
+    fn noise_state_by_resolved_value(states: &[BlockStateId], noise_value: f64) -> BlockStateId {
+        assert!(
+            !states.is_empty(),
+            "noise provider state list must not be empty"
+        );
+        states[Self::noise_state_index(states.len(), noise_value)]
+    }
+
+    fn noise_state_index(state_count: usize, noise_value: f64) -> usize {
+        let placement_value = ((1.0 + noise_value) / 2.0).clamp(0.0, 0.9999);
+        (placement_value * state_count as f64) as usize
+    }
+
+    fn random_block_state_from_data_list(
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        states: &[BlockStateData],
+    ) -> BlockStateId {
+        assert!(
+            !states.is_empty(),
+            "random block-state provider state list must not be empty"
+        );
+        let Ok(state_count) = i32::try_from(states.len()) else {
+            panic!(
+                "random block-state provider state count {} exceeds i32 range",
+                states.len()
+            );
+        };
+        let index = random.next_i32_bounded(state_count) as usize;
+        Self::block_state_from_data(registry, &states[index])
+    }
+
+    fn clamped_map(value: f64, from_low: f64, from_high: f64, to_low: f64, to_high: f64) -> f64 {
+        let inverse_lerp = ((value - from_low) / (from_high - from_low)).clamp(0.0, 1.0);
+        to_low + inverse_lerp * (to_high - to_low)
+    }
+
+    fn is_double_plant_block(block: BlockRef) -> bool {
+        block == &vanilla_blocks::SUNFLOWER
+            || block == &vanilla_blocks::LILAC
+            || block == &vanilla_blocks::ROSE_BUSH
+            || block == &vanilla_blocks::PEONY
+            || block == &vanilla_blocks::TALL_GRASS
+            || block == &vanilla_blocks::LARGE_FERN
+            || block == &vanilla_blocks::PITCHER_PLANT
+            || block == &vanilla_blocks::SMALL_DRIPLEAF
+    }
+
+    fn place_double_plant(
+        region: &mut WorldGenRegion<'_>,
+        state: BlockStateId,
+        lower_pos: BlockPos,
+    ) {
+        let upper_pos = lower_pos.above();
+        let lower_state = Self::copy_waterlogged_from(
+            region,
+            lower_pos,
+            state.set_value(
+                &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                DoubleBlockHalf::Lower,
+            ),
+        );
+        let upper_state = Self::copy_waterlogged_from(
+            region,
+            upper_pos,
+            state.set_value(
+                &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                DoubleBlockHalf::Upper,
+            ),
+        );
+        let _ = region.set_block_state(lower_pos, lower_state, UpdateFlags::UPDATE_CLIENTS);
+        let _ = region.set_block_state(upper_pos, upper_state, UpdateFlags::UPDATE_CLIENTS);
+    }
+
+    fn copy_waterlogged_from(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockStateId {
+        if state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_none()
+        {
+            return state;
+        }
+
+        let waterlogged = get_fluid_state_from_block(region.block_state(pos)).is_water();
+        state.set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
+    }
+
+    fn place_mossy_carpet(region: &mut WorldGenRegion<'_>, random: &mut Xoroshiro, pos: BlockPos) {
+        let simple_carpet_layer = vanilla_blocks::PALE_MOSS_CARPET.default_state();
+        let adjusted_carpet_layer =
+            Self::updated_mossy_carpet_state(region, simple_carpet_layer, pos, true);
+        let _ = region.set_block_state(pos, adjusted_carpet_layer, UpdateFlags::UPDATE_CLIENTS);
+
+        let topper = Self::create_mossy_carpet_topper(region, random, pos);
+        if !topper.is_air() {
+            let _ = region.set_block_state(pos.above(), topper, UpdateFlags::UPDATE_CLIENTS);
+            let update_bottom =
+                Self::updated_mossy_carpet_state(region, adjusted_carpet_layer, pos, true);
+            let _ = region.set_block_state(pos, update_bottom, UpdateFlags::UPDATE_CLIENTS);
+        }
+    }
+
+    fn create_mossy_carpet_topper(
+        region: &WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let above = pos.above();
+        let above_previous_state = region.block_state(above);
+        let is_mossy_carpet_above =
+            above_previous_state.get_block() == &vanilla_blocks::PALE_MOSS_CARPET;
+        if (!is_mossy_carpet_above
+            || !above_previous_state.get_value(&BlockStateProperties::BOTTOM))
+            && (is_mossy_carpet_above || above_previous_state.is_replaceable())
+        {
+            let no_base_state = vanilla_blocks::PALE_MOSS_CARPET
+                .default_state()
+                .set_value(&BlockStateProperties::BOTTOM, false);
+            let mut above_state =
+                Self::updated_mossy_carpet_state(region, no_base_state, above, true);
+
+            for direction in Self::HORIZONTAL_DIRECTIONS {
+                let property = Self::mossy_carpet_wall_property(direction);
+                if above_state.get_value(&property) != WallSide::None && !random.next_bool() {
+                    above_state = above_state.set_value(&property, WallSide::None);
+                }
+            }
+
+            if Self::mossy_carpet_has_faces(above_state) && above_state != above_previous_state {
+                above_state
+            } else {
+                vanilla_blocks::AIR.default_state()
+            }
+        } else {
+            vanilla_blocks::AIR.default_state()
+        }
+    }
+
+    fn updated_mossy_carpet_state(
+        region: &WorldGenRegion<'_>,
+        mut state: BlockStateId,
+        pos: BlockPos,
+        create_sides: bool,
+    ) -> BlockStateId {
+        let create_sides = create_sides || state.get_value(&BlockStateProperties::BOTTOM);
+
+        for direction in Self::HORIZONTAL_DIRECTIONS {
+            let property = Self::mossy_carpet_wall_property(direction);
+            let mut side = if Self::mossy_carpet_can_support_at_face(region, pos, direction) {
+                if create_sides {
+                    WallSide::Low
+                } else {
+                    state.get_value(&property)
+                }
+            } else {
+                WallSide::None
+            };
+
+            if side == WallSide::Low {
+                let above_state = region.block_state(pos.above());
+                if above_state.get_block() == &vanilla_blocks::PALE_MOSS_CARPET
+                    && above_state.get_value(&property) != WallSide::None
+                    && !above_state.get_value(&BlockStateProperties::BOTTOM)
+                {
+                    side = WallSide::Tall;
+                }
+
+                if !state.get_value(&BlockStateProperties::BOTTOM) {
+                    let below_state = region.block_state(pos.below());
+                    if below_state.get_block() == &vanilla_blocks::PALE_MOSS_CARPET
+                        && below_state.get_value(&property) == WallSide::None
+                    {
+                        side = WallSide::None;
+                    }
+                }
+            }
+
+            state = state.set_value(&property, side);
+        }
+
+        state
+    }
+
+    const HORIZONTAL_DIRECTIONS: [Direction; 4] = [
+        Direction::North,
+        Direction::East,
+        Direction::South,
+        Direction::West,
+    ];
+
+    fn mossy_carpet_wall_property(direction: Direction) -> EnumProperty<WallSide> {
+        match direction {
+            Direction::North => BlockStateProperties::NORTH_WALL,
+            Direction::East => BlockStateProperties::EAST_WALL,
+            Direction::South => BlockStateProperties::SOUTH_WALL,
+            Direction::West => BlockStateProperties::WEST_WALL,
+            Direction::Down | Direction::Up => {
+                panic!("mossy carpet has no wall property for vertical direction")
+            }
+        }
+    }
+
+    fn mossy_carpet_can_support_at_face(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        direction: Direction,
+    ) -> bool {
+        direction != Direction::Up && Self::can_attach_to_multiface(region, pos, direction)
+    }
+
+    fn can_attach_to_multiface(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        direction_towards_neighbour: Direction,
+    ) -> bool {
+        let neighbour_pos = pos.relative(direction_towards_neighbour);
+        let neighbour_state = region.block_state(neighbour_pos);
+        let support_direction = direction_towards_neighbour.opposite();
+        shapes::is_face_full(neighbour_state.get_support_shape(), support_direction)
+            || shapes::is_face_full(neighbour_state.get_collision_shape(), support_direction)
+    }
+
+    fn mossy_carpet_has_faces(state: BlockStateId) -> bool {
+        if state.get_value(&BlockStateProperties::BOTTOM) {
+            return true;
+        }
+
+        for direction in Self::HORIZONTAL_DIRECTIONS {
+            let property = Self::mossy_carpet_wall_property(direction);
+            if state.get_value(&property) != WallSide::None {
+                return true;
+            }
+        }
+
+        false
     }
 
     fn configured_feature_kind<'a>(
@@ -981,17 +1506,39 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         data: &BlockStateData,
     ) -> steel_utils::BlockStateId {
-        let properties = data
-            .properties
-            .iter()
-            .map(|(key, value)| (key.as_str(), value.as_str()))
+        let Some(block) = registry.blocks.by_key(&data.name) else {
+            panic!(
+                "block state provider references unknown block {}",
+                data.name
+            );
+        };
+
+        let mut properties = registry
+            .blocks
+            .get_properties(block.default_state())
+            .into_iter()
+            .map(|(key, value)| (key as &str, value as &str))
             .collect::<Vec<_>>();
+
+        for (key, value) in &data.properties {
+            let Some((_, property_value)) = properties
+                .iter_mut()
+                .find(|(property_key, _)| *property_key == key)
+            else {
+                panic!(
+                    "block state provider references unknown property {key} on {}",
+                    data.name
+                );
+            };
+            *property_value = value.as_str();
+        }
+
         let Some(state) = registry
             .blocks
             .state_id_from_properties(&data.name, &properties)
         else {
             panic!(
-                "block predicate references unknown or invalid state {}",
+                "block state provider references unknown or invalid state {}",
                 data.name
             );
         };
