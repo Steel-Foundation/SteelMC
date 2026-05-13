@@ -1108,7 +1108,11 @@ where
                     );
                 };
                 let index_i64 = index as i64;
-                random.set_large_feature_seed(seed_i64 + index_i64, source.pos.0.x, source.pos.0.y);
+                random.set_large_feature_seed(
+                    seed_i64.wrapping_add(index_i64),
+                    source.pos.0.x,
+                    source.pos.0.y,
+                );
 
                 let probability = carver.base().probability;
                 if random.next_f32() > probability {
