@@ -80,7 +80,7 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Returns the strongest status directly available for a chunk position in this step.
     #[must_use]
-    pub fn required_status_at(&self, chunk_x: i32, chunk_z: i32) -> Option<ChunkStatus> {
+    pub const fn required_status_at(&self, chunk_x: i32, chunk_z: i32) -> Option<ChunkStatus> {
         self.step
             .direct_dependencies
             .get(Self::chessboard_distance(self.center, chunk_x, chunk_z))
@@ -88,7 +88,7 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Returns whether block writes are allowed in the given chunk.
     #[must_use]
-    pub fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+    pub const fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
         let radius = self.step.block_state_write_radius;
         radius >= 0
             && (chunk_x - self.center.0.x).abs() <= radius
@@ -156,6 +156,7 @@ impl<'a> WorldGenRegion<'a> {
     /// # Panics
     /// Panics if a position inside the write radius is not covered by this step's
     /// direct dependencies, or if the holder has not reached the declared status.
+    #[must_use]
     pub fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());

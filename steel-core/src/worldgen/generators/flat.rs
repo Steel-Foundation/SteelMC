@@ -7,6 +7,7 @@ use steel_utils::{BlockStateId, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::world::structure::{ColumnBlock, StructureGenerationContext};
+use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
@@ -27,6 +28,8 @@ pub struct FlatChunkGenerator {
     sea_level: i32,
     /// Optional structure engine from flat structure overrides.
     structure_generator: Option<StructureGenerator>,
+    /// Cached placed-feature order for biome decoration.
+    feature_runner: FeatureDecorationRunner,
 }
 
 impl FlatChunkGenerator {
@@ -61,6 +64,7 @@ impl FlatChunkGenerator {
             seed,
             sea_level,
             structure_generator,
+            feature_runner: FeatureDecorationRunner::new(&[&vanilla_biomes::PLAINS], &REGISTRY),
         }
     }
 }
@@ -283,7 +287,7 @@ impl ChunkGenerator for FlatChunkGenerator {
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 
-    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {
-        // TODO: Place generated structure pieces once template block payloads are extracted.
+    fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
+        self.feature_runner.decorate(region, &REGISTRY, self.seed);
     }
 }

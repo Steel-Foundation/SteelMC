@@ -10,6 +10,7 @@ pub mod carver;
 /// Per-chunk bitset marking positions already visited by a carver.
 pub mod carving_mask;
 pub mod context;
+pub(crate) mod feature;
 pub mod generator;
 /// Concrete chunk generator implementations.
 pub mod generators;

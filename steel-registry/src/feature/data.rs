@@ -47,6 +47,10 @@ pub struct PlacedFeatureData {
 
 /// A configured feature kind with its typed configuration.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "typed feature configs are registry data moved by reference; boxing individual variants would add noise before placement implementations use them"
+)]
 pub enum ConfiguredFeatureKind {
     Bamboo(BambooConfiguration),
     BasaltColumns(BasaltColumnsConfiguration),

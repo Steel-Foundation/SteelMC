@@ -28,6 +28,7 @@ use crate::worldgen::BiomeSourceKind;
 use crate::worldgen::carver::{
     CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
 };
+use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::noise::aquifer::{
     Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level,
@@ -80,6 +81,8 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     seed: i64,
     /// Shared structure placement/selection engine.
     structure_generator: StructureGenerator,
+    /// Cached placed-feature order for biome decoration.
+    feature_runner: FeatureDecorationRunner,
     _phantom: PhantomData<N>,
 }
 
@@ -144,10 +147,12 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
         };
 
+        let possible_biome_refs = biome_source.possible_biome_refs();
         let possible_biomes = biome_source.possible_biomes();
         let surface_extension_biomes = SurfaceExtensionBiomes::from_possible(&possible_biomes);
         let structure_generator = StructureGenerator::vanilla(seed as i64, &biome_source);
         let uniform_carver_biome = Self::uniform_carver_biome(&possible_biomes);
+        let feature_runner = FeatureDecorationRunner::new(&possible_biome_refs, &REGISTRY);
 
         Self {
             biome_source,
@@ -161,6 +166,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             biome_zoom_seed,
             seed: seed as i64,
             structure_generator,
+            feature_runner,
             _phantom: PhantomData,
         }
     }
@@ -1088,8 +1094,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         run.run_all(&source_biomes, seed_i64, &mut random);
     }
 
-    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {
-        // TODO: Place structure pieces and biome placed features through WorldGenRegion.
+    fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
+        self.feature_runner.decorate(region, &REGISTRY, self.seed);
     }
 }
 

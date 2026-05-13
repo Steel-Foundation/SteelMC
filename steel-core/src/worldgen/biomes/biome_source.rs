@@ -68,32 +68,45 @@ impl BiomeSourceKind {
         Self::End(Box::new(EndBiomeSource::new(seed)))
     }
 
-    /// Every biome this source can produce. Used to filter structure sets whose
-    /// resolved `allowed_biomes` are from a different dimension.
+    /// Every biome this source can produce, preserving the source's parameter-list order.
+    ///
+    /// Feature sorting depends on biome iteration order because vanilla assigns global
+    /// feature order while walking all possible biomes. The set-returning
+    /// [`possible_biomes`](Self::possible_biomes) is kept for callers that only need
+    /// membership tests.
     #[must_use]
-    pub fn possible_biomes(&self) -> FxHashSet<Identifier> {
-        match self {
+    pub fn possible_biome_refs(&self) -> Vec<BiomeRef> {
+        let biomes: Vec<BiomeRef> = match self {
             Self::Overworld(_) => OVERWORLD_BIOME_PARAMETERS
                 .values()
                 .iter()
-                .map(|(_, b)| b.key.clone())
+                .map(|(_, biome)| *biome)
                 .collect(),
             Self::Nether(_) => NETHER_BIOME_PARAMETERS
                 .values()
                 .iter()
-                .map(|(_, b)| b.key.clone())
+                .map(|(_, biome)| *biome)
                 .collect(),
-            Self::End(_) => [
+            Self::End(_) => vec![
                 &vanilla_biomes::THE_END,
                 &vanilla_biomes::END_HIGHLANDS,
                 &vanilla_biomes::END_MIDLANDS,
                 &vanilla_biomes::END_BARRENS,
                 &vanilla_biomes::SMALL_END_ISLANDS,
-            ]
-            .iter()
-            .map(|b| b.key.clone())
-            .collect(),
-        }
+            ],
+        };
+
+        distinct_biome_refs(biomes)
+    }
+
+    /// Every biome this source can produce. Used to filter structure sets whose
+    /// resolved `allowed_biomes` are from a different dimension.
+    #[must_use]
+    pub fn possible_biomes(&self) -> FxHashSet<Identifier> {
+        self.possible_biome_refs()
+            .into_iter()
+            .map(|biome| biome.key.clone())
+            .collect()
     }
 
     /// Create a per-chunk biome sampler.
@@ -152,6 +165,19 @@ impl BiomeSourceKind {
             Self::Nether(_) | Self::End(_) => BlockPos::new(0, 0, 0),
         }
     }
+}
+
+fn distinct_biome_refs(biomes: Vec<BiomeRef>) -> Vec<BiomeRef> {
+    let mut seen = FxHashSet::default();
+    let mut distinct = Vec::with_capacity(biomes.len());
+
+    for biome in biomes {
+        if seen.insert(&biome.key) {
+            distinct.push(biome);
+        }
+    }
+
+    distinct
 }
 
 /// Per-chunk biome sampler with internal caches.
