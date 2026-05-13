@@ -309,22 +309,55 @@ impl ChunkAccess {
     }
 
     /// Gets the first available Y coordinate for a heightmap column.
+    ///
+    /// Missing proto heightmaps are primed lazily, matching vanilla
+    /// `ChunkAccess.getHeight`. Full chunks map worldgen heightmap queries to
+    /// their final equivalents, matching vanilla `ImposterProtoChunk`.
     #[must_use]
-    pub fn height_at(
-        &self,
+    pub fn height_at(&self, heightmap_type: HeightmapType, local_x: usize, local_z: usize) -> i32 {
+        match self {
+            Self::Full(chunk) => chunk.get_height(
+                Self::full_chunk_heightmap_type(heightmap_type),
+                local_x,
+                local_z,
+            ),
+            Self::Proto(proto) => Self::proto_height_at(proto, heightmap_type, local_x, local_z),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    const fn full_chunk_heightmap_type(heightmap_type: HeightmapType) -> HeightmapType {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => HeightmapType::WorldSurface,
+            HeightmapType::OceanFloorWg => HeightmapType::OceanFloor,
+            other => other,
+        }
+    }
+
+    fn proto_height_at(
+        proto: &ProtoChunk,
         heightmap_type: HeightmapType,
         local_x: usize,
         local_z: usize,
-    ) -> Option<i32> {
-        match self {
-            Self::Full(chunk) => Some(chunk.get_height(heightmap_type, local_x, local_z)),
-            Self::Proto(proto) => proto
-                .heightmaps
-                .read()
-                .get(heightmap_type)
-                .map(|heightmap| heightmap.get_first_available(local_x, local_z)),
-            Self::Unloaded => unreachable!(),
+    ) -> i32 {
+        {
+            let heightmaps = proto.heightmaps.read();
+            if let Some(heightmap) = heightmaps.get(heightmap_type) {
+                return heightmap.get_first_available(local_x, local_z);
+            }
         }
+
+        let mut heightmaps = proto.heightmaps.write();
+        heightmaps.prime_from_sections(
+            &[heightmap_type],
+            proto.min_y(),
+            proto.height(),
+            &proto.sections.sections,
+        );
+        let Some(heightmap) = heightmaps.get(heightmap_type) else {
+            panic!("heightmap {heightmap_type:?} missing after priming");
+        };
+        heightmap.get_first_available(local_x, local_z)
     }
 
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
@@ -494,5 +527,62 @@ impl ChunkAccess {
                 ready_fluid_ticks,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+    use crate::chunk::section::{ChunkSection, Sections};
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn proto_height_at_primes_missing_heightmap() {
+        init_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+        chunk.set_relative_block(3, 5, 7, stone);
+
+        assert_eq!(chunk.height_at(HeightmapType::OceanFloorWg, 3, 7), 6);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert!(
+            proto
+                .heightmaps
+                .read()
+                .get(HeightmapType::OceanFloorWg)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn full_chunk_heightmap_type_maps_worldgen_types_to_final_types() {
+        assert_eq!(
+            ChunkAccess::full_chunk_heightmap_type(HeightmapType::WorldSurfaceWg),
+            HeightmapType::WorldSurface
+        );
+        assert_eq!(
+            ChunkAccess::full_chunk_heightmap_type(HeightmapType::OceanFloorWg),
+            HeightmapType::OceanFloor
+        );
+        assert_eq!(
+            ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
+            HeightmapType::MotionBlocking
+        );
     }
 }

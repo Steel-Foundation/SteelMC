@@ -157,30 +157,23 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Gets the biome id at quart coordinates through the region dependency contract.
     ///
+    /// The vertical quart coordinate is clamped to the chunk's biome section range,
+    /// matching vanilla `ChunkAccess.getNoiseBiome`.
+    ///
     /// # Panics
-    /// Panics if the position's chunk is outside this step's direct dependencies or if
-    /// the quart Y coordinate is outside the loaded section range.
+    /// Panics if the position's chunk is outside this step's direct dependencies.
     #[must_use]
     pub fn noise_biome_id(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> u16 {
         let chunk_x = quart_x >> 2;
         let chunk_z = quart_z >> 2;
-        let section_y = quart_y >> 2;
-        let min_section_y = self.min_y() >> 4;
-        let Ok(section_index) = usize::try_from(section_y - min_section_y) else {
-            panic!(
-                "Worldgen requested biome at quart ({quart_x}, {quart_y}, {quart_z}) below section range"
-            );
-        };
         let local_quart_x = (quart_x & 3) as usize;
-        let local_quart_y = (quart_y & 3) as usize;
         let local_quart_z = (quart_z & 3) as usize;
 
         let chunk = self.chunk(chunk_x, chunk_z, ChunkStatus::Biomes);
-        let Some(section) = chunk.sections().sections.get(section_index) else {
-            panic!(
-                "Worldgen requested biome at quart ({quart_x}, {quart_y}, {quart_z}) outside section range"
-            );
-        };
+        let sections = chunk.sections();
+        let (section_index, local_quart_y) =
+            Self::biome_quart_y_indices(self.min_y(), sections.sections.len(), quart_y);
+        let section = &sections.sections[section_index];
 
         section
             .read()
@@ -285,8 +278,7 @@ impl<'a> WorldGenRegion<'a> {
     /// Gets the first available Y coordinate for a heightmap column.
     ///
     /// # Panics
-    /// Panics if the target chunk is not available at `Carvers` status, or if the
-    /// requested heightmap has not been primed before decoration.
+    /// Panics if the target chunk is not available at `Carvers` status.
     #[must_use]
     pub fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
         let chunk_x = SectionPos::block_to_section_coord(x);
@@ -294,14 +286,8 @@ impl<'a> WorldGenRegion<'a> {
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
 
-        let Some(height) = self
-            .chunk(chunk_x, chunk_z, ChunkStatus::Carvers)
+        self.chunk(chunk_x, chunk_z, ChunkStatus::Carvers)
             .height_at(heightmap_type, local_x, local_z)
-        else {
-            panic!("Worldgen requested unprimed {heightmap_type:?} heightmap at block ({x}, {z})");
-        };
-
-        height
     }
 
     fn writable_chunk_for_pos(
@@ -345,6 +331,28 @@ impl<'a> WorldGenRegion<'a> {
         let dz = abs_diff(center.0.y, chunk_z);
         if dx > dz { dx as usize } else { dz as usize }
     }
+
+    fn biome_quart_y_indices(min_y: i32, section_count: usize, quart_y: i32) -> (usize, usize) {
+        let Some(total_quart_y) = section_count.checked_mul(4) else {
+            panic!("Worldgen chunk section count {section_count} overflows biome quart range");
+        };
+        assert!(
+            total_quart_y > 0,
+            "Worldgen chunk must have at least one biome section"
+        );
+
+        let relative_quart_y = i64::from(quart_y) - i64::from(min_y >> 2);
+        let max_relative_quart_y = total_quart_y - 1;
+        let clamped_relative_quart_y = if relative_quart_y <= 0 {
+            0
+        } else {
+            usize::try_from(relative_quart_y).map_or(max_relative_quart_y, |relative| {
+                relative.min(max_relative_quart_y)
+            })
+        };
+
+        (clamped_relative_quart_y / 4, clamped_relative_quart_y & 3)
+    }
 }
 
 const fn abs_diff(left: i32, right: i32) -> i32 {
@@ -382,5 +390,16 @@ mod tests {
         assert_eq!(WorldGenRegion::chessboard_distance(center, 4, -2), 0);
         assert_eq!(WorldGenRegion::chessboard_distance(center, 5, -3), 1);
         assert_eq!(WorldGenRegion::chessboard_distance(center, -4, 6), 8);
+    }
+
+    #[test]
+    fn biome_quart_y_indices_clamp_to_vertical_biome_range() {
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -17), (0, 0));
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -16), (0, 0));
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -13), (0, 3));
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, -12), (1, 0));
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 79), (23, 3));
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 80), (23, 3));
+        assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 81), (23, 3));
     }
 }
