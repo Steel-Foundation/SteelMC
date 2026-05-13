@@ -3,8 +3,8 @@
 //! Vanilla treats biome decoration as one ordered pass over structure pieces and placed
 //! features. This module builds the same per-step placed-feature ordering up front and
 //! drives the per-chunk decoration seed loop. Placed-feature modifiers and selector
-//! configured features execute normally; concrete block-mutating configured features stay
-//! at the explicit no-op boundary until their foundations are implemented.
+//! configured features execute normally; concrete block-mutating configured features are
+//! added as their foundations are implemented.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,10 +17,11 @@ use steel_registry::blocks::{
     properties::DoubleBlockHalf, properties::EnumProperty, properties::WallSide, shapes,
 };
 use steel_registry::feature::{
-    BlockPredicate, BlockStateData, BlockStateProvider, ConfiguredFeatureKind,
-    ConfiguredFeatureRef, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters,
-    NoiseProvider, NoiseThresholdProvider, PlacedFeatureData, PlacedFeatureEntryRef,
-    PlacedFeatureRef, PlacementModifier, SimpleBlockConfiguration,
+    BlockBlobConfiguration, BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate,
+    BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
+    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, NoiseProvider,
+    NoiseThresholdProvider, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
+    PlacementModifier, SimpleBlockConfiguration,
 };
 use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::{
@@ -735,11 +736,413 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::SimpleBlock(config) => {
                 Self::place_simple_block_feature(region, registry, random, config, origin)
             }
+            ConfiguredFeatureKind::BlockBlob(config) => {
+                Self::place_block_blob_feature(region, registry, random, config, origin)
+            }
+            ConfiguredFeatureKind::BlockColumn(config) => {
+                Self::place_block_column_feature(region, registry, random, config, origin)
+            }
+            ConfiguredFeatureKind::BlockPile(config) => {
+                Self::place_block_pile_feature(region, registry, random, config, origin)
+            }
+            ConfiguredFeatureKind::Disk(config) => {
+                Self::place_disk_feature(region, registry, random, config, origin)
+            }
+            ConfiguredFeatureKind::BasaltPillar => {
+                Self::place_basalt_pillar_feature(region, random, origin)
+            }
             _ => {
                 // TODO: Dispatch concrete block-mutating feature implementations as they are added.
                 false
             }
         }
+    }
+
+    fn place_block_blob_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &BlockBlobConfiguration,
+        mut origin: BlockPos,
+    ) -> bool {
+        while origin.y() > region.min_y() + 3
+            && !Self::test_block_predicate(region, registry, &config.can_place_on, origin.below())
+        {
+            origin = origin.below();
+        }
+
+        if origin.y() <= region.min_y() + 3 {
+            return false;
+        }
+
+        let state = Self::block_state_from_data(registry, &config.state);
+        for _ in 0..3 {
+            let x_radius = random.next_i32_bounded(2);
+            let y_radius = random.next_i32_bounded(2);
+            let z_radius = random.next_i32_bounded(2);
+            let threshold = (x_radius + y_radius + z_radius) as f32 * 0.333 + 0.5;
+            let threshold_squared = threshold * threshold;
+
+            for x in origin.x() - x_radius..=origin.x() + x_radius {
+                for y in origin.y() - y_radius..=origin.y() + y_radius {
+                    for z in origin.z() - z_radius..=origin.z() + z_radius {
+                        let dx = x - origin.x();
+                        let dy = y - origin.y();
+                        let dz = z - origin.z();
+                        if (dx * dx + dy * dy + dz * dz) as f32 <= threshold_squared {
+                            let _ = region.set_block_state(
+                                BlockPos::new(x, y, z),
+                                state,
+                                UpdateFlags::UPDATE_ALL,
+                            );
+                        }
+                    }
+                }
+            }
+
+            origin = origin.offset(
+                -1 + random.next_i32_bounded(2),
+                -random.next_i32_bounded(2),
+                -1 + random.next_i32_bounded(2),
+            );
+        }
+
+        true
+    }
+
+    fn place_block_column_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &BlockColumnConfiguration,
+        origin: BlockPos,
+    ) -> bool {
+        let mut layer_heights = config
+            .layers
+            .iter()
+            .map(|layer| layer.height.sample(random))
+            .collect::<Vec<_>>();
+        let total_height = layer_heights.iter().sum::<i32>();
+        if total_height == 0 {
+            return false;
+        }
+
+        let mut next_pos = origin.relative(config.direction);
+        for height in 0..total_height {
+            if !Self::test_block_predicate(region, registry, &config.allowed_placement, next_pos) {
+                Self::truncate_block_column_layers(
+                    &mut layer_heights,
+                    total_height,
+                    height,
+                    config.prioritize_tip,
+                );
+                break;
+            }
+            next_pos = next_pos.relative(config.direction);
+        }
+
+        let mut place_pos = origin;
+        for (layer_index, layer) in config.layers.iter().enumerate() {
+            for _ in 0..layer_heights[layer_index] {
+                let state = Self::sample_block_state_provider(
+                    region,
+                    registry,
+                    random,
+                    &layer.provider,
+                    place_pos,
+                );
+                let _ = region.set_block_state(place_pos, state, UpdateFlags::UPDATE_CLIENTS);
+                place_pos = place_pos.relative(config.direction);
+            }
+        }
+
+        true
+    }
+
+    fn truncate_block_column_layers(
+        layer_heights: &mut [i32],
+        total_height: i32,
+        new_height: i32,
+        prioritize_tip: bool,
+    ) {
+        let mut amount_to_remove = total_height - new_height;
+        if prioritize_tip {
+            for height in layer_heights {
+                if amount_to_remove == 0 {
+                    return;
+                }
+                let removed = (*height).min(amount_to_remove);
+                amount_to_remove -= removed;
+                *height -= removed;
+            }
+        } else {
+            for height in layer_heights.iter_mut().rev() {
+                if amount_to_remove == 0 {
+                    return;
+                }
+                let removed = (*height).min(amount_to_remove);
+                amount_to_remove -= removed;
+                *height -= removed;
+            }
+        }
+    }
+
+    fn place_block_pile_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &BlockPileConfiguration,
+        origin: BlockPos,
+    ) -> bool {
+        if origin.y() < region.min_y() + 5 {
+            return false;
+        }
+
+        let x_radius = 2 + random.next_i32_bounded(2);
+        let z_radius = 2 + random.next_i32_bounded(2);
+
+        for x in origin.x() - x_radius..=origin.x() + x_radius {
+            for y in origin.y()..=origin.y() + 1 {
+                for z in origin.z() - z_radius..=origin.z() + z_radius {
+                    let dx = origin.x() - x;
+                    let dz = origin.z() - z;
+                    let distance_squared = (dx * dx + dz * dz) as f32;
+                    if distance_squared <= random.next_f32() * 10.0 - random.next_f32() * 6.0
+                        || random.next_f32() < 0.031
+                    {
+                        Self::try_place_block_pile_block(
+                            region,
+                            registry,
+                            random,
+                            config,
+                            BlockPos::new(x, y, z),
+                        );
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn try_place_block_pile_block(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &BlockPileConfiguration,
+        pos: BlockPos,
+    ) {
+        if !region.block_state(pos).is_air() || !Self::block_pile_may_place_on(region, random, pos)
+        {
+            return;
+        }
+
+        let state = Self::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &config.state_provider,
+            pos,
+        );
+        let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_NONE);
+    }
+
+    fn block_pile_may_place_on(
+        region: &WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        pos: BlockPos,
+    ) -> bool {
+        let below = region.block_state(pos.below());
+        if below.get_block() == &vanilla_blocks::DIRT_PATH {
+            return random.next_bool();
+        }
+
+        below.is_face_sturdy(Direction::Up)
+    }
+
+    fn place_disk_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &DiskConfiguration,
+        origin: BlockPos,
+    ) -> bool {
+        let top = origin.y() + config.half_height;
+        let bottom = origin.y() - config.half_height - 1;
+        let radius = config.radius.sample(random);
+        let mut placed_any = false;
+
+        for x in origin.x() - radius..=origin.x() + radius {
+            for z in origin.z() - radius..=origin.z() + radius {
+                let dx = x - origin.x();
+                let dz = z - origin.z();
+                if dx * dx + dz * dz <= radius * radius {
+                    placed_any |= Self::place_disk_column(
+                        region,
+                        registry,
+                        random,
+                        config,
+                        top,
+                        bottom,
+                        BlockPos::new(x, origin.y(), z),
+                    );
+                }
+            }
+        }
+
+        placed_any
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla disk column placement state"
+    )]
+    fn place_disk_column(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &DiskConfiguration,
+        top: i32,
+        bottom: i32,
+        column_pos: BlockPos,
+    ) -> bool {
+        let mut placed_any = false;
+        let mut placed_above = false;
+
+        for y in (bottom + 1..=top).rev() {
+            let pos = BlockPos::new(column_pos.x(), y, column_pos.z());
+            if Self::test_block_predicate(region, registry, &config.target, pos) {
+                if let Some(state) = Self::sample_block_state_provider_optional(
+                    region,
+                    registry,
+                    random,
+                    &config.state_provider,
+                    pos,
+                ) {
+                    let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
+                    if !placed_above {
+                        Self::mark_above_for_postprocessing(region, pos);
+                    }
+                    placed_any = true;
+                    placed_above = true;
+                }
+            } else {
+                placed_above = false;
+            }
+        }
+
+        placed_any
+    }
+
+    fn mark_above_for_postprocessing(region: &WorldGenRegion<'_>, pos: BlockPos) {
+        let mut mark_pos = pos;
+        for _ in 0..2 {
+            mark_pos = mark_pos.above();
+            if region.block_state(mark_pos).is_air() {
+                return;
+            }
+            region.mark_pos_for_postprocessing(mark_pos);
+        }
+    }
+
+    fn place_basalt_pillar_feature(
+        region: &mut WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        origin: BlockPos,
+    ) -> bool {
+        if !region.block_state(origin).is_air() || region.block_state(origin.above()).is_air() {
+            return false;
+        }
+
+        let basalt = vanilla_blocks::BASALT.default_state();
+        let mut pos = origin;
+        let mut place_north_hangoff = true;
+        let mut place_south_hangoff = true;
+        let mut place_west_hangoff = true;
+        let mut place_east_hangoff = true;
+
+        while region.block_state(pos).is_air() {
+            if region.is_outside_build_height(pos.y()) {
+                return true;
+            }
+
+            let _ = region.set_block_state(pos, basalt, UpdateFlags::UPDATE_CLIENTS);
+            if place_north_hangoff {
+                place_north_hangoff =
+                    Self::place_basalt_pillar_hangoff(region, random, basalt, pos.north());
+            }
+            if place_south_hangoff {
+                place_south_hangoff =
+                    Self::place_basalt_pillar_hangoff(region, random, basalt, pos.south());
+            }
+            if place_west_hangoff {
+                place_west_hangoff =
+                    Self::place_basalt_pillar_hangoff(region, random, basalt, pos.west());
+            }
+            if place_east_hangoff {
+                place_east_hangoff =
+                    Self::place_basalt_pillar_hangoff(region, random, basalt, pos.east());
+            }
+
+            pos = pos.below();
+        }
+
+        pos = pos.above();
+        Self::place_basalt_pillar_base_hangoff(region, random, basalt, pos.north());
+        Self::place_basalt_pillar_base_hangoff(region, random, basalt, pos.south());
+        Self::place_basalt_pillar_base_hangoff(region, random, basalt, pos.west());
+        Self::place_basalt_pillar_base_hangoff(region, random, basalt, pos.east());
+        pos = pos.below();
+
+        for dx in -3i32..4 {
+            for dz in -3i32..4 {
+                let probability = dx.abs() * dz.abs();
+                if random.next_i32_bounded(10) < 10 - probability {
+                    let mut base_pos = pos.offset(dx, 0, dz);
+                    let mut max_drop = 3;
+
+                    while region.block_state(base_pos.below()).is_air() {
+                        base_pos = base_pos.below();
+                        max_drop -= 1;
+                        if max_drop <= 0 {
+                            break;
+                        }
+                    }
+
+                    if !region.block_state(base_pos.below()).is_air() {
+                        let _ =
+                            region.set_block_state(base_pos, basalt, UpdateFlags::UPDATE_CLIENTS);
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn place_basalt_pillar_base_hangoff(
+        region: &mut WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        basalt: BlockStateId,
+        pos: BlockPos,
+    ) {
+        if random.next_bool() {
+            let _ = region.set_block_state(pos, basalt, UpdateFlags::UPDATE_CLIENTS);
+        }
+    }
+
+    fn place_basalt_pillar_hangoff(
+        region: &mut WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        basalt: BlockStateId,
+        pos: BlockPos,
+    ) -> bool {
+        if random.next_i32_bounded(10) == 0 {
+            return false;
+        }
+
+        let _ = region.set_block_state(pos, basalt, UpdateFlags::UPDATE_CLIENTS);
+        true
     }
 
     fn place_simple_block_feature(
@@ -1574,5 +1977,16 @@ mod tests {
             let runner = FeatureDecorationRunner::new(&possible_biomes, &registry);
             assert!(runner.sorter.step_count() > 0);
         }
+    }
+
+    #[test]
+    fn block_column_truncation_matches_vanilla_tip_priority() {
+        let mut preserved_base = [2, 3, 4];
+        FeatureDecorationRunner::truncate_block_column_layers(&mut preserved_base, 9, 6, false);
+        assert_eq!(preserved_base, [2, 3, 1]);
+
+        let mut preserved_tip = [2, 3, 4];
+        FeatureDecorationRunner::truncate_block_column_layers(&mut preserved_tip, 9, 6, true);
+        assert_eq!(preserved_tip, [0, 2, 4]);
     }
 }
