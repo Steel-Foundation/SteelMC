@@ -76,6 +76,7 @@ use crate::{
     poi::PointOfInterestStorage,
 };
 
+mod level_reader;
 mod player_area_map;
 mod player_map;
 pub mod structure;
@@ -85,6 +86,7 @@ mod world_entities;
 
 pub use crate::config::WorldStorageConfig;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
+pub use level_reader::LevelReader;
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
 pub use tick_scheduler::ScheduledTick;
@@ -2398,5 +2400,33 @@ impl World {
                 self.broadcast_to_nearby(chunk_pos, packet, None);
             }
         }
+    }
+}
+
+impl LevelReader for World {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        Self::get_block_state(self, pos)
+    }
+
+    fn min_y(&self) -> i32 {
+        self.get_min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.get_height()
+    }
+}
+
+impl LevelReader for Arc<World> {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.as_ref().get_block_state(pos)
+    }
+
+    fn min_y(&self) -> i32 {
+        self.as_ref().get_min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.as_ref().get_height()
     }
 }

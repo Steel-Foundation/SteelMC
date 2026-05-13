@@ -18,7 +18,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// Behavior for cactus flower blocks.
 ///
@@ -43,7 +43,7 @@ impl BlockBehavior for CactusFlowerBlock {
     ///
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts CACTUS, FARMLAND,
     /// or any block with a sturdy center face on top.
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below = world.get_block_state(below_pos);
         let below_block = below.get_block();

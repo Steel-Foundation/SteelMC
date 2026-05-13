@@ -16,6 +16,7 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     heightmap::HeightmapType,
 };
+use crate::world::LevelReader;
 use crate::worldgen::context::WorldGenContext;
 
 /// Chunk-cache backed worldgen view for the current generation step.
@@ -147,6 +148,39 @@ impl<'a> WorldGenRegion<'a> {
             .get_block_state(pos)
     }
 
+    /// Gets the biome id at quart coordinates through the region dependency contract.
+    ///
+    /// # Panics
+    /// Panics if the position's chunk is outside this step's direct dependencies or if
+    /// the quart Y coordinate is outside the loaded section range.
+    #[must_use]
+    pub fn noise_biome_id(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> u16 {
+        let chunk_x = quart_x >> 2;
+        let chunk_z = quart_z >> 2;
+        let section_y = quart_y >> 2;
+        let min_section_y = self.min_y() >> 4;
+        let Ok(section_index) = usize::try_from(section_y - min_section_y) else {
+            panic!(
+                "Worldgen requested biome at quart ({quart_x}, {quart_y}, {quart_z}) below section range"
+            );
+        };
+        let local_quart_x = (quart_x & 3) as usize;
+        let local_quart_y = (quart_y & 3) as usize;
+        let local_quart_z = (quart_z & 3) as usize;
+
+        let chunk = self.chunk(chunk_x, chunk_z, ChunkStatus::Biomes);
+        let Some(section) = chunk.sections().sections.get(section_index) else {
+            panic!(
+                "Worldgen requested biome at quart ({quart_x}, {quart_y}, {quart_z}) outside section range"
+            );
+        };
+
+        section
+            .read()
+            .biomes
+            .get(local_quart_x, local_quart_y, local_quart_z)
+    }
+
     /// Sets a block state if the position is inside the step's write radius.
     ///
     /// Returns whether the write was accepted by the region. Positions outside the write
@@ -236,6 +270,20 @@ const fn abs_diff(left: i32, right: i32) -> i32 {
         left - right
     } else {
         right - left
+    }
+}
+
+impl LevelReader for WorldGenRegion<'_> {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.block_state(pos)
+    }
+
+    fn min_y(&self) -> i32 {
+        WorldGenRegion::min_y(self)
+    }
+
+    fn height(&self) -> i32 {
+        WorldGenRegion::height(self)
     }
 }
 

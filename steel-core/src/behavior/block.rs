@@ -17,7 +17,7 @@ use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
 use crate::fluid::is_water_fluid;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
@@ -79,7 +79,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation ignores all params"
     )]
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         true
     }
 

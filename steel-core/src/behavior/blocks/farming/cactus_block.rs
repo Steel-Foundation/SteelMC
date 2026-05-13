@@ -19,7 +19,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// Maximum cactus stack height (vanilla: 3 blocks).
 const MAX_CACTUS_HEIGHT: u32 = 3;
@@ -61,7 +61,7 @@ impl BlockBehavior for CactusBlock {
     /// 2. No lava on horizontal neighbors
     /// 3. Block below must be `CACTUS`, `SAND`, or `RED_SAND`
     /// 4. Block above must not be liquid
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         // Check horizontal neighbors - no solid blocks or lava
         for dir in [
             Direction::North,

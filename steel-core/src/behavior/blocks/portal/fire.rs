@@ -16,7 +16,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// Behavior for fire blocks.
 #[block_behavior]
@@ -55,7 +55,7 @@ impl FireBlock {
 
     /// Matches vanilla's `FireBlock.canSurvive`: block below has a sturdy top face,
     /// or an adjacent block is flammable.
-    fn can_survive_at(world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive_at(world: &dyn LevelReader, pos: BlockPos) -> bool {
         world
             .get_block_state(pos.below())
             .is_face_sturdy(Direction::Up)
@@ -95,7 +95,7 @@ impl BlockBehavior for FireBlock {
         Some(self.block.default_state())
     }
 
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::can_survive_at(world, pos)
     }
 

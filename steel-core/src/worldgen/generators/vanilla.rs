@@ -4,7 +4,6 @@ use std::{
 };
 
 use rustc_hash::FxHashSet;
-use sha2::{Digest, Sha256};
 use smallvec::SmallVec;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -25,6 +24,7 @@ use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::heightmap::HeightmapType;
 use crate::world::structure::GenerationContext;
 use crate::worldgen::BiomeSourceKind;
+use crate::worldgen::biomes::obfuscate_biome_seed;
 use crate::worldgen::carver::{
     CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
 };
@@ -138,14 +138,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             N::Settings::SEA_LEVEL,
         );
 
-        // BiomeManager.obfuscateSeed(seed) — Guava's Hashing.sha256().hashLong(seed).asLong()
-        // Guava uses little-endian for both input (putLong) and output (asLong).
-        let biome_zoom_seed = {
-            let mut hasher = Sha256::new();
-            hasher.update((seed as i64).to_le_bytes());
-            let result = hasher.finalize();
-            i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
-        };
+        let biome_zoom_seed = obfuscate_biome_seed(seed as i64);
 
         let possible_biome_refs = biome_source.possible_biome_refs();
         let possible_biomes = biome_source.possible_biomes();
@@ -1095,7 +1088,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
     }
 
     fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
-        self.feature_runner.decorate(region, &REGISTRY, self.seed);
+        self.feature_runner
+            .decorate(region, &REGISTRY, self.seed, self.biome_zoom_seed);
     }
 }
 
@@ -1174,7 +1168,7 @@ fn get_fiddle(rval: i64) -> f64 {
 ///
 /// Used by carver top-material lookups where a simple unfuzzed lookup would
 /// differ from vanilla at the quart-cell boundaries.
-pub(super) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
+pub(crate) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
     biome_zoom_seed: i64,
     block_x: i32,
     block_y: i32,
