@@ -19,11 +19,12 @@ use steel_registry::blocks::{
 use steel_registry::feature::{
     BlockBlobConfiguration, BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate,
     BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
-    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, NoiseProvider,
-    NoiseThresholdProvider, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
-    PlacementModifier, SimpleBlockConfiguration,
+    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FluidStateData,
+    IdentifierList, NoiseProvider, NoiseThresholdProvider, PlacedFeatureData,
+    PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, SimpleBlockConfiguration,
+    SpringConfiguration,
 };
-use steel_registry::fluid::FluidStateExt as _;
+use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 use steel_registry::{
     Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _, vanilla_blocks,
 };
@@ -751,6 +752,9 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::BasaltPillar => {
                 Self::place_basalt_pillar_feature(region, random, origin)
             }
+            ConfiguredFeatureKind::SpringFeature(config) => {
+                Self::place_spring_feature(region, registry, config, origin)
+            }
             _ => {
                 // TODO: Dispatch concrete block-mutating feature implementations as they are added.
                 false
@@ -1145,6 +1149,108 @@ impl FeatureDecorationRunner {
         true
     }
 
+    fn place_spring_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        config: &SpringConfiguration,
+        origin: BlockPos,
+    ) -> bool {
+        if !Self::block_matches_identifier_list(
+            registry,
+            region.block_state(origin.above()).get_block(),
+            &config.valid_blocks,
+        ) {
+            return false;
+        }
+
+        if config.requires_block_below
+            && !Self::block_matches_identifier_list(
+                registry,
+                region.block_state(origin.below()).get_block(),
+                &config.valid_blocks,
+            )
+        {
+            return false;
+        }
+
+        let current_state = region.block_state(origin);
+        if !current_state.is_air()
+            && !Self::block_matches_identifier_list(
+                registry,
+                current_state.get_block(),
+                &config.valid_blocks,
+            )
+        {
+            return false;
+        }
+
+        let rock_count = [
+            origin.west(),
+            origin.east(),
+            origin.north(),
+            origin.south(),
+            origin.below(),
+        ]
+        .into_iter()
+        .filter(|&pos| {
+            Self::block_matches_identifier_list(
+                registry,
+                region.block_state(pos).get_block(),
+                &config.valid_blocks,
+            )
+        })
+        .count();
+
+        let hole_count = [
+            origin.west(),
+            origin.east(),
+            origin.north(),
+            origin.south(),
+            origin.below(),
+        ]
+        .into_iter()
+        .filter(|&pos| region.block_state(pos).is_air())
+        .count();
+
+        let Ok(expected_rock_count) = usize::try_from(config.rock_count) else {
+            panic!(
+                "spring feature rock_count {} is negative",
+                config.rock_count
+            );
+        };
+        let Ok(expected_hole_count) = usize::try_from(config.hole_count) else {
+            panic!(
+                "spring feature hole_count {} is negative",
+                config.hole_count
+            );
+        };
+
+        if rock_count != expected_rock_count || hole_count != expected_hole_count {
+            return false;
+        }
+
+        let fluid_state = Self::fluid_state_from_data(registry, &config.state);
+        let block_state = Self::legacy_block_from_fluid_state(registry, fluid_state);
+        let placed = region.set_block_state(origin, block_state, UpdateFlags::UPDATE_CLIENTS);
+        if placed {
+            let _ = region.schedule_fluid_tick_default(origin, fluid_state.fluid_id, 0);
+        }
+        placed
+    }
+
+    fn block_matches_identifier_list(
+        registry: &Registry,
+        block: BlockRef,
+        identifiers: &IdentifierList,
+    ) -> bool {
+        identifiers.0.iter().any(|block_key| {
+            let Some(candidate) = registry.blocks.by_key(block_key) else {
+                panic!("configured feature references unknown block {block_key}");
+            };
+            block == candidate
+        })
+    }
+
     fn place_simple_block_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
@@ -1293,6 +1399,9 @@ impl FeatureDecorationRunner {
         property: &str,
         value: i32,
     ) -> BlockStateId {
+        let Some(block) = registry.blocks.by_state_id(state) else {
+            panic!("block-state provider received invalid block state id {state:?}");
+        };
         let value_string = value.to_string();
         let current_properties = registry.blocks.get_properties(state);
         let mut found = false;
@@ -1314,11 +1423,11 @@ impl FeatureDecorationRunner {
 
         let Some(new_state) = registry
             .blocks
-            .state_id_from_properties(&state.get_block().key, &properties)
+            .state_id_from_properties(&block.key, &properties)
         else {
             panic!(
                 "randomized int provider produced invalid value {value} for property {property} on {}",
-                state.get_block().key
+                block.key
             );
         };
         new_state
@@ -1918,7 +2027,7 @@ impl FeatureDecorationRunner {
 
         let mut properties = registry
             .blocks
-            .get_properties(block.default_state())
+            .get_properties(registry.blocks.get_default_state_id(block))
             .into_iter()
             .map(|(key, value)| (key as &str, value as &str))
             .collect::<Vec<_>>();
@@ -1948,6 +2057,109 @@ impl FeatureDecorationRunner {
         state
     }
 
+    fn fluid_state_from_data(registry: &Registry, data: &FluidStateData) -> FluidState {
+        let Some(fluid) = registry.fluids.by_key(&data.name) else {
+            panic!(
+                "fluid state provider references unknown fluid {}",
+                data.name
+            );
+        };
+
+        let mut amount = Self::default_fluid_amount(fluid);
+        let mut falling = false;
+
+        for (property, value) in &data.properties {
+            match property.as_str() {
+                "falling" if !fluid.is_empty => {
+                    falling = Self::parse_fluid_bool_property(&data.name, property, value);
+                }
+                "level" if !fluid.is_empty && !fluid.is_source => {
+                    amount = Self::parse_flowing_fluid_level(&data.name, value);
+                }
+                _ => {
+                    panic!(
+                        "fluid state provider references unknown property {property} on {}",
+                        data.name
+                    );
+                }
+            }
+        }
+
+        FluidState::new(fluid, amount, falling)
+    }
+
+    const fn default_fluid_amount(fluid: FluidRef) -> u8 {
+        if fluid.is_empty {
+            0
+        } else if fluid.is_source {
+            8
+        } else {
+            1
+        }
+    }
+
+    fn parse_fluid_bool_property(
+        fluid_name: &steel_utils::Identifier,
+        property: &str,
+        value: &str,
+    ) -> bool {
+        match value {
+            "true" => true,
+            "false" => false,
+            _ => panic!(
+                "fluid state provider references invalid boolean value {value} for property {property} on {fluid_name}"
+            ),
+        }
+    }
+
+    fn parse_flowing_fluid_level(fluid_name: &steel_utils::Identifier, value: &str) -> u8 {
+        let Ok(level) = value.parse::<u8>() else {
+            panic!("fluid state provider references invalid flowing level {value} on {fluid_name}");
+        };
+        assert!(
+            (1..=8).contains(&level),
+            "fluid state provider references flowing level {level} outside 1..=8 on {fluid_name}"
+        );
+        level
+    }
+
+    fn legacy_block_from_fluid_state(registry: &Registry, fluid_state: FluidState) -> BlockStateId {
+        let Some(block) = registry.blocks.by_key(&fluid_state.fluid_id.block) else {
+            panic!(
+                "fluid {} references unknown legacy block {}",
+                fluid_state.fluid_id.key, fluid_state.fluid_id.block
+            );
+        };
+
+        let mut state = registry.blocks.get_default_state_id(block);
+        if registry
+            .blocks
+            .try_get_property(state, &BlockStateProperties::LEVEL)
+            .is_some()
+        {
+            state = Self::set_int_property_by_name(
+                registry,
+                state,
+                "level",
+                i32::from(Self::legacy_fluid_block_level(fluid_state)),
+            );
+        }
+        state
+    }
+
+    fn legacy_fluid_block_level(fluid_state: FluidState) -> u8 {
+        if fluid_state.fluid_id.is_source {
+            return 0;
+        }
+
+        let amount = fluid_state.amount.min(8);
+        if fluid_state.falling {
+            8 + (8 - amount)
+        } else {
+            8 - amount
+        }
+    }
+
     const fn offset(origin: BlockPos, offset: &[i32; 3]) -> BlockPos {
         origin.offset(offset[0], offset[1], offset[2])
     }
@@ -1955,7 +2167,13 @@ impl FeatureDecorationRunner {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use steel_registry::Registry;
+    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::feature::FluidStateData;
+    use steel_registry::{vanilla_blocks, vanilla_fluids};
+    use steel_utils::Identifier;
 
     use crate::worldgen::BiomeSourceKind;
 
@@ -1988,5 +2206,34 @@ mod tests {
         let mut preserved_tip = [2, 3, 4];
         FeatureDecorationRunner::truncate_block_column_layers(&mut preserved_tip, 9, 6, true);
         assert_eq!(preserved_tip, [0, 2, 4]);
+    }
+
+    #[test]
+    fn spring_source_fluid_state_creates_vanilla_legacy_source_block() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+
+        let data = FluidStateData {
+            name: Identifier::vanilla_static("water"),
+            properties: BTreeMap::from([("falling".to_owned(), "true".to_owned())]),
+        };
+
+        let fluid_state = FeatureDecorationRunner::fluid_state_from_data(&registry, &data);
+        assert_eq!(fluid_state.fluid_id, &vanilla_fluids::WATER);
+        assert_eq!(fluid_state.amount, 8);
+        assert!(fluid_state.falling);
+
+        let block_state =
+            FeatureDecorationRunner::legacy_block_from_fluid_state(&registry, fluid_state);
+        assert_eq!(
+            registry.blocks.by_state_id(block_state),
+            Some(&vanilla_blocks::WATER)
+        );
+        assert_eq!(
+            registry
+                .blocks
+                .get_property(block_state, &BlockStateProperties::LEVEL),
+            0
+        );
     }
 }

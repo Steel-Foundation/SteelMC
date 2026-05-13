@@ -268,6 +268,18 @@ pub struct BlockStateData {
     pub properties: BTreeMap<String, String>,
 }
 
+/// Fluid state data as encoded by vanilla worldgen JSON.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FluidStateData {
+    /// Fluid identifier.
+    #[serde(rename = "Name")]
+    pub name: Identifier,
+    /// String-valued fluid-state properties.
+    #[serde(rename = "Properties", default)]
+    pub properties: BTreeMap<String, String>,
+}
+
 /// Identifier list that accepts vanilla's single-or-list codec shape.
 #[derive(Debug, Clone)]
 pub struct IdentifierList(pub Vec<Identifier>);
@@ -928,7 +940,7 @@ pub struct SpikeConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpringConfiguration {
-    pub state: BlockStateData,
+    pub state: FluidStateData,
     pub requires_block_below: bool,
     pub rock_count: i32,
     pub hole_count: i32,
