@@ -35,6 +35,7 @@ use crate::worldgen::noise::aquifer::{
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::noise::noise_chunk::NoiseChunk;
 use crate::worldgen::noise::ore_veinifier::OreVeinifier;
+use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::surface::SurfaceSystem;
 
@@ -1087,7 +1088,9 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         run.run_all(&source_biomes, seed_i64, &mut random);
     }
 
-    fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {
+        // TODO: Place structure pieces and biome placed features through WorldGenRegion.
+    }
 }
 
 impl<N, F> CarveRun<'_, '_, N, F>

@@ -14,6 +14,7 @@ pub mod generator;
 /// Concrete chunk generator implementations.
 pub mod generators;
 pub mod noise;
+pub mod region;
 pub mod registry;
 pub(crate) mod stages;
 pub(crate) mod structure;
@@ -27,6 +28,7 @@ pub use context::{
 };
 pub use generator::ChunkGenerator;
 pub use generators::{EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator};
+pub use region::WorldGenRegion;
 pub use registry::{GeneratorOutput, WorldGeneratorRegistry};
 pub use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 pub use steel_worldgen::noise::EndIslands;

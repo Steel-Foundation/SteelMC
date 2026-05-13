@@ -9,6 +9,7 @@ use crate::worldgen::context::{
 };
 use crate::worldgen::generators::{EmptyChunkGenerator, FlatChunkGenerator};
 use crate::worldgen::noise::beardifier::Beardifier;
+use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 
 /// A trait for generating chunks.
@@ -55,6 +56,6 @@ pub trait ChunkGenerator: Send + Sync {
     /// Applies carvers to the chunk.
     fn apply_carvers(&self, chunk: &ChunkAccess);
 
-    /// Applies biome decorations to the chunk.
-    fn apply_biome_decorations(&self, chunk: &ChunkAccess);
+    /// Applies structure piece placement and biome feature decorations.
+    fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>);
 }

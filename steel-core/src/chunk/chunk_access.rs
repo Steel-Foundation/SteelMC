@@ -280,6 +280,52 @@ impl ChunkAccess {
         }
     }
 
+    /// Ensure final heightmaps are primed for feature and post-feature generation.
+    ///
+    /// Vanilla primes `WORLD_SURFACE`, `MOTION_BLOCKING`, `MOTION_BLOCKING_NO_LEAVES`,
+    /// and `OCEAN_FLOOR` before biome decoration, after carvers have finished.
+    ///
+    /// # Lock ordering
+    /// Acquires heightmap write lock, then section read locks. Callers must not
+    /// hold a section write lock when calling this, or a deadlock will occur.
+    ///
+    /// # Panics
+    /// Panics if the chunk is not a proto chunk.
+    pub fn prime_final_heightmaps(&self) {
+        match self {
+            Self::Proto(proto) => {
+                let mut heightmaps = proto.heightmaps.write();
+                heightmaps.prime_from_sections(
+                    HeightmapType::final_types(),
+                    proto.min_y(),
+                    proto.height(),
+                    &proto.sections.sections,
+                );
+            }
+            Self::Full(_) => panic!("prime_final_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Gets the first available Y coordinate for a heightmap column.
+    #[must_use]
+    pub fn height_at(
+        &self,
+        heightmap_type: HeightmapType,
+        local_x: usize,
+        local_z: usize,
+    ) -> Option<i32> {
+        match self {
+            Self::Full(chunk) => Some(chunk.get_height(heightmap_type, local_x, local_z)),
+            Self::Proto(proto) => proto
+                .heightmaps
+                .read()
+                .get(heightmap_type)
+                .map(|heightmap| heightmap.get_first_available(local_x, local_z)),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
     ///
     /// # Panics

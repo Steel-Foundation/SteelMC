@@ -1,6 +1,7 @@
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::noise::beardifier::Beardifier;
+use crate::worldgen::region::WorldGenRegion;
 
 /// A chunk generator that generates an empty world.
 #[derive(Default)]
@@ -26,5 +27,5 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 
-    fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {}
 }

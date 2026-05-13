@@ -1,15 +1,25 @@
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
+    chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
+    chunk_pyramid::ChunkStep,
 };
 use crate::worldgen::context::WorldGenContext;
+use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::region::WorldGenRegion;
 
-// TODO: Wire up to context.generator.apply_biome_decorations() once feature generation is implemented
 pub(crate) fn generate(
-    _context: Arc<WorldGenContext>,
-    _step: &ChunkStep,
-    _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-    _holder: Arc<ChunkHolder>,
+    context: Arc<WorldGenContext>,
+    step: &ChunkStep,
+    cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    holder: Arc<ChunkHolder>,
 ) {
+    let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
+        panic!("Chunk not found at status Carvers");
+    };
+    chunk.prime_final_heightmaps();
+    drop(chunk);
+
+    let mut region = WorldGenRegion::new(context.as_ref(), step, cache, holder.get_pos());
+    context.generator.apply_biome_decorations(&mut region);
 }

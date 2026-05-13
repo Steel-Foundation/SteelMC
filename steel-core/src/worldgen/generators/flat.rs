@@ -9,6 +9,7 @@ use crate::chunk::chunk_access::ChunkAccess;
 use crate::world::structure::{ColumnBlock, StructureGenerationContext};
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::noise::beardifier::Beardifier;
+use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 
 /// A chunk generator that generates a flat world.
@@ -282,5 +283,7 @@ impl ChunkGenerator for FlatChunkGenerator {
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 
-    fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {
+        // TODO: Place generated structure pieces once template block payloads are extracted.
+    }
 }
