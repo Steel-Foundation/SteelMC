@@ -6,9 +6,10 @@
 //! bundles the per-chunk references that every carver method threads
 //! through.
 
-use std::sync::LazyLock;
+use std::{cell::Cell, sync::LazyLock};
 
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
@@ -17,7 +18,7 @@ use steel_utils::math::mth;
 use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::math::lerp2;
-use steel_worldgen::surface::SurfaceRuleContext;
+use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
 use crate::chunk::{
     chunk_access::ChunkAccess,
@@ -132,11 +133,18 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
         let min_surface_level = self.min_surface_level(block_x, block_z) + surface_depth - 8;
 
         let water_height = if under_fluid { block_y + 1 } else { i32::MIN };
-        let cold_enough_to_snow = self
-            .surface_system
-            .cold_enough_to_snow(biome_id, block_x, block_y, block_z);
+        let condition_noise_values: SmallVec<[Cell<f64>; 8]> = N::surface_noise_ids()
+            .iter()
+            .map(|_| Cell::new(0.0))
+            .collect();
+        let condition_noise_initialized: SmallVec<[Cell<bool>; 8]> = N::surface_noise_ids()
+            .iter()
+            .map(|_| Cell::new(false))
+            .collect();
+        let condition_noise_cache =
+            SurfaceConditionNoiseCache::new(&condition_noise_values, &condition_noise_initialized);
 
-        let ctx = SurfaceRuleContext {
+        let mut ctx = SurfaceRuleContext::new(
             block_x,
             block_z,
             surface_depth,
@@ -144,15 +152,17 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
             min_surface_level,
             steep,
             block_y,
-            stone_depth_above: 1,
-            stone_depth_below: 1,
+            1,
+            1,
             water_height,
-            biome_id,
-            cold_enough_to_snow,
-            system: self.surface_system,
-        };
+            Some(biome_id),
+            None,
+            self.surface_system,
+            &condition_noise_cache,
+            N::surface_rule_block_states(),
+        );
 
-        N::try_apply_surface_rule(&ctx)
+        N::try_apply_surface_rule(&mut ctx)
     }
 }
 
