@@ -107,8 +107,12 @@ impl FeatureDecorationRunner {
             }
         }
 
+        let Some(search_volume) = OreSearchVolume::new(x_start, y_start, z_start, size_xz, size_y)
+        else {
+            return false;
+        };
         let mut placed = 0;
-        let mut tested = FxHashSet::default();
+        let mut tested = OreTestedPositions::with_capacity(search_volume.tested_position_count);
 
         for node in vein_nodes {
             let radius = node[3];
@@ -146,9 +150,9 @@ impl FeatureDecorationRunner {
                             continue;
                         }
 
-                        let tested_index = x - x_start
-                            + (y - y_start) * size_xz
-                            + (z - z_start) * size_xz * size_y;
+                        let Some(tested_index) = search_volume.index(x, y, z) else {
+                            continue;
+                        };
                         if tested.insert(tested_index) {
                             let pos = BlockPos::new(x, y, z);
                             if Self::can_write_to_pos(region, pos)
@@ -292,5 +296,103 @@ impl FeatureDecorationRunner {
             SectionPos::block_to_section_coord(pos.x()),
             SectionPos::block_to_section_coord(pos.z()),
         )
+    }
+}
+
+struct OreTestedPositions {
+    words: Vec<u64>,
+}
+
+#[derive(Clone, Copy)]
+struct OreSearchVolume {
+    x_start: i32,
+    y_start: i32,
+    z_start: i32,
+    size_xz: i64,
+    size_y: i64,
+    tested_position_count: usize,
+}
+
+impl OreSearchVolume {
+    fn new(x_start: i32, y_start: i32, z_start: i32, size_xz: i32, size_y: i32) -> Option<Self> {
+        let size_xz = i64::from(size_xz);
+        let size_y = i64::from(size_y);
+        if size_xz <= 0 || size_y <= 0 {
+            return None;
+        }
+
+        let tested_position_count =
+            usize::try_from(size_xz.checked_mul(size_y)?.checked_mul(size_xz)?).ok()?;
+        Some(Self {
+            x_start,
+            y_start,
+            z_start,
+            size_xz,
+            size_y,
+            tested_position_count,
+        })
+    }
+
+    fn index(self, x: i32, y: i32, z: i32) -> Option<usize> {
+        let x_offset = i64::from(x) - i64::from(self.x_start);
+        let y_offset = i64::from(y) - i64::from(self.y_start);
+        let z_offset = i64::from(z) - i64::from(self.z_start);
+        if x_offset < 0 || y_offset < 0 || z_offset < 0 {
+            return None;
+        }
+
+        // Matches vanilla OreFeature's BitSet index layout.
+        let index = x_offset
+            .checked_add(y_offset.checked_mul(self.size_xz)?)?
+            .checked_add(
+                z_offset
+                    .checked_mul(self.size_xz)?
+                    .checked_mul(self.size_y)?,
+            )?;
+        usize::try_from(index).ok()
+    }
+}
+
+impl OreTestedPositions {
+    fn with_capacity(bit_count: usize) -> Self {
+        Self {
+            words: vec![0; bit_count.div_ceil(u64::BITS as usize)],
+        }
+    }
+
+    fn insert(&mut self, index: usize) -> bool {
+        let word_index = index / u64::BITS as usize;
+        if word_index >= self.words.len() {
+            self.words.resize(word_index + 1, 0);
+        }
+
+        let mask = 1_u64 << (index % u64::BITS as usize);
+        let word = &mut self.words[word_index];
+        if *word & mask != 0 {
+            return false;
+        }
+
+        *word |= mask;
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OreSearchVolume, OreTestedPositions};
+
+    #[test]
+    fn ore_tested_position_index_matches_vanilla_layout() {
+        let volume = OreSearchVolume::new(10, 60, 20, 4, 6);
+        assert_eq!(volume.and_then(|volume| volume.index(12, 63, 21)), Some(38));
+    }
+
+    #[test]
+    fn ore_tested_positions_deduplicate_and_grow() {
+        let mut tested = OreTestedPositions::with_capacity(1);
+        assert!(tested.insert(0));
+        assert!(!tested.insert(0));
+        assert!(tested.insert(130));
+        assert!(!tested.insert(130));
     }
 }
