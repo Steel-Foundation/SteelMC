@@ -1,0 +1,461 @@
+use super::prelude::*;
+use super::runner::FeatureDecorationRunner;
+
+struct ConfiguredFeaturePlaceContext<'a, 'region> {
+    region: &'a mut WorldGenRegion<'region>,
+    registry: &'a Registry,
+    random: &'a mut Xoroshiro,
+    origin: BlockPos,
+    biome_zoom_seed: i64,
+}
+
+type ConfiguredFeaturePlacer = for<'a, 'region> fn(
+    &mut ConfiguredFeaturePlaceContext<'a, 'region>,
+    &ConfiguredFeatureKind,
+) -> bool;
+
+struct ConfiguredFeatureRuntimeRegistry {
+    placers: FxHashMap<Identifier, ConfiguredFeaturePlacer>,
+}
+
+impl ConfiguredFeatureRuntimeRegistry {
+    fn new_vanilla() -> Self {
+        let mut placers = FxHashMap::default();
+        register(
+            &mut placers,
+            "random_boolean_selector",
+            place_random_boolean_selector,
+        );
+        register(&mut placers, "random_selector", place_random_selector);
+        register(
+            &mut placers,
+            "simple_random_selector",
+            place_simple_random_selector,
+        );
+        register(&mut placers, "simple_block", place_simple_block);
+        register(&mut placers, "block_blob", place_block_blob);
+        register(&mut placers, "block_column", place_block_column);
+        register(&mut placers, "block_pile", place_block_pile);
+        register(&mut placers, "disk", place_disk);
+        register(&mut placers, "basalt_pillar", place_basalt_pillar);
+        register(&mut placers, "spring_feature", place_spring_feature);
+        register(&mut placers, "ore", place_ore);
+        register(&mut placers, "scattered_ore", place_scattered_ore);
+        Self { placers }
+    }
+
+    fn placer(&self, feature_type: &Identifier) -> Option<ConfiguredFeaturePlacer> {
+        self.placers.get(feature_type).copied()
+    }
+}
+
+static CONFIGURED_FEATURES: LazyLock<ConfiguredFeatureRuntimeRegistry> =
+    LazyLock::new(ConfiguredFeatureRuntimeRegistry::new_vanilla);
+
+fn register(
+    placers: &mut FxHashMap<Identifier, ConfiguredFeaturePlacer>,
+    path: &'static str,
+    placer: ConfiguredFeaturePlacer,
+) {
+    placers.insert(Identifier::new_static("minecraft", path), placer);
+}
+
+impl FeatureDecorationRunner {
+    pub(super) fn place_configured_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        feature: &ConfiguredFeatureRef,
+        origin: BlockPos,
+        biome_zoom_seed: i64,
+    ) -> bool {
+        let kind = Self::configured_feature_kind(registry, feature);
+        let feature_type = Self::configured_feature_type_id(kind);
+        let Some(placer) = CONFIGURED_FEATURES.placer(&feature_type) else {
+            // TODO: Register concrete block-mutating feature implementations as they are added.
+            return false;
+        };
+        let mut context = ConfiguredFeaturePlaceContext {
+            region,
+            registry,
+            random,
+            origin,
+            biome_zoom_seed,
+        };
+        placer(&mut context, kind)
+    }
+
+    pub(super) fn configured_feature_kind<'a>(
+        registry: &'a Registry,
+        feature: &'a ConfiguredFeatureRef,
+    ) -> &'a ConfiguredFeatureKind {
+        match feature {
+            ConfiguredFeatureRef::Reference(key) => {
+                let Some(configured_feature) = registry.configured_features.by_key(key) else {
+                    panic!("placed feature references unknown configured feature {key}");
+                };
+                &configured_feature.kind
+            }
+            ConfiguredFeatureRef::Inline(configured_feature) => configured_feature,
+        }
+    }
+
+    fn configured_feature_type_id(kind: &ConfiguredFeatureKind) -> Identifier {
+        match kind {
+            ConfiguredFeatureKind::Bamboo(_) => Identifier::new_static("minecraft", "bamboo"),
+            ConfiguredFeatureKind::BasaltColumns(_) => {
+                Identifier::new_static("minecraft", "basalt_columns")
+            }
+            ConfiguredFeatureKind::BasaltPillar => {
+                Identifier::new_static("minecraft", "basalt_pillar")
+            }
+            ConfiguredFeatureKind::BlockBlob(_) => {
+                Identifier::new_static("minecraft", "block_blob")
+            }
+            ConfiguredFeatureKind::BlockColumn(_) => {
+                Identifier::new_static("minecraft", "block_column")
+            }
+            ConfiguredFeatureKind::BlockPile(_) => {
+                Identifier::new_static("minecraft", "block_pile")
+            }
+            ConfiguredFeatureKind::BlueIce => Identifier::new_static("minecraft", "blue_ice"),
+            ConfiguredFeatureKind::BonusChest => Identifier::new_static("minecraft", "bonus_chest"),
+            ConfiguredFeatureKind::ChorusPlant => {
+                Identifier::new_static("minecraft", "chorus_plant")
+            }
+            ConfiguredFeatureKind::CoralClaw => Identifier::new_static("minecraft", "coral_claw"),
+            ConfiguredFeatureKind::CoralMushroom => {
+                Identifier::new_static("minecraft", "coral_mushroom")
+            }
+            ConfiguredFeatureKind::CoralTree => Identifier::new_static("minecraft", "coral_tree"),
+            ConfiguredFeatureKind::DeltaFeature(_) => {
+                Identifier::new_static("minecraft", "delta_feature")
+            }
+            ConfiguredFeatureKind::DesertWell => Identifier::new_static("minecraft", "desert_well"),
+            ConfiguredFeatureKind::Disk(_) => Identifier::new_static("minecraft", "disk"),
+            ConfiguredFeatureKind::DripstoneCluster(_) => {
+                Identifier::new_static("minecraft", "dripstone_cluster")
+            }
+            ConfiguredFeatureKind::EndGateway(_) => {
+                Identifier::new_static("minecraft", "end_gateway")
+            }
+            ConfiguredFeatureKind::EndIsland => Identifier::new_static("minecraft", "end_island"),
+            ConfiguredFeatureKind::EndPlatform => {
+                Identifier::new_static("minecraft", "end_platform")
+            }
+            ConfiguredFeatureKind::EndSpike(_) => Identifier::new_static("minecraft", "end_spike"),
+            ConfiguredFeatureKind::FallenTree(_) => {
+                Identifier::new_static("minecraft", "fallen_tree")
+            }
+            ConfiguredFeatureKind::Fossil(_) => Identifier::new_static("minecraft", "fossil"),
+            ConfiguredFeatureKind::FreezeTopLayer => {
+                Identifier::new_static("minecraft", "freeze_top_layer")
+            }
+            ConfiguredFeatureKind::Geode(_) => Identifier::new_static("minecraft", "geode"),
+            ConfiguredFeatureKind::GlowstoneBlob => {
+                Identifier::new_static("minecraft", "glowstone_blob")
+            }
+            ConfiguredFeatureKind::HugeBrownMushroom(_) => {
+                Identifier::new_static("minecraft", "huge_brown_mushroom")
+            }
+            ConfiguredFeatureKind::HugeFungus(_) => {
+                Identifier::new_static("minecraft", "huge_fungus")
+            }
+            ConfiguredFeatureKind::HugeRedMushroom(_) => {
+                Identifier::new_static("minecraft", "huge_red_mushroom")
+            }
+            ConfiguredFeatureKind::Iceberg(_) => Identifier::new_static("minecraft", "iceberg"),
+            ConfiguredFeatureKind::Kelp => Identifier::new_static("minecraft", "kelp"),
+            ConfiguredFeatureKind::Lake(_) => Identifier::new_static("minecraft", "lake"),
+            ConfiguredFeatureKind::LargeDripstone(_) => {
+                Identifier::new_static("minecraft", "large_dripstone")
+            }
+            ConfiguredFeatureKind::MonsterRoom => {
+                Identifier::new_static("minecraft", "monster_room")
+            }
+            ConfiguredFeatureKind::MultifaceGrowth(_) => {
+                Identifier::new_static("minecraft", "multiface_growth")
+            }
+            ConfiguredFeatureKind::NetherForestVegetation(_) => {
+                Identifier::new_static("minecraft", "nether_forest_vegetation")
+            }
+            ConfiguredFeatureKind::NetherrackReplaceBlobs(_) => {
+                Identifier::new_static("minecraft", "netherrack_replace_blobs")
+            }
+            ConfiguredFeatureKind::Ore(_) => Identifier::new_static("minecraft", "ore"),
+            ConfiguredFeatureKind::PointedDripstone(_) => {
+                Identifier::new_static("minecraft", "pointed_dripstone")
+            }
+            ConfiguredFeatureKind::RandomBooleanSelector(_) => {
+                Identifier::new_static("minecraft", "random_boolean_selector")
+            }
+            ConfiguredFeatureKind::RandomSelector(_) => {
+                Identifier::new_static("minecraft", "random_selector")
+            }
+            ConfiguredFeatureKind::RootSystem(_) => {
+                Identifier::new_static("minecraft", "root_system")
+            }
+            ConfiguredFeatureKind::ScatteredOre(_) => {
+                Identifier::new_static("minecraft", "scattered_ore")
+            }
+            ConfiguredFeatureKind::SculkPatch(_) => {
+                Identifier::new_static("minecraft", "sculk_patch")
+            }
+            ConfiguredFeatureKind::SeaPickle(_) => {
+                Identifier::new_static("minecraft", "sea_pickle")
+            }
+            ConfiguredFeatureKind::Seagrass(_) => Identifier::new_static("minecraft", "seagrass"),
+            ConfiguredFeatureKind::SimpleBlock(_) => {
+                Identifier::new_static("minecraft", "simple_block")
+            }
+            ConfiguredFeatureKind::SimpleRandomSelector(_) => {
+                Identifier::new_static("minecraft", "simple_random_selector")
+            }
+            ConfiguredFeatureKind::Spike(_) => Identifier::new_static("minecraft", "spike"),
+            ConfiguredFeatureKind::SpringFeature(_) => {
+                Identifier::new_static("minecraft", "spring_feature")
+            }
+            ConfiguredFeatureKind::Tree(_) => Identifier::new_static("minecraft", "tree"),
+            ConfiguredFeatureKind::TwistingVines(_) => {
+                Identifier::new_static("minecraft", "twisting_vines")
+            }
+            ConfiguredFeatureKind::UnderwaterMagma(_) => {
+                Identifier::new_static("minecraft", "underwater_magma")
+            }
+            ConfiguredFeatureKind::VegetationPatch(_) => {
+                Identifier::new_static("minecraft", "vegetation_patch")
+            }
+            ConfiguredFeatureKind::Vines => Identifier::new_static("minecraft", "vines"),
+            ConfiguredFeatureKind::VoidStartPlatform => {
+                Identifier::new_static("minecraft", "void_start_platform")
+            }
+            ConfiguredFeatureKind::WaterloggedVegetationPatch(_) => {
+                Identifier::new_static("minecraft", "waterlogged_vegetation_patch")
+            }
+            ConfiguredFeatureKind::WeepingVines => {
+                Identifier::new_static("minecraft", "weeping_vines")
+            }
+        }
+    }
+}
+
+fn place_random_boolean_selector(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::RandomBooleanSelector(config) = kind else {
+        panic!("random_boolean_selector placer received wrong configured feature kind");
+    };
+    let selected_feature = if context.random.next_bool() {
+        &config.feature_true
+    } else {
+        &config.feature_false
+    };
+    FeatureDecorationRunner::place_placed_feature_ref(
+        context.region,
+        context.registry,
+        context.random,
+        context.origin,
+        selected_feature,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_random_selector(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::RandomSelector(config) = kind else {
+        panic!("random_selector placer received wrong configured feature kind");
+    };
+    for weighted_feature in &config.features {
+        if context.random.next_f32() < weighted_feature.chance {
+            return FeatureDecorationRunner::place_placed_feature_ref(
+                context.region,
+                context.registry,
+                context.random,
+                context.origin,
+                &weighted_feature.feature,
+                context.biome_zoom_seed,
+            );
+        }
+    }
+
+    FeatureDecorationRunner::place_placed_feature_ref(
+        context.region,
+        context.registry,
+        context.random,
+        context.origin,
+        &config.default,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_simple_random_selector(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SimpleRandomSelector(config) = kind else {
+        panic!("simple_random_selector placer received wrong configured feature kind");
+    };
+    assert!(
+        !config.features.is_empty(),
+        "simple random selector feature list must not be empty"
+    );
+    let Ok(feature_count) = i32::try_from(config.features.len()) else {
+        panic!(
+            "simple random selector feature count {} exceeds i32 range",
+            config.features.len()
+        );
+    };
+    let feature_index = context.random.next_i32_bounded(feature_count) as usize;
+    FeatureDecorationRunner::place_placed_feature_ref(
+        context.region,
+        context.registry,
+        context.random,
+        context.origin,
+        &config.features[feature_index],
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_simple_block(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SimpleBlock(config) = kind else {
+        panic!("simple_block placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_simple_block_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_block_blob(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BlockBlob(config) = kind else {
+        panic!("block_blob placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_block_blob_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_block_column(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BlockColumn(config) = kind else {
+        panic!("block_column placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_block_column_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_block_pile(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BlockPile(config) = kind else {
+        panic!("block_pile placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_block_pile_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_disk(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Disk(config) = kind else {
+        panic!("disk placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_disk_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_basalt_pillar(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BasaltPillar = kind else {
+        panic!("basalt_pillar placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_basalt_pillar_feature(
+        context.region,
+        context.random,
+        context.origin,
+    )
+}
+
+fn place_spring_feature(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SpringFeature(config) = kind else {
+        panic!("spring_feature placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_spring_feature(
+        context.region,
+        context.registry,
+        config,
+        context.origin,
+    )
+}
+
+fn place_ore(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Ore(config) = kind else {
+        panic!("ore placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_ore_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_scattered_ore(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::ScatteredOre(config) = kind else {
+        panic!("scattered_ore placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_scattered_ore_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
