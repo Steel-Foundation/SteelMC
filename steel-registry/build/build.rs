@@ -17,6 +17,7 @@ mod dialogs;
 mod dimension_types;
 mod entities;
 mod entity_data;
+mod features;
 mod fluid_tags;
 mod fluids;
 
@@ -127,6 +128,8 @@ const STRUCTURES: &str = "structures";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
 const CARVERS: &str = "configured_carvers";
+const CONFIGURED_FEATURES: &str = "configured_features";
+const PLACED_FEATURES: &str = "placed_features";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -201,6 +204,8 @@ pub fn main() {
         (enchantment_tags::build(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
         (carvers::build(), CARVERS),
+        (features::build_configured(), CONFIGURED_FEATURES),
+        (features::build_placed(), PLACED_FEATURES),
     ];
 
     // Track which files we're generating this run

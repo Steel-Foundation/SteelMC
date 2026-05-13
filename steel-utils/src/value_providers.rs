@@ -280,6 +280,303 @@ impl<'de> Deserialize<'de> for HeightProvider {
     }
 }
 
+// ── IntProvider ──────────────────────────────────────────────────────────────
+
+/// An `int`-valued provider.
+///
+/// Mirrors vanilla's `IntProvider` hierarchy used by feature placement and
+/// feature configuration data.
+#[derive(Debug, Clone)]
+pub enum IntProvider {
+    /// Always returns the same value.
+    Constant(i32),
+    /// Uniform inclusive over `[min_inclusive, max_inclusive]`.
+    Uniform {
+        /// Inclusive lower bound.
+        min_inclusive: i32,
+        /// Inclusive upper bound.
+        max_inclusive: i32,
+    },
+    /// Biased toward the bottom.
+    BiasedToBottom {
+        /// Inclusive lower bound.
+        min_inclusive: i32,
+        /// Inclusive upper bound.
+        max_inclusive: i32,
+    },
+    /// Heavily biased toward the bottom.
+    VeryBiasedToBottom {
+        /// Inclusive lower bound.
+        min_inclusive: i32,
+        /// Inclusive upper bound.
+        max_inclusive: i32,
+        /// Minimum span of the inner window.
+        inner: i32,
+    },
+    /// Sum of two uniform draws, symmetric triangle when `plateau == 0`.
+    Trapezoid {
+        /// Lower bound.
+        min: i32,
+        /// Upper bound.
+        max: i32,
+        /// Flat-top width.
+        plateau: i32,
+    },
+    /// Gaussian with given mean/deviation, clamped to `[min_inclusive, max_inclusive]`.
+    ClampedNormal {
+        /// Distribution mean.
+        mean: f32,
+        /// Standard deviation.
+        deviation: f32,
+        /// Inclusive lower bound.
+        min_inclusive: i32,
+        /// Inclusive upper bound.
+        max_inclusive: i32,
+    },
+    /// Clamps another provider to an inclusive range.
+    Clamped {
+        /// Source provider.
+        source: Box<IntProvider>,
+        /// Inclusive lower bound.
+        min_inclusive: i32,
+        /// Inclusive upper bound.
+        max_inclusive: i32,
+    },
+    /// Weighted provider selection.
+    WeightedList {
+        /// Weighted alternatives.
+        distribution: Vec<WeightedIntProvider>,
+    },
+}
+
+/// A weighted int-provider entry.
+#[derive(Debug, Clone)]
+pub struct WeightedIntProvider {
+    /// Provider data.
+    pub data: IntProvider,
+    /// Entry weight.
+    pub weight: i32,
+}
+
+impl IntProvider {
+    /// Sample a value.
+    ///
+    /// Matches vanilla's provider structure. Weighted-list selection is the
+    /// standard total-weight draw used by vanilla's `SimpleWeightedRandomList`.
+    pub fn sample<R: Random + ?Sized>(&self, random: &mut R) -> i32 {
+        match self {
+            Self::Constant(v) => *v,
+            Self::Uniform {
+                min_inclusive,
+                max_inclusive,
+            } => random.next_i32_between(*min_inclusive, *max_inclusive),
+            Self::BiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let span = *max_inclusive - *min_inclusive + 1;
+                let bound = random.next_i32_bounded(span) + 1;
+                *min_inclusive + random.next_i32_bounded(bound)
+            }
+            Self::VeryBiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+                inner,
+            } => {
+                let limit = *max_inclusive - *min_inclusive - *inner + 1;
+                if limit <= 0 {
+                    *min_inclusive
+                } else {
+                    let upper_inclusive = random.next_i32_bounded(limit) + *min_inclusive + *inner;
+                    let biased_upper_inclusive =
+                        random.next_i32_between(*min_inclusive, upper_inclusive - 1);
+                    random.next_i32_between(*min_inclusive, biased_upper_inclusive - 1 + *inner)
+                }
+            }
+            Self::Trapezoid { min, max, plateau } => {
+                let range = *max - *min;
+                if *plateau >= range {
+                    random.next_i32_between(*min, *max)
+                } else {
+                    let plateau_start = (range - *plateau) / 2;
+                    let plateau_end = range - plateau_start;
+                    *min + random.next_i32_between(0, plateau_end)
+                        + random.next_i32_between(0, plateau_start)
+                }
+            }
+            Self::ClampedNormal {
+                mean,
+                deviation,
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let sample = (*mean + *deviation * random.next_gaussian() as f32).round() as i32;
+                sample.clamp(*min_inclusive, *max_inclusive)
+            }
+            Self::Clamped {
+                source,
+                min_inclusive,
+                max_inclusive,
+            } => source.sample(random).clamp(*min_inclusive, *max_inclusive),
+            Self::WeightedList { distribution } => {
+                let total_weight: i32 = distribution.iter().map(|entry| entry.weight).sum();
+                if total_weight <= 0 {
+                    return 0;
+                }
+                let mut target = random.next_i32_bounded(total_weight);
+                for entry in distribution {
+                    target -= entry.weight;
+                    if target < 0 {
+                        return entry.data.sample(random);
+                    }
+                }
+                0
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for IntProvider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Constant(i32),
+            Range {
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+            Tagged(Tagged),
+        }
+
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum Tagged {
+            #[serde(rename = "minecraft:constant", alias = "constant")]
+            Constant { value: i32 },
+            #[serde(rename = "minecraft:uniform", alias = "uniform")]
+            Uniform {
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+            #[serde(rename = "minecraft:biased_to_bottom", alias = "biased_to_bottom")]
+            BiasedToBottom {
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+            #[serde(
+                rename = "minecraft:very_biased_to_bottom",
+                alias = "very_biased_to_bottom"
+            )]
+            VeryBiasedToBottom {
+                min_inclusive: i32,
+                max_inclusive: i32,
+                #[serde(default = "default_inner")]
+                inner: i32,
+            },
+            #[serde(rename = "minecraft:trapezoid", alias = "trapezoid")]
+            Trapezoid { min: i32, max: i32, plateau: i32 },
+            #[serde(rename = "minecraft:clamped_normal", alias = "clamped_normal")]
+            ClampedNormal {
+                mean: f32,
+                deviation: f32,
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+            #[serde(rename = "minecraft:clamped", alias = "clamped")]
+            Clamped {
+                source: Box<IntProvider>,
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+            #[serde(rename = "minecraft:weighted_list", alias = "weighted_list")]
+            WeightedList {
+                distribution: Vec<WeightedIntProvider>,
+            },
+        }
+
+        const fn default_inner() -> i32 {
+            1
+        }
+
+        Ok(match Raw::deserialize(d)? {
+            Raw::Constant(v) | Raw::Tagged(Tagged::Constant { value: v }) => Self::Constant(v),
+            Raw::Range {
+                min_inclusive,
+                max_inclusive,
+            } => Self::Uniform {
+                min_inclusive,
+                max_inclusive,
+            },
+            Raw::Tagged(Tagged::Uniform {
+                min_inclusive,
+                max_inclusive,
+            }) => Self::Uniform {
+                min_inclusive,
+                max_inclusive,
+            },
+            Raw::Tagged(Tagged::BiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+            }) => Self::BiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+            },
+            Raw::Tagged(Tagged::VeryBiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+                inner,
+            }) => Self::VeryBiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+                inner,
+            },
+            Raw::Tagged(Tagged::Trapezoid { min, max, plateau }) => {
+                Self::Trapezoid { min, max, plateau }
+            }
+            Raw::Tagged(Tagged::ClampedNormal {
+                mean,
+                deviation,
+                min_inclusive,
+                max_inclusive,
+            }) => Self::ClampedNormal {
+                mean,
+                deviation,
+                min_inclusive,
+                max_inclusive,
+            },
+            Raw::Tagged(Tagged::Clamped {
+                source,
+                min_inclusive,
+                max_inclusive,
+            }) => Self::Clamped {
+                source,
+                min_inclusive,
+                max_inclusive,
+            },
+            Raw::Tagged(Tagged::WeightedList { distribution }) => {
+                Self::WeightedList { distribution }
+            }
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for WeightedIntProvider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            data: IntProvider,
+            weight: i32,
+        }
+
+        let raw = Raw::deserialize(d)?;
+        Ok(Self {
+            data: raw.data,
+            weight: raw.weight,
+        })
+    }
+}
+
 // ── FloatProvider ────────────────────────────────────────────────────────────
 
 /// A `float`-valued provider.

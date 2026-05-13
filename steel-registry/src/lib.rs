@@ -22,6 +22,10 @@ use crate::{
     enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
     entity_types::EntityTypeRegistry,
+    feature::{
+        ConfiguredFeatureKind, ConfiguredFeatureRef, ConfiguredFeatureRegistry, PlacedFeatureData,
+        PlacedFeatureRef, PlacedFeatureRegistry,
+    },
     fluid::FluidRegistry,
     frog_variant::FrogVariantRegistry,
     game_rules::GameRuleRegistry,
@@ -65,6 +69,7 @@ pub mod dimension_type;
 pub mod enchantment;
 pub mod entity_data;
 pub mod entity_types;
+pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
 pub mod game_rules;
@@ -385,6 +390,16 @@ pub mod shared_structs;
 #[path = "generated/vanilla_configured_carvers.rs"]
 pub mod vanilla_configured_carvers;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_configured_features.rs"]
+pub mod vanilla_configured_features;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_placed_features.rs"]
+pub mod vanilla_placed_features;
+
 pub struct RegistryLock(OnceLock<Registry>);
 
 impl RegistryLock {
@@ -485,6 +500,10 @@ pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_i
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
 pub const CONFIGURED_CARVER_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/configured_carver");
+pub const CONFIGURED_FEATURE_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/configured_feature");
+pub const PLACED_FEATURE_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/placed_feature");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 
 pub struct Registry {
@@ -528,6 +547,8 @@ pub struct Registry {
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
     pub configured_carvers: ConfiguredCarverRegistry,
+    pub configured_features: ConfiguredFeatureRegistry,
+    pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
 }
 
@@ -616,6 +637,10 @@ impl Registry {
         vanilla_structure_tags::register_structure_tags(&mut registry.structures);
 
         vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
+        vanilla_configured_features::register_configured_features(
+            &mut registry.configured_features,
+        );
+        vanilla_placed_features::register_placed_features(&mut registry.placed_features);
 
         registry
     }
@@ -663,6 +688,8 @@ impl Registry {
         self.enchantments.freeze();
         self.world_clocks.freeze();
         self.configured_carvers.freeze();
+        self.configured_features.freeze();
+        self.placed_features.freeze();
         self.structures.freeze();
     }
 
@@ -676,6 +703,108 @@ impl Registry {
                     carver_key
                 );
             }
+
+            for feature_stage in &biome.features {
+                for placed_feature_key in feature_stage {
+                    assert!(
+                        self.placed_features.by_key(placed_feature_key).is_some(),
+                        "biome {} references unknown placed feature {}",
+                        biome.key,
+                        placed_feature_key
+                    );
+                }
+            }
+        }
+
+        for (_, placed_feature) in self.placed_features.iter() {
+            self.validate_placed_feature_data(&placed_feature.data);
+        }
+
+        for (_, configured_feature) in self.configured_features.iter() {
+            self.validate_configured_feature_kind(&configured_feature.kind);
+        }
+
+        if !self.placed_features.is_empty() {
+            for pool in vanilla_template_pools::vanilla_template_pools() {
+                for (element, _) in &pool.elements {
+                    self.validate_template_pool_feature_refs(element);
+                }
+            }
+        }
+    }
+
+    fn validate_placed_feature_ref(&self, feature: &PlacedFeatureRef) {
+        match feature {
+            PlacedFeatureRef::Reference(key) => {
+                assert!(
+                    self.placed_features.by_key(key).is_some(),
+                    "unknown placed feature reference {key}"
+                );
+            }
+            PlacedFeatureRef::Inline(data) => self.validate_placed_feature_data(data),
+        }
+    }
+
+    fn validate_placed_feature_data(&self, feature: &PlacedFeatureData) {
+        self.validate_configured_feature_ref(&feature.feature);
+    }
+
+    fn validate_configured_feature_ref(&self, feature: &ConfiguredFeatureRef) {
+        match feature {
+            ConfiguredFeatureRef::Reference(key) => {
+                assert!(
+                    self.configured_features.by_key(key).is_some(),
+                    "unknown configured feature reference {key}"
+                );
+            }
+            ConfiguredFeatureRef::Inline(kind) => self.validate_configured_feature_kind(kind),
+        }
+    }
+
+    fn validate_configured_feature_kind(&self, kind: &ConfiguredFeatureKind) {
+        match kind {
+            ConfiguredFeatureKind::RandomBooleanSelector(config) => {
+                self.validate_placed_feature_ref(&config.feature_true);
+                self.validate_placed_feature_ref(&config.feature_false);
+            }
+            ConfiguredFeatureKind::RandomSelector(config) => {
+                for feature in &config.features {
+                    self.validate_placed_feature_ref(&feature.feature);
+                }
+                self.validate_placed_feature_ref(&config.default);
+            }
+            ConfiguredFeatureKind::RootSystem(config) => {
+                self.validate_placed_feature_ref(&config.feature);
+            }
+            ConfiguredFeatureKind::SimpleRandomSelector(config) => {
+                for feature in &config.features {
+                    self.validate_placed_feature_ref(feature);
+                }
+            }
+            ConfiguredFeatureKind::VegetationPatch(config)
+            | ConfiguredFeatureKind::WaterloggedVegetationPatch(config) => {
+                self.validate_placed_feature_ref(&config.vegetation_feature);
+            }
+            _ => {}
+        }
+    }
+
+    fn validate_template_pool_feature_refs(&self, element: &template_pool::PoolElement) {
+        match element {
+            template_pool::PoolElement::Feature { feature, .. } => {
+                assert!(
+                    self.placed_features.by_key(feature).is_some(),
+                    "template pool references unknown placed feature {feature}"
+                );
+            }
+            template_pool::PoolElement::List { elements, .. } => {
+                for element in elements {
+                    self.validate_template_pool_feature_refs(element);
+                }
+            }
+            template_pool::PoolElement::Single { .. }
+            | template_pool::PoolElement::LegacySingle { .. }
+            | template_pool::PoolElement::Empty => {}
         }
     }
 
@@ -722,6 +851,8 @@ impl Registry {
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
             configured_carvers: ConfiguredCarverRegistry::new(),
+            configured_features: ConfiguredFeatureRegistry::new(),
+            placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
         }
     }
@@ -736,9 +867,9 @@ mod tests {
 
     use crate::biome::{Biome, BiomeEffects, GrassColorModifier, TemperatureModifier};
 
-    use super::Registry;
+    use super::{Registry, RegistryExt};
 
-    fn biome_with_carvers(carvers: Vec<Identifier>) -> &'static Biome {
+    fn biome_with_refs(carvers: Vec<Identifier>, features: Vec<Vec<Identifier>>) -> &'static Biome {
         Box::leak(Box::new(Biome {
             key: Identifier::new_static("test", "missing_carver_biome"),
             has_precipitation: false,
@@ -764,7 +895,7 @@ mod tests {
             spawners: FxHashMap::default(),
             spawn_costs: FxHashMap::default(),
             carvers,
-            features: Vec::new(),
+            features,
             id: OnceLock::new(),
         }))
     }
@@ -773,12 +904,42 @@ mod tests {
     #[should_panic(expected = "references unknown configured carver")]
     fn freeze_rejects_missing_biome_carver_reference() {
         let mut registry = Registry::new_empty();
-        registry
-            .biomes
-            .register(biome_with_carvers(vec![Identifier::vanilla_static(
-                "missing_carver",
-            )]));
+        registry.biomes.register(biome_with_refs(
+            vec![Identifier::vanilla_static("missing_carver")],
+            Vec::new(),
+        ));
 
         registry.freeze();
+    }
+
+    #[test]
+    #[should_panic(expected = "references unknown placed feature")]
+    fn freeze_rejects_missing_biome_placed_feature_reference() {
+        let mut registry = Registry::new_empty();
+        registry.biomes.register(biome_with_refs(
+            Vec::new(),
+            vec![vec![Identifier::vanilla_static("missing_feature")]],
+        ));
+
+        registry.freeze();
+    }
+
+    #[test]
+    fn vanilla_feature_registries_initialize_and_validate() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+
+        assert!(
+            registry
+                .configured_features
+                .by_key(&Identifier::vanilla_static("ore_diamond_small"))
+                .is_some()
+        );
+        assert!(
+            registry
+                .placed_features
+                .by_key(&Identifier::vanilla_static("ore_diamond"))
+                .is_some()
+        );
     }
 }
