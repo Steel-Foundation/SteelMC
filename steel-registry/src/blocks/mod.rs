@@ -21,6 +21,8 @@ pub struct Block {
     pub default_state_offset: u16,
     /// Function to get collision shape for a state offset
     pub collision_shape: ShapeFn,
+    /// Function to get block support shape for a state offset
+    pub support_shape: ShapeFn,
     /// Function to get outline shape for a state offset
     pub outline_shape: ShapeFn,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
@@ -55,14 +57,21 @@ impl Block {
             properties,
             default_state_offset: 0,
             collision_shape: full_block_shape,
+            support_shape: full_block_shape,
             outline_shape: full_block_shape,
             id: OnceLock::new(),
         }
     }
 
     /// Sets the shape functions for this block.
-    pub const fn with_shapes(mut self, collision: ShapeFn, outline: ShapeFn) -> Self {
+    pub const fn with_shapes(
+        mut self,
+        collision: ShapeFn,
+        support: ShapeFn,
+        outline: ShapeFn,
+    ) -> Self {
         self.collision_shape = collision;
+        self.support_shape = support;
         self.outline_shape = outline;
         self
     }
@@ -71,6 +80,12 @@ impl Block {
     #[inline]
     pub fn get_collision_shape(&self, offset: u16) -> &'static [shapes::AABB] {
         (self.collision_shape)(offset)
+    }
+
+    /// Gets the block support shape for a given state offset.
+    #[inline]
+    pub fn get_support_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.support_shape)(offset)
     }
 
     /// Gets the outline shape for a given state offset.
@@ -452,6 +467,26 @@ impl BlockRegistry {
         block.get_collision_shape(offset)
     }
 
+    /// Gets the block support shape for a block state.
+    ///
+    /// Vanilla support checks use `BlockState.getBlockSupportShape`, not collision shape,
+    /// for `isFaceSturdy` and multiface side attachment.
+    #[must_use]
+    pub fn get_support_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
+        let Some(block) = block else {
+            return &[shapes::AABB::FULL_BLOCK];
+        };
+        let block_id = self
+            .state_to_block_id
+            .get(state_id.0 as usize)
+            .copied()
+            .unwrap_or(0);
+        let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
+        let offset = state_id.0.saturating_sub(base_state);
+        block.get_support_shape(offset)
+    }
+
     /// Gets the outline shape for a block state.
     ///
     /// This is the shape shown when the player targets the block.
@@ -477,6 +512,7 @@ impl BlockRegistry {
     pub fn get_shapes(&self, state_id: BlockStateId) -> shapes::BlockShapes {
         shapes::BlockShapes::new(
             self.get_collision_shape(state_id),
+            self.get_support_shape(state_id),
             self.get_outline_shape(state_id),
         )
     }

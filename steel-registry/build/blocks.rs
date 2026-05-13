@@ -85,6 +85,7 @@ pub struct Block {
     pub default_properties: Vec<String>,
     pub behavior_properties: BlockConfig,
     pub collision_shapes: ShapeData,
+    pub support_shapes: ShapeData,
     pub outline_shapes: ShapeData,
 }
 
@@ -420,6 +421,7 @@ pub(crate) fn build() -> TokenStream {
     struct BlockShapeInfo {
         name: String,
         collision_fn_id: u16,
+        support_fn_id: u16,
         outline_fn_id: u16,
     }
     let mut block_shape_infos: Vec<BlockShapeInfo> = Vec::new();
@@ -428,6 +430,8 @@ pub(crate) fn build() -> TokenStream {
     for block in &block_assets.blocks {
         let (collision_default, collision_arms) =
             generate_shape_match(&block.collision_shapes, &mut voxel_pool);
+        let (support_default, support_arms) =
+            generate_shape_match(&block.support_shapes, &mut voxel_pool);
         let (outline_default, outline_arms) =
             generate_shape_match(&block.outline_shapes, &mut voxel_pool);
 
@@ -436,17 +440,23 @@ pub(crate) fn build() -> TokenStream {
             default_id: collision_default,
             arms: collision_arms,
         };
+        let support_sig = ShapeFunctionSignature {
+            default_id: support_default,
+            arms: support_arms,
+        };
         let outline_sig = ShapeFunctionSignature {
             default_id: outline_default,
             arms: outline_arms,
         };
 
         let collision_fn_id = shape_fn_pool.get_or_insert(collision_sig);
+        let support_fn_id = shape_fn_pool.get_or_insert(support_sig);
         let outline_fn_id = shape_fn_pool.get_or_insert(outline_sig);
 
         block_shape_infos.push(BlockShapeInfo {
             name: block.name.clone(),
             collision_fn_id,
+            support_fn_id,
             outline_fn_id,
         });
     }
@@ -572,6 +582,10 @@ pub(crate) fn build() -> TokenStream {
             &format!("shape_fn_{}", info.collision_fn_id),
             Span::call_site(),
         );
+        let support_fn = Ident::new(
+            &format!("shape_fn_{}", info.support_fn_id),
+            Span::call_site(),
+        );
         let outline_fn = Ident::new(
             &format!("shape_fn_{}", info.outline_fn_id),
             Span::call_site(),
@@ -584,7 +598,7 @@ pub(crate) fn build() -> TokenStream {
                 &[
                     #(#properties),*
                 ],
-            ).with_shapes(#collision_fn, #outline_fn)#default_state;
+            ).with_shapes(#collision_fn, #support_fn, #outline_fn)#default_state;
         });
     }
 

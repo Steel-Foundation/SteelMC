@@ -379,25 +379,34 @@ impl ShapeRegistry {
 // Static shape for full block - used during registry initialization
 static FULL_BLOCK_SHAPE: &[AABB] = &[AABB::FULL_BLOCK];
 
-/// Shape data for a block state, containing both collision and outline shapes.
+/// Shape data for a block state.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockShapes {
     pub collision: VoxelShape,
+    pub support: VoxelShape,
     pub outline: VoxelShape,
 }
 
 impl BlockShapes {
     /// Creates new block shapes.
     #[must_use]
-    pub const fn new(collision: VoxelShape, outline: VoxelShape) -> Self {
-        Self { collision, outline }
+    pub const fn new(collision: VoxelShape, support: VoxelShape, outline: VoxelShape) -> Self {
+        Self {
+            collision,
+            support,
+            outline,
+        }
     }
 
-    /// Full block collision and outline.
-    pub const FULL_BLOCK: BlockShapes = BlockShapes::new(&[AABB::FULL_BLOCK], &[AABB::FULL_BLOCK]);
+    /// Full block collision, support, and outline.
+    pub const FULL_BLOCK: BlockShapes = BlockShapes::new(
+        &[AABB::FULL_BLOCK],
+        &[AABB::FULL_BLOCK],
+        &[AABB::FULL_BLOCK],
+    );
 
-    /// Empty shapes (no collision, no outline).
-    pub const EMPTY: BlockShapes = BlockShapes::new(&[], &[]);
+    /// Empty shapes (no collision, support, or outline).
+    pub const EMPTY: BlockShapes = BlockShapes::new(&[], &[], &[]);
 }
 
 use super::properties::Direction;

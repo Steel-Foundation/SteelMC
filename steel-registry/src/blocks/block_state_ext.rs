@@ -20,6 +20,7 @@ pub trait BlockStateExt {
     fn set_value<T, P: Property<T>>(&self, property: &P, value: T) -> BlockStateId;
     fn get_property_str(&self, name: &str) -> Option<String>;
     fn get_collision_shape(&self) -> &'static [blocks::shapes::AABB];
+    fn get_support_shape(&self) -> &'static [blocks::shapes::AABB];
     fn get_outline_shape(&self) -> &'static [blocks::shapes::AABB];
     /// Checks if this block face is sturdy enough to support other blocks.
     /// Uses `SupportType::Full` by default.
@@ -80,6 +81,10 @@ impl BlockStateExt for BlockStateId {
         REGISTRY.blocks.get_collision_shape(*self)
     }
 
+    fn get_support_shape(&self) -> &'static [blocks::shapes::AABB] {
+        REGISTRY.blocks.get_support_shape(*self)
+    }
+
     fn get_outline_shape(&self) -> &'static [blocks::shapes::AABB] {
         REGISTRY.blocks.get_outline_shape(*self)
     }
@@ -89,7 +94,7 @@ impl BlockStateExt for BlockStateId {
     }
 
     fn is_face_sturdy_for(&self, direction: Direction, support_type: SupportType) -> bool {
-        let shape = self.get_collision_shape();
+        let shape = self.get_support_shape();
         blocks::shapes::is_face_sturdy(shape, direction, support_type)
     }
 
