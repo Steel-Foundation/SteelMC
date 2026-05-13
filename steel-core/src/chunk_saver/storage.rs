@@ -308,14 +308,19 @@ impl ChunkStorage {
             .unwrap_or_default();
 
         // Serialize scheduled ticks
-        let (block_ticks, fluid_ticks) = chunk
-            .as_full()
-            .map(|c| {
+        let (block_ticks, fluid_ticks) = match chunk {
+            ChunkAccess::Full(c) => {
                 let bt = Self::block_ticks_to_persistent(&c.block_ticks.lock(), pos);
                 let ft = Self::fluid_ticks_to_persistent(&c.fluid_ticks.lock(), pos);
                 (bt, ft)
-            })
-            .unwrap_or_default();
+            }
+            ChunkAccess::Proto(c) => {
+                let bt = Self::block_ticks_to_persistent(&c.block_ticks.lock(), pos);
+                let ft = Self::fluid_ticks_to_persistent(&c.fluid_ticks.lock(), pos);
+                (bt, ft)
+            }
+            ChunkAccess::Unloaded => unreachable!(),
+        };
 
         // Serialize heightmaps
         let heightmaps = chunk
@@ -663,6 +668,8 @@ impl ChunkStorage {
 
             ChunkAccess::Full(chunk)
         } else {
+            let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
+            let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
             let carving_mask = persistent
                 .carving_mask
                 .as_deref()
@@ -678,6 +685,8 @@ impl ChunkStorage {
                 structure_references,
                 carving_mask,
                 persistent.postprocessing.iter().map(Vec::clone).collect(),
+                block_ticks,
+                fluid_ticks,
             ))
         }
     }

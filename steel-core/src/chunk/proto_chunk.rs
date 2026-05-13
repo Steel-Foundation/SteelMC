@@ -4,11 +4,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crossbeam::atomic::AtomicCell;
 use parking_lot::{MappedRwLockWriteGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
-use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, types::UpdateFlags};
+use steel_registry::{
+    REGISTRY,
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    fluid::FluidRef,
+    vanilla_blocks,
+};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos,
+    locks::{SyncMutex, SyncRwLock},
+    types::UpdateFlags,
+};
 
 use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
+use crate::world::tick_scheduler::{
+    BlockTick, BlockTickList, FluidTick, FluidTickList, TickPriority,
+};
 use crate::worldgen::carving_mask::CarvingMask;
 
 fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
@@ -50,6 +62,10 @@ pub struct ProtoChunk {
     pub carving_mask: SyncRwLock<Option<CarvingMask>>,
     /// Section-indexed packed offsets that need vanilla postprocessing after promotion.
     pub postprocessing: SyncRwLock<Box<[Vec<u16>]>>,
+    /// Scheduled block ticks queued while this chunk is still a proto chunk.
+    pub block_ticks: SyncMutex<BlockTickList>,
+    /// Scheduled fluid ticks queued while this chunk is still a proto chunk.
+    pub fluid_ticks: SyncMutex<FluidTickList>,
     // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
     // does. Vanilla caches `NoiseChunk` on `ChunkAccess` so noise, surface,
     // and carvers share one instance; we currently rebuild per stage. Blocked
@@ -76,6 +92,8 @@ impl ProtoChunk {
             structure_references: SyncRwLock::new(FxHashMap::default()),
             carving_mask: SyncRwLock::new(None),
             postprocessing: SyncRwLock::new(empty_postprocessing(height)),
+            block_ticks: SyncMutex::new(BlockTickList::new()),
+            fluid_ticks: SyncMutex::new(FluidTickList::new()),
         }
     }
 
@@ -95,6 +113,8 @@ impl ProtoChunk {
         structure_references: StructureReferenceMap,
         carving_mask: Option<CarvingMask>,
         postprocessing: Vec<Vec<u16>>,
+        block_ticks: BlockTickList,
+        fluid_ticks: FluidTickList,
     ) -> Self {
         Self {
             sections,
@@ -109,6 +129,8 @@ impl ProtoChunk {
             structure_references: SyncRwLock::new(structure_references),
             carving_mask: SyncRwLock::new(carving_mask),
             postprocessing: SyncRwLock::new(postprocessing_from_disk(height, postprocessing)),
+            block_ticks: SyncMutex::new(block_ticks),
+            fluid_ticks: SyncMutex::new(fluid_ticks),
         }
     }
 
@@ -195,6 +217,42 @@ impl ProtoChunk {
     /// Marks the chunk as unsaved.
     fn mark_unsaved(&self) {
         self.dirty.store(true, Ordering::Release);
+    }
+
+    /// Schedules a block tick in proto storage.
+    ///
+    /// Vanilla `ProtoChunkTicks.schedule(ScheduledTick)` stores a saved tick with delay `0`,
+    /// so worldgen-scheduled proto ticks run after promotion instead of preserving the
+    /// requested delay from generation time.
+    pub fn schedule_block_tick(&self, pos: BlockPos, block: BlockRef, priority: TickPriority) {
+        let tick = BlockTick {
+            tick_type: block,
+            pos,
+            delay: 0,
+            priority,
+            sub_tick_order: 0,
+        };
+
+        if self.block_ticks.lock().schedule(tick) {
+            self.mark_unsaved();
+        }
+    }
+
+    /// Schedules a fluid tick in proto storage.
+    ///
+    /// See [`Self::schedule_block_tick`] for why proto ticks use delay `0`.
+    pub fn schedule_fluid_tick(&self, pos: BlockPos, fluid: FluidRef, priority: TickPriority) {
+        let tick = FluidTick {
+            tick_type: fluid,
+            pos,
+            delay: 0,
+            priority,
+            sub_tick_order: 0,
+        };
+
+        if self.fluid_ticks.lock().schedule(tick) {
+            self.mark_unsaved();
+        }
     }
 
     /// Sets a block state at the given position.
@@ -292,6 +350,9 @@ impl ProtoChunk {
 #[cfg(test)]
 mod tests {
     use super::ProtoChunk;
+    use crate::chunk::section::{ChunkSection, Sections};
+    use crate::world::tick_scheduler::TickPriority;
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos};
 
     #[test]
@@ -307,5 +368,30 @@ mod tests {
             ProtoChunk::unpack_postprocessing_offset(packed, section_y, chunk_pos),
             pos
         );
+    }
+
+    #[test]
+    fn proto_scheduled_block_ticks_use_vanilla_zero_delay() {
+        let _ = REGISTRY.init(Registry::new_vanilla());
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+        );
+        let pos = BlockPos::new(3, 4, 5);
+
+        proto.schedule_block_tick(pos, &vanilla_blocks::DIRT, TickPriority::Normal);
+
+        let ticks = proto.block_ticks.lock();
+        let tick = ticks
+            .iter()
+            .next()
+            .expect("proto chunk should store scheduled block tick");
+
+        assert_eq!(tick.pos, pos);
+        assert_eq!(tick.tick_type, &vanilla_blocks::DIRT);
+        assert_eq!(tick.delay, 0);
+        assert_eq!(tick.priority, TickPriority::Normal);
     }
 }

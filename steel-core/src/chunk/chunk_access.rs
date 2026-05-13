@@ -1,5 +1,6 @@
 //! This module contains the `ChunkAccess` enum, which is used to access chunks in different states.
 use std::sync::atomic::Ordering;
+use steel_registry::{blocks::BlockRef, fluid::FluidRef};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
 use wincode::{SchemaRead, SchemaWrite};
 
@@ -9,7 +10,7 @@ use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
-use crate::world::tick_scheduler::{BlockTick, FluidTick};
+use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
 
 /// The status of a chunk.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, SchemaWrite, SchemaRead)]
@@ -370,6 +371,60 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.get_block_state(pos),
             Self::Proto(proto_chunk) => proto_chunk.get_block_state(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Schedules a block tick on either a full or proto chunk.
+    pub fn schedule_block_tick(
+        &self,
+        pos: BlockPos,
+        block: BlockRef,
+        delay: i32,
+        priority: TickPriority,
+        sub_tick_order: i64,
+    ) {
+        match self {
+            Self::Full(chunk) => {
+                let tick = BlockTick {
+                    tick_type: block,
+                    pos,
+                    delay,
+                    priority,
+                    sub_tick_order,
+                };
+                if chunk.block_ticks.lock().schedule(tick) {
+                    chunk.dirty.store(true, Ordering::Release);
+                }
+            }
+            Self::Proto(proto_chunk) => proto_chunk.schedule_block_tick(pos, block, priority),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Schedules a fluid tick on either a full or proto chunk.
+    pub fn schedule_fluid_tick(
+        &self,
+        pos: BlockPos,
+        fluid: FluidRef,
+        delay: i32,
+        priority: TickPriority,
+        sub_tick_order: i64,
+    ) {
+        match self {
+            Self::Full(chunk) => {
+                let tick = FluidTick {
+                    tick_type: fluid,
+                    pos,
+                    delay,
+                    priority,
+                    sub_tick_order,
+                };
+                if chunk.fluid_ticks.lock().schedule(tick) {
+                    chunk.dirty.store(true, Ordering::Release);
+                }
+            }
+            Self::Proto(proto_chunk) => proto_chunk.schedule_fluid_tick(pos, fluid, priority),
             Self::Unloaded => unreachable!(),
         }
     }

@@ -212,6 +212,8 @@ impl LevelChunk {
         let structure_starts = proto_chunk.structure_starts.into_inner();
         let structure_references = proto_chunk.structure_references.into_inner();
         let postprocessing = proto_chunk.postprocessing.into_inner();
+        let block_ticks = proto_chunk.block_ticks.into_inner();
+        let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -225,8 +227,8 @@ impl LevelChunk {
             level,
             block_entities: BlockEntityStorage::new(),
             entities: EntityStorage::new(),
-            block_ticks: SyncMutex::new(BlockTickList::new()),
-            fluid_ticks: SyncMutex::new(FluidTickList::new()),
+            block_ticks: SyncMutex::new(block_ticks),
+            fluid_ticks: SyncMutex::new(fluid_ticks),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),

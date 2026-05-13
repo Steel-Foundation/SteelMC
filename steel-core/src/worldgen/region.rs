@@ -4,9 +4,13 @@
 //! stay inside the stage's block-state write radius. `WorldGenRegion` centralizes that
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicI64, Ordering},
+};
 
 use parking_lot::RwLockReadGuard;
+use steel_registry::{blocks::BlockRef, fluid::FluidRef};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 
 use crate::chunk::{
@@ -17,6 +21,7 @@ use crate::chunk::{
     heightmap::HeightmapType,
 };
 use crate::world::LevelReader;
+use crate::world::tick_scheduler::TickPriority;
 use crate::worldgen::context::WorldGenContext;
 
 /// Chunk-cache backed worldgen view for the current generation step.
@@ -30,6 +35,7 @@ pub struct WorldGenRegion<'a> {
     step: &'a ChunkStep,
     cache: &'a StaticCache2D<Arc<ChunkHolder>>,
     center: ChunkPos,
+    sub_tick_count: AtomicI64,
 }
 
 impl<'a> WorldGenRegion<'a> {
@@ -46,6 +52,7 @@ impl<'a> WorldGenRegion<'a> {
             step,
             cache,
             center,
+            sub_tick_count: AtomicI64::new(0),
         }
     }
 
@@ -192,37 +199,76 @@ impl<'a> WorldGenRegion<'a> {
     /// direct dependencies, or if the holder has not reached the declared status.
     #[must_use]
     pub fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
-        let chunk_x = SectionPos::block_to_section_coord(pos.x());
-        let chunk_z = SectionPos::block_to_section_coord(pos.z());
-
-        if !self.can_write_to_chunk(chunk_x, chunk_z) {
-            log::error!(
-                "Worldgen attempted to write block at ({}, {}, {}) outside {:?} write radius {} centered on ({}, {})",
-                pos.x(),
-                pos.y(),
-                pos.z(),
-                self.step.target_status,
-                self.step.block_state_write_radius,
-                self.center.0.x,
-                self.center.0.y,
-            );
+        let Some((chunk_x, chunk_z, status)) = self.writable_chunk_for_pos(pos, "write block")
+        else {
             return false;
-        }
-
-        let Some(status) = self.required_status_at(chunk_x, chunk_z) else {
-            panic!(
-                "Worldgen attempted to write block at ({}, {}, {}) in chunk ({chunk_x}, {chunk_z}), \
-                 but {:?} declares no direct dependency for that chunk",
-                pos.x(),
-                pos.y(),
-                pos.z(),
-                self.step.target_status,
-            );
         };
 
         self.chunk(chunk_x, chunk_z, status)
             .set_block_state(pos, state, flags);
         true
+    }
+
+    /// Schedules a block tick through the same region write contract as block placement.
+    #[must_use]
+    pub fn schedule_block_tick(
+        &self,
+        pos: BlockPos,
+        block: BlockRef,
+        delay: i32,
+        priority: TickPriority,
+    ) -> bool {
+        let Some((chunk_x, chunk_z, status)) =
+            self.writable_chunk_for_pos(pos, "schedule block tick")
+        else {
+            return false;
+        };
+        let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
+        self.chunk(chunk_x, chunk_z, status).schedule_block_tick(
+            pos,
+            block,
+            delay,
+            priority,
+            sub_tick_order,
+        );
+        true
+    }
+
+    /// Schedules a block tick with vanilla's normal priority.
+    #[must_use]
+    pub fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool {
+        self.schedule_block_tick(pos, block, delay, TickPriority::Normal)
+    }
+
+    /// Schedules a fluid tick through the same region write contract as block placement.
+    #[must_use]
+    pub fn schedule_fluid_tick(
+        &self,
+        pos: BlockPos,
+        fluid: FluidRef,
+        delay: i32,
+        priority: TickPriority,
+    ) -> bool {
+        let Some((chunk_x, chunk_z, status)) =
+            self.writable_chunk_for_pos(pos, "schedule fluid tick")
+        else {
+            return false;
+        };
+        let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
+        self.chunk(chunk_x, chunk_z, status).schedule_fluid_tick(
+            pos,
+            fluid,
+            delay,
+            priority,
+            sub_tick_order,
+        );
+        true
+    }
+
+    /// Schedules a fluid tick with vanilla's normal priority.
+    #[must_use]
+    pub fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
+        self.schedule_fluid_tick(pos, fluid, delay, TickPriority::Normal)
     }
 
     /// Marks a position for vanilla proto-chunk postprocessing after full promotion.
@@ -256,6 +302,42 @@ impl<'a> WorldGenRegion<'a> {
         };
 
         height
+    }
+
+    fn writable_chunk_for_pos(
+        &self,
+        pos: BlockPos,
+        action: &str,
+    ) -> Option<(i32, i32, ChunkStatus)> {
+        let chunk_x = SectionPos::block_to_section_coord(pos.x());
+        let chunk_z = SectionPos::block_to_section_coord(pos.z());
+
+        if !self.can_write_to_chunk(chunk_x, chunk_z) {
+            log::error!(
+                "Worldgen attempted to {action} at ({}, {}, {}) outside {:?} write radius {} centered on ({}, {})",
+                pos.x(),
+                pos.y(),
+                pos.z(),
+                self.step.target_status,
+                self.step.block_state_write_radius,
+                self.center.0.x,
+                self.center.0.y,
+            );
+            return None;
+        }
+
+        let Some(status) = self.required_status_at(chunk_x, chunk_z) else {
+            panic!(
+                "Worldgen attempted to {action} at ({}, {}, {}) in chunk ({chunk_x}, {chunk_z}), \
+                 but {:?} declares no direct dependency for that chunk",
+                pos.x(),
+                pos.y(),
+                pos.z(),
+                self.step.target_status,
+            );
+        };
+
+        Some((chunk_x, chunk_z, status))
     }
 
     const fn chessboard_distance(center: ChunkPos, chunk_x: i32, chunk_z: i32) -> usize {
