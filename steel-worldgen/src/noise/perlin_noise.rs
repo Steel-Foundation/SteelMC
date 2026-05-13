@@ -323,9 +323,11 @@ mod tests {
             (100.0, 64.0, -100.0),
             (-4096.25, -32.5, 1024.75),
         ] {
-            assert_eq!(
-                noise.get_value(x, y, z),
-                noise.get_value_with_y_params(x, y, z, 0.0, 0.0, false),
+            assert!(
+                (noise.get_value(x, y, z)
+                    - noise.get_value_with_y_params(x, y, z, 0.0, 0.0, false))
+                .abs()
+                    < 1e-15
             );
         }
     }
@@ -393,7 +395,7 @@ mod tests {
             100_000_000.0,
             -100_000_000.0,
         ] {
-            assert_eq!(wrap(x), wrap_reference(x));
+            assert!((wrap(x) - wrap_reference(x)).abs() < 1e-15);
         }
     }
 }

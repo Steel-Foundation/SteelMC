@@ -7,6 +7,7 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+use std::mem;
 
 // ── JSON types ──────────────────────────────────────────────────────────────
 
@@ -405,11 +406,7 @@ fn condition_uses_preliminary_surface(condition: &SurfaceConditionJson) -> bool 
 /// Generate the complete `try_apply_surface_rule` function for a dimension.
 ///
 /// Returns the function token stream, condition noise IDs, and returned block states.
-pub fn generate_surface_rule_function(
-    rule: &SurfaceRuleJson,
-    min_y: i32,
-    height: i32,
-) -> (
+type SurfaceRuleFunctionArtifacts = (
     TokenStream,
     Vec<String>,
     Vec<String>,
@@ -418,13 +415,19 @@ pub fn generate_surface_rule_function(
     bool,
     bool,
     bool,
-) {
+);
+
+pub fn generate_surface_rule_function(
+    rule: &SurfaceRuleJson,
+    min_y: i32,
+    height: i32,
+) -> SurfaceRuleFunctionArtifacts {
     let uses_preliminary_surface = rule_uses_preliminary_surface(rule);
     let mut transpiler = SurfaceRuleTranspiler::new(min_y, height, uses_preliminary_surface);
     let body = transpiler.transpile_rule(rule);
-    let noise_ids = std::mem::take(&mut transpiler.noise_ids);
-    let gradient_ids = std::mem::take(&mut transpiler.gradient_ids);
-    let block_state_names = std::mem::take(&mut transpiler.block_state_names);
+    let noise_ids = mem::take(&mut transpiler.noise_ids);
+    let gradient_ids = mem::take(&mut transpiler.gradient_ids);
+    let block_state_names = mem::take(&mut transpiler.block_state_names);
     let uses_biome = transpiler.uses_biome;
     let uses_preliminary_surface = transpiler.uses_preliminary_surface;
     let uses_surface_secondary = transpiler.uses_surface_secondary;

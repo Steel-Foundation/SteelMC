@@ -596,9 +596,8 @@ mod tests {
             (1.25, 64.5, -30.75),
             (-1000.0, -20.25, 4096.5),
         ] {
-            assert_eq!(
-                noise.noise(x, y, z),
-                noise.noise_with_y_scale(x, y, z, 0.0, 0.0),
+            assert!(
+                (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
             );
         }
     }

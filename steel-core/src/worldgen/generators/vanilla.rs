@@ -173,7 +173,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             .all(|key| {
                 REGISTRY
                     .biomes
-                    .by_key(&key)
+                    .by_key(key)
                     .is_some_and(|biome| biome.carvers == first.carvers)
             })
             .then_some(first)
@@ -929,22 +929,21 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 }
 
                 // Frozen ocean iceberg extension: add packed ice and snow
-                if self.surface_extension_biomes.frozen_ocean {
-                    if let Some(surface_biome_id) = surface_biome_id
+                if self.surface_extension_biomes.frozen_ocean
+                    && let Some(surface_biome_id) = surface_biome_id
                         .filter(|id| *id == frozen_ocean_id || *id == deep_frozen_ocean_id)
-                    {
-                        self.surface_system.frozen_ocean_extension(
-                            chunk,
-                            surface_biome_id,
-                            local_x,
-                            local_z,
-                            block_x,
-                            block_z,
-                            start_height,
-                            min_surface_level,
-                            min_y,
-                        );
-                    }
+                {
+                    self.surface_system.frozen_ocean_extension(
+                        chunk,
+                        surface_biome_id,
+                        local_x,
+                        local_z,
+                        block_x,
+                        block_z,
+                        start_height,
+                        min_surface_level,
+                        min_y,
+                    );
                 }
             }
         }
