@@ -2,9 +2,9 @@
 //!
 //! Vanilla treats biome decoration as one ordered pass over structure pieces and placed
 //! features. This module builds the same per-step placed-feature ordering up front and
-//! drives the per-chunk decoration seed loop. Placed-feature modifiers execute normally;
-//! configured feature placement is the explicit no-op boundary until individual feature
-//! implementations are added.
+//! drives the per-chunk decoration seed loop. Placed-feature modifiers and selector
+//! configured features execute normally; concrete block-mutating configured features stay
+//! at the explicit no-op boundary until their foundations are implemented.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,7 +15,7 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::feature::{
     BlockPredicate, BlockStateData, ConfiguredFeatureKind, ConfiguredFeatureRef, FeatureHeightmap,
-    PlacedFeatureEntryRef, PlacementModifier,
+    PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier,
 };
 use steel_registry::{
     Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _, vanilla_blocks,
@@ -383,11 +383,18 @@ impl FeatureDecorationRunner {
             let Some(feature) = step_features.feature(feature_index) else {
                 panic!("decoration step {step} references missing feature index {feature_index}");
             };
-            Self::place_placed_feature(region, registry, random, origin, feature, biome_zoom_seed);
+            Self::place_placed_feature_entry(
+                region,
+                registry,
+                random,
+                origin,
+                feature,
+                biome_zoom_seed,
+            );
         }
     }
 
-    fn place_placed_feature(
+    fn place_placed_feature_entry(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -395,9 +402,32 @@ impl FeatureDecorationRunner {
         feature: PlacedFeatureEntryRef,
         biome_zoom_seed: i64,
     ) -> bool {
+        let Some(feature_id) = feature.try_id() else {
+            panic!("top-level placed feature {} is not registered", feature.key);
+        };
+        Self::place_placed_feature_data(
+            region,
+            registry,
+            random,
+            origin,
+            &feature.data,
+            Some(feature_id),
+            biome_zoom_seed,
+        )
+    }
+
+    fn place_placed_feature_data(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        origin: BlockPos,
+        feature: &PlacedFeatureData,
+        biome_filter_feature_id: Option<usize>,
+        biome_zoom_seed: i64,
+    ) -> bool {
         let mut positions = vec![origin];
 
-        for modifier in &feature.data.placement {
+        for modifier in &feature.placement {
             let mut next_positions = Vec::new();
             for position in positions {
                 next_positions.extend(Self::apply_placement_modifier(
@@ -405,7 +435,7 @@ impl FeatureDecorationRunner {
                     registry,
                     random,
                     position,
-                    feature,
+                    biome_filter_feature_id,
                     modifier,
                     biome_zoom_seed,
                 ));
@@ -423,11 +453,41 @@ impl FeatureDecorationRunner {
                 region,
                 registry,
                 random,
-                &feature.data.feature,
+                &feature.feature,
                 position,
+                biome_zoom_seed,
             );
         }
         placed
+    }
+
+    fn place_placed_feature_ref(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        origin: BlockPos,
+        feature: &PlacedFeatureRef,
+        biome_zoom_seed: i64,
+    ) -> bool {
+        let feature_data = match feature {
+            PlacedFeatureRef::Reference(key) => {
+                let Some(feature) = registry.placed_features.by_key(key) else {
+                    panic!("configured selector references unknown placed feature {key}");
+                };
+                &feature.data
+            }
+            PlacedFeatureRef::Inline(feature) => feature,
+        };
+
+        Self::place_placed_feature_data(
+            region,
+            registry,
+            random,
+            origin,
+            feature_data,
+            None,
+            biome_zoom_seed,
+        )
     }
 
     #[expect(
@@ -439,13 +499,19 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         random: &mut Xoroshiro,
         origin: BlockPos,
-        feature: PlacedFeatureEntryRef,
+        biome_filter_feature_id: Option<usize>,
         modifier: &PlacementModifier,
         biome_zoom_seed: i64,
     ) -> Vec<BlockPos> {
         match modifier {
             PlacementModifier::Biome => {
-                if Self::biome_allows_feature(region, registry, biome_zoom_seed, origin, feature) {
+                if Self::biome_allows_feature(
+                    region,
+                    registry,
+                    biome_zoom_seed,
+                    origin,
+                    biome_filter_feature_id,
+                ) {
                     vec![origin]
                 } else {
                     Vec::new()
@@ -591,15 +657,78 @@ impl FeatureDecorationRunner {
     }
 
     fn place_configured_feature(
-        _region: &mut WorldGenRegion<'_>,
+        region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        _random: &mut Xoroshiro,
+        random: &mut Xoroshiro,
         feature: &ConfiguredFeatureRef,
-        _origin: BlockPos,
+        origin: BlockPos,
+        biome_zoom_seed: i64,
     ) -> bool {
-        let _configured_feature = Self::configured_feature_kind(registry, feature);
-        // TODO: Dispatch configured feature implementations as they are added.
-        false
+        match Self::configured_feature_kind(registry, feature) {
+            ConfiguredFeatureKind::RandomBooleanSelector(config) => {
+                let selected_feature = if random.next_bool() {
+                    &config.feature_true
+                } else {
+                    &config.feature_false
+                };
+                Self::place_placed_feature_ref(
+                    region,
+                    registry,
+                    random,
+                    origin,
+                    selected_feature,
+                    biome_zoom_seed,
+                )
+            }
+            ConfiguredFeatureKind::RandomSelector(config) => {
+                for weighted_feature in &config.features {
+                    if random.next_f32() < weighted_feature.chance {
+                        return Self::place_placed_feature_ref(
+                            region,
+                            registry,
+                            random,
+                            origin,
+                            &weighted_feature.feature,
+                            biome_zoom_seed,
+                        );
+                    }
+                }
+
+                Self::place_placed_feature_ref(
+                    region,
+                    registry,
+                    random,
+                    origin,
+                    &config.default,
+                    biome_zoom_seed,
+                )
+            }
+            ConfiguredFeatureKind::SimpleRandomSelector(config) => {
+                assert!(
+                    !config.features.is_empty(),
+                    "simple random selector feature list must not be empty"
+                );
+                let Ok(feature_count) = i32::try_from(config.features.len()) else {
+                    panic!(
+                        "simple random selector feature count {} exceeds i32 range",
+                        config.features.len()
+                    );
+                };
+                let feature_index = random.next_i32_bounded(feature_count) as usize;
+                Self::place_placed_feature_ref(
+                    region,
+                    registry,
+                    random,
+                    origin,
+                    &config.features[feature_index],
+                    biome_zoom_seed,
+                )
+            }
+            _ => {
+                // TODO: Dispatch concrete block-mutating feature implementations as they are added.
+                false
+            }
+        }
     }
 
     fn configured_feature_kind<'a>(
@@ -765,7 +894,7 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         biome_zoom_seed: i64,
         origin: BlockPos,
-        feature: PlacedFeatureEntryRef,
+        biome_filter_feature_id: Option<usize>,
     ) -> bool {
         let biome_id = fuzzed_biome_at_block(
             biome_zoom_seed,
@@ -777,10 +906,9 @@ impl FeatureDecorationRunner {
         let Some(biome) = registry.biomes.by_id(usize::from(biome_id)) else {
             panic!("biome filter resolved unknown biome id {biome_id}");
         };
-        let Some(feature_id) = feature.try_id() else {
+        let Some(feature_id) = biome_filter_feature_id else {
             panic!(
-                "biome filter received unregistered placed feature {}",
-                feature.key
+                "Tried to biome check an unregistered feature, or a feature that should not restrict the biome"
             );
         };
 
