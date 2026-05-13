@@ -336,7 +336,7 @@ impl LevelChunk {
             let section_y = Self::section_y_from_section_index(min_y, section_index);
             for packed in packed_offsets {
                 let pos = ProtoChunk::unpack_postprocessing_offset(packed, section_y, chunk_pos);
-                let state = world.get_block_state(pos);
+                let state = world.get_postprocessing_block_state(pos);
                 let fluid_state = state.get_fluid_state();
 
                 if !fluid_state.is_empty() {
@@ -370,7 +370,7 @@ impl LevelChunk {
         let mut updated = state;
         for direction in Direction::UPDATE_SHAPE_ORDER {
             let neighbor_pos = pos.relative(direction);
-            let neighbor_state = world.get_block_state(neighbor_pos);
+            let neighbor_state = world.get_postprocessing_block_state(neighbor_pos);
             let behavior = BLOCK_BEHAVIORS.get_behavior(updated.get_block());
             updated =
                 behavior.update_shape(updated, world, pos, direction, neighbor_pos, neighbor_state);
