@@ -228,13 +228,13 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn can_attach_to_multiface(
         region: &WorldGenRegion<'_>,
         pos: BlockPos,
-        direction_towards_neighbour: Direction,
+        direction_towards_neighbor: Direction,
     ) -> bool {
-        let neighbour_pos = pos.relative(direction_towards_neighbour);
-        let neighbour_state = region.block_state(neighbour_pos);
-        let support_direction = direction_towards_neighbour.opposite();
-        shapes::is_face_full(neighbour_state.get_support_shape(), support_direction)
-            || shapes::is_face_full(neighbour_state.get_collision_shape(), support_direction)
+        let neighbor_pos = pos.relative(direction_towards_neighbor);
+        let neighbor_state = region.block_state(neighbor_pos);
+        let support_direction = direction_towards_neighbor.opposite();
+        shapes::is_face_full(neighbor_state.get_support_shape(), support_direction)
+            || shapes::is_face_full(neighbor_state.get_collision_shape(), support_direction)
     }
 
     pub(in crate::worldgen::feature) fn mossy_carpet_has_faces(state: BlockStateId) -> bool {
