@@ -20,6 +20,50 @@ impl FeatureDecorationRunner {
         Direction::East,
     ];
 
+    pub(super) const fn manhattan_distance(left: BlockPos, right: BlockPos) -> i32 {
+        Self::abs_diff(left.x(), right.x())
+            + Self::abs_diff(left.y(), right.y())
+            + Self::abs_diff(left.z(), right.z())
+    }
+
+    pub(super) fn for_each_vanilla_within_manhattan(
+        origin: BlockPos,
+        reach_x: i32,
+        reach_y: i32,
+        reach_z: i32,
+        mut visitor: impl FnMut(BlockPos) -> bool,
+    ) {
+        let max_depth = reach_x + reach_y + reach_z;
+        for current_depth in 0..=max_depth {
+            let max_x = reach_x.min(current_depth);
+            for x in -max_x..=max_x {
+                let max_y = reach_y.min(current_depth - x.abs());
+                for y in -max_y..=max_y {
+                    let z = current_depth - x.abs() - y.abs();
+                    if z > reach_z {
+                        continue;
+                    }
+
+                    if !visitor(origin.offset(x, y, z)) {
+                        return;
+                    }
+
+                    if z != 0 && !visitor(origin.offset(x, y, -z)) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    const fn abs_diff(left: i32, right: i32) -> i32 {
+        if left >= right {
+            left - right
+        } else {
+            right - left
+        }
+    }
+
     #[must_use]
     pub(crate) fn new(possible_biomes: &[BiomeRef], registry: &Registry) -> Self {
         let mut source_biome_ids = FxHashSet::default();

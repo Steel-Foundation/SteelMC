@@ -6,12 +6,13 @@ pub(super) use steel_registry::blocks::{
     properties::DoubleBlockHalf, properties::EnumProperty, properties::WallSide, shapes,
 };
 pub(super) use steel_registry::feature::{
-    BlockBlobConfiguration, BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate,
-    BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
-    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FluidStateData,
-    IdentifierList, NoiseProvider, NoiseThresholdProvider, OreConfiguration, OreTarget,
-    PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, RuleTest,
-    SimpleBlockConfiguration, SpringConfiguration,
+    BasaltColumnsConfiguration, BlockBlobConfiguration, BlockColumnConfiguration,
+    BlockPileConfiguration, BlockPredicate, BlockStateData, BlockStateProvider,
+    ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
+    DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FluidStateData, IdentifierList,
+    NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
+    OreTarget, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier,
+    RuleTest, SimpleBlockConfiguration, SpringConfiguration,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{

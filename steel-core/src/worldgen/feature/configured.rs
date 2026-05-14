@@ -37,11 +37,18 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "block_column", place_block_column);
         register(&mut placers, "block_pile", place_block_pile);
         register(&mut placers, "disk", place_disk);
+        register(&mut placers, "basalt_columns", place_basalt_columns);
         register(&mut placers, "basalt_pillar", place_basalt_pillar);
         register(&mut placers, "blue_ice", place_blue_ice);
+        register(&mut placers, "delta_feature", place_delta_feature);
         register(&mut placers, "end_island", place_end_island);
         register(&mut placers, "end_platform", place_end_platform);
         register(&mut placers, "glowstone_blob", place_glowstone_blob);
+        register(
+            &mut placers,
+            "netherrack_replace_blobs",
+            place_netherrack_replace_blobs,
+        );
         register(&mut placers, "vines", place_vines);
         register(
             &mut placers,
@@ -423,6 +430,21 @@ fn place_basalt_pillar(
     )
 }
 
+fn place_basalt_columns(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BasaltColumns(config) = kind else {
+        panic!("basalt_columns placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_basalt_columns_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
 fn place_blue_ice(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -431,6 +453,22 @@ fn place_blue_ice(
         panic!("blue_ice placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_blue_ice_feature(context.region, context.random, context.origin)
+}
+
+fn place_delta_feature(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::DeltaFeature(config) = kind else {
+        panic!("delta_feature placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_delta_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
 }
 
 fn place_end_island(
@@ -467,6 +505,22 @@ fn place_glowstone_blob(
     FeatureDecorationRunner::place_glowstone_blob_feature(
         context.region,
         context.random,
+        context.origin,
+    )
+}
+
+fn place_netherrack_replace_blobs(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::NetherrackReplaceBlobs(config) = kind else {
+        panic!("netherrack_replace_blobs placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_netherrack_replace_blobs_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
         context.origin,
     )
 }

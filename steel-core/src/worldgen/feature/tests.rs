@@ -6,7 +6,7 @@ use super::runner::FeatureDecorationRunner;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::feature::FluidStateData;
 use steel_registry::{vanilla_blocks, vanilla_fluids};
-use steel_utils::Identifier;
+use steel_utils::{BlockPos, Identifier};
 
 use crate::worldgen::BiomeSourceKind;
 
@@ -21,6 +21,34 @@ fn feature_direction_order_matches_java_direction_values() {
             steel_utils::Direction::South,
             steel_utils::Direction::West,
             steel_utils::Direction::East,
+        ]
+    );
+}
+
+#[test]
+fn within_manhattan_iteration_starts_in_vanilla_order() {
+    let mut positions = Vec::new();
+    FeatureDecorationRunner::for_each_vanilla_within_manhattan(
+        BlockPos::new(10, 20, 30),
+        1,
+        1,
+        1,
+        |pos| {
+            positions.push(pos);
+            positions.len() < 7
+        },
+    );
+
+    assert_eq!(
+        positions,
+        [
+            BlockPos::new(10, 20, 30),
+            BlockPos::new(9, 20, 30),
+            BlockPos::new(10, 19, 30),
+            BlockPos::new(10, 20, 31),
+            BlockPos::new(10, 20, 29),
+            BlockPos::new(10, 21, 30),
+            BlockPos::new(11, 20, 30),
         ]
     );
 }
