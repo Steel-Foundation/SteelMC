@@ -5,6 +5,8 @@ mod block_blob;
 mod block_column;
 mod block_pile;
 mod blue_ice;
+mod chorus_plant;
+mod coral;
 mod delta;
 mod disk;
 mod end_island;

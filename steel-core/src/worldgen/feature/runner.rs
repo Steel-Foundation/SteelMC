@@ -20,6 +20,31 @@ impl FeatureDecorationRunner {
         Direction::East,
     ];
 
+    pub(super) const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
+        Direction::North,
+        Direction::East,
+        Direction::South,
+        Direction::West,
+    ];
+
+    pub(super) fn random_horizontal_direction(random: &mut Xoroshiro) -> Direction {
+        Self::VANILLA_HORIZONTAL_DIRECTIONS[random.next_i32_bounded(4) as usize]
+    }
+
+    pub(super) fn shuffled_directions<const N: usize>(
+        random: &mut Xoroshiro,
+        mut directions: [Direction; N],
+    ) -> [Direction; N] {
+        for i in (1..N).rev() {
+            let Ok(bound) = i32::try_from(i + 1) else {
+                panic!("direction shuffle length {N} exceeds i32 range");
+            };
+            let j = random.next_i32_bounded(bound) as usize;
+            directions.swap(i, j);
+        }
+        directions
+    }
+
     pub(super) const fn manhattan_distance(left: BlockPos, right: BlockPos) -> i32 {
         Self::abs_diff(left.x(), right.x())
             + Self::abs_diff(left.y(), right.y())

@@ -26,6 +26,19 @@ fn feature_direction_order_matches_java_direction_values() {
 }
 
 #[test]
+fn feature_horizontal_direction_order_matches_java_plane_horizontal() {
+    assert_eq!(
+        FeatureDecorationRunner::VANILLA_HORIZONTAL_DIRECTIONS,
+        [
+            steel_utils::Direction::North,
+            steel_utils::Direction::East,
+            steel_utils::Direction::South,
+            steel_utils::Direction::West,
+        ]
+    );
+}
+
+#[test]
 fn within_manhattan_iteration_starts_in_vanilla_order() {
     let mut positions = Vec::new();
     FeatureDecorationRunner::for_each_vanilla_within_manhattan(

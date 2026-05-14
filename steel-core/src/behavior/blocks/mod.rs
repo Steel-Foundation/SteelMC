@@ -25,10 +25,10 @@ pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
-    AzaleaBlock, BambooStalkBlock, BushBlock, CarpetBlock, DoublePlantBlock, DryVegetationBlock,
-    FireflyBushBlock, FlowerBedBlock, FlowerBlock, KelpBlock, KelpPlantBlock, LeafLitterBlock,
-    LilyPadBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
-    NetherSproutsBlock, SeaPickleBlock, SeagrassBlock, ShortDryGrassBlock, SmallDripleafBlock,
-    SporeBlossomBlock, SweetBerryBushBlock, TallDryGrassBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, WitherRoseBlock,
+    AzaleaBlock, BambooStalkBlock, BushBlock, CarpetBlock, ChorusFlowerBlock, ChorusPlantBlock,
+    DoublePlantBlock, DryVegetationBlock, FireflyBushBlock, FlowerBedBlock, FlowerBlock, KelpBlock,
+    KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MossyCarpetBlock, MushroomBlock,
+    NetherFungusBlock, NetherRootsBlock, NetherSproutsBlock, SeaPickleBlock, SeagrassBlock,
+    ShortDryGrassBlock, SmallDripleafBlock, SporeBlossomBlock, SweetBerryBushBlock,
+    TallDryGrassBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, WitherRoseBlock,
 };
