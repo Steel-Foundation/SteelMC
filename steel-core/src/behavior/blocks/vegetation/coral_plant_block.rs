@@ -39,6 +39,9 @@ impl BlockBehavior for CoralPlantBlock {
         }
         // Vanilla: WATERLOGGED reflects whether the click position has a full
         // water source.
-        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_water_source()))
+        Some(state.set_value(
+            &BlockStateProperties::WATERLOGGED,
+            context.is_water_source(),
+        ))
     }
 }

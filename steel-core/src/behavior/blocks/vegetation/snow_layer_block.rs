@@ -36,17 +36,17 @@ impl BlockBehavior for SnowLayerBlock {
         let below = world.get_block_state(pos.below());
         let below_block = below.get_block();
 
-        if REGISTRY
-            .blocks
-            .is_in_tag(below_block, &vanilla_block_tags::CANNOT_SUPPORT_SNOW_LAYER_TAG)
-        {
+        if REGISTRY.blocks.is_in_tag(
+            below_block,
+            &vanilla_block_tags::CANNOT_SUPPORT_SNOW_LAYER_TAG,
+        ) {
             return false;
         }
 
-        if REGISTRY
-            .blocks
-            .is_in_tag(below_block, &vanilla_block_tags::SUPPORT_OVERRIDE_SNOW_LAYER_TAG)
-        {
+        if REGISTRY.blocks.is_in_tag(
+            below_block,
+            &vanilla_block_tags::SUPPORT_OVERRIDE_SNOW_LAYER_TAG,
+        ) {
             return true;
         }
 

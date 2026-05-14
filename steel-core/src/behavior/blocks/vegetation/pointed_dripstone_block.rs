@@ -50,6 +50,9 @@ impl BlockBehavior for PointedDripstoneBlock {
         // and computes thickness. Placeholder: default state if it survives.
         let state = self.block.default_state();
         self.can_survive(state, context.world, context.relative_pos)
-            .then_some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_water_source()))
+            .then_some(state.set_value(
+                &BlockStateProperties::WATERLOGGED,
+                context.is_water_source(),
+            ))
     }
 }

@@ -40,9 +40,10 @@ impl BlockBehavior for MangrovePropaguleBlock {
         }
 
         let below = world.get_block_state(pos.below());
-        REGISTRY
-            .blocks
-            .is_in_tag(below.get_block(), &vanilla_block_tags::SUPPORTS_MANGROVE_PROPAGULE_TAG)
+        REGISTRY.blocks.is_in_tag(
+            below.get_block(),
+            &vanilla_block_tags::SUPPORTS_MANGROVE_PROPAGULE_TAG,
+        )
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

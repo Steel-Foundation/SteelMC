@@ -42,6 +42,9 @@ impl BlockBehavior for BigDripleafBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
         self.can_survive(state, context.world, context.relative_pos)
-            .then_some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_water_source()))
+            .then_some(state.set_value(
+                &BlockStateProperties::WATERLOGGED,
+                context.is_water_source(),
+            ))
     }
 }

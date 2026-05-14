@@ -153,9 +153,7 @@ pub fn init_block_entities() {
 
     // Register beehive block entity factory
     registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
-        Arc::new(SyncMutex::new(BeehiveBlockEntity::new(
-            level, pos, state,
-        )))
+        Arc::new(SyncMutex::new(BeehiveBlockEntity::new(level, pos, state)))
     });
 
     assert!(

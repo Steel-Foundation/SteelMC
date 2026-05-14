@@ -413,7 +413,8 @@ impl ProtoChunk {
             if let Some(existing) = self.get_block_entity(pos) {
                 existing.lock().set_block_state(state);
                 self.update_block_entity_ticker(&existing);
-            } else if let Some(entity) = new_behavior.new_block_entity(self.level.clone(), pos, state)
+            } else if let Some(entity) =
+                new_behavior.new_block_entity(self.level.clone(), pos, state)
             {
                 self.add_and_register_block_entity(entity);
             }

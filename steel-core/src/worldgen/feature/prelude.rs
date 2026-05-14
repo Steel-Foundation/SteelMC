@@ -16,7 +16,7 @@ pub(super) use steel_registry::feature::{
     NoiseThresholdProvider, OreConfiguration, OreTarget, PlacedFeatureData, PlacedFeatureEntryRef,
     PlacedFeatureRef, PlacementModifier, RuleTest, SeaPickleConfiguration, SeagrassConfiguration,
     SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
-    TrunkPlacer, TwistingVinesConfiguration,
+    TreeDecorator, TrunkPlacer, TwistingVinesConfiguration,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{

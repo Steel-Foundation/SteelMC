@@ -1,6 +1,6 @@
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::sync::{Arc, Once, Weak};
 use std::time::Duration;
@@ -19,7 +19,7 @@ use steel_core::worldgen::{
     NetherGenerator, OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
-use steel_registry::{vanilla_dimension_types, Registry, REGISTRY};
+use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use tokio::runtime::Builder as RuntimeBuilder;

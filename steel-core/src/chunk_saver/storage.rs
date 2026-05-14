@@ -1515,7 +1515,9 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let block_pos = BlockPos::new(3, 4, 5);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-        let barrel = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::BARREL);
+        let barrel = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::BARREL);
         proto.set_block_state(block_pos, barrel, UpdateFlags::UPDATE_NONE);
 
         assert!(proto.get_block_entity(block_pos).is_some());
