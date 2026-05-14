@@ -9,6 +9,17 @@ const BEEHIVE_SPAWN_DIRECTIONS: [Direction; 3] =
     [Direction::East, Direction::South, Direction::West];
 
 impl FeatureDecorationRunner {
+    pub(super) const fn tree_decorator_supported(decorator: &TreeDecorator) -> bool {
+        matches!(
+            decorator,
+            TreeDecorator::AlterGround { .. }
+                | TreeDecorator::Beehive { .. }
+                | TreeDecorator::Cocoa { .. }
+                | TreeDecorator::LeaveVine { .. }
+                | TreeDecorator::TrunkVine
+        )
+    }
+
     pub(super) fn place_tree_decorators(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
@@ -18,6 +29,11 @@ impl FeatureDecorationRunner {
     ) {
         for decorator in &config.decorators {
             match decorator {
+                TreeDecorator::AlterGround { provider } => {
+                    Self::place_alter_ground_tree_decorator(
+                        region, registry, random, provider, placement,
+                    );
+                }
                 TreeDecorator::Beehive { probability } => {
                     Self::place_beehive_tree_decorator(
                         region,
@@ -27,11 +43,22 @@ impl FeatureDecorationRunner {
                         placement,
                     );
                 }
-                TreeDecorator::AlterGround { .. }
-                | TreeDecorator::Cocoa { .. }
-                | TreeDecorator::CreakingHeart { .. }
-                | TreeDecorator::LeaveVine { .. }
-                | TreeDecorator::TrunkVine
+                TreeDecorator::Cocoa { probability } => {
+                    Self::place_cocoa_tree_decorator(
+                        region,
+                        registry,
+                        random,
+                        *probability,
+                        placement,
+                    );
+                }
+                TreeDecorator::LeaveVine { probability } => {
+                    Self::place_leave_vine_tree_decorator(region, random, *probability, placement);
+                }
+                TreeDecorator::TrunkVine => {
+                    Self::place_trunk_vine_tree_decorator(region, random, placement);
+                }
+                TreeDecorator::CreakingHeart { .. }
                 | TreeDecorator::AttachedToLeaves(_)
                 | TreeDecorator::AttachedToLogs(_)
                 | TreeDecorator::PlaceOnGround(_)
@@ -41,6 +68,298 @@ impl FeatureDecorationRunner {
                     );
                 }
             }
+        }
+    }
+
+    fn place_alter_ground_tree_decorator(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &BlockStateProvider,
+        placement: &mut TreePlacement,
+    ) {
+        let positions = Self::lowest_tree_trunks_or_roots(placement);
+        let Some(first_pos) = positions.first() else {
+            return;
+        };
+        let min_y = first_pos.y();
+
+        for pos in positions.into_iter().filter(|pos| pos.y() == min_y) {
+            Self::place_alter_ground_circle(
+                region,
+                registry,
+                random,
+                provider,
+                pos.offset(-1, 0, -1),
+                placement,
+            );
+            Self::place_alter_ground_circle(
+                region,
+                registry,
+                random,
+                provider,
+                pos.offset(2, 0, -1),
+                placement,
+            );
+            Self::place_alter_ground_circle(
+                region,
+                registry,
+                random,
+                provider,
+                pos.offset(-1, 0, 2),
+                placement,
+            );
+            Self::place_alter_ground_circle(
+                region,
+                registry,
+                random,
+                provider,
+                pos.offset(2, 0, 2),
+                placement,
+            );
+
+            for _ in 0..5 {
+                let placement_offset = random.next_i32_bounded(64);
+                let x = placement_offset % 8;
+                let z = placement_offset / 8;
+                if x == 0 || x == 7 || z == 0 || z == 7 {
+                    Self::place_alter_ground_circle(
+                        region,
+                        registry,
+                        random,
+                        provider,
+                        pos.offset(-3 + x, 0, -3 + z),
+                        placement,
+                    );
+                }
+            }
+        }
+    }
+
+    fn place_alter_ground_circle(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &BlockStateProvider,
+        pos: BlockPos,
+        placement: &mut TreePlacement,
+    ) {
+        for x in -2i32..=2 {
+            for z in -2i32..=2 {
+                if x.abs() != 2 || z.abs() != 2 {
+                    Self::place_alter_ground_block_at(
+                        region,
+                        registry,
+                        random,
+                        provider,
+                        pos.offset(x, 0, z),
+                        placement,
+                    );
+                }
+            }
+        }
+    }
+
+    fn place_alter_ground_block_at(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &BlockStateProvider,
+        pos: BlockPos,
+        placement: &mut TreePlacement,
+    ) {
+        for y in (-3..=2).rev() {
+            let cursor = pos.above_n(y);
+            if let Some(state) = Self::sample_block_state_provider_optional(
+                region, registry, random, provider, cursor,
+            ) {
+                placement.set_decoration(region, cursor, state);
+                break;
+            }
+
+            if !region.block_state(cursor).is_air() && y < 0 {
+                break;
+            }
+        }
+    }
+
+    fn place_trunk_vine_tree_decorator(
+        region: &mut WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        placement: &mut TreePlacement,
+    ) {
+        for log in Self::sorted_tree_positions(&placement.trunks) {
+            if random.next_i32_bounded(3) > 0 {
+                Self::try_place_tree_vine(
+                    region,
+                    placement,
+                    log.relative(Direction::West),
+                    Direction::East,
+                );
+            }
+            if random.next_i32_bounded(3) > 0 {
+                Self::try_place_tree_vine(
+                    region,
+                    placement,
+                    log.relative(Direction::East),
+                    Direction::West,
+                );
+            }
+            if random.next_i32_bounded(3) > 0 {
+                Self::try_place_tree_vine(
+                    region,
+                    placement,
+                    log.relative(Direction::North),
+                    Direction::South,
+                );
+            }
+            if random.next_i32_bounded(3) > 0 {
+                Self::try_place_tree_vine(
+                    region,
+                    placement,
+                    log.relative(Direction::South),
+                    Direction::North,
+                );
+            }
+        }
+    }
+
+    fn place_leave_vine_tree_decorator(
+        region: &mut WorldGenRegion<'_>,
+        random: &mut Xoroshiro,
+        probability: f32,
+        placement: &mut TreePlacement,
+    ) {
+        for leaf in Self::sorted_tree_positions(&placement.foliage) {
+            if random.next_f32() < probability {
+                Self::try_place_hanging_tree_vine(
+                    region,
+                    placement,
+                    leaf.relative(Direction::West),
+                    Direction::East,
+                );
+            }
+            if random.next_f32() < probability {
+                Self::try_place_hanging_tree_vine(
+                    region,
+                    placement,
+                    leaf.relative(Direction::East),
+                    Direction::West,
+                );
+            }
+            if random.next_f32() < probability {
+                Self::try_place_hanging_tree_vine(
+                    region,
+                    placement,
+                    leaf.relative(Direction::North),
+                    Direction::South,
+                );
+            }
+            if random.next_f32() < probability {
+                Self::try_place_hanging_tree_vine(
+                    region,
+                    placement,
+                    leaf.relative(Direction::South),
+                    Direction::North,
+                );
+            }
+        }
+    }
+
+    fn try_place_hanging_tree_vine(
+        region: &mut WorldGenRegion<'_>,
+        placement: &mut TreePlacement,
+        pos: BlockPos,
+        vine_face: Direction,
+    ) {
+        if !Self::try_place_tree_vine(region, placement, pos, vine_face) {
+            return;
+        }
+
+        let mut pos = pos.below();
+        let mut max_length = 4;
+        while region.block_state(pos).is_air() && max_length > 0 {
+            Self::place_tree_vine(region, placement, pos, vine_face);
+            pos = pos.below();
+            max_length -= 1;
+        }
+    }
+
+    fn place_cocoa_tree_decorator(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        probability: f32,
+        placement: &mut TreePlacement,
+    ) {
+        if random.next_f32() >= probability {
+            return;
+        }
+
+        let logs = Self::sorted_tree_positions(&placement.trunks);
+        let Some(first_log) = logs.first() else {
+            return;
+        };
+        let tree_y = first_log.y();
+
+        for log in logs.into_iter().filter(|pos| pos.y() - tree_y <= 2) {
+            for direction in Self::VANILLA_HORIZONTAL_DIRECTIONS {
+                if random.next_f32() > 0.25 {
+                    continue;
+                }
+
+                let cocoa_pos = log.relative(direction.opposite());
+                if !region.block_state(cocoa_pos).is_air() {
+                    continue;
+                }
+
+                let age = random.next_i32_bounded(3) as u8;
+                let cocoa_state = registry
+                    .blocks
+                    .get_default_state_id(&vanilla_blocks::COCOA)
+                    .set_value(&BlockStateProperties::AGE_2, age)
+                    .set_value(&BlockStateProperties::HORIZONTAL_FACING, direction);
+                placement.set_decoration(region, cocoa_pos, cocoa_state);
+            }
+        }
+    }
+
+    fn try_place_tree_vine(
+        region: &mut WorldGenRegion<'_>,
+        placement: &mut TreePlacement,
+        pos: BlockPos,
+        vine_face: Direction,
+    ) -> bool {
+        if !region.block_state(pos).is_air() {
+            return false;
+        }
+
+        Self::place_tree_vine(region, placement, pos, vine_face);
+        true
+    }
+
+    fn place_tree_vine(
+        region: &mut WorldGenRegion<'_>,
+        placement: &mut TreePlacement,
+        pos: BlockPos,
+        vine_face: Direction,
+    ) {
+        placement.set_decoration(region, pos, Self::vine_state_for_face(vine_face));
+    }
+
+    fn lowest_tree_trunks_or_roots(placement: &TreePlacement) -> Vec<BlockPos> {
+        let roots = Self::sorted_tree_positions(&placement.roots);
+        let logs = Self::sorted_tree_positions(&placement.trunks);
+        if roots.is_empty() {
+            return logs;
+        }
+
+        if logs.first().is_some_and(|log| roots[0].y() == log.y()) {
+            let mut positions = logs;
+            positions.extend(roots);
+            positions
+        } else {
+            roots
         }
     }
 

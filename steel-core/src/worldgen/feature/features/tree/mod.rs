@@ -6,9 +6,6 @@ mod foliage;
 mod leaves;
 mod trunk;
 
-// TODO: Register `minecraft:tree` after the required trunk/foliage/root placers
-// and tree decorators are implemented.
-
 impl FeatureDecorationRunner {
     pub(crate) fn place_tree_feature(
         region: &mut WorldGenRegion<'_>,
@@ -17,6 +14,11 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         origin: BlockPos,
     ) -> bool {
+        // TODO: Remove this gate after all vanilla tree placers, root placers, and decorators exist.
+        if !Self::tree_configuration_supported(config) {
+            return false;
+        }
+
         let mut placement = TreePlacement::default();
         let placed = Self::do_place_tree(region, registry, random, config, origin, &mut placement);
         if !placed || (placement.trunks.is_empty() && placement.foliage.is_empty()) {
@@ -93,6 +95,13 @@ impl FeatureDecorationRunner {
         }
 
         true
+    }
+
+    fn tree_configuration_supported(config: &TreeConfiguration) -> bool {
+        config.root_placer.is_none()
+            && Self::tree_trunk_placer_supported(&config.trunk_placer)
+            && Self::tree_foliage_placer_supported(&config.foliage_placer)
+            && config.decorators.iter().all(Self::tree_decorator_supported)
     }
 
     const fn tree_min_clipped_height(feature_size: &FeatureSize) -> Option<i32> {

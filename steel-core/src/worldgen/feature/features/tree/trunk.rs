@@ -3,6 +3,13 @@ use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement};
 
 impl FeatureDecorationRunner {
+    pub(super) const fn tree_trunk_placer_supported(trunk_placer: &TrunkPlacer) -> bool {
+        matches!(
+            trunk_placer,
+            TrunkPlacer::Straight(_) | TrunkPlacer::Forking(_) | TrunkPlacer::Giant(_)
+        )
+    }
+
     pub(super) fn tree_height(random: &mut Xoroshiro, placer: &TrunkPlacer) -> i32 {
         match placer {
             TrunkPlacer::Straight(base)
@@ -68,6 +75,15 @@ impl FeatureDecorationRunner {
                 placement,
             ),
             TrunkPlacer::Forking(_) => Self::place_forking_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placement,
+            ),
+            TrunkPlacer::Giant(_) => Self::place_giant_tree_trunk(
                 region,
                 registry,
                 random,
@@ -183,6 +199,86 @@ impl FeatureDecorationRunner {
         }
 
         attachments
+    }
+
+    fn place_giant_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        let below = origin.below();
+        Self::place_below_trunk_block(region, registry, random, below, config, placement);
+        Self::place_below_trunk_block(
+            region,
+            registry,
+            random,
+            below.relative(Direction::East),
+            config,
+            placement,
+        );
+        Self::place_below_trunk_block(
+            region,
+            registry,
+            random,
+            below.relative(Direction::South),
+            config,
+            placement,
+        );
+        Self::place_below_trunk_block(
+            region,
+            registry,
+            random,
+            below.offset(1, 0, 1),
+            config,
+            placement,
+        );
+
+        for y in 0..tree_height {
+            let _ = Self::place_tree_log(
+                region,
+                registry,
+                random,
+                origin.above_n(y),
+                config,
+                placement,
+            );
+            if y < tree_height - 1 {
+                let _ = Self::place_tree_log(
+                    region,
+                    registry,
+                    random,
+                    origin.offset(1, y, 0),
+                    config,
+                    placement,
+                );
+                let _ = Self::place_tree_log(
+                    region,
+                    registry,
+                    random,
+                    origin.offset(1, y, 1),
+                    config,
+                    placement,
+                );
+                let _ = Self::place_tree_log(
+                    region,
+                    registry,
+                    random,
+                    origin.offset(0, y, 1),
+                    config,
+                    placement,
+                );
+            }
+        }
+
+        vec![FoliageAttachment {
+            pos: origin.above_n(tree_height),
+            radius_offset: 0,
+            double_trunk: true,
+        }]
     }
 
     fn place_below_trunk_block(

@@ -3,6 +3,18 @@ use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement, abs_i32};
 
 impl FeatureDecorationRunner {
+    pub(super) const fn tree_foliage_placer_supported(foliage_placer: &FoliagePlacer) -> bool {
+        matches!(
+            foliage_placer,
+            FoliagePlacer::Blob(_)
+                | FoliagePlacer::Bush(_)
+                | FoliagePlacer::Pine(_)
+                | FoliagePlacer::Spruce(_)
+                | FoliagePlacer::MegaPine(_)
+                | FoliagePlacer::Acacia(_)
+        )
+    }
+
     pub(super) fn tree_foliage_height(
         random: &mut Xoroshiro,
         tree_height: i32,
@@ -15,6 +27,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Spruce(placer) => {
                 (tree_height - placer.trunk_height.sample(random)).max(4)
             }
+            FoliagePlacer::MegaPine(placer) => placer.crown_height.sample(random),
             FoliagePlacer::Acacia(_) => 0,
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
@@ -34,6 +47,7 @@ impl FeatureDecorationRunner {
                 placer.radius.sample(random) + random.next_i32_bounded((trunk_height + 1).max(1))
             }
             FoliagePlacer::Spruce(placer) => placer.radius.sample(random),
+            FoliagePlacer::MegaPine(placer) => placer.radius.sample(random),
             FoliagePlacer::Acacia(placer) => placer.radius.sample(random),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
@@ -94,6 +108,16 @@ impl FeatureDecorationRunner {
                 leaf_radius,
                 placement,
             ),
+            FoliagePlacer::MegaPine(_) => Self::create_mega_pine_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                attachment,
+                foliage_height,
+                leaf_radius,
+                placement,
+            ),
             FoliagePlacer::Acacia(_) => Self::create_acacia_tree_foliage(
                 region,
                 registry,
@@ -107,6 +131,48 @@ impl FeatureDecorationRunner {
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
+        }
+    }
+
+    fn create_mega_pine_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        attachment: FoliageAttachment,
+        foliage_height: i32,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let offset = Self::tree_foliage_offset(random, &config.foliage_placer);
+        let mut previous_radius = 0;
+        let min_y = attachment.pos.y() - foliage_height + offset;
+        let max_y = attachment.pos.y() + offset;
+
+        for y in min_y..=max_y {
+            let y_offset = attachment.pos.y() - y;
+            let smooth_radius = leaf_radius
+                + attachment.radius_offset
+                + floor(y_offset as f64 / foliage_height as f64 * 3.5);
+            let jagged_radius = if y_offset > 0 && smooth_radius == previous_radius && (y & 1) == 0
+            {
+                smooth_radius + 1
+            } else {
+                smooth_radius
+            };
+            let row_origin = BlockPos::new(attachment.pos.x(), y, attachment.pos.z());
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                row_origin,
+                jagged_radius,
+                0,
+                attachment.double_trunk,
+                placement,
+            );
+            previous_radius = smooth_radius;
         }
     }
 
@@ -287,6 +353,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Bush(placer) => placer.offset.sample(random),
             FoliagePlacer::Pine(placer) => placer.offset.sample(random),
             FoliagePlacer::Spruce(placer) => placer.offset.sample(random),
+            FoliagePlacer::MegaPine(placer) => placer.offset.sample(random),
             FoliagePlacer::Acacia(placer) => placer.offset.sample(random),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
@@ -345,6 +412,9 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Pine(_) | FoliagePlacer::Spruce(_) => {
                 Self::conifer_foliage_should_skip_location(dx, dz, current_radius)
             }
+            FoliagePlacer::MegaPine(_) => {
+                Self::mega_pine_foliage_should_skip_location(dx, dz, current_radius)
+            }
             FoliagePlacer::Acacia(_) => {
                 Self::acacia_foliage_should_skip_location(dx, y, dz, current_radius)
             }
@@ -377,6 +447,10 @@ impl FeatureDecorationRunner {
 
     const fn conifer_foliage_should_skip_location(dx: i32, dz: i32, current_radius: i32) -> bool {
         dx == current_radius && dz == current_radius && current_radius > 0
+    }
+
+    const fn mega_pine_foliage_should_skip_location(dx: i32, dz: i32, current_radius: i32) -> bool {
+        dx + dz >= 7 || dx * dx + dz * dz > current_radius * current_radius
     }
 
     const fn acacia_foliage_should_skip_location(
@@ -456,5 +530,12 @@ mod tests {
         assert!(FeatureDecorationRunner::conifer_foliage_should_skip_location(2, 2, 2));
         assert!(!FeatureDecorationRunner::conifer_foliage_should_skip_location(1, 2, 2));
         assert!(!FeatureDecorationRunner::conifer_foliage_should_skip_location(0, 0, 0));
+    }
+
+    #[test]
+    fn mega_pine_uses_circular_row_cutoff_with_vanilla_seven_limit() {
+        assert!(FeatureDecorationRunner::mega_pine_foliage_should_skip_location(4, 3, 5));
+        assert!(FeatureDecorationRunner::mega_pine_foliage_should_skip_location(4, 4, 5));
+        assert!(!FeatureDecorationRunner::mega_pine_foliage_should_skip_location(3, 3, 5));
     }
 }

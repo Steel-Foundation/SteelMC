@@ -24,7 +24,7 @@ struct ConfiguredFeatureRuntimeRegistry {
 impl ConfiguredFeatureRuntimeRegistry {
     fn new_vanilla() -> Self {
         let mut placers = FxHashMap::default();
-        let mut pending_placers = FxHashMap::default();
+        let pending_placers = FxHashMap::default();
         register(
             &mut placers,
             "random_boolean_selector",
@@ -84,7 +84,7 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "spike", place_spike);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
-        register(&mut pending_placers, "tree", place_tree);
+        register(&mut placers, "tree", place_tree);
         Self {
             placers,
             pending_placers,

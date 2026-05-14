@@ -28,7 +28,7 @@ impl FeatureDecorationRunner {
         false
     }
 
-    fn vine_state_for_face(direction: Direction) -> BlockStateId {
+    pub(in crate::worldgen::feature) fn vine_state_for_face(direction: Direction) -> BlockStateId {
         let vine = vanilla_blocks::VINE.default_state();
         match direction {
             Direction::Up => vine.set_value(&BlockStateProperties::UP, true),
