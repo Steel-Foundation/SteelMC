@@ -51,6 +51,12 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "glowstone_blob", place_glowstone_blob);
         register(
             &mut placers,
+            "huge_brown_mushroom",
+            place_huge_brown_mushroom,
+        );
+        register(&mut placers, "huge_red_mushroom", place_huge_red_mushroom);
+        register(
+            &mut placers,
             "nether_forest_vegetation",
             place_nether_forest_vegetation,
         );
@@ -71,6 +77,7 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "kelp", place_kelp);
         register(&mut placers, "sea_pickle", place_sea_pickle);
         register(&mut placers, "seagrass", place_seagrass);
+        register(&mut placers, "spike", place_spike);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
         Self { placers }
@@ -599,6 +606,38 @@ fn place_glowstone_blob(
     )
 }
 
+fn place_huge_brown_mushroom(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::HugeBrownMushroom(config) = kind else {
+        panic!("huge_brown_mushroom placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_huge_brown_mushroom_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_huge_red_mushroom(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::HugeRedMushroom(config) = kind else {
+        panic!("huge_red_mushroom placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_huge_red_mushroom_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
 fn place_netherrack_replace_blobs(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -729,6 +768,22 @@ fn place_seagrass(
     };
     FeatureDecorationRunner::place_seagrass_feature(
         context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_spike(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Spike(config) = kind else {
+        panic!("spike placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_spike_feature(
+        context.region,
+        context.registry,
         context.random,
         config,
         context.origin,
