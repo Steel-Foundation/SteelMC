@@ -17,6 +17,7 @@ impl FeatureDecorationRunner {
                 | TreeDecorator::Cocoa { .. }
                 | TreeDecorator::LeaveVine { .. }
                 | TreeDecorator::TrunkVine
+                | TreeDecorator::PlaceOnGround(_)
         )
     }
 
@@ -58,10 +59,14 @@ impl FeatureDecorationRunner {
                 TreeDecorator::TrunkVine => {
                     Self::place_trunk_vine_tree_decorator(region, random, placement);
                 }
+                TreeDecorator::PlaceOnGround(decorator) => {
+                    Self::place_on_ground_tree_decorator(
+                        region, registry, random, decorator, placement,
+                    );
+                }
                 TreeDecorator::CreakingHeart { .. }
                 | TreeDecorator::AttachedToLeaves(_)
                 | TreeDecorator::AttachedToLogs(_)
-                | TreeDecorator::PlaceOnGround(_)
                 | TreeDecorator::PaleMoss { .. } => {
                     panic!(
                         "tree decorator requires runtime support before minecraft:tree can be registered"
@@ -181,6 +186,80 @@ impl FeatureDecorationRunner {
                 break;
             }
         }
+    }
+
+    fn place_on_ground_tree_decorator(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        decorator: &PlaceOnGroundDecorator,
+        placement: &mut TreePlacement,
+    ) {
+        let positions = Self::lowest_tree_trunks_or_roots(placement);
+        let Some(origin) = positions.first() else {
+            return;
+        };
+        let min_y = origin.y();
+        let mut min_x = origin.x();
+        let mut max_x = origin.x();
+        let mut min_z = origin.z();
+        let mut max_z = origin.z();
+
+        for position in positions {
+            if position.y() == min_y {
+                min_x = min_x.min(position.x());
+                max_x = max_x.max(position.x());
+                min_z = min_z.min(position.z());
+                max_z = max_z.max(position.z());
+            }
+        }
+
+        min_x -= decorator.radius;
+        max_x += decorator.radius;
+        min_z -= decorator.radius;
+        max_z += decorator.radius;
+        let min_y = min_y - decorator.height;
+        let max_y = min_y + decorator.height * 2;
+
+        for _ in 0..decorator.tries {
+            let pos = BlockPos::new(
+                random.next_i32_between(min_x, max_x),
+                random.next_i32_between(min_y, max_y),
+                random.next_i32_between(min_z, max_z),
+            );
+            Self::attempt_place_tree_ground_decorator(
+                region,
+                registry,
+                random,
+                &decorator.block_state_provider,
+                pos,
+                placement,
+            );
+        }
+    }
+
+    fn attempt_place_tree_ground_decorator(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        provider: &BlockStateProvider,
+        pos: BlockPos,
+        placement: &mut TreePlacement,
+    ) {
+        let above = pos.above();
+        let above_state = region.block_state(above);
+        if !above_state.is_air() && above_state.get_block() != &vanilla_blocks::VINE {
+            return;
+        }
+        if !region.block_state(pos).is_solid_render() {
+            return;
+        }
+        if region.height_at(HeightmapType::MotionBlockingNoLeaves, pos.x(), pos.z()) > above.y() {
+            return;
+        }
+
+        let state = Self::sample_block_state_provider(region, registry, random, provider, above);
+        placement.set_decoration(region, above, state);
     }
 
     fn place_trunk_vine_tree_decorator(

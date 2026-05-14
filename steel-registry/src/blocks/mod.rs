@@ -25,6 +25,12 @@ pub struct Block {
     pub support_shape: ShapeFn,
     /// Function to get outline shape for a state offset
     pub outline_shape: ShapeFn,
+    /// Function to get occlusion shape for a state offset
+    pub occlusion_shape: ShapeFn,
+    /// Function to get interaction shape for a state offset
+    pub interaction_shape: ShapeFn,
+    /// Function to get visual shape for a state offset
+    pub visual_shape: ShapeFn,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
 }
@@ -45,6 +51,11 @@ const fn full_block_shape(_offset: u16) -> &'static [shapes::AABB] {
     &[shapes::AABB::FULL_BLOCK]
 }
 
+/// Default interaction shape function that returns an empty shape.
+const fn empty_shape(_offset: u16) -> &'static [shapes::AABB] {
+    &[]
+}
+
 impl Block {
     pub const fn new(
         key: Identifier,
@@ -59,6 +70,9 @@ impl Block {
             collision_shape: full_block_shape,
             support_shape: full_block_shape,
             outline_shape: full_block_shape,
+            occlusion_shape: full_block_shape,
+            interaction_shape: empty_shape,
+            visual_shape: full_block_shape,
             id: OnceLock::new(),
         }
     }
@@ -69,10 +83,16 @@ impl Block {
         collision: ShapeFn,
         support: ShapeFn,
         outline: ShapeFn,
+        occlusion: ShapeFn,
+        interaction: ShapeFn,
+        visual: ShapeFn,
     ) -> Self {
         self.collision_shape = collision;
         self.support_shape = support;
         self.outline_shape = outline;
+        self.occlusion_shape = occlusion;
+        self.interaction_shape = interaction;
+        self.visual_shape = visual;
         self
     }
 
@@ -92,6 +112,24 @@ impl Block {
     #[inline]
     pub fn get_outline_shape(&self, offset: u16) -> &'static [shapes::AABB] {
         (self.outline_shape)(offset)
+    }
+
+    /// Gets the occlusion shape for a given state offset.
+    #[inline]
+    pub fn get_occlusion_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.occlusion_shape)(offset)
+    }
+
+    /// Gets the interaction shape for a given state offset.
+    #[inline]
+    pub fn get_interaction_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.interaction_shape)(offset)
+    }
+
+    /// Gets the visual shape for a given state offset.
+    #[inline]
+    pub fn get_visual_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.visual_shape)(offset)
     }
 
     /// Sets the default state offset for this block.
@@ -446,13 +484,11 @@ crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 
 // Shape lookup methods
 impl BlockRegistry {
-    /// Gets the collision shape for a block state.
-    ///
-    /// Returns a slice of AABBs that make up the collision shape.
-    /// For simple blocks this is typically a single full-block AABB.
-    /// For complex blocks like fences, this may be multiple AABBs.
-    #[must_use]
-    pub fn get_collision_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    fn shape_for_state(
+        &self,
+        state_id: BlockStateId,
+        shape: fn(&Block, u16) -> &'static [shapes::AABB],
+    ) -> &'static [shapes::AABB] {
         let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
         let Some(block) = block else {
             return &[shapes::AABB::FULL_BLOCK];
@@ -464,7 +500,17 @@ impl BlockRegistry {
             .unwrap_or(0);
         let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
         let offset = state_id.0.saturating_sub(base_state);
-        block.get_collision_shape(offset)
+        shape(block, offset)
+    }
+
+    /// Gets the collision shape for a block state.
+    ///
+    /// Returns a slice of AABBs that make up the collision shape.
+    /// For simple blocks this is typically a single full-block AABB.
+    /// For complex blocks like fences, this may be multiple AABBs.
+    #[must_use]
+    pub fn get_collision_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_collision_shape)
     }
 
     /// Gets the block support shape for a block state.
@@ -473,18 +519,7 @@ impl BlockRegistry {
     /// for `isFaceSturdy` and multiface side attachment.
     #[must_use]
     pub fn get_support_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
-        let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
-        let Some(block) = block else {
-            return &[shapes::AABB::FULL_BLOCK];
-        };
-        let block_id = self
-            .state_to_block_id
-            .get(state_id.0 as usize)
-            .copied()
-            .unwrap_or(0);
-        let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
-        let offset = state_id.0.saturating_sub(base_state);
-        block.get_support_shape(offset)
+        self.shape_for_state(state_id, Block::get_support_shape)
     }
 
     /// Gets the outline shape for a block state.
@@ -493,27 +528,46 @@ impl BlockRegistry {
     /// Often the same as collision shape, but can differ (e.g., fences).
     #[must_use]
     pub fn get_outline_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
-        let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
-        let Some(block) = block else {
-            return &[shapes::AABB::FULL_BLOCK];
-        };
-        let block_id = self
-            .state_to_block_id
-            .get(state_id.0 as usize)
-            .copied()
-            .unwrap_or(0);
-        let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
-        let offset = state_id.0.saturating_sub(base_state);
-        block.get_outline_shape(offset)
+        self.shape_for_state(state_id, Block::get_outline_shape)
     }
 
-    /// Gets both collision and outline shapes for a block state.
+    /// Gets the occlusion shape for a block state.
+    ///
+    /// Vanilla caches this as `BlockState.getOcclusionShape()` and uses it for
+    /// `isSolidRender`, light occlusion, and face occlusion.
+    #[must_use]
+    pub fn get_occlusion_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_occlusion_shape)
+    }
+
+    /// Gets the interaction shape for a block state.
+    ///
+    /// Vanilla uses this as an interaction hit override after the primary raycast
+    /// shape has already hit.
+    #[must_use]
+    pub fn get_interaction_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_interaction_shape)
+    }
+
+    /// Gets the visual shape for a block state.
+    ///
+    /// Vanilla uses this for visual raycasts; it defaults to collision shape but
+    /// differs for a few blocks such as fences, mud, soul sand, and powder snow.
+    #[must_use]
+    pub fn get_visual_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_visual_shape)
+    }
+
+    /// Gets all static shape channels for a block state.
     #[must_use]
     pub fn get_shapes(&self, state_id: BlockStateId) -> shapes::BlockShapes {
         shapes::BlockShapes::new(
             self.get_collision_shape(state_id),
             self.get_support_shape(state_id),
             self.get_outline_shape(state_id),
+            self.get_occlusion_shape(state_id),
+            self.get_interaction_shape(state_id),
+            self.get_visual_shape(state_id),
         )
     }
 

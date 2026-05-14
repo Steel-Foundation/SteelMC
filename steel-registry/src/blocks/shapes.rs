@@ -385,28 +385,44 @@ pub struct BlockShapes {
     pub collision: VoxelShape,
     pub support: VoxelShape,
     pub outline: VoxelShape,
+    pub occlusion: VoxelShape,
+    pub interaction: VoxelShape,
+    pub visual: VoxelShape,
 }
 
 impl BlockShapes {
     /// Creates new block shapes.
     #[must_use]
-    pub const fn new(collision: VoxelShape, support: VoxelShape, outline: VoxelShape) -> Self {
+    pub const fn new(
+        collision: VoxelShape,
+        support: VoxelShape,
+        outline: VoxelShape,
+        occlusion: VoxelShape,
+        interaction: VoxelShape,
+        visual: VoxelShape,
+    ) -> Self {
         Self {
             collision,
             support,
             outline,
+            occlusion,
+            interaction,
+            visual,
         }
     }
 
-    /// Full block collision, support, and outline.
+    /// Full block for every shape channel except interaction.
     pub const FULL_BLOCK: BlockShapes = BlockShapes::new(
         &[AABB::FULL_BLOCK],
         &[AABB::FULL_BLOCK],
         &[AABB::FULL_BLOCK],
+        &[AABB::FULL_BLOCK],
+        &[],
+        &[AABB::FULL_BLOCK],
     );
 
-    /// Empty shapes (no collision, support, or outline).
-    pub const EMPTY: BlockShapes = BlockShapes::new(&[], &[], &[]);
+    /// Empty shapes for all shape channels.
+    pub const EMPTY: BlockShapes = BlockShapes::new(&[], &[], &[], &[], &[], &[]);
 }
 
 use super::properties::Direction;
@@ -443,7 +459,7 @@ pub fn bounding_box(shape: VoxelShape) -> AABB {
 
 /// Checks if a shape is a full block (covers the entire 0-1 cube).
 ///
-/// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolid()`.
+/// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolidRender()`.
 ///
 /// TODO: Handle multi-AABB shapes whose union covers the full block (e.g. stacked slabs).
 /// Vanilla uses exact boolean voxel arithmetic (`Shapes.joinIsNotEmpty`). No vanilla blocks

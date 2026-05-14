@@ -13,10 +13,10 @@ pub(super) use steel_registry::feature::{
     DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
     FluidStateData, FoliagePlacer, HugeMushroomConfiguration, IdentifierList,
     NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, NoiseProvider,
-    NoiseThresholdProvider, OreConfiguration, OreTarget, PlacedFeatureData, PlacedFeatureEntryRef,
-    PlacedFeatureRef, PlacementModifier, RuleTest, SeaPickleConfiguration, SeagrassConfiguration,
-    SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
-    TreeDecorator, TrunkPlacer, TwistingVinesConfiguration,
+    NoiseThresholdProvider, OreConfiguration, OreTarget, PlaceOnGroundDecorator, PlacedFeatureData,
+    PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, RuleTest, SeaPickleConfiguration,
+    SeagrassConfiguration, SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration,
+    TreeConfiguration, TreeDecorator, TrunkPlacer, TwistingVinesConfiguration,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{
