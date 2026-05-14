@@ -3,20 +3,25 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::sync::{Arc, Once, Weak};
+use steel_core::behavior::init_behaviors;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
-use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep};
+use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
+use steel_core::level_data::WorldGenerationSettings;
+use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{
     BiomeSourceKind, ChunkBiomeSampler, ChunkGenerator, ChunkGeneratorType, EndGenerator,
-    NetherGenerator, OverworldGenerator, WorldGenContext,
+    NetherGenerator, OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
-use steel_utils::ChunkPos;
+use steel_utils::types::{Difficulty, GameType};
+use steel_utils::{ChunkPos, Identifier};
+use tokio::runtime::Builder as RuntimeBuilder;
 
 static INIT: Once = Once::new();
 
@@ -25,6 +30,7 @@ fn ensure_registry() {
         let mut registry = Registry::new_vanilla();
         registry.freeze();
         let _ = REGISTRY.init(registry);
+        init_behaviors();
     });
 }
 
@@ -335,6 +341,177 @@ fn bench_end_carvers(c: &mut Criterion) {
     });
 }
 
+// ── Feature benchmarks ─────────────────────────────────────────────────────
+
+fn make_chunk_through_carvers(
+    chunk_x: i32,
+    chunk_z: i32,
+    dim: &DimensionType,
+    generator: &ChunkGeneratorType,
+) -> ChunkAccess {
+    let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
+    generator.create_structures(&chunk);
+    generator.create_biomes(&chunk);
+    generator.fill_from_noise(&chunk, None);
+    {
+        let neighbor_biomes = self_neighbor_biomes(&chunk);
+        generator.build_surface(&chunk, &neighbor_biomes);
+    }
+    generator.apply_carvers(&chunk);
+    chunk
+}
+
+fn make_holder_for_features(
+    chunk_x: i32,
+    chunk_z: i32,
+    dim: &DimensionType,
+    generator: &ChunkGeneratorType,
+) -> Arc<ChunkHolder> {
+    let holder = Arc::new(ChunkHolder::new(
+        ChunkPos::new(chunk_x, chunk_z),
+        0,
+        dim.min_y,
+        dim.height,
+    ));
+
+    let distance = chunk_x.abs().max(chunk_z.abs());
+    if distance <= 1 {
+        holder.insert_chunk(
+            make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
+            ChunkStatus::Carvers,
+        );
+    } else {
+        let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
+        generator.create_structures(&chunk);
+        holder.insert_chunk(chunk, ChunkStatus::StructureStarts);
+    }
+
+    holder
+}
+
+struct FeatureFixture {
+    context: Arc<WorldGenContext>,
+    cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    target: Arc<ChunkHolder>,
+    _world: Arc<World>,
+}
+
+fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
+    let generator_config = toml::Value::Table(toml::map::Map::new());
+    let output = WorldGeneratorRegistry::new_with_builtins()
+        .expect("built-in world generators should register")
+        .create(&generator_key, &generator_config, 0)
+        .expect("feature benchmark should use a built-in generator");
+    let dim = output.dimension_type;
+    let generator = Arc::new(output.generator);
+    let generation_settings = WorldGenerationSettings::from_generator_config(
+        generator_key.clone(),
+        &output.config,
+        dim.key.clone(),
+        dim.min_y,
+        dim.height,
+    );
+    let chunk_runtime = Arc::new(
+        RuntimeBuilder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("feature benchmark runtime should build"),
+    );
+    let generation_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("feature benchmark generation pool should build"),
+    );
+    let world_config = WorldConfig {
+        storage: WorldStorageConfig::RamOnly,
+        level_data_path: None,
+        generator: generator.clone(),
+        generation_settings,
+        view_distance: 10,
+        simulation_distance: 10,
+        compression: None,
+        is_flat: false,
+        sea_level: output.sea_level,
+        default_gamemode: GameType::Survival,
+        difficulty: Difficulty::Normal,
+    };
+    let world_key = Identifier::new("bench", format!("{}_features", generator_key.path));
+    let world = chunk_runtime
+        .block_on(World::new_with_config(
+            chunk_runtime.clone(),
+            world_key,
+            dim,
+            0,
+            world_config,
+            generation_pool,
+        ))
+        .expect("feature benchmark world should build");
+    let context = world.chunk_map.world_gen_context.clone();
+
+    let generator_for_factory = generator.clone();
+    let cache = Arc::new(StaticCache2D::create(0, 0, 8, move |x, z| {
+        make_holder_for_features(x, z, dim, generator_for_factory.as_ref())
+    }));
+    let target = cache.get(0, 0).clone();
+
+    FeatureFixture {
+        context,
+        cache,
+        target,
+        _world: world,
+    }
+}
+
+fn bench_features(c: &mut Criterion, name: &str, generator_key: Identifier) {
+    let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
+
+    c.bench_function(name, |b| {
+        b.iter_batched(
+            {
+                let generator_key = generator_key.clone();
+                move || build_feature_fixture(generator_key.clone())
+            },
+            |fixture| {
+                ChunkStatusTasks::generate_features(
+                    fixture.context,
+                    step,
+                    &fixture.cache,
+                    fixture.target,
+                );
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_overworld_features(c: &mut Criterion) {
+    ensure_registry();
+    bench_features(
+        c,
+        "overworld_generate_features",
+        Identifier::vanilla_static("overworld"),
+    );
+}
+
+fn bench_nether_features(c: &mut Criterion) {
+    ensure_registry();
+    bench_features(
+        c,
+        "nether_generate_features",
+        Identifier::vanilla_static("the_nether"),
+    );
+}
+
+fn bench_end_features(c: &mut Criterion) {
+    ensure_registry();
+    bench_features(
+        c,
+        "end_generate_features",
+        Identifier::vanilla_static("the_end"),
+    );
+}
+
 // ── Structure benchmarks ────────────────────────────────────────────────────
 
 /// A 20×20 grid hits structure sets with different spacings (villages at 32,
@@ -620,6 +797,10 @@ criterion_group!(
     bench_overworld_carvers,
     bench_nether_carvers,
     bench_end_carvers,
+    // Features
+    bench_overworld_features,
+    bench_nether_features,
+    bench_end_features,
     // Structure starts
     bench_overworld_structure_starts,
     bench_nether_structure_starts,

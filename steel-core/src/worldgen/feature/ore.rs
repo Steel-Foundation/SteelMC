@@ -113,6 +113,7 @@ impl FeatureDecorationRunner {
         };
         let mut placed = 0;
         let mut tested = OreTestedPositions::with_capacity(search_volume.tested_position_count);
+        let mut sections = region.bulk_section_access();
 
         for node in vein_nodes {
             let radius = node[3];
@@ -155,8 +156,14 @@ impl FeatureDecorationRunner {
                         };
                         if tested.insert(tested_index) {
                             let pos = BlockPos::new(x, y, z);
-                            if Self::can_write_to_pos(region, pos)
-                                && Self::try_place_ore_block(region, registry, random, config, pos)
+                            if sections.can_write_to_pos(pos)
+                                && Self::try_place_ore_block_in_bulk(
+                                    &mut sections,
+                                    registry,
+                                    random,
+                                    config,
+                                    pos,
+                                )
                             {
                                 placed += 1;
                             }
@@ -220,6 +227,32 @@ impl FeatureDecorationRunner {
         false
     }
 
+    pub(super) fn try_place_ore_block_in_bulk(
+        sections: &mut WorldGenBulkSectionAccess<'_, '_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &OreConfiguration,
+        pos: BlockPos,
+    ) -> bool {
+        let block_state = sections.block_state(pos);
+        for target in &config.targets {
+            if Self::can_place_ore_in_bulk(
+                sections,
+                registry,
+                random,
+                config,
+                target,
+                pos,
+                block_state,
+            ) {
+                let state = Self::block_state_from_data(registry, &target.state);
+                return sections.set_block_state(pos, state);
+            }
+        }
+
+        false
+    }
+
     pub(super) fn can_place_ore(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
@@ -238,6 +271,26 @@ impl FeatureDecorationRunner {
         }
 
         !Self::is_adjacent_to_air(region, registry, pos)
+    }
+
+    pub(super) fn can_place_ore_in_bulk(
+        sections: &mut WorldGenBulkSectionAccess<'_, '_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &OreConfiguration,
+        target: &OreTarget,
+        pos: BlockPos,
+        block_state: BlockStateId,
+    ) -> bool {
+        if !Self::rule_test_matches(registry, &target.target, block_state) {
+            return false;
+        }
+
+        if Self::should_skip_air_check(random, config.discard_chance_on_air_exposure) {
+            return true;
+        }
+
+        !Self::is_adjacent_to_air_in_bulk(sections, registry, pos)
     }
 
     pub(super) fn rule_test_matches(
@@ -284,18 +337,22 @@ impl FeatureDecorationRunner {
         })
     }
 
+    pub(super) fn is_adjacent_to_air_in_bulk(
+        sections: &mut WorldGenBulkSectionAccess<'_, '_>,
+        registry: &Registry,
+        pos: BlockPos,
+    ) -> bool {
+        Direction::ALL.into_iter().any(|direction| {
+            let neighbor = sections.block_state(pos.relative(direction));
+            Self::is_air_block_state(registry, neighbor)
+        })
+    }
+
     pub(super) fn is_air_block_state(registry: &Registry, state: BlockStateId) -> bool {
         let Some(block) = registry.blocks.by_state_id(state) else {
             panic!("feature received invalid block state id {}", state.0);
         };
         block.config.is_air
-    }
-
-    pub(super) fn can_write_to_pos(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
-        region.can_write_to_chunk(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
-        )
     }
 }
 

@@ -32,6 +32,6 @@ pub(super) use crate::chunk::chunk_access::ChunkStatus;
 pub(super) use crate::chunk::heightmap::HeightmapType;
 pub(super) use crate::fluid::state::get_fluid_state_from_block;
 pub(super) use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
-pub(super) use crate::worldgen::region::WorldGenRegion;
+pub(super) use crate::worldgen::region::{WorldGenBulkSectionAccess, WorldGenRegion};
 
 pub(super) const DECORATION_STEP_COUNT: usize = 11;

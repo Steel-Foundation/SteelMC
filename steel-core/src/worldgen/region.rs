@@ -10,7 +10,8 @@ use std::sync::{
 };
 
 use parking_lot::RwLockReadGuard;
-use steel_registry::{blocks::BlockRef, fluid::FluidRef};
+use rustc_hash::FxHashMap;
+use steel_registry::{REGISTRY, blocks::BlockRef, fluid::FluidRef, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 
 use crate::chunk::{
@@ -36,6 +37,23 @@ pub struct WorldGenRegion<'a> {
     cache: &'a StaticCache2D<Arc<ChunkHolder>>,
     center: ChunkPos,
     sub_tick_count: AtomicI64,
+}
+
+/// Cached section-level access for feature code that mirrors vanilla `BulkSectionAccess`.
+///
+/// Vanilla exposes acquired `LevelChunkSection`s and lets some features mutate section-local
+/// block states directly. Steel keeps chunk guards cached instead of section references because
+/// sections live behind Rust locks; callers still get the same direct section semantics without
+/// bypassing the worldgen dependency and write-radius checks.
+pub(crate) struct WorldGenBulkSectionAccess<'region, 'world> {
+    region: &'region WorldGenRegion<'world>,
+    chunks: FxHashMap<ChunkPos, CachedWorldGenChunk<'region>>,
+    air: BlockStateId,
+}
+
+struct CachedWorldGenChunk<'region> {
+    guard: RwLockReadGuard<'region, ChunkAccess>,
+    verified_status: ChunkStatus,
 }
 
 impl<'a> WorldGenRegion<'a> {
@@ -290,6 +308,12 @@ impl<'a> WorldGenRegion<'a> {
             .height_at(heightmap_type, local_x, local_z)
     }
 
+    /// Creates a cached direct-section accessor for features that use vanilla `BulkSectionAccess`.
+    #[must_use]
+    pub(crate) fn bulk_section_access(&self) -> WorldGenBulkSectionAccess<'_, 'a> {
+        WorldGenBulkSectionAccess::new(self)
+    }
+
     fn writable_chunk_for_pos(
         &self,
         pos: BlockPos,
@@ -355,6 +379,144 @@ impl<'a> WorldGenRegion<'a> {
     }
 }
 
+impl<'region, 'world> WorldGenBulkSectionAccess<'region, 'world> {
+    fn new(region: &'region WorldGenRegion<'world>) -> Self {
+        Self {
+            region,
+            chunks: FxHashMap::default(),
+            air: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
+        }
+    }
+
+    /// Reads a block state through cached section access.
+    ///
+    /// Out-of-height reads return air, matching vanilla `BulkSectionAccess.getBlockState`.
+    #[must_use]
+    pub(crate) fn block_state(&mut self, pos: BlockPos) -> BlockStateId {
+        let air = self.air;
+        let Some(section_index) =
+            Self::section_index(self.region.min_y(), self.region.height(), pos.y())
+        else {
+            return air;
+        };
+
+        let chunk_x = SectionPos::block_to_section_coord(pos.x());
+        let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        let chunk = self.chunk(chunk_x, chunk_z, ChunkStatus::Empty);
+        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+            return air;
+        };
+
+        let section = section.read();
+        if section.states.has_only_air() {
+            return air;
+        }
+
+        section.states.get(
+            Self::local_coord(pos.x()),
+            Self::local_coord(pos.y()),
+            Self::local_coord(pos.z()),
+        )
+    }
+
+    /// Writes a block state directly to the containing section.
+    ///
+    /// This intentionally mirrors vanilla `LevelChunkSection.setBlockState` as used through
+    /// `BulkSectionAccess`: section block counts are updated, but heightmaps, neighbor updates,
+    /// block entity callbacks, and other `WorldGenRegion.setBlock` side effects are skipped.
+    #[must_use]
+    pub(crate) fn set_block_state(&mut self, pos: BlockPos, state: BlockStateId) -> bool {
+        let Some((chunk_x, chunk_z, status)) =
+            self.region.writable_chunk_for_pos(pos, "bulk write block")
+        else {
+            return false;
+        };
+        let Some(section_index) =
+            Self::section_index(self.region.min_y(), self.region.height(), pos.y())
+        else {
+            return false;
+        };
+
+        let chunk = self.chunk(chunk_x, chunk_z, status);
+        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+            panic!(
+                "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {section_index}",
+                pos.x(),
+                pos.y(),
+                pos.z()
+            );
+        };
+
+        let old_state = section.write().set_block_state(
+            Self::local_coord(pos.x()),
+            Self::local_coord(pos.y()),
+            Self::local_coord(pos.z()),
+            state,
+        );
+        if old_state != state {
+            chunk.guard.mark_dirty();
+        }
+
+        true
+    }
+
+    /// Returns whether a section-local write would be allowed for this position.
+    #[must_use]
+    pub(crate) fn can_write_to_pos(&self, pos: BlockPos) -> bool {
+        self.region.can_write_to_chunk(
+            SectionPos::block_to_section_coord(pos.x()),
+            SectionPos::block_to_section_coord(pos.z()),
+        )
+    }
+
+    fn chunk(
+        &mut self,
+        chunk_x: i32,
+        chunk_z: i32,
+        status: ChunkStatus,
+    ) -> &CachedWorldGenChunk<'region> {
+        let key = ChunkPos::new(chunk_x, chunk_z);
+
+        if !self.chunks.contains_key(&key) {
+            let guard = self.region.chunk(chunk_x, chunk_z, status);
+            self.chunks.insert(
+                key,
+                CachedWorldGenChunk {
+                    guard,
+                    verified_status: status,
+                },
+            );
+        } else if self
+            .chunks
+            .get(&key)
+            .is_some_and(|cached| status > cached.verified_status)
+        {
+            drop(self.region.chunk(chunk_x, chunk_z, status));
+            let Some(cached) = self.chunks.get_mut(&key) else {
+                panic!("Worldgen bulk section cache lost verified chunk ({chunk_x}, {chunk_z})");
+            };
+            cached.verified_status = status;
+        }
+
+        let Some(cached) = self.chunks.get(&key) else {
+            panic!("Worldgen bulk section cache failed to store chunk ({chunk_x}, {chunk_z})");
+        };
+        cached
+    }
+
+    fn section_index(min_y: i32, height: i32, y: i32) -> Option<usize> {
+        if y < min_y || y >= min_y + height {
+            return None;
+        }
+
+        usize::try_from((y - min_y) / 16).ok()
+    }
+
+    fn local_coord(coord: i32) -> usize {
+        (coord & 15) as usize
+    }
+}
+
 const fn abs_diff(left: i32, right: i32) -> i32 {
     if left >= right {
         left - right
@@ -381,7 +543,7 @@ impl LevelReader for WorldGenRegion<'_> {
 mod tests {
     use steel_utils::ChunkPos;
 
-    use super::WorldGenRegion;
+    use super::{WorldGenBulkSectionAccess, WorldGenRegion};
 
     #[test]
     fn chessboard_distance_matches_chunk_dependency_radius() {
@@ -401,5 +563,42 @@ mod tests {
         assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 79), (23, 3));
         assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 80), (23, 3));
         assert_eq!(WorldGenRegion::biome_quart_y_indices(-64, 24, 81), (23, 3));
+    }
+
+    #[test]
+    fn bulk_section_index_matches_world_height_bounds() {
+        assert_eq!(
+            WorldGenBulkSectionAccess::section_index(-64, 384, -65),
+            None
+        );
+        assert_eq!(
+            WorldGenBulkSectionAccess::section_index(-64, 384, -64),
+            Some(0)
+        );
+        assert_eq!(
+            WorldGenBulkSectionAccess::section_index(-64, 384, -49),
+            Some(0)
+        );
+        assert_eq!(
+            WorldGenBulkSectionAccess::section_index(-64, 384, -48),
+            Some(1)
+        );
+        assert_eq!(
+            WorldGenBulkSectionAccess::section_index(-64, 384, 319),
+            Some(23)
+        );
+        assert_eq!(
+            WorldGenBulkSectionAccess::section_index(-64, 384, 320),
+            None
+        );
+    }
+
+    #[test]
+    fn bulk_section_local_coord_uses_vanilla_section_mask() {
+        assert_eq!(WorldGenBulkSectionAccess::local_coord(-17), 15);
+        assert_eq!(WorldGenBulkSectionAccess::local_coord(-16), 0);
+        assert_eq!(WorldGenBulkSectionAccess::local_coord(-1), 15);
+        assert_eq!(WorldGenBulkSectionAccess::local_coord(0), 0);
+        assert_eq!(WorldGenBulkSectionAccess::local_coord(31), 15);
     }
 }
