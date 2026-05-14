@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_block_pile_feature(
+    pub(in crate::worldgen::feature) fn place_block_pile_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -40,7 +40,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(super) fn try_place_block_pile_block(
+    pub(in crate::worldgen::feature) fn try_place_block_pile_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -62,7 +62,7 @@ impl FeatureDecorationRunner {
         let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_NONE);
     }
 
-    pub(super) fn block_pile_may_place_on(
+    pub(in crate::worldgen::feature) fn block_pile_may_place_on(
         region: &WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         pos: BlockPos,

@@ -1,5 +1,5 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 const PLATFORM_OFFSET_X: i32 = 8;
 const PLATFORM_OFFSET_Y: i32 = 3;
@@ -8,7 +8,7 @@ const PLATFORM_RADIUS: i32 = 16;
 const PLATFORM_RADIUS_CHUNKS: i32 = 1;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_void_start_platform_feature(
+    pub(in crate::worldgen::feature) fn place_void_start_platform_feature(
         region: &mut WorldGenRegion<'_>,
         origin: BlockPos,
     ) -> bool {

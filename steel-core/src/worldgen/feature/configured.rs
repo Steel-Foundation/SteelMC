@@ -46,15 +46,22 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "glowstone_blob", place_glowstone_blob);
         register(
             &mut placers,
+            "nether_forest_vegetation",
+            place_nether_forest_vegetation,
+        );
+        register(
+            &mut placers,
             "netherrack_replace_blobs",
             place_netherrack_replace_blobs,
         );
+        register(&mut placers, "twisting_vines", place_twisting_vines);
         register(&mut placers, "vines", place_vines);
         register(
             &mut placers,
             "void_start_platform",
             place_void_start_platform,
         );
+        register(&mut placers, "weeping_vines", place_weeping_vines);
         register(&mut placers, "spring_feature", place_spring_feature);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
@@ -525,6 +532,37 @@ fn place_netherrack_replace_blobs(
     )
 }
 
+fn place_nether_forest_vegetation(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::NetherForestVegetation(config) = kind else {
+        panic!("nether_forest_vegetation placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_nether_forest_vegetation_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_twisting_vines(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::TwistingVines(config) = kind else {
+        panic!("twisting_vines placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_twisting_vines_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
 fn place_vines(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -543,6 +581,20 @@ fn place_void_start_platform(
         panic!("void_start_platform placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_void_start_platform_feature(context.region, context.origin)
+}
+
+fn place_weeping_vines(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::WeepingVines = kind else {
+        panic!("weeping_vines placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_weeping_vines_feature(
+        context.region,
+        context.random,
+        context.origin,
+    )
 }
 
 fn place_spring_feature(

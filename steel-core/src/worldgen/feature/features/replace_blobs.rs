@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_netherrack_replace_blobs_feature(
+    pub(in crate::worldgen::feature) fn place_netherrack_replace_blobs_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,

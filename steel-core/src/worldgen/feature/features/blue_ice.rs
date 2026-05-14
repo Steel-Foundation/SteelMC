@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_blue_ice_feature(
+    pub(in crate::worldgen::feature) fn place_blue_ice_feature(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         origin: BlockPos,
@@ -77,7 +77,7 @@ impl FeatureDecorationRunner {
         state.get_block() == &vanilla_blocks::WATER
     }
 
-    pub(super) const fn blue_ice_xz_diff(y_offset: i32) -> i32 {
+    pub(in crate::worldgen::feature) const fn blue_ice_xz_diff(y_offset: i32) -> i32 {
         let mut xz_diff = 3;
         if y_offset < 2 {
             xz_diff += y_offset / 2;

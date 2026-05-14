@@ -1,5 +1,5 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 const CLUSTERED_REACH: i32 = 5;
 const CLUSTERED_SIZE: i32 = 50;
@@ -7,7 +7,7 @@ const UNCLUSTERED_REACH: i32 = 8;
 const UNCLUSTERED_SIZE: i32 = 15;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_basalt_columns_feature(
+    pub(in crate::worldgen::feature) fn place_basalt_columns_feature(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         config: &BasaltColumnsConfiguration,

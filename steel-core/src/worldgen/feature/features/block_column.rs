@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_block_column_feature(
+    pub(in crate::worldgen::feature) fn place_block_column_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -51,7 +51,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(super) fn truncate_block_column_layers(
+    pub(in crate::worldgen::feature) fn truncate_block_column_layers(
         layer_heights: &mut [i32],
         total_height: i32,
         new_height: i32,

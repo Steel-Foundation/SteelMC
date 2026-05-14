@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_ore_feature(
+    pub(in crate::worldgen::feature) fn place_ore_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -49,7 +49,7 @@ impl FeatureDecorationRunner {
         clippy::too_many_arguments,
         reason = "mirrors vanilla ore vein placement inputs"
     )]
-    pub(super) fn do_place_ore(
+    pub(in crate::worldgen::feature) fn do_place_ore(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -176,7 +176,7 @@ impl FeatureDecorationRunner {
         placed > 0
     }
 
-    pub(super) fn place_scattered_ore_feature(
+    pub(in crate::worldgen::feature) fn place_scattered_ore_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -201,15 +201,18 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(super) fn random_scattered_ore_offset(random: &mut Xoroshiro, max_distance: i32) -> i32 {
+    pub(in crate::worldgen::feature) fn random_scattered_ore_offset(
+        random: &mut Xoroshiro,
+        max_distance: i32,
+    ) -> i32 {
         Self::java_round_f32((random.next_f32() - random.next_f32()) * max_distance as f32)
     }
 
-    pub(super) fn java_round_f32(value: f32) -> i32 {
+    pub(in crate::worldgen::feature) fn java_round_f32(value: f32) -> i32 {
         (value + 0.5).floor() as i32
     }
 
-    pub(super) fn try_place_ore_block(
+    pub(in crate::worldgen::feature) fn try_place_ore_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -227,7 +230,7 @@ impl FeatureDecorationRunner {
         false
     }
 
-    pub(super) fn try_place_ore_block_in_bulk(
+    pub(in crate::worldgen::feature) fn try_place_ore_block_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -253,7 +256,7 @@ impl FeatureDecorationRunner {
         false
     }
 
-    pub(super) fn can_place_ore(
+    pub(in crate::worldgen::feature) fn can_place_ore(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -273,7 +276,7 @@ impl FeatureDecorationRunner {
         !Self::is_adjacent_to_air(region, registry, pos)
     }
 
-    pub(super) fn can_place_ore_in_bulk(
+    pub(in crate::worldgen::feature) fn can_place_ore_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -293,7 +296,7 @@ impl FeatureDecorationRunner {
         !Self::is_adjacent_to_air_in_bulk(sections, registry, pos)
     }
 
-    pub(super) fn rule_test_matches(
+    pub(in crate::worldgen::feature) fn rule_test_matches(
         registry: &Registry,
         target: &RuleTest,
         state: BlockStateId,
@@ -313,7 +316,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn should_skip_air_check(
+    pub(in crate::worldgen::feature) fn should_skip_air_check(
         random: &mut Xoroshiro,
         discard_chance_on_air_exposure: f32,
     ) -> bool {
@@ -326,7 +329,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn is_adjacent_to_air(
+    pub(in crate::worldgen::feature) fn is_adjacent_to_air(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
         pos: BlockPos,
@@ -337,7 +340,7 @@ impl FeatureDecorationRunner {
         })
     }
 
-    pub(super) fn is_adjacent_to_air_in_bulk(
+    pub(in crate::worldgen::feature) fn is_adjacent_to_air_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_>,
         registry: &Registry,
         pos: BlockPos,
@@ -348,7 +351,10 @@ impl FeatureDecorationRunner {
         })
     }
 
-    pub(super) fn is_air_block_state(registry: &Registry, state: BlockStateId) -> bool {
+    pub(in crate::worldgen::feature) fn is_air_block_state(
+        registry: &Registry,
+        state: BlockStateId,
+    ) -> bool {
         let Some(block) = registry.blocks.by_state_id(state) else {
             panic!("feature received invalid block state id {}", state.0);
         };

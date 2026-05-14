@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_disk_feature(
+    pub(in crate::worldgen::feature) fn place_disk_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -39,7 +39,7 @@ impl FeatureDecorationRunner {
         clippy::too_many_arguments,
         reason = "matches vanilla disk column placement state"
     )]
-    pub(super) fn place_disk_column(
+    pub(in crate::worldgen::feature) fn place_disk_column(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -76,7 +76,10 @@ impl FeatureDecorationRunner {
         placed_any
     }
 
-    pub(super) fn mark_above_for_postprocessing(region: &WorldGenRegion<'_>, pos: BlockPos) {
+    pub(in crate::worldgen::feature) fn mark_above_for_postprocessing(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+    ) {
         let mut mark_pos = pos;
         for _ in 0..2 {
             mark_pos = mark_pos.above();

@@ -10,13 +10,15 @@ pub(super) use steel_registry::feature::{
     BlockPileConfiguration, BlockPredicate, BlockStateData, BlockStateProvider,
     ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
     DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FluidStateData, IdentifierList,
-    NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
-    OreTarget, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier,
-    RuleTest, SimpleBlockConfiguration, SpringConfiguration,
+    NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, NoiseProvider,
+    NoiseThresholdProvider, OreConfiguration, OreTarget, PlacedFeatureData, PlacedFeatureEntryRef,
+    PlacedFeatureRef, PlacementModifier, RuleTest, SimpleBlockConfiguration, SpringConfiguration,
+    TwistingVinesConfiguration,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{
-    Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _, vanilla_blocks,
+    Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _, vanilla_block_tags,
+    vanilla_blocks,
 };
 pub(super) use steel_utils::math::Axis;
 pub(super) use steel_utils::random::{

@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_simple_block_feature(
+    pub(in crate::worldgen::feature) fn place_simple_block_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -43,7 +43,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(super) fn is_double_plant_block(block: BlockRef) -> bool {
+    pub(in crate::worldgen::feature) fn is_double_plant_block(block: BlockRef) -> bool {
         block == &vanilla_blocks::SUNFLOWER
             || block == &vanilla_blocks::LILAC
             || block == &vanilla_blocks::ROSE_BUSH
@@ -54,7 +54,7 @@ impl FeatureDecorationRunner {
             || block == &vanilla_blocks::SMALL_DRIPLEAF
     }
 
-    pub(super) fn place_double_plant(
+    pub(in crate::worldgen::feature) fn place_double_plant(
         region: &mut WorldGenRegion<'_>,
         state: BlockStateId,
         lower_pos: BlockPos,
@@ -80,7 +80,7 @@ impl FeatureDecorationRunner {
         let _ = region.set_block_state(upper_pos, upper_state, UpdateFlags::UPDATE_CLIENTS);
     }
 
-    pub(super) fn copy_waterlogged_from(
+    pub(in crate::worldgen::feature) fn copy_waterlogged_from(
         region: &WorldGenRegion<'_>,
         pos: BlockPos,
         state: BlockStateId,
@@ -96,7 +96,7 @@ impl FeatureDecorationRunner {
         state.set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
     }
 
-    pub(super) fn place_mossy_carpet(
+    pub(in crate::worldgen::feature) fn place_mossy_carpet(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         pos: BlockPos,
@@ -115,7 +115,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn create_mossy_carpet_topper(
+    pub(in crate::worldgen::feature) fn create_mossy_carpet_topper(
         region: &WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         pos: BlockPos,
@@ -151,7 +151,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn updated_mossy_carpet_state(
+    pub(in crate::worldgen::feature) fn updated_mossy_carpet_state(
         region: &WorldGenRegion<'_>,
         mut state: BlockStateId,
         pos: BlockPos,
@@ -203,7 +203,9 @@ impl FeatureDecorationRunner {
         Direction::West,
     ];
 
-    pub(super) fn mossy_carpet_wall_property(direction: Direction) -> EnumProperty<WallSide> {
+    pub(in crate::worldgen::feature) fn mossy_carpet_wall_property(
+        direction: Direction,
+    ) -> EnumProperty<WallSide> {
         match direction {
             Direction::North => BlockStateProperties::NORTH_WALL,
             Direction::East => BlockStateProperties::EAST_WALL,
@@ -215,7 +217,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn mossy_carpet_can_support_at_face(
+    pub(in crate::worldgen::feature) fn mossy_carpet_can_support_at_face(
         region: &WorldGenRegion<'_>,
         pos: BlockPos,
         direction: Direction,
@@ -223,7 +225,7 @@ impl FeatureDecorationRunner {
         direction != Direction::Up && Self::can_attach_to_multiface(region, pos, direction)
     }
 
-    pub(super) fn can_attach_to_multiface(
+    pub(in crate::worldgen::feature) fn can_attach_to_multiface(
         region: &WorldGenRegion<'_>,
         pos: BlockPos,
         direction_towards_neighbour: Direction,
@@ -235,7 +237,7 @@ impl FeatureDecorationRunner {
             || shapes::is_face_full(neighbour_state.get_collision_shape(), support_direction)
     }
 
-    pub(super) fn mossy_carpet_has_faces(state: BlockStateId) -> bool {
+    pub(in crate::worldgen::feature) fn mossy_carpet_has_faces(state: BlockStateId) -> bool {
         if state.get_value(&BlockStateProperties::BOTTOM) {
             return true;
         }

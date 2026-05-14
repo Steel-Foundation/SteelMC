@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_end_platform_feature(
+    pub(in crate::worldgen::feature) fn place_end_platform_feature(
         region: &mut WorldGenRegion<'_>,
         origin: BlockPos,
     ) -> bool {
@@ -10,7 +10,10 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(super) fn create_end_platform(region: &mut WorldGenRegion<'_>, origin: BlockPos) {
+    pub(in crate::worldgen::feature) fn create_end_platform(
+        region: &mut WorldGenRegion<'_>,
+        origin: BlockPos,
+    ) {
         let obsidian = vanilla_blocks::OBSIDIAN.default_state();
         let air = vanilla_blocks::AIR.default_state();
 

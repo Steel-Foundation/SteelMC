@@ -6,32 +6,16 @@
 //! configured features execute normally; concrete block-mutating configured features are
 //! added through the configured-feature runtime registry.
 
-mod basalt_columns;
-mod basalt_pillar;
-mod block_blob;
-mod block_column;
-mod block_pile;
-mod blue_ice;
 mod configured;
-mod delta;
-mod disk;
-mod end_island;
-mod end_platform;
-mod glowstone_blob;
-mod ore;
+mod features;
 mod placed;
 mod placement;
 mod predicates;
 mod prelude;
 mod providers;
-mod replace_blobs;
 mod runner;
-mod simple_block;
 mod sorter;
-mod spring;
 mod state;
-mod vines;
-mod void_start_platform;
 
 pub(crate) use runner::FeatureDecorationRunner;
 

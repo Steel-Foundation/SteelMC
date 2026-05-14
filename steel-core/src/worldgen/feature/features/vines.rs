@@ -1,8 +1,11 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_vines_feature(region: &mut WorldGenRegion<'_>, origin: BlockPos) -> bool {
+    pub(in crate::worldgen::feature) fn place_vines_feature(
+        region: &mut WorldGenRegion<'_>,
+        origin: BlockPos,
+    ) -> bool {
         if !region.block_state(origin).is_air() {
             return false;
         }

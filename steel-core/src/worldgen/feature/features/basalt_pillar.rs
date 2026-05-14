@@ -1,8 +1,8 @@
-use super::prelude::*;
-use super::runner::FeatureDecorationRunner;
+use super::super::prelude::*;
+use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
-    pub(super) fn place_basalt_pillar_feature(
+    pub(in crate::worldgen::feature) fn place_basalt_pillar_feature(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         origin: BlockPos,
@@ -77,7 +77,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(super) fn place_basalt_pillar_base_hangoff(
+    pub(in crate::worldgen::feature) fn place_basalt_pillar_base_hangoff(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         basalt: BlockStateId,
@@ -88,7 +88,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn place_basalt_pillar_hangoff(
+    pub(in crate::worldgen::feature) fn place_basalt_pillar_hangoff(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         basalt: BlockStateId,
