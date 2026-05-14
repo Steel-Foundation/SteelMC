@@ -32,6 +32,7 @@ impl ConfiguredFeatureRuntimeRegistry {
             "simple_random_selector",
             place_simple_random_selector,
         );
+        register(&mut placers, "bamboo", place_bamboo);
         register(&mut placers, "simple_block", place_simple_block);
         register(&mut placers, "block_blob", place_block_blob);
         register(&mut placers, "block_column", place_block_column);
@@ -63,6 +64,9 @@ impl ConfiguredFeatureRuntimeRegistry {
         );
         register(&mut placers, "weeping_vines", place_weeping_vines);
         register(&mut placers, "spring_feature", place_spring_feature);
+        register(&mut placers, "kelp", place_kelp);
+        register(&mut placers, "sea_pickle", place_sea_pickle);
+        register(&mut placers, "seagrass", place_seagrass);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
         Self { placers }
@@ -343,6 +347,21 @@ fn place_simple_random_selector(
     )
 }
 
+fn place_bamboo(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Bamboo(config) = kind else {
+        panic!("bamboo placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_bamboo_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
 fn place_simple_block(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -607,6 +626,46 @@ fn place_spring_feature(
     FeatureDecorationRunner::place_spring_feature(
         context.region,
         context.registry,
+        config,
+        context.origin,
+    )
+}
+
+fn place_kelp(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Kelp = kind else {
+        panic!("kelp placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_kelp_feature(context.region, context.random, context.origin)
+}
+
+fn place_sea_pickle(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SeaPickle(config) = kind else {
+        panic!("sea_pickle placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_sea_pickle_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_seagrass(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Seagrass(config) = kind else {
+        panic!("seagrass placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_seagrass_feature(
+        context.region,
+        context.random,
         config,
         context.origin,
     )

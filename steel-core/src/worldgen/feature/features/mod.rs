@@ -1,3 +1,4 @@
+mod bamboo;
 mod basalt_columns;
 mod basalt_pillar;
 mod block_blob;
@@ -9,9 +10,12 @@ mod disk;
 mod end_island;
 mod end_platform;
 mod glowstone_blob;
+mod kelp;
 mod nether_forest_vegetation;
 mod ore;
 mod replace_blobs;
+mod sea_pickle;
+mod seagrass;
 mod simple_block;
 mod spring;
 mod twisting_vines;

@@ -8,7 +8,6 @@ use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
-use crate::fluid::state::get_fluid_state_from_block;
 
 /// A wrapper around a chunk section.
 #[derive(Debug)]
@@ -305,7 +304,10 @@ impl ChunkSection {
                             ticking += 1;
                         }
                     }
-                    if !get_fluid_state_from_block(state).is_empty() {
+                    let fluid_state = block_behaviors
+                        .get_behavior(state.get_block())
+                        .get_fluid_state(state);
+                    if !fluid_state.is_empty() {
                         fluid += 1;
                     }
                 }
@@ -358,8 +360,14 @@ impl ChunkSection {
             }
 
             // Update fluid count
-            let old_has_fluid = !get_fluid_state_from_block(old_state).is_empty();
-            let new_has_fluid = !get_fluid_state_from_block(new_state).is_empty();
+            let old_has_fluid = !block_behaviors
+                .get_behavior(old_state.get_block())
+                .get_fluid_state(old_state)
+                .is_empty();
+            let new_has_fluid = !block_behaviors
+                .get_behavior(new_state.get_block())
+                .get_fluid_state(new_state)
+                .is_empty();
 
             if old_has_fluid && !new_has_fluid {
                 self.fluid_count -= 1;
