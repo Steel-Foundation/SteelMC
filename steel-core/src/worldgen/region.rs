@@ -92,6 +92,12 @@ impl<'a> WorldGenRegion<'a> {
         self.context.height()
     }
 
+    /// Returns this dimension's sea level.
+    #[must_use]
+    pub fn sea_level(&self) -> i32 {
+        self.context.world().sea_level
+    }
+
     /// Returns the exclusive maximum build height.
     #[must_use]
     pub fn max_y_exclusive(&self) -> i32 {

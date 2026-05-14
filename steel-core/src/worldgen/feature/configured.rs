@@ -38,6 +38,16 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "block_pile", place_block_pile);
         register(&mut placers, "disk", place_disk);
         register(&mut placers, "basalt_pillar", place_basalt_pillar);
+        register(&mut placers, "blue_ice", place_blue_ice);
+        register(&mut placers, "end_island", place_end_island);
+        register(&mut placers, "end_platform", place_end_platform);
+        register(&mut placers, "glowstone_blob", place_glowstone_blob);
+        register(&mut placers, "vines", place_vines);
+        register(
+            &mut placers,
+            "void_start_platform",
+            place_void_start_platform,
+        );
         register(&mut placers, "spring_feature", place_spring_feature);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
@@ -411,6 +421,74 @@ fn place_basalt_pillar(
         context.random,
         context.origin,
     )
+}
+
+fn place_blue_ice(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BlueIce = kind else {
+        panic!("blue_ice placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_blue_ice_feature(context.region, context.random, context.origin)
+}
+
+fn place_end_island(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::EndIsland = kind else {
+        panic!("end_island placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_end_island_feature(
+        context.region,
+        context.random,
+        context.origin,
+    )
+}
+
+fn place_end_platform(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::EndPlatform = kind else {
+        panic!("end_platform placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_end_platform_feature(context.region, context.origin)
+}
+
+fn place_glowstone_blob(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::GlowstoneBlob = kind else {
+        panic!("glowstone_blob placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_glowstone_blob_feature(
+        context.region,
+        context.random,
+        context.origin,
+    )
+}
+
+fn place_vines(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Vines = kind else {
+        panic!("vines placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_vines_feature(context.region, context.origin)
+}
+
+fn place_void_start_platform(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::VoidStartPlatform = kind else {
+        panic!("void_start_platform placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_void_start_platform_feature(context.region, context.origin)
 }
 
 fn place_spring_feature(

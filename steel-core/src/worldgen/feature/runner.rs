@@ -11,6 +11,15 @@ pub(crate) struct FeatureDecorationRunner {
 }
 
 impl FeatureDecorationRunner {
+    pub(super) const VANILLA_DIRECTION_VALUES: [Direction; 6] = [
+        Direction::Down,
+        Direction::Up,
+        Direction::North,
+        Direction::South,
+        Direction::West,
+        Direction::East,
+    ];
+
     #[must_use]
     pub(crate) fn new(possible_biomes: &[BiomeRef], registry: &Registry) -> Self {
         let mut source_biome_ids = FxHashSet::default();

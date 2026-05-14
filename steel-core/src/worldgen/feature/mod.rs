@@ -10,8 +10,12 @@ mod basalt_pillar;
 mod block_blob;
 mod block_column;
 mod block_pile;
+mod blue_ice;
 mod configured;
 mod disk;
+mod end_island;
+mod end_platform;
+mod glowstone_blob;
 mod ore;
 mod placed;
 mod placement;
@@ -23,6 +27,8 @@ mod simple_block;
 mod sorter;
 mod spring;
 mod state;
+mod vines;
+mod void_start_platform;
 
 pub(crate) use runner::FeatureDecorationRunner;
 
