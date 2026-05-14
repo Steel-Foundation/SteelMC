@@ -24,7 +24,7 @@ pub struct StainedGlassPaneBlock {
         json = "color",
         module = "steel_registry::loot_table"
     )]
-    #[expect(unused)]
+    #[expect(unused, reason = "Is needed for beacon beam")]
     color: DyeColor,
 }
 
