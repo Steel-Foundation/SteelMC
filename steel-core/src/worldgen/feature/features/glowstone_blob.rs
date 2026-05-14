@@ -32,22 +32,22 @@ impl FeatureDecorationRunner {
                 continue;
             }
 
-            let mut neighbours = 0;
+            let mut neighbors = 0;
             for direction in Self::VANILLA_DIRECTION_VALUES {
                 if region
                     .block_state(place_pos.relative(direction))
                     .get_block()
                     == &vanilla_blocks::GLOWSTONE
                 {
-                    neighbours += 1;
+                    neighbors += 1;
                 }
 
-                if neighbours > 1 {
+                if neighbors > 1 {
                     break;
                 }
             }
 
-            if neighbours == 1 {
+            if neighbors == 1 {
                 let _ = region.set_block_state(place_pos, glowstone, UpdateFlags::UPDATE_CLIENTS);
             }
         }
