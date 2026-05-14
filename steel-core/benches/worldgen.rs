@@ -1,8 +1,9 @@
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 use std::sync::{Arc, Once, Weak};
+use std::time::Duration;
 use steel_core::behavior::init_behaviors;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
@@ -18,7 +19,7 @@ use steel_core::worldgen::{
     NetherGenerator, OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
-use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
+use steel_registry::{vanilla_dimension_types, Registry, REGISTRY};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -41,7 +42,13 @@ fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAcc
         .collect();
     let sections = Sections::from_owned(sections);
     let pos = ChunkPos::new(chunk_x, chunk_z);
-    ChunkAccess::Proto(ProtoChunk::new(sections, pos, dim.min_y, dim.height))
+    ChunkAccess::Proto(ProtoChunk::new(
+        sections,
+        pos,
+        dim.min_y,
+        dim.height,
+        std::sync::Weak::new(),
+    ))
 }
 
 /// Build a `neighbor_biomes` closure that reads from the chunk's own sections.
@@ -362,6 +369,7 @@ fn make_chunk_through_carvers(
 }
 
 fn make_holder_for_features(
+    center: ChunkPos,
     chunk_x: i32,
     chunk_z: i32,
     dim: &DimensionType,
@@ -374,7 +382,9 @@ fn make_holder_for_features(
         dim.height,
     ));
 
-    let distance = chunk_x.abs().max(chunk_z.abs());
+    let distance = (chunk_x - center.0.x)
+        .abs()
+        .max((chunk_z - center.0.y).abs());
     if distance <= 1 {
         holder.insert_chunk(
             make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
@@ -397,10 +407,18 @@ struct FeatureFixture {
 }
 
 fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
+    build_feature_fixture_at(generator_key, 0, ChunkPos::new(0, 0))
+}
+
+fn build_feature_fixture_at(
+    generator_key: Identifier,
+    seed: i64,
+    center: ChunkPos,
+) -> FeatureFixture {
     let generator_config = toml::Value::Table(toml::map::Map::new());
     let output = WorldGeneratorRegistry::new_with_builtins()
         .expect("built-in world generators should register")
-        .create(&generator_key, &generator_config, 0)
+        .create(&generator_key, &generator_config, seed)
         .expect("feature benchmark should use a built-in generator");
     let dim = output.dimension_type;
     let generator = Arc::new(output.generator);
@@ -442,7 +460,7 @@ fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
             chunk_runtime.clone(),
             world_key,
             dim,
-            0,
+            seed,
             world_config,
             generation_pool,
         ))
@@ -450,10 +468,13 @@ fn build_feature_fixture(generator_key: Identifier) -> FeatureFixture {
     let context = world.chunk_map.world_gen_context.clone();
 
     let generator_for_factory = generator.clone();
-    let cache = Arc::new(StaticCache2D::create(0, 0, 8, move |x, z| {
-        make_holder_for_features(x, z, dim, generator_for_factory.as_ref())
-    }));
-    let target = cache.get(0, 0).clone();
+    let cache = Arc::new(StaticCache2D::create(
+        center.0.x,
+        center.0.y,
+        8,
+        move |x, z| make_holder_for_features(center, x, z, dim, generator_for_factory.as_ref()),
+    ));
+    let target = cache.get(center.0.x, center.0.y).clone();
 
     FeatureFixture {
         context,
@@ -492,6 +513,56 @@ fn bench_overworld_features(c: &mut Criterion) {
         "overworld_generate_features",
         Identifier::vanilla_static("overworld"),
     );
+}
+
+const PROFILE_FEATURE_SEED: i64 = 2_965_282_071_327_931_563;
+const FEATURE_SAMPLE_GRID_RADIUS: i32 = 8;
+const FEATURE_SAMPLE_GRID_STRIDE: i32 = 4;
+
+fn feature_sample_positions() -> Vec<ChunkPos> {
+    let side = FEATURE_SAMPLE_GRID_RADIUS * 2 + 1;
+    let mut positions = Vec::with_capacity((side * side) as usize);
+
+    for z in -FEATURE_SAMPLE_GRID_RADIUS..=FEATURE_SAMPLE_GRID_RADIUS {
+        for x in -FEATURE_SAMPLE_GRID_RADIUS..=FEATURE_SAMPLE_GRID_RADIUS {
+            positions.push(ChunkPos::new(
+                x * FEATURE_SAMPLE_GRID_STRIDE,
+                z * FEATURE_SAMPLE_GRID_STRIDE,
+            ));
+        }
+    }
+
+    positions
+}
+
+fn bench_overworld_features_profile_range(c: &mut Criterion) {
+    ensure_registry();
+    let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
+    let positions = feature_sample_positions();
+    let mut next_position_index = 0usize;
+
+    c.bench_function("overworld_generate_features_profile_range", |b| {
+        b.iter_batched(
+            || {
+                let center = positions[next_position_index % positions.len()];
+                next_position_index = next_position_index.wrapping_add(1);
+                build_feature_fixture_at(
+                    Identifier::vanilla_static("overworld"),
+                    PROFILE_FEATURE_SEED,
+                    center,
+                )
+            },
+            |fixture| {
+                ChunkStatusTasks::generate_features(
+                    fixture.context,
+                    step,
+                    &fixture.cache,
+                    fixture.target,
+                );
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
 }
 
 fn bench_nether_features(c: &mut Criterion) {
@@ -814,4 +885,12 @@ criterion_group!(
     bench_nether_full,
     bench_end_full,
 );
-criterion_main!(benches);
+criterion_group! {
+    name = feature_distribution_benches;
+    config = Criterion::default()
+        .sample_size(30)
+        .warm_up_time(Duration::from_secs(2))
+        .measurement_time(Duration::from_secs(20));
+    targets = bench_overworld_features_profile_range
+}
+criterion_main!(benches, feature_distribution_benches);

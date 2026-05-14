@@ -6,6 +6,7 @@ use wincode::{SchemaRead, SchemaWrite};
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
+use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
@@ -408,6 +409,26 @@ impl ChunkAccess {
         }
     }
 
+    /// Gets a block entity at the given position.
+    #[must_use]
+    pub fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        match self {
+            Self::Full(chunk) => chunk.get_block_entity(pos),
+            Self::Proto(proto_chunk) => proto_chunk.get_block_entity(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns all block entities in this chunk.
+    #[must_use]
+    pub fn get_block_entities(&self) -> Vec<SharedBlockEntity> {
+        match self {
+            Self::Full(chunk) => chunk.get_block_entities(),
+            Self::Proto(proto_chunk) => proto_chunk.get_block_entities(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Schedules a block tick on either a full or proto chunk.
     pub fn schedule_block_tick(
         &self,
@@ -551,6 +572,7 @@ mod tests {
             ChunkPos::new(0, 0),
             0,
             16,
+            std::sync::Weak::new(),
         );
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         let chunk = ChunkAccess::Proto(proto);

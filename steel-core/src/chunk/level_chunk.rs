@@ -214,6 +214,7 @@ impl LevelChunk {
         let postprocessing = proto_chunk.postprocessing.into_inner();
         let block_ticks = proto_chunk.block_ticks.into_inner();
         let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
+        let block_entities = proto_chunk.block_entities;
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -225,7 +226,7 @@ impl LevelChunk {
             min_y,
             height,
             level,
-            block_entities: BlockEntityStorage::new(),
+            block_entities,
             entities: EntityStorage::new(),
             block_ticks: SyncMutex::new(block_ticks),
             fluid_ticks: SyncMutex::new(fluid_ticks),

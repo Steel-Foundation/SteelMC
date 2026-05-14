@@ -1,5 +1,8 @@
 //! A proto chunk is a chunk that is still being generated.
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Weak,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crossbeam::atomic::AtomicCell;
 use parking_lot::{MappedRwLockWriteGuard, RwLockWriteGuard};
@@ -16,7 +19,10 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
+use crate::behavior::BLOCK_BEHAVIORS;
+use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
+use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{
     BlockTick, BlockTickList, FluidTick, FluidTickList, TickPriority,
@@ -54,6 +60,10 @@ pub struct ProtoChunk {
     min_y: i32,
     /// The total height of the world.
     height: i32,
+    /// Weak reference to the world for block entity dirty callbacks while the chunk is proto.
+    level: Weak<World>,
+    /// Block entities created during generation before promotion to a full chunk.
+    pub(crate) block_entities: BlockEntityStorage,
     /// Structure starts originating in this chunk.
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks.
@@ -79,7 +89,13 @@ pub struct ProtoChunk {
 impl ProtoChunk {
     /// Creates a new proto chunk at the given position with empty sections.
     #[must_use]
-    pub fn new(sections: Sections, pos: ChunkPos, min_y: i32, height: i32) -> Self {
+    pub fn new(
+        sections: Sections,
+        pos: ChunkPos,
+        min_y: i32,
+        height: i32,
+        level: Weak<World>,
+    ) -> Self {
         Self {
             sections,
             pos,
@@ -88,6 +104,8 @@ impl ProtoChunk {
             heightmaps: SyncRwLock::new(ProtoHeightmaps::new()),
             min_y,
             height,
+            level,
+            block_entities: BlockEntityStorage::new(),
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
             carving_mask: SyncRwLock::new(None),
@@ -115,6 +133,7 @@ impl ProtoChunk {
         postprocessing: Vec<Vec<u16>>,
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
+        level: Weak<World>,
     ) -> Self {
         Self {
             sections,
@@ -125,6 +144,8 @@ impl ProtoChunk {
             heightmaps: SyncRwLock::new(ProtoHeightmaps::new()),
             min_y,
             height,
+            level,
+            block_entities: BlockEntityStorage::new(),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             carving_mask: SyncRwLock::new(carving_mask),
@@ -219,6 +240,47 @@ impl ProtoChunk {
         self.dirty.store(true, Ordering::Release);
     }
 
+    /// Returns the weak reference to the world.
+    #[must_use]
+    pub fn level_weak(&self) -> Weak<World> {
+        self.level.clone()
+    }
+
+    /// Gets a block entity at the given position.
+    #[must_use]
+    pub fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.block_entities.get(pos)
+    }
+
+    /// Adds a block entity and registers it for ticking if needed.
+    pub fn add_and_register_block_entity(&self, block_entity: SharedBlockEntity) {
+        self.block_entities.add_and_register(block_entity);
+        self.mark_unsaved();
+    }
+
+    /// Removes a block entity at the given position.
+    pub fn remove_block_entity(&self, pos: BlockPos) {
+        self.block_entities.remove(pos);
+        self.mark_unsaved();
+    }
+
+    /// Updates the ticking status of a block entity.
+    pub fn update_block_entity_ticker(&self, block_entity: &SharedBlockEntity) {
+        self.block_entities.update_ticker(block_entity);
+    }
+
+    /// Returns all block entities in this proto chunk.
+    #[must_use]
+    pub fn get_block_entities(&self) -> Vec<SharedBlockEntity> {
+        self.block_entities.get_all()
+    }
+
+    /// Returns a reference to the block entity storage.
+    #[must_use]
+    pub const fn block_entity_storage(&self) -> &BlockEntityStorage {
+        &self.block_entities
+    }
+
     /// Schedules a block tick in proto storage.
     ///
     /// Vanilla `ProtoChunkTicks.schedule(ScheduledTick)` stores a saved tick with delay `0`,
@@ -262,7 +324,7 @@ impl ProtoChunk {
         &self,
         pos: BlockPos,
         state: BlockStateId,
-        _flags: UpdateFlags,
+        flags: UpdateFlags,
     ) -> Option<BlockStateId> {
         let y = pos.0.y;
 
@@ -316,8 +378,46 @@ impl ProtoChunk {
             }
         }
 
+        self.update_block_entity_lifecycle(pos, old_state, state, flags);
         self.mark_unsaved();
         Some(old_state)
+    }
+
+    fn update_block_entity_lifecycle(
+        &self,
+        pos: BlockPos,
+        old_state: BlockStateId,
+        state: BlockStateId,
+        flags: UpdateFlags,
+    ) {
+        let old_block = old_state.get_block();
+        let new_block = state.get_block();
+        let block_changed = old_block != new_block;
+        let side_effects = !flags.contains(UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS);
+
+        let block_behaviors = &*BLOCK_BEHAVIORS;
+        let old_behavior = block_behaviors.get_behavior(old_block);
+        let new_behavior = block_behaviors.get_behavior(new_block);
+
+        if block_changed && old_behavior.has_block_entity() {
+            let should_keep = new_behavior.should_keep_block_entity(old_state, state);
+            if !should_keep {
+                if side_effects && let Some(block_entity) = self.get_block_entity(pos) {
+                    block_entity.lock().pre_remove_side_effects(pos, old_state);
+                }
+                self.remove_block_entity(pos);
+            }
+        }
+
+        if new_behavior.has_block_entity() {
+            if let Some(existing) = self.get_block_entity(pos) {
+                existing.lock().set_block_state(state);
+                self.update_block_entity_ticker(&existing);
+            } else if let Some(entity) = new_behavior.new_block_entity(self.level.clone(), pos, state)
+            {
+                self.add_and_register_block_entity(entity);
+            }
+        }
     }
 
     /// Gets a block state at the given position.
@@ -378,6 +478,7 @@ mod tests {
             ChunkPos::new(0, 0),
             0,
             16,
+            std::sync::Weak::new(),
         );
         let pos = BlockPos::new(3, 4, 5);
 

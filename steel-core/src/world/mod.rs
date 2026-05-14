@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_access::ChunkStatus;
+use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -918,11 +918,8 @@ impl World {
     ///
     /// Called when entities move, are added/removed, or when block entities change.
     pub fn mark_chunk_dirty(&self, chunk_pos: ChunkPos) {
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            if let Some(lc) = chunk.as_full() {
-                lc.dirty.store(true, Ordering::Release);
-            }
-        });
+        self.chunk_map
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Empty, ChunkAccess::mark_dirty);
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),

@@ -1,8 +1,8 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
-// TODO: Register `minecraft:tree` after proto chunks can carry worldgen block entities.
-// Vanilla beehive decorators populate bee occupants while the tree is being placed.
+// TODO: Register `minecraft:tree` after the required trunk/foliage/root placers
+// and tree decorators are implemented.
 
 const LEAF_DISTANCE_LIMIT: usize = 7;
 

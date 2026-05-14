@@ -185,6 +185,7 @@ fn make_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: i
         ChunkPos::new(pos.0, pos.1),
         min_y,
         height,
+        std::sync::Weak::new(),
     );
     ChunkAccess::Proto(proto)
 }

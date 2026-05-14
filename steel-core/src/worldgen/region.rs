@@ -14,6 +14,7 @@ use rustc_hash::FxHashMap;
 use steel_registry::{REGISTRY, blocks::BlockRef, fluid::FluidRef, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 
+use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
     chunk_generation_task::StaticCache2D,
@@ -177,6 +178,18 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.chunk(chunk_x, chunk_z, ChunkStatus::Empty)
             .get_block_state(pos)
+    }
+
+    /// Gets a block entity through the region dependency contract.
+    ///
+    /// # Panics
+    /// Panics if the position's chunk is outside this step's direct dependencies.
+    #[must_use]
+    pub fn block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        let chunk_x = SectionPos::block_to_section_coord(pos.x());
+        let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        self.chunk(chunk_x, chunk_z, ChunkStatus::Empty)
+            .get_block_entity(pos)
     }
 
     /// Gets the biome id at quart coordinates through the region dependency contract.

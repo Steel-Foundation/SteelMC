@@ -15,7 +15,7 @@ mod vegetation;
 pub use building::{
     FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper, WeatheringCopperFullBlock,
 };
-pub use container::{BarrelBlock, CraftingTableBlock};
+pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
     CandleBlock, CeilingHangingSignBlock, StandingSignBlock, TorchBlock, WallHangingSignBlock,
     WallSignBlock, WallTorchBlock,

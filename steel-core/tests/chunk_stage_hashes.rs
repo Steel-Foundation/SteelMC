@@ -518,6 +518,7 @@ fn chunk_stage_hashes_inner() {
                 ChunkPos::new(pos.0, pos.1),
                 min_y,
                 height,
+                std::sync::Weak::new(),
             );
             chunks.insert(pos, ChunkAccess::Proto(proto));
         }
