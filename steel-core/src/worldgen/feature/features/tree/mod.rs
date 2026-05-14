@@ -265,6 +265,7 @@ impl FeatureDecorationRunner {
     fn tree_foliage_height(random: &mut Xoroshiro, foliage_placer: &FoliagePlacer) -> i32 {
         match foliage_placer {
             FoliagePlacer::Blob(placer) => placer.height.sample(random),
+            FoliagePlacer::Acacia(_) => 0,
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -278,6 +279,7 @@ impl FeatureDecorationRunner {
     ) -> i32 {
         match foliage_placer {
             FoliagePlacer::Blob(placer) => placer.radius.sample(random),
+            FoliagePlacer::Acacia(placer) => placer.radius.sample(random),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -355,6 +357,15 @@ impl FeatureDecorationRunner {
                 config,
                 placement,
             ),
+            TrunkPlacer::Forking(_) => Self::place_forking_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placement,
+            ),
             _ => {
                 panic!(
                     "tree trunk placer requires runtime support before minecraft:tree can be registered"
@@ -384,6 +395,84 @@ impl FeatureDecorationRunner {
             radius_offset: 0,
             double_trunk: false,
         }]
+    }
+
+    fn place_forking_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
+
+        let mut attachments = Vec::new();
+        let lean_direction = Self::random_horizontal_direction(random);
+        let lean_height = tree_height - random.next_i32_bounded(4) - 1;
+        let mut lean_steps = 3 - random.next_i32_bounded(3);
+        let mut trunk_x = origin.x();
+        let mut trunk_z = origin.z();
+        let mut foliage_y = None;
+
+        for y_offset in 0..tree_height {
+            let y = origin.y() + y_offset;
+            if y_offset >= lean_height && lean_steps > 0 {
+                let (dx, _, dz) = lean_direction.offset();
+                trunk_x += dx;
+                trunk_z += dz;
+                lean_steps -= 1;
+            }
+
+            let pos = BlockPos::new(trunk_x, y, trunk_z);
+            if Self::place_tree_log(region, registry, random, pos, config, placement) {
+                foliage_y = Some(y + 1);
+            }
+        }
+
+        if let Some(y) = foliage_y {
+            attachments.push(FoliageAttachment {
+                pos: BlockPos::new(trunk_x, y, trunk_z),
+                radius_offset: 1,
+                double_trunk: false,
+            });
+        }
+
+        trunk_x = origin.x();
+        trunk_z = origin.z();
+        let branch_direction = Self::random_horizontal_direction(random);
+        if branch_direction != lean_direction {
+            let mut branch_y_offset = lean_height - random.next_i32_bounded(2) - 1;
+            let mut branch_steps = 1 + random.next_i32_bounded(3);
+            foliage_y = None;
+
+            while branch_y_offset < tree_height && branch_steps > 0 {
+                if branch_y_offset >= 1 {
+                    let y = origin.y() + branch_y_offset;
+                    let (dx, _, dz) = branch_direction.offset();
+                    trunk_x += dx;
+                    trunk_z += dz;
+                    let pos = BlockPos::new(trunk_x, y, trunk_z);
+                    if Self::place_tree_log(region, registry, random, pos, config, placement) {
+                        foliage_y = Some(y + 1);
+                    }
+                }
+
+                branch_y_offset += 1;
+                branch_steps -= 1;
+            }
+
+            if let Some(y) = foliage_y {
+                attachments.push(FoliageAttachment {
+                    pos: BlockPos::new(trunk_x, y, trunk_z),
+                    radius_offset: 0,
+                    double_trunk: false,
+                });
+            }
+        }
+
+        attachments
     }
 
     fn place_below_trunk_block(
@@ -452,6 +541,16 @@ impl FeatureDecorationRunner {
                 leaf_radius,
                 placement,
             ),
+            FoliagePlacer::Acacia(_) => Self::create_acacia_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                attachment,
+                foliage_height,
+                leaf_radius,
+                placement,
+            ),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -486,9 +585,57 @@ impl FeatureDecorationRunner {
         }
     }
 
+    fn create_acacia_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        attachment: FoliageAttachment,
+        foliage_height: i32,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let offset = Self::tree_foliage_offset(random, &config.foliage_placer);
+        let foliage_pos = attachment.pos.above_n(offset);
+        Self::place_tree_leaves_row(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            leaf_radius + attachment.radius_offset,
+            -1 - foliage_height,
+            attachment.double_trunk,
+            placement,
+        );
+        Self::place_tree_leaves_row(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            leaf_radius - 1,
+            -foliage_height,
+            attachment.double_trunk,
+            placement,
+        );
+        Self::place_tree_leaves_row(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            leaf_radius + attachment.radius_offset - 1,
+            0,
+            attachment.double_trunk,
+            placement,
+        );
+    }
+
     fn tree_foliage_offset(random: &mut Xoroshiro, foliage_placer: &FoliagePlacer) -> i32 {
         match foliage_placer {
             FoliagePlacer::Blob(placer) => placer.offset.sample(random),
+            FoliagePlacer::Acacia(placer) => placer.offset.sample(random),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -509,8 +656,9 @@ impl FeatureDecorationRunner {
         let offset = if double_trunk { 1 } else { 0 };
         for dx in -current_radius..=current_radius + offset {
             for dz in -current_radius..=current_radius + offset {
-                if !Self::blob_foliage_should_skip_location(
+                if !Self::tree_foliage_should_skip_location(
                     random,
+                    &config.foliage_placer,
                     dx,
                     y,
                     dz,
@@ -525,8 +673,9 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn blob_foliage_should_skip_location(
+    fn tree_foliage_should_skip_location(
         random: &mut Xoroshiro,
+        foliage_placer: &FoliagePlacer,
         dx: i32,
         y: i32,
         dz: i32,
@@ -534,7 +683,42 @@ impl FeatureDecorationRunner {
         double_trunk: bool,
     ) -> bool {
         let (dx, dz) = Self::foliage_signed_distances(dx, dz, double_trunk);
+        match foliage_placer {
+            FoliagePlacer::Blob(_) => {
+                Self::blob_foliage_should_skip_location(random, dx, y, dz, current_radius)
+            }
+            FoliagePlacer::Acacia(_) => {
+                Self::acacia_foliage_should_skip_location(dx, y, dz, current_radius)
+            }
+            _ => {
+                panic!(
+                    "tree foliage placer requires runtime support before minecraft:tree can be registered"
+                )
+            }
+        }
+    }
+
+    fn blob_foliage_should_skip_location(
+        random: &mut Xoroshiro,
+        dx: i32,
+        y: i32,
+        dz: i32,
+        current_radius: i32,
+    ) -> bool {
         dx == current_radius && dz == current_radius && (random.next_i32_bounded(2) == 0 || y == 0)
+    }
+
+    const fn acacia_foliage_should_skip_location(
+        dx: i32,
+        y: i32,
+        dz: i32,
+        current_radius: i32,
+    ) -> bool {
+        if y == 0 {
+            (dx > 1 || dz > 1) && dx != 0 && dz != 0
+        } else {
+            dx == current_radius && dz == current_radius && current_radius > 0
+        }
     }
 
     fn foliage_signed_distances(dx: i32, dz: i32, double_trunk: bool) -> (i32, i32) {
@@ -785,4 +969,24 @@ fn take_frontier_position(frontier: &mut FxHashSet<BlockPos>) -> Option<BlockPos
 
 const fn abs_i32(value: i32) -> i32 {
     if value < 0 { -value } else { value }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acacia_top_layer_keeps_cross_and_inner_corners() {
+        assert!(FeatureDecorationRunner::acacia_foliage_should_skip_location(2, 0, 2, 2));
+        assert!(FeatureDecorationRunner::acacia_foliage_should_skip_location(1, 0, 2, 2));
+        assert!(!FeatureDecorationRunner::acacia_foliage_should_skip_location(0, 0, 2, 2));
+        assert!(!FeatureDecorationRunner::acacia_foliage_should_skip_location(1, 0, 1, 2));
+    }
+
+    #[test]
+    fn acacia_lower_layers_skip_only_outer_corners() {
+        assert!(FeatureDecorationRunner::acacia_foliage_should_skip_location(2, -1, 2, 2));
+        assert!(!FeatureDecorationRunner::acacia_foliage_should_skip_location(1, -1, 2, 2));
+        assert!(!FeatureDecorationRunner::acacia_foliage_should_skip_location(0, -1, 0, 0));
+    }
 }
