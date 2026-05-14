@@ -7,15 +7,16 @@ pub(super) use steel_registry::blocks::{
     properties::WallSide, shapes,
 };
 pub(super) use steel_registry::feature::{
-    BambooConfiguration, BasaltColumnsConfiguration, BlockBlobConfiguration,
+    BambooConfiguration, BasaltColumnsConfiguration, BlobFoliagePlacer, BlockBlobConfiguration,
     BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate, BlockStateData,
     BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration,
-    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FluidStateData,
-    HugeMushroomConfiguration, IdentifierList, NetherForestVegetationConfiguration,
-    NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
-    OreTarget, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier,
-    RuleTest, SeaPickleConfiguration, SeagrassConfiguration, SimpleBlockConfiguration,
-    SpikeConfiguration, SpringConfiguration, TwistingVinesConfiguration,
+    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
+    FluidStateData, FoliagePlacer, HugeMushroomConfiguration, IdentifierList,
+    NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, NoiseProvider,
+    NoiseThresholdProvider, OreConfiguration, OreTarget, PlacedFeatureData, PlacedFeatureEntryRef,
+    PlacedFeatureRef, PlacementModifier, RuleTest, SeaPickleConfiguration, SeagrassConfiguration,
+    SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
+    TrunkPlacer, TwistingVinesConfiguration,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{

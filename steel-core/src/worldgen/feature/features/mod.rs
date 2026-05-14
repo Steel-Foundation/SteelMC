@@ -22,6 +22,7 @@ mod seagrass;
 mod simple_block;
 mod spike;
 mod spring;
+mod tree;
 mod twisting_vines;
 mod vines;
 mod void_start_platform;

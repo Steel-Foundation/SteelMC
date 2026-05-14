@@ -16,11 +16,15 @@ type ConfiguredFeaturePlacer = for<'a, 'region> fn(
 
 struct ConfiguredFeatureRuntimeRegistry {
     placers: FxHashMap<Identifier, ConfiguredFeaturePlacer>,
+    /// Placer foundations that compile but are intentionally inactive until a lower-level
+    /// worldgen contract is ready.
+    pending_placers: FxHashMap<Identifier, ConfiguredFeaturePlacer>,
 }
 
 impl ConfiguredFeatureRuntimeRegistry {
     fn new_vanilla() -> Self {
         let mut placers = FxHashMap::default();
+        let mut pending_placers = FxHashMap::default();
         register(
             &mut placers,
             "random_boolean_selector",
@@ -80,11 +84,19 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "spike", place_spike);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
-        Self { placers }
+        register(&mut pending_placers, "tree", place_tree);
+        Self {
+            placers,
+            pending_placers,
+        }
     }
 
     fn placer(&self, feature_type: &Identifier) -> Option<ConfiguredFeaturePlacer> {
         self.placers.get(feature_type).copied()
+    }
+
+    fn pending_placer(&self, feature_type: &Identifier) -> Option<ConfiguredFeaturePlacer> {
+        self.pending_placers.get(feature_type).copied()
     }
 }
 
@@ -111,6 +123,9 @@ impl FeatureDecorationRunner {
         let kind = Self::configured_feature_kind(registry, feature);
         let feature_type = Self::configured_feature_type_id(kind);
         let Some(placer) = CONFIGURED_FEATURES.placer(&feature_type) else {
+            if CONFIGURED_FEATURES.pending_placer(&feature_type).is_some() {
+                return false;
+            }
             // TODO: Register concrete block-mutating feature implementations as they are added.
             return false;
         };
@@ -814,6 +829,22 @@ fn place_scattered_ore(
         panic!("scattered_ore placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_scattered_ore_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_tree(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Tree(config) = kind else {
+        panic!("tree placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_tree_feature(
         context.region,
         context.registry,
         context.random,
