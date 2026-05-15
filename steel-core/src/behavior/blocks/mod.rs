@@ -14,8 +14,8 @@ mod redstone;
 mod utils;
 
 pub use building::{
-    FenceBlock, IronBarsBlock, RotatedPillarBlock, WeatherState, WeatheringCopper,
-    WeatheringCopperBarsBlock, WeatheringCopperFullBlock,
+    FenceBlock, FenceGateBlock, IronBarsBlock, RotatedPillarBlock, WallBlock, WeatherState,
+    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperFullBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, CraftingTableBlock};
