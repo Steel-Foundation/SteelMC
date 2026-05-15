@@ -3,20 +3,24 @@ pub(super) use std::sync::LazyLock;
 pub(super) use rustc_hash::{FxHashMap, FxHashSet};
 pub(super) use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
-    properties::BlockStateProperties, properties::DoubleBlockHalf, properties::EnumProperty,
-    properties::WallSide, shapes,
+    properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,
+    properties::EnumProperty, properties::WallSide, shapes,
 };
 pub(super) use steel_registry::feature::{
-    BambooConfiguration, BasaltColumnsConfiguration, BlobFoliagePlacer, BlockBlobConfiguration,
+    AttachedToLeavesDecorator, AttachedToLogsDecorator, BambooConfiguration,
+    BasaltColumnsConfiguration, BendingTrunkPlacer, BlobFoliagePlacer, BlockBlobConfiguration,
     BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate, BlockStateData,
-    BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration,
-    DiskConfiguration, DualNoiseProvider, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
-    FluidStateData, FoliagePlacer, HugeMushroomConfiguration, IdentifierList,
+    BlockStateProvider, CherryFoliagePlacer, CherryTrunkPlacer, ConfiguredFeatureKind,
+    ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration, DualNoiseProvider,
+    FeatureHeightmap, FeatureNoiseParameters, FeatureSize, FluidStateData, FoliagePlacer,
+    HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement, MangroveRootPlacer,
     NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, NoiseProvider,
     NoiseThresholdProvider, OreConfiguration, OreTarget, PlaceOnGroundDecorator, PlacedFeatureData,
-    PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, RuleTest, SeaPickleConfiguration,
-    SeagrassConfiguration, SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration,
-    TreeConfiguration, TreeDecorator, TrunkPlacer, TwistingVinesConfiguration,
+    PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, RandomSpreadFoliagePlacer,
+    RootPlacer, RuleTest, SeaPickleConfiguration, SeagrassConfiguration, SimpleBlockConfiguration,
+    SpikeConfiguration, SpringConfiguration, TreeConfiguration, TreeDecorator, TrunkPlacer,
+    TwistingVinesConfiguration, UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration,
+    VerticalSurface,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{

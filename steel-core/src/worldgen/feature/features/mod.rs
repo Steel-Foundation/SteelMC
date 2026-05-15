@@ -24,6 +24,7 @@ mod spike;
 mod spring;
 mod tree;
 mod twisting_vines;
+mod vegetation_patch;
 mod vines;
 mod void_start_platform;
 mod weeping_vines;

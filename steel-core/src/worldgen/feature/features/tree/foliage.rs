@@ -3,20 +3,6 @@ use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement, abs_i32};
 
 impl FeatureDecorationRunner {
-    pub(super) const fn tree_foliage_placer_supported(foliage_placer: &FoliagePlacer) -> bool {
-        matches!(
-            foliage_placer,
-            FoliagePlacer::Blob(_)
-                | FoliagePlacer::Bush(_)
-                | FoliagePlacer::Fancy(_)
-                | FoliagePlacer::Pine(_)
-                | FoliagePlacer::Spruce(_)
-                | FoliagePlacer::MegaPine(_)
-                | FoliagePlacer::Acacia(_)
-                | FoliagePlacer::DarkOak(_)
-        )
-    }
-
     pub(super) fn tree_foliage_height(
         random: &mut Xoroshiro,
         tree_height: i32,
@@ -33,9 +19,9 @@ impl FeatureDecorationRunner {
             FoliagePlacer::MegaPine(placer) => placer.crown_height.sample(random),
             FoliagePlacer::Acacia(_) => 0,
             FoliagePlacer::DarkOak(_) => 4,
-            _ => panic!(
-                "tree foliage placer requires runtime support before minecraft:tree can be registered"
-            ),
+            FoliagePlacer::Jungle(placer) => placer.height.sample(random),
+            FoliagePlacer::RandomSpread(placer) => placer.foliage_height,
+            FoliagePlacer::Cherry(placer) => placer.height.sample(random),
         }
     }
 
@@ -55,9 +41,9 @@ impl FeatureDecorationRunner {
             FoliagePlacer::MegaPine(placer) => placer.radius.sample(random),
             FoliagePlacer::Acacia(placer) => placer.radius.sample(random),
             FoliagePlacer::DarkOak(placer) => placer.radius.sample(random),
-            _ => panic!(
-                "tree foliage placer requires runtime support before minecraft:tree can be registered"
-            ),
+            FoliagePlacer::Jungle(placer) => placer.radius.sample(random),
+            FoliagePlacer::RandomSpread(placer) => placer.radius.sample(random),
+            FoliagePlacer::Cherry(placer) => placer.radius.sample(random),
         }
     }
 
@@ -153,8 +139,37 @@ impl FeatureDecorationRunner {
                 leaf_radius,
                 placement,
             ),
-            _ => panic!(
-                "tree foliage placer requires runtime support before minecraft:tree can be registered"
+            FoliagePlacer::Jungle(_) => Self::create_jungle_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                attachment,
+                foliage_height,
+                leaf_radius,
+                placement,
+            ),
+            FoliagePlacer::RandomSpread(placer) => Self::create_random_spread_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                placer,
+                attachment,
+                foliage_height,
+                leaf_radius,
+                placement,
+            ),
+            FoliagePlacer::Cherry(placer) => Self::create_cherry_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                placer,
+                attachment,
+                foliage_height,
+                leaf_radius,
+                placement,
             ),
         }
     }
@@ -188,6 +203,139 @@ impl FeatureDecorationRunner {
                 placement,
             );
         }
+    }
+
+    fn create_jungle_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        attachment: FoliageAttachment,
+        foliage_height: i32,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let offset = Self::tree_foliage_offset(random, &config.foliage_placer);
+        let leaf_height = if attachment.double_trunk {
+            foliage_height
+        } else {
+            1 + random.next_i32_bounded(2)
+        };
+
+        for y in (offset - leaf_height..=offset).rev() {
+            let current_radius = leaf_radius + attachment.radius_offset + 1 - y;
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                attachment.pos,
+                current_radius,
+                y,
+                attachment.double_trunk,
+                placement,
+            );
+        }
+    }
+
+    fn create_random_spread_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        placer: &RandomSpreadFoliagePlacer,
+        attachment: FoliageAttachment,
+        foliage_height: i32,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        for _ in 0..placer.leaf_placement_attempts {
+            let pos = attachment.pos.offset(
+                random.next_i32_bounded(leaf_radius) - random.next_i32_bounded(leaf_radius),
+                random.next_i32_bounded(foliage_height) - random.next_i32_bounded(foliage_height),
+                random.next_i32_bounded(leaf_radius) - random.next_i32_bounded(leaf_radius),
+            );
+            let _ = Self::try_place_tree_leaf(region, registry, random, config, pos, placement);
+        }
+    }
+
+    fn create_cherry_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        placer: &CherryFoliagePlacer,
+        attachment: FoliageAttachment,
+        foliage_height: i32,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let offset = Self::tree_foliage_offset(random, &config.foliage_placer);
+        let foliage_pos = attachment.pos.above_n(offset);
+        let current_radius = leaf_radius + attachment.radius_offset - 1;
+        Self::place_tree_leaves_row(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            current_radius - 2,
+            foliage_height - 3,
+            attachment.double_trunk,
+            placement,
+        );
+        Self::place_tree_leaves_row(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            current_radius - 1,
+            foliage_height - 4,
+            attachment.double_trunk,
+            placement,
+        );
+
+        for y in (0..=foliage_height - 5).rev() {
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                foliage_pos,
+                current_radius,
+                y,
+                attachment.double_trunk,
+                placement,
+            );
+        }
+
+        Self::place_tree_leaves_row_with_hanging_leaves_below(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            current_radius,
+            -1,
+            attachment.double_trunk,
+            placer.hanging_leaves_chance,
+            placer.hanging_leaves_extension_chance,
+            placement,
+        );
+        Self::place_tree_leaves_row_with_hanging_leaves_below(
+            region,
+            registry,
+            random,
+            config,
+            foliage_pos,
+            current_radius - 1,
+            -2,
+            attachment.double_trunk,
+            placer.hanging_leaves_chance,
+            placer.hanging_leaves_extension_chance,
+            placement,
+        );
     }
 
     fn create_dark_oak_tree_foliage(
@@ -497,9 +645,9 @@ impl FeatureDecorationRunner {
             FoliagePlacer::MegaPine(placer) => placer.offset.sample(random),
             FoliagePlacer::Acacia(placer) => placer.offset.sample(random),
             FoliagePlacer::DarkOak(placer) => placer.offset.sample(random),
-            _ => panic!(
-                "tree foliage placer requires runtime support before minecraft:tree can be registered"
-            ),
+            FoliagePlacer::Jungle(placer) => placer.offset.sample(random),
+            FoliagePlacer::RandomSpread(placer) => placer.offset.sample(random),
+            FoliagePlacer::Cherry(placer) => placer.offset.sample(random),
         }
     }
 
@@ -532,6 +680,106 @@ impl FeatureDecorationRunner {
                 }
             }
         }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla foliage row helper"
+    )]
+    fn place_tree_leaves_row_with_hanging_leaves_below(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        origin: BlockPos,
+        current_radius: i32,
+        y: i32,
+        double_trunk: bool,
+        hanging_leaves_chance: f32,
+        hanging_leaves_extension_chance: f32,
+        placement: &mut TreePlacement,
+    ) {
+        Self::place_tree_leaves_row(
+            region,
+            registry,
+            random,
+            config,
+            origin,
+            current_radius,
+            y,
+            double_trunk,
+            placement,
+        );
+
+        let offset = if double_trunk { 1 } else { 0 };
+        let log_pos = origin.below();
+        for along_edge in Self::VANILLA_HORIZONTAL_DIRECTIONS {
+            let to_edge = along_edge.rotate_y_clockwise();
+            let offset_to_edge = if Self::direction_is_positive(to_edge) {
+                current_radius + offset
+            } else {
+                current_radius
+            };
+            let mut pos = origin
+                .offset(0, y - 1, 0)
+                .relative_n(to_edge, offset_to_edge)
+                .relative_n(along_edge, -current_radius);
+            let mut offset_along_edge = -current_radius;
+
+            while offset_along_edge < current_radius + offset {
+                let leaves_above = placement.foliage.contains(&pos.above());
+                if leaves_above
+                    && Self::try_place_hanging_leaf_extension(
+                        region,
+                        registry,
+                        random,
+                        config,
+                        hanging_leaves_chance,
+                        log_pos,
+                        pos,
+                        placement,
+                    )
+                {
+                    let _ = Self::try_place_hanging_leaf_extension(
+                        region,
+                        registry,
+                        random,
+                        config,
+                        hanging_leaves_extension_chance,
+                        log_pos,
+                        pos.below(),
+                        placement,
+                    );
+                }
+
+                offset_along_edge += 1;
+                pos = pos.relative(along_edge);
+            }
+        }
+    }
+
+    fn try_place_hanging_leaf_extension(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        chance: f32,
+        log_pos: BlockPos,
+        pos: BlockPos,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        if Self::manhattan_distance(pos, log_pos) >= 7 || random.next_f32() > chance {
+            return false;
+        }
+
+        Self::try_place_tree_leaf(region, registry, random, config, pos, placement)
+    }
+
+    const fn direction_is_positive(direction: Direction) -> bool {
+        matches!(
+            direction,
+            Direction::Up | Direction::South | Direction::East
+        )
     }
 
     fn tree_foliage_should_skip_location(
@@ -570,15 +818,17 @@ impl FeatureDecorationRunner {
             FoliagePlacer::MegaPine(_) => {
                 Self::mega_pine_foliage_should_skip_location(dx, dz, current_radius)
             }
+            FoliagePlacer::Jungle(_) => {
+                Self::mega_pine_foliage_should_skip_location(dx, dz, current_radius)
+            }
+            FoliagePlacer::RandomSpread(_) => false,
             FoliagePlacer::Acacia(_) => {
                 Self::acacia_foliage_should_skip_location(dx, y, dz, current_radius)
             }
-            FoliagePlacer::DarkOak(_) => unreachable!(),
-            _ => {
-                panic!(
-                    "tree foliage placer requires runtime support before minecraft:tree can be registered"
-                )
+            FoliagePlacer::Cherry(placer) => {
+                Self::cherry_foliage_should_skip_location(random, placer, dx, y, dz, current_radius)
             }
+            FoliagePlacer::DarkOak(_) => unreachable!(),
         }
     }
 
@@ -629,6 +879,31 @@ impl FeatureDecorationRunner {
             dx + dz > current_radius * 2 - 2
         } else {
             false
+        }
+    }
+
+    fn cherry_foliage_should_skip_location(
+        random: &mut Xoroshiro,
+        placer: &CherryFoliagePlacer,
+        dx: i32,
+        y: i32,
+        dz: i32,
+        current_radius: i32,
+    ) -> bool {
+        if y == -1
+            && (dx == current_radius || dz == current_radius)
+            && random.next_f32() < placer.wide_bottom_layer_hole_chance
+        {
+            return true;
+        }
+
+        let corner = dx == current_radius && dz == current_radius;
+        let wide_layer = current_radius > 2;
+        if wide_layer {
+            corner
+                || dx + dz > current_radius * 2 - 2 && random.next_f32() < placer.corner_hole_chance
+        } else {
+            corner && random.next_f32() < placer.corner_hole_chance
         }
     }
 

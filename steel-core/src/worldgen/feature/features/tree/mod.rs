@@ -4,6 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 mod decorators;
 mod foliage;
 mod leaves;
+mod roots;
 mod trunk;
 
 impl FeatureDecorationRunner {
@@ -13,12 +14,8 @@ impl FeatureDecorationRunner {
         random: &mut Xoroshiro,
         config: &TreeConfiguration,
         origin: BlockPos,
+        biome_zoom_seed: i64,
     ) -> bool {
-        // TODO: Remove this gate after all vanilla tree placers, root placers, and decorators exist.
-        if !Self::tree_configuration_supported(config) {
-            return false;
-        }
-
         let mut placement = TreePlacement::default();
         let placed = Self::do_place_tree(region, registry, random, config, origin, &mut placement);
         if !placed || (placement.trunks.is_empty() && placement.foliage.is_empty()) {
@@ -26,7 +23,14 @@ impl FeatureDecorationRunner {
         }
 
         if !config.decorators.is_empty() {
-            Self::place_tree_decorators(region, registry, random, config, &mut placement);
+            Self::place_tree_decorators(
+                region,
+                registry,
+                random,
+                config,
+                &mut placement,
+                biome_zoom_seed,
+            );
         }
 
         let Some(bounds) = TreeBounds::from_placement(&placement) else {
@@ -44,17 +48,11 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         placement: &mut TreePlacement,
     ) -> bool {
-        if config.root_placer.is_some() {
-            panic!(
-                "tree root placers require runtime support before minecraft:tree can be registered"
-            );
-        }
-
         let tree_height = Self::tree_height(random, &config.trunk_placer);
         let foliage_height = Self::tree_foliage_height(random, tree_height, config);
         let trunk_height = tree_height - foliage_height;
         let leaf_radius = Self::tree_foliage_radius(random, &config.foliage_placer, trunk_height);
-        let trunk_origin = origin;
+        let trunk_origin = Self::tree_root_origin(random, origin, config.root_placer.as_ref());
         let min_y = origin.y().min(trunk_origin.y());
         let max_y = origin.y().max(trunk_origin.y()) + tree_height + 1;
 
@@ -67,6 +65,20 @@ impl FeatureDecorationRunner {
         let min_clipped_height = Self::tree_min_clipped_height(&config.minimum_size);
         if clipped_tree_height < tree_height
             && min_clipped_height.is_none_or(|height| clipped_tree_height < height)
+        {
+            return false;
+        }
+
+        if config.root_placer.is_some()
+            && !Self::place_tree_roots(
+                region,
+                registry,
+                random,
+                origin,
+                trunk_origin,
+                config,
+                placement,
+            )
         {
             return false;
         }
@@ -95,13 +107,6 @@ impl FeatureDecorationRunner {
         }
 
         true
-    }
-
-    fn tree_configuration_supported(config: &TreeConfiguration) -> bool {
-        config.root_placer.is_none()
-            && Self::tree_trunk_placer_supported(&config.trunk_placer)
-            && Self::tree_foliage_placer_supported(&config.foliage_placer)
-            && config.decorators.iter().all(Self::tree_decorator_supported)
     }
 
     const fn tree_min_clipped_height(feature_size: &FeatureSize) -> Option<i32> {
@@ -177,6 +182,21 @@ impl FeatureDecorationRunner {
                 .is_in_tag(state.get_block(), &vanilla_block_tags::LOGS_TAG)
     }
 
+    fn tree_valid_pos_or_tag(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        pos: BlockPos,
+        tag: &Identifier,
+    ) -> bool {
+        let state = region.block_state(pos);
+        state.is_air()
+            || registry.blocks.is_in_tag(
+                state.get_block(),
+                &vanilla_block_tags::REPLACEABLE_BY_TREES_TAG,
+            )
+            || registry.blocks.is_in_tag(state.get_block(), tag)
+    }
+
     fn tree_is_air_or_leaves(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
@@ -217,6 +237,11 @@ struct TreePlacement {
 }
 
 impl TreePlacement {
+    fn set_root(&mut self, region: &mut WorldGenRegion<'_>, pos: BlockPos, state: BlockStateId) {
+        self.roots.insert(pos);
+        FeatureDecorationRunner::set_tree_block(region, pos, state);
+    }
+
     fn set_trunk(&mut self, region: &mut WorldGenRegion<'_>, pos: BlockPos, state: BlockStateId) {
         self.trunks.insert(pos);
         FeatureDecorationRunner::set_tree_block(region, pos, state);

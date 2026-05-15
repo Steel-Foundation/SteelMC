@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 use steel_utils::{
     Direction, Identifier,
-    value_providers::{FloatProvider, HeightProvider, IntProvider},
+    value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
 };
 
 /// A configured feature reference, either a registry key or an inline configured feature.
@@ -1025,7 +1025,7 @@ pub struct CherryTrunkPlacer {
     pub height_rand_b: i32,
     pub branch_count: IntProvider,
     pub branch_horizontal_length: IntProvider,
-    pub branch_start_offset_from_top: IntProvider,
+    pub branch_start_offset_from_top: UniformIntProvider,
     pub branch_end_offset_from_top: IntProvider,
 }
 

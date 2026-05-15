@@ -8,17 +8,6 @@ const FANCY_BRANCH_SLOPE: f64 = 0.381;
 const FANCY_BRANCH_LENGTH_MAGIC: f64 = 0.328;
 
 impl FeatureDecorationRunner {
-    pub(super) const fn tree_trunk_placer_supported(trunk_placer: &TrunkPlacer) -> bool {
-        matches!(
-            trunk_placer,
-            TrunkPlacer::Straight(_)
-                | TrunkPlacer::Forking(_)
-                | TrunkPlacer::Giant(_)
-                | TrunkPlacer::Fancy(_)
-                | TrunkPlacer::DarkOak(_)
-        )
-    }
-
     pub(super) fn tree_height(random: &mut Xoroshiro, placer: &TrunkPlacer) -> i32 {
         match placer {
             TrunkPlacer::Straight(base)
@@ -119,11 +108,45 @@ impl FeatureDecorationRunner {
                 config,
                 placement,
             ),
-            _ => {
-                panic!(
-                    "tree trunk placer requires runtime support before minecraft:tree can be registered"
-                )
-            }
+            TrunkPlacer::MegaJungle(_) => Self::place_mega_jungle_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placement,
+            ),
+            TrunkPlacer::Bending(placer) => Self::place_bending_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placer,
+                placement,
+            ),
+            TrunkPlacer::UpwardsBranching(placer) => Self::place_upwards_branching_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placer,
+                placement,
+            ),
+            TrunkPlacer::Cherry(placer) => Self::place_cherry_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placer,
+                placement,
+            ),
         }
     }
 
@@ -306,6 +329,391 @@ impl FeatureDecorationRunner {
             radius_offset: 0,
             double_trunk: true,
         }]
+    }
+
+    fn place_mega_jungle_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        let mut attachments = Self::place_giant_tree_trunk(
+            region,
+            registry,
+            random,
+            tree_height,
+            origin,
+            config,
+            placement,
+        );
+
+        let mut branch_height = tree_height - 2 - random.next_i32_bounded(4);
+        while branch_height > tree_height / 2 {
+            let angle = random.next_f32() * std::f32::consts::TAU;
+            let mut branch_x = 0;
+            let mut branch_z = 0;
+
+            for branch_step in 0..5 {
+                branch_x = (1.5_f32 + angle.cos() * branch_step as f32) as i32;
+                branch_z = (1.5_f32 + angle.sin() * branch_step as f32) as i32;
+                let pos = origin.offset(branch_x, branch_height - 3 + branch_step / 2, branch_z);
+                let _ = Self::place_tree_log(region, registry, random, pos, config, placement);
+            }
+
+            attachments.push(FoliageAttachment {
+                pos: origin.offset(branch_x, branch_height, branch_z),
+                radius_offset: -2,
+                double_trunk: false,
+            });
+            branch_height -= 2 + random.next_i32_bounded(4);
+        }
+
+        attachments
+    }
+
+    fn place_bending_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placer: &BendingTrunkPlacer,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        let direction = Self::random_horizontal_direction(random);
+        let log_height = tree_height - 1;
+        let mut pos = origin;
+        Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
+        let mut foliage_points = Vec::new();
+
+        for y in 0..=log_height {
+            if y + 1 >= log_height + random.next_i32_bounded(2) {
+                pos = pos.relative(direction);
+            }
+
+            let _ = Self::place_tree_log(region, registry, random, pos, config, placement);
+
+            if y >= placer.min_height_for_leaves {
+                foliage_points.push(FoliageAttachment {
+                    pos,
+                    radius_offset: 0,
+                    double_trunk: false,
+                });
+            }
+
+            pos = pos.relative(Direction::Up);
+        }
+
+        let bend_length = placer.bend_length.sample(random);
+        for _ in 0..=bend_length {
+            let _ = Self::place_tree_log(region, registry, random, pos, config, placement);
+            foliage_points.push(FoliageAttachment {
+                pos,
+                radius_offset: 0,
+                double_trunk: false,
+            });
+            pos = pos.relative(direction);
+        }
+
+        foliage_points
+    }
+
+    fn place_upwards_branching_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placer: &UpwardsBranchingTrunkPlacer,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        let mut attachments = Vec::new();
+
+        for height_pos in 0..tree_height {
+            let current_height = origin.y() + height_pos;
+            let log_pos = BlockPos::new(origin.x(), current_height, origin.z());
+            if Self::place_tree_log_growing_through(
+                region,
+                registry,
+                random,
+                log_pos,
+                &placer.can_grow_through,
+                config,
+                placement,
+            ) && height_pos < tree_height - 1
+                && random.next_f32() < placer.place_branch_per_log_probability
+            {
+                let branch_dir = Self::random_horizontal_direction(random);
+                let branch_len = placer.extra_branch_length.sample(random);
+                let branch_pos = 0.max(branch_len - placer.extra_branch_length.sample(random) - 1);
+                let branch_steps = placer.extra_branch_steps.sample(random);
+                Self::place_upwards_branching_tree_branch(
+                    region,
+                    registry,
+                    random,
+                    tree_height,
+                    config,
+                    placer,
+                    &mut attachments,
+                    log_pos,
+                    current_height,
+                    branch_dir,
+                    branch_pos,
+                    branch_steps,
+                    placement,
+                );
+            }
+
+            if height_pos == tree_height - 1 {
+                attachments.push(FoliageAttachment {
+                    pos: BlockPos::new(origin.x(), current_height + 1, origin.z()),
+                    radius_offset: 0,
+                    double_trunk: false,
+                });
+            }
+        }
+
+        attachments
+    }
+
+    #[expect(clippy::too_many_arguments, reason = "mirrors vanilla branch state")]
+    fn place_upwards_branching_tree_branch(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        config: &TreeConfiguration,
+        placer: &UpwardsBranchingTrunkPlacer,
+        attachments: &mut Vec<FoliageAttachment>,
+        log_pos: BlockPos,
+        current_height: i32,
+        branch_dir: Direction,
+        branch_pos: i32,
+        mut branch_steps: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let mut height_along_branch = current_height + branch_pos;
+        let mut log_x = log_pos.x();
+        let mut log_z = log_pos.z();
+        let mut branch_placement_index = branch_pos;
+
+        while branch_placement_index < tree_height && branch_steps > 0 {
+            if branch_placement_index >= 1 {
+                let placement_height = current_height + branch_placement_index;
+                let (dx, _, dz) = branch_dir.offset();
+                log_x += dx;
+                log_z += dz;
+                height_along_branch = placement_height;
+                let branch_log_pos = BlockPos::new(log_x, placement_height, log_z);
+                if Self::place_tree_log_growing_through(
+                    region,
+                    registry,
+                    random,
+                    branch_log_pos,
+                    &placer.can_grow_through,
+                    config,
+                    placement,
+                ) {
+                    height_along_branch = placement_height + 1;
+                }
+
+                attachments.push(FoliageAttachment {
+                    pos: branch_log_pos,
+                    radius_offset: 0,
+                    double_trunk: false,
+                });
+            }
+
+            branch_placement_index += 1;
+            branch_steps -= 1;
+        }
+
+        if height_along_branch - current_height > 1 {
+            let foliage_pos = BlockPos::new(log_x, height_along_branch, log_z);
+            attachments.push(FoliageAttachment {
+                pos: foliage_pos,
+                radius_offset: 0,
+                double_trunk: false,
+            });
+            attachments.push(FoliageAttachment {
+                pos: foliage_pos.below_n(2),
+                radius_offset: 0,
+                double_trunk: false,
+            });
+        }
+    }
+
+    fn place_cherry_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placer: &CherryTrunkPlacer,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
+        let first_branch_offset =
+            0.max(tree_height - 1 + placer.branch_start_offset_from_top.sample(random));
+        let second_branch_provider = placer
+            .branch_start_offset_from_top
+            .with_max_inclusive(placer.branch_start_offset_from_top.max_inclusive - 1);
+        let mut second_branch_offset =
+            0.max(tree_height - 1 + second_branch_provider.sample(random));
+        if second_branch_offset >= first_branch_offset {
+            second_branch_offset += 1;
+        }
+
+        let branch_count = placer.branch_count.sample(random);
+        let has_middle_branch = branch_count == 3;
+        let has_both_side_branches = branch_count >= 2;
+        let trunk_height = if has_middle_branch {
+            tree_height
+        } else if has_both_side_branches {
+            first_branch_offset.max(second_branch_offset) + 1
+        } else {
+            first_branch_offset + 1
+        };
+
+        for y in 0..trunk_height {
+            let _ = Self::place_tree_log(
+                region,
+                registry,
+                random,
+                origin.above_n(y),
+                config,
+                placement,
+            );
+        }
+
+        let mut attachments = Vec::new();
+        if has_middle_branch {
+            attachments.push(FoliageAttachment {
+                pos: origin.above_n(trunk_height),
+                radius_offset: 0,
+                double_trunk: false,
+            });
+        }
+
+        let tree_direction = Self::random_horizontal_direction(random);
+        let sideways_axis = tree_direction.get_axis();
+        attachments.push(Self::generate_cherry_tree_branch(
+            region,
+            registry,
+            random,
+            tree_height,
+            origin,
+            config,
+            placer,
+            tree_direction,
+            first_branch_offset,
+            first_branch_offset < trunk_height - 1,
+            sideways_axis,
+            placement,
+        ));
+        if has_both_side_branches {
+            attachments.push(Self::generate_cherry_tree_branch(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placer,
+                tree_direction.opposite(),
+                second_branch_offset,
+                second_branch_offset < trunk_height - 1,
+                sideways_axis,
+                placement,
+            ));
+        }
+
+        attachments
+    }
+
+    #[expect(clippy::too_many_arguments, reason = "mirrors vanilla branch state")]
+    fn generate_cherry_tree_branch(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placer: &CherryTrunkPlacer,
+        branch_direction: Direction,
+        offset_from_origin: i32,
+        middle_continues_upwards: bool,
+        sideways_axis: Axis,
+        placement: &mut TreePlacement,
+    ) -> FoliageAttachment {
+        let mut log_pos = origin.above_n(offset_from_origin);
+        let branch_end_y = tree_height - 1 + placer.branch_end_offset_from_top.sample(random);
+        let extend_branch_away_from_trunk =
+            middle_continues_upwards || branch_end_y < offset_from_origin;
+        let distance_to_trunk = placer.branch_horizontal_length.sample(random)
+            + i32::from(extend_branch_away_from_trunk);
+        let branch_end_pos = origin
+            .relative_n(branch_direction, distance_to_trunk)
+            .above_n(branch_end_y);
+        let steps_horizontally = if extend_branch_away_from_trunk { 2 } else { 1 };
+
+        for _ in 0..steps_horizontally {
+            log_pos = log_pos.relative(branch_direction);
+            let _ = Self::place_tree_log_with_axis(
+                region,
+                registry,
+                random,
+                log_pos,
+                sideways_axis,
+                config,
+                placement,
+            );
+        }
+
+        let vertical_direction = if branch_end_pos.y() > log_pos.y() {
+            Direction::Up
+        } else {
+            Direction::Down
+        };
+
+        loop {
+            let distance = Self::manhattan_distance(log_pos, branch_end_pos);
+            if distance == 0 {
+                return FoliageAttachment {
+                    pos: branch_end_pos.above(),
+                    radius_offset: 0,
+                    double_trunk: false,
+                };
+            }
+
+            let vertical_distance = (branch_end_pos.y() - log_pos.y()).abs();
+            let grow_vertically = random.next_f32() < vertical_distance as f32 / distance as f32;
+            log_pos = if grow_vertically {
+                log_pos.relative(vertical_direction)
+            } else {
+                log_pos.relative(branch_direction)
+            };
+
+            if grow_vertically {
+                let _ = Self::place_tree_log(region, registry, random, log_pos, config, placement);
+            } else {
+                let _ = Self::place_tree_log_with_axis(
+                    region,
+                    registry,
+                    random,
+                    log_pos,
+                    sideways_axis,
+                    config,
+                    placement,
+                );
+            }
+        }
     }
 
     fn place_dark_oak_tree_trunk(
@@ -648,7 +1056,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn place_fancy_tree_log(
+    fn place_tree_log_with_axis(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
@@ -671,6 +1079,18 @@ impl FeatureDecorationRunner {
         let state = Self::with_axis_if_present(state, axis);
         placement.set_trunk(region, pos, state);
         true
+    }
+
+    fn place_fancy_tree_log(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        pos: BlockPos,
+        axis: Axis,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        Self::place_tree_log_with_axis(region, registry, random, pos, axis, config, placement)
     }
 
     fn with_axis_if_present(state: BlockStateId, axis: Axis) -> BlockStateId {
@@ -727,6 +1147,30 @@ impl FeatureDecorationRunner {
         placement: &mut TreePlacement,
     ) -> bool {
         if !Self::tree_valid_pos(region, registry, pos) {
+            return false;
+        }
+
+        let state = Self::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &config.trunk_provider,
+            pos,
+        );
+        placement.set_trunk(region, pos, state);
+        true
+    }
+
+    fn place_tree_log_growing_through(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        pos: BlockPos,
+        can_grow_through: &Identifier,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        if !Self::tree_valid_pos_or_tag(region, registry, pos, can_grow_through) {
             return false;
         }
 

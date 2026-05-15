@@ -85,6 +85,12 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
         register(&mut placers, "tree", place_tree);
+        register(&mut placers, "vegetation_patch", place_vegetation_patch);
+        register(
+            &mut placers,
+            "waterlogged_vegetation_patch",
+            place_waterlogged_vegetation_patch,
+        );
         Self {
             placers,
             pending_placers,
@@ -121,6 +127,17 @@ impl FeatureDecorationRunner {
         biome_zoom_seed: i64,
     ) -> bool {
         let kind = Self::configured_feature_kind(registry, feature);
+        Self::place_configured_feature_kind(region, registry, random, kind, origin, biome_zoom_seed)
+    }
+
+    pub(super) fn place_configured_feature_kind(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        kind: &ConfiguredFeatureKind,
+        origin: BlockPos,
+        biome_zoom_seed: i64,
+    ) -> bool {
         let feature_type = Self::configured_feature_type_id(kind);
         let Some(placer) = CONFIGURED_FEATURES.placer(&feature_type) else {
             if CONFIGURED_FEATURES.pending_placer(&feature_type).is_some() {
@@ -417,6 +434,40 @@ fn place_block_blob(
         context.random,
         config,
         context.origin,
+    )
+}
+
+fn place_vegetation_patch(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::VegetationPatch(config) = kind else {
+        panic!("vegetation_patch placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_vegetation_patch_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_waterlogged_vegetation_patch(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::WaterloggedVegetationPatch(config) = kind else {
+        panic!("waterlogged_vegetation_patch placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_waterlogged_vegetation_patch_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+        context.biome_zoom_seed,
     )
 }
 
@@ -850,5 +901,6 @@ fn place_tree(
         context.random,
         config,
         context.origin,
+        context.biome_zoom_seed,
     )
 }

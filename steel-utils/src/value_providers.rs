@@ -358,6 +358,80 @@ pub struct WeightedIntProvider {
     pub weight: i32,
 }
 
+/// Uniform inclusive int provider.
+///
+/// This is used for vanilla fields whose codec is specifically `UniformInt`,
+/// not the general `IntProvider` dispatch.
+#[derive(Debug, Clone, Copy)]
+pub struct UniformIntProvider {
+    /// Inclusive lower bound.
+    pub min_inclusive: i32,
+    /// Inclusive upper bound.
+    pub max_inclusive: i32,
+}
+
+impl UniformIntProvider {
+    /// Sample a value.
+    pub fn sample<R: Random + ?Sized>(self, random: &mut R) -> i32 {
+        random.next_i32_between(self.min_inclusive, self.max_inclusive)
+    }
+
+    /// Returns a provider with the same lower bound and a different inclusive upper bound.
+    #[must_use]
+    pub const fn with_max_inclusive(self, max_inclusive: i32) -> Self {
+        Self {
+            min_inclusive: self.min_inclusive,
+            max_inclusive,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UniformIntProvider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Range {
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+            Tagged(Tagged),
+        }
+
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum Tagged {
+            #[serde(rename = "minecraft:uniform", alias = "uniform")]
+            Uniform {
+                min_inclusive: i32,
+                max_inclusive: i32,
+            },
+        }
+
+        let (min_inclusive, max_inclusive) = match Raw::deserialize(d)? {
+            Raw::Range {
+                min_inclusive,
+                max_inclusive,
+            }
+            | Raw::Tagged(Tagged::Uniform {
+                min_inclusive,
+                max_inclusive,
+            }) => (min_inclusive, max_inclusive),
+        };
+
+        if min_inclusive > max_inclusive {
+            return Err(D::Error::custom(
+                "UniformIntProvider min_inclusive exceeds max_inclusive",
+            ));
+        }
+
+        Ok(Self {
+            min_inclusive,
+            max_inclusive,
+        })
+    }
+}
+
 impl IntProvider {
     /// Sample a value.
     ///
