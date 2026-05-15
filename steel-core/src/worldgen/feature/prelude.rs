@@ -23,10 +23,10 @@ pub(super) use steel_registry::feature::{
     NoiseThresholdProvider, OreConfiguration, OreTarget, PlaceOnGroundDecorator, PlacedFeatureData,
     PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, PointedDripstoneConfiguration,
     RandomSpreadFoliagePlacer, RootPlacer, RootSystemConfiguration, RuleTest,
-    SeaPickleConfiguration, SeagrassConfiguration, SimpleBlockConfiguration, SpikeConfiguration,
-    SpringConfiguration, TreeConfiguration, TreeDecorator, TrunkPlacer, TwistingVinesConfiguration,
-    UnderwaterMagmaConfiguration, UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration,
-    VerticalSurface,
+    SculkPatchConfiguration, SeaPickleConfiguration, SeagrassConfiguration,
+    SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
+    TreeDecorator, TrunkPlacer, TwistingVinesConfiguration, UnderwaterMagmaConfiguration,
+    UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration, VerticalSurface,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{

@@ -97,6 +97,7 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "spike", place_spike);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
+        register(&mut placers, "sculk_patch", place_sculk_patch);
         register(&mut placers, "tree", place_tree);
         register(&mut placers, "vegetation_patch", place_vegetation_patch);
         register(
@@ -1108,6 +1109,22 @@ fn place_scattered_ore(
         panic!("scattered_ore placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_scattered_ore_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_sculk_patch(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::SculkPatch(config) = kind else {
+        panic!("sculk_patch placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_sculk_patch_feature(
         context.region,
         context.registry,
         context.random,

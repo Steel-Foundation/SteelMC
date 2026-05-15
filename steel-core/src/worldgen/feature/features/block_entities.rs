@@ -23,6 +23,15 @@ impl FeatureDecorationRunner {
         let _ = region.set_block_entity_data(pos, block_entity_type, state, nbt);
     }
 
+    pub(in crate::worldgen::feature) fn set_empty_block_entity(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        block_entity_type: BlockEntityTypeRef,
+        state: BlockStateId,
+    ) {
+        let _ = region.set_block_entity_data(pos, block_entity_type, state, NbtCompound::new());
+    }
+
     pub(in crate::worldgen::feature) fn set_brushable_loot_table(
         region: &WorldGenRegion<'_>,
         pos: BlockPos,

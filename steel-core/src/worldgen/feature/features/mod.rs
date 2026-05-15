@@ -29,6 +29,7 @@ mod multiface_growth;
 mod nether_forest_vegetation;
 mod ore;
 mod replace_blobs;
+mod sculk_patch;
 mod sea_pickle;
 mod seagrass;
 mod simple_block;
