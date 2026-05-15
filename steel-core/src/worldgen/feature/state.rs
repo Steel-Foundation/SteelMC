@@ -1,5 +1,6 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
+use crate::worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
     pub(super) fn block_matches_identifier_list(
@@ -19,43 +20,7 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         data: &BlockStateData,
     ) -> steel_utils::BlockStateId {
-        let Some(block) = registry.blocks.by_key(&data.name) else {
-            panic!(
-                "block state provider references unknown block {}",
-                data.name
-            );
-        };
-
-        let mut properties = registry
-            .blocks
-            .get_properties(registry.blocks.get_default_state_id(block))
-            .into_iter()
-            .map(|(key, value)| (key as &str, value as &str))
-            .collect::<Vec<_>>();
-
-        for (key, value) in &data.properties {
-            let Some((_, property_value)) = properties
-                .iter_mut()
-                .find(|(property_key, _)| *property_key == key)
-            else {
-                panic!(
-                    "block state provider references unknown property {key} on {}",
-                    data.name
-                );
-            };
-            *property_value = value.as_str();
-        }
-
-        let Some(state) = registry
-            .blocks
-            .state_id_from_properties(&data.name, &properties)
-        else {
-            panic!(
-                "block state provider references unknown or invalid state {}",
-                data.name
-            );
-        };
-        state
+        WorldgenStateResolver::block_state_from_data(registry, data, "block state provider")
     }
 
     pub(super) fn fluid_state_from_data(registry: &Registry, data: &FluidStateData) -> FluidState {

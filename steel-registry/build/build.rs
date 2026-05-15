@@ -41,6 +41,7 @@ mod poi_types;
 mod recipes;
 mod sound_events;
 mod sound_types;
+mod structure_processors;
 mod structure_sets;
 mod structure_tags;
 mod template_pools;
@@ -125,6 +126,7 @@ const SOUND_TYPES: &str = "sound_types";
 const STRUCTURE_SETS: &str = "structure_sets";
 const STRUCTURE_TAGS: &str = "structure_tags";
 const STRUCTURES: &str = "structures";
+const STRUCTURE_PROCESSORS: &str = "structure_processors";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
 const CARVERS: &str = "configured_carvers";
@@ -193,6 +195,7 @@ pub fn main() {
         (world_clocks::build(), WORLD_CLOCKS),
         (poi_types::build(), POI_TYPES),
         (structure_sets::build_structures(), STRUCTURES),
+        (structure_processors::build(), STRUCTURE_PROCESSORS),
         (structure_tags::build(), STRUCTURE_TAGS),
         (structure_sets::build(), STRUCTURE_SETS),
         (template_pools::build(), TEMPLATE_POOLS),

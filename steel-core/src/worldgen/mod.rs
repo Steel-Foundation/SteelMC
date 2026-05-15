@@ -18,8 +18,10 @@ pub mod noise;
 pub mod region;
 pub mod registry;
 pub(crate) mod stages;
+pub(crate) mod state_resolver;
 pub(crate) mod structure;
 pub mod surface;
+pub(crate) mod template;
 
 pub use biomes::{
     BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,

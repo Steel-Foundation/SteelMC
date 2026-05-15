@@ -40,6 +40,7 @@ use crate::{
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
     structure::StructureRegistry,
+    structure_processor::StructureProcessorListRegistry,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
@@ -86,6 +87,7 @@ pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
 pub mod structure;
+pub mod structure_processor;
 pub mod structure_set;
 pub mod template_pool;
 pub mod timeline;
@@ -370,6 +372,11 @@ pub mod vanilla_structure_tags;
 #[path = "generated/vanilla_structure_sets.rs"]
 pub mod vanilla_structure_sets;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_processors.rs"]
+pub mod vanilla_structure_processors;
+
 #[rustfmt::skip]
 #[path = "generated/vanilla_template_pools.rs"]
 pub mod vanilla_template_pools;
@@ -505,6 +512,8 @@ pub const CONFIGURED_FEATURE_REGISTRY: Identifier =
 pub const PLACED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/placed_feature");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
+pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/processor_list");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -550,6 +559,7 @@ pub struct Registry {
     pub configured_features: ConfiguredFeatureRegistry,
     pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
+    pub structure_processors: StructureProcessorListRegistry,
 }
 
 impl Debug for Registry {
@@ -635,6 +645,9 @@ impl Registry {
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
         vanilla_structures::register_structures(&mut registry.structures);
         vanilla_structure_tags::register_structure_tags(&mut registry.structures);
+        vanilla_structure_processors::register_structure_processor_lists(
+            &mut registry.structure_processors,
+        );
 
         vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
         vanilla_configured_features::register_configured_features(
@@ -691,6 +704,7 @@ impl Registry {
         self.configured_features.freeze();
         self.placed_features.freeze();
         self.structures.freeze();
+        self.structure_processors.freeze();
     }
 
     fn validate_references(&self) {
@@ -776,6 +790,22 @@ impl Registry {
             ConfiguredFeatureKind::RootSystem(config) => {
                 self.validate_placed_feature_ref(&config.feature);
             }
+            ConfiguredFeatureKind::Fossil(config) => {
+                assert!(
+                    self.structure_processors
+                        .by_key(&config.fossil_processors)
+                        .is_some(),
+                    "fossil configured feature references unknown processor list {}",
+                    config.fossil_processors
+                );
+                assert!(
+                    self.structure_processors
+                        .by_key(&config.overlay_processors)
+                        .is_some(),
+                    "fossil configured feature references unknown processor list {}",
+                    config.overlay_processors
+                );
+            }
             ConfiguredFeatureKind::SimpleRandomSelector(config) => {
                 for feature in &config.features {
                     self.validate_placed_feature_ref(feature);
@@ -854,6 +884,7 @@ impl Registry {
             configured_features: ConfiguredFeatureRegistry::new(),
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
+            structure_processors: StructureProcessorListRegistry::new(),
         }
     }
 }

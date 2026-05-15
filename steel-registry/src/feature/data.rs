@@ -5,8 +5,8 @@
 //! preserve registry references as identifiers so future datapack/mod registries
 //! can resolve them without changing the storage model.
 
-use std::{collections::BTreeMap, str::FromStr};
-
+use crate::shared_structs::deserialize_tag_identifier;
+pub use crate::shared_structs::{BlockStateData, FluidStateData};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 use steel_utils::{
@@ -256,30 +256,6 @@ fn deserialize_configured_feature_kind(
     })
 }
 
-/// Block state data as encoded by vanilla worldgen JSON.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BlockStateData {
-    /// Block identifier.
-    #[serde(rename = "Name")]
-    pub name: Identifier,
-    /// String-valued block-state properties.
-    #[serde(rename = "Properties", default)]
-    pub properties: BTreeMap<String, String>,
-}
-
-/// Fluid state data as encoded by vanilla worldgen JSON.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FluidStateData {
-    /// Fluid identifier.
-    #[serde(rename = "Name")]
-    pub name: Identifier,
-    /// String-valued fluid-state properties.
-    #[serde(rename = "Properties", default)]
-    pub properties: BTreeMap<String, String>,
-}
-
 /// Identifier list that accepts vanilla's single-or-list codec shape.
 #[derive(Debug, Clone)]
 pub struct IdentifierList(pub Vec<Identifier>);
@@ -334,14 +310,6 @@ fn parse_direction(value: &str) -> Result<Direction, &'static str> {
         "east" => Ok(Direction::East),
         _ => Err("invalid direction"),
     }
-}
-
-fn deserialize_tag_identifier<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Identifier, D::Error> {
-    let value = String::deserialize(deserializer)?;
-    let tag = value.strip_prefix('#').unwrap_or(&value);
-    Identifier::from_str(tag).map_err(D::Error::custom)
 }
 
 /// Block predicates used by placement modifiers and feature configs.

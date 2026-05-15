@@ -106,6 +106,7 @@ impl ConfiguredFeatureRuntimeRegistry {
             place_waterlogged_vegetation_patch,
         );
         register(&mut placers, "fallen_tree", place_fallen_tree);
+        register(&mut placers, "fossil", place_fossil);
         register(&mut placers, "freeze_top_layer", place_freeze_top_layer);
         register(&mut placers, "root_system", place_root_system);
         Self {
@@ -1164,6 +1165,22 @@ fn place_fallen_tree(
         config,
         context.origin,
         context.biome_zoom_seed,
+    )
+}
+
+fn place_fossil(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Fossil(config) = kind else {
+        panic!("fossil placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_fossil_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
     )
 }
 
