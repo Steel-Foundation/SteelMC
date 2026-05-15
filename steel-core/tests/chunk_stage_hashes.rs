@@ -48,6 +48,12 @@ const STAGES: &[&str] = &[
     // "minecraft:features",
 ];
 
+/// Match the extractor run's structure setting.
+///
+/// Set this to `false` when the vanilla fixture was produced with
+/// `-DMC_DEBUG_DISABLE_STRUCTURES=true`.
+const GENERATE_STRUCTURES: bool = false;
+
 /// Max block-level diffs to show per chunk before truncating.
 const MAX_DIFFS_PER_CHUNK: usize = 30;
 
@@ -418,6 +424,7 @@ fn build_test_beardifier(
     reason = "large test with many hash assertions"
 )]
 fn chunk_stage_hashes_inner() {
+    use steel_core::behavior::init_behaviors;
     use steel_core::chunk::proto_chunk::ProtoChunk;
     use steel_core::chunk::section::ChunkSection;
     use steel_core::worldgen::{
@@ -429,6 +436,7 @@ fn chunk_stage_hashes_inner() {
     let mut registry = Registry::new_vanilla();
     registry.freeze();
     let _ = REGISTRY.init(registry);
+    init_behaviors();
 
     let expected = load_expected_hashes();
     let seed = expected.seed;
@@ -494,9 +502,11 @@ fn chunk_stage_hashes_inner() {
             FxHashSet::with_capacity_and_hasher(test_entries.len() * 289, FxBuildHasher);
         let mut biome_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
         for entry in &test_entries {
-            for dx in -8i32..=8 {
-                for dz in -8i32..=8 {
-                    starts_positions.insert((entry.x + dx, entry.z + dz));
+            if GENERATE_STRUCTURES {
+                for dx in -8i32..=8 {
+                    for dz in -8i32..=8 {
+                        starts_positions.insert((entry.x + dx, entry.z + dz));
+                    }
                 }
             }
             for dx in -1i32..=1 {
@@ -504,6 +514,9 @@ fn chunk_stage_hashes_inner() {
                     biome_positions.insert((entry.x + dx, entry.z + dz));
                 }
             }
+        }
+        if !GENERATE_STRUCTURES {
+            starts_positions.extend(biome_positions.iter().copied());
         }
 
         let mut chunks: FxHashMap<(i32, i32), ChunkAccess> =
@@ -523,14 +536,16 @@ fn chunk_stage_hashes_inner() {
             chunks.insert(pos, ChunkAccess::Proto(proto));
         }
         eprintln!(
-            "[{dim_short}] Allocated {} proto chunks for structure neighborhood",
+            "[{dim_short}] Allocated {} proto chunks (structures: {GENERATE_STRUCTURES})",
             chunks.len()
         );
 
         // STRUCTURE_STARTS — per-chunk; uses biome_source directly (no chunk biomes
         // required). Most chunks early-exit at `placement.is_structure_chunk`.
-        for chunk in chunks.values() {
-            generator.create_structures(chunk);
+        if GENERATE_STRUCTURES {
+            for chunk in chunks.values() {
+                generator.create_structures(chunk);
+            }
         }
 
         // BIOMES — only for the 3×3 around each test chunk (surface stage's lookup).
@@ -541,35 +556,37 @@ fn chunk_stage_hashes_inner() {
         // STRUCTURE_REFERENCES — mirror of `generate_references`: scan 17×17 for each
         // test chunk, recording which neighbor chunks hold a start whose inflated BB
         // intersects this chunk.
-        for entry in &test_entries {
-            let target_x = entry.x;
-            let target_z = entry.z;
-            let target_block_x = target_x * 16;
-            let target_block_z = target_z * 16;
+        if GENERATE_STRUCTURES {
+            for entry in &test_entries {
+                let target_x = entry.x;
+                let target_z = entry.z;
+                let target_block_x = target_x * 16;
+                let target_block_z = target_z * 16;
 
-            for source_x in (target_x - 8)..=(target_x + 8) {
-                for source_z in (target_z - 8)..=(target_z + 8) {
-                    let Some(source_chunk) = chunks.get(&(source_x, source_z)) else {
-                        continue;
-                    };
-                    let starts = source_chunk.structure_starts();
-                    for (structure_id, start) in starts.iter() {
-                        // `start.bounding_box` is already inflated by `bb_inflate`,
-                        // matching `worldgen::stages::structures::generate_references`.
-                        let Some(bb) = start.bounding_box else {
+                for source_x in (target_x - 8)..=(target_x + 8) {
+                    for source_z in (target_z - 8)..=(target_z + 8) {
+                        let Some(source_chunk) = chunks.get(&(source_x, source_z)) else {
                             continue;
                         };
-                        if bb.intersects_xz(
-                            target_block_x,
-                            target_block_z,
-                            target_block_x + 15,
-                            target_block_z + 15,
-                        ) {
-                            chunks[&(target_x, target_z)]
-                                .structure_references_mut()
-                                .entry(structure_id.clone())
-                                .or_default()
-                                .insert(ChunkPos::new(source_x, source_z));
+                        let starts = source_chunk.structure_starts();
+                        for (structure_id, start) in starts.iter() {
+                            // `start.bounding_box` is already inflated by `bb_inflate`,
+                            // matching `worldgen::stages::structures::generate_references`.
+                            let Some(bb) = start.bounding_box else {
+                                continue;
+                            };
+                            if bb.intersects_xz(
+                                target_block_x,
+                                target_block_z,
+                                target_block_x + 15,
+                                target_block_z + 15,
+                            ) {
+                                chunks[&(target_x, target_z)]
+                                    .structure_references_mut()
+                                    .entry(structure_id.clone())
+                                    .or_default()
+                                    .insert(ChunkPos::new(source_x, source_z));
+                            }
                         }
                     }
                 }
@@ -579,7 +596,11 @@ fn chunk_stage_hashes_inner() {
         // NOISE — fill_from_noise with per-chunk beardifier built from references.
         for entry in &test_entries {
             let chunk = &chunks[&(entry.x, entry.z)];
-            let beardifier = build_test_beardifier(chunk, &chunks);
+            let beardifier = if GENERATE_STRUCTURES {
+                build_test_beardifier(chunk, &chunks)
+            } else {
+                None
+            };
             generator.fill_from_noise(chunk, beardifier.as_ref());
         }
 
