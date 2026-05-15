@@ -633,17 +633,28 @@ pub struct EndGatewayConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EndSpikeConfiguration {
+    #[serde(default)]
     pub spikes: Vec<EndSpike>,
+    #[serde(default)]
     pub crystal_invulnerable: bool,
+    #[serde(default)]
+    pub crystal_beam_target: Option<Offset>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EndSpike {
+    #[serde(rename = "centerX")]
+    #[serde(default)]
     pub center_x: i32,
+    #[serde(rename = "centerZ")]
+    #[serde(default)]
     pub center_z: i32,
+    #[serde(default)]
     pub radius: i32,
+    #[serde(default)]
     pub height: i32,
+    #[serde(default)]
     pub guarded: bool,
 }
 

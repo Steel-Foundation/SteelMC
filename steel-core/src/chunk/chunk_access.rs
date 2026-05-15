@@ -11,6 +11,7 @@ use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
+use crate::entity::SharedEntity;
 use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
@@ -455,6 +456,28 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.get_block_entities(),
             Self::Proto(proto_chunk) => proto_chunk.get_block_entities(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Adds an entity to either a full or proto chunk.
+    pub fn add_entity(&self, entity: SharedEntity) -> bool {
+        match self {
+            Self::Full(chunk) => chunk.add_and_register_entity(entity),
+            Self::Proto(proto_chunk) => {
+                proto_chunk.add_entity(entity);
+                true
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns all saveable entities in this chunk.
+    #[must_use]
+    pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
+        match self {
+            Self::Full(chunk) => chunk.entities.get_saveable_entities(),
+            Self::Proto(proto_chunk) => proto_chunk.get_saveable_entities(),
             Self::Unloaded => unreachable!(),
         }
     }

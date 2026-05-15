@@ -22,6 +22,7 @@ use steel_utils::{
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
+use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{
@@ -64,6 +65,8 @@ pub struct ProtoChunk {
     level: Weak<World>,
     /// Block entities created during generation before promotion to a full chunk.
     pub(crate) block_entities: BlockEntityStorage,
+    /// Entities created during generation before promotion to a full chunk.
+    pub(crate) entities: EntityStorage,
     /// Structure starts originating in this chunk.
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks.
@@ -106,6 +109,7 @@ impl ProtoChunk {
             height,
             level,
             block_entities: BlockEntityStorage::new(),
+            entities: EntityStorage::new(),
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
             carving_mask: SyncRwLock::new(None),
@@ -146,6 +150,7 @@ impl ProtoChunk {
             height,
             level,
             block_entities: BlockEntityStorage::new(),
+            entities: EntityStorage::new(),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             carving_mask: SyncRwLock::new(carving_mask),
@@ -279,6 +284,24 @@ impl ProtoChunk {
     #[must_use]
     pub const fn block_entity_storage(&self) -> &BlockEntityStorage {
         &self.block_entities
+    }
+
+    /// Adds an entity to proto storage.
+    pub fn add_entity(&self, entity: SharedEntity) {
+        self.entities.add(entity);
+        self.mark_unsaved();
+    }
+
+    /// Returns all entities in this proto chunk.
+    #[must_use]
+    pub fn get_entities(&self) -> Vec<SharedEntity> {
+        self.entities.get_all()
+    }
+
+    /// Returns entities that should be persisted from this proto chunk.
+    #[must_use]
+    pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
+        self.entities.get_saveable_entities()
     }
 
     /// Schedules a block tick in proto storage.

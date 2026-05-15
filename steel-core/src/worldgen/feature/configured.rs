@@ -55,6 +55,7 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "end_gateway", place_end_gateway);
         register(&mut placers, "end_island", place_end_island);
         register(&mut placers, "end_platform", place_end_platform);
+        register(&mut placers, "end_spike", place_end_spike);
         register(&mut placers, "geode", place_geode);
         register(&mut placers, "glowstone_blob", place_glowstone_blob);
         register(
@@ -712,6 +713,21 @@ fn place_end_platform(
         panic!("end_platform placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_end_platform_feature(context.region, context.origin)
+}
+
+fn place_end_spike(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::EndSpike(config) = kind else {
+        panic!("end_spike placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_end_spike_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
 }
 
 fn place_geode(

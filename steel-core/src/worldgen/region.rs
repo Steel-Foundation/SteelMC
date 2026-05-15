@@ -5,7 +5,7 @@
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
 use std::sync::{
-    Arc,
+    Arc, Weak,
     atomic::{AtomicI64, Ordering},
 };
 
@@ -26,8 +26,9 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     heightmap::HeightmapType,
 };
-use crate::world::LevelReader;
+use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
+use crate::world::{LevelReader, World};
 use crate::worldgen::context::WorldGenContext;
 
 /// Chunk-cache backed worldgen view for the current generation step.
@@ -107,6 +108,12 @@ impl<'a> WorldGenRegion<'a> {
     #[must_use]
     pub fn seed(&self) -> i64 {
         self.context.world().seed()
+    }
+
+    /// Returns the weak world reference used by generated chunks and entities.
+    #[must_use]
+    pub fn weak_world(&self) -> Weak<World> {
+        self.context.weak_world()
     }
 
     /// Returns block light as seen by feature-stage worldgen.
@@ -302,6 +309,18 @@ impl<'a> WorldGenRegion<'a> {
         self.chunk(chunk_x, chunk_z, status)
             .remove_block_entity(pos);
         true
+    }
+
+    /// Adds an entity at a writable worldgen position.
+    #[must_use]
+    pub fn add_fresh_entity(&self, entity: SharedEntity) -> bool {
+        let pos = BlockPos::from(entity.position());
+        let Some((chunk_x, chunk_z, status)) = self.writable_chunk_for_pos(pos, "add entity")
+        else {
+            return false;
+        };
+
+        self.chunk(chunk_x, chunk_z, status).add_entity(entity)
     }
 
     /// Schedules a block tick through the same region write contract as block placement.

@@ -10,7 +10,7 @@ use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
 use uuid::Uuid;
 
-use super::entities::{BlockDisplayEntity, ItemEntity};
+use super::entities::{BlockDisplayEntity, EndCrystalEntity, ItemEntity};
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
 
@@ -209,6 +209,17 @@ pub fn init_entities() {
             Arc::new(ItemEntity::from_saved(
                 id, pos, uuid, velocity, rotation, on_ground, world,
             ))
+        },
+    );
+
+    // Register end crystal entity factory
+    registry.register(&vanilla_entities::END_CRYSTAL, |id, pos, world| {
+        Arc::new(EndCrystalEntity::new(id, pos, world))
+    });
+    registry.register_load(
+        &vanilla_entities::END_CRYSTAL,
+        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
+            Arc::new(EndCrystalEntity::from_saved(id, pos, uuid, rotation, world))
         },
     );
 

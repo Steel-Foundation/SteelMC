@@ -297,11 +297,7 @@ impl ChunkStorage {
 
         let block_entities = chunk.get_block_entities();
 
-        // Get saveable entities if this is a full chunk
-        let entities: Vec<SharedEntity> = chunk
-            .as_full()
-            .map(|c| c.entities.get_saveable_entities())
-            .unwrap_or_default();
+        let entities = chunk.get_saveable_entities();
 
         // Serialize scheduled ticks
         let (block_ticks, fluid_ticks) = match chunk {
@@ -635,7 +631,9 @@ impl ChunkStorage {
 
             // Load entities
             for persistent_entity in &persistent.entities {
-                if let Some(entity) = Self::persistent_to_entity(persistent_entity, pos, &chunk) {
+                if let Some(entity) =
+                    Self::persistent_to_entity_at_level(persistent_entity, pos, chunk.level_weak())
+                {
                     chunk.add_and_register_entity(entity);
                 }
             }
@@ -699,6 +697,14 @@ impl ChunkStorage {
                 }
             }
 
+            for persistent_entity in &persistent.entities {
+                if let Some(entity) =
+                    Self::persistent_to_entity_at_level(persistent_entity, pos, level.clone())
+                {
+                    chunk.add_entity(entity);
+                }
+            }
+
             chunk.dirty.store(false, Ordering::Release);
 
             ChunkAccess::Proto(chunk)
@@ -752,10 +758,10 @@ impl ChunkStorage {
     }
 
     /// Converts a persistent entity to runtime format.
-    fn persistent_to_entity(
+    fn persistent_to_entity_at_level(
         persistent: &PersistentEntity,
         chunk_pos: ChunkPos,
-        chunk: &LevelChunk,
+        level: Weak<World>,
     ) -> Option<SharedEntity> {
         use glam::DVec3;
         use uuid::Uuid;
@@ -814,9 +820,6 @@ impl ChunkStorage {
             );
             return None;
         }
-
-        // Get world reference
-        let level = chunk.level_weak();
 
         // Parse NBT from bytes (or use empty compound data)
         let nbt_bytes = if persistent.nbt_data.is_empty() {
@@ -1359,13 +1362,16 @@ impl ChunkStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Once;
+    use std::sync::{Arc, Once};
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
+    use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
+    use glam::DVec3;
     use rustc_hash::{FxHashMap, FxHashSet};
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
+    use steel_registry::vanilla_entities;
     use steel_utils::types::UpdateFlags;
 
     static RUNTIME_REGISTRIES: Once = Once::new();
@@ -1381,6 +1387,7 @@ mod tests {
         RUNTIME_REGISTRIES.call_once(|| {
             init_behaviors();
             init_block_entities();
+            init_entities();
         });
     }
 
@@ -1544,6 +1551,50 @@ mod tests {
 
         let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
         assert!(full.get_block_entity(block_pos).is_some());
+    }
+
+    #[test]
+    fn proto_entities_roundtrip_and_promote_to_full_chunk() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let entity_pos = DVec3::new(5.5, 6.0, 7.5);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let crystal = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            entity_pos,
+            Weak::new(),
+        ));
+        crystal.set_beam_target(Some(BlockPos::new(0, 64, 0)));
+        crystal.set_invulnerable(true);
+        proto.add_entity(crystal);
+
+        let chunk = ChunkAccess::Proto(proto);
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.entities.len(), 1);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Features,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("features status should load as proto chunk");
+        };
+        assert_eq!(loaded_proto.get_entities().len(), 1);
+
+        let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+        let entities = full.entities.get_all();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(
+            entities[0].entity_type().id(),
+            vanilla_entities::END_CRYSTAL.id()
+        );
     }
 
     #[test]

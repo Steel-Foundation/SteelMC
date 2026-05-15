@@ -3,6 +3,7 @@
 //! Entities are stored in chunks similar to block entities.
 //! The chunk owns the `Arc<dyn Entity>` and is responsible for ticking.
 
+use std::fmt;
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
@@ -20,6 +21,14 @@ use crate::world::World;
 pub struct EntityStorage {
     /// Entities in this chunk, keyed by entity ID.
     entities: SyncRwLock<FxHashMap<i32, SharedEntity>>,
+}
+
+impl fmt::Debug for EntityStorage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EntityStorage")
+            .field("len", &self.len())
+            .finish()
+    }
 }
 
 impl EntityStorage {
