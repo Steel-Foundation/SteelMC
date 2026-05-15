@@ -1,12 +1,20 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
-use super::{FoliageAttachment, TreePlacement};
+use super::{FoliageAttachment, TreePlacement, abs_i32};
+
+const FANCY_TRUNK_HEIGHT_SCALE: f64 = 0.618;
+const FANCY_CLUSTER_DENSITY_MAGIC: f64 = 1.382;
+const FANCY_BRANCH_SLOPE: f64 = 0.381;
+const FANCY_BRANCH_LENGTH_MAGIC: f64 = 0.328;
 
 impl FeatureDecorationRunner {
     pub(super) const fn tree_trunk_placer_supported(trunk_placer: &TrunkPlacer) -> bool {
         matches!(
             trunk_placer,
-            TrunkPlacer::Straight(_) | TrunkPlacer::Forking(_) | TrunkPlacer::Giant(_)
+            TrunkPlacer::Straight(_)
+                | TrunkPlacer::Forking(_)
+                | TrunkPlacer::Giant(_)
+                | TrunkPlacer::Fancy(_)
         )
     }
 
@@ -84,6 +92,15 @@ impl FeatureDecorationRunner {
                 placement,
             ),
             TrunkPlacer::Giant(_) => Self::place_giant_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placement,
+            ),
+            TrunkPlacer::Fancy(_) => Self::place_fancy_tree_trunk(
                 region,
                 registry,
                 random,
@@ -281,6 +298,279 @@ impl FeatureDecorationRunner {
         }]
     }
 
+    fn place_fancy_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        let height = tree_height + 2;
+        let trunk_height = floor(f64::from(height) * FANCY_TRUNK_HEIGHT_SCALE);
+        Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
+
+        let clusters_per_y = 1.min(floor(
+            FANCY_CLUSTER_DENSITY_MAGIC + (f64::from(height) / 13.0).powi(2),
+        ));
+        let trunk_top = origin.y() + trunk_height;
+        let mut relative_y = height - 5;
+        let mut foliage_coords = vec![FancyFoliageCoords {
+            attachment: FoliageAttachment {
+                pos: origin.above_n(relative_y),
+                radius_offset: 0,
+                double_trunk: false,
+            },
+            branch_base: trunk_top,
+        }];
+
+        while relative_y >= 0 {
+            let tree_shape = Self::fancy_tree_shape(height, relative_y);
+            if tree_shape >= 0.0 {
+                for _ in 0..clusters_per_y {
+                    let radius = f64::from(tree_shape)
+                        * (f64::from(random.next_f32()) + FANCY_BRANCH_LENGTH_MAGIC);
+                    let angle = f64::from(random.next_f32() * 2.0_f32) * std::f64::consts::PI;
+                    let x = radius * angle.sin() + 0.5;
+                    let z = radius * angle.cos() + 0.5;
+                    let check_start = origin.offset(floor(x), relative_y - 1, floor(z));
+                    let check_end = check_start.above_n(5);
+                    if Self::make_fancy_tree_limb(
+                        region,
+                        registry,
+                        random,
+                        check_start,
+                        check_end,
+                        false,
+                        config,
+                        placement,
+                    ) {
+                        let dx = origin.x() - check_start.x();
+                        let dz = origin.z() - check_start.z();
+                        let branch_height = f64::from(check_start.y())
+                            - f64::from(dx * dx + dz * dz).sqrt() * FANCY_BRANCH_SLOPE;
+                        let branch_top = if branch_height > f64::from(trunk_top) {
+                            trunk_top
+                        } else {
+                            branch_height as i32
+                        };
+                        let check_branch_base = BlockPos::new(origin.x(), branch_top, origin.z());
+                        if Self::make_fancy_tree_limb(
+                            region,
+                            registry,
+                            random,
+                            check_branch_base,
+                            check_start,
+                            false,
+                            config,
+                            placement,
+                        ) {
+                            foliage_coords.push(FancyFoliageCoords {
+                                attachment: FoliageAttachment {
+                                    pos: check_start,
+                                    radius_offset: 0,
+                                    double_trunk: false,
+                                },
+                                branch_base: check_branch_base.y(),
+                            });
+                        }
+                    }
+                }
+            }
+            relative_y -= 1;
+        }
+
+        Self::make_fancy_tree_limb(
+            region,
+            registry,
+            random,
+            origin,
+            origin.above_n(trunk_height),
+            true,
+            config,
+            placement,
+        );
+        Self::make_fancy_tree_branches(
+            region,
+            registry,
+            random,
+            height,
+            origin,
+            &foliage_coords,
+            config,
+            placement,
+        );
+
+        foliage_coords
+            .into_iter()
+            .filter(|coord| Self::trim_fancy_tree_branch(height, coord.branch_base - origin.y()))
+            .map(|coord| coord.attachment)
+            .collect()
+    }
+
+    fn make_fancy_tree_limb(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        start_pos: BlockPos,
+        end_pos: BlockPos,
+        do_place: bool,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        if !do_place && start_pos == end_pos {
+            return true;
+        }
+
+        let delta = BlockPos::new(
+            end_pos.x() - start_pos.x(),
+            end_pos.y() - start_pos.y(),
+            end_pos.z() - start_pos.z(),
+        );
+        let steps = Self::fancy_tree_limb_steps(delta);
+        if steps == 0 {
+            if do_place {
+                let _ = Self::place_fancy_tree_log(
+                    region,
+                    registry,
+                    random,
+                    start_pos,
+                    Axis::Y,
+                    config,
+                    placement,
+                );
+            }
+            return true;
+        }
+
+        let dx = delta.x() as f32 / steps as f32;
+        let dy = delta.y() as f32 / steps as f32;
+        let dz = delta.z() as f32 / steps as f32;
+
+        for step in 0..=steps {
+            let step = step as f32;
+            let pos = start_pos.offset(
+                floor(f64::from(0.5_f32 + step * dx)),
+                floor(f64::from(0.5_f32 + step * dy)),
+                floor(f64::from(0.5_f32 + step * dz)),
+            );
+            if do_place {
+                let axis = Self::fancy_tree_log_axis(start_pos, pos);
+                let _ = Self::place_fancy_tree_log(
+                    region, registry, random, pos, axis, config, placement,
+                );
+            } else if !Self::tree_is_free(region, registry, pos) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn fancy_tree_limb_steps(pos: BlockPos) -> i32 {
+        let abs_x = abs_i32(pos.x());
+        let abs_y = abs_i32(pos.y());
+        let abs_z = abs_i32(pos.z());
+        abs_x.max(abs_y).max(abs_z)
+    }
+
+    fn fancy_tree_log_axis(start_pos: BlockPos, block_pos: BlockPos) -> Axis {
+        let xdiff = abs_i32(block_pos.x() - start_pos.x());
+        let zdiff = abs_i32(block_pos.z() - start_pos.z());
+        let maxdiff = xdiff.max(zdiff);
+        if maxdiff == 0 {
+            Axis::Y
+        } else if xdiff == maxdiff {
+            Axis::X
+        } else {
+            Axis::Z
+        }
+    }
+
+    fn trim_fancy_tree_branch(height: i32, local_y: i32) -> bool {
+        local_y as f64 >= height as f64 * 0.2
+    }
+
+    fn make_fancy_tree_branches(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        height: i32,
+        origin: BlockPos,
+        foliage_coords: &[FancyFoliageCoords],
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) {
+        for end_coord in foliage_coords {
+            let base_coord = BlockPos::new(origin.x(), end_coord.branch_base, origin.z());
+            if base_coord != end_coord.attachment.pos
+                && Self::trim_fancy_tree_branch(height, end_coord.branch_base - origin.y())
+            {
+                Self::make_fancy_tree_limb(
+                    region,
+                    registry,
+                    random,
+                    base_coord,
+                    end_coord.attachment.pos,
+                    true,
+                    config,
+                    placement,
+                );
+            }
+        }
+    }
+
+    fn place_fancy_tree_log(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        pos: BlockPos,
+        axis: Axis,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        if !Self::tree_valid_pos(region, registry, pos) {
+            return false;
+        }
+
+        let state = Self::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &config.trunk_provider,
+            pos,
+        );
+        let state = Self::with_axis_if_present(state, axis);
+        placement.set_trunk(region, pos, state);
+        true
+    }
+
+    fn with_axis_if_present(state: BlockStateId, axis: Axis) -> BlockStateId {
+        if state.try_get_value(&BlockStateProperties::AXIS).is_some() {
+            state.set_value(&BlockStateProperties::AXIS, axis)
+        } else {
+            state
+        }
+    }
+
+    fn fancy_tree_shape(height: i32, y: i32) -> f32 {
+        if (y as f32) < height as f32 * 0.3 {
+            return -1.0;
+        }
+
+        let radius = height as f32 / 2.0;
+        let adjacent = radius - y as f32;
+        let mut distance = (radius * radius - adjacent * adjacent).sqrt();
+        if adjacent == 0.0 {
+            distance = radius;
+        } else if adjacent.abs() >= radius {
+            return 0.0;
+        }
+
+        distance * 0.5
+    }
+
     fn place_below_trunk_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
@@ -322,5 +612,48 @@ impl FeatureDecorationRunner {
         );
         placement.set_trunk(region, pos, state);
         true
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FancyFoliageCoords {
+    attachment: FoliageAttachment,
+    branch_base: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fancy_tree_shape_rejects_lower_third() {
+        assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 3), -1.0);
+    }
+
+    #[test]
+    fn fancy_tree_shape_uses_half_circle_crown() {
+        assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 6), 3.0);
+        assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 12), 0.0);
+    }
+
+    #[test]
+    fn fancy_log_axis_prefers_x_on_horizontal_tie() {
+        let start = BlockPos::new(0, 0, 0);
+        assert_eq!(
+            FeatureDecorationRunner::fancy_tree_log_axis(start, BlockPos::new(0, 3, 0)),
+            Axis::Y
+        );
+        assert_eq!(
+            FeatureDecorationRunner::fancy_tree_log_axis(start, BlockPos::new(2, 3, 1)),
+            Axis::X
+        );
+        assert_eq!(
+            FeatureDecorationRunner::fancy_tree_log_axis(start, BlockPos::new(1, 3, 2)),
+            Axis::Z
+        );
+        assert_eq!(
+            FeatureDecorationRunner::fancy_tree_log_axis(start, BlockPos::new(2, 3, 2)),
+            Axis::X
+        );
     }
 }

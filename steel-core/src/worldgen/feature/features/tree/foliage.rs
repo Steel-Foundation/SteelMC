@@ -8,6 +8,7 @@ impl FeatureDecorationRunner {
             foliage_placer,
             FoliagePlacer::Blob(_)
                 | FoliagePlacer::Bush(_)
+                | FoliagePlacer::Fancy(_)
                 | FoliagePlacer::Pine(_)
                 | FoliagePlacer::Spruce(_)
                 | FoliagePlacer::MegaPine(_)
@@ -23,6 +24,7 @@ impl FeatureDecorationRunner {
         match &config.foliage_placer {
             FoliagePlacer::Blob(placer) => placer.height.sample(random),
             FoliagePlacer::Bush(placer) => placer.height.sample(random),
+            FoliagePlacer::Fancy(placer) => placer.height.sample(random),
             FoliagePlacer::Pine(placer) => placer.height.sample(random),
             FoliagePlacer::Spruce(placer) => {
                 (tree_height - placer.trunk_height.sample(random)).max(4)
@@ -43,6 +45,7 @@ impl FeatureDecorationRunner {
         match foliage_placer {
             FoliagePlacer::Blob(placer) => placer.radius.sample(random),
             FoliagePlacer::Bush(placer) => placer.radius.sample(random),
+            FoliagePlacer::Fancy(placer) => placer.radius.sample(random),
             FoliagePlacer::Pine(placer) => {
                 placer.radius.sample(random) + random.next_i32_bounded((trunk_height + 1).max(1))
             }
@@ -79,6 +82,16 @@ impl FeatureDecorationRunner {
                 placement,
             ),
             FoliagePlacer::Bush(_) => Self::create_bush_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                attachment,
+                foliage_height,
+                leaf_radius,
+                placement,
+            ),
+            FoliagePlacer::Fancy(_) => Self::create_fancy_tree_foliage(
                 region,
                 registry,
                 random,
@@ -131,6 +144,37 @@ impl FeatureDecorationRunner {
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
+        }
+    }
+
+    fn create_fancy_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        attachment: FoliageAttachment,
+        foliage_height: i32,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let offset = Self::tree_foliage_offset(random, &config.foliage_placer);
+        for y in (offset - foliage_height..=offset).rev() {
+            let current_radius = if y != offset && y != offset - foliage_height {
+                leaf_radius + 1
+            } else {
+                leaf_radius
+            };
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                attachment.pos,
+                current_radius,
+                y,
+                attachment.double_trunk,
+                placement,
+            );
         }
     }
 
@@ -351,6 +395,7 @@ impl FeatureDecorationRunner {
         match foliage_placer {
             FoliagePlacer::Blob(placer) => placer.offset.sample(random),
             FoliagePlacer::Bush(placer) => placer.offset.sample(random),
+            FoliagePlacer::Fancy(placer) => placer.offset.sample(random),
             FoliagePlacer::Pine(placer) => placer.offset.sample(random),
             FoliagePlacer::Spruce(placer) => placer.offset.sample(random),
             FoliagePlacer::MegaPine(placer) => placer.offset.sample(random),
@@ -409,6 +454,9 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Bush(_) => {
                 Self::bush_foliage_should_skip_location(random, dx, dz, current_radius)
             }
+            FoliagePlacer::Fancy(_) => {
+                Self::fancy_foliage_should_skip_location(dx, dz, current_radius)
+            }
             FoliagePlacer::Pine(_) | FoliagePlacer::Spruce(_) => {
                 Self::conifer_foliage_should_skip_location(dx, dz, current_radius)
             }
@@ -443,6 +491,12 @@ impl FeatureDecorationRunner {
         current_radius: i32,
     ) -> bool {
         dx == current_radius && dz == current_radius && random.next_i32_bounded(2) == 0
+    }
+
+    fn fancy_foliage_should_skip_location(dx: i32, dz: i32, current_radius: i32) -> bool {
+        let dx = dx as f32 + 0.5;
+        let dz = dz as f32 + 0.5;
+        dx * dx + dz * dz > (current_radius * current_radius) as f32
     }
 
     const fn conifer_foliage_should_skip_location(dx: i32, dz: i32, current_radius: i32) -> bool {
@@ -537,5 +591,16 @@ mod tests {
         assert!(FeatureDecorationRunner::mega_pine_foliage_should_skip_location(4, 3, 5));
         assert!(FeatureDecorationRunner::mega_pine_foliage_should_skip_location(4, 4, 5));
         assert!(!FeatureDecorationRunner::mega_pine_foliage_should_skip_location(3, 3, 5));
+    }
+
+    #[test]
+    fn fancy_foliage_uses_shifted_circular_cutoff() {
+        assert!(!FeatureDecorationRunner::fancy_foliage_should_skip_location(0, 0, 1));
+        assert!(FeatureDecorationRunner::fancy_foliage_should_skip_location(
+            1, 0, 1
+        ));
+        assert!(FeatureDecorationRunner::fancy_foliage_should_skip_location(
+            0, 0, 0
+        ));
     }
 }
