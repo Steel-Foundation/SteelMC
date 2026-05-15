@@ -99,6 +99,22 @@ impl<'a> WorldGenRegion<'a> {
         self.context.world().sea_level
     }
 
+    /// Returns the world seed.
+    #[must_use]
+    pub fn seed(&self) -> i64 {
+        self.context.world().seed()
+    }
+
+    /// Returns block light as seen by feature-stage worldgen.
+    ///
+    /// Vanilla routes this through the level light engine from `WorldGenRegion`, but block light
+    /// is not generated for the feature-stage proto chunks. Treating the region as dark keeps
+    /// snow and freeze checks aligned with vanilla feature placement.
+    #[must_use]
+    pub const fn block_light_at(&self, _pos: BlockPos) -> u8 {
+        0
+    }
+
     /// Returns the exclusive maximum build height.
     #[must_use]
     pub fn max_y_exclusive(&self) -> i32 {

@@ -96,7 +96,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn place_weeping_vines_column(
+    pub(in crate::worldgen::feature) fn place_weeping_vines_column(
         region: &mut WorldGenRegion<'_>,
         random: &mut Xoroshiro,
         mut place_pos: BlockPos,

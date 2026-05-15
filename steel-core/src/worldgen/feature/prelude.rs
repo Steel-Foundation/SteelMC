@@ -1,26 +1,31 @@
 pub(super) use std::sync::LazyLock;
 
 pub(super) use rustc_hash::{FxHashMap, FxHashSet};
+pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
+pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
     properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,
-    properties::EnumProperty, properties::WallSide, shapes,
+    properties::DripstoneThickness, properties::EnumProperty, properties::WallSide, shapes,
 };
 pub(super) use steel_registry::feature::{
     AttachedToLeavesDecorator, AttachedToLogsDecorator, BambooConfiguration,
     BasaltColumnsConfiguration, BendingTrunkPlacer, BlobFoliagePlacer, BlockBlobConfiguration,
     BlockColumnConfiguration, BlockPileConfiguration, BlockPredicate, BlockStateData,
     BlockStateProvider, CherryFoliagePlacer, CherryTrunkPlacer, ConfiguredFeatureKind,
-    ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration, DualNoiseProvider,
-    FeatureHeightmap, FeatureNoiseParameters, FeatureSize, FluidStateData, FoliagePlacer,
-    HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement, MangroveRootPlacer,
-    NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, NoiseProvider,
-    NoiseThresholdProvider, OreConfiguration, OreTarget, PlaceOnGroundDecorator, PlacedFeatureData,
-    PlacedFeatureEntryRef, PlacedFeatureRef, PlacementModifier, RandomSpreadFoliagePlacer,
-    RootPlacer, RuleTest, SeaPickleConfiguration, SeagrassConfiguration, SimpleBlockConfiguration,
-    SpikeConfiguration, SpringConfiguration, TreeConfiguration, TreeDecorator, TrunkPlacer,
-    TwistingVinesConfiguration, UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration,
-    VerticalSurface,
+    ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
+    DripstoneClusterConfiguration, DualNoiseProvider, FallenTreeConfiguration, FeatureHeightmap,
+    FeatureNoiseParameters, FeatureSize, FluidStateData, FoliagePlacer, GeodeBlockSettings,
+    GeodeConfiguration, HugeFungusConfiguration, HugeMushroomConfiguration, IdentifierList,
+    LakeConfiguration, LargeDripstoneConfiguration, MangroveRootPlacement, MangroveRootPlacer,
+    MultifaceGrowthConfiguration, NetherForestVegetationConfiguration,
+    NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
+    OreTarget, PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
+    PlacementModifier, PointedDripstoneConfiguration, RandomSpreadFoliagePlacer, RootPlacer,
+    RootSystemConfiguration, RuleTest, SeaPickleConfiguration, SeagrassConfiguration,
+    SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
+    TreeDecorator, TrunkPlacer, TwistingVinesConfiguration, UnderwaterMagmaConfiguration,
+    UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration, VerticalSurface,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{

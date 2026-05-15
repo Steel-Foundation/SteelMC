@@ -1,11 +1,6 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 
-static BIOME_INFO_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
-    let mut random = RandomSource::Legacy(LegacyRandom::from_seed(2345));
-    PerlinSimplexNoise::new(&mut random, &[0])
-});
-
 impl FeatureDecorationRunner {
     #[expect(
         clippy::too_many_lines,
@@ -100,7 +95,7 @@ impl FeatureDecorationRunner {
                 noise_factor,
                 noise_offset,
             } => {
-                let noise = BIOME_INFO_NOISE.get_value(
+                let noise = Self::biome_info_noise_value(
                     f64::from(origin.x()) / *noise_factor,
                     f64::from(origin.z()) / *noise_factor,
                 );
@@ -113,8 +108,10 @@ impl FeatureDecorationRunner {
                 below_noise,
                 above_noise,
             } => {
-                let noise = BIOME_INFO_NOISE
-                    .get_value(f64::from(origin.x()) / 200.0, f64::from(origin.z()) / 200.0);
+                let noise = Self::biome_info_noise_value(
+                    f64::from(origin.x()) / 200.0,
+                    f64::from(origin.z()) / 200.0,
+                );
                 let count = if noise < *noise_level {
                     *below_noise
                 } else {

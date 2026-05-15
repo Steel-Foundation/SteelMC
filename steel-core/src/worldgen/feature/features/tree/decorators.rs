@@ -13,11 +13,11 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut Xoroshiro,
-        config: &TreeConfiguration,
+        decorators: &[TreeDecorator],
         placement: &mut TreePlacement,
         biome_zoom_seed: i64,
     ) {
-        for decorator in &config.decorators {
+        for decorator in decorators {
             match decorator {
                 TreeDecorator::AlterGround { provider } => {
                     Self::place_alter_ground_tree_decorator(

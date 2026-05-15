@@ -2,8 +2,10 @@ use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
 mod decorators;
+mod fallen;
 mod foliage;
 mod leaves;
+mod root_system;
 mod roots;
 mod trunk;
 
@@ -27,7 +29,7 @@ impl FeatureDecorationRunner {
                 region,
                 registry,
                 random,
-                config,
+                &config.decorators,
                 &mut placement,
                 biome_zoom_seed,
             );

@@ -433,6 +433,58 @@ impl<'de> Deserialize<'de> for UniformIntProvider {
 }
 
 impl IntProvider {
+    /// Static lower bound for this provider.
+    #[must_use]
+    pub fn min(&self) -> i32 {
+        match self {
+            Self::Constant(value) => *value,
+            Self::Uniform { min_inclusive, .. }
+            | Self::BiasedToBottom { min_inclusive, .. }
+            | Self::VeryBiasedToBottom { min_inclusive, .. }
+            | Self::Clamped { min_inclusive, .. }
+            | Self::ClampedNormal { min_inclusive, .. } => *min_inclusive,
+            Self::Trapezoid { min, .. } => *min,
+            Self::WeightedList { distribution } => {
+                let mut min = 0;
+                let mut found = false;
+                for entry in distribution {
+                    let value = entry.data.min();
+                    if !found || value < min {
+                        min = value;
+                        found = true;
+                    }
+                }
+                min
+            }
+        }
+    }
+
+    /// Static upper bound for this provider.
+    #[must_use]
+    pub fn max(&self) -> i32 {
+        match self {
+            Self::Constant(value) => *value,
+            Self::Uniform { max_inclusive, .. }
+            | Self::BiasedToBottom { max_inclusive, .. }
+            | Self::VeryBiasedToBottom { max_inclusive, .. }
+            | Self::Clamped { max_inclusive, .. }
+            | Self::ClampedNormal { max_inclusive, .. } => *max_inclusive,
+            Self::Trapezoid { max, .. } => *max,
+            Self::WeightedList { distribution } => {
+                let mut max = 0;
+                let mut found = false;
+                for entry in distribution {
+                    let value = entry.data.max();
+                    if !found || value > max {
+                        max = value;
+                        found = true;
+                    }
+                }
+                max
+            }
+        }
+    }
+
     /// Sample a value.
     ///
     /// Matches vanilla's provider structure. Weighted-list selection is the

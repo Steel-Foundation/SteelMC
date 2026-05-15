@@ -16,6 +16,7 @@ mod providers;
 mod runner;
 mod sorter;
 mod state;
+mod weather;
 
 pub(crate) use runner::FeatureDecorationRunner;
 

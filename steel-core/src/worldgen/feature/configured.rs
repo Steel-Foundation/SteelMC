@@ -52,6 +52,7 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "delta_feature", place_delta_feature);
         register(&mut placers, "end_island", place_end_island);
         register(&mut placers, "end_platform", place_end_platform);
+        register(&mut placers, "geode", place_geode);
         register(&mut placers, "glowstone_blob", place_glowstone_blob);
         register(
             &mut placers,
@@ -59,6 +60,8 @@ impl ConfiguredFeatureRuntimeRegistry {
             place_huge_brown_mushroom,
         );
         register(&mut placers, "huge_red_mushroom", place_huge_red_mushroom);
+        register(&mut placers, "huge_fungus", place_huge_fungus);
+        register(&mut placers, "iceberg", place_iceberg);
         register(
             &mut placers,
             "nether_forest_vegetation",
@@ -79,8 +82,14 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "weeping_vines", place_weeping_vines);
         register(&mut placers, "spring_feature", place_spring_feature);
         register(&mut placers, "kelp", place_kelp);
+        register(&mut placers, "lake", place_lake);
+        register(&mut placers, "multiface_growth", place_multiface_growth);
         register(&mut placers, "sea_pickle", place_sea_pickle);
         register(&mut placers, "seagrass", place_seagrass);
+        register(&mut placers, "underwater_magma", place_underwater_magma);
+        register(&mut placers, "pointed_dripstone", place_pointed_dripstone);
+        register(&mut placers, "dripstone_cluster", place_dripstone_cluster);
+        register(&mut placers, "large_dripstone", place_large_dripstone);
         register(&mut placers, "spike", place_spike);
         register(&mut placers, "ore", place_ore);
         register(&mut placers, "scattered_ore", place_scattered_ore);
@@ -91,6 +100,9 @@ impl ConfiguredFeatureRuntimeRegistry {
             "waterlogged_vegetation_patch",
             place_waterlogged_vegetation_patch,
         );
+        register(&mut placers, "fallen_tree", place_fallen_tree);
+        register(&mut placers, "freeze_top_layer", place_freeze_top_layer);
+        register(&mut placers, "root_system", place_root_system);
         Self {
             placers,
             pending_placers,
@@ -658,6 +670,22 @@ fn place_end_platform(
     FeatureDecorationRunner::place_end_platform_feature(context.region, context.origin)
 }
 
+fn place_geode(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Geode(config) = kind else {
+        panic!("geode placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_geode_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
 fn place_glowstone_blob(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -696,6 +724,38 @@ fn place_huge_red_mushroom(
         panic!("huge_red_mushroom placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_huge_red_mushroom_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_huge_fungus(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::HugeFungus(config) = kind else {
+        panic!("huge_fungus placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_huge_fungus_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_iceberg(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Iceberg(config) = kind else {
+        panic!("iceberg placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_iceberg_feature(
         context.region,
         context.registry,
         context.random,
@@ -810,6 +870,54 @@ fn place_kelp(
     FeatureDecorationRunner::place_kelp_feature(context.region, context.random, context.origin)
 }
 
+fn place_lake(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::Lake(config) = kind else {
+        panic!("lake placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_lake_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_freeze_top_layer(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::FreezeTopLayer = kind else {
+        panic!("freeze_top_layer placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_freeze_top_layer_feature(
+        context.region,
+        context.registry,
+        context.origin,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_multiface_growth(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::MultifaceGrowth(config) = kind else {
+        panic!("multiface_growth placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_multiface_growth_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
 fn place_sea_pickle(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -834,6 +942,69 @@ fn place_seagrass(
     };
     FeatureDecorationRunner::place_seagrass_feature(
         context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_underwater_magma(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::UnderwaterMagma(config) = kind else {
+        panic!("underwater_magma placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_underwater_magma_feature(
+        context.region,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_pointed_dripstone(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::PointedDripstone(config) = kind else {
+        panic!("pointed_dripstone placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_pointed_dripstone_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_dripstone_cluster(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::DripstoneCluster(config) = kind else {
+        panic!("dripstone_cluster placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_dripstone_cluster_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+    )
+}
+
+fn place_large_dripstone(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::LargeDripstone(config) = kind else {
+        panic!("large_dripstone placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_large_dripstone_feature(
+        context.region,
+        context.registry,
         context.random,
         config,
         context.origin,
@@ -896,6 +1067,40 @@ fn place_tree(
         panic!("tree placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_tree_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_fallen_tree(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::FallenTree(config) = kind else {
+        panic!("fallen_tree placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_fallen_tree_feature(
+        context.region,
+        context.registry,
+        context.random,
+        config,
+        context.origin,
+        context.biome_zoom_seed,
+    )
+}
+
+fn place_root_system(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::RootSystem(config) = kind else {
+        panic!("root_system placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_root_system_feature(
         context.region,
         context.registry,
         context.random,
