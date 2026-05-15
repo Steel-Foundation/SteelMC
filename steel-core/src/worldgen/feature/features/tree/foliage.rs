@@ -13,6 +13,7 @@ impl FeatureDecorationRunner {
                 | FoliagePlacer::Spruce(_)
                 | FoliagePlacer::MegaPine(_)
                 | FoliagePlacer::Acacia(_)
+                | FoliagePlacer::DarkOak(_)
         )
     }
 
@@ -31,6 +32,7 @@ impl FeatureDecorationRunner {
             }
             FoliagePlacer::MegaPine(placer) => placer.crown_height.sample(random),
             FoliagePlacer::Acacia(_) => 0,
+            FoliagePlacer::DarkOak(_) => 4,
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -52,6 +54,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Spruce(placer) => placer.radius.sample(random),
             FoliagePlacer::MegaPine(placer) => placer.radius.sample(random),
             FoliagePlacer::Acacia(placer) => placer.radius.sample(random),
+            FoliagePlacer::DarkOak(placer) => placer.radius.sample(random),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -141,6 +144,15 @@ impl FeatureDecorationRunner {
                 leaf_radius,
                 placement,
             ),
+            FoliagePlacer::DarkOak(_) => Self::create_dark_oak_tree_foliage(
+                region,
+                registry,
+                random,
+                config,
+                attachment,
+                leaf_radius,
+                placement,
+            ),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -173,6 +185,90 @@ impl FeatureDecorationRunner {
                 current_radius,
                 y,
                 attachment.double_trunk,
+                placement,
+            );
+        }
+    }
+
+    fn create_dark_oak_tree_foliage(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        config: &TreeConfiguration,
+        attachment: FoliageAttachment,
+        leaf_radius: i32,
+        placement: &mut TreePlacement,
+    ) {
+        let offset = Self::tree_foliage_offset(random, &config.foliage_placer);
+        let pos = attachment.pos.above_n(offset);
+        if attachment.double_trunk {
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                pos,
+                leaf_radius + 2,
+                -1,
+                true,
+                placement,
+            );
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                pos,
+                leaf_radius + 3,
+                0,
+                true,
+                placement,
+            );
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                pos,
+                leaf_radius + 2,
+                1,
+                true,
+                placement,
+            );
+            if random.next_bool() {
+                Self::place_tree_leaves_row(
+                    region,
+                    registry,
+                    random,
+                    config,
+                    pos,
+                    leaf_radius,
+                    2,
+                    true,
+                    placement,
+                );
+            }
+        } else {
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                pos,
+                leaf_radius + 2,
+                -1,
+                false,
+                placement,
+            );
+            Self::place_tree_leaves_row(
+                region,
+                registry,
+                random,
+                config,
+                pos,
+                leaf_radius + 1,
+                0,
+                false,
                 placement,
             );
         }
@@ -400,6 +496,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Spruce(placer) => placer.offset.sample(random),
             FoliagePlacer::MegaPine(placer) => placer.offset.sample(random),
             FoliagePlacer::Acacia(placer) => placer.offset.sample(random),
+            FoliagePlacer::DarkOak(placer) => placer.offset.sample(random),
             _ => panic!(
                 "tree foliage placer requires runtime support before minecraft:tree can be registered"
             ),
@@ -446,6 +543,16 @@ impl FeatureDecorationRunner {
         current_radius: i32,
         double_trunk: bool,
     ) -> bool {
+        if matches!(foliage_placer, FoliagePlacer::DarkOak(_)) {
+            return Self::dark_oak_foliage_should_skip_location(
+                dx,
+                y,
+                dz,
+                current_radius,
+                double_trunk,
+            );
+        }
+
         let (dx, dz) = Self::foliage_signed_distances(dx, dz, double_trunk);
         match foliage_placer {
             FoliagePlacer::Blob(_) => {
@@ -466,6 +573,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Acacia(_) => {
                 Self::acacia_foliage_should_skip_location(dx, y, dz, current_radius)
             }
+            FoliagePlacer::DarkOak(_) => unreachable!(),
             _ => {
                 panic!(
                     "tree foliage placer requires runtime support before minecraft:tree can be registered"
@@ -497,6 +605,31 @@ impl FeatureDecorationRunner {
         let dx = dx as f32 + 0.5;
         let dz = dz as f32 + 0.5;
         dx * dx + dz * dz > (current_radius * current_radius) as f32
+    }
+
+    fn dark_oak_foliage_should_skip_location(
+        dx: i32,
+        y: i32,
+        dz: i32,
+        current_radius: i32,
+        double_trunk: bool,
+    ) -> bool {
+        if y == 0
+            && double_trunk
+            && (dx == -current_radius || dx >= current_radius)
+            && (dz == -current_radius || dz >= current_radius)
+        {
+            return true;
+        }
+
+        let (dx, dz) = Self::foliage_signed_distances(dx, dz, double_trunk);
+        if y == -1 && !double_trunk {
+            dx == current_radius && dz == current_radius
+        } else if y == 1 {
+            dx + dz > current_radius * 2 - 2
+        } else {
+            false
+        }
     }
 
     const fn conifer_foliage_should_skip_location(dx: i32, dz: i32, current_radius: i32) -> bool {
@@ -602,5 +735,34 @@ mod tests {
         assert!(FeatureDecorationRunner::fancy_foliage_should_skip_location(
             0, 0, 0
         ));
+    }
+
+    #[test]
+    fn dark_oak_double_trunk_skips_outer_corner_extensions_on_center_layer() {
+        assert!(
+            FeatureDecorationRunner::dark_oak_foliage_should_skip_location(-3, 0, -3, 3, true,)
+        );
+        assert!(FeatureDecorationRunner::dark_oak_foliage_should_skip_location(4, 0, 4, 3, true,));
+        assert!(
+            !FeatureDecorationRunner::dark_oak_foliage_should_skip_location(-2, 0, -3, 3, true,)
+        );
+    }
+
+    #[test]
+    fn dark_oak_side_crowns_skip_lower_outer_corners() {
+        assert!(
+            FeatureDecorationRunner::dark_oak_foliage_should_skip_location(2, -1, 2, 2, false,)
+        );
+        assert!(
+            !FeatureDecorationRunner::dark_oak_foliage_should_skip_location(2, -1, 1, 2, false,)
+        );
+    }
+
+    #[test]
+    fn dark_oak_upper_layer_uses_diagonal_cutoff() {
+        assert!(FeatureDecorationRunner::dark_oak_foliage_should_skip_location(3, 1, 2, 3, false,));
+        assert!(
+            !FeatureDecorationRunner::dark_oak_foliage_should_skip_location(2, 1, 2, 3, false,)
+        );
     }
 }

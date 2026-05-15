@@ -177,6 +177,18 @@ impl FeatureDecorationRunner {
                 .is_in_tag(state.get_block(), &vanilla_block_tags::LOGS_TAG)
     }
 
+    fn tree_is_air_or_leaves(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        pos: BlockPos,
+    ) -> bool {
+        let state = region.block_state(pos);
+        state.is_air()
+            || registry
+                .blocks
+                .is_in_tag(state.get_block(), &vanilla_block_tags::LEAVES_TAG)
+    }
+
     fn tree_is_vine(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         region.block_state(pos).get_block() == &vanilla_blocks::VINE
     }

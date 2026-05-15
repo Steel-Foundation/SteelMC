@@ -15,6 +15,7 @@ impl FeatureDecorationRunner {
                 | TrunkPlacer::Forking(_)
                 | TrunkPlacer::Giant(_)
                 | TrunkPlacer::Fancy(_)
+                | TrunkPlacer::DarkOak(_)
         )
     }
 
@@ -101,6 +102,15 @@ impl FeatureDecorationRunner {
                 placement,
             ),
             TrunkPlacer::Fancy(_) => Self::place_fancy_tree_trunk(
+                region,
+                registry,
+                random,
+                tree_height,
+                origin,
+                config,
+                placement,
+            ),
+            TrunkPlacer::DarkOak(_) => Self::place_dark_oak_tree_trunk(
                 region,
                 registry,
                 random,
@@ -296,6 +306,123 @@ impl FeatureDecorationRunner {
             radius_offset: 0,
             double_trunk: true,
         }]
+    }
+
+    fn place_dark_oak_tree_trunk(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        tree_height: i32,
+        origin: BlockPos,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> Vec<FoliageAttachment> {
+        let mut attachments = Vec::new();
+        let below = origin.below();
+        Self::place_below_trunk_block(region, registry, random, below, config, placement);
+        Self::place_below_trunk_block(
+            region,
+            registry,
+            random,
+            below.relative(Direction::East),
+            config,
+            placement,
+        );
+        Self::place_below_trunk_block(
+            region,
+            registry,
+            random,
+            below.relative(Direction::South),
+            config,
+            placement,
+        );
+        Self::place_below_trunk_block(
+            region,
+            registry,
+            random,
+            below.offset(1, 0, 1),
+            config,
+            placement,
+        );
+
+        let lean_direction = Self::random_horizontal_direction(random);
+        let lean_height = tree_height - random.next_i32_bounded(4);
+        let mut lean_steps = 2 - random.next_i32_bounded(3);
+        let x = origin.x();
+        let y = origin.y();
+        let z = origin.z();
+        let mut trunk_x = x;
+        let mut trunk_z = z;
+        let foliage_y = y + tree_height - 1;
+
+        for y_offset in 0..tree_height {
+            if y_offset >= lean_height && lean_steps > 0 {
+                let (dx, _, dz) = lean_direction.offset();
+                trunk_x += dx;
+                trunk_z += dz;
+                lean_steps -= 1;
+            }
+
+            let pos = BlockPos::new(trunk_x, y + y_offset, trunk_z);
+            if Self::tree_is_air_or_leaves(region, registry, pos) {
+                let _ = Self::place_tree_log(region, registry, random, pos, config, placement);
+                let _ = Self::place_tree_log(
+                    region,
+                    registry,
+                    random,
+                    pos.relative(Direction::East),
+                    config,
+                    placement,
+                );
+                let _ = Self::place_tree_log(
+                    region,
+                    registry,
+                    random,
+                    pos.relative(Direction::South),
+                    config,
+                    placement,
+                );
+                let _ = Self::place_tree_log(
+                    region,
+                    registry,
+                    random,
+                    pos.offset(1, 0, 1),
+                    config,
+                    placement,
+                );
+            }
+        }
+
+        attachments.push(FoliageAttachment {
+            pos: BlockPos::new(trunk_x, foliage_y, trunk_z),
+            radius_offset: 0,
+            double_trunk: true,
+        });
+
+        for ox in -1..=2 {
+            for oz in -1..=2 {
+                if ox >= 0 && ox <= 1 && oz >= 0 && oz <= 1 {
+                    continue;
+                }
+                if random.next_i32_bounded(3) > 0 {
+                    continue;
+                }
+
+                let branch_length = random.next_i32_bounded(3) + 2;
+                for branch_y in 0..branch_length {
+                    let pos = BlockPos::new(x + ox, foliage_y - branch_y - 1, z + oz);
+                    let _ = Self::place_tree_log(region, registry, random, pos, config, placement);
+                }
+
+                attachments.push(FoliageAttachment {
+                    pos: BlockPos::new(x + ox, foliage_y, z + oz),
+                    radius_offset: 0,
+                    double_trunk: false,
+                });
+            }
+        }
+
+        attachments
     }
 
     fn place_fancy_tree_trunk(
