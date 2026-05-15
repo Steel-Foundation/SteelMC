@@ -33,37 +33,67 @@ impl FeatureDecorationRunner {
         biome_filter_feature_id: Option<usize>,
         biome_zoom_seed: i64,
     ) -> bool {
-        let mut positions = vec![origin];
+        Self::place_placed_feature_from_modifier(
+            region,
+            registry,
+            random,
+            origin,
+            feature,
+            biome_filter_feature_id,
+            biome_zoom_seed,
+            0,
+        )
+    }
 
-        for modifier in &feature.placement {
-            let mut next_positions = Vec::new();
-            for position in positions {
-                next_positions.extend(Self::apply_placement_modifier(
-                    region,
-                    registry,
-                    random,
-                    position,
-                    biome_filter_feature_id,
-                    modifier,
-                    biome_zoom_seed,
-                ));
-            }
-
-            if next_positions.is_empty() {
-                return false;
-            }
-            positions = next_positions;
-        }
-
-        let mut placed = false;
-        for position in positions {
-            placed |= Self::place_configured_feature(
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "threading vanilla placed-feature stream state explicitly"
+    )]
+    fn place_placed_feature_from_modifier(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut Xoroshiro,
+        origin: BlockPos,
+        feature: &PlacedFeatureData,
+        biome_filter_feature_id: Option<usize>,
+        biome_zoom_seed: i64,
+        modifier_index: usize,
+    ) -> bool {
+        let Some(modifier) = feature.placement.get(modifier_index) else {
+            return Self::place_configured_feature(
                 region,
                 registry,
                 random,
                 &feature.feature,
-                position,
+                origin,
                 biome_zoom_seed,
+            );
+        };
+
+        let positions = Self::apply_placement_modifier(
+            region,
+            registry,
+            random,
+            origin,
+            biome_filter_feature_id,
+            modifier,
+            biome_zoom_seed,
+        );
+        if positions.is_empty() {
+            return false;
+        }
+
+        let mut placed = false;
+        for position in positions {
+            placed |= Self::place_placed_feature_from_modifier(
+                region,
+                registry,
+                random,
+                position,
+                feature,
+                biome_filter_feature_id,
+                biome_zoom_seed,
+                modifier_index + 1,
             );
         }
         placed
