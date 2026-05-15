@@ -995,7 +995,8 @@ impl FeatureDecorationRunner {
                 let _ = Self::place_fancy_tree_log(
                     region, registry, random, pos, axis, config, placement,
                 );
-            } else if !Self::tree_is_free(region, registry, pos) {
+            } else if !Self::tree_trunk_placer_is_free(region, registry, pos, &config.trunk_placer)
+            {
                 return false;
             }
         }

@@ -149,7 +149,7 @@ impl FeatureDecorationRunner {
             for x in -radius..=radius {
                 for z in -radius..=radius {
                     let pos = tree_pos.offset(x, y, z);
-                    if !Self::tree_is_free(region, registry, pos)
+                    if !Self::tree_trunk_placer_is_free(region, registry, pos, &config.trunk_placer)
                         || (!config.ignore_vines && Self::tree_is_vine(region, pos))
                     {
                         return y - 2;
@@ -170,16 +170,38 @@ impl FeatureDecorationRunner {
             )
     }
 
-    fn tree_is_free(region: &WorldGenRegion<'_>, registry: &Registry, pos: BlockPos) -> bool {
+    fn tree_trunk_placer_is_free(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        pos: BlockPos,
+        trunk_placer: &TrunkPlacer,
+    ) -> bool {
         let state = region.block_state(pos);
-        state.is_air()
-            || registry.blocks.is_in_tag(
-                state.get_block(),
-                &vanilla_block_tags::REPLACEABLE_BY_TREES_TAG,
-            )
+        Self::tree_valid_pos_for_trunk_placer(region, registry, pos, trunk_placer)
             || registry
                 .blocks
                 .is_in_tag(state.get_block(), &vanilla_block_tags::LOGS_TAG)
+    }
+
+    fn tree_valid_pos_for_trunk_placer(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        pos: BlockPos,
+        trunk_placer: &TrunkPlacer,
+    ) -> bool {
+        match trunk_placer {
+            TrunkPlacer::UpwardsBranching(placer) => {
+                Self::tree_valid_pos_or_tag(region, registry, pos, &placer.can_grow_through)
+            }
+            TrunkPlacer::Straight(_)
+            | TrunkPlacer::Forking(_)
+            | TrunkPlacer::Giant(_)
+            | TrunkPlacer::Fancy(_)
+            | TrunkPlacer::DarkOak(_)
+            | TrunkPlacer::MegaJungle(_)
+            | TrunkPlacer::Bending(_)
+            | TrunkPlacer::Cherry(_) => Self::tree_valid_pos(region, registry, pos),
+        }
     }
 
     fn tree_valid_pos_or_tag(
