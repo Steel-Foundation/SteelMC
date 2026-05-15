@@ -45,11 +45,14 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "basalt_columns", place_basalt_columns);
         register(&mut placers, "basalt_pillar", place_basalt_pillar);
         register(&mut placers, "blue_ice", place_blue_ice);
+        register(&mut placers, "bonus_chest", place_bonus_chest);
         register(&mut placers, "chorus_plant", place_chorus_plant);
         register(&mut placers, "coral_claw", place_coral_claw);
         register(&mut placers, "coral_mushroom", place_coral_mushroom);
         register(&mut placers, "coral_tree", place_coral_tree);
         register(&mut placers, "delta_feature", place_delta_feature);
+        register(&mut placers, "desert_well", place_desert_well);
+        register(&mut placers, "end_gateway", place_end_gateway);
         register(&mut placers, "end_island", place_end_island);
         register(&mut placers, "end_platform", place_end_platform);
         register(&mut placers, "geode", place_geode);
@@ -83,6 +86,7 @@ impl ConfiguredFeatureRuntimeRegistry {
         register(&mut placers, "spring_feature", place_spring_feature);
         register(&mut placers, "kelp", place_kelp);
         register(&mut placers, "lake", place_lake);
+        register(&mut placers, "monster_room", place_monster_room);
         register(&mut placers, "multiface_growth", place_multiface_growth);
         register(&mut placers, "sea_pickle", place_sea_pickle);
         register(&mut placers, "seagrass", place_seagrass);
@@ -570,6 +574,20 @@ fn place_blue_ice(
     FeatureDecorationRunner::place_blue_ice_feature(context.region, context.random, context.origin)
 }
 
+fn place_bonus_chest(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::BonusChest = kind else {
+        panic!("bonus_chest placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_bonus_chest_feature(
+        context.region,
+        context.random,
+        context.origin,
+    )
+}
+
 fn place_chorus_plant(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
@@ -644,6 +662,30 @@ fn place_delta_feature(
         config,
         context.origin,
     )
+}
+
+fn place_desert_well(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::DesertWell = kind else {
+        panic!("desert_well placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_desert_well_feature(
+        context.region,
+        context.random,
+        context.origin,
+    )
+}
+
+fn place_end_gateway(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::EndGateway(config) = kind else {
+        panic!("end_gateway placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_end_gateway_feature(context.region, config, context.origin)
 }
 
 fn place_end_island(
@@ -884,6 +926,21 @@ fn place_lake(
         config,
         context.origin,
         context.biome_zoom_seed,
+    )
+}
+
+fn place_monster_room(
+    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
+    kind: &ConfiguredFeatureKind,
+) -> bool {
+    let ConfiguredFeatureKind::MonsterRoom = kind else {
+        panic!("monster_room placer received wrong configured feature kind");
+    };
+    FeatureDecorationRunner::place_monster_room_feature(
+        context.region,
+        context.registry,
+        context.random,
+        context.origin,
     )
 }
 

@@ -1,4 +1,5 @@
 //! This module contains the `ChunkAccess` enum, which is used to access chunks in different states.
+use std::sync::Weak;
 use std::sync::atomic::Ordering;
 use steel_registry::{blocks::BlockRef, fluid::FluidRef};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
@@ -10,6 +11,7 @@ use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
+use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
 
@@ -415,6 +417,34 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.get_block_entity(pos),
             Self::Proto(proto_chunk) => proto_chunk.get_block_entity(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns the weak world reference stored by this chunk.
+    #[must_use]
+    pub fn level_weak(&self) -> Weak<World> {
+        match self {
+            Self::Full(chunk) => chunk.level_weak(),
+            Self::Proto(proto_chunk) => proto_chunk.level_weak(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Adds a block entity and registers it for ticking if needed.
+    pub fn add_and_register_block_entity(&self, block_entity: SharedBlockEntity) {
+        match self {
+            Self::Full(chunk) => chunk.add_and_register_block_entity(block_entity),
+            Self::Proto(proto_chunk) => proto_chunk.add_and_register_block_entity(block_entity),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Removes a block entity at the given position.
+    pub fn remove_block_entity(&self, pos: BlockPos) {
+        match self {
+            Self::Full(chunk) => chunk.remove_block_entity(pos),
+            Self::Proto(proto_chunk) => proto_chunk.remove_block_entity(pos),
             Self::Unloaded => unreachable!(),
         }
     }

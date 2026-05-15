@@ -11,10 +11,14 @@ use std::sync::{
 
 use parking_lot::RwLockReadGuard;
 use rustc_hash::FxHashMap;
-use steel_registry::{REGISTRY, blocks::BlockRef, fluid::FluidRef, vanilla_blocks};
+use simdnbt::owned::NbtCompound;
+use steel_registry::{
+    REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef, fluid::FluidRef,
+    vanilla_blocks,
+};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 
-use crate::block_entity::SharedBlockEntity;
+use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
     chunk_generation_task::StaticCache2D,
@@ -252,6 +256,51 @@ impl<'a> WorldGenRegion<'a> {
 
         self.chunk(chunk_x, chunk_z, status)
             .set_block_state(pos, state, flags);
+        true
+    }
+
+    /// Attaches block entity data at a writable worldgen position.
+    ///
+    /// This mirrors vanilla's feature paths that place a block first, then configure its block
+    /// entity. If Steel does not have concrete behavior for the type yet, the raw fallback keeps
+    /// the NBT intact for later save/load.
+    #[must_use]
+    pub fn set_block_entity_data(
+        &self,
+        pos: BlockPos,
+        block_entity_type: BlockEntityTypeRef,
+        state: BlockStateId,
+        nbt: NbtCompound,
+    ) -> bool {
+        let Some((chunk_x, chunk_z, status)) =
+            self.writable_chunk_for_pos(pos, "write block entity")
+        else {
+            return false;
+        };
+
+        let chunk = self.chunk(chunk_x, chunk_z, status);
+        let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
+            block_entity_type,
+            chunk.level_weak(),
+            pos,
+            state,
+            nbt,
+        );
+        chunk.add_and_register_block_entity(entity);
+        true
+    }
+
+    /// Removes block entity data at a writable worldgen position.
+    #[must_use]
+    pub fn remove_block_entity(&self, pos: BlockPos) -> bool {
+        let Some((chunk_x, chunk_z, status)) =
+            self.writable_chunk_for_pos(pos, "remove block entity")
+        else {
+            return false;
+        };
+
+        self.chunk(chunk_x, chunk_z, status)
+            .remove_block_entity(pos);
         true
     }
 

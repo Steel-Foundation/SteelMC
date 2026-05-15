@@ -739,15 +739,15 @@ impl ChunkStorage {
         // Parse and load NBT data
         if persistent.nbt_data.is_empty() {
             // No NBT data, just create the entity without loading
-            BLOCK_ENTITIES.create(block_entity_type, level, pos, state)
+            Some(BLOCK_ENTITIES.create_or_raw(block_entity_type, level, pos, state))
         } else {
             // Parse NBT from bytes as borrowed
             let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&persistent.nbt_data)) else {
-                return BLOCK_ENTITIES.create(block_entity_type, level, pos, state);
+                return Some(BLOCK_ENTITIES.create_or_raw(block_entity_type, level, pos, state));
             };
 
             // Create the block entity and load NBT
-            BLOCK_ENTITIES.create_and_load(block_entity_type, level, pos, state, &nbt)
+            Some(BLOCK_ENTITIES.create_and_load_or_raw(block_entity_type, level, pos, state, &nbt))
         }
     }
 
@@ -1364,6 +1364,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
     use rustc_hash::{FxHashMap, FxHashSet};
+    use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
     use steel_utils::types::UpdateFlags;
 
@@ -1543,6 +1544,67 @@ mod tests {
 
         let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
         assert!(full.get_block_entity(block_pos).is_some());
+    }
+
+    #[test]
+    fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let block_pos = BlockPos::new(4, 4, 6);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let spawner = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SPAWNER);
+        proto.set_block_state(block_pos, spawner, UpdateFlags::UPDATE_NONE);
+
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
+        nbt.insert("LootTableSeed", 42_i64);
+        let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
+            &vanilla_block_entity_types::MOB_SPAWNER,
+            proto.level_weak(),
+            block_pos,
+            spawner,
+            nbt,
+        );
+        proto.add_and_register_block_entity(entity);
+
+        let chunk = ChunkAccess::Proto(proto);
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.block_entities.len(), 1);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Features,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("features status should load as proto chunk");
+        };
+        let Some(loaded_entity) = loaded_proto.get_block_entity(block_pos) else {
+            panic!("raw block entity should survive chunk load");
+        };
+
+        let mut saved = NbtCompound::new();
+        let guard = loaded_entity.lock();
+        assert_eq!(
+            guard.get_type().id(),
+            vanilla_block_entity_types::MOB_SPAWNER.id()
+        );
+        guard.save_additional(&mut saved);
+        drop(guard);
+
+        assert_eq!(
+            saved.string("LootTable").map(ToString::to_string),
+            Some("minecraft:chests/simple_dungeon".to_owned())
+        );
+        assert_eq!(saved.long("LootTableSeed"), Some(42));
     }
 
     #[test]
