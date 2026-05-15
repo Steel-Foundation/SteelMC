@@ -36,7 +36,7 @@ impl FeatureDecorationRunner {
         let Some(bounds) = TreeBounds::from_placement(&placement) else {
             return false;
         };
-        Self::update_tree_leaves(region, bounds, &placement);
+        Self::update_tree_leaves(region, registry, bounds, &placement);
         true
     }
 

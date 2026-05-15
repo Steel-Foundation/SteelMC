@@ -25,7 +25,7 @@ pub(super) use steel_registry::feature::{
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{
     REGISTRY, Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _,
-    vanilla_block_tags, vanilla_blocks,
+    vanilla_block_tags, vanilla_blocks, vanilla_fluids,
 };
 pub(super) use steel_utils::math::Axis;
 pub(super) use steel_utils::random::{
