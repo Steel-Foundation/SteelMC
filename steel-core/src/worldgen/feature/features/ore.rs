@@ -1,3 +1,4 @@
+use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use steel_utils::math::mth;
@@ -112,61 +113,68 @@ impl FeatureDecorationRunner {
         else {
             return false;
         };
-        let mut placed = 0;
+        let profile = OreFeatureProfile::new(config.size);
+        let mut placed = 0_u64;
         let mut tested = OreTestedPositions::with_capacity(search_volume.tested_position_count);
-        let mut sections = region.bulk_section_access();
 
-        for node in vein_nodes {
-            let radius = node[3];
-            if radius < 0.0 {
-                continue;
-            }
+        {
+            let mut sections = region.bulk_section_access_for_ore(profile.stats());
 
-            let x_min = floor(node[0] - radius).max(x_start);
-            let y_min = floor(node[1] - radius).max(y_start);
-            let z_min = floor(node[2] - radius).max(z_start);
-            let x_max = floor(node[0] + radius).max(x_min);
-            let y_max = floor(node[1] + radius).max(y_min);
-            let z_max = floor(node[2] + radius).max(z_min);
-
-            for x in x_min..=x_max {
-                let x_distance = (f64::from(x) + 0.5 - node[0]) / radius;
-                if x_distance * x_distance >= 1.0 {
+            for node in vein_nodes {
+                let radius = node[3];
+                if radius < 0.0 {
                     continue;
                 }
 
-                for y in y_min..=y_max {
-                    let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
-                    if x_distance * x_distance + y_distance * y_distance >= 1.0 {
+                let x_min = floor(node[0] - radius).max(x_start);
+                let y_min = floor(node[1] - radius).max(y_start);
+                let z_min = floor(node[2] - radius).max(z_start);
+                let x_max = floor(node[0] + radius).max(x_min);
+                let y_max = floor(node[1] + radius).max(y_min);
+                let z_max = floor(node[2] + radius).max(z_min);
+
+                for x in x_min..=x_max {
+                    let x_distance = (f64::from(x) + 0.5 - node[0]) / radius;
+                    if x_distance * x_distance >= 1.0 {
                         continue;
                     }
 
-                    for z in z_min..=z_max {
-                        let z_distance = (f64::from(z) + 0.5 - node[2]) / radius;
-                        if x_distance * x_distance
-                            + y_distance * y_distance
-                            + z_distance * z_distance
-                            >= 1.0
-                            || region.is_outside_build_height(y)
-                        {
+                    for y in y_min..=y_max {
+                        let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
+                        if x_distance * x_distance + y_distance * y_distance >= 1.0 {
                             continue;
                         }
 
-                        let Some(tested_index) = search_volume.index(x, y, z) else {
-                            continue;
-                        };
-                        if tested.insert(tested_index) {
-                            let pos = BlockPos::new(x, y, z);
-                            if sections.can_write_to_pos(pos)
-                                && Self::try_place_ore_block_in_bulk(
-                                    &mut sections,
-                                    registry,
-                                    random,
-                                    config,
-                                    pos,
-                                )
+                        for z in z_min..=z_max {
+                            let z_distance = (f64::from(z) + 0.5 - node[2]) / radius;
+                            if x_distance * x_distance
+                                + y_distance * y_distance
+                                + z_distance * z_distance
+                                >= 1.0
+                                || region.is_outside_build_height(y)
                             {
-                                placed += 1;
+                                continue;
+                            }
+
+                            sections.record_ore_candidate_position();
+                            let Some(tested_index) = search_volume.index(x, y, z) else {
+                                continue;
+                            };
+                            if tested.insert(tested_index) {
+                                sections.record_ore_unique_position();
+                                let pos = BlockPos::new(x, y, z);
+                                if sections.can_write_to_pos(pos) {
+                                    sections.record_ore_write_allowed_position();
+                                    if Self::try_place_ore_block_in_bulk(
+                                        &mut sections,
+                                        registry,
+                                        random,
+                                        config,
+                                        pos,
+                                    ) {
+                                        placed += 1;
+                                    }
+                                }
                             }
                         }
                     }
@@ -174,6 +182,7 @@ impl FeatureDecorationRunner {
             }
         }
 
+        profile.finish(placed);
         placed > 0
     }
 
@@ -232,13 +241,13 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn try_place_ore_block_in_bulk(
-        sections: &mut WorldGenBulkSectionAccess<'_, '_>,
+        sections: &mut WorldGenBulkSectionAccess<'_, '_, '_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
         pos: BlockPos,
     ) -> bool {
-        let block_state = sections.block_state(pos);
+        let block_state = sections.ore_target_block_state(pos);
         for target in &config.targets {
             if Self::can_place_ore_in_bulk(
                 sections,
@@ -278,7 +287,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn can_place_ore_in_bulk(
-        sections: &mut WorldGenBulkSectionAccess<'_, '_>,
+        sections: &mut WorldGenBulkSectionAccess<'_, '_, '_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
@@ -342,12 +351,12 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn is_adjacent_to_air_in_bulk(
-        sections: &mut WorldGenBulkSectionAccess<'_, '_>,
+        sections: &mut WorldGenBulkSectionAccess<'_, '_, '_>,
         registry: &Registry,
         pos: BlockPos,
     ) -> bool {
         Direction::ALL.into_iter().any(|direction| {
-            let neighbor = sections.block_state(pos.relative(direction));
+            let neighbor = sections.ore_neighbor_block_state(pos.relative(direction));
             Self::is_air_block_state(registry, neighbor)
         })
     }

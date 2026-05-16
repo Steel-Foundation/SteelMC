@@ -399,6 +399,40 @@ fn make_holder_for_features(
     holder
 }
 
+fn make_holder_for_feature_centers(
+    centers: &[ChunkPos],
+    chunk_x: i32,
+    chunk_z: i32,
+    dim: &DimensionType,
+    generator: &ChunkGeneratorType,
+) -> Arc<ChunkHolder> {
+    let holder = Arc::new(ChunkHolder::new(
+        ChunkPos::new(chunk_x, chunk_z),
+        0,
+        dim.min_y,
+        dim.height,
+    ));
+
+    let needs_carvers = centers.iter().any(|center| {
+        (chunk_x - center.0.x)
+            .abs()
+            .max((chunk_z - center.0.y).abs())
+            <= 1
+    });
+    if needs_carvers {
+        holder.insert_chunk(
+            make_chunk_through_carvers(chunk_x, chunk_z, dim, generator),
+            ChunkStatus::Carvers,
+        );
+    } else {
+        let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
+        generator.create_structures(&chunk);
+        holder.insert_chunk(chunk, ChunkStatus::StructureStarts);
+    }
+
+    holder
+}
+
 struct FeatureFixture {
     context: Arc<WorldGenContext>,
     cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
@@ -484,6 +518,14 @@ fn build_feature_fixture_at(
     }
 }
 
+struct ConcurrentFeatureFixture {
+    context: Arc<WorldGenContext>,
+    cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    targets: Vec<Arc<ChunkHolder>>,
+    generation_pool: Arc<rayon::ThreadPool>,
+    _world: Arc<World>,
+}
+
 fn bench_features(c: &mut Criterion, name: &str, generator_key: Identifier) {
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
 
@@ -516,49 +558,141 @@ fn bench_overworld_features(c: &mut Criterion) {
 }
 
 const PROFILE_FEATURE_SEED: i64 = 2_965_282_071_327_931_563;
-const FEATURE_SAMPLE_GRID_RADIUS: i32 = 8;
-const FEATURE_SAMPLE_GRID_STRIDE: i32 = 4;
+const CONCURRENT_FEATURE_GRID_MIN: i32 = -1;
+const CONCURRENT_FEATURE_GRID_MAX: i32 = 2;
+const CONCURRENT_FEATURE_THREAD_COUNT: usize = 8;
 
-fn feature_sample_positions() -> Vec<ChunkPos> {
-    let side = FEATURE_SAMPLE_GRID_RADIUS * 2 + 1;
+fn concurrent_feature_centers() -> Vec<ChunkPos> {
+    let side = CONCURRENT_FEATURE_GRID_MAX - CONCURRENT_FEATURE_GRID_MIN + 1;
     let mut positions = Vec::with_capacity((side * side) as usize);
 
-    for z in -FEATURE_SAMPLE_GRID_RADIUS..=FEATURE_SAMPLE_GRID_RADIUS {
-        for x in -FEATURE_SAMPLE_GRID_RADIUS..=FEATURE_SAMPLE_GRID_RADIUS {
-            positions.push(ChunkPos::new(
-                x * FEATURE_SAMPLE_GRID_STRIDE,
-                z * FEATURE_SAMPLE_GRID_STRIDE,
-            ));
+    for z in CONCURRENT_FEATURE_GRID_MIN..=CONCURRENT_FEATURE_GRID_MAX {
+        for x in CONCURRENT_FEATURE_GRID_MIN..=CONCURRENT_FEATURE_GRID_MAX {
+            positions.push(ChunkPos::new(x, z));
         }
     }
 
     positions
 }
 
-fn bench_overworld_features_profile_range(c: &mut Criterion) {
+fn concurrent_feature_cache_radius(centers: &[ChunkPos]) -> i32 {
+    centers
+        .iter()
+        .map(|center| center.0.x.abs().max(center.0.y.abs()) + 8)
+        .max()
+        .unwrap_or(8)
+}
+
+fn build_concurrent_feature_fixture(
+    generator_key: Identifier,
+    seed: i64,
+) -> ConcurrentFeatureFixture {
+    let generator_config = toml::Value::Table(toml::map::Map::new());
+    let output = WorldGeneratorRegistry::new_with_builtins()
+        .expect("built-in world generators should register")
+        .create(&generator_key, &generator_config, seed)
+        .expect("feature benchmark should use a built-in generator");
+    let dim = output.dimension_type;
+    let generator = Arc::new(output.generator);
+    let generation_settings = WorldGenerationSettings::from_generator_config(
+        generator_key.clone(),
+        &output.config,
+        dim.key.clone(),
+        dim.min_y,
+        dim.height,
+    );
+    let chunk_runtime = Arc::new(
+        RuntimeBuilder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("feature benchmark runtime should build"),
+    );
+    let generation_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(CONCURRENT_FEATURE_THREAD_COUNT)
+            .thread_name(|index| format!("bench-feature-{index}"))
+            .build()
+            .expect("feature benchmark generation pool should build"),
+    );
+    let world_config = WorldConfig {
+        storage: WorldStorageConfig::RamOnly,
+        level_data_path: None,
+        generator: generator.clone(),
+        generation_settings,
+        view_distance: 10,
+        simulation_distance: 10,
+        compression: None,
+        is_flat: false,
+        sea_level: output.sea_level,
+        default_gamemode: GameType::Survival,
+        difficulty: Difficulty::Normal,
+    };
+    let world_key = Identifier::new(
+        "bench",
+        format!("{}_features_concurrent", generator_key.path),
+    );
+    let world = chunk_runtime
+        .block_on(World::new_with_config(
+            chunk_runtime.clone(),
+            world_key,
+            dim,
+            seed,
+            world_config,
+            generation_pool.clone(),
+        ))
+        .expect("feature benchmark world should build");
+    let context = world.chunk_map.world_gen_context.clone();
+
+    let centers: Arc<[ChunkPos]> = concurrent_feature_centers().into();
+    let cache_radius = concurrent_feature_cache_radius(&centers);
+    let generator_for_factory = generator.clone();
+    let centers_for_factory = centers.clone();
+    let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
+        make_holder_for_feature_centers(
+            &centers_for_factory,
+            x,
+            z,
+            dim,
+            generator_for_factory.as_ref(),
+        )
+    }));
+    let targets = centers
+        .iter()
+        .map(|center| cache.get(center.0.x, center.0.y).clone())
+        .collect();
+
+    ConcurrentFeatureFixture {
+        context,
+        cache,
+        targets,
+        generation_pool,
+        _world: world,
+    }
+}
+
+fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
     ensure_registry();
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
-    let positions = feature_sample_positions();
-    let mut next_position_index = 0usize;
 
-    c.bench_function("overworld_generate_features_profile_range", |b| {
+    c.bench_function("overworld_generate_features_concurrent_overlap", |b| {
         b.iter_batched(
             || {
-                let center = positions[next_position_index % positions.len()];
-                next_position_index = next_position_index.wrapping_add(1);
-                build_feature_fixture_at(
+                build_concurrent_feature_fixture(
                     Identifier::vanilla_static("overworld"),
                     PROFILE_FEATURE_SEED,
-                    center,
                 )
             },
             |fixture| {
-                ChunkStatusTasks::generate_features(
-                    fixture.context,
-                    step,
-                    &fixture.cache,
-                    fixture.target,
-                );
+                fixture.generation_pool.scope(|scope| {
+                    for target in &fixture.targets {
+                        let context = fixture.context.clone();
+                        let cache = fixture.cache.clone();
+                        let target = target.clone();
+                        scope.spawn(move |_| {
+                            ChunkStatusTasks::generate_features(context, step, &cache, target);
+                        });
+                    }
+                });
             },
             criterion::BatchSize::SmallInput,
         );
@@ -891,6 +1025,6 @@ criterion_group! {
         .sample_size(30)
         .warm_up_time(Duration::from_secs(2))
         .measurement_time(Duration::from_secs(20));
-    targets = bench_overworld_features_profile_range
+    targets = bench_overworld_features_concurrent_overlap
 }
 criterion_main!(benches, feature_distribution_benches);

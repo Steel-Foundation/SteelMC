@@ -8,6 +8,7 @@
 
 mod configured;
 mod features;
+pub(crate) mod instrumentation;
 mod placed;
 mod placement;
 mod predicates;
