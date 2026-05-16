@@ -6,8 +6,6 @@
 //!
 //! Both break when their supporting block is removed.
 
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -19,7 +17,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 /// Behavior for standing torch blocks (torch, `soul_torch`, `copper_torch`).
 ///
@@ -50,7 +48,7 @@ impl BlockBehavior for TorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -105,7 +103,7 @@ impl BlockBehavior for WallTorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

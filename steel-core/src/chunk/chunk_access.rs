@@ -196,6 +196,54 @@ impl ChunkAccess {
         }
     }
 
+    /// Sets a relative block during generation and preserves heightmap side effects.
+    ///
+    /// This is for optimized generation paths that intentionally skip block
+    /// behavior updates but still need vanilla's heightmap maintenance.
+    pub(crate) fn set_relative_block_for_generation(
+        &self,
+        relative_x: usize,
+        relative_y: usize,
+        relative_z: usize,
+        value: BlockStateId,
+    ) {
+        self.set_relative_block(relative_x, relative_y, relative_z, value);
+        let y = self.min_y() + relative_y as i32;
+        self.update_heightmaps_after_direct_write(relative_x, y, relative_z, value);
+    }
+
+    /// Applies heightmap maintenance after a direct section write.
+    pub(crate) fn update_heightmaps_after_direct_write(
+        &self,
+        local_x: usize,
+        y: i32,
+        local_z: usize,
+        state: BlockStateId,
+    ) {
+        match self {
+            Self::Full(chunk) => {
+                let min_y = chunk.min_y();
+                let sections = &chunk.sections;
+                chunk
+                    .heightmaps
+                    .write()
+                    .update(local_x, y, local_z, state, |lx, scan_y, lz| {
+                        let scan_section_index = ((scan_y - min_y) / 16) as usize;
+                        let scan_local_y = ((scan_y - min_y) % 16) as usize;
+                        sections.sections[scan_section_index].read().states.get(
+                            lx,
+                            scan_local_y,
+                            lz,
+                        )
+                    });
+            }
+            Self::Proto(proto) => {
+                proto.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns whether the chunk has been modified since last save.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -258,10 +306,12 @@ impl ChunkAccess {
         }
     }
 
-    /// Ensure worldgen heightmaps (`WorldSurfaceWg`, `OceanFloorWg`) are primed.
+    /// Ensure specific proto heightmaps are primed.
     ///
-    /// Must be called after `fill_from_noise` (which uses `set_relative_block`
-    /// and therefore does not update heightmaps) and before `build_surface`.
+    /// Use this when vanilla explicitly asks a chunk to materialize a heightmap
+    /// (for example through `getHeight`). Direct terrain writes should maintain
+    /// their heightmap side effects as they write, matching vanilla's generator
+    /// paths.
     ///
     /// # Lock ordering
     /// Acquires heightmap write lock, then section read locks. Callers must not
@@ -269,18 +319,18 @@ impl ChunkAccess {
     ///
     /// # Panics
     /// Panics if the chunk is not a proto chunk.
-    pub fn prime_worldgen_heightmaps(&self) {
+    pub fn prime_heightmaps(&self, heightmap_types: &[HeightmapType]) {
         match self {
             Self::Proto(proto) => {
                 let mut heightmaps = proto.heightmaps.write();
                 heightmaps.prime_from_sections(
-                    HeightmapType::worldgen_types(),
+                    heightmap_types,
                     proto.min_y(),
                     proto.height(),
                     &proto.sections.sections,
                 );
             }
-            Self::Full(_) => panic!("prime_worldgen_heightmaps not available on full chunks"),
+            Self::Full(_) => panic!("prime_heightmaps not available on full chunks"),
             Self::Unloaded => unreachable!(),
         }
     }
@@ -643,6 +693,31 @@ mod tests {
                 .get(HeightmapType::OceanFloorWg)
                 .is_some()
         );
+    }
+
+    #[test]
+    fn generation_relative_write_updates_proto_heightmaps() {
+        init_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            std::sync::Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block_for_generation(3, 5, 7, stone);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("generation write should prime OceanFloorWg");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 6);
     }
 
     #[test]

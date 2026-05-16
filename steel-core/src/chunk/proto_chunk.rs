@@ -21,7 +21,11 @@ use steel_utils::{
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
-use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
+use crate::chunk::{
+    chunk_access::ChunkStatus,
+    heightmap::{HeightmapType, ProtoHeightmaps},
+    section::Sections,
+};
 use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
@@ -377,7 +381,41 @@ impl ProtoChunk {
             return None;
         }
 
-        let heightmap_types = self.status().heightmaps_after();
+        self.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
+
+        self.update_block_entity_lifecycle(pos, old_state, state, flags);
+        self.mark_unsaved();
+        Some(old_state)
+    }
+
+    /// Applies the heightmap side effect for an optimized direct section write.
+    ///
+    /// Use this only for generation paths that intentionally bypass
+    /// [`Self::set_block_state`] but still need vanilla heightmap maintenance.
+    pub(crate) fn update_status_heightmaps_after_block_change(
+        &self,
+        local_x: usize,
+        y: i32,
+        local_z: usize,
+        state: BlockStateId,
+    ) {
+        self.update_heightmaps_after_block_change(
+            self.status().heightmaps_after(),
+            local_x,
+            y,
+            local_z,
+            state,
+        );
+    }
+
+    fn update_heightmaps_after_block_change(
+        &self,
+        heightmap_types: &[HeightmapType],
+        local_x: usize,
+        y: i32,
+        local_z: usize,
+        state: BlockStateId,
+    ) {
         let min_y = self.min_y;
         let height = self.height;
         let sections = &self.sections;
@@ -392,7 +430,6 @@ impl ProtoChunk {
         };
 
         let mut heightmaps = self.heightmaps.write();
-
         heightmaps.prime(heightmap_types, min_y, height, get_block);
 
         for &hm_type in heightmap_types {
@@ -400,10 +437,6 @@ impl ProtoChunk {
                 heightmap.update(local_x, y, local_z, state, get_block);
             }
         }
-
-        self.update_block_entity_lifecycle(pos, old_state, state, flags);
-        self.mark_unsaved();
-        Some(old_state)
     }
 
     fn update_block_entity_lifecycle(

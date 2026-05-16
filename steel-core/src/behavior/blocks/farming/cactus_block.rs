@@ -19,7 +19,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Maximum cactus stack height (vanilla: 3 blocks).
 const MAX_CACTUS_HEIGHT: u32 = 3;
@@ -185,7 +185,7 @@ impl BlockBehavior for CactusBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

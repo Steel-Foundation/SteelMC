@@ -157,12 +157,6 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
-        let chunk_x = SectionPos::block_to_section_coord(origin.x());
-        let chunk_z = SectionPos::block_to_section_coord(origin.z());
-        if !region.can_write_to_chunk(chunk_x, chunk_z) {
-            return false;
-        }
-
         let feature_type = Self::configured_feature_type_id(kind);
         let Some(placer) = CONFIGURED_FEATURES.placer(&feature_type) else {
             if CONFIGURED_FEATURES.pending_placer(&feature_type).is_some() {
@@ -365,7 +359,8 @@ fn place_random_selector(
         panic!("random_selector placer received wrong configured feature kind");
     };
     for weighted_feature in &config.features {
-        if context.random.next_f32() < weighted_feature.chance {
+        let roll = context.random.next_f32();
+        if roll < weighted_feature.chance {
             return FeatureDecorationRunner::place_placed_feature_ref(
                 context.region,
                 context.registry,

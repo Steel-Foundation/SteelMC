@@ -1,6 +1,7 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
@@ -9,8 +10,8 @@ use crate::world::LevelReader;
 
 use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
 
-/// Vanilla `VineBlock` survival.
-// TODO: Implement placement, random tick spread, and shape updates.
+/// Vanilla `VineBlock` survival and neighbor shape updates.
+// TODO: Implement placement and random tick spread.
 #[block_behavior]
 pub struct VineBlock {
     block: BlockRef,
@@ -22,10 +23,86 @@ impl VineBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    fn has_faces(state: BlockStateId) -> bool {
+        VINE_FACE_DIRECTIONS
+            .into_iter()
+            .any(|direction| state.get_value(face_property(direction)))
+    }
+
+    fn can_support_at_face(
+        &self,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        direction: Direction,
+    ) -> bool {
+        if direction == Direction::Down {
+            return false;
+        }
+
+        if can_attach_to_multiface(world, pos.relative(direction), direction) {
+            return true;
+        }
+
+        if !direction.is_horizontal() {
+            return false;
+        }
+
+        let property = face_property(direction);
+        let above = world.get_block_state(pos.above());
+        above.get_block() == self.block && above.get_value(property)
+    }
+
+    fn updated_state(
+        &self,
+        mut state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let above_pos = pos.above();
+        if state.get_value(&BlockStateProperties::UP) {
+            state = state.set_value(
+                &BlockStateProperties::UP,
+                can_attach_to_multiface(world, above_pos, Direction::Down),
+            );
+        }
+
+        let mut above_state: Option<BlockStateId> = None;
+        for direction in VINE_HORIZONTAL_DIRECTIONS {
+            let property = face_property(direction);
+            if !state.get_value(property) {
+                continue;
+            }
+
+            let mut can_support = self.can_support_at_face(world, pos, direction);
+            if !can_support {
+                let above = *above_state.get_or_insert_with(|| world.get_block_state(above_pos));
+                can_support = above.get_block() == self.block && above.get_value(property);
+            }
+
+            state = state.set_value(property, can_support);
+        }
+
+        state
+    }
 }
 
-/// Vanilla `VineBlock.getPropertyForFace`. Only called with horizontal
-/// directions from `can_survive`; `Down` is unreachable.
+const VINE_FACE_DIRECTIONS: [Direction; 5] = [
+    Direction::Up,
+    Direction::North,
+    Direction::East,
+    Direction::South,
+    Direction::West,
+];
+
+const VINE_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
+    Direction::North,
+    Direction::East,
+    Direction::South,
+    Direction::West,
+];
+
+/// Vanilla `VineBlock.getPropertyForFace`; vines have no `Down` face property.
 fn face_property(direction: Direction) -> &'static BoolProperty {
     match direction {
         Direction::Up => &BlockStateProperties::UP,
@@ -39,46 +116,28 @@ fn face_property(direction: Direction) -> &'static BoolProperty {
 
 impl BlockBehavior for VineBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        // Vanilla: hasFaces(getUpdatedState(state, level, pos)) > 0.
-        //
-        // getUpdatedState recomputes each face property:
-        //   - UP: kept iff isAcceptableNeighbor(above, DOWN)
-        //   - For each horizontal D set: kept iff canSupportAtFace(pos, D)
-        //     OR (above is vine AND above.D is true).
-        //
-        // We short-circuit on the first surviving face.
-        //
-        // canSupportAtFace(pos, D) for horizontal D is:
-        //   isAcceptableNeighbor(pos+D, D)
-        //     OR (above is vine AND above.D is true)
-        // — note vanilla's fallback in getUpdatedState duplicates the second
-        // branch from canSupportAtFace, so we only need to check it once.
-        let above_pos = pos.above();
+        Self::has_faces(self.updated_state(state, world, pos))
+    }
 
-        if state.get_value(&BlockStateProperties::UP)
-            && can_attach_to_multiface(world, above_pos, Direction::Down)
-        {
-            return true;
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn crate::world::ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if direction == Direction::Down {
+            return state;
         }
 
-        let mut above_state: Option<BlockStateId> = None;
-        for direction in Direction::HORIZONTAL {
-            let property = face_property(direction);
-            if !state.get_value(property) {
-                continue;
-            }
-
-            if can_attach_to_multiface(world, pos.relative(direction), direction) {
-                return true;
-            }
-
-            let above = *above_state.get_or_insert_with(|| world.get_block_state(above_pos));
-            if above.get_block() == self.block && above.get_value(property) {
-                return true;
-            }
+        let updated = self.updated_state(state, world, pos);
+        if Self::has_faces(updated) {
+            updated
+        } else {
+            vanilla_blocks::AIR.default_state()
         }
-
-        false
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

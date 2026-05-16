@@ -21,7 +21,7 @@ use steel_worldgen::surface::{
 };
 
 use crate::chunk::chunk_access::ChunkAccess;
-use crate::chunk::heightmap::HeightmapType;
+use crate::chunk::heightmap::{Heightmap, HeightmapType};
 use crate::world::structure::GenerationContext;
 use crate::worldgen::BiomeSourceKind;
 use crate::worldgen::biomes::obfuscate_biome_seed;
@@ -603,6 +603,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let mut prev_x: usize = usize::MAX;
         let mut prev_z: usize = usize::MAX;
         let sections = chunk.sections();
+        let mut ocean_floor_wg =
+            Heightmap::new(HeightmapType::OceanFloorWg, min_y, N::Settings::HEIGHT);
+        let mut world_surface_wg =
+            Heightmap::new(HeightmapType::WorldSurfaceWg, min_y, N::Settings::HEIGHT);
 
         noise_chunk.fill(
             noises,
@@ -639,9 +643,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             })
                             .unwrap_or(default_block_id);
                         pending_writes.push((local_x, relative_y, local_z, block));
+                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, block);
+                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, block);
                     }
                     AquiferResult::Fluid(id) => {
                         pending_writes.push((local_x, relative_y, local_z, id));
+                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, id);
+                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, id);
                         if aquifer.should_schedule_fluid_update() && id.has_fluid() {
                             chunk.mark_pos_for_postprocessing(BlockPos::new(
                                 world_x, world_y, world_z,
@@ -657,6 +665,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         if !pending_writes.is_empty() {
             sections.write_block_batch(&pending_writes);
         }
+
+        let ChunkAccess::Proto(proto) = chunk else {
+            return;
+        };
+        let mut heightmaps = proto.heightmaps.write();
+        heightmaps.replace(ocean_floor_wg);
+        heightmaps.replace(world_surface_wg);
     }
 
     #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
@@ -681,9 +696,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let chunk_quart_x = pos.0.x * 4;
         let chunk_quart_z = pos.0.y * 4;
 
-        // Ensure worldgen heightmaps are primed (fill_from_noise uses set_relative_block
-        // which doesn't update heightmaps).
-        chunk.prime_worldgen_heightmaps();
+        chunk.prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
 
         // Pre-compute preliminary surface corners only for rules/extensions that read them.
         let preliminary_surface_corners = surface_needs_min_surface_level.then(|| {
@@ -710,12 +723,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             );
             (p00, p10, p01, p11)
         });
-
-        // Read WorldSurfaceWg heightmap once
-        let heightmaps = chunk.proto_heightmaps();
-        let worldgen_surface = heightmaps
-            .get(HeightmapType::WorldSurfaceWg)
-            .expect("WorldSurfaceWg heightmap not initialized");
 
         let eroded_badlands_id = (*vanilla_biomes::ERODED_BADLANDS).id() as u16;
         let frozen_ocean_id = (*vanilla_biomes::FROZEN_OCEAN).id() as u16;
@@ -744,7 +751,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let block_z = chunk_min_z + local_z as i32;
 
                 // Start scanning from one above the highest non-air block
-                let mut start_height = worldgen_surface.get_first_available(local_x, local_z);
+                let mut start_height =
+                    chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, local_z);
 
                 // Column-local Voronoi cache for fuzzed biome lookups.
                 let mut biome_col = biome_data.as_deref().map(|biome_data| {
@@ -822,15 +830,19 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let steep = surface_rule_uses_steep && {
                     let z_north = local_z.saturating_sub(1);
                     let z_south = (local_z + 1).min(15);
-                    let h_north = worldgen_surface.get_highest_taken(local_x, z_north);
-                    let h_south = worldgen_surface.get_highest_taken(local_x, z_south);
+                    let h_north =
+                        chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, z_north) - 1;
+                    let h_south =
+                        chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, z_south) - 1;
                     if h_south >= h_north + 4 {
                         true
                     } else {
                         let x_west = local_x.saturating_sub(1);
                         let x_east = (local_x + 1).min(15);
-                        let h_west = worldgen_surface.get_highest_taken(x_west, local_z);
-                        let h_east = worldgen_surface.get_highest_taken(x_east, local_z);
+                        let h_west =
+                            chunk.height_at(HeightmapType::WorldSurfaceWg, x_west, local_z) - 1;
+                        let h_east =
+                            chunk.height_at(HeightmapType::WorldSurfaceWg, x_east, local_z) - 1;
                         h_west >= h_east + 4
                     }
                 };
@@ -925,6 +937,14 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     chunk
                         .sections()
                         .write_column_blocks(local_x, local_z, &pending_writes);
+                    for &(relative_y, state) in &pending_writes {
+                        chunk.update_heightmaps_after_direct_write(
+                            local_x,
+                            min_y + relative_y as i32,
+                            local_z,
+                            state,
+                        );
+                    }
                     chunk.mark_dirty();
                 }
 
@@ -963,9 +983,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             return;
         }
 
-        // Carver top-material lookups run `SurfaceRules.steep()`, which reads
-        // the worldgen surface heightmap in vanilla's `Context.updateXZ`.
-        chunk.prime_worldgen_heightmaps();
+        chunk.prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
 
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;

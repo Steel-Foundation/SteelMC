@@ -5,9 +5,10 @@
 //! * `VerticalAnchor` is a single-key object: `{"absolute": 180}`,
 //!   `{"above_bottom": 8}`, or `{"below_top": 1}`.
 //! * `HeightProvider` accepts either a bare `VerticalAnchor` (shortcut for
-//!   `ConstantHeight`) or a typed object `{"type": "minecraft:uniform", ...}`.
+//!   `ConstantHeight`) or a typed object with a namespaced vanilla registry id,
+//!   e.g. `{"type": "minecraft:uniform", ...}`.
 //! * `FloatProvider` accepts either a bare float (shortcut for `ConstantFloat`)
-//!   or a typed object `{"type": "minecraft:uniform", ...}`.
+//!   or a typed object with a namespaced vanilla registry id.
 
 use serde::{Deserialize, Deserializer, de::Error as _};
 
@@ -193,40 +194,30 @@ impl HeightProvider {
 impl<'de> Deserialize<'de> for HeightProvider {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Anchor(VerticalAnchor),
-            Tagged(Tagged),
-        }
-
-        #[derive(Deserialize)]
-        #[serde(tag = "type")]
+        #[serde(tag = "type", deny_unknown_fields)]
         enum Tagged {
-            #[serde(rename = "minecraft:constant", alias = "constant")]
+            #[serde(rename = "minecraft:constant")]
             Constant { value: VerticalAnchor },
-            #[serde(rename = "minecraft:uniform", alias = "uniform")]
+            #[serde(rename = "minecraft:uniform")]
             Uniform {
                 min_inclusive: VerticalAnchor,
                 max_inclusive: VerticalAnchor,
             },
-            #[serde(rename = "minecraft:trapezoid", alias = "trapezoid")]
+            #[serde(rename = "minecraft:trapezoid")]
             Trapezoid {
                 min_inclusive: VerticalAnchor,
                 max_inclusive: VerticalAnchor,
                 #[serde(default)]
                 plateau: i32,
             },
-            #[serde(rename = "minecraft:biased_to_bottom", alias = "biased_to_bottom")]
+            #[serde(rename = "minecraft:biased_to_bottom")]
             BiasedToBottom {
                 min_inclusive: VerticalAnchor,
                 max_inclusive: VerticalAnchor,
                 #[serde(default = "default_inner")]
                 inner: i32,
             },
-            #[serde(
-                rename = "minecraft:very_biased_to_bottom",
-                alias = "very_biased_to_bottom"
-            )]
+            #[serde(rename = "minecraft:very_biased_to_bottom")]
             VeryBiasedToBottom {
                 min_inclusive: VerticalAnchor,
                 max_inclusive: VerticalAnchor,
@@ -239,44 +230,55 @@ impl<'de> Deserialize<'de> for HeightProvider {
             1
         }
 
-        Ok(match Raw::deserialize(d)? {
-            Raw::Anchor(anchor) => Self::Constant(anchor),
-            Raw::Tagged(Tagged::Constant { value }) => Self::Constant(value),
-            Raw::Tagged(Tagged::Uniform {
-                min_inclusive,
-                max_inclusive,
-            }) => Self::Uniform {
-                min_inclusive,
-                max_inclusive,
+        let value = serde_json::Value::deserialize(d)?;
+        let has_type = value
+            .as_object()
+            .is_some_and(|object| object.contains_key("type"));
+
+        if !has_type {
+            let anchor = VerticalAnchor::deserialize(value).map_err(D::Error::custom)?;
+            return Ok(Self::Constant(anchor));
+        }
+
+        Ok(
+            match serde_json::from_value(value).map_err(D::Error::custom)? {
+                Tagged::Constant { value } => Self::Constant(value),
+                Tagged::Uniform {
+                    min_inclusive,
+                    max_inclusive,
+                } => Self::Uniform {
+                    min_inclusive,
+                    max_inclusive,
+                },
+                Tagged::Trapezoid {
+                    min_inclusive,
+                    max_inclusive,
+                    plateau,
+                } => Self::Trapezoid {
+                    min_inclusive,
+                    max_inclusive,
+                    plateau,
+                },
+                Tagged::BiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                    inner,
+                } => Self::BiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                    inner,
+                },
+                Tagged::VeryBiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                    inner,
+                } => Self::VeryBiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                    inner,
+                },
             },
-            Raw::Tagged(Tagged::Trapezoid {
-                min_inclusive,
-                max_inclusive,
-                plateau,
-            }) => Self::Trapezoid {
-                min_inclusive,
-                max_inclusive,
-                plateau,
-            },
-            Raw::Tagged(Tagged::BiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-                inner,
-            }) => Self::BiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-                inner,
-            },
-            Raw::Tagged(Tagged::VeryBiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-                inner,
-            }) => Self::VeryBiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-                inner,
-            },
-        })
+        )
     }
 }
 
@@ -396,31 +398,33 @@ impl<'de> Deserialize<'de> for UniformIntProvider {
         }
 
         #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Tagged(Tagged),
-            Range(Range),
-        }
-
-        #[derive(Deserialize)]
-        #[serde(tag = "type")]
+        #[serde(tag = "type", deny_unknown_fields)]
         enum Tagged {
-            #[serde(rename = "minecraft:uniform", alias = "uniform")]
+            #[serde(rename = "minecraft:uniform")]
             Uniform {
                 min_inclusive: i32,
                 max_inclusive: i32,
             },
         }
 
-        let (min_inclusive, max_inclusive) = match Raw::deserialize(d)? {
-            Raw::Range(Range {
+        let value = serde_json::Value::deserialize(d)?;
+        let has_type = value
+            .as_object()
+            .is_some_and(|object| object.contains_key("type"));
+
+        let (min_inclusive, max_inclusive) = if has_type {
+            match serde_json::from_value(value).map_err(D::Error::custom)? {
+                Tagged::Uniform {
+                    min_inclusive,
+                    max_inclusive,
+                } => (min_inclusive, max_inclusive),
+            }
+        } else {
+            let Range {
                 min_inclusive,
                 max_inclusive,
-            })
-            | Raw::Tagged(Tagged::Uniform {
-                min_inclusive,
-                max_inclusive,
-            }) => (min_inclusive, max_inclusive),
+            } = Range::deserialize(value).map_err(D::Error::custom)?;
+            (min_inclusive, max_inclusive)
         };
 
         if min_inclusive > max_inclusive {
@@ -577,61 +581,43 @@ impl<'de> Deserialize<'de> for IntProvider {
     )]
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Range {
-            min_inclusive: i32,
-            max_inclusive: i32,
-        }
-
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Constant(i32),
-            Tagged(Tagged),
-            Range(Range),
-        }
-
-        #[derive(Deserialize)]
-        #[serde(tag = "type")]
+        #[serde(tag = "type", deny_unknown_fields)]
         enum Tagged {
-            #[serde(rename = "minecraft:constant", alias = "constant")]
+            #[serde(rename = "minecraft:constant")]
             Constant { value: i32 },
-            #[serde(rename = "minecraft:uniform", alias = "uniform")]
+            #[serde(rename = "minecraft:uniform")]
             Uniform {
                 min_inclusive: i32,
                 max_inclusive: i32,
             },
-            #[serde(rename = "minecraft:biased_to_bottom", alias = "biased_to_bottom")]
+            #[serde(rename = "minecraft:biased_to_bottom")]
             BiasedToBottom {
                 min_inclusive: i32,
                 max_inclusive: i32,
             },
-            #[serde(
-                rename = "minecraft:very_biased_to_bottom",
-                alias = "very_biased_to_bottom"
-            )]
+            #[serde(rename = "minecraft:very_biased_to_bottom")]
             VeryBiasedToBottom {
                 min_inclusive: i32,
                 max_inclusive: i32,
                 #[serde(default = "default_inner")]
                 inner: i32,
             },
-            #[serde(rename = "minecraft:trapezoid", alias = "trapezoid")]
+            #[serde(rename = "minecraft:trapezoid")]
             Trapezoid { min: i32, max: i32, plateau: i32 },
-            #[serde(rename = "minecraft:clamped_normal", alias = "clamped_normal")]
+            #[serde(rename = "minecraft:clamped_normal")]
             ClampedNormal {
                 mean: f32,
                 deviation: f32,
                 min_inclusive: i32,
                 max_inclusive: i32,
             },
-            #[serde(rename = "minecraft:clamped", alias = "clamped")]
+            #[serde(rename = "minecraft:clamped")]
             Clamped {
                 source: Box<IntProvider>,
                 min_inclusive: i32,
                 max_inclusive: i32,
             },
-            #[serde(rename = "minecraft:weighted_list", alias = "weighted_list")]
+            #[serde(rename = "minecraft:weighted_list")]
             WeightedList {
                 distribution: Vec<WeightedIntProvider>,
             },
@@ -641,72 +627,70 @@ impl<'de> Deserialize<'de> for IntProvider {
             1
         }
 
-        Ok(match Raw::deserialize(d)? {
-            Raw::Constant(v) => Self::Constant(v),
-            Raw::Range(Range {
-                min_inclusive,
-                max_inclusive,
-            }) => Self::Uniform {
-                min_inclusive,
-                max_inclusive,
+        let value = serde_json::Value::deserialize(d)?;
+        if value.is_number() {
+            return Ok(Self::Constant(
+                i32::deserialize(value).map_err(D::Error::custom)?,
+            ));
+        }
+
+        Ok(
+            match serde_json::from_value(value).map_err(D::Error::custom)? {
+                Tagged::Constant { value } => Self::Constant(value),
+                Tagged::Uniform {
+                    min_inclusive,
+                    max_inclusive,
+                } => Self::Uniform {
+                    min_inclusive,
+                    max_inclusive,
+                },
+                Tagged::BiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                } => Self::BiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                },
+                Tagged::VeryBiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                    inner,
+                } => Self::VeryBiasedToBottom {
+                    min_inclusive,
+                    max_inclusive,
+                    inner,
+                },
+                Tagged::Trapezoid { min, max, plateau } => Self::Trapezoid { min, max, plateau },
+                Tagged::ClampedNormal {
+                    mean,
+                    deviation,
+                    min_inclusive,
+                    max_inclusive,
+                } => Self::ClampedNormal {
+                    mean,
+                    deviation,
+                    min_inclusive,
+                    max_inclusive,
+                },
+                Tagged::Clamped {
+                    source,
+                    min_inclusive,
+                    max_inclusive,
+                } => Self::Clamped {
+                    source,
+                    min_inclusive,
+                    max_inclusive,
+                },
+                Tagged::WeightedList { distribution } => Self::WeightedList { distribution },
             },
-            Raw::Tagged(Tagged::Constant { value }) => Self::Constant(value),
-            Raw::Tagged(Tagged::Uniform {
-                min_inclusive,
-                max_inclusive,
-            }) => Self::Uniform {
-                min_inclusive,
-                max_inclusive,
-            },
-            Raw::Tagged(Tagged::BiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-            }) => Self::BiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-            },
-            Raw::Tagged(Tagged::VeryBiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-                inner,
-            }) => Self::VeryBiasedToBottom {
-                min_inclusive,
-                max_inclusive,
-                inner,
-            },
-            Raw::Tagged(Tagged::Trapezoid { min, max, plateau }) => {
-                Self::Trapezoid { min, max, plateau }
-            }
-            Raw::Tagged(Tagged::ClampedNormal {
-                mean,
-                deviation,
-                min_inclusive,
-                max_inclusive,
-            }) => Self::ClampedNormal {
-                mean,
-                deviation,
-                min_inclusive,
-                max_inclusive,
-            },
-            Raw::Tagged(Tagged::Clamped {
-                source,
-                min_inclusive,
-                max_inclusive,
-            }) => Self::Clamped {
-                source,
-                min_inclusive,
-                max_inclusive,
-            },
-            Raw::Tagged(Tagged::WeightedList { distribution }) => {
-                Self::WeightedList { distribution }
-            }
-        })
+        )
     }
 }
 
 impl<'de> Deserialize<'de> for WeightedIntProvider {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Raw {
             data: IntProvider,
             weight: i32,
@@ -815,25 +799,18 @@ impl FloatProvider {
 impl<'de> Deserialize<'de> for FloatProvider {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Constant(f32),
-            Tagged(Tagged),
-        }
-
-        #[derive(Deserialize)]
-        #[serde(tag = "type")]
+        #[serde(tag = "type", deny_unknown_fields)]
         enum Tagged {
-            #[serde(rename = "minecraft:constant", alias = "constant")]
+            #[serde(rename = "minecraft:constant")]
             Constant { value: f32 },
-            #[serde(rename = "minecraft:uniform", alias = "uniform")]
+            #[serde(rename = "minecraft:uniform")]
             Uniform {
                 min_inclusive: f32,
                 max_exclusive: f32,
             },
-            #[serde(rename = "minecraft:trapezoid", alias = "trapezoid")]
+            #[serde(rename = "minecraft:trapezoid")]
             Trapezoid { min: f32, max: f32, plateau: f32 },
-            #[serde(rename = "minecraft:clamped_normal", alias = "clamped_normal")]
+            #[serde(rename = "minecraft:clamped_normal")]
             ClampedNormal {
                 mean: f32,
                 deviation: f32,
@@ -842,30 +819,37 @@ impl<'de> Deserialize<'de> for FloatProvider {
             },
         }
 
-        Ok(match Raw::deserialize(d)? {
-            Raw::Constant(v) | Raw::Tagged(Tagged::Constant { value: v }) => Self::Constant(v),
-            Raw::Tagged(Tagged::Uniform {
-                min_inclusive,
-                max_exclusive,
-            }) => Self::Uniform {
-                min_inclusive,
-                max_exclusive,
+        let value = serde_json::Value::deserialize(d)?;
+        if value.is_number() {
+            return Ok(Self::Constant(
+                f32::deserialize(value).map_err(D::Error::custom)?,
+            ));
+        }
+
+        Ok(
+            match serde_json::from_value(value).map_err(D::Error::custom)? {
+                Tagged::Constant { value: v } => Self::Constant(v),
+                Tagged::Uniform {
+                    min_inclusive,
+                    max_exclusive,
+                } => Self::Uniform {
+                    min_inclusive,
+                    max_exclusive,
+                },
+                Tagged::Trapezoid { min, max, plateau } => Self::Trapezoid { min, max, plateau },
+                Tagged::ClampedNormal {
+                    mean,
+                    deviation,
+                    min,
+                    max,
+                } => Self::ClampedNormal {
+                    mean,
+                    deviation,
+                    min,
+                    max,
+                },
             },
-            Raw::Tagged(Tagged::Trapezoid { min, max, plateau }) => {
-                Self::Trapezoid { min, max, plateau }
-            }
-            Raw::Tagged(Tagged::ClampedNormal {
-                mean,
-                deviation,
-                min,
-                max,
-            }) => Self::ClampedNormal {
-                mean,
-                deviation,
-                min,
-                max,
-            },
-        })
+        )
     }
 }
 
@@ -1014,6 +998,127 @@ mod test {
             }
             other => panic!("expected ClampedNormal, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn provider_type_tags_require_extracted_registry_ids() {
+        assert!(
+            serde_json::from_str::<HeightProvider>(
+                r#"{
+                    "type": "uniform",
+                    "max_inclusive": {"absolute": 180},
+                    "min_inclusive": {"above_bottom": 8}
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<UniformIntProvider>(
+                r#"{
+                    "type": "uniform",
+                    "min_inclusive": 0,
+                    "max_inclusive": 10
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<IntProvider>(
+                r#"{
+                    "type": "uniform",
+                    "min_inclusive": 0,
+                    "max_inclusive": 10
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<FloatProvider>(
+                r#"{
+                    "type": "uniform",
+                    "min_inclusive": 0.0,
+                    "max_exclusive": 1.0
+                }"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn provider_typed_payloads_deny_unknown_fields() {
+        assert!(
+            serde_json::from_str::<HeightProvider>(
+                r#"{
+                    "type": "minecraft:uniform",
+                    "max_inclusive": {"absolute": 180},
+                    "min_inclusive": {"above_bottom": 8},
+                    "extra": 0
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<UniformIntProvider>(
+                r#"{
+                    "type": "minecraft:uniform",
+                    "min_inclusive": 0,
+                    "max_inclusive": 10,
+                    "extra": 0
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<IntProvider>(
+                r#"{
+                    "type": "minecraft:clamped",
+                    "source": 4,
+                    "min_inclusive": 0,
+                    "max_inclusive": 10,
+                    "extra": 0
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<FloatProvider>(
+                r#"{
+                    "type": "minecraft:uniform",
+                    "min_inclusive": 0.0,
+                    "max_exclusive": 1.0,
+                    "extra": 0.0
+                }"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn int_provider_requires_typed_object_or_bare_constant() {
+        assert!(
+            serde_json::from_str::<IntProvider>(
+                r#"{
+                    "min_inclusive": 0,
+                    "max_inclusive": 10
+                }"#,
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<IntProvider>(
+                r#"{
+                    "type": "minecraft:weighted_list",
+                    "distribution": [
+                        {
+                            "data": 1,
+                            "weight": 2,
+                            "extra": 3
+                        }
+                    ]
+                }"#,
+            )
+            .is_err()
+        );
     }
 
     #[test]

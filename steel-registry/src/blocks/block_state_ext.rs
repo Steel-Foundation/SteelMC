@@ -35,6 +35,10 @@ pub trait BlockStateExt {
     /// This matches vanilla's `BlockState.isSolid()` which is used by standing signs
     /// to check if they can be placed on a block.
     fn is_solid(&self) -> bool;
+    /// Checks if this block state blocks motion.
+    ///
+    /// This matches vanilla's `BlockState.blocksMotion()`.
+    fn blocks_motion(&self) -> bool;
     /// Checks if this block state renders as a full solid cube.
     ///
     /// This matches vanilla's cached `BlockState.isSolidRender()`, based on the
@@ -140,6 +144,13 @@ impl BlockStateExt for BlockStateId {
         bounds.get_size() >= 0.729_166_7 || bounds.height() >= 1.0
     }
 
+    fn blocks_motion(&self) -> bool {
+        let block = self.get_block();
+        block != &vanilla_blocks::COBWEB
+            && block != &vanilla_blocks::BAMBOO_SAPLING
+            && self.is_solid()
+    }
+
     fn is_solid_render(&self) -> bool {
         self.get_block().config.can_occlude
             && blocks::shapes::is_shape_full_block(self.get_occlusion_shape())
@@ -205,5 +216,22 @@ mod tests {
             glass.get_collision_shape()
         ));
         assert!(!glass.is_solid_render());
+    }
+
+    #[test]
+    fn blocks_motion_matches_vanilla_base_predicate() {
+        init_test_registry();
+
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        assert!(stone.blocks_motion());
+
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        assert!(!water.blocks_motion());
+        assert!(water.has_fluid());
+
+        let cobweb = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::COBWEB);
+        assert!(!cobweb.blocks_motion());
     }
 }

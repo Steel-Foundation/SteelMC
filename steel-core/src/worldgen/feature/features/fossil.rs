@@ -147,7 +147,7 @@ impl FeatureDecorationRunner {
             region.min_y(),
             min_z - 16,
             min_x + 15 + 16,
-            region.max_y_exclusive(),
+            region.max_y_exclusive() - 1,
             min_z + 15 + 16,
         )
     }

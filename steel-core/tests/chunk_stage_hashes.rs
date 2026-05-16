@@ -51,6 +51,8 @@ struct ChunkStageHashesJson {
     chunk_generation_order: String,
     #[serde(default)]
     feature_hash_capture: Option<String>,
+    #[serde(default)]
+    hashset_iteration_order: Option<String>,
     dimensions: FxHashMap<String, DimensionData>,
 }
 
@@ -75,10 +77,16 @@ const MAX_DIFFS_PER_CHUNK: usize = 30;
 /// When non-empty, only these chunks are generated and checked (ignores the JSON list).
 /// Example: &[(24, 35)] to debug a single failing chunk.
 const DEBUG_CHUNKS: &[(i32, i32)] = &[];
+const DEBUG_CLUSTER_ENV: &str = "STEEL_HASH_DEBUG_CLUSTER";
+const DEBUG_CHUNK_ENV: &str = "STEEL_HASH_DEBUG_CHUNK";
+const DEBUG_DIMENSION_ENV: &str = "STEEL_HASH_DEBUG_DIMENSION";
+const DEBUG_STAGE_ENV: &str = "STEEL_HASH_DEBUG_STAGE";
+const DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV: &str = "STEEL_HASH_STOP_AFTER_FIRST_MISMATCH";
 
 const FEATURE_STAGE: &str = "minecraft:features";
 const CHUNK_GENERATION_ORDER_X_Z_ASCENDING: &str = "x_z_ascending";
 const FEATURE_HASH_CAPTURE_AFTER_ALL_READY: &str = "after_all_tracked_features_ready";
+const HASHSET_ITERATION_ORDER_INSERTION: &str = "insertion_order";
 
 fn load_expected_hashes() -> ChunkStageHashesJson {
     let json_str = include_str!("../test_assets/chunk_stage_hashes.json");
@@ -89,6 +97,56 @@ fn sorted_positions(positions: &FxHashSet<(i32, i32)>) -> Vec<(i32, i32)> {
     let mut positions = positions.iter().copied().collect::<Vec<_>>();
     positions.sort_unstable();
     positions
+}
+
+fn debug_chunk_filter() -> Option<FxHashSet<(i32, i32)>> {
+    let mut chunks = FxHashSet::default();
+    chunks.extend(DEBUG_CHUNKS.iter().copied());
+
+    if let Ok(chunk) = std::env::var(DEBUG_CHUNK_ENV) {
+        let Some((x, z)) = chunk.split_once(',') else {
+            panic!("{DEBUG_CHUNK_ENV} must be formatted as '<chunk_x>,<chunk_z>'");
+        };
+        let Ok(chunk_x) = x.parse::<i32>() else {
+            panic!("{DEBUG_CHUNK_ENV} chunk_x is not an i32: {x}");
+        };
+        let Ok(chunk_z) = z.parse::<i32>() else {
+            panic!("{DEBUG_CHUNK_ENV} chunk_z is not an i32: {z}");
+        };
+        chunks.insert((chunk_x, chunk_z));
+    }
+
+    if let Ok(cluster) = std::env::var(DEBUG_CLUSTER_ENV) {
+        let Some((x, z)) = cluster.split_once(',') else {
+            panic!("{DEBUG_CLUSTER_ENV} must be formatted as '<chunk_x>,<chunk_z>'");
+        };
+        let Ok(origin_x) = x.parse::<i32>() else {
+            panic!("{DEBUG_CLUSTER_ENV} chunk_x is not an i32: {x}");
+        };
+        let Ok(origin_z) = z.parse::<i32>() else {
+            panic!("{DEBUG_CLUSTER_ENV} chunk_z is not an i32: {z}");
+        };
+
+        for dx in 0..10 {
+            for dz in 0..10 {
+                chunks.insert((origin_x + dx, origin_z + dz));
+            }
+        }
+    }
+
+    (!chunks.is_empty()).then_some(chunks)
+}
+
+fn debug_dimension_filter() -> Option<String> {
+    std::env::var(DEBUG_DIMENSION_ENV)
+        .ok()
+        .filter(|dimension| !dimension.is_empty())
+}
+
+fn debug_stage_filter() -> Option<String> {
+    std::env::var(DEBUG_STAGE_ENV)
+        .ok()
+        .filter(|stage| !stage.is_empty())
 }
 
 fn empty_proto_chunk(
@@ -594,14 +652,28 @@ fn chunk_stage_hashes_inner() {
             Some(FEATURE_HASH_CAPTURE_AFTER_ALL_READY),
             "features stage hashes must be extracted after all tracked features are ready; rerun the extractor"
         );
+        assert_eq!(
+            expected.hashset_iteration_order.as_deref(),
+            Some(HASHSET_ITERATION_ORDER_INSERTION),
+            "features stage hashes must be extracted with deterministic insertion-order HashSet normalization; rerun the extractor"
+        );
     }
     let feature_step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
     let feature_cache_radius = feature_step.direct_dependencies.get_radius() as i32;
     let feature_carver_radius = feature_step
         .direct_dependencies
         .get_radius_of(ChunkStatus::Carvers) as i32;
+    let debug_dimension = debug_dimension_filter();
+    let debug_stage = debug_stage_filter();
+    let stop_after_first_mismatch = std::env::var_os(DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV).is_some();
 
     for &dim_key in DIMENSION_ORDER {
+        if debug_dimension
+            .as_deref()
+            .is_some_and(|filter| filter != dim_key)
+        {
+            continue;
+        }
         let Some(dim_data) = expected.dimensions.get(dim_key) else {
             continue;
         };
@@ -643,15 +715,15 @@ fn chunk_stage_hashes_inner() {
 
         eprintln!("=== {dim_key} ===");
 
-        // Filter entries by DEBUG_CHUNKS if set
-        let mut test_entries: Vec<&ChunkStageEntry> = if DEBUG_CHUNKS.is_empty() {
-            dim_data.chunks.iter().collect()
-        } else {
+        let debug_filter = debug_chunk_filter();
+        let mut test_entries: Vec<&ChunkStageEntry> = if let Some(filter) = &debug_filter {
             dim_data
                 .chunks
                 .iter()
-                .filter(|c| DEBUG_CHUNKS.contains(&(c.x, c.z)))
+                .filter(|c| filter.contains(&(c.x, c.z)))
                 .collect()
+        } else {
+            dim_data.chunks.iter().collect()
         };
         test_entries.sort_unstable_by_key(|entry| (entry.x, entry.z));
         let tracked_positions: FxHashSet<(i32, i32)> = test_entries
@@ -793,6 +865,9 @@ fn chunk_stage_hashes_inner() {
         }
 
         for &stage in STAGES {
+            if debug_stage.as_deref().is_some_and(|filter| filter != stage) {
+                continue;
+            }
             let reference_blocks = load_reference_blocks(stage, dim_short);
             let has_reference = reference_blocks.is_some();
 
@@ -807,8 +882,9 @@ fn chunk_stage_hashes_inner() {
                 // FEATURES in x/z order. Untracked radius-1 dependencies must reach
                 // CARVERS, but their feature stage must not run.
                 let dependency_positions = sorted_positions(&feature_carver_positions);
+                let feature_stage_only = debug_stage.as_deref() == Some(FEATURE_STAGE);
                 for &pos in &dependency_positions {
-                    if tracked_positions.contains(&pos) {
+                    if !feature_stage_only && tracked_positions.contains(&pos) {
                         continue;
                     }
                     let chunk = chunk_or_panic(&chunks, pos);
@@ -830,7 +906,7 @@ fn chunk_stage_hashes_inner() {
                     generator.build_surface(chunk, &neighbor_biomes);
                 }
                 for &pos in &dependency_positions {
-                    if tracked_positions.contains(&pos) {
+                    if !feature_stage_only && tracked_positions.contains(&pos) {
                         continue;
                     }
                     generator.apply_carvers(chunk_or_panic(&chunks, pos));
@@ -861,33 +937,6 @@ fn chunk_stage_hashes_inner() {
                         Some(holder) => holder,
                         None => panic!("Missing feature center chunk ({chunk_x}, {chunk_z})"),
                     };
-                    for dx in -feature_carver_radius..=feature_carver_radius {
-                        for dz in -feature_carver_radius..=feature_carver_radius {
-                            let distance = dx.abs().max(dz.abs()) as usize;
-                            if !feature_step
-                                .direct_dependencies
-                                .get(distance)
-                                .is_some_and(|status| status >= ChunkStatus::Carvers)
-                            {
-                                continue;
-                            }
-                            let dependency_x = chunk_x + dx;
-                            let dependency_z = chunk_z + dz;
-                            let holder = match holders.get(&(dependency_x, dependency_z)) {
-                                Some(holder) => holder,
-                                None => panic!(
-                                    "Missing feature carver dependency chunk ({dependency_x}, {dependency_z})"
-                                ),
-                            };
-                            let chunk = match holder.try_chunk(ChunkStatus::Carvers) {
-                                Some(chunk) => chunk,
-                                None => panic!(
-                                    "Feature dependency chunk ({dependency_x}, {dependency_z}) missing Carvers status"
-                                ),
-                            };
-                            chunk.prime_worldgen_heightmaps();
-                        }
-                    }
                     {
                         let chunk = match center_holder.try_chunk(ChunkStatus::Carvers) {
                             Some(chunk) => chunk,
@@ -1012,6 +1061,9 @@ fn chunk_stage_hashes_inner() {
                         actual_hash,
                         block_diffs,
                     ));
+                    if stop_after_first_mismatch {
+                        break;
+                    }
                 }
             }
 

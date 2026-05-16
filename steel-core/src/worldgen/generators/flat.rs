@@ -281,7 +281,7 @@ impl ChunkGenerator for FlatChunkGenerator {
         for x in 0..16 {
             for z in 0..16 {
                 for (relative_y, block) in self.layers.iter().enumerate().take(max_relative_y) {
-                    chunk.set_relative_block(x, relative_y, z, *block);
+                    chunk.set_relative_block_for_generation(x, relative_y, z, *block);
                 }
             }
         }

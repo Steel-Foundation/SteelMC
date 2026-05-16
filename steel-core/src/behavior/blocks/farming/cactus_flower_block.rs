@@ -5,8 +5,6 @@
 //!
 //! Vanilla equivalent: `CactusFlowerBlock` extends `VegetationBlock`.
 
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -18,7 +16,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 /// Behavior for cactus flower blocks.
 ///
@@ -66,7 +64,7 @@ impl BlockBehavior for CactusFlowerBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

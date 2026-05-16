@@ -1,10 +1,12 @@
 use steel_macros::block_behavior;
+use steel_registry::blocks::properties::Direction;
 use steel_registry::vanilla_block_tags;
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
@@ -24,6 +26,22 @@ impl TallGrassBlock {
 }
 
 impl BlockBehavior for TallGrassBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if self.can_survive(state, world, pos) {
+            state
+        } else {
+            vanilla_blocks::AIR.default_state()
+        }
+    }
+
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_VEGETATION_TAG)
     }

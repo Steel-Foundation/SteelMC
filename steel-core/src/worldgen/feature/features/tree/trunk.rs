@@ -288,7 +288,7 @@ impl FeatureDecorationRunner {
         );
 
         for y in 0..tree_height {
-            let _ = Self::place_tree_log(
+            let _ = Self::place_tree_log_if_free(
                 region,
                 registry,
                 random,
@@ -297,7 +297,7 @@ impl FeatureDecorationRunner {
                 placement,
             );
             if y < tree_height - 1 {
-                let _ = Self::place_tree_log(
+                let _ = Self::place_tree_log_if_free(
                     region,
                     registry,
                     random,
@@ -305,7 +305,7 @@ impl FeatureDecorationRunner {
                     config,
                     placement,
                 );
-                let _ = Self::place_tree_log(
+                let _ = Self::place_tree_log_if_free(
                     region,
                     registry,
                     random,
@@ -313,7 +313,7 @@ impl FeatureDecorationRunner {
                     config,
                     placement,
                 );
-                let _ = Self::place_tree_log(
+                let _ = Self::place_tree_log_if_free(
                     region,
                     registry,
                     random,
@@ -1160,6 +1160,21 @@ impl FeatureDecorationRunner {
         );
         placement.set_trunk(region, pos, state);
         true
+    }
+
+    fn place_tree_log_if_free(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        pos: BlockPos,
+        config: &TreeConfiguration,
+        placement: &mut TreePlacement,
+    ) -> bool {
+        if !Self::tree_trunk_placer_is_free(region, registry, pos, &config.trunk_placer) {
+            return false;
+        }
+
+        Self::place_tree_log(region, registry, random, pos, config, placement)
     }
 
     fn place_tree_log_growing_through(

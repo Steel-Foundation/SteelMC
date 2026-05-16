@@ -1,12 +1,13 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, DoubleBlockHalf};
-use steel_registry::vanilla_block_tags;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
+use steel_registry::{vanilla_block_tags, vanilla_blocks};
+use steel_utils::math::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
@@ -26,6 +27,36 @@ impl DoublePlantBlock {
 }
 
 impl BlockBehavior for DoublePlantBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
+        let neighbor_is_matching_other_half = neighbor_state.get_block() == self.block
+            && neighbor_state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) != half;
+
+        if direction.get_axis() == Axis::Y
+            && (half == DoubleBlockHalf::Lower) == (direction == Direction::Up)
+            && !neighbor_is_matching_other_half
+        {
+            return vanilla_blocks::AIR.default_state();
+        }
+
+        if half == DoubleBlockHalf::Lower
+            && direction == Direction::Down
+            && !self.can_survive(state, world, pos)
+        {
+            return vanilla_blocks::AIR.default_state();
+        }
+
+        state
+    }
+
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
             let below = world.get_block_state(pos.below());

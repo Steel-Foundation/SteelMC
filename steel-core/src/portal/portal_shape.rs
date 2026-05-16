@@ -9,7 +9,7 @@ use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, Direction};
 
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// A detected portal shape with axis, position, and dimensions.
 pub struct PortalShape {
@@ -61,7 +61,7 @@ pub fn nether_portal_config() -> PortalFrameConfig {
 
 /// Matches vanilla's `PortalShape.isEmpty`: any air variant, any block in the `fire` tag,
 /// or the portal block itself.
-fn is_empty(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
+fn is_empty(world: &dyn LevelReader, pos: BlockPos, config: &PortalFrameConfig) -> bool {
     let state = world.get_block_state(pos);
     if state.is_air() {
         return true;
@@ -77,7 +77,7 @@ impl PortalShape {
     /// Finds an empty portal frame starting with X axis preferred.
     /// Matches vanilla's `findEmptyPortalShape` as called from `BaseFireBlock.onPlace`.
     pub fn find_empty_portal_shape(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         fire_pos: BlockPos,
         config: &PortalFrameConfig,
     ) -> Option<Self> {
@@ -87,7 +87,7 @@ impl PortalShape {
     /// Finds an empty portal frame trying `preferred_axis` first, then the other.
     /// Matches vanilla's `findPortalShape` with the empty-portal predicate.
     pub fn find_empty_portal_shape_with_axis(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         fire_pos: BlockPos,
         preferred_axis: Axis,
         config: &PortalFrameConfig,
@@ -108,7 +108,7 @@ impl PortalShape {
     /// Finds a portal shape on a specific axis.
     /// Used by `update_shape` to check if the portal is still complete.
     pub fn find_any_shape(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
         axis: Axis,
         config: &PortalFrameConfig,
@@ -118,7 +118,7 @@ impl PortalShape {
 
     /// Tries to find a valid portal on a single axis, matching vanilla's detection algorithm.
     fn try_axis(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
         axis: Axis,
         config: &PortalFrameConfig,
@@ -169,7 +169,7 @@ impl PortalShape {
     /// `getDistanceUntilEdgeAboveFrame`. Each position must be empty and have a frame block
     /// below it. Returns 0 if the terminating block is not a frame block.
     fn get_distance_until_edge(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
         direction: Direction,
         config: &PortalFrameConfig,
@@ -193,7 +193,7 @@ impl PortalShape {
 
     /// Finds the bottom-left corner of the portal interior.
     fn calculate_bottom_left(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
         right_dir: Direction,
         config: &PortalFrameConfig,
@@ -219,7 +219,7 @@ impl PortalShape {
 
     /// Calculates the width of the portal interior from the bottom-left corner.
     fn calculate_width(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         bottom_left: BlockPos,
         right_dir: Direction,
         config: &PortalFrameConfig,
@@ -237,7 +237,7 @@ impl PortalShape {
     /// Matches vanilla's `getDistanceUntilTop`: always uses `isEmpty` (air/fire/portal)
     /// for interior validation regardless of the outer interior check strategy.
     fn calculate_height(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         bottom_left: BlockPos,
         width: u32,
         right_dir: Direction,
@@ -274,7 +274,7 @@ impl PortalShape {
 
     /// Checks that the top frame row is complete.
     fn has_top_frame(
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         bottom_left: BlockPos,
         height: u32,
         width: u32,
@@ -290,7 +290,7 @@ impl PortalShape {
         true
     }
 
-    fn is_frame_block(world: &Arc<World>, pos: BlockPos, config: &PortalFrameConfig) -> bool {
+    fn is_frame_block(world: &dyn LevelReader, pos: BlockPos, config: &PortalFrameConfig) -> bool {
         world.get_block_state(pos).get_block() == config.frame
     }
 

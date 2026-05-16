@@ -20,7 +20,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for all button block variants.
 ///
@@ -134,7 +134,7 @@ impl BlockBehavior for ButtonBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

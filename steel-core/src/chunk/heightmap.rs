@@ -13,6 +13,8 @@ use steel_registry::{
 };
 use steel_utils::BlockStateId;
 
+use crate::behavior::BlockStateBehaviorExt as _;
+
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HeightmapType {
@@ -63,11 +65,12 @@ impl HeightmapType {
             .expect("Invalid state ID");
         match self {
             Self::WorldSurface | Self::WorldSurfaceWg => !block.config.is_air,
-            Self::MotionBlocking => block.config.has_collision || block.config.liquid,
+            Self::MotionBlocking => state.blocks_motion() || !state.get_fluid_state().is_empty(),
             Self::MotionBlockingNoLeaves => {
-                (block.config.has_collision || block.config.liquid) && !Self::is_leaves(block)
+                (state.blocks_motion() || !state.get_fluid_state().is_empty())
+                    && !Self::is_leaves(block)
             }
-            Self::OceanFloor | Self::OceanFloorWg => block.config.has_collision,
+            Self::OceanFloor | Self::OceanFloorWg => state.blocks_motion(),
         }
     }
 
@@ -202,6 +205,27 @@ impl Heightmap {
             }
             // No opaque block found, set to min_y
             self.set_height(local_x, local_z, self.min_y);
+            return true;
+        }
+
+        false
+    }
+
+    /// Updates this heightmap for a direct write into a previously-air block.
+    ///
+    /// Vanilla's noise fill writes sections directly and updates the worldgen
+    /// heightmaps beside those writes. There is no downward scan in that path
+    /// because blocks are only being added to an empty terrain column.
+    pub fn update_for_initial_fill(
+        &mut self,
+        local_x: usize,
+        y: i32,
+        local_z: usize,
+        state: BlockStateId,
+    ) -> bool {
+        let first_available = self.get_first_available(local_x, local_z);
+        if self.map_type.is_opaque(state) && y >= first_available {
+            self.set_height(local_x, local_z, y + 1);
             return true;
         }
 
@@ -344,6 +368,21 @@ impl ProtoHeightmaps {
             HeightmapType::MotionBlocking => self.motion_blocking.take(),
             HeightmapType::MotionBlockingNoLeaves => self.motion_blocking_no_leaves.take(),
             HeightmapType::OceanFloor => self.ocean_floor.take(),
+        }
+    }
+
+    /// Replaces one stored heightmap with a fully built instance.
+    pub fn replace(&mut self, heightmap: Heightmap) {
+        let heightmap_type = heightmap.heightmap_type();
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg = Some(heightmap),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg = Some(heightmap),
+            HeightmapType::WorldSurface => self.world_surface = Some(heightmap),
+            HeightmapType::MotionBlocking => self.motion_blocking = Some(heightmap),
+            HeightmapType::MotionBlockingNoLeaves => {
+                self.motion_blocking_no_leaves = Some(heightmap)
+            }
+            HeightmapType::OceanFloor => self.ocean_floor = Some(heightmap),
         }
     }
 
@@ -609,7 +648,26 @@ impl ChunkHeightmaps {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Once;
+
+    use steel_registry::{
+        REGISTRY, Registry,
+        blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        vanilla_blocks,
+    };
+
+    use crate::behavior::init_behaviors;
+
     use super::*;
+
+    static INIT_BEHAVIORS: Once = Once::new();
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+        INIT_BEHAVIORS.call_once(init_behaviors);
+    }
 
     #[test]
     fn test_bits_per_value() {
@@ -627,5 +685,44 @@ mod tests {
         assert_eq!(Heightmap::get_index(15, 0), 15);
         assert_eq!(Heightmap::get_index(0, 1), 16);
         assert_eq!(Heightmap::get_index(15, 15), 255);
+    }
+
+    #[test]
+    fn heightmap_predicates_use_blocks_motion_and_fluid_state() {
+        init_registry();
+
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        assert!(!HeightmapType::OceanFloorWg.is_opaque(water));
+        assert!(HeightmapType::MotionBlocking.is_opaque(water));
+
+        let slab = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::OAK_SLAB);
+        let waterlogged_slab = slab.set_value(&BlockStateProperties::WATERLOGGED, true);
+        assert!(waterlogged_slab.has_fluid());
+        assert!(HeightmapType::MotionBlocking.is_opaque(waterlogged_slab));
+
+        let cobweb = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::COBWEB);
+        assert!(!HeightmapType::OceanFloorWg.is_opaque(cobweb));
+    }
+
+    #[test]
+    fn initial_fill_update_tracks_only_matching_blocks() {
+        init_registry();
+
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        let mut ocean_floor = Heightmap::new(HeightmapType::OceanFloorWg, 0, 16);
+        assert!(!ocean_floor.update_for_initial_fill(0, 12, 0, water));
+        assert_eq!(ocean_floor.get_first_available(0, 0), 0);
+
+        assert!(ocean_floor.update_for_initial_fill(0, 5, 0, stone));
+        assert_eq!(ocean_floor.get_first_available(0, 0), 6);
+
+        assert!(!ocean_floor.update_for_initial_fill(0, 4, 0, stone));
+        assert_eq!(ocean_floor.get_first_available(0, 0), 6);
     }
 }

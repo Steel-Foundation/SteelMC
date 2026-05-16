@@ -1,12 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 use std::str::FromStr;
 
 use flate2::read::GzDecoder;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::properties::Direction as BlockPropertyDirection;
 use steel_registry::blocks::{self};
+use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::shared_structs::BlockStateData;
 use steel_registry::structure_processor::{
     PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
@@ -16,8 +16,11 @@ use steel_registry::{Registry, RegistryExt, TaggedRegistryExt, vanilla_template_
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BlockStateId, BoundingBox, Identifier, Rotation, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
+};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::state_resolver::WorldgenStateResolver;
 
@@ -306,8 +309,10 @@ impl StructureTemplate {
         random: &mut WorldgenRandom,
         flags: UpdateFlags,
     ) -> bool {
-        let palette = self.palette(random);
-        let mut placed_any = false;
+        let Some(palette) = self.palette(random) else {
+            return false;
+        };
+        let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
         for block in &palette.blocks {
             let original = ProcessedBlockInfo {
@@ -317,26 +322,65 @@ impl StructureTemplate {
                 nbt: block.nbt.clone(),
             };
 
-            if !settings.bounding_box.is_inside(original.world_pos) {
-                continue;
-            }
-
             let Some(processed) =
                 Self::process_block(region, registry, &original, settings, reference_pos, random)
             else {
                 continue;
             };
 
+            if !settings.bounding_box.is_inside(processed.world_pos) {
+                continue;
+            }
+
+            processed_blocks.push(processed);
+        }
+
+        let mut placed_any = false;
+        let mut placed_positions = Vec::with_capacity(processed_blocks.len());
+        let mut min_x = i32::MAX;
+        let mut min_y = i32::MAX;
+        let mut min_z = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut max_y = i32::MIN;
+        let mut max_z = i32::MIN;
+        for processed in processed_blocks {
             let final_state = Self::rotate_state(registry, processed.state, settings.rotation);
             if !region.set_block_state(processed.world_pos, final_state, flags) {
                 continue;
             }
             placed_any = true;
+            min_x = min_x.min(processed.world_pos.x());
+            min_y = min_y.min(processed.world_pos.y());
+            min_z = min_z.min(processed.world_pos.z());
+            max_x = max_x.max(processed.world_pos.x());
+            max_y = max_y.max(processed.world_pos.y());
+            max_z = max_z.max(processed.world_pos.z());
+            placed_positions.push(processed.world_pos);
 
             if let Some(nbt) = processed.nbt {
                 Self::place_block_entity(region, registry, processed.world_pos, final_state, nbt);
             } else {
                 let _ = region.remove_block_entity(processed.world_pos);
+            }
+        }
+
+        if placed_any && !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE) {
+            Self::update_shape_at_edge(
+                region,
+                flags,
+                &placed_positions,
+                BlockPos::new(min_x, min_y, min_z),
+                BlockPos::new(max_x, max_y, max_z),
+            );
+
+            let placed_update_flags =
+                (flags & !UpdateFlags::UPDATE_NEIGHBORS) | UpdateFlags::UPDATE_KNOWN_SHAPE;
+            for pos in placed_positions {
+                let state = region.block_state(pos);
+                let new_state = Self::update_from_neighbor_shapes(region, state, pos);
+                if state != new_state {
+                    let _ = region.set_block_state(pos, new_state, placed_update_flags);
+                }
             }
         }
 
@@ -347,18 +391,146 @@ impl StructureTemplate {
         placed_any
     }
 
-    fn palette(&self, random: &mut WorldgenRandom) -> &StructureTemplatePalette {
-        if self.palettes.len() <= 1 {
-            return &self.palettes[0];
+    fn update_shape_at_edge(
+        region: &mut WorldGenRegion<'_>,
+        flags: UpdateFlags,
+        placed_positions: &[BlockPos],
+        min: BlockPos,
+        max: BlockPos,
+    ) {
+        let filled = placed_positions
+            .iter()
+            .map(|pos| (pos.x() - min.x(), pos.y() - min.y(), pos.z() - min.z()))
+            .collect::<BTreeSet<_>>();
+        let x_size = max.x() - min.x() + 1;
+        let y_size = max.y() - min.y() + 1;
+        let z_size = max.z() - min.z() + 1;
+        let edge_flags = flags & !UpdateFlags::UPDATE_NEIGHBORS;
+
+        Self::for_all_shape_faces(
+            x_size,
+            y_size,
+            z_size,
+            |x, y, z| filled.contains(&(x, y, z)),
+            |direction, x, y, z| {
+                let pos = min.offset(x, y, z);
+                let neighbor_pos = pos.relative(direction);
+                let state = region.block_state(pos);
+                let neighbor_state = region.block_state(neighbor_pos);
+                let new_state = BLOCK_BEHAVIORS
+                    .get_behavior(state.get_block())
+                    .update_shape(state, region, pos, direction, neighbor_pos, neighbor_state);
+                if state != new_state {
+                    let _ = region.set_block_state(pos, new_state, edge_flags);
+                }
+
+                let new_neighbor_state = BLOCK_BEHAVIORS
+                    .get_behavior(neighbor_state.get_block())
+                    .update_shape(
+                        neighbor_state,
+                        region,
+                        neighbor_pos,
+                        direction.opposite(),
+                        pos,
+                        new_state,
+                    );
+                if neighbor_state != new_neighbor_state {
+                    let _ = region.set_block_state(neighbor_pos, new_neighbor_state, edge_flags);
+                }
+            },
+        );
+    }
+
+    fn update_from_neighbor_shapes(
+        region: &WorldGenRegion<'_>,
+        state: BlockStateId,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let mut updated = state;
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            let neighbor_state = region.block_state(neighbor_pos);
+            updated = BLOCK_BEHAVIORS
+                .get_behavior(updated.get_block())
+                .update_shape(
+                    updated,
+                    region,
+                    pos,
+                    direction,
+                    neighbor_pos,
+                    neighbor_state,
+                );
+        }
+        updated
+    }
+
+    fn for_all_shape_faces(
+        x_size: i32,
+        y_size: i32,
+        z_size: i32,
+        is_full: impl Fn(i32, i32, i32) -> bool,
+        mut consumer: impl FnMut(Direction, i32, i32, i32),
+    ) {
+        for x in 0..x_size {
+            for y in 0..y_size {
+                let mut last_full = false;
+                for z in 0..=z_size {
+                    let full = z != z_size && is_full(x, y, z);
+                    if !last_full && full {
+                        consumer(Direction::North, x, y, z);
+                    }
+                    if last_full && !full {
+                        consumer(Direction::South, x, y, z - 1);
+                    }
+                    last_full = full;
+                }
+            }
         }
 
+        for z in 0..z_size {
+            for x in 0..x_size {
+                let mut last_full = false;
+                for y in 0..=y_size {
+                    let full = y != y_size && is_full(x, y, z);
+                    if !last_full && full {
+                        consumer(Direction::Down, x, y, z);
+                    }
+                    if last_full && !full {
+                        consumer(Direction::Up, x, y - 1, z);
+                    }
+                    last_full = full;
+                }
+            }
+        }
+
+        for y in 0..y_size {
+            for z in 0..z_size {
+                let mut last_full = false;
+                for x in 0..=x_size {
+                    let full = x != x_size && is_full(x, y, z);
+                    if !last_full && full {
+                        consumer(Direction::West, x, y, z);
+                    }
+                    if last_full && !full {
+                        consumer(Direction::East, x - 1, y, z);
+                    }
+                    last_full = full;
+                }
+            }
+        }
+    }
+
+    fn palette(&self, random: &mut WorldgenRandom) -> Option<&StructureTemplatePalette> {
+        if self.palettes.is_empty() {
+            return None;
+        }
         let Ok(bound) = i32::try_from(self.palettes.len()) else {
             panic!(
                 "structure template palette count {} exceeds i32 range",
                 self.palettes.len()
             );
         };
-        &self.palettes[random.next_i32_bounded(bound) as usize]
+        Some(&self.palettes[random.next_i32_bounded(bound) as usize])
     }
 
     fn transformed_position(
@@ -677,23 +849,23 @@ impl StructureTemplate {
 
     fn parse_direction(value: &str) -> Option<Direction> {
         match value {
-            "down" => Some(Direction::Down),
-            "up" => Some(Direction::Up),
-            "north" => Some(Direction::North),
-            "south" => Some(Direction::South),
-            "west" => Some(Direction::West),
-            "east" => Some(Direction::East),
+            "down" => Some(BlockPropertyDirection::Down),
+            "up" => Some(BlockPropertyDirection::Up),
+            "north" => Some(BlockPropertyDirection::North),
+            "south" => Some(BlockPropertyDirection::South),
+            "west" => Some(BlockPropertyDirection::West),
+            "east" => Some(BlockPropertyDirection::East),
             _ => None,
         }
     }
 
     fn direction_from_property_name(name: &str) -> Direction {
         match name {
-            "north" => Direction::North,
-            "east" => Direction::East,
-            "south" => Direction::South,
-            "west" => Direction::West,
-            _ => Direction::North,
+            "north" => BlockPropertyDirection::North,
+            "east" => BlockPropertyDirection::East,
+            "south" => BlockPropertyDirection::South,
+            "west" => BlockPropertyDirection::West,
+            _ => BlockPropertyDirection::North,
         }
     }
 
@@ -708,11 +880,11 @@ impl StructureTemplate {
 
     fn property_name_from_direction(direction: Direction) -> Option<&'static str> {
         match direction {
-            Direction::North => Some("north"),
-            Direction::East => Some("east"),
-            Direction::South => Some("south"),
-            Direction::West => Some("west"),
-            Direction::Down | Direction::Up => None,
+            BlockPropertyDirection::North => Some("north"),
+            BlockPropertyDirection::East => Some("east"),
+            BlockPropertyDirection::South => Some("south"),
+            BlockPropertyDirection::West => Some("west"),
+            BlockPropertyDirection::Down | BlockPropertyDirection::Up => None,
         }
     }
 

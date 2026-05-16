@@ -3,8 +3,6 @@
 //! These mirror the placement/survival rules of regular torches but add a `LIT`
 //! property and are intended to be expanded with redstone logic later.
 
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -16,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 /// Standing redstone torch (`redstone_torch`).
 ///
@@ -47,7 +45,7 @@ impl BlockBehavior for RedstoneTorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -101,7 +99,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

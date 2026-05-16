@@ -13,12 +13,13 @@ use parking_lot::RwLockReadGuard;
 use rustc_hash::FxHashMap;
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
-    REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef, fluid::FluidRef,
-    vanilla_blocks,
+    REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
+    blocks::block_state_ext::BlockStateExt as _, fluid::FluidRef, vanilla_blocks,
 };
 use steel_utils::random::RandomSource;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 
+use crate::behavior::FLUID_BEHAVIORS;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
@@ -29,7 +30,7 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::context::WorldGenContext;
 
 /// Chunk-cache backed worldgen view for the current generation step.
@@ -272,7 +273,27 @@ impl<'a> WorldGenRegion<'a> {
 
         self.chunk(chunk_x, chunk_z, status)
             .set_block_state(pos, state, flags);
+        if !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE)
+            && let Some(postprocess_pos) = Self::postprocess_pos_for_state(state, pos)
+        {
+            self.mark_pos_for_postprocessing(postprocess_pos);
+        }
         true
+    }
+
+    /// Mirrors the vanilla `Blocks` post-process hooks that can affect worldgen output.
+    ///
+    /// Vanilla hardcodes these callbacks in `Blocks.java`: mushrooms postprocess themselves,
+    /// while soul sand and magma blocks postprocess the block above.
+    fn postprocess_pos_for_state(state: BlockStateId, pos: BlockPos) -> Option<BlockPos> {
+        let block = state.get_block();
+        if block == &vanilla_blocks::BROWN_MUSHROOM || block == &vanilla_blocks::RED_MUSHROOM {
+            Some(pos)
+        } else if block == &vanilla_blocks::SOUL_SAND || block == &vanilla_blocks::MAGMA_BLOCK {
+            Some(pos.above())
+        } else {
+            None
+        }
     }
 
     /// Attaches block entity data at a writable worldgen position.
@@ -642,12 +663,38 @@ impl LevelReader for WorldGenRegion<'_> {
         self.block_state(pos)
     }
 
+    fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+        let sky_light = if self.context.world().dimension_type.has_skylight {
+            15_u8.saturating_sub(sky_darkening)
+        } else {
+            0
+        };
+
+        sky_light.max(self.block_light_at(pos))
+    }
+
     fn min_y(&self) -> i32 {
         WorldGenRegion::min_y(self)
     }
 
     fn height(&self) -> i32 {
         WorldGenRegion::height(self)
+    }
+}
+
+impl ScheduledTickAccess for WorldGenRegion<'_> {
+    fn fluid_tick_delay(&self, fluid: FluidRef) -> i32 {
+        FLUID_BEHAVIORS
+            .get_behavior(fluid)
+            .tick_delay(&self.context.world())
+    }
+
+    fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool {
+        WorldGenRegion::schedule_block_tick_default(self, pos, block, delay)
+    }
+
+    fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
+        WorldGenRegion::schedule_fluid_tick_default(self, pos, fluid, delay)
     }
 }
 

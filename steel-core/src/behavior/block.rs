@@ -17,7 +17,7 @@ use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
 use crate::fluid::is_water_fluid;
 use crate::player::Player;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
@@ -58,7 +58,7 @@ pub trait BlockBehavior: Send + Sync {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

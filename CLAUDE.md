@@ -6,6 +6,8 @@
 
 **BIOME DETERMINISM** - Steel and the SteelExtractor hash harness use deterministic per-sampler biome caching. Do not dismiss feature hash mismatches as vanilla `ThreadLocal` biome-cache nondeterminism, and do not add thread-local biome behavior without an explicit design discussion.
 
+**HASHSET DETERMINISM** - Java `HashSet` iteration order is implementation-defined and does not count as vanilla parity. SteelExtractor normalizes unordered worldgen position sets that affect placement to insertion order, and Steel should match that deterministic insertion-order oracle.
+
 **SKETCHY WORKAROUND PROTOCOL** — Halt and ask permission before using:
 - `.clone()` to appease borrow checker, `.unwrap()`/`.expect()` in production, `unsafe`
 - `Any` (Any isn't abi safe and a bad workaround)

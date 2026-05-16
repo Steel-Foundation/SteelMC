@@ -510,20 +510,7 @@ const RIGID_BORDER: f32 = 0.125; // 2/16
 /// completely covers the 1x1 face area.
 #[must_use]
 pub fn is_face_full(shape: VoxelShape, direction: Direction) -> bool {
-    if shape.is_empty() {
-        return false;
-    }
-
-    // For a face to be "full", the shape's projection onto that face must cover 0.0-1.0
-    // on both axes perpendicular to the direction.
-    match direction {
-        Direction::Down => covers_face_xy(shape, |aabb| aabb.min_y <= 0.0),
-        Direction::Up => covers_face_xy(shape, |aabb| aabb.max_y >= 1.0),
-        Direction::North => covers_face_xy_for_z(shape, |aabb| aabb.min_z <= 0.0),
-        Direction::South => covers_face_xy_for_z(shape, |aabb| aabb.max_z >= 1.0),
-        Direction::West => covers_face_yz(shape, |aabb| aabb.min_x <= 0.0),
-        Direction::East => covers_face_yz(shape, |aabb| aabb.max_x >= 1.0),
-    }
+    face_rectangles_cover(shape, direction, 0.0, 1.0, 0.0, 1.0)
 }
 
 /// Checks if a shape provides center support on a face.
@@ -651,36 +638,170 @@ pub fn is_face_sturdy(shape: VoxelShape, direction: Direction, support_type: Sup
     }
 }
 
-// Helper: checks if shape covers full X-Y face (for Up/Down directions)
-fn covers_face_xy(shape: VoxelShape, face_check: impl Fn(&AABB) -> bool) -> bool {
-    // Simple check: if there's a single AABB that covers 0-1 on X and Z and touches the face
-    shape.iter().any(|aabb| {
-        face_check(aabb)
-            && aabb.min_x <= 0.0
-            && aabb.max_x >= 1.0
-            && aabb.min_z <= 0.0
-            && aabb.max_z >= 1.0
-    })
+#[derive(Clone, Copy)]
+struct FaceRect {
+    min_a: f32,
+    max_a: f32,
+    min_b: f32,
+    max_b: f32,
 }
 
-// Helper: checks if shape covers full X-Y face (for North/South directions)
-fn covers_face_xy_for_z(shape: VoxelShape, face_check: impl Fn(&AABB) -> bool) -> bool {
-    shape.iter().any(|aabb| {
-        face_check(aabb)
-            && aabb.min_x <= 0.0
-            && aabb.max_x >= 1.0
-            && aabb.min_y <= 0.0
-            && aabb.max_y >= 1.0
-    })
+const FACE_EPSILON: f32 = 1.0e-6;
+
+fn face_rectangles_cover(
+    shape: VoxelShape,
+    direction: Direction,
+    target_min_a: f32,
+    target_max_a: f32,
+    target_min_b: f32,
+    target_max_b: f32,
+) -> bool {
+    let mut rects = Vec::new();
+    for aabb in shape {
+        let Some(rect) = face_rect_for_aabb(*aabb, direction) else {
+            continue;
+        };
+        if rect.max_a <= target_min_a
+            || rect.min_a >= target_max_a
+            || rect.max_b <= target_min_b
+            || rect.min_b >= target_max_b
+        {
+            continue;
+        }
+        rects.push(FaceRect {
+            min_a: rect.min_a.max(target_min_a),
+            max_a: rect.max_a.min(target_max_a),
+            min_b: rect.min_b.max(target_min_b),
+            max_b: rect.max_b.min(target_max_b),
+        });
+    }
+
+    if rects.is_empty() {
+        return false;
+    }
+
+    let mut a_edges = vec![target_min_a, target_max_a];
+    let mut b_edges = vec![target_min_b, target_max_b];
+    for rect in &rects {
+        a_edges.push(rect.min_a);
+        a_edges.push(rect.max_a);
+        b_edges.push(rect.min_b);
+        b_edges.push(rect.max_b);
+    }
+    sort_and_dedup_edges(&mut a_edges);
+    sort_and_dedup_edges(&mut b_edges);
+
+    for a_pair in a_edges.windows(2) {
+        if a_pair[1] - a_pair[0] <= FACE_EPSILON {
+            continue;
+        }
+        for b_pair in b_edges.windows(2) {
+            if b_pair[1] - b_pair[0] <= FACE_EPSILON {
+                continue;
+            }
+            let covered = rects.iter().any(|rect| {
+                rect.min_a <= a_pair[0] + FACE_EPSILON
+                    && rect.max_a >= a_pair[1] - FACE_EPSILON
+                    && rect.min_b <= b_pair[0] + FACE_EPSILON
+                    && rect.max_b >= b_pair[1] - FACE_EPSILON
+            });
+            if !covered {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
-// Helper: checks if shape covers full Y-Z face (for East/West directions)
-fn covers_face_yz(shape: VoxelShape, face_check: impl Fn(&AABB) -> bool) -> bool {
-    shape.iter().any(|aabb| {
-        face_check(aabb)
-            && aabb.min_y <= 0.0
-            && aabb.max_y >= 1.0
-            && aabb.min_z <= 0.0
-            && aabb.max_z >= 1.0
-    })
+fn face_rect_for_aabb(aabb: AABB, direction: Direction) -> Option<FaceRect> {
+    let rect = match direction {
+        Direction::Down if aabb.min_y <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x,
+            max_a: aabb.max_x,
+            min_b: aabb.min_z,
+            max_b: aabb.max_z,
+        },
+        Direction::Up if aabb.max_y >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x,
+            max_a: aabb.max_x,
+            min_b: aabb.min_z,
+            max_b: aabb.max_z,
+        },
+        Direction::North if aabb.min_z <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x,
+            max_a: aabb.max_x,
+            min_b: aabb.min_y,
+            max_b: aabb.max_y,
+        },
+        Direction::South if aabb.max_z >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min_x,
+            max_a: aabb.max_x,
+            min_b: aabb.min_y,
+            max_b: aabb.max_y,
+        },
+        Direction::West if aabb.min_x <= FACE_EPSILON => FaceRect {
+            min_a: aabb.min_y,
+            max_a: aabb.max_y,
+            min_b: aabb.min_z,
+            max_b: aabb.max_z,
+        },
+        Direction::East if aabb.max_x >= 1.0 - FACE_EPSILON => FaceRect {
+            min_a: aabb.min_y,
+            max_a: aabb.max_y,
+            min_b: aabb.min_z,
+            max_b: aabb.max_z,
+        },
+        _ => return None,
+    };
+
+    if rect.min_a >= rect.max_a || rect.min_b >= rect.max_b {
+        return None;
+    }
+    Some(rect)
+}
+
+fn sort_and_dedup_edges(edges: &mut Vec<f32>) {
+    edges.sort_by(|a, b| a.total_cmp(b));
+    edges.dedup_by(|a, b| (*a - *b).abs() <= FACE_EPSILON);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const QUADRANT_TOP_FACE: &[AABB] = &[
+        AABB::new(0.0, 0.5, 0.0, 0.5, 1.0, 0.5),
+        AABB::new(0.5, 0.5, 0.0, 1.0, 1.0, 0.5),
+        AABB::new(0.0, 0.5, 0.5, 0.5, 1.0, 1.0),
+        AABB::new(0.5, 0.5, 0.5, 1.0, 1.0, 1.0),
+    ];
+
+    const GAPPED_TOP_FACE: &[AABB] = &[
+        AABB::new(0.0, 0.5, 0.0, 0.45, 1.0, 1.0),
+        AABB::new(0.55, 0.5, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const VANILLA_AZALEA_SHAPE: &[AABB] = &[
+        AABB::new(0.375, 0.0, 0.375, 0.625, 1.0, 0.625),
+        AABB::new(0.0, 0.5, 0.0, 0.375, 1.0, 1.0),
+        AABB::new(0.375, 0.5, 0.0, 1.0, 1.0, 0.375),
+        AABB::new(0.375, 0.5, 0.625, 1.0, 1.0, 1.0),
+        AABB::new(0.625, 0.5, 0.375, 1.0, 1.0, 0.625),
+    ];
+
+    #[test]
+    fn face_full_accepts_union_covering_face() {
+        assert!(is_face_full(QUADRANT_TOP_FACE, Direction::Up));
+    }
+
+    #[test]
+    fn face_full_rejects_union_with_gap() {
+        assert!(!is_face_full(GAPPED_TOP_FACE, Direction::Up));
+    }
+
+    #[test]
+    fn face_full_accepts_vanilla_azalea_top_shape() {
+        assert!(is_face_full(VANILLA_AZALEA_SHAPE, Direction::Up));
+    }
 }

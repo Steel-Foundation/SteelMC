@@ -951,7 +951,12 @@ impl FeatureDecorationRunner {
         let is_persistent = current_state
             .try_get_value(&BlockStateProperties::PERSISTENT)
             .unwrap_or(false);
-        if is_persistent || !Self::tree_valid_pos(region, registry, pos) {
+        let valid_tree_pos = current_state.is_air()
+            || registry.blocks.is_in_tag(
+                current_state.get_block(),
+                &vanilla_block_tags::REPLACEABLE_BY_TREES_TAG,
+            );
+        if is_persistent || !valid_tree_pos {
             return false;
         }
 

@@ -83,32 +83,122 @@ impl FeatureDecorationRunner {
             }
         }
 
-        Self::update_tree_shape_at_edge(region, registry, &shape);
+        Self::update_tree_shape_at_edge(region, registry, bounds, &shape);
     }
 
     fn update_tree_shape_at_edge(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
+        bounds: TreeBounds,
         shape: &FxHashSet<BlockPos>,
     ) {
-        for &pos in shape {
-            for direction in Self::VANILLA_DIRECTION_VALUES {
-                let neighbor_pos = pos.relative(direction);
-                if shape.contains(&neighbor_pos) {
-                    continue;
-                }
-
-                let state = region.block_state(pos);
-                let neighbor_state = region.block_state(neighbor_pos);
-                Self::update_leaf_shape_at_edge(region, registry, pos, state, neighbor_state);
-                Self::update_leaf_shape_at_edge(
+        for x in bounds.min_x..=bounds.max_x {
+            for y in bounds.min_y..=bounds.max_y {
+                Self::scan_tree_shape_line(
                     region,
                     registry,
-                    neighbor_pos,
-                    neighbor_state,
-                    state,
+                    shape,
+                    bounds.min_z,
+                    bounds.max_z,
+                    |z| BlockPos::new(x, y, z),
+                    Direction::North,
+                    Direction::South,
                 );
             }
+        }
+
+        for z in bounds.min_z..=bounds.max_z {
+            for x in bounds.min_x..=bounds.max_x {
+                Self::scan_tree_shape_line(
+                    region,
+                    registry,
+                    shape,
+                    bounds.min_y,
+                    bounds.max_y,
+                    |y| BlockPos::new(x, y, z),
+                    Direction::Down,
+                    Direction::Up,
+                );
+            }
+        }
+
+        for y in bounds.min_y..=bounds.max_y {
+            for z in bounds.min_z..=bounds.max_z {
+                Self::scan_tree_shape_line(
+                    region,
+                    registry,
+                    shape,
+                    bounds.min_x,
+                    bounds.max_x,
+                    |x| BlockPos::new(x, y, z),
+                    Direction::West,
+                    Direction::East,
+                );
+            }
+        }
+    }
+
+    fn scan_tree_shape_line(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        shape: &FxHashSet<BlockPos>,
+        start: i32,
+        end: i32,
+        mut pos_at: impl FnMut(i32) -> BlockPos,
+        negative: Direction,
+        positive: Direction,
+    ) {
+        let mut last_full = false;
+        for cursor in start..=end + 1 {
+            let full = cursor != end + 1 && shape.contains(&pos_at(cursor));
+            if !last_full && full {
+                Self::update_tree_shape_face(region, registry, pos_at(cursor), negative);
+            }
+
+            if last_full && !full {
+                Self::update_tree_shape_face(region, registry, pos_at(cursor - 1), positive);
+            }
+
+            last_full = full;
+        }
+    }
+
+    fn update_tree_shape_face(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        pos: BlockPos,
+        direction: Direction,
+    ) {
+        let neighbor_pos = pos.relative(direction);
+        let state = region.block_state(pos);
+        let neighbor_state = region.block_state(neighbor_pos);
+
+        Self::update_leaf_shape_at_edge(region, registry, pos, state, neighbor_state);
+        Self::update_leaf_shape_at_edge(region, registry, neighbor_pos, neighbor_state, state);
+
+        let new_state = BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .update_shape(state, region, pos, direction, neighbor_pos, neighbor_state);
+        if state != new_state {
+            let _ = region.set_block_state(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
+        }
+
+        let new_neighbor_state = BLOCK_BEHAVIORS
+            .get_behavior(neighbor_state.get_block())
+            .update_shape(
+                neighbor_state,
+                region,
+                neighbor_pos,
+                direction.opposite(),
+                pos,
+                new_state,
+            );
+        if neighbor_state != new_neighbor_state {
+            let _ = region.set_block_state(
+                neighbor_pos,
+                new_neighbor_state,
+                UpdateFlags::UPDATE_CLIENTS,
+            );
         }
     }
 
