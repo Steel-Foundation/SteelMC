@@ -470,6 +470,14 @@ fn interpolated_density<N: DimensionNoises>(
 }
 
 impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
+    fn min_y(&self) -> i32 {
+        N::Settings::MIN_Y
+    }
+
+    fn gen_depth(&self) -> i32 {
+        N::Settings::HEIGHT
+    }
+
     fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
         self.biome_source.initial_spawn_search_origin()
     }

@@ -19,7 +19,7 @@ impl FeatureDecorationRunner {
             total_height *= 2;
         }
 
-        if !config.planted && origin.y() + total_height + 1 >= region.height() {
+        if !config.planted && origin.y() + total_height + 1 >= region.generation_height() {
             return false;
         }
 

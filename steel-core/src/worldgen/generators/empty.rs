@@ -18,6 +18,14 @@ impl EmptyChunkGenerator {
 }
 
 impl ChunkGenerator for EmptyChunkGenerator {
+    fn min_y(&self) -> i32 {
+        0
+    }
+
+    fn gen_depth(&self) -> i32 {
+        384
+    }
+
     fn create_structures(&self, _chunk: &ChunkAccess) {}
 
     fn create_biomes(&self, _chunk: &ChunkAccess) {}

@@ -108,6 +108,18 @@ impl<'a> WorldGenRegion<'a> {
         self.context.height()
     }
 
+    /// Returns the minimum Y coordinate used by vanilla `WorldGenerationContext`.
+    #[must_use]
+    pub fn generation_min_y(&self) -> i32 {
+        self.context.generation_min_y()
+    }
+
+    /// Returns the vertical generation depth used by vanilla `WorldGenerationContext`.
+    #[must_use]
+    pub fn generation_height(&self) -> i32 {
+        self.context.generation_height()
+    }
+
     /// Returns this dimension's sea level.
     #[must_use]
     pub fn sea_level(&self) -> i32 {

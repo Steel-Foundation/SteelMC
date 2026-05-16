@@ -212,6 +212,14 @@ impl StructureGenerationContext for FlatGenerationContext<'_> {
 }
 
 impl ChunkGenerator for FlatChunkGenerator {
+    fn min_y(&self) -> i32 {
+        0
+    }
+
+    fn gen_depth(&self) -> i32 {
+        384
+    }
+
     fn spawn_height(&self, min_y: i32, height: i32) -> i32 {
         min_y + height.min(self.layers.len() as i32)
     }

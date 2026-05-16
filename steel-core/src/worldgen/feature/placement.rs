@@ -71,7 +71,11 @@ impl FeatureDecorationRunner {
             PlacementModifier::HeightRange { height } => {
                 vec![BlockPos::new(
                     origin.x(),
-                    height.sample(random, region.min_y(), region.height()),
+                    height.sample(
+                        random,
+                        region.generation_min_y(),
+                        region.generation_height(),
+                    ),
                     origin.z(),
                 )]
             }

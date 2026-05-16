@@ -19,6 +19,12 @@ use crate::worldgen::structure::StructureGenerator;
 /// A trait for generating chunks.
 #[enum_dispatch]
 pub trait ChunkGenerator: Send + Sync {
+    /// Returns the generator's minimum Y coordinate.
+    fn min_y(&self) -> i32;
+
+    /// Returns the generator's vertical generation depth in blocks.
+    fn gen_depth(&self) -> i32;
+
     /// Returns the climate-selected origin used by vanilla before searching for a safe spawn chunk.
     fn initial_spawn_search_origin(&self) -> BlockPos {
         BlockPos::new(0, 0, 0)
