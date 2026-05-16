@@ -16,7 +16,7 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, WallSide,
 };
 use steel_registry::vanilla_block_tags::{
-    BARS_TAG, FENCE_GATES_TAG, WALL_POST_OVERRIDE_TAG, WALLS_TAG,
+    BARS_TAG, C_GLASS_PANES_TAG, FENCE_GATES_TAG, WALL_POST_OVERRIDE_TAG, WALLS_TAG,
 };
 use steel_registry::vanilla_fluids;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
@@ -166,6 +166,7 @@ fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direct
     REGISTRY.blocks.is_in_tag(block, &WALLS_TAG)
         || (!is_excluded_for_connection(block) && face_solid)
         || REGISTRY.blocks.is_in_tag(block, &BARS_TAG)
+        || REGISTRY.blocks.is_in_tag(block, &C_GLASS_PANES_TAG)
         || connected_fence_gate
 }
 
