@@ -61,7 +61,19 @@ impl ImprovedNoise {
     #[inline]
     #[must_use]
     pub fn noise(&self, x: f64, y: f64, z: f64) -> f64 {
-        self.noise_with_y_scale(x, y, z, 0.0, 0.0)
+        let x = x + self.xo;
+        let y = y + self.yo;
+        let z = z + self.zo;
+
+        let xf = floor(x);
+        let yf = floor(y);
+        let zf = floor(z);
+
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+        let zr = z - f64::from(zf);
+
+        self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -572,6 +584,22 @@ mod tests {
         let v1 = noise1.noise(100.0, 64.0, 100.0);
         let v2 = noise2.noise(100.0, 64.0, 100.0);
         assert!((v1 - v2).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_noise_matches_zero_y_scale_path() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        for (x, y, z) in [
+            (0.0, 0.0, 0.0),
+            (1.25, 64.5, -30.75),
+            (-1000.0, -20.25, 4096.5),
+        ] {
+            assert!(
+                (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
+            );
+        }
     }
 
     #[test]

@@ -1,22 +1,33 @@
-use std::{cell::RefCell, marker::PhantomData};
+use std::{
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+};
 
+use rustc_hash::FxHashSet;
 use sha2::{Digest, Sha256};
-use steel_registry::RegistryEntry;
+use smallvec::SmallVec;
+use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::vanilla_biomes;
-use steel_utils::BlockStateId;
+use steel_registry::carver::ConfiguredCarverKind;
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::random::{
     Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::{lerp, lerp2};
 use steel_worldgen::noise_parameters::get_noise_parameters;
-use steel_worldgen::surface::SurfaceRuleContext;
+use steel_worldgen::surface::{
+    SurfaceBiomeProvider, SurfaceConditionNoiseCache, SurfaceRuleContext,
+};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::heightmap::HeightmapType;
 use crate::world::structure::GenerationContext;
 use crate::worldgen::BiomeSourceKind;
+use crate::worldgen::carver::{
+    CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
+};
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::noise::aquifer::{
     Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level,
@@ -26,6 +37,8 @@ use crate::worldgen::noise::noise_chunk::NoiseChunk;
 use crate::worldgen::noise::ore_veinifier::OreVeinifier;
 use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::surface::SurfaceSystem;
+
+const CARVER_SOURCE_CHUNK_COUNT: usize = 17 * 17;
 
 /// A chunk generator for vanilla (normal) world generation.
 ///
@@ -38,6 +51,15 @@ use crate::worldgen::surface::SurfaceSystem;
 pub struct VanillaGenerator<N: DimensionNoises> {
     /// Biome source for this dimension. Determines biomes at each quart position.
     biome_source: BiomeSourceKind,
+    /// Representative biome for source-carver lookup when every possible
+    /// biome from `biome_source` has the same carver list.
+    ///
+    /// Vanilla still samples each source biome in `apply_carvers`; Steel skips
+    /// that sampling only when the source's full possible-biome set proves the
+    /// carver list is uniform. If future biome sources can produce mixed
+    /// carver lists this remains `None` and the vanilla per-source lookup is
+    /// used.
+    uniform_carver_biome: Option<BiomeRef>,
     /// Noise generators for this dimension's density functions.
     /// Boxed because noise structs can be large.
     noises: Box<N>,
@@ -47,15 +69,37 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     ore_veinifier: Option<OreVeinifier>,
     /// Surface system for biome-specific block replacement.
     surface_system: SurfaceSystem,
+    /// Which vanilla surface extension biomes this source can produce.
+    surface_extension_biomes: SurfaceExtensionBiomes,
     /// Block state ID for the default block, cached at construction time.
     default_block_id: BlockStateId,
     /// Obfuscated seed for `BiomeManager` biome zoom fuzzing.
     biome_zoom_seed: i64,
-    /// World seed as i64 (matching Java's long), used for structure placement.
+    /// World seed as i64 (matching Java's long), used for structures and carver seeding.
     seed: i64,
     /// Shared structure placement/selection engine.
     structure_generator: StructureGenerator,
     _phantom: PhantomData<N>,
+}
+
+#[derive(Clone, Copy)]
+struct SurfaceExtensionBiomes {
+    eroded_badlands: bool,
+    frozen_ocean: bool,
+}
+
+impl SurfaceExtensionBiomes {
+    fn from_possible(possible_biomes: &FxHashSet<Identifier>) -> Self {
+        Self {
+            eroded_badlands: possible_biomes.contains(&vanilla_biomes::ERODED_BADLANDS.key),
+            frozen_ocean: possible_biomes.contains(&vanilla_biomes::FROZEN_OCEAN.key)
+                || possible_biomes.contains(&vanilla_biomes::DEEP_FROZEN_OCEAN.key),
+        }
+    }
+
+    const fn needs_surface_biome(self) -> bool {
+        self.eroded_badlands || self.frozen_ocean
+    }
 }
 
 impl<N: DimensionNoises> VanillaGenerator<N> {
@@ -85,6 +129,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             &splitter,
             &noise_params,
             N::surface_noise_ids(),
+            N::surface_gradient_ids(),
             default_block_id,
             N::Settings::SEA_LEVEL,
         );
@@ -98,20 +143,40 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
         };
 
+        let possible_biomes = biome_source.possible_biomes();
+        let surface_extension_biomes = SurfaceExtensionBiomes::from_possible(&possible_biomes);
         let structure_generator = StructureGenerator::vanilla(seed as i64, &biome_source);
+        let uniform_carver_biome = Self::uniform_carver_biome(&possible_biomes);
 
         Self {
             biome_source,
+            uniform_carver_biome,
             noises: Box::new(noises),
             splitter,
             ore_veinifier,
             surface_system,
+            surface_extension_biomes,
             default_block_id,
             biome_zoom_seed,
             seed: seed as i64,
             structure_generator,
             _phantom: PhantomData,
         }
+    }
+
+    fn uniform_carver_biome(possible_biomes: &FxHashSet<Identifier>) -> Option<BiomeRef> {
+        let mut possible_biomes = possible_biomes.iter();
+        let first_key = possible_biomes.next()?;
+        let first = REGISTRY.biomes.by_key(first_key)?;
+
+        possible_biomes
+            .all(|key| {
+                REGISTRY
+                    .biomes
+                    .by_key(key)
+                    .is_some_and(|biome| biome.carvers == first.carvers)
+            })
+            .then_some(first)
     }
 }
 
@@ -577,6 +642,11 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     }
                     AquiferResult::Fluid(id) => {
                         pending_writes.push((local_x, relative_y, local_z, id));
+                        if aquifer.should_schedule_fluid_update() && id.has_fluid() {
+                            chunk.mark_pos_for_postprocessing(BlockPos::new(
+                                world_x, world_y, world_z,
+                            ));
+                        }
                     }
                     AquiferResult::Air => {}
                 }
@@ -597,6 +667,17 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let chunk_min_z = pos.0.y * 16;
         let default_block_id = self.default_block_id;
         let noises = &*self.noises;
+        let surface_rule_block_states = N::surface_rule_block_states();
+        let surface_rule_uses_biome = N::surface_rule_uses_biome();
+        let surface_rule_uses_preliminary_surface = N::surface_rule_uses_preliminary_surface();
+        let surface_rule_uses_surface_secondary = N::surface_rule_uses_surface_secondary();
+        let surface_rule_uses_steep = N::surface_rule_uses_steep();
+        let lazy_surface_rule_biome =
+            surface_rule_uses_biome && surface_rule_uses_preliminary_surface;
+        let surface_needs_min_surface_level =
+            surface_rule_uses_preliminary_surface || self.surface_extension_biomes.frozen_ocean;
+        let surface_needs_biomes =
+            surface_rule_uses_biome || self.surface_extension_biomes.needs_surface_biome();
         let chunk_quart_x = pos.0.x * 4;
         let chunk_quart_z = pos.0.y * 4;
 
@@ -604,20 +685,31 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // which doesn't update heightmaps).
         chunk.prime_worldgen_heightmaps();
 
-        // Pre-compute the 4 preliminary surface level corners for the 16-block cell.
-        // Vanilla uses bilinear interpolation across these 4 corners (SurfaceRules.Context).
-        let mut psl_cache = N::ColumnCache::default();
-        let p00 = preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z);
-        let p10 =
-            preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x + 16, chunk_min_z);
-        let p01 =
-            preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z + 16);
-        let p11 = preliminary_surface_level::<N>(
-            noises,
-            &mut psl_cache,
-            chunk_min_x + 16,
-            chunk_min_z + 16,
-        );
+        // Pre-compute preliminary surface corners only for rules/extensions that read them.
+        let preliminary_surface_corners = surface_needs_min_surface_level.then(|| {
+            let mut psl_cache = N::ColumnCache::default();
+            let p00 =
+                preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z);
+            let p10 = preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x + 16,
+                chunk_min_z,
+            );
+            let p01 = preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x,
+                chunk_min_z + 16,
+            );
+            let p11 = preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x + 16,
+                chunk_min_z + 16,
+            );
+            (p00, p10, p01, p11)
+        });
 
         // Read WorldSurfaceWg heightmap once
         let heightmaps = chunk.proto_heightmaps();
@@ -629,12 +721,22 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let frozen_ocean_id = (*vanilla_biomes::FROZEN_OCEAN).id() as u16;
         let deep_frozen_ocean_id = (*vanilla_biomes::DEEP_FROZEN_OCEAN).id() as u16;
 
-        // Pre-extract all biome palette values to avoid per-read section locking.
-        let biome_data = chunk.sections().read_all_biomes();
+        // Pre-extract biome palette values only if surface rules/extensions need them.
+        let biome_data = surface_needs_biomes.then(|| chunk.sections().read_all_biomes());
         let section_count = chunk.sections().sections.len();
 
         let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut column_buf: Vec<BlockStateId> = Vec::new();
+        let condition_noise_values = N::surface_noise_ids()
+            .iter()
+            .map(|_| Cell::new(0.0))
+            .collect::<Vec<_>>();
+        let condition_noise_initialized = N::surface_noise_ids()
+            .iter()
+            .map(|_| Cell::new(false))
+            .collect::<Vec<_>>();
+        let condition_noise_cache =
+            SurfaceConditionNoiseCache::new(&condition_noise_values, &condition_noise_initialized);
 
         for local_x in 0..16usize {
             for local_z in 0..16usize {
@@ -644,22 +746,32 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 // Start scanning from one above the highest non-air block
                 let mut start_height = worldgen_surface.get_first_available(local_x, local_z);
 
-                // Column-local Voronoi cache for fuzzed biome lookups
-                let mut biome_col = FuzzedBiomeColumn::new(
-                    &biome_data,
-                    section_count,
-                    self.biome_zoom_seed,
-                    block_x,
-                    block_z,
-                    min_y,
-                    chunk_quart_x,
-                    chunk_quart_z,
-                    neighbor_biomes,
-                );
+                // Column-local Voronoi cache for fuzzed biome lookups.
+                let mut biome_col = biome_data.as_deref().map(|biome_data| {
+                    FuzzedBiomeColumn::new(
+                        biome_data,
+                        section_count,
+                        self.biome_zoom_seed,
+                        block_x,
+                        block_z,
+                        min_y,
+                        chunk_quart_x,
+                        chunk_quart_z,
+                        neighbor_biomes,
+                    )
+                });
 
                 // Eroded badlands extension: add terracotta pillars above surface
-                let surface_biome_id = biome_col.get(start_height);
-                if surface_biome_id == eroded_badlands_id {
+                let surface_biome_id = if self.surface_extension_biomes.needs_surface_biome() {
+                    biome_col
+                        .as_mut()
+                        .map(|biome_col| biome_col.get(start_height))
+                } else {
+                    None
+                };
+                if self.surface_extension_biomes.eroded_badlands
+                    && surface_biome_id == Some(eroded_badlands_id)
+                {
                     start_height = self.surface_system.eroded_badlands_extension(
                         chunk,
                         local_x,
@@ -680,26 +792,34 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 // Surface depth for this column
                 let surface_depth = self.surface_system.get_surface_depth(block_x, block_z);
 
-                // Surface secondary noise (lazy in vanilla, but always used in overworld)
-                let surface_secondary = self.surface_system.get_surface_secondary(block_x, block_z);
+                let surface_secondary = if surface_rule_uses_surface_secondary {
+                    self.surface_system.get_surface_secondary(block_x, block_z)
+                } else {
+                    0.0
+                };
+                condition_noise_cache.reset();
 
-                // Min surface level: bilinear interpolation of preliminary surface level
-                // Vanilla: (float)(blockX & 15) / 16.0F — float intermediate is exact for 0-15
-                let t_x = f64::from(local_x as u8) / 16.0;
-                let t_z = f64::from(local_z as u8) / 16.0;
-                let interp = lerp2(
-                    t_x,
-                    t_z,
-                    f64::from(p00),
-                    f64::from(p10),
-                    f64::from(p01),
-                    f64::from(p11),
-                );
-                let min_surface_level = interp.floor() as i32 + surface_depth - 8;
+                let min_surface_level =
+                    if let Some((p00, p10, p01, p11)) = preliminary_surface_corners {
+                        // Vanilla: (float)(blockX & 15) / 16.0F — exact for 0-15.
+                        let t_x = f64::from(local_x as u8) / 16.0;
+                        let t_z = f64::from(local_z as u8) / 16.0;
+                        let interp = lerp2(
+                            t_x,
+                            t_z,
+                            f64::from(p00),
+                            f64::from(p10),
+                            f64::from(p01),
+                            f64::from(p11),
+                        );
+                        interp.floor() as i32 + surface_depth - 8
+                    } else {
+                        0
+                    };
 
                 // Steep condition: vanilla only checks south >= north + 4 and
                 // west >= east + 4 (asymmetric, not absolute difference).
-                let steep = {
+                let steep = surface_rule_uses_steep && {
                     let z_north = local_z.saturating_sub(1);
                     let z_south = (local_z + 1).min(15);
                     let h_north = worldgen_surface.get_highest_taken(local_x, z_north);
@@ -760,30 +880,39 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
 
                     // Only apply surface rules to the default block
                     if state == default_block_id {
-                        // Get biome via fuzzed BiomeManager lookup
-                        let biome_id = biome_col.get(y);
+                        let eager_biome_id = if surface_rule_uses_biome && !lazy_surface_rule_biome
+                        {
+                            biome_col.as_mut().map(|biome_col| biome_col.get(y))
+                        } else {
+                            None
+                        };
+                        let biome_provider = if lazy_surface_rule_biome {
+                            biome_col
+                                .as_mut()
+                                .map(|biome_col| biome_col as &mut dyn SurfaceBiomeProvider)
+                        } else {
+                            None
+                        };
 
-                        let cold_enough_to_snow = self
-                            .surface_system
-                            .cold_enough_to_snow(biome_id, block_x, y, block_z);
-
-                        let ctx = SurfaceRuleContext {
+                        let mut ctx = SurfaceRuleContext::new(
                             block_x,
                             block_z,
                             surface_depth,
                             surface_secondary,
                             min_surface_level,
                             steep,
-                            block_y: y,
+                            y,
                             stone_depth_above,
                             stone_depth_below,
                             water_height,
-                            biome_id,
-                            cold_enough_to_snow,
-                            system: &self.surface_system,
-                        };
+                            eager_biome_id,
+                            biome_provider,
+                            &self.surface_system,
+                            &condition_noise_cache,
+                            surface_rule_block_states,
+                        );
 
-                        let rule_result = N::try_apply_surface_rule(&ctx);
+                        let rule_result = N::try_apply_surface_rule(&mut ctx);
 
                         if let Some(new_block) = rule_result {
                             pending_writes.push((relative_y, new_block));
@@ -800,7 +929,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 }
 
                 // Frozen ocean iceberg extension: add packed ice and snow
-                if surface_biome_id == frozen_ocean_id || surface_biome_id == deep_frozen_ocean_id {
+                if self.surface_extension_biomes.frozen_ocean
+                    && let Some(surface_biome_id) = surface_biome_id
+                        .filter(|id| *id == frozen_ocean_id || *id == deep_frozen_ocean_id)
+                {
                     self.surface_system.frozen_ocean_extension(
                         chunk,
                         surface_biome_id,
@@ -817,9 +949,190 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         }
     }
 
-    fn apply_carvers(&self, _chunk: &ChunkAccess) {}
+    #[expect(clippy::too_many_lines, reason = "matches vanilla carver setup flow")]
+    fn apply_carvers(&self, chunk: &ChunkAccess) {
+        // Carvers only run on proto chunks.
+        let ChunkAccess::Proto(proto) = chunk else {
+            return;
+        };
+
+        if self
+            .uniform_carver_biome
+            .is_some_and(|biome| biome.carvers.is_empty())
+        {
+            return;
+        }
+
+        // Carver top-material lookups run `SurfaceRules.steep()`, which reads
+        // the worldgen surface heightmap in vanilla's `Context.updateXZ`.
+        chunk.prime_worldgen_heightmaps();
+
+        let pos = chunk.pos();
+        let chunk_min_x = pos.0.x * 16;
+        let chunk_min_z = pos.0.y * 16;
+        let min_y = N::Settings::MIN_Y;
+        let height = N::Settings::HEIGHT;
+        let noises = &*self.noises;
+
+        // Fresh aquifer (vanilla caches NoiseChunk across stages; see TODO on
+        // ProtoChunk::carving_mask for why we rebuild instead).
+        let mut column_cache = N::ColumnCache::default();
+        if N::Settings::AQUIFERS_ENABLED {
+            column_cache.init_grid(chunk_min_x, chunk_min_z, noises);
+        }
+        let aquifer = Aquifer::<N>::new(
+            chunk_min_x,
+            chunk_min_z,
+            min_y,
+            height,
+            &self.splitter,
+            noises,
+            column_cache,
+        );
+
+        // Preliminary surface level at the chunk's 4 corners — used by
+        // top_material min_surface_level interpolation.
+        let mut psl_cache = N::ColumnCache::default();
+        let psl_corners = PreliminarySurfaceCorners {
+            nw: preliminary_surface_level::<N>(noises, &mut psl_cache, chunk_min_x, chunk_min_z),
+            ne: preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x + 16,
+                chunk_min_z,
+            ),
+            sw: preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x,
+                chunk_min_z + 16,
+            ),
+            se: preliminary_surface_level::<N>(
+                noises,
+                &mut psl_cache,
+                chunk_min_x + 16,
+                chunk_min_z + 16,
+            ),
+        };
+
+        let mut ctx = CarvingContext {
+            min_y,
+            gen_depth: height,
+            surface_system: &self.surface_system,
+            aquifer,
+            default_block_id: self.default_block_id,
+            psl_corners,
+            chunk_min_x,
+            chunk_min_z,
+        };
+
+        let ids = CarverBlockIds::load();
+
+        // Pre-fetch the 17×17 source-chunk carver lists. Done up front so we
+        // can later close over `biome_sampler` mutably inside `biome_getter`.
+        // Vanilla samples every source biome here; when this generator's full
+        // possible-biome set has a uniform carver list, the representative
+        // biome gives the same carver keys without 289 climate lookups.
+        let mut biome_sampler = self.biome_source.chunk_sampler();
+        let mut source_biomes: SmallVec<[SourceChunk; CARVER_SOURCE_CHUNK_COUNT]> = SmallVec::new();
+        for dx in -8i32..=8 {
+            for dz in -8i32..=8 {
+                let sx = pos.0.x + dx;
+                let sz = pos.0.y + dz;
+                let biome = if let Some(biome) = self.uniform_carver_biome {
+                    biome
+                } else {
+                    let qx = (sx * 16) >> 2;
+                    let qz = (sz * 16) >> 2;
+                    biome_sampler.sample(qx, 0, qz)
+                };
+                source_biomes.push(SourceChunk {
+                    pos: ChunkPos::new(sx, sz),
+                    biome,
+                });
+            }
+        }
+
+        // Grab (and lazily create) the carving mask on the proto chunk.
+        let mut mask_guard = proto.get_or_create_carving_mask();
+        let mask = &mut *mask_guard;
+
+        // `WorldgenRandom(LegacyRandomSource(generateUniqueSeed()))` — initial
+        // seed is irrelevant; every carver overwrites it via
+        // `set_large_feature_seed` before its probability check.
+        let mut random = LegacyRandom::from_seed(0);
+        let seed_i64 = self.seed;
+
+        let biome_zoom_seed = self.biome_zoom_seed;
+        // BiomeManager-fuzzed lookup — matches vanilla's `BiomeManager.getBiome`
+        // used by the carver's top-material path. An unfuzzed quart lookup
+        // would mismatch vanilla at quart-cell boundaries.
+        let mut biome_getter = |bx: i32, by: i32, bz: i32| -> u16 {
+            fuzzed_biome_at_block(biome_zoom_seed, bx, by, bz, |qx, qy, qz| {
+                biome_sampler.sample(qx, qy, qz).id() as u16
+            })
+        };
+
+        let mut run = CarveRun {
+            ctx: &mut ctx,
+            noises,
+            chunk,
+            chunk_min_x,
+            chunk_min_z,
+            biome_getter: &mut biome_getter,
+            mask,
+            ids,
+        };
+
+        run.run_all(&source_biomes, seed_i64, &mut random);
+    }
 
     fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+}
+
+impl<N, F> CarveRun<'_, '_, N, F>
+where
+    N: DimensionNoises,
+    F: FnMut(i32, i32, i32) -> u16,
+{
+    /// Drive the 17×17 source-chunk carver loop. Each carver in each source
+    /// biome is seeded via `set_large_feature_seed`, probability-checked,
+    /// then dispatched to the appropriate `carve_*` method.
+    fn run_all(&mut self, source_biomes: &[SourceChunk], seed_i64: i64, random: &mut LegacyRandom) {
+        for source in source_biomes {
+            for (index, carver_key) in source.biome.carvers.iter().enumerate() {
+                let Some(carver) = REGISTRY.configured_carvers.by_key(carver_key) else {
+                    panic!(
+                        "biome {} references unknown configured carver {}",
+                        source.biome.key, carver_key
+                    );
+                };
+                let index_i64 = index as i64;
+                random.set_large_feature_seed(
+                    seed_i64.wrapping_add(index_i64),
+                    source.pos.0.x,
+                    source.pos.0.y,
+                );
+
+                let probability = carver.base().probability;
+                if random.next_f32() > probability {
+                    continue;
+                }
+
+                match &carver.kind {
+                    ConfiguredCarverKind::Cave(cfg) => {
+                        self.carve_cave(cfg, cave::CaveKind::Overworld, source.pos, random);
+                    }
+                    ConfiguredCarverKind::NetherCave(cfg) => {
+                        self.carve_cave(cfg, cave::CaveKind::Nether, source.pos, random);
+                    }
+                    ConfiguredCarverKind::Canyon(cfg) => {
+                        self.carve_canyon(cfg, source.pos, random);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ── BiomeManager biome zoom helpers ──────────────────────────────────────────
@@ -840,6 +1153,86 @@ const fn lcg_next(mut rval: i64, c: i64) -> i64 {
 fn get_fiddle(rval: i64) -> f64 {
     let uniform = ((rval >> 24).rem_euclid(1024)) as f64 / 1024.0;
     (uniform - 0.5) * 0.9
+}
+
+/// Single-shot fuzzed biome lookup at a block position. Matches vanilla's
+/// `BiomeManager.getBiome(BlockPos)`: the block is shifted by `-2`, snapped to
+/// the enclosing quart cell, and the winning biome is chosen from the 8
+/// corners of that cell by `get_fiddle`-perturbed squared distance.
+///
+/// `quart_biome` returns the unfuzzed biome at a quart-coordinate — typically
+/// `biome_sampler.sample(qx, qy, qz).id()`.
+///
+/// Used by carver top-material lookups where a simple unfuzzed lookup would
+/// differ from vanilla at the quart-cell boundaries.
+pub(super) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
+    biome_zoom_seed: i64,
+    block_x: i32,
+    block_y: i32,
+    block_z: i32,
+    mut quart_biome: F,
+) -> u16 {
+    let abs_x = block_x - 2;
+    let abs_y = block_y - 2;
+    let abs_z = block_z - 2;
+    let parent_x = abs_x >> 2;
+    let parent_y = abs_y >> 2;
+    let parent_z = abs_z >> 2;
+    let fract_x = f64::from(abs_x & 3) / 4.0;
+    let fract_y = f64::from(abs_y & 3) / 4.0;
+    let fract_z = f64::from(abs_z & 3) / 4.0;
+
+    let mut min_i = 0usize;
+    let mut min_dist = f64::INFINITY;
+
+    for i in 0..8usize {
+        let x_even = (i & 4) == 0;
+        let y_even = (i & 2) == 0;
+        let z_even = (i & 1) == 0;
+        let cx = if x_even { parent_x } else { parent_x + 1 };
+        let cy = if y_even { parent_y } else { parent_y + 1 };
+        let cz = if z_even { parent_z } else { parent_z + 1 };
+        let dx = if x_even { fract_x } else { fract_x - 1.0 };
+        let dy = if y_even { fract_y } else { fract_y - 1.0 };
+        let dz = if z_even { fract_z } else { fract_z - 1.0 };
+
+        // BiomeManager.getFiddledDistance — identical sequence to
+        // FuzzedBiomeColumn::compute_cy_group but without the column cache.
+        let mut rval = lcg_next(biome_zoom_seed, i64::from(cx));
+        rval = lcg_next(rval, i64::from(cy));
+        rval = lcg_next(rval, i64::from(cz));
+        rval = lcg_next(rval, i64::from(cx));
+        rval = lcg_next(rval, i64::from(cy));
+        rval = lcg_next(rval, i64::from(cz));
+        let fx = get_fiddle(rval);
+        rval = lcg_next(rval, biome_zoom_seed);
+        let fy = get_fiddle(rval);
+        rval = lcg_next(rval, biome_zoom_seed);
+        let fz = get_fiddle(rval);
+
+        let dist = (dx + fx).powi(2) + (dy + fy).powi(2) + (dz + fz).powi(2);
+        if min_dist > dist {
+            min_i = i;
+            min_dist = dist;
+        }
+    }
+
+    let bx = if (min_i & 4) == 0 {
+        parent_x
+    } else {
+        parent_x + 1
+    };
+    let by = if (min_i & 2) == 0 {
+        parent_y
+    } else {
+        parent_y + 1
+    };
+    let bz = if (min_i & 1) == 0 {
+        parent_z
+    } else {
+        parent_z + 1
+    };
+    quart_biome(bx, by, bz)
 }
 
 /// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).
@@ -1027,5 +1420,12 @@ impl<'a> FuzzedBiomeColumn<'a> {
         } else {
             (self.neighbor_biomes)(biome_qx, biome_qy, biome_qz)
         }
+    }
+}
+
+impl SurfaceBiomeProvider for FuzzedBiomeColumn<'_> {
+    #[inline]
+    fn biome_id(&mut self, block_y: i32) -> u16 {
+        self.get(block_y)
     }
 }

@@ -2,12 +2,26 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam::atomic::AtomicCell;
+use parking_lot::{MappedRwLockWriteGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, types::UpdateFlags};
 
 use crate::chunk::{chunk_access::ChunkStatus, heightmap::ProtoHeightmaps, section::Sections};
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
+use crate::worldgen::carving_mask::CarvingMask;
+
+fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
+    let section_count = (height / 16) as usize;
+    (0..section_count).map(|_| Vec::new()).collect()
+}
+
+fn postprocessing_from_disk(height: i32, mut postprocessing: Vec<Vec<u16>>) -> Box<[Vec<u16>]> {
+    let section_count = (height / 16) as usize;
+    postprocessing.resize_with(section_count, Vec::new);
+    postprocessing.truncate(section_count);
+    postprocessing.into_boxed_slice()
+}
 
 /// A chunk that is still being generated.
 #[derive(Debug)]
@@ -32,6 +46,18 @@ pub struct ProtoChunk {
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks.
     pub structure_references: SyncRwLock<StructureReferenceMap>,
+    /// Bitset of positions visited by carvers (lazily initialized).
+    pub carving_mask: SyncRwLock<Option<CarvingMask>>,
+    /// Section-indexed packed offsets that need vanilla postprocessing after promotion.
+    pub postprocessing: SyncRwLock<Box<[Vec<u16>]>>,
+    // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
+    // does. Vanilla caches `NoiseChunk` on `ChunkAccess` so noise, surface,
+    // and carvers share one instance; we currently rebuild per stage. Blocked
+    // by the type-erasure question — `NoiseChunk<N: DimensionNoises>` is
+    // generic, `ProtoChunk` is not, and `Any` is forbidden by CLAUDE.md.
+    // Options to evaluate: (1) object-safe trait returning carver-needed
+    // values, (2) generic `ProtoChunk<N>` (big ripple), (3) stay as-is if
+    // rebuild cost stays negligible.
 }
 
 impl ProtoChunk {
@@ -48,12 +74,18 @@ impl ProtoChunk {
             height,
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
+            carving_mask: SyncRwLock::new(None),
+            postprocessing: SyncRwLock::new(empty_postprocessing(height)),
         }
     }
 
     /// Creates a proto chunk that was loaded from disk.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "disk rehydration mirrors the persisted proto chunk fields"
+    )]
     #[must_use]
-    pub const fn from_disk(
+    pub fn from_disk(
         sections: Sections,
         pos: ChunkPos,
         status: ChunkStatus,
@@ -61,6 +93,8 @@ impl ProtoChunk {
         height: i32,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
+        carving_mask: Option<CarvingMask>,
+        postprocessing: Vec<Vec<u16>>,
     ) -> Self {
         Self {
             sections,
@@ -73,6 +107,8 @@ impl ProtoChunk {
             height,
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
+            carving_mask: SyncRwLock::new(carving_mask),
+            postprocessing: SyncRwLock::new(postprocessing_from_disk(height, postprocessing)),
         }
     }
 
@@ -97,6 +133,57 @@ impl ProtoChunk {
     /// Sets the generation status of this chunk.
     pub fn set_status(&self, status: ChunkStatus) {
         self.status.store(status);
+    }
+
+    /// Returns a write guard to this chunk's carving mask, initializing it on
+    /// first access. Mirrors vanilla's `ProtoChunk.getOrCreateCarvingMask`.
+    ///
+    /// # Panics
+    /// Never — the mask is populated immediately before projecting the guard.
+    pub fn get_or_create_carving_mask(&self) -> MappedRwLockWriteGuard<'_, CarvingMask> {
+        let mut guard = self.carving_mask.write();
+        if guard.is_none() {
+            *guard = Some(CarvingMask::new(self.height, self.min_y));
+        }
+        RwLockWriteGuard::map(guard, |opt| match opt {
+            Some(mask) => mask,
+            None => unreachable!("carving mask initialized immediately above"),
+        })
+    }
+
+    /// Vanilla `ProtoChunk.packOffsetCoordinates` for postprocessing offsets.
+    #[must_use]
+    pub const fn pack_postprocessing_offset(pos: BlockPos) -> u16 {
+        let x = (pos.0.x & 15) as u16;
+        let y = (pos.0.y & 15) as u16;
+        let z = (pos.0.z & 15) as u16;
+        x | (y << 4) | (z << 8)
+    }
+
+    /// Vanilla `ProtoChunk.unpackOffsetCoordinates` for postprocessing offsets.
+    #[must_use]
+    pub fn unpack_postprocessing_offset(
+        packed: u16,
+        section_y: i32,
+        chunk_pos: ChunkPos,
+    ) -> BlockPos {
+        let x = chunk_pos.0.x * 16 + i32::from(packed & 15);
+        let y = section_y * 16 + i32::from((packed >> 4) & 15);
+        let z = chunk_pos.0.y * 16 + i32::from((packed >> 8) & 15);
+        BlockPos::new(x, y, z)
+    }
+
+    /// Marks a block position for postprocessing after proto-to-full promotion.
+    pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
+        let y = pos.0.y;
+        if y < self.min_y || y >= self.min_y + self.height {
+            return;
+        }
+
+        let section_index = self.get_section_index(y);
+        let packed = Self::pack_postprocessing_offset(pos);
+        self.postprocessing.write()[section_index].push(packed);
+        self.mark_unsaved();
     }
 
     /// Gets the section index for a given Y coordinate.
@@ -199,5 +286,26 @@ impl ProtoChunk {
         let local_z = (pos.0.z & 15) as usize;
 
         section.read().states.get(local_x, local_y, local_z)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProtoChunk;
+    use steel_utils::{BlockPos, ChunkPos};
+
+    #[test]
+    fn postprocessing_offset_pack_unpack_matches_vanilla_layout() {
+        let chunk_pos = ChunkPos::new(-2, 1);
+        let section_y = -4;
+        let pos = BlockPos::new(-17, -63, 31);
+
+        let packed = ProtoChunk::pack_postprocessing_offset(pos);
+
+        assert_eq!(packed, 15 | (1 << 4) | (15 << 8));
+        assert_eq!(
+            ProtoChunk::unpack_postprocessing_offset(packed, section_y, chunk_pos),
+            pos
+        );
     }
 }

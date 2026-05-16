@@ -28,7 +28,7 @@
 //! Block data uses power-of-2 bit packing (1, 2, 4, 8, 16 bits) to avoid entries
 //! spanning u64 boundaries.
 
-use steel_utils::{BoundingBox, Identifier};
+use steel_utils::{BoundingBox, Identifier, PackedChunkPos};
 use wincode::{SchemaRead, SchemaWrite};
 
 use crate::chunk::chunk_access::ChunkStatus;
@@ -43,7 +43,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v6: Added structure start and structure reference persistence.
 /// v7: Added POI persistence (`PersistentPoi`).
 /// v8: Added typed jigsaw piece-state persistence.
-pub const FORMAT_VERSION: u16 = 8;
+/// v9: Added proto chunk carving mask persistence and typed packed chunk references.
+pub const FORMAT_VERSION: u16 = 9;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -312,6 +313,10 @@ pub struct PersistentChunk {
     pub fluid_ticks: Vec<PersistentTick>,
     /// Final heightmaps for full chunks (empty for proto chunks).
     pub heightmaps: Vec<PersistentHeightmap>,
+    /// Proto chunk carving mask as Steel's packed bitset layout.
+    pub carving_mask: Option<Vec<u64>>,
+    /// Proto chunk postprocessing offsets grouped by section index.
+    pub postprocessing: Vec<Vec<u16>>,
     /// Structure starts originating in this chunk.
     pub structure_starts: Vec<PersistentStructureStart>,
     /// References to structures from nearby origin chunks.
@@ -548,13 +553,12 @@ pub struct PersistentJigsawJunction {
 /// A structure reference entry stored with a chunk.
 ///
 /// References point to structure starts in nearby origin chunks.
-/// The packed chunk positions use [`ChunkPos::as_i64`] encoding.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentStructureReference {
     /// Structure type identifier.
     pub structure: Identifier,
     /// Packed chunk positions of origin chunks.
-    pub references: Vec<i64>,
+    pub references: Vec<PackedChunkPos>,
 }
 
 /// A point of interest's occupancy state stored with a chunk.

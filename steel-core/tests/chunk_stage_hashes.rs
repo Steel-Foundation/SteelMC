@@ -18,6 +18,7 @@ use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::section::Sections;
 use steel_core::world::structure::StructureStart;
 use steel_core::worldgen::noise::beardifier::Beardifier;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_utils::ChunkPos;
 
@@ -43,7 +44,7 @@ struct ChunkStageHashesJson {
 const STAGES: &[&str] = &[
     "minecraft:noise",
     "minecraft:surface",
-    // "minecraft:carvers",
+    "minecraft:carvers",
     // "minecraft:features",
 ];
 
@@ -65,7 +66,23 @@ fn compute_block_hash(sections: &Sections) -> String {
 
     for section_holder in &sections.sections {
         let section = section_holder.read();
-        if section.states.has_only_air() {
+        // Match vanilla's `LevelChunkSection.hasOnlyAir()` — which returns
+        // true when `nonEmptyBlockCount == 0`, i.e. every block is air /
+        // cave_air / void_air. Steel's palette-level `has_only_air()` doesn't
+        // treat a heterogeneous cave_air-only palette as "empty", so we scan
+        // manually to match the extractor's shortcut.
+        let mut all_air = true;
+        'scan: for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    if !section.states.get(x, y, z).is_air() {
+                        all_air = false;
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        if all_air {
             ctx.consume([0u8]);
         } else {
             for y in 0..16 {
@@ -313,7 +330,7 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
 }
 
 #[test]
-#[ignore = "This test takes too long to run for normal testing"]
+#[ignore = "This test takes too long to run for normal testing; run with --release"]
 fn chunk_stage_hashes() {
     use std::panic;
     use std::thread;
@@ -602,6 +619,7 @@ fn chunk_stage_hashes_inner() {
 
                     match stage {
                         "minecraft:surface" => generator.build_surface(chunk, &neighbor_biomes),
+                        "minecraft:carvers" => generator.apply_carvers(chunk),
                         _ => panic!("Stage {stage} not yet implemented in test harness"),
                     }
                 }

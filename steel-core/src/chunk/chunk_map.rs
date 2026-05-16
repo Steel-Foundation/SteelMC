@@ -138,8 +138,22 @@ impl ChunkMap {
     where
         F: FnOnce(&ChunkAccess) -> R,
     {
+        self.with_chunk_at_status(pos, ChunkStatus::Full, f)
+    }
+
+    /// Executes a function with access to a chunk at the requested generation status or later.
+    /// Returns `None` if the chunk is not loaded or has not reached the requested status.
+    pub(crate) fn with_chunk_at_status<F, R>(
+        &self,
+        pos: ChunkPos,
+        status: ChunkStatus,
+        f: F,
+    ) -> Option<R>
+    where
+        F: FnOnce(&ChunkAccess) -> R,
+    {
         let chunk_holder = self.chunks.read_sync(&pos, |_, chunk| chunk.clone())?;
-        let guard = chunk_holder.try_chunk(ChunkStatus::Full)?;
+        let guard = chunk_holder.try_chunk(status)?;
         Some(f(&guard))
     }
 
@@ -286,7 +300,7 @@ impl ChunkMap {
                             let block_pos = section_pos.relative_to_block_pos(packed);
                             let block_state = world.get_block_state(block_pos);
                             BlockChange {
-                                pos: block_pos,
+                                pos: packed,
                                 block_state,
                             }
                         })

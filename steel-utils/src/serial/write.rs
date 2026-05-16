@@ -16,7 +16,7 @@ use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::{
-    BlockPos, Identifier,
+    BlockPos, Identifier, PackedBlockPos,
     codec::VarInt,
     serial::{PrefixedWrite, WriteTo},
 };
@@ -134,7 +134,7 @@ impl<T: WriteTo> WriteTo for Vec<T> {
 
 impl WriteTo for BlockPos {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        self.as_i64().write(writer)
+        PackedBlockPos::from(*self).write(writer)
     }
 }
 

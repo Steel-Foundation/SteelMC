@@ -255,8 +255,90 @@ fn bench_end_surface(c: &mut Criterion) {
     });
 }
 
+// ── Carvers benchmarks ──────────────────────────────────────────────────────
+
+fn bench_overworld_carvers(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let source = BiomeSourceKind::overworld(0);
+    let generator = OverworldGenerator::new(source, 0);
+
+    c.bench_function("overworld_apply_carvers", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk, None);
+                {
+                    let neighbor_biomes = self_neighbor_biomes(&chunk);
+                    generator.build_surface(&chunk, &neighbor_biomes);
+                }
+                chunk
+            },
+            |chunk| {
+                generator.apply_carvers(black_box(&chunk));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_nether_carvers(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
+
+    c.bench_function("nether_apply_carvers", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk, None);
+                {
+                    let neighbor_biomes = self_neighbor_biomes(&chunk);
+                    generator.build_surface(&chunk, &neighbor_biomes);
+                }
+                chunk
+            },
+            |chunk| {
+                generator.apply_carvers(black_box(&chunk));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_end_carvers(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
+
+    c.bench_function("end_apply_carvers", |b| {
+        b.iter_batched(
+            || {
+                let chunk = make_proto_chunk(0, 0, dim);
+                generator.create_biomes(&chunk);
+                generator.fill_from_noise(&chunk, None);
+                {
+                    let neighbor_biomes = self_neighbor_biomes(&chunk);
+                    generator.build_surface(&chunk, &neighbor_biomes);
+                }
+                chunk
+            },
+            |chunk| {
+                generator.apply_carvers(black_box(&chunk));
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+// ── Structure benchmarks ────────────────────────────────────────────────────
+
 /// A 20×20 grid hits structure sets with different spacings (villages at 32,
-/// shipwrecks at 24, mineshafts at 1, …), so the timings include cheap-reject,
+/// shipwrecks at 24, mineshafts at 1, ...), so the timings include cheap-reject,
 /// full-placement, and jigsaw paths.
 const STRUCTURE_GRID_SIDE: i32 = 20;
 
@@ -458,6 +540,68 @@ fn bench_end_structure_references(c: &mut Criterion) {
     );
 }
 
+// ── Full-pipeline benchmarks (biomes + noise + surface + carvers) ──────────
+
+fn bench_overworld_full(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::OVERWORLD;
+    let source = BiomeSourceKind::overworld(0);
+    let generator = OverworldGenerator::new(source, 0);
+
+    c.bench_function("overworld_full_through_carvers", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_biomes(&chunk);
+            generator.fill_from_noise(&chunk, None);
+            {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(&chunk, &neighbor_biomes);
+            }
+            generator.apply_carvers(&chunk);
+        });
+    });
+}
+
+fn bench_nether_full(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_NETHER;
+    let source = BiomeSourceKind::nether(0);
+    let generator = NetherGenerator::new(source, 0);
+
+    c.bench_function("nether_full_through_carvers", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_biomes(&chunk);
+            generator.fill_from_noise(&chunk, None);
+            {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(&chunk, &neighbor_biomes);
+            }
+            generator.apply_carvers(&chunk);
+        });
+    });
+}
+
+fn bench_end_full(c: &mut Criterion) {
+    ensure_registry();
+    let dim = &vanilla_dimension_types::THE_END;
+    let source = BiomeSourceKind::end(0);
+    let generator = EndGenerator::new(source, 0);
+
+    c.bench_function("end_full_through_carvers", |b| {
+        b.iter(|| {
+            let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
+            generator.create_biomes(&chunk);
+            generator.fill_from_noise(&chunk, None);
+            {
+                let neighbor_biomes = self_neighbor_biomes(&chunk);
+                generator.build_surface(&chunk, &neighbor_biomes);
+            }
+            generator.apply_carvers(&chunk);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -472,6 +616,10 @@ criterion_group!(
     bench_overworld_surface,
     bench_nether_surface,
     bench_end_surface,
+    // Carvers
+    bench_overworld_carvers,
+    bench_nether_carvers,
+    bench_end_carvers,
     // Structure starts
     bench_overworld_structure_starts,
     bench_nether_structure_starts,
@@ -480,5 +628,9 @@ criterion_group!(
     bench_overworld_structure_references,
     bench_nether_structure_references,
     bench_end_structure_references,
+    // Full pipeline (biomes → noise → surface → carvers)
+    bench_overworld_full,
+    bench_nether_full,
+    bench_end_full,
 );
 criterion_main!(benches);

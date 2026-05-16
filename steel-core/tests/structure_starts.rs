@@ -190,7 +190,7 @@ fn make_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: i
 }
 
 #[test]
-#[ignore = "This test takes too long to run for normal testing"]
+#[ignore = "This test takes too long to run for normal testing; run with --release"]
 fn structure_starts() {
     use std::panic;
     use std::thread;

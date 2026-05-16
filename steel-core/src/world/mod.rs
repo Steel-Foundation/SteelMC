@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use crate::chunk::chunk_access::ChunkStatus;
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -669,6 +670,29 @@ impl World {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
+    }
+
+    /// Gets a block state for generation postprocessing.
+    ///
+    /// Vanilla delays `LevelChunk.postProcessGeneration` until neighboring
+    /// chunks are full because that hook runs during the ticking-chunk
+    /// transition. Steel runs it as the center chunk reaches full. At that
+    /// point the chunk pyramid guarantees the 3x3 neighbors have reached
+    /// `Light`, which means they have completed `Features`, the last
+    /// block-mutating generation stage. Postprocessing only needs block
+    /// states, so reading light-stage proto chunks here is intentional.
+    #[must_use]
+    pub(crate) fn get_postprocessing_block_state(&self, pos: BlockPos) -> BlockStateId {
+        if !self.is_in_valid_bounds(pos) {
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Features, |chunk| {
+                chunk.get_block_state(pos)
+            })
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 

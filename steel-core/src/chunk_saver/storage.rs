@@ -9,6 +9,7 @@ use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_in
 use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
+use crate::worldgen::carving_mask::CarvingMask;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::cmp::Ordering as CmpOrdering;
@@ -19,7 +20,9 @@ use std::{io, sync::Weak};
 use steel_registry::structure::{LiquidSettingsData, TerrainAdjustment};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, Identifier, Rotation};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
+};
 
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
 use crate::world::structure::{
@@ -331,6 +334,24 @@ impl ChunkStorage {
             .map(|c| Self::pois_to_persistent(c, pos))
             .unwrap_or_default();
 
+        let carving_mask = match chunk {
+            ChunkAccess::Proto(proto) => proto
+                .carving_mask
+                .read()
+                .as_ref()
+                .map(CarvingMask::to_packed_u64s),
+            ChunkAccess::Full(_) => None,
+            ChunkAccess::Unloaded => unreachable!(),
+        };
+
+        let postprocessing = match chunk {
+            ChunkAccess::Proto(proto) => {
+                proto.postprocessing.read().iter().map(Vec::clone).collect()
+            }
+            ChunkAccess::Full(_) => Vec::new(),
+            ChunkAccess::Unloaded => unreachable!(),
+        };
+
         let persistent = Self::to_persistent(
             chunk.sections(),
             &block_entities,
@@ -338,6 +359,8 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            carving_mask,
+            postprocessing,
             structure_starts,
             structure_references,
             pois,
@@ -360,6 +383,8 @@ impl ChunkStorage {
         block_ticks: Vec<PersistentTick>,
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
+        carving_mask: Option<Vec<u64>>,
+        postprocessing: Vec<Vec<u16>>,
         structure_starts: Vec<PersistentStructureStart>,
         structure_references: Vec<PersistentStructureReference>,
         pois: Vec<PersistentPoi>,
@@ -444,6 +469,8 @@ impl ChunkStorage {
             block_ticks,
             fluid_ticks,
             heightmaps,
+            carving_mask,
+            postprocessing,
             structure_starts,
             structure_references,
             pois,
@@ -575,71 +602,73 @@ impl ChunkStorage {
         let structure_references =
             Self::persistent_to_structure_references(&persistent.structure_references);
 
-        match status {
-            ChunkStatus::Full => {
-                // Reconstruct scheduled ticks from persistent data
-                let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
-                let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
+        if status == ChunkStatus::Full {
+            // Reconstruct scheduled ticks from persistent data
+            let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
+            let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
 
-                // Reconstruct heightmaps from persistent data
-                let heightmaps =
-                    Self::persistent_to_heightmaps(&persistent.heightmaps, min_y, height);
+            // Reconstruct heightmaps from persistent data
+            let heightmaps = Self::persistent_to_heightmaps(&persistent.heightmaps, min_y, height);
 
-                let chunk = LevelChunk::from_disk(
-                    Sections::from_owned(sections.into_boxed_slice()),
-                    pos,
-                    min_y,
-                    height,
-                    level.clone(),
-                    block_ticks,
-                    fluid_ticks,
-                    heightmaps,
-                    structure_starts,
-                    structure_references,
-                );
+            let chunk = LevelChunk::from_disk(
+                Sections::from_owned(sections.into_boxed_slice()),
+                pos,
+                min_y,
+                height,
+                level.clone(),
+                block_ticks,
+                fluid_ticks,
+                heightmaps,
+                structure_starts,
+                structure_references,
+            );
 
-                // Load block entities
-                for persistent_be in &persistent.block_entities {
-                    if let Some(block_entity) =
-                        Self::persistent_to_block_entity(persistent_be, pos, &chunk)
-                    {
-                        chunk.add_and_register_block_entity(block_entity);
-                    }
-                }
-
-                // Load entities
-                for persistent_entity in &persistent.entities {
-                    if let Some(entity) = Self::persistent_to_entity(persistent_entity, pos, &chunk)
-                    {
-                        chunk.add_and_register_entity(entity);
-                    }
-                }
-
-                // Restore POI ticket state (populate_poi ran in from_disk, now apply saved occupancy)
-                if !persistent.pois.is_empty()
-                    && let Some(world) = level.upgrade()
+            // Load block entities
+            for persistent_be in &persistent.block_entities {
+                if let Some(block_entity) =
+                    Self::persistent_to_block_entity(persistent_be, pos, &chunk)
                 {
-                    let tickets: Vec<_> = persistent
-                        .pois
-                        .iter()
-                        .map(|p| {
-                            let block_pos = BlockPos::new(
-                                pos.0.x * 16 + i32::from(p.x),
-                                i32::from(p.y),
-                                pos.0.y * 16 + i32::from(p.z),
-                            );
-                            (block_pos, p.free_tickets)
-                        })
-                        .collect();
-                    world.poi_storage.lock().restore_tickets(pos, &tickets);
+                    chunk.add_and_register_block_entity(block_entity);
                 }
-
-                // Clear dirty flag since we just loaded (add_and_register marks dirty)
-                chunk.dirty.store(false, Ordering::Release);
-
-                ChunkAccess::Full(chunk)
             }
-            _ => ChunkAccess::Proto(ProtoChunk::from_disk(
+
+            // Load entities
+            for persistent_entity in &persistent.entities {
+                if let Some(entity) = Self::persistent_to_entity(persistent_entity, pos, &chunk) {
+                    chunk.add_and_register_entity(entity);
+                }
+            }
+
+            // Restore POI ticket state (populate_poi ran in from_disk, now apply saved occupancy)
+            if !persistent.pois.is_empty()
+                && let Some(world) = level.upgrade()
+            {
+                let tickets: Vec<_> = persistent
+                    .pois
+                    .iter()
+                    .map(|p| {
+                        let block_pos = BlockPos::new(
+                            pos.0.x * 16 + i32::from(p.x),
+                            i32::from(p.y),
+                            pos.0.y * 16 + i32::from(p.z),
+                        );
+                        (block_pos, p.free_tickets)
+                    })
+                    .collect();
+                world.poi_storage.lock().restore_tickets(pos, &tickets);
+            }
+
+            // Clear dirty flag since we just loaded (add_and_register marks dirty)
+            chunk.dirty.store(false, Ordering::Release);
+
+            ChunkAccess::Full(chunk)
+        } else {
+            let carving_mask = persistent
+                .carving_mask
+                .as_deref()
+                .map(|packed| CarvingMask::from_packed_u64s(height, min_y, packed));
+
+            ChunkAccess::Proto(ProtoChunk::from_disk(
                 Sections::from_owned(sections.into_boxed_slice()),
                 pos,
                 status,
@@ -647,7 +676,9 @@ impl ChunkStorage {
                 height,
                 structure_starts,
                 structure_references,
-            )),
+                carving_mask,
+                persistent.postprocessing.iter().map(Vec::clone).collect(),
+            ))
         }
     }
 
@@ -1086,7 +1117,11 @@ impl ChunkStorage {
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
                 references: {
-                    let mut packed: Vec<_> = positions.iter().map(|pos| pos.as_i64()).collect();
+                    let mut packed: Vec<_> = positions
+                        .iter()
+                        .copied()
+                        .map(PackedChunkPos::from)
+                        .collect();
                     packed.sort_unstable();
                     packed
                 },
@@ -1163,7 +1198,7 @@ impl ChunkStorage {
                 let positions = pr
                     .references
                     .iter()
-                    .map(|&l| ChunkPos::from_i64(l))
+                    .map(|&packed| packed.to_chunk_pos())
                     .collect();
                 (pr.structure.clone(), positions)
             })
@@ -1314,6 +1349,117 @@ mod tests {
         }
     }
 
+    fn single_empty_section() -> Sections {
+        Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice())
+    }
+
+    #[test]
+    fn proto_carving_mask_presence_roundtrips_when_empty() {
+        init_registry();
+
+        let pos = ChunkPos::new(3, -4);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16);
+        proto.set_status(ChunkStatus::Carvers);
+        drop(proto.get_or_create_carving_mask());
+        let chunk = ChunkAccess::Proto(proto);
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.carving_mask, Some(Vec::new()));
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Carvers,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("carvers status should load as proto chunk");
+        };
+
+        assert!(loaded_proto.carving_mask.read().is_some());
+    }
+
+    #[test]
+    fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
+        init_registry();
+
+        let pos = ChunkPos::new(3, -4);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16);
+        proto.set_status(ChunkStatus::Carvers);
+        {
+            let mut mask = proto.get_or_create_carving_mask();
+            mask.set(7, 5, 11);
+        }
+        let chunk = ChunkAccess::Proto(proto);
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert!(
+            prepared
+                .persistent
+                .carving_mask
+                .as_ref()
+                .is_some_and(|packed| !packed.is_empty())
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Carvers,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("carvers status should load as proto chunk");
+        };
+
+        let mask_guard = loaded_proto.carving_mask.read();
+        let Some(mask) = mask_guard.as_ref() else {
+            panic!("carving mask should restore from persistent chunk");
+        };
+        assert!(mask.get(7, 5, 11));
+        assert!(!mask.get(8, 5, 11));
+    }
+
+    #[test]
+    fn proto_postprocessing_roundtrips_through_persistent_chunk() {
+        init_registry();
+
+        let pos = ChunkPos::new(-2, 1);
+        let marked = BlockPos::new(-17, -63, 31);
+        let proto = ProtoChunk::new(single_empty_section(), pos, -64, 16);
+        proto.set_status(ChunkStatus::Noise);
+        proto.mark_pos_for_postprocessing(marked);
+        let packed = ProtoChunk::pack_postprocessing_offset(marked);
+        let chunk = ChunkAccess::Proto(proto);
+
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+
+        assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Noise,
+            -64,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("noise status should load as proto chunk");
+        };
+
+        assert_eq!(loaded_proto.postprocessing.read()[0], vec![packed]);
+    }
+
     #[test]
     fn structure_persistence_filters_empty_starts_and_sorts_entries() {
         let alpha = Identifier::new_static("minecraft", "alpha");
@@ -1382,7 +1528,10 @@ mod tests {
         );
         assert_eq!(
             persistent_references[1].references,
-            vec![ChunkPos::new(1, 0).as_i64(), ChunkPos::new(2, 0).as_i64()]
+            vec![
+                PackedChunkPos::from(ChunkPos::new(1, 0)),
+                PackedChunkPos::from(ChunkPos::new(2, 0))
+            ]
         );
     }
 

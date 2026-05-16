@@ -2,6 +2,7 @@
 
 use std::{
     borrow::Cow,
+    error::Error,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
     io::{self, Cursor, Write},
@@ -110,7 +111,7 @@ pub struct ChunkPos(pub IVec2);
 
 impl Hash for ChunkPos {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.as_i64() as u64);
+        state.write_u64(PackedChunkPos::from(*self).as_raw() as u64);
     }
 }
 
@@ -157,23 +158,6 @@ impl ChunkPos {
     pub const fn is_valid(x: i32, z: i32) -> bool {
         x.abs().max(z.abs()) <= Self::MAX_COORDINATE_VALUE
     }
-
-    /// Converts the `ChunkPos` to an `i64`.
-    #[must_use]
-    #[inline]
-    pub fn as_i64(self) -> i64 {
-        (i64::from(self.0.x) & 0xFFFF_FFFF) | ((i64::from(self.0.y) & 0xFFFF_FFFF) << 32)
-    }
-
-    /// Creates a new `ChunkPos` from an `i64`.
-    #[must_use]
-    #[inline]
-    pub const fn from_i64(value: i64) -> Self {
-        Self(IVec2::new(
-            (value & 0xFFFF_FFFF) as i32,
-            (value >> 32) as i32,
-        ))
-    }
 }
 
 impl WriteTo for ChunkPos {
@@ -203,51 +187,15 @@ impl From<DVec3> for BlockPos {
 }
 
 impl BlockPos {
-    // Define constants as per the Java logic
-    const PACKED_HORIZONTAL_LEN: u32 = 26;
-    const PACKED_Y_LEN: u32 = 12;
-    const X_OFFSET: u32 = Self::PACKED_HORIZONTAL_LEN + Self::PACKED_Y_LEN; // 38
-    const Z_OFFSET: u32 = Self::PACKED_Y_LEN; // 12
-    const PACKED_X_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
-    const PACKED_Y_MASK: i64 = (1i64 << Self::PACKED_Y_LEN) - 1;
-    const PACKED_Z_MASK: i64 = (1i64 << Self::PACKED_HORIZONTAL_LEN) - 1;
     pub const ZERO: BlockPos = BlockPos(IVec3::new(0, 0, 0));
 
     /// Maximum horizontal coordinate value: `(1 << 26) / 2 - 1 = 33554431`
-    pub const MAX_HORIZONTAL_COORDINATE: i32 = (1 << Self::PACKED_HORIZONTAL_LEN) / 2 - 1;
+    pub const MAX_HORIZONTAL_COORDINATE: i32 = (1 << PackedBlockPos::HORIZONTAL_BITS) / 2 - 1;
 
     /// Creates a new `BlockPos` from coordinates.
     #[must_use]
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self(IVec3::new(x, y, z))
-    }
-
-    /// Converts the `BlockPos` to an `i64`.
-    /// Layout: X (26 bits, offset 38) | Z (26 bits, offset 12) | Y (12 bits, offset 0)
-    #[must_use]
-    pub fn as_i64(&self) -> i64 {
-        let x = i64::from(self.0.x);
-        let y = i64::from(self.0.y);
-        let z = i64::from(self.0.z);
-        ((x & Self::PACKED_X_MASK) << Self::X_OFFSET)
-            | ((z & Self::PACKED_Z_MASK) << Self::Z_OFFSET)
-            | (y & Self::PACKED_Y_MASK)
-    }
-
-    /// Creates a `BlockPos` from an `i64`.
-    /// Layout: X (26 bits, offset 38) | Z (26 bits, offset 12) | Y (12 bits, offset 0)
-    #[must_use]
-    pub const fn from_i64(value: i64) -> Self {
-        let x = value >> Self::X_OFFSET;
-        let y = value & Self::PACKED_Y_MASK;
-        let z = (value >> Self::Z_OFFSET) & Self::PACKED_Z_MASK;
-
-        // Sign extend the values
-        let x = (x << (64 - Self::PACKED_HORIZONTAL_LEN)) >> (64 - Self::PACKED_HORIZONTAL_LEN);
-        let y = (y << (64 - Self::PACKED_Y_LEN)) >> (64 - Self::PACKED_Y_LEN);
-        let z = (z << (64 - Self::PACKED_HORIZONTAL_LEN)) >> (64 - Self::PACKED_HORIZONTAL_LEN);
-
-        Self(IVec3::new(x as i32, y as i32, z as i32))
     }
 
     /// Returns a new `BlockPos` offset by the given amounts.
@@ -438,7 +386,7 @@ impl BlockPos {
 impl ReadFrom for BlockPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let packed = <i64 as ReadFrom>::read(data)?;
-        Ok(Self::from_i64(packed))
+        Ok(PackedBlockPos::from_raw(packed).into())
     }
 }
 
@@ -492,83 +440,35 @@ impl SectionPos {
         self.0.z
     }
 
-    /// Extracts the section-relative X coordinate from a packed position.
-    #[must_use]
-    pub const fn section_relative_x(packed: i16) -> i32 {
-        ((packed as i32) >> 8) & Self::SECTION_MASK
-    }
-
-    /// Extracts the section-relative Y coordinate from a packed position.
-    #[must_use]
-    pub const fn section_relative_y(packed: i16) -> i32 {
-        (packed as i32) & Self::SECTION_MASK
-    }
-
-    /// Extracts the section-relative Z coordinate from a packed position.
-    #[must_use]
-    pub const fn section_relative_z(packed: i16) -> i32 {
-        ((packed as i32) >> 4) & Self::SECTION_MASK
-    }
-
     /// Converts section-relative coordinates to an absolute block X coordinate.
     #[must_use]
-    pub const fn relative_to_block_x(&self, relative_x: i16) -> i32 {
-        (self.0.x << Self::SECTION_BITS) + Self::section_relative_x(relative_x)
+    pub const fn relative_to_block_x(&self, relative: PackedSectionBlockPos) -> i32 {
+        (self.0.x << Self::SECTION_BITS) + relative.x() as i32
     }
 
     /// Converts section-relative coordinates to an absolute block Y coordinate.
     #[must_use]
-    pub const fn relative_to_block_y(&self, relative_y: i16) -> i32 {
-        (self.0.y << Self::SECTION_BITS) + Self::section_relative_y(relative_y)
+    pub const fn relative_to_block_y(&self, relative: PackedSectionBlockPos) -> i32 {
+        (self.0.y << Self::SECTION_BITS) + relative.y() as i32
     }
 
     /// Converts section-relative coordinates to an absolute block Z coordinate.
     #[must_use]
-    pub const fn relative_to_block_z(&self, relative_z: i16) -> i32 {
-        (self.0.z << Self::SECTION_BITS) + Self::section_relative_z(relative_z)
+    pub const fn relative_to_block_z(&self, relative: PackedSectionBlockPos) -> i32 {
+        (self.0.z << Self::SECTION_BITS) + relative.z() as i32
     }
 
-    /// Packs the section position into an i64.
-    /// Format: (x << 42) | (z << 20) | y
-    #[must_use]
-    pub fn as_i64(&self) -> i64 {
-        let x = i64::from(self.0.x);
-        let y = i64::from(self.0.y);
-        let z = i64::from(self.0.z);
-
-        ((x & 0x3F_FFFF) << 42) | ((z & 0x3F_FFFF) << 20) | (y & 0xF_FFFF)
-    }
-
-    /// Unpacks a section position from an i64.
-    /// Format: (x << 42) | (z << 20) | y
-    #[must_use]
-    pub const fn from_i64(value: i64) -> Self {
-        let x = value >> 42;
-        let z = (value >> 20) & 0x3F_FFFF;
-        let y = value & 0xF_FFFF;
-
-        // Sign extend
-        let x = (x << 42) >> 42;
-        let y = (y << 44) >> 44;
-        let z = (z << 42) >> 42;
-
-        Self(IVec3::new(x as i32, y as i32, z as i32))
-    }
-
-    /// Packs a block position into a section-relative short.
+    /// Packs a block position into a section-relative offset.
     /// Format: (x << 8) | (z << 4) | y (each coordinate masked to 4 bits)
     #[must_use]
     #[inline]
-    pub const fn section_relative_pos(pos: BlockPos) -> i16 {
-        let x = pos.0.x & Self::SECTION_MASK;
-        let y = pos.0.y & Self::SECTION_MASK;
-        let z = pos.0.z & Self::SECTION_MASK;
-        ((x << 8) | (z << 4) | y) as i16
+    pub const fn section_relative_pos(pos: BlockPos) -> PackedSectionBlockPos {
+        PackedSectionBlockPos::from_block_pos(pos)
     }
 
     /// Converts a section-relative packed position back to a block position.
     #[must_use]
-    pub const fn relative_to_block_pos(&self, relative: i16) -> BlockPos {
+    pub const fn relative_to_block_pos(&self, relative: PackedSectionBlockPos) -> BlockPos {
         BlockPos(IVec3::new(
             self.relative_to_block_x(relative),
             self.relative_to_block_y(relative),
@@ -577,16 +477,397 @@ impl SectionPos {
     }
 }
 
+/// A chunk position in Steel's packed `i64` layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SchemaWrite, SchemaRead)]
+pub struct PackedChunkPos(i64);
+
+impl PackedChunkPos {
+    /// Creates a packed chunk position from its raw representation.
+    #[must_use]
+    pub const fn from_raw(raw: i64) -> Self {
+        Self(raw)
+    }
+
+    /// Returns the raw packed representation.
+    #[must_use]
+    pub const fn as_raw(self) -> i64 {
+        self.0
+    }
+
+    /// Converts this packed value into a `ChunkPos`.
+    #[must_use]
+    pub const fn to_chunk_pos(self) -> ChunkPos {
+        ChunkPos(IVec2::new(
+            (self.0 & 0xFFFF_FFFF) as i32,
+            (self.0 >> 32) as i32,
+        ))
+    }
+}
+
+impl From<ChunkPos> for PackedChunkPos {
+    fn from(pos: ChunkPos) -> Self {
+        Self((i64::from(pos.0.x) & 0xFFFF_FFFF) | ((i64::from(pos.0.y) & 0xFFFF_FFFF) << 32))
+    }
+}
+
+impl From<PackedChunkPos> for ChunkPos {
+    fn from(pos: PackedChunkPos) -> Self {
+        pos.to_chunk_pos()
+    }
+}
+
+impl ReadFrom for PackedChunkPos {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        Ok(Self::from_raw(<i64 as ReadFrom>::read(data)?))
+    }
+}
+
+impl WriteTo for PackedChunkPos {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.0.write(writer)
+    }
+}
+
+/// A block position in Minecraft's packed protocol `i64` layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SchemaWrite, SchemaRead)]
+pub struct PackedBlockPos(i64);
+
+impl PackedBlockPos {
+    const HORIZONTAL_BITS: u32 = 26;
+    const Y_BITS: u32 = 12;
+    const X_OFFSET: u32 = Self::HORIZONTAL_BITS + Self::Y_BITS;
+    const Z_OFFSET: u32 = Self::Y_BITS;
+    const XZ_MASK: i64 = (1i64 << Self::HORIZONTAL_BITS) - 1;
+    const Y_MASK: i64 = (1i64 << Self::Y_BITS) - 1;
+
+    /// Creates a packed block position from its raw representation.
+    #[must_use]
+    pub const fn from_raw(raw: i64) -> Self {
+        Self(raw)
+    }
+
+    /// Returns the raw packed representation.
+    #[must_use]
+    pub const fn as_raw(self) -> i64 {
+        self.0
+    }
+
+    /// Converts this packed value into a `BlockPos`.
+    #[must_use]
+    pub const fn to_block_pos(self) -> BlockPos {
+        let x = self.0 >> Self::X_OFFSET;
+        let y = self.0 & Self::Y_MASK;
+        let z = (self.0 >> Self::Z_OFFSET) & Self::XZ_MASK;
+
+        let x = (x << (64 - Self::HORIZONTAL_BITS)) >> (64 - Self::HORIZONTAL_BITS);
+        let y = (y << (64 - Self::Y_BITS)) >> (64 - Self::Y_BITS);
+        let z = (z << (64 - Self::HORIZONTAL_BITS)) >> (64 - Self::HORIZONTAL_BITS);
+
+        BlockPos(IVec3::new(x as i32, y as i32, z as i32))
+    }
+}
+
+impl From<BlockPos> for PackedBlockPos {
+    fn from(pos: BlockPos) -> Self {
+        let x = i64::from(pos.0.x);
+        let y = i64::from(pos.0.y);
+        let z = i64::from(pos.0.z);
+        Self(
+            ((x & Self::XZ_MASK) << Self::X_OFFSET)
+                | ((z & Self::XZ_MASK) << Self::Z_OFFSET)
+                | (y & Self::Y_MASK),
+        )
+    }
+}
+
+impl From<PackedBlockPos> for BlockPos {
+    fn from(pos: PackedBlockPos) -> Self {
+        pos.to_block_pos()
+    }
+}
+
+impl ReadFrom for PackedBlockPos {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        Ok(Self::from_raw(<i64 as ReadFrom>::read(data)?))
+    }
+}
+
+impl WriteTo for PackedBlockPos {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.0.write(writer)
+    }
+}
+
+/// A section position in Minecraft's packed `i64` layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SchemaWrite, SchemaRead)]
+pub struct PackedSectionPos(i64);
+
+impl PackedSectionPos {
+    const XZ_BITS: u32 = 22;
+    const Y_BITS: u32 = 20;
+    const X_OFFSET: u32 = Self::XZ_BITS + Self::Y_BITS;
+    const Z_OFFSET: u32 = Self::Y_BITS;
+    const XZ_MASK: i64 = (1i64 << Self::XZ_BITS) - 1;
+    const Y_MASK: i64 = (1i64 << Self::Y_BITS) - 1;
+
+    /// Creates a packed section position from its raw representation.
+    #[must_use]
+    pub const fn from_raw(raw: i64) -> Self {
+        Self(raw)
+    }
+
+    /// Returns the raw packed representation.
+    #[must_use]
+    pub const fn as_raw(self) -> i64 {
+        self.0
+    }
+
+    /// Converts this packed value into a `SectionPos`.
+    #[must_use]
+    pub const fn to_section_pos(self) -> SectionPos {
+        let x = self.0 >> Self::X_OFFSET;
+        let z = (self.0 >> Self::Z_OFFSET) & Self::XZ_MASK;
+        let y = self.0 & Self::Y_MASK;
+
+        let x = (x << (64 - Self::XZ_BITS)) >> (64 - Self::XZ_BITS);
+        let y = (y << (64 - Self::Y_BITS)) >> (64 - Self::Y_BITS);
+        let z = (z << (64 - Self::XZ_BITS)) >> (64 - Self::XZ_BITS);
+
+        SectionPos(IVec3::new(x as i32, y as i32, z as i32))
+    }
+}
+
+impl From<SectionPos> for PackedSectionPos {
+    fn from(pos: SectionPos) -> Self {
+        let x = i64::from(pos.0.x);
+        let y = i64::from(pos.0.y);
+        let z = i64::from(pos.0.z);
+        Self(
+            ((x & Self::XZ_MASK) << Self::X_OFFSET)
+                | ((z & Self::XZ_MASK) << Self::Z_OFFSET)
+                | (y & Self::Y_MASK),
+        )
+    }
+}
+
+impl From<PackedSectionPos> for SectionPos {
+    fn from(pos: PackedSectionPos) -> Self {
+        pos.to_section_pos()
+    }
+}
+
+impl ReadFrom for PackedSectionPos {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        Ok(Self::from_raw(<i64 as ReadFrom>::read(data)?))
+    }
+}
+
+impl WriteTo for PackedSectionPos {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.0.write(writer)
+    }
+}
+
+/// A block's X/Z position packed relative to its containing chunk.
+///
+/// Layout: `(x << 4) | z`, with each coordinate using 4 bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SchemaWrite, SchemaRead)]
+pub struct PackedChunkLocalXZ(u8);
+
+impl PackedChunkLocalXZ {
+    const COORD_MASK: u8 = 0x0f;
+
+    /// Packs an absolute block position by masking X and Z to chunk-local range.
+    #[must_use]
+    pub const fn from_block_pos(pos: BlockPos) -> Self {
+        Self::from_local_unchecked(
+            (pos.0.x & SectionPos::SECTION_MASK) as u8,
+            (pos.0.z & SectionPos::SECTION_MASK) as u8,
+        )
+    }
+
+    /// Packs validated chunk-local X/Z coordinates.
+    #[must_use]
+    pub const fn from_local_xz(x: u8, z: u8) -> Option<Self> {
+        if x < 16 && z < 16 {
+            Some(Self::from_local_unchecked(x, z))
+        } else {
+            None
+        }
+    }
+
+    /// Rebuilds a packed chunk-local X/Z position from its raw representation.
+    #[must_use]
+    pub const fn from_raw(raw: u8) -> Self {
+        Self(raw)
+    }
+
+    /// Returns the raw packed representation.
+    #[must_use]
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
+
+    /// Returns the chunk-local X coordinate.
+    #[must_use]
+    pub const fn x(self) -> u8 {
+        (self.0 >> 4) & Self::COORD_MASK
+    }
+
+    /// Returns the chunk-local Z coordinate.
+    #[must_use]
+    pub const fn z(self) -> u8 {
+        self.0 & Self::COORD_MASK
+    }
+
+    const fn from_local_unchecked(x: u8, z: u8) -> Self {
+        Self((x << 4) | z)
+    }
+}
+
+impl From<BlockPos> for PackedChunkLocalXZ {
+    fn from(pos: BlockPos) -> Self {
+        Self::from_block_pos(pos)
+    }
+}
+
+impl ReadFrom for PackedChunkLocalXZ {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        Ok(Self::from_raw(<u8 as ReadFrom>::read(data)?))
+    }
+}
+
+impl WriteTo for PackedChunkLocalXZ {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.0.write(writer)
+    }
+}
+
+/// A block position packed relative to its containing 16x16x16 section.
+///
+/// Layout: `(x << 8) | (z << 4) | y`, with each coordinate using 4 bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SchemaWrite, SchemaRead)]
+pub struct PackedSectionBlockPos(u16);
+
+impl PackedSectionBlockPos {
+    const COORD_MASK: u16 = 0x0f;
+    const RAW_MASK: u16 = 0x0fff;
+
+    /// Packs an absolute block position by masking each coordinate to section-local range.
+    #[must_use]
+    #[inline]
+    pub const fn from_block_pos(pos: BlockPos) -> Self {
+        Self::from_local_unchecked(
+            (pos.0.x & SectionPos::SECTION_MASK) as u8,
+            (pos.0.y & SectionPos::SECTION_MASK) as u8,
+            (pos.0.z & SectionPos::SECTION_MASK) as u8,
+        )
+    }
+
+    /// Packs validated section-local coordinates.
+    #[must_use]
+    pub const fn from_local_xyz(x: u8, y: u8, z: u8) -> Option<Self> {
+        if x < 16 && y < 16 && z < 16 {
+            Some(Self::from_local_unchecked(x, y, z))
+        } else {
+            None
+        }
+    }
+
+    /// Rebuilds a packed section block position from its raw representation.
+    #[must_use]
+    pub const fn from_raw(raw: u16) -> Option<Self> {
+        if raw & !Self::RAW_MASK == 0 {
+            Some(Self(raw))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the raw packed representation.
+    #[must_use]
+    pub const fn as_u16(self) -> u16 {
+        self.0
+    }
+
+    /// Returns the section-local X coordinate.
+    #[must_use]
+    pub const fn x(self) -> u8 {
+        ((self.0 >> 8) & Self::COORD_MASK) as u8
+    }
+
+    /// Returns the section-local Y coordinate.
+    #[must_use]
+    pub const fn y(self) -> u8 {
+        (self.0 & Self::COORD_MASK) as u8
+    }
+
+    /// Returns the section-local Z coordinate.
+    #[must_use]
+    pub const fn z(self) -> u8 {
+        ((self.0 >> 4) & Self::COORD_MASK) as u8
+    }
+
+    /// Converts this section-relative position to an absolute block position.
+    #[must_use]
+    pub const fn to_block_pos(self, section_pos: SectionPos) -> BlockPos {
+        section_pos.relative_to_block_pos(self)
+    }
+
+    const fn from_local_unchecked(x: u8, y: u8, z: u8) -> Self {
+        Self(((x as u16) << 8) | ((z as u16) << 4) | y as u16)
+    }
+}
+
+impl From<BlockPos> for PackedSectionBlockPos {
+    fn from(pos: BlockPos) -> Self {
+        Self::from_block_pos(pos)
+    }
+}
+
+impl TryFrom<u16> for PackedSectionBlockPos {
+    type Error = InvalidPackedSectionBlockPos;
+
+    fn try_from(raw: u16) -> Result<Self, Self::Error> {
+        Self::from_raw(raw).ok_or(InvalidPackedSectionBlockPos { raw })
+    }
+}
+
+/// Error returned when a raw section-relative block position uses reserved bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidPackedSectionBlockPos {
+    raw: u16,
+}
+
+impl InvalidPackedSectionBlockPos {
+    /// Returns the invalid raw value.
+    #[must_use]
+    pub const fn raw(self) -> u16 {
+        self.raw
+    }
+}
+
+impl Display for InvalidPackedSectionBlockPos {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "packed section block position {:#06x} uses reserved bits",
+            self.raw
+        )
+    }
+}
+
+impl Error for InvalidPackedSectionBlockPos {}
+
 impl ReadFrom for SectionPos {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
-        let packed = <i64 as ReadFrom>::read(data)?;
-        Ok(Self::from_i64(packed))
+        Ok(<PackedSectionPos as ReadFrom>::read(data)?.into())
     }
 }
 
 impl WriteTo for SectionPos {
     fn write(&self, writer: &mut impl Write) -> io::Result<()> {
-        self.as_i64().write(writer)
+        PackedSectionPos::from(*self).write(writer)
     }
 }
 
@@ -1107,11 +1388,11 @@ mod tests {
         ];
 
         for pos in positions {
-            let encoded = pos.as_i64();
-            let decoded = BlockPos::from_i64(encoded);
+            let encoded = PackedBlockPos::from(pos);
+            let decoded = encoded.to_block_pos();
             assert_eq!(
                 pos, decoded,
-                "Roundtrip failed for {pos:?}: encoded={encoded}, decoded={decoded:?}"
+                "Roundtrip failed for {pos:?}: encoded={encoded:?}, decoded={decoded:?}"
             );
         }
     }
@@ -1120,9 +1401,75 @@ mod tests {
     fn test_block_pos_specific_case() {
         // Test the specific case from the bug report
         let pos = BlockPos(IVec3::new(0, -61, -2));
-        let encoded = pos.as_i64();
-        let decoded = BlockPos::from_i64(encoded);
+        let encoded = PackedBlockPos::from(pos);
+        let decoded = encoded.to_block_pos();
         assert_eq!(pos, decoded, "Position 0, -61, -2 failed roundtrip");
+    }
+
+    #[test]
+    fn packed_chunk_local_xz_masks_absolute_coordinates() {
+        let packed = PackedChunkLocalXZ::from_block_pos(BlockPos::new(17, 64, 18));
+
+        assert_eq!(packed.as_u8(), 0x12);
+        assert_eq!(packed.x(), 1);
+        assert_eq!(packed.z(), 2);
+    }
+
+    #[test]
+    fn packed_chunk_local_xz_rejects_invalid_local_coordinates() {
+        assert!(PackedChunkLocalXZ::from_local_xz(15, 15).is_some());
+        assert!(PackedChunkLocalXZ::from_local_xz(16, 0).is_none());
+        assert!(PackedChunkLocalXZ::from_local_xz(0, 16).is_none());
+    }
+
+    #[test]
+    fn packed_section_block_pos_masks_absolute_coordinates() {
+        let packed = PackedSectionBlockPos::from_block_pos(BlockPos::new(17, -1, 18));
+
+        assert_eq!(packed.as_u16(), 0x12f);
+        assert_eq!(packed.x(), 1);
+        assert_eq!(packed.y(), 15);
+        assert_eq!(packed.z(), 2);
+    }
+
+    #[test]
+    fn packed_section_block_pos_rejects_invalid_raw_bits() {
+        assert!(PackedSectionBlockPos::from_raw(0x0fff).is_some());
+        assert!(PackedSectionBlockPos::from_raw(0x1000).is_none());
+    }
+
+    #[test]
+    fn packed_section_block_pos_rejects_invalid_local_coordinates() {
+        assert!(PackedSectionBlockPos::from_local_xyz(15, 15, 15).is_some());
+        assert!(PackedSectionBlockPos::from_local_xyz(16, 0, 0).is_none());
+        assert!(PackedSectionBlockPos::from_local_xyz(0, 16, 0).is_none());
+        assert!(PackedSectionBlockPos::from_local_xyz(0, 0, 16).is_none());
+    }
+
+    #[test]
+    fn packed_section_block_pos_converts_to_absolute_block_pos() {
+        let section = SectionPos::new(2, -4, -3);
+        let Some(packed) = PackedSectionBlockPos::from_local_xyz(1, 15, 2) else {
+            panic!("valid local packed section block position was rejected");
+        };
+
+        assert_eq!(packed.to_block_pos(section), BlockPos::new(33, -49, -46));
+        assert_eq!(
+            section.relative_to_block_pos(packed),
+            BlockPos::new(33, -49, -46)
+        );
+    }
+
+    #[test]
+    fn packed_position_newtypes_roundtrip() {
+        let chunk = ChunkPos::new(-12, 34);
+        assert_eq!(PackedChunkPos::from(chunk).to_chunk_pos(), chunk);
+
+        let block = BlockPos::new(-1024, 64, 2048);
+        assert_eq!(PackedBlockPos::from(block).to_block_pos(), block);
+
+        let section = SectionPos::new(-8, -4, 12);
+        assert_eq!(PackedSectionPos::from(section).to_section_pos(), section);
     }
 }
 

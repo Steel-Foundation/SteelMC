@@ -30,6 +30,9 @@ pub mod text;
 pub mod types;
 /// UUID extension trait for Minecraft NBT serialization.
 pub mod uuid_ext;
+/// Vanilla-compatible value provider types (`VerticalAnchor`,
+/// `HeightProvider`, `FloatProvider`).
+pub mod value_providers;
 
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/ids.rs"]
@@ -52,5 +55,10 @@ pub use types::BlockStateId;
 pub use types::BoundingBox;
 pub use types::ChunkPos;
 pub use types::Identifier;
+pub use types::PackedBlockPos;
+pub use types::PackedChunkLocalXZ;
+pub use types::PackedChunkPos;
+pub use types::PackedSectionBlockPos;
+pub use types::PackedSectionPos;
 pub use types::SectionPos;
 pub use uuid_ext::UuidExt;
