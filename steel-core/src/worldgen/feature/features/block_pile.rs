@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_block_pile_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &BlockPileConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -16,26 +16,20 @@ impl FeatureDecorationRunner {
         let x_radius = 2 + random.next_i32_bounded(2);
         let z_radius = 2 + random.next_i32_bounded(2);
 
-        for x in origin.x() - x_radius..=origin.x() + x_radius {
-            for y in origin.y()..=origin.y() + 1 {
-                for z in origin.z() - z_radius..=origin.z() + z_radius {
-                    let dx = origin.x() - x;
-                    let dz = origin.z() - z;
-                    let distance_squared = (dx * dx + dz * dz) as f32;
-                    if distance_squared <= random.next_f32() * 10.0 - random.next_f32() * 6.0
-                        || random.next_f32() < 0.031
-                    {
-                        Self::try_place_block_pile_block(
-                            region,
-                            registry,
-                            random,
-                            config,
-                            BlockPos::new(x, y, z),
-                        );
-                    }
+        Self::for_each_vanilla_between_closed(
+            origin.offset(-x_radius, 0, -z_radius),
+            origin.offset(x_radius, 1, z_radius),
+            |pos| {
+                let dx = origin.x() - pos.x();
+                let dz = origin.z() - pos.z();
+                let distance_squared = (dx * dx + dz * dz) as f32;
+                if distance_squared <= random.next_f32() * 10.0 - random.next_f32() * 6.0
+                    || random.next_f32() < 0.031
+                {
+                    Self::try_place_block_pile_block(region, registry, random, config, pos);
                 }
-            }
-        }
+            },
+        );
 
         true
     }
@@ -43,7 +37,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn try_place_block_pile_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &BlockPileConfiguration,
         pos: BlockPos,
     ) {
@@ -64,7 +58,7 @@ impl FeatureDecorationRunner {
 
     pub(in crate::worldgen::feature) fn block_pile_may_place_on(
         region: &WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
     ) -> bool {
         let below = region.block_state(pos.below());

@@ -4,7 +4,7 @@ use super::runner::FeatureDecorationRunner;
 struct ConfiguredFeaturePlaceContext<'a, 'region> {
     region: &'a mut WorldGenRegion<'region>,
     registry: &'a Registry,
-    random: &'a mut Xoroshiro,
+    random: &'a mut WorldgenRandom,
     origin: BlockPos,
     biome_zoom_seed: i64,
 }
@@ -140,7 +140,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_configured_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         feature: &ConfiguredFeatureRef,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -152,11 +152,17 @@ impl FeatureDecorationRunner {
     pub(super) fn place_configured_feature_kind(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         kind: &ConfiguredFeatureKind,
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
+        let chunk_x = SectionPos::block_to_section_coord(origin.x());
+        let chunk_z = SectionPos::block_to_section_coord(origin.z());
+        if !region.can_write_to_chunk(chunk_x, chunk_z) {
+            return false;
+        }
+
         let feature_type = Self::configured_feature_type_id(kind);
         let Some(placer) = CONFIGURED_FEATURES.placer(&feature_type) else {
             if CONFIGURED_FEATURES.pending_placer(&feature_type).is_some() {

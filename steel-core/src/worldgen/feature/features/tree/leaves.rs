@@ -1,5 +1,6 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
+use super::super::super::vanilla_collections::JavaBlockPosSet;
 use super::{TreeBounds, TreePlacement};
 
 const LEAF_DISTANCE_LIMIT: usize = 7;
@@ -12,16 +13,23 @@ impl FeatureDecorationRunner {
         placement: &TreePlacement,
     ) {
         let mut shape = FxHashSet::default();
-        for &pos in placement.decorations.iter().chain(placement.roots.iter()) {
+        for pos in placement
+            .decorations
+            .java_ordered_positions()
+            .into_iter()
+            .chain(placement.roots.java_ordered_positions())
+        {
             if bounds.contains(pos) {
                 shape.insert(pos);
             }
         }
 
         let mut frontiers = (0..LEAF_DISTANCE_LIMIT)
-            .map(|_| FxHashSet::default())
+            .map(|_| JavaBlockPosSet::default())
             .collect::<Vec<_>>();
-        frontiers[0].extend(placement.trunks.iter().copied());
+        for pos in placement.trunks.java_ordered_positions() {
+            frontiers[0].insert(pos);
+        }
         let mut smallest_distance = 0;
 
         loop {
@@ -159,8 +167,6 @@ impl FeatureDecorationRunner {
     }
 }
 
-fn take_frontier_position(frontier: &mut FxHashSet<BlockPos>) -> Option<BlockPos> {
-    let pos = frontier.iter().next().copied()?;
-    frontier.remove(&pos);
-    Some(pos)
+fn take_frontier_position(frontier: &mut JavaBlockPosSet) -> Option<BlockPos> {
+    frontier.pop_java_ordered_position()
 }

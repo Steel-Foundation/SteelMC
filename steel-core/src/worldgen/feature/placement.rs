@@ -9,7 +9,7 @@ impl FeatureDecorationRunner {
     pub(super) fn apply_placement_modifier(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         biome_filter_feature_id: Option<usize>,
         modifier: &PlacementModifier,
@@ -68,11 +68,13 @@ impl FeatureDecorationRunner {
                     })
                     .collect()
             }
-            PlacementModifier::HeightRange { height } => vec![BlockPos::new(
-                origin.x(),
-                height.sample(random, region.min_y(), region.height()),
-                origin.z(),
-            )],
+            PlacementModifier::HeightRange { height } => {
+                vec![BlockPos::new(
+                    origin.x(),
+                    height.sample(random, region.min_y(), region.height()),
+                    origin.z(),
+                )]
+            }
             PlacementModifier::Heightmap { heightmap } => {
                 let height = region.height_at(
                     Self::feature_heightmap_type(*heightmap),
@@ -85,11 +87,11 @@ impl FeatureDecorationRunner {
                     Vec::new()
                 }
             }
-            PlacementModifier::InSquare => vec![BlockPos::new(
-                origin.x() + random.next_i32_bounded(16),
-                origin.y(),
-                origin.z() + random.next_i32_bounded(16),
-            )],
+            PlacementModifier::InSquare => {
+                let x = origin.x() + random.next_i32_bounded(16);
+                let z = origin.z() + random.next_i32_bounded(16);
+                vec![BlockPos::new(x, origin.y(), z)]
+            }
             PlacementModifier::NoiseBasedCount {
                 noise_to_count_ratio,
                 noise_factor,
@@ -122,11 +124,16 @@ impl FeatureDecorationRunner {
             PlacementModifier::RandomOffset {
                 xz_spread,
                 y_spread,
-            } => vec![BlockPos::new(
-                origin.x() + xz_spread.sample(random),
-                origin.y() + y_spread.sample(random),
-                origin.z() + xz_spread.sample(random),
-            )],
+            } => {
+                let x_offset = xz_spread.sample(random);
+                let y_offset = y_spread.sample(random);
+                let z_offset = xz_spread.sample(random);
+                vec![BlockPos::new(
+                    origin.x() + x_offset,
+                    origin.y() + y_offset,
+                    origin.z() + z_offset,
+                )]
+            }
             PlacementModifier::RarityFilter { chance } => {
                 assert!(
                     *chance > 0,
@@ -190,7 +197,7 @@ impl FeatureDecorationRunner {
 
     pub(super) fn count_on_every_layer_positions(
         region: &WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         count: &IntProvider,
     ) -> Vec<BlockPos> {

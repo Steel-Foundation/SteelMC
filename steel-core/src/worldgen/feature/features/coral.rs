@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_coral_claw_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let Some(coral) =
@@ -75,7 +75,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_coral_mushroom_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let Some(coral) =
@@ -112,7 +112,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_coral_tree_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let Some(coral) =
@@ -159,7 +159,7 @@ impl FeatureDecorationRunner {
     fn place_coral_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         state: BlockStateId,
     ) -> bool {
@@ -230,7 +230,7 @@ impl FeatureDecorationRunner {
 
     pub(super) fn random_block_from_tag(
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tag: &Identifier,
     ) -> Option<BlockRef> {
         let blocks = registry.blocks.get_tag(tag)?;

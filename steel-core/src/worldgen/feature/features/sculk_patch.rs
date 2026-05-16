@@ -100,7 +100,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_sculk_patch_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &SculkPatchConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -199,7 +199,7 @@ impl FeatureDecorationRunner {
     fn sculk_update_cursors(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         spreader: &mut SculkSpreader,
         spread_veins: bool,
@@ -232,7 +232,7 @@ impl FeatureDecorationRunner {
     fn sculk_update_cursor(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         spreader: &SculkSpreader,
         spread_veins: bool,
@@ -339,7 +339,7 @@ impl FeatureDecorationRunner {
     fn sculk_attempt_use_charge(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         spreader: &SculkSpreader,
         spread_veins: bool,
@@ -370,7 +370,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_block_attempt_use_charge(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         spreader: &SculkSpreader,
         cursor: &SculkChargeCursor,
@@ -409,7 +409,7 @@ impl FeatureDecorationRunner {
     fn sculk_vein_attempt_use_charge(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         spreader: &SculkSpreader,
         spread_veins: bool,
         cursor: &SculkChargeCursor,
@@ -428,7 +428,7 @@ impl FeatureDecorationRunner {
     fn sculk_vein_attempt_place_sculk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         spreader: &SculkSpreader,
         pos: BlockPos,
     ) -> bool {
@@ -779,7 +779,7 @@ impl FeatureDecorationRunner {
         region: &WorldGenRegion<'_>,
         registry: &Registry,
         pos: BlockPos,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
     ) -> Option<BlockPos> {
         let mut sculk_position = pos;
         for offset in Self::sculk_randomized_non_corner_neighbor_offsets(random) {
@@ -806,7 +806,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn sculk_randomized_non_corner_neighbor_offsets(random: &mut Xoroshiro) -> Vec<BlockPos> {
+    fn sculk_randomized_non_corner_neighbor_offsets(random: &mut WorldgenRandom) -> Vec<BlockPos> {
         let mut offsets = Vec::with_capacity(18);
         for z in -1..=1 {
             for y in -1..=1 {
@@ -929,7 +929,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_random_growth_state(
         region: &WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         is_world_generation: bool,
     ) -> BlockStateId {

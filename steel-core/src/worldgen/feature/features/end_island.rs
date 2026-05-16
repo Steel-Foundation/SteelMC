@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_end_island_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let end_stone = vanilla_blocks::END_STONE.default_state();

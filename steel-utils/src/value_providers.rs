@@ -389,13 +389,17 @@ impl UniformIntProvider {
 impl<'de> Deserialize<'de> for UniformIntProvider {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Range {
+            min_inclusive: i32,
+            max_inclusive: i32,
+        }
+
+        #[derive(Deserialize)]
         #[serde(untagged)]
         enum Raw {
-            Range {
-                min_inclusive: i32,
-                max_inclusive: i32,
-            },
             Tagged(Tagged),
+            Range(Range),
         }
 
         #[derive(Deserialize)]
@@ -409,10 +413,10 @@ impl<'de> Deserialize<'de> for UniformIntProvider {
         }
 
         let (min_inclusive, max_inclusive) = match Raw::deserialize(d)? {
-            Raw::Range {
+            Raw::Range(Range {
                 min_inclusive,
                 max_inclusive,
-            }
+            })
             | Raw::Tagged(Tagged::Uniform {
                 min_inclusive,
                 max_inclusive,
@@ -520,14 +524,18 @@ impl IntProvider {
                 }
             }
             Self::Trapezoid { min, max, plateau } => {
-                let range = *max - *min;
-                if *plateau >= range {
-                    random.next_i32_between(*min, *max)
+                if *plateau == 0 && *max == -*min {
+                    random.next_i32_bounded(*max + 1) - random.next_i32_bounded(*max + 1)
                 } else {
-                    let plateau_start = (range - *plateau) / 2;
-                    let plateau_end = range - plateau_start;
-                    *min + random.next_i32_between(0, plateau_end)
-                        + random.next_i32_between(0, plateau_start)
+                    let range = *max - *min;
+                    if *plateau >= range {
+                        random.next_i32_between(*min, *max)
+                    } else {
+                        let plateau_start = (range - *plateau) / 2;
+                        let plateau_end = range - plateau_start;
+                        *min + random.next_i32_between(0, plateau_end)
+                            + random.next_i32_between(0, plateau_start)
+                    }
                 }
             }
             Self::ClampedNormal {
@@ -536,8 +544,8 @@ impl IntProvider {
                 min_inclusive,
                 max_inclusive,
             } => {
-                let sample = (*mean + *deviation * random.next_gaussian() as f32).round() as i32;
-                sample.clamp(*min_inclusive, *max_inclusive)
+                let sample = *mean + *deviation * random.next_gaussian() as f32;
+                sample.clamp(*min_inclusive as f32, *max_inclusive as f32) as i32
             }
             Self::Clamped {
                 source,
@@ -569,14 +577,18 @@ impl<'de> Deserialize<'de> for IntProvider {
     )]
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Range {
+            min_inclusive: i32,
+            max_inclusive: i32,
+        }
+
+        #[derive(Deserialize)]
         #[serde(untagged)]
         enum Raw {
             Constant(i32),
-            Range {
-                min_inclusive: i32,
-                max_inclusive: i32,
-            },
             Tagged(Tagged),
+            Range(Range),
         }
 
         #[derive(Deserialize)]
@@ -630,12 +642,16 @@ impl<'de> Deserialize<'de> for IntProvider {
         }
 
         Ok(match Raw::deserialize(d)? {
-            Raw::Constant(v) | Raw::Tagged(Tagged::Constant { value: v }) => Self::Constant(v),
-            Raw::Range {
+            Raw::Constant(v) => Self::Constant(v),
+            Raw::Range(Range {
                 min_inclusive,
                 max_inclusive,
-            }
-            | Raw::Tagged(Tagged::Uniform {
+            }) => Self::Uniform {
+                min_inclusive,
+                max_inclusive,
+            },
+            Raw::Tagged(Tagged::Constant { value }) => Self::Constant(value),
+            Raw::Tagged(Tagged::Uniform {
                 min_inclusive,
                 max_inclusive,
             }) => Self::Uniform {
@@ -969,6 +985,49 @@ mod test {
             }
             other => panic!("expected Trapezoid, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn int_provider_clamped_normal_prefers_tagged_shape() {
+        let provider: IntProvider = serde_json::from_str(
+            r#"{
+                "type": "minecraft:clamped_normal",
+                "mean": 0.0,
+                "deviation": 3.0,
+                "min_inclusive": -10,
+                "max_inclusive": 10
+            }"#,
+        )
+        .unwrap();
+
+        match provider {
+            IntProvider::ClampedNormal {
+                mean,
+                deviation,
+                min_inclusive,
+                max_inclusive,
+            } => {
+                assert_eq!(mean, 0.0);
+                assert_eq!(deviation, 3.0);
+                assert_eq!(min_inclusive, -10);
+                assert_eq!(max_inclusive, 10);
+            }
+            other => panic!("expected ClampedNormal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn int_provider_symmetric_trapezoid_sample_matches_vanilla_shortcut() {
+        let provider = IntProvider::Trapezoid {
+            min: -7,
+            max: 7,
+            plateau: 0,
+        };
+        let mut rng = LegacyRandom::from_seed(123);
+        let mut rng_ref = LegacyRandom::from_seed(123);
+        let sample = provider.sample(&mut rng);
+        let expected = rng_ref.next_i32_bounded(8) - rng_ref.next_i32_bounded(8);
+        assert_eq!(sample, expected);
     }
 
     /// Matches vanilla's `Mth.randomBetween`: `min + nextFloat()*(max-min)`.

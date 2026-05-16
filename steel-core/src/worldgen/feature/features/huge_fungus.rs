@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_huge_fungus_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeFungusConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -64,7 +64,7 @@ impl FeatureDecorationRunner {
     fn place_huge_fungus_stem(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeFungusConfiguration,
         origin: BlockPos,
         stem_state: BlockStateId,
@@ -114,7 +114,7 @@ impl FeatureDecorationRunner {
     fn place_huge_fungus_hat(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeFungusConfiguration,
         origin: BlockPos,
         hat_state: BlockStateId,
@@ -216,7 +216,7 @@ impl FeatureDecorationRunner {
     )]
     fn place_huge_fungus_hat_block(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         hat_state: BlockStateId,
         decor_state: BlockStateId,
@@ -236,7 +236,7 @@ impl FeatureDecorationRunner {
 
     fn place_huge_fungus_hat_drop_block(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         hat_state: BlockStateId,
         place_vines: bool,
@@ -253,7 +253,7 @@ impl FeatureDecorationRunner {
 
     fn try_place_huge_fungus_weeping_vines(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         hat_pos: BlockPos,
     ) {
         let place_pos = hat_pos.below();

@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_netherrack_replace_blobs_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &NetherrackReplaceBlobsConfiguration,
         origin: BlockPos,
     ) -> bool {

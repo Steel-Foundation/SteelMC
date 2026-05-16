@@ -3,13 +3,14 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::{REGISTRY, RegistryExt, vanilla_biomes};
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::random::RandomSource;
+use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::world::structure::{ColumnBlock, StructureGenerationContext};
 use crate::worldgen::biomes::obfuscate_biome_seed;
 use crate::worldgen::feature::FeatureDecorationRunner;
-use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
@@ -290,6 +291,10 @@ impl ChunkGenerator for FlatChunkGenerator {
     }
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
+
+    fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource {
+        xoroshiro_worldgen_region_random(world_seed, center)
+    }
 
     fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
         self.feature_runner

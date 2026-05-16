@@ -15,7 +15,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_fossil_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &FossilConfiguration,
         origin: BlockPos,
     ) -> bool {

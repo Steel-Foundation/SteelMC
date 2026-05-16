@@ -36,7 +36,7 @@ pub(super) use steel_registry::{
 };
 pub(super) use steel_utils::math::Axis;
 pub(super) use steel_utils::random::{
-    Random as _, RandomSource, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
+    Random as _, RandomSource, legacy_random::LegacyRandom, worldgen_random::WorldgenRandom,
 };
 pub(super) use steel_utils::types::UpdateFlags;
 pub(super) use steel_utils::value_providers::IntProvider;

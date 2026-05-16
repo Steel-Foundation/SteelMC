@@ -1,5 +1,6 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
+use steel_utils::math::mth;
 
 struct LargeDripstone {
     root: BlockPos,
@@ -18,7 +19,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_large_dripstone_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &LargeDripstoneConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -122,8 +123,8 @@ impl FeatureDecorationRunner {
         let angle_increment = 6.0 / xz_radius as f32;
         let mut angle = 0.0f32;
         while angle < std::f32::consts::TAU {
-            let dx = (angle.cos() * xz_radius as f32) as i32;
-            let dz = (angle.sin() * xz_radius as f32) as i32;
+            let dx = (mth::cos(f64::from(angle)) * xz_radius as f32) as i32;
+            let dz = (mth::sin(f64::from(angle)) * xz_radius as f32) as i32;
             if Self::is_empty_or_water_or_lava(region.block_state(center.offset(dx, 0, dz))) {
                 return false;
             }
@@ -133,7 +134,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    fn random_f32_between(random: &mut Xoroshiro, min: f32, max: f32) -> f32 {
+    fn random_f32_between(random: &mut WorldgenRandom, min: f32, max: f32) -> f32 {
         random.next_f32() * (max - min) + min
     }
 }
@@ -142,7 +143,7 @@ impl LargeDripstone {
     fn new(
         root: BlockPos,
         pointing_up: bool,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         radius: i32,
         bluntness: steel_utils::value_providers::FloatProvider,
         height_scale: steel_utils::value_providers::FloatProvider,
@@ -209,7 +210,7 @@ impl LargeDripstone {
         &self,
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         wind: &WindOffsetter,
     ) {
         for dx in -self.radius..=self.radius {
@@ -280,7 +281,7 @@ impl LargeDripstone {
 impl WindOffsetter {
     fn new(
         origin_y: i32,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         wind_speed_range: steel_utils::value_providers::FloatProvider,
     ) -> Self {
         let speed = wind_speed_range.sample(random);
@@ -289,8 +290,8 @@ impl WindOffsetter {
         Self {
             origin_y,
             wind_speed: Some((
-                f64::from(direction.cos() * speed),
-                f64::from(direction.sin() * speed),
+                f64::from(mth::cos(f64::from(direction)) * speed),
+                f64::from(mth::sin(f64::from(direction)) * speed),
             )),
         }
     }

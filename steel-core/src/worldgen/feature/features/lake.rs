@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_lake_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &LakeConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -36,7 +36,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    fn carve_lake_ellipsoid(random: &mut Xoroshiro, grid: &mut [bool]) {
+    fn carve_lake_ellipsoid(random: &mut WorldgenRandom, grid: &mut [bool]) {
         let x_radius = random.next_f64() * 6.0 + 3.0;
         let y_radius = random.next_f64() * 4.0 + 2.0;
         let z_radius = random.next_f64() * 6.0 + 3.0;
@@ -121,7 +121,7 @@ impl FeatureDecorationRunner {
     fn place_lake_barrier(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &LakeConfiguration,
         grid: &[bool],
         origin: BlockPos,

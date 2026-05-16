@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
         pos: BlockPos,
     ) -> Option<BlockStateId> {
@@ -32,7 +32,7 @@ impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
         pos: BlockPos,
     ) -> BlockStateId {
@@ -95,7 +95,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    pub(super) fn random_axis(random: &mut Xoroshiro) -> Axis {
+    pub(super) fn random_axis(random: &mut WorldgenRandom) -> Axis {
         match random.next_i32_bounded(3) {
             0 => Axis::X,
             1 => Axis::Y,
@@ -155,7 +155,7 @@ impl FeatureDecorationRunner {
 
     pub(super) fn sample_noise_threshold_provider(
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &NoiseThresholdProvider,
         pos: BlockPos,
     ) -> BlockStateId {
@@ -256,7 +256,7 @@ impl FeatureDecorationRunner {
 
     pub(super) fn random_block_state_from_data_list(
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         states: &[BlockStateData],
     ) -> BlockStateId {
         assert!(

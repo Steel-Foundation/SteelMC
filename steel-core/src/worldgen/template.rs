@@ -15,7 +15,7 @@ use steel_registry::structure_processor::{
 use steel_registry::{Registry, RegistryExt, TaggedRegistryExt, vanilla_template_pools};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::random::xoroshiro::Xoroshiro;
+use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Identifier, Rotation, types::UpdateFlags};
 
 use crate::worldgen::region::WorldGenRegion;
@@ -303,7 +303,7 @@ impl StructureTemplate {
         position: BlockPos,
         reference_pos: BlockPos,
         settings: &StructurePlaceSettings<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         flags: UpdateFlags,
     ) -> bool {
         let palette = self.palette(random);
@@ -347,7 +347,7 @@ impl StructureTemplate {
         placed_any
     }
 
-    fn palette(&self, random: &mut Xoroshiro) -> &StructureTemplatePalette {
+    fn palette(&self, random: &mut WorldgenRandom) -> &StructureTemplatePalette {
         if self.palettes.len() <= 1 {
             return &self.palettes[0];
         }
@@ -377,7 +377,7 @@ impl StructureTemplate {
         original: &ProcessedBlockInfo,
         settings: &StructurePlaceSettings<'_>,
         reference_pos: BlockPos,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
     ) -> Option<ProcessedBlockInfo> {
         let mut current = original.clone();
         for processor in settings.processors {
@@ -401,7 +401,7 @@ impl StructureTemplate {
         original: &ProcessedBlockInfo,
         current: ProcessedBlockInfo,
         reference_pos: BlockPos,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
     ) -> Option<ProcessedBlockInfo> {
         match processor {
             StructureProcessorKind::BlockRot {

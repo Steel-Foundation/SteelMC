@@ -27,12 +27,12 @@ impl FeatureDecorationRunner {
         Direction::West,
     ];
 
-    pub(super) fn random_horizontal_direction(random: &mut Xoroshiro) -> Direction {
+    pub(super) fn random_horizontal_direction(random: &mut WorldgenRandom) -> Direction {
         Self::VANILLA_HORIZONTAL_DIRECTIONS[random.next_i32_bounded(4) as usize]
     }
 
     pub(super) fn shuffled_directions<const N: usize>(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         mut directions: [Direction; N],
     ) -> [Direction; N] {
         for i in (1..N).rev() {
@@ -81,6 +81,26 @@ impl FeatureDecorationRunner {
         }
     }
 
+    pub(super) fn for_each_vanilla_between_closed(
+        min: BlockPos,
+        max: BlockPos,
+        mut visitor: impl FnMut(BlockPos),
+    ) {
+        let width = max.x() - min.x() + 1;
+        let height = max.y() - min.y() + 1;
+        let depth = max.z() - min.z() + 1;
+        debug_assert!(width > 0 && height > 0 && depth > 0);
+
+        let end = i64::from(width) * i64::from(height) * i64::from(depth);
+        for index in 0..end {
+            let x = (index % i64::from(width)) as i32;
+            let slice = index / i64::from(width);
+            let y = (slice % i64::from(height)) as i32;
+            let z = (slice / i64::from(height)) as i32;
+            visitor(BlockPos::new(min.x() + x, min.y() + y, min.z() + z));
+        }
+    }
+
     const fn abs_diff(left: i32, right: i32) -> i32 {
         if left >= right {
             left - right
@@ -121,7 +141,7 @@ impl FeatureDecorationRunner {
         let origin = BlockPos::new(center.0.x * 16, region.min_y(), center.0.y * 16);
         let possible_biomes = self.collect_possible_biome_ids(region);
 
-        let mut random = Xoroshiro::from_seed(0);
+        let mut random = WorldgenRandom::from_seed(0);
         let decoration_seed = random.set_decoration_seed(seed, origin.x(), origin.z());
         let step_count = DECORATION_STEP_COUNT.max(self.sorter.step_count());
 
@@ -178,7 +198,7 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         decoration_seed: i64,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         step: usize,
         step_features: &FeatureStepData,
@@ -223,10 +243,10 @@ impl FeatureDecorationRunner {
             let Ok(step_i32) = i32::try_from(step) else {
                 panic!("decoration step {step} exceeds i32 range");
             };
-            random.set_feature_seed(decoration_seed, feature_index_i32, step_i32);
             let Some(feature) = step_features.feature(feature_index) else {
                 panic!("decoration step {step} references missing feature index {feature_index}");
             };
+            random.set_feature_seed(decoration_seed, feature_index_i32, step_i32);
             Self::place_placed_feature_entry(
                 region,
                 registry,

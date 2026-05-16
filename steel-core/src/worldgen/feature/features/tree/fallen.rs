@@ -6,7 +6,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_fallen_tree_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &FallenTreeConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -58,7 +58,7 @@ impl FeatureDecorationRunner {
     fn place_fallen_tree_stump(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &FallenTreeConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -90,7 +90,7 @@ impl FeatureDecorationRunner {
     fn place_fallen_log(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &FallenTreeConfiguration,
         log_length: i32,
         mut log_start_pos: BlockPos,
@@ -170,7 +170,7 @@ impl FeatureDecorationRunner {
     fn place_fallen_log_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &FallenTreeConfiguration,
         pos: BlockPos,
         axis: Option<Axis>,

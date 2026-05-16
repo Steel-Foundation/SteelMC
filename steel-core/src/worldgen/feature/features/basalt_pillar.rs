@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_basalt_pillar_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         if !region.block_state(origin).is_air() || region.block_state(origin.above()).is_air() {
@@ -79,7 +79,7 @@ impl FeatureDecorationRunner {
 
     pub(in crate::worldgen::feature) fn place_basalt_pillar_base_hangoff(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         basalt: BlockStateId,
         pos: BlockPos,
     ) {
@@ -90,7 +90,7 @@ impl FeatureDecorationRunner {
 
     pub(in crate::worldgen::feature) fn place_basalt_pillar_hangoff(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         basalt: BlockStateId,
         pos: BlockPos,
     ) -> bool {

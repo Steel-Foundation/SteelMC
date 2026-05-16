@@ -27,7 +27,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_dripstone_cluster_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &DripstoneClusterConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -62,7 +62,7 @@ impl FeatureDecorationRunner {
     fn place_dripstone_cluster_column(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         dx: i32,
         dz: i32,
@@ -265,7 +265,7 @@ impl FeatureDecorationRunner {
     }
 
     fn dripstone_cluster_height(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         dx: i32,
         dz: i32,
         density: f32,
@@ -277,13 +277,13 @@ impl FeatureDecorationRunner {
         }
 
         let distance_from_center = dx.abs() + dz.abs();
-        let height_mean = Self::clamped_map_f32(
-            distance_from_center as f32,
+        let height_mean = Self::clamped_map_f64(
+            f64::from(distance_from_center),
             0.0,
-            config.max_distance_from_center_affecting_height_bias as f32,
-            max_height as f32 / 2.0,
+            f64::from(config.max_distance_from_center_affecting_height_bias),
+            f64::from(max_height) / 2.0,
             0.0,
-        );
+        ) as f32;
         Self::random_between_biased(
             random,
             0.0,
@@ -406,8 +406,20 @@ impl FeatureDecorationRunner {
         new_min + factor * (new_max - new_min)
     }
 
+    fn clamped_map_f64(value: f64, old_min: f64, old_max: f64, new_min: f64, new_max: f64) -> f64 {
+        if value <= old_min {
+            return new_min;
+        }
+        if value >= old_max {
+            return new_max;
+        }
+
+        let factor = (value - old_min) / (old_max - old_min);
+        new_min + factor * (new_max - new_min)
+    }
+
     fn random_between_biased(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         min: f32,
         max: f32,
         mean: f32,

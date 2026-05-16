@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_bamboo_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &BambooConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -58,7 +58,7 @@ impl FeatureDecorationRunner {
 
     fn place_bamboo_podzol_disc(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) {
         let radius = random.next_i32_bounded(4) + 1;

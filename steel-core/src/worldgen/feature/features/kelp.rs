@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_kelp_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let mut placed = 0;
@@ -52,7 +52,7 @@ impl FeatureDecorationRunner {
         placed > 0
     }
 
-    fn aged_kelp_head(state: BlockStateId, random: &mut Xoroshiro) -> BlockStateId {
+    fn aged_kelp_head(state: BlockStateId, random: &mut WorldgenRandom) -> BlockStateId {
         let age = (random.next_i32_bounded(4) + 20) as u8;
         state.set_value(&BlockStateProperties::AGE_25, age)
     }

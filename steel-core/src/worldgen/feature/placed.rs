@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_placed_feature_entry(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: PlacedFeatureEntryRef,
         biome_zoom_seed: i64,
@@ -27,7 +27,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_placed_feature_data(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureData,
         biome_filter_feature_id: Option<usize>,
@@ -52,7 +52,7 @@ impl FeatureDecorationRunner {
     fn place_placed_feature_from_modifier(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureData,
         biome_filter_feature_id: Option<usize>,
@@ -102,7 +102,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_placed_feature_ref(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureRef,
         biome_zoom_seed: i64,

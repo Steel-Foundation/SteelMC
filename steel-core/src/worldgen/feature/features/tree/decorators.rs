@@ -1,5 +1,6 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
+use super::super::super::vanilla_collections::JavaBlockPosSet;
 use super::TreePlacement;
 
 use crate::block_entity::entities::BeehiveBlockEntity;
@@ -12,7 +13,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_tree_decorators(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         decorators: &[TreeDecorator],
         placement: &mut TreePlacement,
         biome_zoom_seed: i64,
@@ -95,7 +96,7 @@ impl FeatureDecorationRunner {
     fn place_alter_ground_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
         placement: &mut TreePlacement,
     ) {
@@ -160,7 +161,7 @@ impl FeatureDecorationRunner {
     fn place_alter_ground_circle(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
         pos: BlockPos,
         placement: &mut TreePlacement,
@@ -184,7 +185,7 @@ impl FeatureDecorationRunner {
     fn place_alter_ground_block_at(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
         pos: BlockPos,
         placement: &mut TreePlacement,
@@ -207,7 +208,7 @@ impl FeatureDecorationRunner {
     fn place_on_ground_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         decorator: &PlaceOnGroundDecorator,
         placement: &mut TreePlacement,
     ) {
@@ -257,7 +258,7 @@ impl FeatureDecorationRunner {
     fn attempt_place_tree_ground_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
         pos: BlockPos,
         placement: &mut TreePlacement,
@@ -280,7 +281,7 @@ impl FeatureDecorationRunner {
 
     fn place_trunk_vine_tree_decorator(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         placement: &mut TreePlacement,
     ) {
         for log in Self::sorted_tree_positions(&placement.trunks) {
@@ -321,7 +322,7 @@ impl FeatureDecorationRunner {
 
     fn place_leave_vine_tree_decorator(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         probability: f32,
         placement: &mut TreePlacement,
     ) {
@@ -383,7 +384,7 @@ impl FeatureDecorationRunner {
     fn place_cocoa_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         probability: f32,
         placement: &mut TreePlacement,
     ) {
@@ -461,7 +462,7 @@ impl FeatureDecorationRunner {
     fn place_beehive_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         probability: f32,
         placement: &mut TreePlacement,
     ) {
@@ -530,7 +531,7 @@ impl FeatureDecorationRunner {
     fn place_attached_to_leaves_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         decorator: &AttachedToLeavesDecorator,
         placement: &mut TreePlacement,
     ) {
@@ -573,7 +574,7 @@ impl FeatureDecorationRunner {
     fn place_attached_to_logs_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         decorator: &AttachedToLogsDecorator,
         placement: &mut TreePlacement,
     ) {
@@ -602,7 +603,7 @@ impl FeatureDecorationRunner {
     fn place_pale_moss_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         leaves_probability: f32,
         trunk_probability: f32,
         ground_probability: f32,
@@ -655,7 +656,7 @@ impl FeatureDecorationRunner {
     fn place_creaking_heart_tree_decorator(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         probability: f32,
         placement: &mut TreePlacement,
     ) {
@@ -689,7 +690,7 @@ impl FeatureDecorationRunner {
 
     fn add_pale_moss_hanger(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         mut pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
@@ -740,7 +741,7 @@ impl FeatureDecorationRunner {
     }
 
     fn random_tree_decorator_direction(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         directions: &[Direction],
     ) -> Direction {
         assert!(
@@ -753,13 +754,13 @@ impl FeatureDecorationRunner {
         directions[random.next_i32_bounded(direction_count) as usize]
     }
 
-    fn sorted_tree_positions(positions: &FxHashSet<BlockPos>) -> Vec<BlockPos> {
-        let mut positions = positions.iter().copied().collect::<Vec<_>>();
+    fn sorted_tree_positions(positions: &JavaBlockPosSet) -> Vec<BlockPos> {
+        let mut positions = positions.java_ordered_positions();
         positions.sort_by_key(BlockPos::y);
         positions
     }
 
-    fn shuffle_tree_positions(random: &mut Xoroshiro, positions: &mut [BlockPos]) {
+    fn shuffle_tree_positions(random: &mut WorldgenRandom, positions: &mut [BlockPos]) {
         for i in (1..positions.len()).rev() {
             let Ok(bound) = i32::try_from(i + 1) else {
                 panic!("tree decorator shuffle length exceeds i32 range");

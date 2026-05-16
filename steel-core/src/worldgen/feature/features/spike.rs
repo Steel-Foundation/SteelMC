@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_spike_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &SpikeConfiguration,
         mut origin: BlockPos,
     ) -> bool {
@@ -43,7 +43,7 @@ impl FeatureDecorationRunner {
     fn place_spike_body(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &SpikeConfiguration,
         origin: BlockPos,
         height: i32,
@@ -95,7 +95,7 @@ impl FeatureDecorationRunner {
     fn place_spike_base(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &SpikeConfiguration,
         origin: BlockPos,
         width: i32,

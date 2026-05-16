@@ -4,7 +4,7 @@
 
 **VANILLA FUNCTIONALITY** - We should keep 1:1 Vanilla functionality. If a compromise can be made you MUST present the issue at hand to the user first.
 
-**BIOME DETERMINISM** - Steel intentionally uses deterministic per-sampler biome caching instead of vanilla's `ThreadLocal` biome cache. Do not reproduce vanilla's generation-order-dependent biome tie-breaking; when a mismatch is caused only by that vanilla nondeterminism, document the exact case instead of adding thread locals.
+**BIOME DETERMINISM** - Steel and the SteelExtractor hash harness use deterministic per-sampler biome caching. Do not dismiss feature hash mismatches as vanilla `ThreadLocal` biome-cache nondeterminism, and do not add thread-local biome behavior without an explicit design discussion.
 
 **SKETCHY WORKAROUND PROTOCOL** — Halt and ask permission before using:
 - `.clone()` to appease borrow checker, `.unwrap()`/`.expect()` in production, `unsafe`

@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_underwater_magma_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &UnderwaterMagmaConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -16,25 +16,22 @@ impl FeatureDecorationRunner {
         let radius = config.placement_radius_around_floor;
         let mut placed = false;
 
-        for x in floor_pos.x() - radius..=floor_pos.x() + radius {
-            for y in floor_pos.y() - radius..=floor_pos.y() + radius {
-                for z in floor_pos.z() - radius..=floor_pos.z() + radius {
-                    let pos = BlockPos::new(x, y, z);
-                    if random.next_f32() >= config.placement_probability_per_valid_position {
-                        continue;
-                    }
-
-                    if Self::underwater_magma_valid_placement(region, pos) {
-                        let did_place = region.set_block_state(
-                            pos,
-                            vanilla_blocks::MAGMA_BLOCK.default_state(),
-                            UpdateFlags::UPDATE_CLIENTS,
-                        );
-                        placed |= did_place;
-                    }
+        Self::for_each_vanilla_between_closed(
+            floor_pos.offset(-radius, -radius, -radius),
+            floor_pos.offset(radius, radius, radius),
+            |pos| {
+                if random.next_f32() < config.placement_probability_per_valid_position
+                    && Self::underwater_magma_valid_placement(region, pos)
+                {
+                    let did_place = region.set_block_state(
+                        pos,
+                        vanilla_blocks::MAGMA_BLOCK.default_state(),
+                        UpdateFlags::UPDATE_CLIENTS,
+                    );
+                    placed |= did_place;
                 }
-            }
-        }
+            },
+        );
 
         placed
     }

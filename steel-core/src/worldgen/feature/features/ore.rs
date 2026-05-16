@@ -1,18 +1,18 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use steel_utils::math::mth;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_ore_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         origin: BlockPos,
     ) -> bool {
         if config.size <= 0 {
             return false;
         }
-
         let direction = random.next_f32() * std::f32::consts::PI;
         let spread_xz = config.size as f32 / 8.0;
         let spread_xz_ceil = spread_xz.ceil() as i32;
@@ -52,7 +52,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn do_place_ore(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         x0: f64,
         x1: f64,
@@ -74,7 +74,8 @@ impl FeatureDecorationRunner {
         for i in 0..size {
             let step = i as f32 / config.size as f32;
             let size_factor = random.next_f64() * f64::from(config.size) / 16.0;
-            let radius = ((std::f32::consts::PI * step).sin() as f64 + 1.0) * size_factor + 1.0;
+            let radius_wave = mth::sin(f64::from(std::f32::consts::PI * step)) + 1.0;
+            let radius = f64::from(radius_wave) * size_factor + 1.0;
             vein_nodes[i] = [
                 lerp(f64::from(step), x0, x1),
                 lerp(f64::from(step), y0, y1),
@@ -179,7 +180,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_scattered_ore_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -202,7 +203,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn random_scattered_ore_offset(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         max_distance: i32,
     ) -> i32 {
         Self::java_round_f32((random.next_f32() - random.next_f32()) * max_distance as f32)
@@ -215,7 +216,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn try_place_ore_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         pos: BlockPos,
     ) -> bool {
@@ -233,7 +234,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn try_place_ore_block_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         pos: BlockPos,
     ) -> bool {
@@ -259,7 +260,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn can_place_ore(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         target: &OreTarget,
         pos: BlockPos,
@@ -279,7 +280,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn can_place_ore_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &OreConfiguration,
         target: &OreTarget,
         pos: BlockPos,
@@ -317,7 +318,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(in crate::worldgen::feature) fn should_skip_air_check(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         discard_chance_on_air_exposure: f32,
     ) -> bool {
         if discard_chance_on_air_exposure <= 0.0 {

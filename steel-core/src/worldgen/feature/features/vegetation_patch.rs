@@ -1,11 +1,12 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use super::super::vanilla_collections::JavaBlockPosSet;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_vegetation_patch_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &VegetationPatchConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -30,7 +31,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_waterlogged_vegetation_patch_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &VegetationPatchConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -41,9 +42,9 @@ impl FeatureDecorationRunner {
             region, registry, random, config, origin, x_radius, z_radius,
         );
         let water_surface = Self::waterlogged_vegetation_patch_surface(region, &surface);
-        for surface_pos in &water_surface {
+        for surface_pos in water_surface.java_ordered_positions() {
             let _ = region.set_block_state(
-                *surface_pos,
+                surface_pos,
                 vanilla_blocks::WATER.default_state(),
                 UpdateFlags::UPDATE_CLIENTS,
             );
@@ -64,15 +65,15 @@ impl FeatureDecorationRunner {
     fn place_vegetation_patch_ground(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &VegetationPatchConfiguration,
         origin: BlockPos,
         x_radius: i32,
         z_radius: i32,
-    ) -> Vec<BlockPos> {
+    ) -> JavaBlockPosSet {
         let inwards = Self::vegetation_patch_surface_direction(config.surface);
         let outwards = inwards.opposite();
-        let mut surface = Vec::new();
+        let mut surface = JavaBlockPosSet::default();
 
         for dx in -x_radius..=x_radius {
             let is_x_edge = dx == -x_radius || dx == x_radius;
@@ -130,7 +131,7 @@ impl FeatureDecorationRunner {
                     inwards,
                     depth,
                 ) {
-                    surface.push(below_pos);
+                    surface.insert(below_pos);
                 }
             }
         }
@@ -141,7 +142,7 @@ impl FeatureDecorationRunner {
     fn place_vegetation_patch_ground_column(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &VegetationPatchConfiguration,
         pos: &mut BlockPos,
         inwards: Direction,
@@ -175,9 +176,9 @@ impl FeatureDecorationRunner {
     fn distribute_vegetation_patch(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &VegetationPatchConfiguration,
-        surface: &[BlockPos],
+        surface: &JavaBlockPosSet,
         biome_zoom_seed: i64,
         waterlogged: bool,
     ) {
@@ -186,7 +187,7 @@ impl FeatureDecorationRunner {
         }
 
         let outwards = Self::vegetation_patch_surface_direction(config.surface).opposite();
-        for surface_pos in surface {
+        for surface_pos in surface.java_ordered_positions() {
             if random.next_f32() >= config.vegetation_chance {
                 continue;
             }
@@ -205,10 +206,10 @@ impl FeatureDecorationRunner {
                 biome_zoom_seed,
             );
             if waterlogged && placed {
-                let state = region.block_state(*surface_pos);
+                let state = region.block_state(surface_pos);
                 if let Some(false) = state.try_get_value(&BlockStateProperties::WATERLOGGED) {
                     let _ = region.set_block_state(
-                        *surface_pos,
+                        surface_pos,
                         state.set_value(&BlockStateProperties::WATERLOGGED, true),
                         UpdateFlags::UPDATE_CLIENTS,
                     );
@@ -219,13 +220,15 @@ impl FeatureDecorationRunner {
 
     fn waterlogged_vegetation_patch_surface(
         region: &WorldGenRegion<'_>,
-        surface: &[BlockPos],
-    ) -> Vec<BlockPos> {
-        surface
-            .iter()
-            .copied()
-            .filter(|pos| !Self::vegetation_patch_surface_exposed(region, *pos))
-            .collect()
+        surface: &JavaBlockPosSet,
+    ) -> JavaBlockPosSet {
+        let mut water_surface = JavaBlockPosSet::default();
+        for pos in surface.java_ordered_positions() {
+            if !Self::vegetation_patch_surface_exposed(region, pos) {
+                water_surface.insert(pos);
+            }
+        }
+        water_surface
     }
 
     fn vegetation_patch_surface_exposed(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {

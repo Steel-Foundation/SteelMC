@@ -4,7 +4,7 @@ use super::TreePlacement;
 
 impl FeatureDecorationRunner {
     pub(super) fn tree_root_origin(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         root_placer: Option<&RootPlacer>,
     ) -> BlockPos {
@@ -19,7 +19,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_tree_roots(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         trunk_origin: BlockPos,
         config: &TreeConfiguration,
@@ -42,7 +42,7 @@ impl FeatureDecorationRunner {
     fn place_mangrove_tree_roots(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         trunk_origin: BlockPos,
         placer: &MangroveRootPlacer,
@@ -94,7 +94,7 @@ impl FeatureDecorationRunner {
     fn simulate_mangrove_tree_roots(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         root_pos: BlockPos,
         direction: Direction,
         root_origin: BlockPos,
@@ -140,7 +140,7 @@ impl FeatureDecorationRunner {
     fn potential_mangrove_root_positions(
         pos: BlockPos,
         previous_direction: Direction,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         root_origin: BlockPos,
         placement: &MangroveRootPlacement,
     ) -> Vec<BlockPos> {
@@ -177,7 +177,7 @@ impl FeatureDecorationRunner {
     fn place_mangrove_tree_root(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         placer: &MangroveRootPlacer,
         placement: &mut TreePlacement,

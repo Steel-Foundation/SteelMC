@@ -8,7 +8,7 @@ const FANCY_BRANCH_SLOPE: f64 = 0.381;
 const FANCY_BRANCH_LENGTH_MAGIC: f64 = 0.328;
 
 impl FeatureDecorationRunner {
-    pub(super) fn tree_height(random: &mut Xoroshiro, placer: &TrunkPlacer) -> i32 {
+    pub(super) fn tree_height(random: &mut WorldgenRandom, placer: &TrunkPlacer) -> i32 {
         match placer {
             TrunkPlacer::Straight(base)
             | TrunkPlacer::Giant(base)
@@ -43,7 +43,7 @@ impl FeatureDecorationRunner {
     }
 
     fn sample_tree_height(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         base_height: i32,
         height_rand_a: i32,
         height_rand_b: i32,
@@ -56,7 +56,7 @@ impl FeatureDecorationRunner {
     pub(super) fn place_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -153,7 +153,7 @@ impl FeatureDecorationRunner {
     fn place_straight_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -176,7 +176,7 @@ impl FeatureDecorationRunner {
     fn place_forking_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -254,7 +254,7 @@ impl FeatureDecorationRunner {
     fn place_giant_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -334,7 +334,7 @@ impl FeatureDecorationRunner {
     fn place_mega_jungle_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -377,7 +377,7 @@ impl FeatureDecorationRunner {
     fn place_bending_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -425,7 +425,7 @@ impl FeatureDecorationRunner {
     fn place_upwards_branching_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -485,7 +485,7 @@ impl FeatureDecorationRunner {
     fn place_upwards_branching_tree_branch(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         config: &TreeConfiguration,
         placer: &UpwardsBranchingTrunkPlacer,
@@ -551,7 +551,7 @@ impl FeatureDecorationRunner {
     fn place_cherry_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -641,7 +641,7 @@ impl FeatureDecorationRunner {
     fn generate_cherry_tree_branch(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -719,7 +719,7 @@ impl FeatureDecorationRunner {
     fn place_dark_oak_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -836,7 +836,7 @@ impl FeatureDecorationRunner {
     fn place_fancy_tree_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         origin: BlockPos,
         config: &TreeConfiguration,
@@ -947,7 +947,7 @@ impl FeatureDecorationRunner {
     fn make_fancy_tree_limb(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         start_pos: BlockPos,
         end_pos: BlockPos,
         do_place: bool,
@@ -1031,7 +1031,7 @@ impl FeatureDecorationRunner {
     fn make_fancy_tree_branches(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         height: i32,
         origin: BlockPos,
         foliage_coords: &[FancyFoliageCoords],
@@ -1060,7 +1060,7 @@ impl FeatureDecorationRunner {
     fn place_tree_log_with_axis(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         axis: Axis,
         config: &TreeConfiguration,
@@ -1085,7 +1085,7 @@ impl FeatureDecorationRunner {
     fn place_fancy_tree_log(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         axis: Axis,
         config: &TreeConfiguration,
@@ -1122,7 +1122,7 @@ impl FeatureDecorationRunner {
     fn place_below_trunk_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
@@ -1142,7 +1142,7 @@ impl FeatureDecorationRunner {
     fn place_tree_log(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
@@ -1165,7 +1165,7 @@ impl FeatureDecorationRunner {
     fn place_tree_log_growing_through(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         can_grow_through: &Identifier,
         config: &TreeConfiguration,

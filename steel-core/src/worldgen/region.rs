@@ -16,6 +16,7 @@ use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef, fluid::FluidRef,
     vanilla_blocks,
 };
+use steel_utils::random::RandomSource;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
 
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
@@ -42,6 +43,7 @@ pub struct WorldGenRegion<'a> {
     step: &'a ChunkStep,
     cache: &'a StaticCache2D<Arc<ChunkHolder>>,
     center: ChunkPos,
+    random: RandomSource,
     sub_tick_count: AtomicI64,
 }
 
@@ -70,12 +72,14 @@ impl<'a> WorldGenRegion<'a> {
         step: &'a ChunkStep,
         cache: &'a StaticCache2D<Arc<ChunkHolder>>,
         center: ChunkPos,
+        random: RandomSource,
     ) -> Self {
         Self {
             context,
             step,
             cache,
             center,
+            random,
             sub_tick_count: AtomicI64::new(0),
         }
     }
@@ -84,6 +88,11 @@ impl<'a> WorldGenRegion<'a> {
     #[must_use]
     pub const fn center(&self) -> ChunkPos {
         self.center
+    }
+
+    /// Returns the random source exposed by vanilla `WorldGenRegion.getRandom()`.
+    pub fn random_mut(&mut self) -> &mut RandomSource {
+        &mut self.random
     }
 
     /// Returns the minimum build height.

@@ -17,7 +17,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_multiface_growth_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &MultifaceGrowthConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -75,7 +75,7 @@ impl FeatureDecorationRunner {
     fn place_multiface_growth_if_possible(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         old_state: BlockStateId,
         config: &MultifaceGrowthConfiguration,
@@ -122,7 +122,7 @@ impl FeatureDecorationRunner {
     fn spread_multiface_from_face_toward_random_direction(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &MultifaceGrowthConfiguration,
         state: BlockStateId,
         pos: BlockPos,
@@ -479,7 +479,7 @@ impl FeatureDecorationRunner {
     }
 
     fn multiface_shuffled_valid_directions(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &MultifaceGrowthConfiguration,
     ) -> Vec<Direction> {
         let mut directions = Self::multiface_valid_directions(config);
@@ -488,7 +488,7 @@ impl FeatureDecorationRunner {
     }
 
     fn multiface_shuffled_valid_directions_except(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &MultifaceGrowthConfiguration,
         excluded: Direction,
     ) -> Vec<Direction> {
@@ -514,7 +514,7 @@ impl FeatureDecorationRunner {
         directions
     }
 
-    fn shuffle_multiface_directions(random: &mut Xoroshiro, directions: &mut [Direction]) {
+    fn shuffle_multiface_directions(random: &mut WorldgenRandom, directions: &mut [Direction]) {
         for i in (1..directions.len()).rev() {
             let Ok(bound) = i32::try_from(i + 1) else {
                 panic!("multiface direction shuffle length exceeds i32 range");

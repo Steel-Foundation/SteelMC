@@ -11,7 +11,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_huge_brown_mushroom_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -28,7 +28,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_huge_red_mushroom_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -45,7 +45,7 @@ impl FeatureDecorationRunner {
     fn place_huge_mushroom_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
         kind: HugeMushroomKind,
@@ -81,7 +81,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    fn huge_mushroom_tree_height(random: &mut Xoroshiro) -> i32 {
+    fn huge_mushroom_tree_height(random: &mut WorldgenRandom) -> i32 {
         let mut tree_height = random.next_i32_bounded(3) + 4;
         if random.next_i32_bounded(12) == 0 {
             tree_height *= 2;
@@ -130,7 +130,7 @@ impl FeatureDecorationRunner {
     fn make_brown_mushroom_cap(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
         tree_height: i32,
@@ -174,7 +174,7 @@ impl FeatureDecorationRunner {
     fn make_red_mushroom_cap(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
         tree_height: i32,
@@ -230,7 +230,7 @@ impl FeatureDecorationRunner {
     fn place_huge_mushroom_trunk(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
         tree_height: i32,

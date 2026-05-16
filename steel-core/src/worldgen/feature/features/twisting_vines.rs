@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_twisting_vines_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TwistingVinesConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -57,7 +57,7 @@ impl FeatureDecorationRunner {
 
     fn place_twisting_vines_column(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         mut place_pos: BlockPos,
         total_height: i32,
         min_age: u8,

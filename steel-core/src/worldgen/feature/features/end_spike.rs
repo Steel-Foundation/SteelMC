@@ -16,7 +16,7 @@ const END_SPIKE_CAGE_HEIGHT: i32 = 3;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_end_spike_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &EndSpikeConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -75,7 +75,7 @@ impl FeatureDecorationRunner {
 
     fn place_end_spike(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &EndSpikeConfiguration,
         spike: &EndSpike,
     ) {
@@ -165,7 +165,7 @@ impl FeatureDecorationRunner {
 
     fn place_end_spike_crystal(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &EndSpikeConfiguration,
         spike: &EndSpike,
     ) {

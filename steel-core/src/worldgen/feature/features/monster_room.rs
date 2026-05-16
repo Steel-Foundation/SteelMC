@@ -13,7 +13,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_monster_room_feature(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let xr = random.next_i32_bounded(2) + 2;

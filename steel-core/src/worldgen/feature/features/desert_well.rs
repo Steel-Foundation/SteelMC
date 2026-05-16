@@ -6,7 +6,7 @@ const DESERT_WELL_ARCHAEOLOGY: &str = "minecraft:archaeology/desert_well";
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_desert_well_feature(
         region: &WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let mut origin = origin.above();

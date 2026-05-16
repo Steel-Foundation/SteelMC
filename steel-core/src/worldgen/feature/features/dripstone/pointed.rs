@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_pointed_dripstone_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &PointedDripstoneConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -31,7 +31,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn pointed_dripstone_tip_direction(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
     ) -> Option<Direction> {
         let can_place_above = Self::is_dripstone_base(registry, region.block_state(pos.above()));
@@ -54,7 +54,7 @@ impl FeatureDecorationRunner {
     fn create_patch_of_dripstone_blocks(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         config: &PointedDripstoneConfiguration,
     ) {
@@ -195,7 +195,7 @@ impl FeatureDecorationRunner {
         state.is_air() || state.get_block() == &vanilla_blocks::WATER
     }
 
-    fn random_vanilla_direction(random: &mut Xoroshiro) -> Direction {
+    fn random_vanilla_direction(random: &mut WorldgenRandom) -> Direction {
         Self::VANILLA_DIRECTION_VALUES[random.next_i32_bounded(6) as usize]
     }
 }

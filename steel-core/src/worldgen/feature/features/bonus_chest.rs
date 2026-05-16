@@ -6,7 +6,7 @@ const SPAWN_BONUS_CHEST: &str = "minecraft:chests/spawn_bonus_chest";
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_bonus_chest_feature(
         region: &WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(origin.x());
@@ -53,7 +53,7 @@ impl FeatureDecorationRunner {
         false
     }
 
-    fn shuffled_inclusive_range(start: i32, end: i32, random: &mut Xoroshiro) -> Vec<i32> {
+    fn shuffled_inclusive_range(start: i32, end: i32, random: &mut WorldgenRandom) -> Vec<i32> {
         let mut values: Vec<i32> = (start..=end).collect();
         for i in (1..values.len()).rev() {
             let bound = (i + 1) as i32;

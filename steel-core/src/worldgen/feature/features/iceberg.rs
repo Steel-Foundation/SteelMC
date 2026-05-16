@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_iceberg_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &BlockStateData,
         origin: BlockPos,
     ) -> bool {
@@ -142,7 +142,7 @@ impl FeatureDecorationRunner {
     )]
     fn generate_iceberg_cut_out(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         width: i32,
         height: i32,
         global_origin: BlockPos,
@@ -266,7 +266,7 @@ impl FeatureDecorationRunner {
     )]
     fn generate_iceberg_block(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
         height: i32,
         x_offset: i32,
@@ -325,7 +325,7 @@ impl FeatureDecorationRunner {
     )]
     fn set_iceberg_shape_block(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         pos: BlockPos,
         height_difference: i32,
         height: i32,
@@ -369,7 +369,7 @@ impl FeatureDecorationRunner {
         z_offset: i32,
         origin: BlockPos,
         radius: i32,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
     ) -> f64 {
         let offset = 10.0 * random.next_f32().clamp(0.2, 0.8) / radius as f32;
         f64::from(offset)
@@ -398,7 +398,7 @@ impl FeatureDecorationRunner {
     }
 
     fn height_dependent_radius_round(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         y_offset: i32,
         height: i32,
         width: i32,
@@ -423,7 +423,7 @@ impl FeatureDecorationRunner {
     }
 
     fn height_dependent_radius_steep(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         y_offset: i32,
         height: i32,
         width: i32,

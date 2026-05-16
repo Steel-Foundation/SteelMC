@@ -1,5 +1,6 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use super::super::vanilla_collections::JavaBlockPosSet;
 
 mod decorators;
 mod fallen;
@@ -13,7 +14,7 @@ impl FeatureDecorationRunner {
     pub(crate) fn place_tree_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -45,7 +46,7 @@ impl FeatureDecorationRunner {
     fn do_place_tree(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         origin: BlockPos,
         placement: &mut TreePlacement,
@@ -254,10 +255,10 @@ struct FoliageAttachment {
 
 #[derive(Default)]
 struct TreePlacement {
-    roots: FxHashSet<BlockPos>,
-    trunks: FxHashSet<BlockPos>,
-    foliage: FxHashSet<BlockPos>,
-    decorations: FxHashSet<BlockPos>,
+    roots: JavaBlockPosSet,
+    trunks: JavaBlockPosSet,
+    foliage: JavaBlockPosSet,
+    decorations: JavaBlockPosSet,
 }
 
 impl TreePlacement {
@@ -302,10 +303,10 @@ impl TreeBounds {
         let mut bounds: Option<Self> = None;
         for &pos in placement
             .roots
-            .iter()
-            .chain(placement.trunks.iter())
-            .chain(placement.foliage.iter())
-            .chain(placement.decorations.iter())
+            .insertion_order()
+            .chain(placement.trunks.insertion_order())
+            .chain(placement.foliage.insertion_order())
+            .chain(placement.decorations.insertion_order())
         {
             match &mut bounds {
                 Some(bounds) => bounds.include(pos),

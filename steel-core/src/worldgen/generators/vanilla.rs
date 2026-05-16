@@ -10,7 +10,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::carver::ConfiguredCarverKind;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::random::{
-    Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
+    Random, RandomSource, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -29,7 +29,7 @@ use crate::worldgen::carver::{
     CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
-use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::{ChunkGenerator, worldgen_region_random_from_splitter};
 use crate::worldgen::noise::aquifer::{
     Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level,
 };
@@ -1085,6 +1085,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         };
 
         run.run_all(&source_biomes, seed_i64, &mut random);
+    }
+
+    fn create_worldgen_region_random(&self, _world_seed: i64, center: ChunkPos) -> RandomSource {
+        worldgen_region_random_from_splitter(&self.splitter, center)
     }
 
     fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {

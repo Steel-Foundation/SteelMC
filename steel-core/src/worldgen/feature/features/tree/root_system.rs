@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_root_system_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &RootSystemConfiguration,
         origin: BlockPos,
         biome_zoom_seed: i64,
@@ -37,7 +37,7 @@ impl FeatureDecorationRunner {
     fn place_root_system_dirt_and_tree(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &RootSystemConfiguration,
         tree_pos: &mut BlockPos,
         origin: BlockPos,
@@ -122,7 +122,7 @@ impl FeatureDecorationRunner {
     fn place_root_system_dirt(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &RootSystemConfiguration,
         origin: BlockPos,
         target_height: i32,
@@ -143,7 +143,7 @@ impl FeatureDecorationRunner {
     fn place_root_system_rooted_dirt(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &RootSystemConfiguration,
         mut pos: BlockPos,
         origin_x: i32,
@@ -180,7 +180,7 @@ impl FeatureDecorationRunner {
     fn place_root_system_hanging_roots(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &RootSystemConfiguration,
         origin: BlockPos,
     ) {

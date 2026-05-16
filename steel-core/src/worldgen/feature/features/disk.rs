@@ -5,7 +5,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_disk_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &DiskConfiguration,
         origin: BlockPos,
     ) -> bool {
@@ -14,23 +14,19 @@ impl FeatureDecorationRunner {
         let radius = config.radius.sample(random);
         let mut placed_any = false;
 
-        for x in origin.x() - radius..=origin.x() + radius {
-            for z in origin.z() - radius..=origin.z() + radius {
-                let dx = x - origin.x();
-                let dz = z - origin.z();
+        Self::for_each_vanilla_between_closed(
+            origin.offset(-radius, 0, -radius),
+            origin.offset(radius, 0, radius),
+            |column_pos| {
+                let dx = column_pos.x() - origin.x();
+                let dz = column_pos.z() - origin.z();
                 if dx * dx + dz * dz <= radius * radius {
                     placed_any |= Self::place_disk_column(
-                        region,
-                        registry,
-                        random,
-                        config,
-                        top,
-                        bottom,
-                        BlockPos::new(x, origin.y(), z),
+                        region, registry, random, config, top, bottom, column_pos,
                     );
                 }
-            }
-        }
+            },
+        );
 
         placed_any
     }
@@ -42,7 +38,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_disk_column(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &DiskConfiguration,
         top: i32,
         bottom: i32,

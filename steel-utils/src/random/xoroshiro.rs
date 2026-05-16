@@ -77,27 +77,6 @@ impl Xoroshiro {
     pub const fn set_seed(&mut self, seed: i64) {
         *self = Self::from_seed(seed as u64);
     }
-
-    /// Vanilla's `WorldgenRandom.setDecorationSeed`.
-    pub const fn set_decoration_seed(&mut self, seed: i64, block_x: i32, block_z: i32) -> i64 {
-        self.set_seed(seed);
-        let x_scale = self.next_random() as i64 | 1;
-        let z_scale = self.next_random() as i64 | 1;
-        let decoration_seed = (block_x as i64)
-            .wrapping_mul(x_scale)
-            .wrapping_add((block_z as i64).wrapping_mul(z_scale))
-            ^ seed;
-        self.set_seed(decoration_seed);
-        decoration_seed
-    }
-
-    /// Vanilla's `WorldgenRandom.setFeatureSeed`.
-    pub const fn set_feature_seed(&mut self, decoration_seed: i64, feature_index: i32, step: i32) {
-        let feature_seed = decoration_seed
-            .wrapping_add(feature_index as i64)
-            .wrapping_add(10_000_i64.wrapping_mul(step as i64));
-        self.set_seed(feature_seed);
-    }
 }
 
 impl MarsagliaPolarGaussian for Xoroshiro {
@@ -130,7 +109,7 @@ impl Random for Xoroshiro {
         let mut m = l.wrapping_mul(bound as u64);
         let mut n = m & 0xFFFF_FFFF;
         if n < bound as u64 {
-            let i = (((!bound).wrapping_add(1)) as u64) % (bound as u64);
+            let i = u64::from(((!bound as u32).wrapping_add(1)) % bound as u32);
             while n < i {
                 l = (self.next_i32() as u64) & 0xFFFF_FFFF;
                 m = l.wrapping_mul(bound as u64);

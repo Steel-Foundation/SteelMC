@@ -4,7 +4,7 @@ use super::{FoliageAttachment, TreePlacement, abs_i32};
 
 impl FeatureDecorationRunner {
     pub(super) fn tree_foliage_height(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         tree_height: i32,
         config: &TreeConfiguration,
     ) -> i32 {
@@ -26,7 +26,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn tree_foliage_radius(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         foliage_placer: &FoliagePlacer,
         trunk_height: i32,
     ) -> i32 {
@@ -50,7 +50,7 @@ impl FeatureDecorationRunner {
     pub(super) fn create_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         _tree_height: i32,
         attachment: FoliageAttachment,
@@ -177,7 +177,7 @@ impl FeatureDecorationRunner {
     fn create_fancy_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -208,7 +208,7 @@ impl FeatureDecorationRunner {
     fn create_jungle_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -241,7 +241,7 @@ impl FeatureDecorationRunner {
     fn create_random_spread_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         placer: &RandomSpreadFoliagePlacer,
         attachment: FoliageAttachment,
@@ -262,7 +262,7 @@ impl FeatureDecorationRunner {
     fn create_cherry_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         placer: &CherryFoliagePlacer,
         attachment: FoliageAttachment,
@@ -341,7 +341,7 @@ impl FeatureDecorationRunner {
     fn create_dark_oak_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         leaf_radius: i32,
@@ -425,7 +425,7 @@ impl FeatureDecorationRunner {
     fn create_mega_pine_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -467,7 +467,7 @@ impl FeatureDecorationRunner {
     fn create_bush_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -494,7 +494,7 @@ impl FeatureDecorationRunner {
     fn create_pine_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -526,7 +526,7 @@ impl FeatureDecorationRunner {
     fn create_spruce_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -563,7 +563,7 @@ impl FeatureDecorationRunner {
     fn create_blob_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         _placer: &BlobFoliagePlacer,
         attachment: FoliageAttachment,
@@ -591,7 +591,7 @@ impl FeatureDecorationRunner {
     fn create_acacia_tree_foliage(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         attachment: FoliageAttachment,
         foliage_height: i32,
@@ -635,7 +635,7 @@ impl FeatureDecorationRunner {
         );
     }
 
-    fn tree_foliage_offset(random: &mut Xoroshiro, foliage_placer: &FoliagePlacer) -> i32 {
+    fn tree_foliage_offset(random: &mut WorldgenRandom, foliage_placer: &FoliagePlacer) -> i32 {
         match foliage_placer {
             FoliagePlacer::Blob(placer) => placer.offset.sample(random),
             FoliagePlacer::Bush(placer) => placer.offset.sample(random),
@@ -654,7 +654,7 @@ impl FeatureDecorationRunner {
     fn place_tree_leaves_row(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         origin: BlockPos,
         current_radius: i32,
@@ -689,7 +689,7 @@ impl FeatureDecorationRunner {
     fn place_tree_leaves_row_with_hanging_leaves_below(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         origin: BlockPos,
         current_radius: i32,
@@ -727,7 +727,7 @@ impl FeatureDecorationRunner {
             let mut offset_along_edge = -current_radius;
 
             while offset_along_edge < current_radius + offset {
-                let leaves_above = placement.foliage.contains(&pos.above());
+                let leaves_above = placement.foliage.contains(pos.above());
                 if leaves_above
                     && Self::try_place_hanging_leaf_extension(
                         region,
@@ -761,7 +761,7 @@ impl FeatureDecorationRunner {
     fn try_place_hanging_leaf_extension(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         chance: f32,
         log_pos: BlockPos,
@@ -783,7 +783,7 @@ impl FeatureDecorationRunner {
     }
 
     fn tree_foliage_should_skip_location(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         foliage_placer: &FoliagePlacer,
         dx: i32,
         y: i32,
@@ -833,7 +833,7 @@ impl FeatureDecorationRunner {
     }
 
     fn blob_foliage_should_skip_location(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         dx: i32,
         y: i32,
         dz: i32,
@@ -843,7 +843,7 @@ impl FeatureDecorationRunner {
     }
 
     fn bush_foliage_should_skip_location(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         dx: i32,
         dz: i32,
         current_radius: i32,
@@ -883,7 +883,7 @@ impl FeatureDecorationRunner {
     }
 
     fn cherry_foliage_should_skip_location(
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         placer: &CherryFoliagePlacer,
         dx: i32,
         y: i32,
@@ -942,7 +942,7 @@ impl FeatureDecorationRunner {
     fn try_place_tree_leaf(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &TreeConfiguration,
         pos: BlockPos,
         placement: &mut TreePlacement,

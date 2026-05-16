@@ -9,7 +9,7 @@ const UNCLUSTERED_SIZE: i32 = 15;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_basalt_columns_feature(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         config: &BasaltColumnsConfiguration,
         origin: BlockPos,
     ) -> bool {

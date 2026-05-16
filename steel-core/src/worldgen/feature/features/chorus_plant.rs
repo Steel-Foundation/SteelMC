@@ -7,7 +7,7 @@ impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_chorus_plant_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         if !region.block_state(origin).is_air()
@@ -25,7 +25,7 @@ impl FeatureDecorationRunner {
 
     fn generate_chorus_plant(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         target: BlockPos,
         max_horizontal_spread: i32,
     ) {
@@ -37,7 +37,7 @@ impl FeatureDecorationRunner {
 
     fn grow_chorus_tree_recursive(
         region: &mut WorldGenRegion<'_>,
-        random: &mut Xoroshiro,
+        random: &mut WorldgenRandom,
         current: BlockPos,
         start_pos: BlockPos,
         max_horizontal_spread: i32,

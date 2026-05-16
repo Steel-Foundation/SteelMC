@@ -24,7 +24,11 @@ pub(crate) fn generate(
     chunk.prime_final_heightmaps();
     drop(chunk);
 
-    let mut region = WorldGenRegion::new(context.as_ref(), step, cache, center);
+    let world_seed = context.world().seed();
+    let region_random = context
+        .generator
+        .create_worldgen_region_random(world_seed, center);
+    let mut region = WorldGenRegion::new(context.as_ref(), step, cache, center, region_random);
     context.generator.apply_biome_decorations(&mut region);
 }
 
