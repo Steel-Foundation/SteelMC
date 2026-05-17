@@ -74,8 +74,6 @@ impl BlockBehavior for ColoredFallingBlock {
     }
 }
 
-// ─── SandBlock ────────────────────────────────────────────────────────────────
-
 /// Behavior for sand and red sand.
 ///
 /// Vanilla: `SandBlock extends ColoredFallingBlock`. Server-side behavior is

@@ -541,7 +541,6 @@ impl World {
             return true;
         }
 
-        // TODO: Check other entities with blocksBuilding=true (mobs, boats, minecarts, etc.)
         let mut obstructed = false;
         self.players.iter_players(|_uuid, player| {
             let player_pos = player.position.lock();
@@ -555,17 +554,45 @@ impl World {
                 player_pos.z + half_width,
             );
 
-            // Check if any block AABB intersects with the player
             for block_aabb in collision_shape {
                 let world_aabb = block_aabb.at_block(pos.x(), pos.y(), pos.z());
                 if player_aabb.intersects_block_aabb(&world_aabb) {
                     obstructed = true;
-                    return false; // stop iteration
+                    return false;
                 }
             }
 
-            true // continue iteration
+            true
         });
+
+        if !obstructed {
+            // Vanilla: also checks all entities with blocksBuilding=true (FallingBlockEntity, mobs, boats…)
+            // TODO: mobs and boats don't implement blocks_building() yet — add overrides as they're implemented
+            let query_aabb = AABBd::new(
+                pos.x() as f64,
+                pos.y() as f64,
+                pos.z() as f64,
+                pos.x() as f64 + 1.0,
+                pos.y() as f64 + 1.0,
+                pos.z() as f64 + 1.0,
+            );
+            for entity in self.get_entities_in_aabb(&query_aabb) {
+                if !entity.blocks_building() || entity.is_removed() {
+                    continue;
+                }
+                let entity_aabb = entity.bounding_box();
+                for block_aabb in collision_shape {
+                    let world_aabb = block_aabb.at_block(pos.x(), pos.y(), pos.z());
+                    if entity_aabb.intersects_block_aabb(&world_aabb) {
+                        obstructed = true;
+                        break;
+                    }
+                }
+                if obstructed {
+                    break;
+                }
+            }
+        }
 
         !obstructed
     }

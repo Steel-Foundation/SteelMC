@@ -20,7 +20,7 @@ pub use decoration::{
     CandleBlock, CeilingHangingSignBlock, StandingSignBlock, TorchBlock, WallHangingSignBlock,
     WallSignBlock, WallTorchBlock,
 };
-pub use falling::{AnvilBlock, ColoredFallingBlock, ConcretePowderBlock, SandBlock};
+pub use falling::{ColoredFallingBlock, ConcretePowderBlock, SandBlock};
 pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
 pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock};

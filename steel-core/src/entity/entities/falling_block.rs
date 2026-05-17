@@ -36,7 +36,7 @@ use crate::physics::MoverType;
 use crate::world::RaytraceAction;
 use crate::world::World;
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, calc_delta,
+    CBlockUpdate, CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, calc_delta,
 };
 
 /// Gravity applied per tick (blocks/tick²). Vanilla: `FallingBlockEntity.getDefaultGravity()`
@@ -457,6 +457,10 @@ impl Entity for FallingBlockEntity {
         DEFAULT_GRAVITY
     }
 
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
     fn spawn_data(&self) -> i32 {
         self.block_state.load().0 as i32
     }
@@ -495,6 +499,8 @@ impl Entity for FallingBlockEntity {
         };
 
         // TODO: portals
+        // TODO: applyEffectsFromBlocks() — requires movement tracking on EntityBase,
+        //       BlockBehavior::entity_inside()/step_on(), and AABB block iteration along path
 
         let Some(world) = self.level() else {
             return;
@@ -574,6 +580,8 @@ impl Entity for FallingBlockEntity {
             use steel_registry::vanilla_blocks;
             if current_state.get_block() != &vanilla_blocks::MOVING_PISTON {
                 if !self.cancel_drop.load(Ordering::Relaxed) {
+                    // TODO: should use canBeReplaced(DirectionalPlaceContext(DOWN, EMPTY, UP)) —
+                    //       in practice equivalent for most blocks since the item is always empty
                     let may_replace = current_state.is_replaceable();
                     let below_state = world.get_block_state(pos.below());
                     let would_continue = is_free(below_state) && !(is_concrete_powder && is_stuck_in_water);
@@ -596,15 +604,29 @@ impl Entity for FallingBlockEntity {
                             };
 
                         if world.set_block(pos, place_state, UpdateFlags::UPDATE_ALL) {
+                            // Send immediate block update to entity-tracking players so the
+                            // client sees the block placed in the same frame as the entity
+                            // removal. Vanilla: sendToTrackingPlayers(ClientboundBlockUpdatePacket)
+                            let chunk_pos = steel_utils::ChunkPos::new(
+                                pos.x() >> 4,
+                                pos.z() >> 4,
+                            );
+                            world.broadcast_to_nearby(
+                                chunk_pos,
+                                CBlockUpdate { pos, block_state: world.get_block_state(pos) },
+                                None,
+                            );
+                            self.set_removed(RemovalReason::Killed);
                             let behavior = BLOCK_BEHAVIORS.get_behavior(block_ref);
                             behavior.on_land(&world, pos, place_state, current_state, self);
                             // TODO: load block_data into block entity when has_block_entity() works
                         } else if self.drop_item.load(Ordering::Relaxed) && self.entity_drops_enabled(&world) {
                             self.call_on_broken_after_fall(&world, pos);
                             self.try_drop_block_item(&world);
+                            self.set_removed(RemovalReason::Killed);
+                        } else {
+                            self.set_removed(RemovalReason::Killed);
                         }
-
-                        self.set_removed(RemovalReason::Killed);
                     } else {
                         self.set_removed(RemovalReason::Killed);
                         if self.drop_item.load(Ordering::Relaxed) && self.entity_drops_enabled(&world) {

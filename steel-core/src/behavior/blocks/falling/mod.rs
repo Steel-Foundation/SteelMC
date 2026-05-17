@@ -3,11 +3,9 @@
 //! All blocks in this module extend vanilla's `FallingBlock` (schedules a tick on placement
 //! that spawns a `FallingBlockEntity` when the block below is free).
 
-mod anvil_block;
 mod colored_falling_block;
 mod concrete_powder_block;
 
-pub use anvil_block::AnvilBlock;
 pub use colored_falling_block::{ColoredFallingBlock, SandBlock};
 pub use concrete_powder_block::ConcretePowderBlock;
 

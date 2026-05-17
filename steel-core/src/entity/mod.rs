@@ -182,6 +182,13 @@ pub trait Entity: Send + Sync {
         }
     }
 
+    /// Whether this entity prevents block placement in its space.
+    ///
+    /// Vanilla: `Entity.blocksBuilding`. True for players, mobs, boats, falling blocks, etc.
+    fn blocks_building(&self) -> bool {
+        false
+    }
+
     /// Gets the entity as a Player if it is one.
     fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
         None
