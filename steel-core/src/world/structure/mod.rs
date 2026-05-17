@@ -218,6 +218,10 @@ pub struct TemplatePieceData {
     pub liquid_settings: LiquidSettingsData,
     /// How structure-template data markers are handled for this family.
     pub marker_handling: TemplateMarkerHandling,
+    /// Bounding box passed to vanilla template placement.
+    pub placement_clip: TemplatePlacementClip,
+    /// Family-specific work done after the template blocks are placed.
+    pub post_process: TemplatePostProcess,
 }
 
 /// Vanilla `Mirror` modes used by template placement.
@@ -249,6 +253,24 @@ pub enum TemplateMarkerHandling {
     Ignore,
     /// Dispatch data markers to the structure-family placement code.
     DataMarkers,
+}
+
+/// Vanilla bounding box adjustment before calling `StructureTemplate.placeInWorld`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplatePlacementClip {
+    /// Use the center chunk's writable box unchanged.
+    CenterChunk,
+    /// Expand the center chunk writable box to include this piece's transformed template box.
+    CenterChunkExpandedToTemplate,
+}
+
+/// Family-specific post-template processing for template-backed pieces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplatePostProcess {
+    /// No family-specific postprocess.
+    None,
+    /// Nether fossil dried-ghast placement.
+    NetherFossil,
 }
 
 /// Family-specific state for code-generated structure pieces.

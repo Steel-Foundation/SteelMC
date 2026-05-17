@@ -7,16 +7,20 @@
 
 mod mineshaft;
 
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::StructureProcessorKind;
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
-use steel_registry::{Registry, RegistryExt};
+use steel_registry::{Registry, RegistryExt, vanilla_blocks};
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
+use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BoundingBox, Rotation, types::UpdateFlags};
 
 use crate::world::structure::{
     ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
-    StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementClip,
+    TemplatePostProcess,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::region::WorldGenRegion;
@@ -47,6 +51,8 @@ impl StructurePiecePlacer {
         random: &mut WorldgenRandom,
         biome_zoom_seed: i64,
     ) -> bool {
+        let piece_bounding_box = piece.bounding_box;
+        let piece_orientation = piece.orientation;
         let placed = match &mut piece.payload {
             StructurePiecePayload::Jigsaw(data) => Self::place_pool_element(
                 region,
@@ -67,8 +73,8 @@ impl StructurePiecePlacer {
                 Self::place_mineshaft_piece(
                     region,
                     registry,
-                    piece.bounding_box,
-                    piece.orientation,
+                    piece_bounding_box,
+                    piece_orientation,
                     data,
                     clip,
                     random,
@@ -272,15 +278,18 @@ impl StructurePiecePlacer {
             processor_random: StructureProcessorRandom::Positional,
             liquid_settings: data.liquid_settings,
         };
-        if !template
-            .bounding_box_with_transform(
-                position,
-                data.rotation,
-                data.mirror,
-                settings.rotation_pivot,
-            )
-            .intersects(&clip)
-        {
+        let template_box = template.bounding_box_with_transform(
+            position,
+            data.rotation,
+            data.mirror,
+            settings.rotation_pivot,
+        );
+        let placement_clip = Self::template_placement_clip(data.placement_clip, clip, template_box);
+        let settings = StructurePlaceSettings {
+            bounding_box: placement_clip,
+            ..settings
+        };
+        if !template_box.intersects(&placement_clip) {
             return false;
         }
 
@@ -295,7 +304,89 @@ impl StructurePiecePlacer {
         );
         if placed {
             template.replace_jigsaw_final_states(region, registry, position, &settings, random);
+            Self::post_process_template_piece(
+                region,
+                registry,
+                data.post_process,
+                template_box,
+                placement_clip,
+            );
         }
         placed
+    }
+
+    const fn template_placement_clip(
+        placement_clip: TemplatePlacementClip,
+        center_clip: BoundingBox,
+        template_box: BoundingBox,
+    ) -> BoundingBox {
+        match placement_clip {
+            TemplatePlacementClip::CenterChunk => center_clip,
+            TemplatePlacementClip::CenterChunkExpandedToTemplate => {
+                BoundingBox::encapsulating(&center_clip, &template_box)
+            }
+        }
+    }
+
+    fn post_process_template_piece(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        post_process: TemplatePostProcess,
+        template_box: BoundingBox,
+        placement_clip: BoundingBox,
+    ) {
+        match post_process {
+            TemplatePostProcess::None => {}
+            TemplatePostProcess::NetherFossil => {
+                Self::place_nether_fossil_dried_ghast(
+                    region,
+                    registry,
+                    template_box,
+                    placement_clip,
+                );
+            }
+        }
+    }
+
+    fn place_nether_fossil_dried_ghast(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        fossil_box: BoundingBox,
+        placement_clip: BoundingBox,
+    ) {
+        let center = fossil_box.get_center();
+        let mut seed_random = LegacyRandom::from_seed(region.seed() as u64);
+        let splitter = seed_random.next_positional();
+        let mut positional_random = splitter.at(center.x(), center.y(), center.z());
+        if positional_random.next_f32() >= 0.5 {
+            return;
+        }
+
+        let pos = BlockPos::new(
+            fossil_box.min_x + positional_random.next_i32_bounded(fossil_box.get_x_span()),
+            fossil_box.min_y,
+            fossil_box.min_z + positional_random.next_i32_bounded(fossil_box.get_z_span()),
+        );
+        if !placement_clip.is_inside(pos) {
+            return;
+        }
+        if !region.block_state(pos).is_air() {
+            return;
+        }
+
+        let rotation = Rotation::get_random(&mut positional_random);
+        let state = Self::dried_ghast_state(registry, rotation);
+        let _ = region.set_block_state(pos, state, Self::TEMPLATE_UPDATE_FLAGS);
+    }
+
+    fn dried_ghast_state(registry: &Registry, rotation: Rotation) -> steel_utils::BlockStateId {
+        let facing = rotation.rotate(steel_utils::Direction::North);
+        let Some(state) = registry.blocks.state_id_from_block_defaulted_properties(
+            &vanilla_blocks::DRIED_GHAST,
+            [("facing", facing.as_str())],
+        ) else {
+            panic!("dried_ghast missing vanilla facing property");
+        };
+        state
     }
 }

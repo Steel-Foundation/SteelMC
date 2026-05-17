@@ -31,7 +31,7 @@ use crate::world::structure::mineshaft::{
 use crate::world::structure::{
     ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
     StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
-    TemplateMarkerHandling, TemplatePieceData,
+    TemplateMarkerHandling, TemplatePieceData, TemplatePlacementClip, TemplatePostProcess,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -178,6 +178,34 @@ const fn marker_handling_from_persistent(value: i8) -> TemplateMarkerHandling {
     match value {
         1 => TemplateMarkerHandling::DataMarkers,
         _ => TemplateMarkerHandling::Ignore,
+    }
+}
+
+const fn placement_clip_to_persistent(placement_clip: TemplatePlacementClip) -> i8 {
+    match placement_clip {
+        TemplatePlacementClip::CenterChunk => 0,
+        TemplatePlacementClip::CenterChunkExpandedToTemplate => 1,
+    }
+}
+
+const fn placement_clip_from_persistent(value: i8) -> TemplatePlacementClip {
+    match value {
+        1 => TemplatePlacementClip::CenterChunkExpandedToTemplate,
+        _ => TemplatePlacementClip::CenterChunk,
+    }
+}
+
+const fn post_process_to_persistent(post_process: TemplatePostProcess) -> i8 {
+    match post_process {
+        TemplatePostProcess::None => 0,
+        TemplatePostProcess::NetherFossil => 1,
+    }
+}
+
+const fn post_process_from_persistent(value: i8) -> TemplatePostProcess {
+    match value {
+        1 => TemplatePostProcess::NetherFossil,
+        _ => TemplatePostProcess::None,
     }
 }
 
@@ -1188,6 +1216,8 @@ impl ChunkStorage {
                     processors: Self::processors_to_persistent(&data.processors),
                     liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
                     marker_handling: marker_handling_to_persistent(data.marker_handling),
+                    placement_clip: placement_clip_to_persistent(data.placement_clip),
+                    post_process: post_process_to_persistent(data.post_process),
                 })
             }
             StructurePiecePayload::Procedural(data) => PersistentStructurePiecePayload::Procedural(
@@ -1223,6 +1253,8 @@ impl ChunkStorage {
                     processors: Self::persistent_to_processors(&data.processors),
                     liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
                     marker_handling: marker_handling_from_persistent(data.marker_handling),
+                    placement_clip: placement_clip_from_persistent(data.placement_clip),
+                    post_process: post_process_from_persistent(data.post_process),
                 })
             }
             PersistentStructurePiecePayload::Procedural(data) => {
@@ -2102,6 +2134,8 @@ mod tests {
                 processors: ProcessorList::Registry(processor_id.clone()),
                 liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
                 marker_handling: TemplateMarkerHandling::DataMarkers,
+                placement_clip: TemplatePlacementClip::CenterChunkExpandedToTemplate,
+                post_process: TemplatePostProcess::NetherFossil,
             }),
             ground_level_delta: 0,
             junctions: Vec::new(),
@@ -2171,6 +2205,11 @@ mod tests {
             template.marker_handling,
             TemplateMarkerHandling::DataMarkers
         );
+        assert_eq!(
+            template.placement_clip,
+            TemplatePlacementClip::CenterChunkExpandedToTemplate
+        );
+        assert_eq!(template.post_process, TemplatePostProcess::NetherFossil);
         assert_eq!(
             template.processors,
             ProcessorList::Registry(processor_id.clone())

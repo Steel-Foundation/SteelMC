@@ -44,7 +44,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v7: Added POI persistence (`PersistentPoi`).
 /// v8: Added typed jigsaw piece-state persistence.
 /// v9: Added proto chunk carving mask persistence and typed packed chunk references.
-pub const FORMAT_VERSION: u16 = 9;
+/// v10: Added template piece clip and postprocess persistence.
+pub const FORMAT_VERSION: u16 = 10;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -520,6 +521,10 @@ pub struct PersistentTemplatePieceData {
     pub liquid_settings: i8,
     /// Marker handling: 0=ignore, 1=data_markers.
     pub marker_handling: i8,
+    /// Placement clip: 0=center_chunk, 1=center_chunk_expanded_to_template.
+    pub placement_clip: i8,
+    /// Postprocess: 0=none, 1=nether_fossil.
+    pub post_process: i8,
 }
 
 /// Persisted procedural piece data.
