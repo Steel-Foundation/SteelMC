@@ -7,6 +7,7 @@ use super::prelude::*;
 use super::sorter::{FeatureSorter, FeatureStepData};
 #[cfg(test)]
 use crate::world::structure::StructureReferenceMap;
+#[cfg(test)]
 use crate::world::structure::StructureStart;
 use crate::worldgen::structure_piece_placer::StructurePiecePlacer;
 
@@ -160,7 +161,14 @@ impl FeatureDecorationRunner {
         let step_count = DECORATION_STEP_COUNT.max(self.sorter.step_count());
 
         for step in 0..step_count {
-            Self::place_structures_for_step(region, registry, decoration_seed, &mut random, step);
+            Self::place_structures_for_step(
+                region,
+                registry,
+                decoration_seed,
+                &mut random,
+                step,
+                biome_zoom_seed,
+            );
 
             let Some(step_features) = self.sorter.step(step) else {
                 continue;
@@ -262,10 +270,10 @@ impl FeatureDecorationRunner {
         starts
     }
 
-    fn starts_for_structure_in_region(
+    fn structure_source_positions_in_region(
         region: &WorldGenRegion<'_>,
         structure_id: &Identifier,
-    ) -> Vec<StructureStart> {
+    ) -> Vec<steel_utils::ChunkPos> {
         let center = region.center();
         let center_chunk = region.chunk(center.0.x, center.0.y, ChunkStatus::StructureStarts);
         let references = center_chunk.structure_references();
@@ -275,25 +283,7 @@ impl FeatureDecorationRunner {
             .unwrap_or_default();
         drop(references);
         drop(center_chunk);
-
-        // Copy starts out before dispatch so block-writing placers never hold
-        // source chunk read locks while mutating the region.
-        let mut starts = Vec::new();
-        for source_pos in source_positions {
-            let Some(source_chunk) =
-                region.try_chunk(source_pos.0.x, source_pos.0.y, ChunkStatus::StructureStarts)
-            else {
-                continue;
-            };
-            let source_starts = source_chunk.structure_starts();
-            let Some(start) = source_starts.get(structure_id) else {
-                continue;
-            };
-            if start.chunk_pos == source_pos && !start.pieces.is_empty() {
-                starts.push(start.clone());
-            }
-        }
-        starts
+        source_positions
     }
 
     pub(super) fn place_structures_for_step(
@@ -302,6 +292,7 @@ impl FeatureDecorationRunner {
         decoration_seed: i64,
         random: &mut WorldgenRandom,
         step: usize,
+        biome_zoom_seed: i64,
     ) {
         let writable_box = Self::center_chunk_writable_box(region);
 
@@ -311,16 +302,34 @@ impl FeatureDecorationRunner {
         {
             Self::set_structure_seed(random, decoration_seed, structure_index, step);
 
-            let starts = Self::starts_for_structure_in_region(region, &structure.key);
-            for start in starts {
-                for piece in &start.pieces {
+            let source_positions =
+                Self::structure_source_positions_in_region(region, &structure.key);
+            for source_pos in source_positions {
+                let Some(source_chunk) =
+                    region.try_chunk(source_pos.0.x, source_pos.0.y, ChunkStatus::StructureStarts)
+                else {
+                    continue;
+                };
+                let mut source_starts = source_chunk.structure_starts_mut();
+                let Some(start) = source_starts.get_mut(&structure.key) else {
+                    continue;
+                };
+                if start.chunk_pos != source_pos || start.pieces.is_empty() {
+                    continue;
+                }
+                let Some(reference_pos) = start.placement_reference_pos() else {
+                    continue;
+                };
+                for piece in &mut start.pieces {
                     if piece.bounding_box.intersects(&writable_box) {
                         StructurePiecePlacer::place_piece(
                             region,
                             registry,
                             piece,
+                            reference_pos,
                             writable_box,
                             random,
+                            biome_zoom_seed,
                         );
                     }
                 }

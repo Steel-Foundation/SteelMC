@@ -444,24 +444,12 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        // Decode the property indices from the relative state index.
-        // Properties are decoded in reverse order (last property = inner loop).
-        let mut index = relative_index;
-        let mut property_value_index = 0;
+        let property_indices = Self::decode_property_indices(block, relative_index);
+        let block_property = block.properties[property_index];
+        let block_values = block_property.get_possible_values();
+        let block_value = block_values[property_indices[property_index]];
 
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
-            let current_index = (index % count) as usize;
-
-            if i == property_index {
-                property_value_index = current_index;
-            }
-
-            index /= count;
-        }
-
-        // Convert the index back to the actual value
-        Some(property.value_from_index(property_value_index))
+        property.get_value(block_value)
     }
 
     // Panics if that property isn't supposed to be on this block.
@@ -504,8 +492,18 @@ impl BlockRegistry {
             index /= count;
         }
 
-        // Update the specific property's index
-        let new_value_index = property.get_internal_index(&value);
+        let caller_value_index = property.get_internal_index(&value);
+        let caller_values = property.as_dyn().get_possible_values();
+        let value_name = caller_values[caller_value_index];
+        let block_values = block.properties[property_index].get_possible_values();
+        let Some(new_value_index) = block_values.iter().position(|v| *v == value_name) else {
+            panic!(
+                "Value {} for property {} not found on block {}",
+                value_name,
+                property.as_dyn().get_name(),
+                block.key
+            );
+        };
         property_indices[property_index] = new_value_index;
 
         // Re-encode the property indices back to a state ID.
@@ -680,6 +678,7 @@ use steel_utils::{BlockStateId, Identifier};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blocks::properties::{BlockStateProperties, Direction};
     use crate::vanilla_blocks;
 
     fn create_test_registry() -> BlockRegistry {
@@ -886,6 +885,34 @@ mod tests {
         let invalid_props = [("power", "999")]; // Power only goes 0-15
         let result = registry.state_id_from_properties(&key, &invalid_props);
         assert!(result.is_none(), "Should return None for invalid value");
+    }
+
+    #[test]
+    fn same_named_direction_properties_translate_by_value_name() {
+        let registry = create_test_registry();
+        let wall_torch = registry.get_default_state_id(&vanilla_blocks::WALL_TORCH);
+
+        let south_torch = registry.set_property(
+            wall_torch,
+            &BlockStateProperties::HORIZONTAL_FACING,
+            Direction::South,
+        );
+        let facing_from_six_way_property =
+            registry.try_get_property(south_torch, &BlockStateProperties::FACING);
+        assert_eq!(facing_from_six_way_property, Some(Direction::South));
+
+        let west_torch =
+            registry.set_property(south_torch, &BlockStateProperties::FACING, Direction::West);
+        let facing_from_horizontal_property =
+            registry.try_get_property(west_torch, &BlockStateProperties::HORIZONTAL_FACING);
+        assert_eq!(facing_from_horizontal_property, Some(Direction::West));
+
+        let dispenser = registry.get_default_state_id(&vanilla_blocks::DISPENSER);
+        let upward_dispenser =
+            registry.set_property(dispenser, &BlockStateProperties::FACING, Direction::Up);
+        let horizontal_facing =
+            registry.try_get_property(upward_dispenser, &BlockStateProperties::HORIZONTAL_FACING);
+        assert_eq!(horizontal_facing, None);
     }
 
     #[test]

@@ -25,7 +25,7 @@ use rustc_hash::FxHashMap;
 
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSplitter};
-use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier, Rotation};
+use steel_utils::{BlockPos, BoundingBox, ChunkPos, Direction, Identifier, Rotation};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
@@ -117,6 +117,19 @@ impl StructureStart {
         }
         Some(bb.inflated_by(bb_inflate, bb_inflate, bb_inflate))
     }
+
+    /// Vanilla `StructureStart.placeInChunk` reference position: the first
+    /// piece center X/Z and first piece minimum Y.
+    #[must_use]
+    pub fn placement_reference_pos(&self) -> Option<BlockPos> {
+        let first_piece = self.pieces.first()?;
+        let center = first_piece.bounding_box.get_center();
+        Some(BlockPos::new(
+            center.x(),
+            first_piece.bounding_box.min_y,
+            center.z(),
+        ))
+    }
 }
 
 /// Vanilla's `StructurePiece` runtime state.
@@ -158,7 +171,7 @@ impl StructurePiece {
             bounding_box,
             gen_depth,
             orientation,
-            payload: StructurePiecePayload::Procedural(ProceduralPieceData),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented),
             ground_level_delta: 0,
             junctions: Vec::new(),
             projection: None,
@@ -221,13 +234,14 @@ pub enum TemplateMarkerHandling {
     DataMarkers,
 }
 
-/// Marker type for code-generated structure pieces.
-///
-/// Procedural families already encode their current vanilla identity in
-/// [`StructurePiece::piece_type`]. Family-specific placement state will be
-/// added here as each procedural placer is implemented.
-#[derive(Debug, Clone, Copy)]
-pub struct ProceduralPieceData;
+/// Family-specific state for code-generated structure pieces.
+#[derive(Debug, Clone)]
+pub enum ProceduralPieceData {
+    /// Procedural family whose placement implementation has not been enabled yet.
+    Unimplemented,
+    /// Mineshaft room/corridor/crossing/stairs payload.
+    Mineshaft(mineshaft::MineshaftPiecePayload),
+}
 
 /// Structure starts keyed by structure id.
 pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;

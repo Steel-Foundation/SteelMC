@@ -195,6 +195,9 @@ impl FluidReplaceableExt for BlockStateId {
 mod tests {
     use super::*;
     use crate::Registry;
+    use crate::blocks::properties::BlockStateProperties;
+    use crate::blocks::shapes::SupportType;
+    use steel_utils::Direction;
 
     fn init_test_registry() {
         REGISTRY.get_or_init(|| {
@@ -233,5 +236,16 @@ mod tests {
             .blocks
             .get_default_state_id(&vanilla_blocks::COBWEB);
         assert!(!cobweb.blocks_motion());
+    }
+
+    #[test]
+    fn fence_post_supports_center_attachments_from_below() {
+        init_test_registry();
+
+        let fence = vanilla_blocks::OAK_FENCE
+            .default_state()
+            .set_value(&BlockStateProperties::EAST, true);
+
+        assert!(fence.is_face_sturdy_for(Direction::Down, SupportType::Center));
     }
 }

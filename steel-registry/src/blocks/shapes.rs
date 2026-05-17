@@ -497,9 +497,10 @@ pub enum SupportType {
     Rigid,
 }
 
-/// Center support shape: a 4x4 pixel column in the center (2-14 in pixel coords = 0.125-0.875).
-const CENTER_SUPPORT_MIN: f32 = 0.125; // 2/16
-const CENTER_SUPPORT_MAX: f32 = 0.875; // 14/16
+/// Vanilla `SupportType.CENTER`: `Block.column(2.0, 0.0, 10.0)`.
+const CENTER_SUPPORT_MIN: f32 = 7.0 / 16.0;
+const CENTER_SUPPORT_MAX: f32 = 9.0 / 16.0;
+const CENTER_SUPPORT_Y_MAX: f32 = 10.0 / 16.0;
 
 /// Rigid support requires coverage except for a 2-pixel border.
 const RIGID_BORDER: f32 = 0.125; // 2/16
@@ -522,50 +523,31 @@ pub fn is_face_center_supported(shape: VoxelShape, direction: Direction) -> bool
         return false;
     }
 
-    // Check if any AABB in the shape covers the center region on the given face
     match direction {
-        Direction::Down => shape.iter().any(|aabb| {
-            aabb.min_y <= 0.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
-        Direction::Up => shape.iter().any(|aabb| {
-            aabb.max_y >= 1.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
-        Direction::North => shape.iter().any(|aabb| {
-            aabb.min_z <= 0.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-        }),
-        Direction::South => shape.iter().any(|aabb| {
-            aabb.max_z >= 1.0
-                && aabb.min_x <= CENTER_SUPPORT_MIN
-                && aabb.max_x >= CENTER_SUPPORT_MAX
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-        }),
-        Direction::West => shape.iter().any(|aabb| {
-            aabb.min_x <= 0.0
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
-        Direction::East => shape.iter().any(|aabb| {
-            aabb.max_x >= 1.0
-                && aabb.min_y <= CENTER_SUPPORT_MIN
-                && aabb.max_y >= CENTER_SUPPORT_MAX
-                && aabb.min_z <= CENTER_SUPPORT_MIN
-                && aabb.max_z >= CENTER_SUPPORT_MAX
-        }),
+        Direction::Down | Direction::Up => face_rectangles_cover(
+            shape,
+            direction,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+        ),
+        Direction::North | Direction::South => face_rectangles_cover(
+            shape,
+            direction,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+            0.0,
+            CENTER_SUPPORT_Y_MAX,
+        ),
+        Direction::West | Direction::East => face_rectangles_cover(
+            shape,
+            direction,
+            0.0,
+            CENTER_SUPPORT_Y_MAX,
+            CENTER_SUPPORT_MIN,
+            CENTER_SUPPORT_MAX,
+        ),
     }
 }
 

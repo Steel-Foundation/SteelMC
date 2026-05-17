@@ -135,6 +135,11 @@ pub mod vanilla_biomes;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_biome_tags.rs"]
+pub mod vanilla_biome_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_chat_types.rs"]
 pub mod vanilla_chat_types;
 
@@ -588,6 +593,7 @@ impl Registry {
         vanilla_item_tags::register_item_tags(&mut registry.items);
 
         vanilla_biomes::register_biomes(&mut registry.biomes);
+        vanilla_biome_tags::register_biome_tags(&mut registry.biomes);
         vanilla_chat_types::register_chat_types(&mut registry.chat_types);
         vanilla_trim_patterns::register_trim_patterns(&mut registry.trim_patterns);
         vanilla_trim_materials::register_trim_materials(&mut registry.trim_materials);

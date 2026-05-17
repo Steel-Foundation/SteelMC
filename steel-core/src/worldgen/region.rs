@@ -561,8 +561,9 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Gets the first available Y coordinate for a heightmap column.
     ///
-    /// # Panics
-    /// Panics if the target chunk is not available at `Carvers` status.
+    /// Mirrors vanilla `WorldGenRegion.getHeight`, which requests the target
+    /// chunk at `EMPTY` and then reads whichever generated status the step
+    /// dependency cache already holds for that chunk.
     #[must_use]
     pub fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
         let chunk_x = SectionPos::block_to_section_coord(x);
@@ -577,7 +578,7 @@ impl<'a> WorldGenRegion<'a> {
             return height;
         }
 
-        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Carvers, |chunk| {
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
             chunk.height_at(heightmap_type, local_x, local_z)
         })
     }
@@ -620,7 +621,7 @@ impl<'a> WorldGenRegion<'a> {
         chunk_z: i32,
         heightmap_type: HeightmapType,
     ) -> Box<[i32; 256]> {
-        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Carvers, |chunk| {
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
             Self::worldgen_heightmap_columns_from_chunk(chunk, heightmap_type)
         })
     }

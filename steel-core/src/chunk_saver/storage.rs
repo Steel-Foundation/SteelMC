@@ -25,6 +25,9 @@ use steel_utils::{
 };
 
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
+use crate::world::structure::mineshaft::{
+    MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
+};
 use crate::world::structure::{
     ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
     StructureReferenceMap, StructureStart, StructureStartMap, TemplateMarkerHandling,
@@ -51,6 +54,29 @@ const fn direction_from_2d(value: i8) -> Option<Direction> {
         2 => Some(Direction::North),
         3 => Some(Direction::East),
         _ => None,
+    }
+}
+
+const fn required_direction_from_2d(value: i8) -> Direction {
+    match value {
+        1 => Direction::West,
+        2 => Direction::North,
+        3 => Direction::East,
+        _ => Direction::South,
+    }
+}
+
+const fn mineshaft_type_to_persistent(mineshaft_type: MineshaftType) -> i8 {
+    match mineshaft_type {
+        MineshaftType::Normal => 0,
+        MineshaftType::Mesa => 1,
+    }
+}
+
+const fn mineshaft_type_from_persistent(value: i8) -> MineshaftType {
+    match value {
+        1 => MineshaftType::Mesa,
+        _ => MineshaftType::Normal,
     }
 }
 
@@ -150,7 +176,8 @@ use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
     PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentJigsawPieceData,
-    PersistentPoi, PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentPoi,
+    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
     PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
     PersistentStructureReference, PersistentStructureStart, PersistentTemplatePieceData,
     PersistentTick, PreparedChunkSave,
@@ -1032,6 +1059,92 @@ impl ChunkStorage {
         }
     }
 
+    fn procedural_piece_data_to_persistent(
+        data: &ProceduralPieceData,
+    ) -> PersistentProceduralPieceData {
+        match data {
+            ProceduralPieceData::Unimplemented => PersistentProceduralPieceData::Unimplemented,
+            ProceduralPieceData::Mineshaft(data) => {
+                PersistentProceduralPieceData::Mineshaft(PersistentMineshaftPieceData {
+                    mineshaft_type: mineshaft_type_to_persistent(data.mineshaft_type),
+                    kind: Self::mineshaft_kind_to_persistent(&data.kind),
+                })
+            }
+        }
+    }
+
+    fn persistent_to_procedural_piece_data(
+        data: &PersistentProceduralPieceData,
+    ) -> ProceduralPieceData {
+        match data {
+            PersistentProceduralPieceData::Unimplemented => ProceduralPieceData::Unimplemented,
+            PersistentProceduralPieceData::Mineshaft(data) => {
+                ProceduralPieceData::Mineshaft(MineshaftPiecePayload {
+                    mineshaft_type: mineshaft_type_from_persistent(data.mineshaft_type),
+                    kind: Self::persistent_to_mineshaft_kind(&data.kind),
+                })
+            }
+        }
+    }
+
+    fn mineshaft_kind_to_persistent(kind: &MineshaftPieceKind) -> PersistentMineshaftPieceKind {
+        match kind {
+            MineshaftPieceKind::Room {
+                child_entrance_boxes,
+            } => PersistentMineshaftPieceKind::Room {
+                child_entrance_boxes: child_entrance_boxes.to_vec(),
+            },
+            MineshaftPieceKind::Corridor {
+                has_rails,
+                spider_corridor,
+                has_placed_spider,
+                num_sections,
+            } => PersistentMineshaftPieceKind::Corridor {
+                has_rails: *has_rails,
+                spider_corridor: *spider_corridor,
+                has_placed_spider: *has_placed_spider,
+                num_sections: *num_sections,
+            },
+            MineshaftPieceKind::Crossing {
+                direction,
+                is_two_floored,
+            } => PersistentMineshaftPieceKind::Crossing {
+                direction: direction_to_2d(Some(*direction)),
+                is_two_floored: *is_two_floored,
+            },
+            MineshaftPieceKind::Stairs => PersistentMineshaftPieceKind::Stairs,
+        }
+    }
+
+    fn persistent_to_mineshaft_kind(kind: &PersistentMineshaftPieceKind) -> MineshaftPieceKind {
+        match kind {
+            PersistentMineshaftPieceKind::Room {
+                child_entrance_boxes,
+            } => MineshaftPieceKind::Room {
+                child_entrance_boxes: child_entrance_boxes.to_vec(),
+            },
+            PersistentMineshaftPieceKind::Corridor {
+                has_rails,
+                spider_corridor,
+                has_placed_spider,
+                num_sections,
+            } => MineshaftPieceKind::Corridor {
+                has_rails: *has_rails,
+                spider_corridor: *spider_corridor,
+                has_placed_spider: *has_placed_spider,
+                num_sections: *num_sections,
+            },
+            PersistentMineshaftPieceKind::Crossing {
+                direction,
+                is_two_floored,
+            } => MineshaftPieceKind::Crossing {
+                direction: required_direction_from_2d(*direction),
+                is_two_floored: *is_two_floored,
+            },
+            PersistentMineshaftPieceKind::Stairs => MineshaftPieceKind::Stairs,
+        }
+    }
+
     fn structure_piece_payload_to_persistent(
         payload: &StructurePiecePayload,
     ) -> PersistentStructurePiecePayload {
@@ -1054,9 +1167,9 @@ impl ChunkStorage {
                     marker_handling: marker_handling_to_persistent(data.marker_handling),
                 })
             }
-            StructurePiecePayload::Procedural(ProceduralPieceData) => {
-                PersistentStructurePiecePayload::Procedural(PersistentProceduralPieceData)
-            }
+            StructurePiecePayload::Procedural(data) => PersistentStructurePiecePayload::Procedural(
+                Self::procedural_piece_data_to_persistent(data),
+            ),
         }
     }
 
@@ -1082,8 +1195,8 @@ impl ChunkStorage {
                     marker_handling: marker_handling_from_persistent(data.marker_handling),
                 })
             }
-            PersistentStructurePiecePayload::Procedural(PersistentProceduralPieceData) => {
-                StructurePiecePayload::Procedural(ProceduralPieceData)
+            PersistentStructurePiecePayload::Procedural(data) => {
+                StructurePiecePayload::Procedural(Self::persistent_to_procedural_piece_data(data))
             }
         }
     }
@@ -1477,7 +1590,7 @@ mod tests {
             bounding_box: steel_utils::BoundingBox::new(0, 64, 0, 1, 65, 1),
             gen_depth: 0,
             orientation: None,
-            payload: StructurePiecePayload::Procedural(ProceduralPieceData),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented),
             ground_level_delta: 0,
             junctions: Vec::new(),
             projection: None,
@@ -1967,11 +2080,31 @@ mod tests {
             5,
             Some(Direction::South),
         );
+        let mineshaft_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "mscorridor"),
+            bounding_box: steel_utils::BoundingBox::new(32, 45, 32, 34, 47, 46),
+            gen_depth: 4,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(
+                MineshaftPiecePayload {
+                    mineshaft_type: MineshaftType::Mesa,
+                    kind: MineshaftPieceKind::Corridor {
+                        has_rails: true,
+                        spider_corridor: false,
+                        has_placed_spider: true,
+                        num_sections: 3,
+                    },
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
 
         let start = StructureStart::new(
             structure_id.clone(),
             ChunkPos::new(8, 9),
-            vec![template_piece, procedural_piece],
+            vec![template_piece, procedural_piece, mineshaft_piece],
             TerrainAdjustment::None,
         );
         let mut starts = FxHashMap::default();
@@ -1985,7 +2118,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 2);
+        assert_eq!(loaded_start.pieces.len(), 3);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2009,7 +2142,27 @@ mod tests {
 
         assert!(matches!(
             loaded_start.pieces[1].payload,
-            StructurePiecePayload::Procedural(ProceduralPieceData)
+            StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented)
         ));
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
+            &loaded_start.pieces[2].payload
+        else {
+            panic!("mineshaft payload should roundtrip");
+        };
+        assert_eq!(payload.mineshaft_type, MineshaftType::Mesa);
+        let MineshaftPieceKind::Corridor {
+            has_rails,
+            spider_corridor,
+            has_placed_spider,
+            num_sections,
+        } = &payload.kind
+        else {
+            panic!("expected mineshaft corridor payload");
+        };
+        assert!(*has_rails);
+        assert!(!*spider_corridor);
+        assert!(*has_placed_spider);
+        assert_eq!(*num_sections, 3);
     }
 }

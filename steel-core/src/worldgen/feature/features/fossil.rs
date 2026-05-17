@@ -1,8 +1,11 @@
-use crate::worldgen::template::{StructurePlaceSettings, StructureTemplate};
+use crate::worldgen::template::{
+    StructureBlockIgnore, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+};
 use steel_utils::{BoundingBox, Rotation};
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::StructureProcessorKind;
 
 const VANILLA_ROTATIONS: [Rotation; 4] = [
@@ -70,6 +73,12 @@ impl FeatureDecorationRunner {
             rotation,
             bounding_box,
             processors: fossil_processors,
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Placement,
+            liquid_settings: LiquidSettingsData::ApplyWaterlogging,
         };
         fossil_template.place_in_world(
             region,
@@ -85,6 +94,12 @@ impl FeatureDecorationRunner {
             rotation,
             bounding_box,
             processors: overlay_processors,
+            block_ignore: StructureBlockIgnore::None,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Placement,
+            liquid_settings: LiquidSettingsData::ApplyWaterlogging,
         };
         overlay_template.place_in_world(
             region,

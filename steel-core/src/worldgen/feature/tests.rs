@@ -96,16 +96,58 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
         FeatureDecorationRunner::structures_for_decoration_step(&registry, 7);
 
     assert_eq!(
-        underground[0].key,
-        Identifier::vanilla_static("buried_treasure")
+        underground
+            .iter()
+            .map(|structure| structure.key.path.as_ref())
+            .collect::<Vec<_>>(),
+        [
+            "buried_treasure",
+            "mineshaft",
+            "mineshaft_mesa",
+            "trail_ruins",
+            "trial_chambers",
+        ]
     );
     assert_eq!(
-        surface[0].key,
-        Identifier::vanilla_static("bastion_remnant")
+        surface
+            .iter()
+            .map(|structure| structure.key.path.as_ref())
+            .collect::<Vec<_>>(),
+        [
+            "bastion_remnant",
+            "desert_pyramid",
+            "end_city",
+            "igloo",
+            "jungle_pyramid",
+            "mansion",
+            "monument",
+            "ocean_ruin_cold",
+            "ocean_ruin_warm",
+            "pillager_outpost",
+            "ruined_portal",
+            "ruined_portal_desert",
+            "ruined_portal_jungle",
+            "ruined_portal_mountain",
+            "ruined_portal_nether",
+            "ruined_portal_ocean",
+            "ruined_portal_swamp",
+            "shipwreck",
+            "shipwreck_beached",
+            "stronghold",
+            "swamp_hut",
+            "village_desert",
+            "village_plains",
+            "village_savanna",
+            "village_snowy",
+            "village_taiga",
+        ]
     );
     assert_eq!(
-        underground_decoration[0].key,
-        Identifier::vanilla_static("ancient_city")
+        underground_decoration
+            .iter()
+            .map(|structure| structure.key.path.as_ref())
+            .collect::<Vec<_>>(),
+        ["ancient_city", "fortress", "nether_fossil"]
     );
 
     assert!(
@@ -206,6 +248,34 @@ fn structure_piece_clip_box_is_center_chunk_build_height_box() {
     assert_eq!(
         FeatureDecorationRunner::chunk_writable_box(ChunkPos::new(-2, 3), -64, 320),
         BoundingBox::new(-32, -64, 48, -17, 319, 63)
+    );
+}
+
+#[test]
+fn structure_start_reference_pos_uses_first_piece_center_and_min_y() {
+    let start = StructureStart::new(
+        Identifier::vanilla_static("test_structure"),
+        ChunkPos::new(0, 0),
+        vec![
+            StructurePiece::non_jigsaw(
+                Identifier::vanilla_static("first_piece"),
+                BoundingBox::new(10, 42, 20, 19, 50, 29),
+                0,
+                None,
+            ),
+            StructurePiece::non_jigsaw(
+                Identifier::vanilla_static("second_piece"),
+                BoundingBox::new(100, 5, 100, 110, 9, 110),
+                1,
+                None,
+            ),
+        ],
+        TerrainAdjustment::None,
+    );
+
+    assert_eq!(
+        start.placement_reference_pos(),
+        Some(BlockPos::new(15, 42, 25))
     );
 }
 

@@ -6,6 +6,12 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 
+#[derive(Clone, Copy)]
+enum BiomeFilterMode<'a> {
+    Check(Option<&'a Identifier>),
+    Ignore,
+}
+
 impl FeatureDecorationRunner {
     pub(super) fn place_placed_feature_entry(
         region: &mut WorldGenRegion<'_>,
@@ -37,7 +43,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureData,
-        biome_filter_feature_key: Option<&Identifier>,
+        biome_filter: Option<&Identifier>,
         biome_zoom_seed: i64,
     ) -> bool {
         Self::place_placed_feature_from_modifier(
@@ -46,7 +52,7 @@ impl FeatureDecorationRunner {
             random,
             origin,
             feature,
-            biome_filter_feature_key,
+            BiomeFilterMode::Check(biome_filter),
             biome_zoom_seed,
             0,
         )
@@ -62,7 +68,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureData,
-        biome_filter_feature_key: Option<&Identifier>,
+        biome_filter: BiomeFilterMode<'_>,
         biome_zoom_seed: i64,
         modifier_index: usize,
     ) -> bool {
@@ -81,20 +87,25 @@ impl FeatureDecorationRunner {
 
         match modifier {
             PlacementModifier::Biome => {
-                if Self::biome_allows_feature(
-                    region,
-                    registry,
-                    biome_zoom_seed,
-                    origin,
-                    biome_filter_feature_key,
-                ) {
+                let biome_allows = match biome_filter {
+                    BiomeFilterMode::Check(feature_key) => Self::biome_allows_feature(
+                        region,
+                        registry,
+                        biome_zoom_seed,
+                        origin,
+                        feature_key,
+                    ),
+                    BiomeFilterMode::Ignore => true,
+                };
+
+                if biome_allows {
                     placed = Self::place_placed_feature_from_modifier(
                         region,
                         registry,
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -108,7 +119,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -123,7 +134,7 @@ impl FeatureDecorationRunner {
                             random,
                             origin,
                             feature,
-                            biome_filter_feature_key,
+                            biome_filter,
                             biome_zoom_seed,
                             modifier_index + 1,
                         ) {
@@ -141,7 +152,7 @@ impl FeatureDecorationRunner {
                         random,
                         position,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     ) {
@@ -170,7 +181,7 @@ impl FeatureDecorationRunner {
                         random,
                         position,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -192,7 +203,7 @@ impl FeatureDecorationRunner {
                         random,
                         position,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     ) {
@@ -216,7 +227,7 @@ impl FeatureDecorationRunner {
                     random,
                     position,
                     feature,
-                    biome_filter_feature_key,
+                    biome_filter,
                     biome_zoom_seed,
                     modifier_index + 1,
                 );
@@ -234,7 +245,7 @@ impl FeatureDecorationRunner {
                         random,
                         BlockPos::new(origin.x(), height, origin.z()),
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -252,7 +263,7 @@ impl FeatureDecorationRunner {
                     random,
                     position,
                     feature,
-                    biome_filter_feature_key,
+                    biome_filter,
                     biome_zoom_seed,
                     modifier_index + 1,
                 );
@@ -276,7 +287,7 @@ impl FeatureDecorationRunner {
                             random,
                             origin,
                             feature,
-                            biome_filter_feature_key,
+                            biome_filter,
                             biome_zoom_seed,
                             modifier_index + 1,
                         ) {
@@ -307,7 +318,7 @@ impl FeatureDecorationRunner {
                             random,
                             origin,
                             feature,
-                            biome_filter_feature_key,
+                            biome_filter,
                             biome_zoom_seed,
                             modifier_index + 1,
                         ) {
@@ -331,7 +342,7 @@ impl FeatureDecorationRunner {
                     random,
                     position,
                     feature,
-                    biome_filter_feature_key,
+                    biome_filter,
                     biome_zoom_seed,
                     modifier_index + 1,
                 );
@@ -348,7 +359,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -374,7 +385,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -391,7 +402,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_key,
+                        biome_filter,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -428,6 +439,30 @@ impl FeatureDecorationRunner {
             feature_data,
             None,
             biome_zoom_seed,
+        )
+    }
+
+    pub(crate) fn place_structure_pool_feature(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        origin: BlockPos,
+        feature_key: &Identifier,
+        biome_zoom_seed: i64,
+    ) -> bool {
+        let Some(feature) = registry.placed_features.by_key(feature_key) else {
+            panic!("template pool references unknown placed feature {feature_key}");
+        };
+
+        Self::place_placed_feature_from_modifier(
+            region,
+            registry,
+            random,
+            origin,
+            &feature.data,
+            BiomeFilterMode::Ignore,
+            biome_zoom_seed,
+            0,
         )
     }
 }

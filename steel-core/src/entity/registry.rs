@@ -10,7 +10,7 @@ use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
 use uuid::Uuid;
 
-use super::entities::{BlockDisplayEntity, EndCrystalEntity, ItemEntity};
+use super::entities::{BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity};
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
 
@@ -220,6 +220,19 @@ pub fn init_entities() {
         &vanilla_entities::END_CRYSTAL,
         |id, pos, uuid, _velocity, rotation, _on_ground, world| {
             Arc::new(EndCrystalEntity::from_saved(id, pos, uuid, rotation, world))
+        },
+    );
+
+    // Register chest minecart entity factory
+    registry.register(&vanilla_entities::CHEST_MINECART, |id, pos, world| {
+        Arc::new(ChestMinecartEntity::new(id, pos, world))
+    });
+    registry.register_load(
+        &vanilla_entities::CHEST_MINECART,
+        |id, pos, uuid, velocity, rotation, on_ground, world| {
+            Arc::new(ChestMinecartEntity::from_saved(
+                id, pos, uuid, velocity, rotation, on_ground, world,
+            ))
         },
     );
 

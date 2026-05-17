@@ -2,6 +2,7 @@ use std::{env, fs, path::Path, process::Command};
 
 mod attributes;
 mod banner_patterns;
+mod biome_tags;
 mod biomes;
 mod block_entity_types;
 mod block_tags;
@@ -77,6 +78,7 @@ const ITEM_TAGS: &str = "item_tags";
 const PACKETS: &str = "packets";
 const BANNER_PATTERNS: &str = "banner_patterns";
 const BIOMES: &str = "biomes";
+const BIOME_TAGS: &str = "biome_tags";
 const CHAT_TYPES: &str = "chat_types";
 const TRIM_PATTERNS: &str = "trim_patterns";
 const TRIM_MATERIALS: &str = "trim_materials";
@@ -155,6 +157,7 @@ pub fn main() {
         (packets::build(), PACKETS),
         (banner_patterns::build(), BANNER_PATTERNS),
         (biomes::build(), BIOMES),
+        (biome_tags::build(), BIOME_TAGS),
         (chat_types::build(), CHAT_TYPES),
         (trim_patterns::build(), TRIM_PATTERNS),
         (trim_materials::build(), TRIM_MATERIALS),

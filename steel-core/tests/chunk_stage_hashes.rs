@@ -71,7 +71,7 @@ const STAGES: &[&str] = &[
 ///
 /// Set this to `false` when the vanilla fixture was produced with
 /// `-DMC_DEBUG_DISABLE_STRUCTURES=true`.
-const GENERATE_STRUCTURES: bool = false;
+const GENERATE_STRUCTURES: bool = true;
 
 /// Max block-level diffs to show per chunk before truncating.
 const MAX_DIFFS_PER_CHUNK: usize = 30;
@@ -742,13 +742,6 @@ fn chunk_stage_hashes_inner() {
         let mut biome_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
         let mut feature_carver_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
         for entry in &test_entries {
-            if GENERATE_STRUCTURES {
-                for dx in -8i32..=8 {
-                    for dz in -8i32..=8 {
-                        starts_positions.insert((entry.x + dx, entry.z + dz));
-                    }
-                }
-            }
             if includes_features {
                 for dx in -feature_cache_radius..=feature_cache_radius {
                     for dz in -feature_cache_radius..=feature_cache_radius {
@@ -764,6 +757,24 @@ fn chunk_stage_hashes_inner() {
             for dx in -1i32..=1 {
                 for dz in -1i32..=1 {
                     biome_positions.insert((entry.x + dx, entry.z + dz));
+                }
+            }
+        }
+
+        let reference_target_positions = if includes_features {
+            sorted_positions(&feature_carver_positions)
+        } else {
+            test_entries
+                .iter()
+                .map(|entry| (entry.x, entry.z))
+                .collect::<Vec<_>>()
+        };
+        if GENERATE_STRUCTURES {
+            for &(target_x, target_z) in &reference_target_positions {
+                for dx in -8i32..=8 {
+                    for dz in -8i32..=8 {
+                        starts_positions.insert((target_x + dx, target_z + dz));
+                    }
                 }
             }
         }
@@ -804,12 +815,10 @@ fn chunk_stage_hashes_inner() {
         }
 
         // STRUCTURE_REFERENCES — mirror of `generate_references`: scan 17×17 for each
-        // test chunk, recording which neighbor chunks hold a start whose inflated BB
-        // intersects this chunk.
+        // chunk that will be read at noise/carver stage, recording which neighbor chunks
+        // hold a start whose inflated BB intersects it.
         if GENERATE_STRUCTURES {
-            for entry in &test_entries {
-                let target_x = entry.x;
-                let target_z = entry.z;
+            for &(target_x, target_z) in &reference_target_positions {
                 let target_block_x = target_x * 16;
                 let target_block_z = target_z * 16;
 

@@ -8,23 +8,30 @@ use simdnbt::borrow::{
     NbtCompoundList as BorrowedNbtCompoundList, NbtList as BorrowedNbtList, read as read_nbt,
 };
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::properties::Direction as BlockPropertyDirection;
 use steel_registry::blocks::{self};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
+use steel_registry::fluid::FluidState;
 use steel_registry::shared_structs::BlockStateData;
+use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::{
     PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
     StructureProcessorKind, StructureRuleTestData,
 };
-use steel_registry::{Registry, RegistryExt, TaggedRegistryExt, vanilla_template_pools};
-use steel_utils::random::Random;
+use steel_registry::template_pool::Projection;
+use steel_registry::{
+    Registry, RegistryExt, TaggedRegistryExt, vanilla_blocks, vanilla_template_pools,
+};
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
+use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{
     BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
 };
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
+use crate::chunk::heightmap::HeightmapType;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::state_resolver::WorldgenStateResolver;
 
@@ -52,7 +59,7 @@ struct StructureBlockInfo {
     nbt: Option<NbtCompound>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct ProcessedBlockInfo {
     template_pos: BlockPos,
     world_pos: BlockPos,
@@ -60,10 +67,35 @@ struct ProcessedBlockInfo {
     nbt: Option<NbtCompound>,
 }
 
+/// Hardcoded vanilla block-ignore processors used by structure pool elements.
+///
+/// Registry-backed processor lists cannot express these singleton instances in
+/// Steel yet because vanilla wires them directly in `SinglePoolElement`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StructureBlockIgnore {
+    None,
+    StructureBlock,
+    StructureAndAir,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StructureProcessorRandom {
+    /// Vanilla `StructurePlaceSettings.setRandom(random)`.
+    Placement,
+    /// Vanilla `StructurePlaceSettings.getRandom(pos)` fallback.
+    Positional,
+}
+
 pub(crate) struct StructurePlaceSettings<'a> {
     pub(crate) rotation: Rotation,
     pub(crate) bounding_box: BoundingBox,
     pub(crate) processors: &'a [StructureProcessorKind],
+    pub(crate) block_ignore: StructureBlockIgnore,
+    pub(crate) late_block_ignore: StructureBlockIgnore,
+    pub(crate) replace_jigsaws: bool,
+    pub(crate) projection: Option<Projection>,
+    pub(crate) processor_random: StructureProcessorRandom,
+    pub(crate) liquid_settings: LiquidSettingsData,
 }
 
 impl StructureTemplate {
@@ -317,31 +349,52 @@ impl StructureTemplate {
         random: &mut WorldgenRandom,
         flags: UpdateFlags,
     ) -> bool {
-        let Some(palette) = self.palette(random) else {
+        let Some(palette) = self.palette(settings, position, random) else {
             return false;
         };
+        let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
         for block in &palette.blocks {
             let original = ProcessedBlockInfo {
+                template_pos: block.pos,
+                world_pos: block.pos,
+                state: block.state,
+                nbt: block.nbt.clone(),
+            };
+            let processed = ProcessedBlockInfo {
                 template_pos: block.pos,
                 world_pos: Self::transformed_position(position, block.pos, settings.rotation),
                 state: block.state,
                 nbt: block.nbt.clone(),
             };
 
-            let Some(processed) =
-                Self::process_block(region, registry, &original, settings, reference_pos, random)
-            else {
+            let Some(processed) = Self::process_block(
+                region,
+                registry,
+                &original,
+                processed,
+                settings,
+                reference_pos,
+                random,
+            ) else {
                 continue;
             };
 
-            if !settings.bounding_box.is_inside(processed.world_pos) {
-                continue;
-            }
-
+            original_blocks.push(original);
             processed_blocks.push(processed);
         }
+
+        let processed_blocks = Self::finalize_processing(
+            region,
+            registry,
+            position,
+            reference_pos,
+            settings,
+            &original_blocks,
+            processed_blocks,
+            random,
+        );
 
         let mut placed_any = false;
         let mut placed_positions = Vec::with_capacity(processed_blocks.len());
@@ -351,8 +404,30 @@ impl StructureTemplate {
         let mut max_x = i32::MIN;
         let mut max_y = i32::MIN;
         let mut max_z = i32::MIN;
+        let mut to_fill = Vec::new();
+        let mut locked_fluids = Vec::new();
+        let apply_waterlogging = settings.liquid_settings == LiquidSettingsData::ApplyWaterlogging;
         for processed in processed_blocks {
+            if !settings.bounding_box.is_inside(processed.world_pos) {
+                continue;
+            }
+
             let final_state = Self::rotate_state(registry, processed.state, settings.rotation);
+            let previous_fluid_state =
+                apply_waterlogging.then(|| Self::fluid_state_at(region, processed.world_pos));
+            if processed.nbt.is_some() {
+                let barrier_flags = UpdateFlags::UPDATE_INVISIBLE
+                    | UpdateFlags::UPDATE_KNOWN_SHAPE
+                    | UpdateFlags::UPDATE_SUPPRESS_DROPS
+                    | UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS
+                    | UpdateFlags::UPDATE_SKIP_ON_PLACE;
+                let _ = region.set_block_state(
+                    processed.world_pos,
+                    vanilla_blocks::BARRIER.default_state(),
+                    barrier_flags,
+                );
+            }
+
             if !region.set_block_state(processed.world_pos, final_state, flags) {
                 continue;
             }
@@ -365,12 +440,33 @@ impl StructureTemplate {
             max_z = max_z.max(processed.world_pos.z());
             placed_positions.push(processed.world_pos);
 
-            if let Some(nbt) = processed.nbt {
+            if let Some(mut nbt) = processed.nbt {
+                if nbt.contains("LootTable") {
+                    nbt.insert("LootTableSeed", NbtTag::Long(random.next_i64()));
+                }
                 Self::place_block_entity(region, registry, processed.world_pos, final_state, nbt);
             } else {
                 let _ = region.remove_block_entity(processed.world_pos);
             }
+
+            if let Some(previous_fluid_state) = previous_fluid_state {
+                if Self::fluid_state_for_block(final_state).is_source() {
+                    locked_fluids.push(processed.world_pos);
+                } else if Self::is_liquid_block_container(final_state) {
+                    let _ = Self::place_liquid(
+                        region,
+                        processed.world_pos,
+                        final_state,
+                        previous_fluid_state,
+                    );
+                    if !previous_fluid_state.is_source() {
+                        to_fill.push(processed.world_pos);
+                    }
+                }
+            }
         }
+
+        Self::fill_neighbor_source_liquids(region, &mut to_fill, &locked_fluids);
 
         if placed_any && !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE) {
             Self::update_shape_at_edge(
@@ -472,6 +568,102 @@ impl StructureTemplate {
         updated
     }
 
+    fn fill_neighbor_source_liquids(
+        region: &mut WorldGenRegion<'_>,
+        to_fill: &mut Vec<BlockPos>,
+        locked_fluids: &[BlockPos],
+    ) {
+        const DIRECTIONS: [Direction; 5] = [
+            Direction::Up,
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ];
+
+        let mut filled = true;
+        while filled && !to_fill.is_empty() {
+            filled = false;
+            let mut index = 0;
+            while index < to_fill.len() {
+                let pos = to_fill[index];
+                let mut to_place = Self::fluid_state_at(region, pos);
+                for direction in DIRECTIONS {
+                    if to_place.is_source() {
+                        break;
+                    }
+                    let neighbor_pos = pos.relative(direction);
+                    let neighbor = Self::fluid_state_at(region, neighbor_pos);
+                    if neighbor.is_source() && !locked_fluids.contains(&neighbor_pos) {
+                        to_place = neighbor;
+                    }
+                }
+
+                if to_place.is_source() {
+                    let state = region.block_state(pos);
+                    if Self::is_liquid_block_container(state)
+                        && Self::place_liquid(region, pos, state, to_place)
+                    {
+                        filled = true;
+                        to_fill.remove(index);
+                        continue;
+                    }
+                }
+
+                index += 1;
+            }
+        }
+    }
+
+    fn fluid_state_at(region: &WorldGenRegion<'_>, pos: BlockPos) -> FluidState {
+        Self::fluid_state_for_block(region.block_state(pos))
+    }
+
+    fn fluid_state_for_block(state: BlockStateId) -> FluidState {
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .get_fluid_state(state)
+    }
+
+    fn is_liquid_block_container(state: BlockStateId) -> bool {
+        state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+    }
+
+    fn place_liquid(
+        region: &mut WorldGenRegion<'_>,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        if state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_none()
+        {
+            return false;
+        }
+        if !behavior.can_place_liquid(state, fluid_state.fluid_id) {
+            return false;
+        }
+
+        let waterlogged = state.set_value(&BlockStateProperties::WATERLOGGED, true);
+        if !region.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL) {
+            return false;
+        }
+
+        let delay = region.weak_world().upgrade().map_or_else(
+            || i32::try_from(fluid_state.fluid_id.tick_delay).unwrap_or(i32::MAX),
+            |world| {
+                FLUID_BEHAVIORS
+                    .get_behavior(fluid_state.fluid_id)
+                    .tick_delay(&world)
+            },
+        );
+        region.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay)
+    }
+
     fn for_all_shape_faces(
         x_size: i32,
         y_size: i32,
@@ -528,7 +720,12 @@ impl StructureTemplate {
         }
     }
 
-    fn palette(&self, random: &mut WorldgenRandom) -> Option<&StructureTemplatePalette> {
+    fn palette(
+        &self,
+        settings: &StructurePlaceSettings<'_>,
+        position: BlockPos,
+        random: &mut WorldgenRandom,
+    ) -> Option<&StructureTemplatePalette> {
         if self.palettes.is_empty() {
             return None;
         }
@@ -538,7 +735,14 @@ impl StructureTemplate {
                 self.palettes.len()
             );
         };
-        Some(&self.palettes[random.next_i32_bounded(bound) as usize])
+        let index = match settings.processor_random {
+            StructureProcessorRandom::Placement => random.next_i32_bounded(bound),
+            StructureProcessorRandom::Positional => {
+                let mut random = LegacyRandom::from_seed(Self::block_pos_seed(position) as u64);
+                random.next_i32_bounded(bound)
+            }
+        };
+        Some(&self.palettes[index as usize])
     }
 
     const fn transformed_position(
@@ -555,11 +759,20 @@ impl StructureTemplate {
         region: &WorldGenRegion<'_>,
         registry: &Registry,
         original: &ProcessedBlockInfo,
+        initial: ProcessedBlockInfo,
         settings: &StructurePlaceSettings<'_>,
         reference_pos: BlockPos,
         random: &mut WorldgenRandom,
     ) -> Option<ProcessedBlockInfo> {
-        let mut current = original.clone();
+        let mut current = initial;
+        if settings.block_ignore.ignores(registry, current.state) {
+            return None;
+        }
+
+        if settings.replace_jigsaws {
+            current = Self::replace_jigsaw_block(registry, current)?;
+        }
+
         for processor in settings.processors {
             current = Self::process_block_with_processor(
                 region,
@@ -567,9 +780,16 @@ impl StructureTemplate {
                 processor,
                 original,
                 current,
+                settings,
                 reference_pos,
                 random,
             )?;
+        }
+        if settings.projection == Some(Projection::TerrainMatching) {
+            current = Self::apply_terrain_matching_projection(region, original, current);
+        }
+        if settings.late_block_ignore.ignores(registry, current.state) {
+            return None;
         }
         Some(current)
     }
@@ -580,6 +800,7 @@ impl StructureTemplate {
         processor: &StructureProcessorKind,
         original: &ProcessedBlockInfo,
         current: ProcessedBlockInfo,
+        settings: &StructurePlaceSettings<'_>,
         reference_pos: BlockPos,
         random: &mut WorldgenRandom,
     ) -> Option<ProcessedBlockInfo> {
@@ -595,7 +816,8 @@ impl StructureTemplate {
                 }) {
                     return Some(current);
                 }
-                (random.next_f32() <= *integrity).then_some(current)
+                (Self::processor_next_f32(settings, current.world_pos, random) <= *integrity)
+                    .then_some(current)
             }
             StructureProcessorKind::ProtectedBlocks { cannot_replace } => {
                 let existing =
@@ -622,12 +844,210 @@ impl StructureTemplate {
                 }
                 Some(current)
             }
-            StructureProcessorKind::Capped { .. } => {
-                // TODO: Implement vanilla CappedProcessor finalization before using capped processor
-                // lists for structure-piece placement. Fossil processor lists do not contain capped.
-                Some(current)
+            StructureProcessorKind::Capped { .. } => Some(current),
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "processor finalization receives vanilla's full template processing context"
+    )]
+    fn finalize_processing(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        position: BlockPos,
+        reference_pos: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        original_blocks: &[ProcessedBlockInfo],
+        mut processed_blocks: Vec<ProcessedBlockInfo>,
+        random: &mut WorldgenRandom,
+    ) -> Vec<ProcessedBlockInfo> {
+        for processor in settings.processors {
+            if let StructureProcessorKind::Capped { delegate, limit } = processor {
+                processed_blocks = Self::finalize_capped_processing(
+                    region,
+                    registry,
+                    position,
+                    reference_pos,
+                    delegate,
+                    limit,
+                    original_blocks,
+                    processed_blocks,
+                    settings,
+                    random,
+                );
             }
         }
+        processed_blocks
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "matches vanilla CappedProcessor.finalizeProcessing inputs"
+    )]
+    fn finalize_capped_processing(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        position: BlockPos,
+        reference_pos: BlockPos,
+        delegate: &StructureProcessorKind,
+        limit: &steel_utils::value_providers::IntProvider,
+        original_blocks: &[ProcessedBlockInfo],
+        mut processed_blocks: Vec<ProcessedBlockInfo>,
+        settings: &StructurePlaceSettings<'_>,
+        random: &mut WorldgenRandom,
+    ) -> Vec<ProcessedBlockInfo> {
+        if limit.max() == 0 || processed_blocks.is_empty() {
+            return processed_blocks;
+        }
+        if original_blocks.len() != processed_blocks.len() {
+            return processed_blocks;
+        }
+
+        let Ok(processed_len_i32) = i32::try_from(processed_blocks.len()) else {
+            panic!(
+                "processed structure block list length {} exceeds i32 range",
+                processed_blocks.len()
+            );
+        };
+
+        let mut cap_random = Self::capped_processor_random(region.seed(), position);
+        let max_to_replace = limit.sample(&mut cap_random).min(processed_len_i32);
+        if max_to_replace < 1 {
+            return processed_blocks;
+        }
+
+        let mut indices = (0..processed_blocks.len()).collect::<Vec<_>>();
+        Self::vanilla_shuffle(&mut indices, &mut cap_random);
+
+        let mut replaced = 0;
+        for index in indices {
+            if replaced >= max_to_replace {
+                break;
+            }
+
+            let current = processed_blocks[index].clone();
+            let Some(altered) = Self::process_block_with_processor(
+                region,
+                registry,
+                delegate,
+                &original_blocks[index],
+                current,
+                settings,
+                reference_pos,
+                random,
+            ) else {
+                continue;
+            };
+
+            if altered != processed_blocks[index] {
+                processed_blocks[index] = altered;
+                replaced += 1;
+            }
+        }
+
+        processed_blocks
+    }
+
+    fn processor_next_f32(
+        settings: &StructurePlaceSettings<'_>,
+        pos: BlockPos,
+        random: &mut WorldgenRandom,
+    ) -> f32 {
+        match settings.processor_random {
+            StructureProcessorRandom::Placement => random.next_f32(),
+            StructureProcessorRandom::Positional => {
+                let mut random = LegacyRandom::from_seed(Self::block_pos_seed(pos) as u64);
+                random.next_f32()
+            }
+        }
+    }
+
+    fn capped_processor_random(
+        world_seed: i64,
+        position: BlockPos,
+    ) -> steel_utils::random::RandomSource {
+        LegacyRandom::from_seed(world_seed as u64)
+            .next_positional()
+            .at(position.x(), position.y(), position.z())
+    }
+
+    fn vanilla_shuffle<T>(items: &mut [T], random: &mut impl Random) {
+        for i in (1..items.len()).rev() {
+            let Ok(bound) = i32::try_from(i + 1) else {
+                panic!(
+                    "structure processor shuffle length {} exceeds i32 range",
+                    items.len()
+                );
+            };
+            let j = random.next_i32_bounded(bound) as usize;
+            items.swap(i, j);
+        }
+    }
+
+    fn replace_jigsaw_block(
+        registry: &Registry,
+        mut current: ProcessedBlockInfo,
+    ) -> Option<ProcessedBlockInfo> {
+        if Self::block_for_state(registry, current.state) != &vanilla_blocks::JIGSAW {
+            return Some(current);
+        }
+
+        let Some(nbt) = current.nbt.as_ref() else {
+            return Some(current);
+        };
+        let final_state = nbt
+            .string("final_state")
+            .map(|value| value.to_str())
+            .unwrap_or_else(|| "minecraft:air".into());
+        current.state = Self::parse_block_state_string(registry, final_state.as_ref())
+            .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
+        current.nbt = None;
+
+        (Self::block_for_state(registry, current.state) != &vanilla_blocks::STRUCTURE_VOID)
+            .then_some(current)
+    }
+
+    fn parse_block_state_string(registry: &Registry, value: &str) -> Option<BlockStateId> {
+        let (name, properties) = match value.split_once('[') {
+            Some((name, rest)) => {
+                let rest = rest.strip_suffix(']')?;
+                (name, Some(rest))
+            }
+            None => (value, None),
+        };
+        let id = Identifier::from_str(name).ok()?;
+        let block = registry.blocks.by_key(&id)?;
+
+        let mut parsed_properties = Vec::new();
+        if let Some(properties) = properties {
+            for property in properties.split(',') {
+                let (key, value) = property.split_once('=')?;
+                parsed_properties.push((key, value));
+            }
+        }
+
+        registry
+            .blocks
+            .state_id_from_block_defaulted_properties(block, parsed_properties)
+    }
+
+    fn apply_terrain_matching_projection(
+        region: &WorldGenRegion<'_>,
+        original: &ProcessedBlockInfo,
+        mut current: ProcessedBlockInfo,
+    ) -> ProcessedBlockInfo {
+        let height = region.height_at(
+            HeightmapType::WorldSurfaceWg,
+            current.world_pos.x(),
+            current.world_pos.z(),
+        ) - 1;
+        current.world_pos = BlockPos::new(
+            current.world_pos.x(),
+            height + original.template_pos.y(),
+            current.world_pos.z(),
+        );
+        current
     }
 
     #[expect(
@@ -915,6 +1335,22 @@ impl StructureTemplate {
     }
 }
 
+impl StructureBlockIgnore {
+    fn ignores(self, registry: &Registry, state: BlockStateId) -> bool {
+        match self {
+            Self::None => false,
+            Self::StructureBlock => {
+                StructureTemplate::block_for_state(registry, state)
+                    == &vanilla_blocks::STRUCTURE_BLOCK
+            }
+            Self::StructureAndAir => {
+                let block = StructureTemplate::block_for_state(registry, state);
+                block == &vanilla_blocks::STRUCTURE_BLOCK || block == &vanilla_blocks::AIR
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -952,5 +1388,72 @@ mod tests {
             StructureTemplate::block_pos_seed(BlockPos::new(12, -3, 45)),
             103_080_484_998_711
         );
+    }
+
+    #[test]
+    fn jigsaw_replacement_uses_final_state_and_removes_nbt() {
+        let registry = Registry::new_vanilla();
+        let mut nbt = NbtCompound::new();
+        nbt.insert(
+            "final_state",
+            NbtTag::String("minecraft:oak_stairs[facing=east,half=top]".into()),
+        );
+        let current = ProcessedBlockInfo {
+            template_pos: BlockPos::ZERO,
+            world_pos: BlockPos::new(1, 2, 3),
+            state: registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::JIGSAW),
+            nbt: Some(nbt),
+        };
+
+        let replaced = StructureTemplate::replace_jigsaw_block(&registry, current)
+            .expect("non-structure-void final state should remain");
+
+        assert_eq!(replaced.nbt, None);
+        assert_eq!(
+            replaced.state,
+            StructureTemplate::parse_block_state_string(
+                &registry,
+                "minecraft:oak_stairs[facing=east,half=top]"
+            )
+            .expect("test final state should parse")
+        );
+    }
+
+    #[test]
+    fn jigsaw_replacement_drops_structure_void_final_state() {
+        let registry = Registry::new_vanilla();
+        let mut nbt = NbtCompound::new();
+        nbt.insert(
+            "final_state",
+            NbtTag::String("minecraft:structure_void".into()),
+        );
+        let current = ProcessedBlockInfo {
+            template_pos: BlockPos::ZERO,
+            world_pos: BlockPos::new(1, 2, 3),
+            state: registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::JIGSAW),
+            nbt: Some(nbt),
+        };
+
+        assert!(StructureTemplate::replace_jigsaw_block(&registry, current).is_none());
+    }
+
+    #[test]
+    fn structure_block_ignore_modes_match_vanilla_single_variants() {
+        let registry = Registry::new_vanilla();
+        let structure_block = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::STRUCTURE_BLOCK);
+        let air = registry.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let stone = registry.blocks.get_default_state_id(&vanilla_blocks::STONE);
+
+        assert!(StructureBlockIgnore::StructureBlock.ignores(&registry, structure_block));
+        assert!(!StructureBlockIgnore::StructureBlock.ignores(&registry, air));
+        assert!(StructureBlockIgnore::StructureAndAir.ignores(&registry, structure_block));
+        assert!(StructureBlockIgnore::StructureAndAir.ignores(&registry, air));
+        assert!(!StructureBlockIgnore::StructureAndAir.ignores(&registry, stone));
     }
 }

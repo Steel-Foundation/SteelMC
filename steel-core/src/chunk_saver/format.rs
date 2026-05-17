@@ -518,7 +518,51 @@ pub struct PersistentTemplatePieceData {
 
 /// Persisted procedural piece data.
 #[derive(SchemaWrite, SchemaRead)]
-pub struct PersistentProceduralPieceData;
+pub enum PersistentProceduralPieceData {
+    /// Procedural family whose placement state has not been captured yet.
+    Unimplemented,
+    /// Mineshaft room/corridor/crossing/stairs payload.
+    Mineshaft(PersistentMineshaftPieceData),
+}
+
+/// Persisted mineshaft piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentMineshaftPieceData {
+    /// Mineshaft type: 0=normal, 1=mesa.
+    pub mineshaft_type: i8,
+    /// Piece-specific mineshaft data.
+    pub kind: PersistentMineshaftPieceKind,
+}
+
+/// Persisted piece-specific mineshaft data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentMineshaftPieceKind {
+    /// Start room.
+    Room {
+        /// Child entrance boxes.
+        child_entrance_boxes: Vec<BoundingBox>,
+    },
+    /// Horizontal corridor.
+    Corridor {
+        /// Whether rails can generate through this corridor.
+        has_rails: bool,
+        /// Whether this is a cobweb-heavy cave-spider corridor.
+        spider_corridor: bool,
+        /// Whether the cave-spider spawner has already been placed.
+        has_placed_spider: bool,
+        /// Number of five-block corridor sections.
+        num_sections: i32,
+    },
+    /// Corridor crossing.
+    Crossing {
+        /// Direction: 0=south, 1=west, 2=north, 3=east.
+        direction: i8,
+        /// Whether the crossing has the upper floor.
+        is_two_floored: bool,
+    },
+    /// Stair segment.
+    Stairs,
+}
 
 /// Persisted pool element selected during jigsaw assembly.
 #[derive(SchemaWrite, SchemaRead)]
