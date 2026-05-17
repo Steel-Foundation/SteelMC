@@ -7,6 +7,7 @@
 
 mod mineshaft;
 mod pool_element;
+mod ruined_portal;
 mod template_piece;
 mod template_processors;
 

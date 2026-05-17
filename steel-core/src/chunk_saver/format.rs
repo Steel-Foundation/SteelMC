@@ -526,9 +526,10 @@ pub struct PersistentTemplatePieceData {
     pub marker_handling: i8,
     /// Family-specific position adjustment before template block placement.
     pub placement_adjustment: PersistentTemplatePlacementAdjustment,
-    /// Placement clip: 0=center_chunk, 1=center_chunk_expanded_to_template.
+    /// Placement clip: 0=center_chunk, 1=center_chunk_expanded_to_template,
+    /// 2=center_chunk_contains_template_center_expanded_to_template.
     pub placement_clip: i8,
-    /// Postprocess: 0=none, 1=nether_fossil, 2=igloo_top.
+    /// Postprocess: 0=none, 1=nether_fossil, 2=igloo_top, 3=ruined_portal.
     pub post_process: i8,
 }
 

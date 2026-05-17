@@ -9,7 +9,7 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, type
 use crate::chunk::heightmap::HeightmapType;
 use crate::world::structure::{
     StructureMirror, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
-    TemplatePlacementClip, TemplatePostProcess,
+    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
@@ -65,7 +65,11 @@ impl StructurePiecePlacer {
             settings.rotation_pivot,
         );
         *piece_bounding_box = template_box;
-        let placement_clip = Self::template_placement_clip(data.placement_clip, clip, template_box);
+        let Some(placement_clip) =
+            Self::template_placement_clip(data.placement_clip, clip, template_box)
+        else {
+            return false;
+        };
         let settings = StructurePlaceSettings {
             bounding_box: placement_clip,
             ..settings
@@ -100,10 +104,12 @@ impl StructurePiecePlacer {
                 region,
                 registry,
                 data.post_process,
+                &data.processors,
                 position,
                 &settings,
                 template_box,
                 placement_clip,
+                random,
             );
         }
         placed
@@ -315,11 +321,18 @@ impl StructurePiecePlacer {
         placement_clip: TemplatePlacementClip,
         center_clip: BoundingBox,
         template_box: BoundingBox,
-    ) -> BoundingBox {
+    ) -> Option<BoundingBox> {
         match placement_clip {
-            TemplatePlacementClip::CenterChunk => center_clip,
+            TemplatePlacementClip::CenterChunk => Some(center_clip),
             TemplatePlacementClip::CenterChunkExpandedToTemplate => {
-                BoundingBox::encapsulating(&center_clip, &template_box)
+                Some(BoundingBox::encapsulating(&center_clip, &template_box))
+            }
+            TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate => {
+                if center_clip.is_inside(template_box.get_center()) {
+                    Some(BoundingBox::encapsulating(&center_clip, &template_box))
+                } else {
+                    None
+                }
             }
         }
     }
@@ -328,10 +341,12 @@ impl StructurePiecePlacer {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         post_process: TemplatePostProcess,
+        processors: &TemplateProcessorList,
         position: BlockPos,
         settings: &StructurePlaceSettings<'_>,
         template_box: BoundingBox,
         placement_clip: BoundingBox,
+        random: &mut WorldgenRandom,
     ) {
         match post_process {
             TemplatePostProcess::None => {}
@@ -345,6 +360,23 @@ impl StructurePiecePlacer {
             }
             TemplatePostProcess::IglooTop => {
                 Self::post_process_igloo_top(region, position, settings);
+            }
+            TemplatePostProcess::RuinedPortal => {
+                let TemplateProcessorList::RuinedPortal {
+                    vertical_placement,
+                    properties,
+                } = processors
+                else {
+                    panic!("ruined portal postprocess requires ruined portal processors");
+                };
+                Self::post_process_ruined_portal(
+                    region,
+                    registry,
+                    *vertical_placement,
+                    *properties,
+                    template_box,
+                    random,
+                );
             }
         }
     }
@@ -417,5 +449,34 @@ impl StructurePiecePlacer {
             panic!("dried_ghast missing vanilla facing property");
         };
         state
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn center_gated_expanded_clip_requires_template_center_inside_center_chunk() {
+        let center_clip = BoundingBox::new(0, -64, 0, 15, 319, 15);
+        let centered_template = BoundingBox::new(0, 70, 0, 15, 80, 15);
+        let outside_template = BoundingBox::new(16, 70, 8, 31, 80, 23);
+
+        assert_eq!(
+            StructurePiecePlacer::template_placement_clip(
+                TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+                center_clip,
+                centered_template,
+            ),
+            Some(BoundingBox::encapsulating(&center_clip, &centered_template)),
+        );
+        assert_eq!(
+            StructurePiecePlacer::template_placement_clip(
+                TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+                center_clip,
+                outside_template,
+            ),
+            None,
+        );
     }
 }

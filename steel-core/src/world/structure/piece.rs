@@ -194,6 +194,8 @@ pub enum TemplatePlacementClip {
     CenterChunk,
     /// Expand the center chunk writable box to include this piece's transformed template box.
     CenterChunkExpandedToTemplate,
+    /// Expand to the transformed template box only when its center is in the center chunk.
+    CenterChunkContainsTemplateCenterExpandedToTemplate,
 }
 
 /// Family-specific post-template processing for template-backed pieces.
@@ -205,6 +207,8 @@ pub enum TemplatePostProcess {
     NetherFossil,
     /// Igloo top-piece trapdoor snow-block fixup.
     IglooTop,
+    /// Ruined portal netherrack spread, drip columns, vines, and overgrowth.
+    RuinedPortal,
 }
 
 /// Family-specific state for code-generated structure pieces.

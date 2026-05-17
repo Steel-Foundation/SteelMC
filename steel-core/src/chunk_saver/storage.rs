@@ -252,12 +252,14 @@ const fn placement_clip_to_persistent(placement_clip: TemplatePlacementClip) -> 
     match placement_clip {
         TemplatePlacementClip::CenterChunk => 0,
         TemplatePlacementClip::CenterChunkExpandedToTemplate => 1,
+        TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate => 2,
     }
 }
 
 const fn placement_clip_from_persistent(value: i8) -> TemplatePlacementClip {
     match value {
         1 => TemplatePlacementClip::CenterChunkExpandedToTemplate,
+        2 => TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
         _ => TemplatePlacementClip::CenterChunk,
     }
 }
@@ -267,6 +269,7 @@ const fn post_process_to_persistent(post_process: TemplatePostProcess) -> i8 {
         TemplatePostProcess::None => 0,
         TemplatePostProcess::NetherFossil => 1,
         TemplatePostProcess::IglooTop => 2,
+        TemplatePostProcess::RuinedPortal => 3,
     }
 }
 
@@ -274,6 +277,7 @@ const fn post_process_from_persistent(value: i8) -> TemplatePostProcess {
     match value {
         1 => TemplatePostProcess::NetherFossil,
         2 => TemplatePostProcess::IglooTop,
+        3 => TemplatePostProcess::RuinedPortal,
         _ => TemplatePostProcess::None,
     }
 }
@@ -2452,5 +2456,17 @@ mod tests {
         let loaded = ChunkStorage::persistent_to_template_processors(&persistent);
 
         assert_eq!(loaded, processors);
+        assert_eq!(
+            placement_clip_from_persistent(placement_clip_to_persistent(
+                TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+            )),
+            TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+        );
+        assert_eq!(
+            post_process_from_persistent(post_process_to_persistent(
+                TemplatePostProcess::RuinedPortal
+            )),
+            TemplatePostProcess::RuinedPortal,
+        );
     }
 }
