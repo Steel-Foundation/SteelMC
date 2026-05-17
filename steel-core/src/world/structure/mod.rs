@@ -4,6 +4,7 @@
 //! `structuresReferences` (pointing at nearby origin chunks). The structure key
 //! is `Identifier` until a structure registry is added.
 
+pub mod desert_pyramid;
 pub mod end_city;
 pub mod fortress;
 pub mod igloo;
@@ -20,7 +21,7 @@ pub mod shipwreck;
 pub mod single_piece;
 pub mod stronghold;
 
-use std::{cell::RefCell, slice};
+use std::{cell::RefCell, slice, vec};
 
 use rustc_hash::FxHashMap;
 
@@ -55,6 +56,33 @@ const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
 /// Matches vanilla's `Direction.Plane.HORIZONTAL.getRandomDirection`.
 pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
     VANILLA_HORIZONTAL_DIRECTIONS[rng.next_i32_bounded(4) as usize]
+}
+
+/// Vanilla's `StructurePiece.makeBoundingBox`: north/south keep width/depth,
+/// east/west swap them.
+pub(crate) const fn make_oriented_piece_bounding_box(
+    chunk_min_x: i32,
+    y: i32,
+    chunk_min_z: i32,
+    orientation: Direction,
+    width: i32,
+    height: i32,
+    depth: i32,
+) -> BoundingBox {
+    let z_axis = matches!(orientation, Direction::North | Direction::South);
+    let (box_width, box_depth) = if z_axis {
+        (width, depth)
+    } else {
+        (depth, width)
+    };
+    BoundingBox::new(
+        chunk_min_x,
+        y,
+        chunk_min_z,
+        chunk_min_x + box_width - 1,
+        y + height - 1,
+        chunk_min_z + box_depth - 1,
+    )
 }
 
 /// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)
@@ -181,7 +209,7 @@ impl StructureReferenceSet {
 
     /// Returns `true` when no positions are stored.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.positions.is_empty()
     }
 }
@@ -204,7 +232,7 @@ impl<'a> IntoIterator for &'a StructureReferenceSet {
 }
 
 impl IntoIterator for StructureReferenceSet {
-    type IntoIter = std::vec::IntoIter<ChunkPos>;
+    type IntoIter = vec::IntoIter<ChunkPos>;
     type Item = ChunkPos;
 
     fn into_iter(self) -> Self::IntoIter {

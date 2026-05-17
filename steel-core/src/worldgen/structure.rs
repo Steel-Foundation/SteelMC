@@ -13,6 +13,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
+use crate::world::structure::desert_pyramid::DesertPyramidStructure;
 use crate::world::structure::end_city::EndCityStructure;
 use crate::world::structure::fortress::NetherFortressStructure;
 use crate::world::structure::igloo::IglooStructure;
@@ -800,14 +801,7 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
     reg("woodland_mansion", Box::new(WoodlandMansionStructure));
     reg("ocean_monument", Box::new(OceanMonumentStructure));
     reg("mineshaft", Box::new(MineshaftStructure));
-    reg(
-        "desert_pyramid",
-        Box::new(SinglePieceStructure {
-            size: (21, 15, 21),
-            piece_id: "tedp",
-            require_above_sea: true,
-        }),
-    );
+    reg("desert_pyramid", Box::new(DesertPyramidStructure));
     reg(
         "jungle_temple",
         Box::new(SinglePieceStructure {

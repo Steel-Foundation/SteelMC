@@ -6,19 +6,29 @@
 //! before any payload variant starts writing blocks.
 
 mod buried_treasure;
+mod desert_pyramid;
 mod mineshaft;
 mod pool_element;
 mod ruined_portal;
 mod template_piece;
 mod template_processors;
 
+use simdnbt::owned::NbtCompound;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{Registry, vanilla_blocks};
+use steel_registry::structure::StructureRef;
+use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
+use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, BoundingBox, Direction, Identifier, PackedBlockPos, Rotation,
+    types::UpdateFlags,
+};
 
-use crate::world::structure::{ProceduralPieceData, StructurePiece, StructurePiecePayload};
+use crate::world::structure::{
+    ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
+};
 use crate::worldgen::region::WorldGenRegion;
 
 pub(crate) struct StructurePiecePlacer;
@@ -83,10 +93,32 @@ impl StructurePiecePlacer {
             StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure) => {
                 Self::place_buried_treasure_piece(region, &mut piece_bounding_box, clip, random)
             }
+            StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(data)) => {
+                Self::place_desert_pyramid_piece(
+                    region,
+                    registry,
+                    &mut piece_bounding_box,
+                    piece_orientation,
+                    data,
+                    clip,
+                    random,
+                )
+            }
             StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented) => false,
         };
         piece.bounding_box = piece_bounding_box;
         placed
+    }
+
+    pub(crate) fn after_place_structure(
+        region: &mut WorldGenRegion<'_>,
+        structure: StructureRef,
+        pieces: &mut [StructurePiece],
+        clip: BoundingBox,
+    ) {
+        if structure.structure_type == Identifier::new_static("minecraft", "desert_pyramid") {
+            Self::after_place_desert_pyramid(region, pieces, clip);
+        }
     }
 
     const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
@@ -140,5 +172,92 @@ impl StructurePiecePlacer {
             lock_dir = lock_dir.opposite();
         }
         state.set_value(&BlockStateProperties::HORIZONTAL_FACING, lock_dir)
+    }
+
+    pub(super) fn create_loot_chest(
+        region: &mut WorldGenRegion<'_>,
+        clip: BoundingBox,
+        random: &mut WorldgenRandom,
+        pos: BlockPos,
+        loot_table: &'static str,
+    ) -> bool {
+        if !clip.is_inside(pos) || region.block_state(pos).get_block() == &vanilla_blocks::CHEST {
+            return false;
+        }
+
+        let state = Self::reorient_chest(region, pos, vanilla_blocks::CHEST.default_state());
+        if !region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS) {
+            return false;
+        }
+
+        Self::set_loot_table_block_entity(
+            region,
+            pos,
+            &vanilla_block_entity_types::CHEST,
+            state,
+            loot_table,
+            random.next_i64(),
+        )
+    }
+
+    pub(super) fn set_loot_table_block_entity(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        block_entity_type: BlockEntityTypeRef,
+        state: BlockStateId,
+        loot_table: &'static str,
+        seed: i64,
+    ) -> bool {
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", loot_table);
+        if seed != 0 {
+            nbt.insert("LootTableSeed", seed);
+        }
+        region.set_block_entity_data(pos, block_entity_type, state, nbt)
+    }
+
+    pub(super) fn set_brushable_loot_table(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        state: BlockStateId,
+        loot_table: &'static str,
+    ) -> bool {
+        Self::set_loot_table_block_entity(
+            region,
+            pos,
+            &vanilla_block_entity_types::BRUSHABLE_BLOCK,
+            state,
+            loot_table,
+            PackedBlockPos::from(pos).as_raw(),
+        )
+    }
+
+    pub(super) const fn orientation_transform(
+        orientation: Option<Direction>,
+    ) -> (StructureMirror, Rotation) {
+        match orientation {
+            None | Some(Direction::North | Direction::Up | Direction::Down) => {
+                (StructureMirror::None, Rotation::None)
+            }
+            Some(Direction::South) => (StructureMirror::LeftRight, Rotation::None),
+            Some(Direction::West) => (StructureMirror::LeftRight, Rotation::Clockwise90),
+            Some(Direction::East) => (StructureMirror::None, Rotation::Clockwise90),
+        }
+    }
+
+    pub(super) fn needs_structure_shape_postprocessing(state: BlockStateId) -> bool {
+        let block = state.get_block();
+        block == &vanilla_blocks::NETHER_BRICK_FENCE
+            || block == &vanilla_blocks::TORCH
+            || block == &vanilla_blocks::WALL_TORCH
+            || block == &vanilla_blocks::OAK_FENCE
+            || block == &vanilla_blocks::SPRUCE_FENCE
+            || block == &vanilla_blocks::DARK_OAK_FENCE
+            || block == &vanilla_blocks::PALE_OAK_FENCE
+            || block == &vanilla_blocks::ACACIA_FENCE
+            || block == &vanilla_blocks::BIRCH_FENCE
+            || block == &vanilla_blocks::JUNGLE_FENCE
+            || block == &vanilla_blocks::LADDER
+            || block == &vanilla_blocks::IRON_BARS
     }
 }

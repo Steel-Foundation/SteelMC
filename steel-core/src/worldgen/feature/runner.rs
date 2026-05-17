@@ -7,7 +7,6 @@ use super::prelude::*;
 use super::sorter::{FeatureSorter, FeatureStepData};
 #[cfg(test)]
 use crate::world::structure::StructureReferenceMap;
-#[cfg(test)]
 use crate::world::structure::StructureStart;
 use crate::worldgen::structure_piece_placer::StructurePiecePlacer;
 
@@ -333,6 +332,14 @@ impl FeatureDecorationRunner {
                         );
                     }
                 }
+                StructurePiecePlacer::after_place_structure(
+                    region,
+                    structure,
+                    &mut start.pieces,
+                    writable_box,
+                );
+                start.bounding_box =
+                    StructureStart::compute_bounding_box(&start.pieces, start.bb_inflate);
             }
         }
     }

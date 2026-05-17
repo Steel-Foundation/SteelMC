@@ -24,6 +24,7 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
 };
 
+use crate::world::structure::desert_pyramid::DesertPyramidPieceData;
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
 use crate::world::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
@@ -292,13 +293,13 @@ use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
-    PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentJigsawPieceData,
-    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentPoi,
-    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
-    PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
-    PersistentStructureReference, PersistentStructureStart, PersistentTemplatePieceData,
-    PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
-    PreparedChunkSave,
+    PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
+    PersistentJigsawJunction, PersistentJigsawPieceData, PersistentMineshaftPieceData,
+    PersistentMineshaftPieceKind, PersistentPoi, PersistentPoolElement,
+    PersistentProceduralPieceData, PersistentProcessorList, PersistentSection,
+    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
+    PersistentStructureStart, PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
+    PersistentTemplateProcessorList, PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -1183,6 +1184,12 @@ impl ChunkStorage {
         match data {
             ProceduralPieceData::Unimplemented => PersistentProceduralPieceData::Unimplemented,
             ProceduralPieceData::BuriedTreasure => PersistentProceduralPieceData::BuriedTreasure,
+            ProceduralPieceData::DesertPyramid(data) => {
+                PersistentProceduralPieceData::DesertPyramid(PersistentDesertPyramidPieceData {
+                    height_position: data.height_position.unwrap_or(-1),
+                    has_placed_chest: data.has_placed_chest,
+                })
+            }
             ProceduralPieceData::Mineshaft(data) => {
                 PersistentProceduralPieceData::Mineshaft(PersistentMineshaftPieceData {
                     mineshaft_type: mineshaft_type_to_persistent(data.mineshaft_type),
@@ -1198,6 +1205,14 @@ impl ChunkStorage {
         match data {
             PersistentProceduralPieceData::Unimplemented => ProceduralPieceData::Unimplemented,
             PersistentProceduralPieceData::BuriedTreasure => ProceduralPieceData::BuriedTreasure,
+            PersistentProceduralPieceData::DesertPyramid(data) => {
+                ProceduralPieceData::DesertPyramid(DesertPyramidPieceData {
+                    height_position: (data.height_position >= 0).then_some(data.height_position),
+                    has_placed_chest: data.has_placed_chest,
+                    potential_suspicious_sand_world_positions: Vec::new(),
+                    random_collapsed_roof_pos: BlockPos::new(0, 0, 0),
+                })
+            }
             PersistentProceduralPieceData::Mineshaft(data) => {
                 ProceduralPieceData::Mineshaft(MineshaftPiecePayload {
                     mineshaft_type: mineshaft_type_from_persistent(data.mineshaft_type),
@@ -2323,6 +2338,23 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         };
+        let desert_pyramid_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "tedp"),
+            bounding_box: steel_utils::BoundingBox::new(48, 63, 48, 68, 77, 68),
+            gen_depth: 0,
+            orientation: Some(Direction::East),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(
+                DesertPyramidPieceData {
+                    height_position: Some(63),
+                    has_placed_chest: [true, false, true, false],
+                    potential_suspicious_sand_world_positions: vec![BlockPos::new(51, 64, 54)],
+                    random_collapsed_roof_pos: BlockPos::new(50, 64, 50),
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
         let mineshaft_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "mscorridor"),
             bounding_box: steel_utils::BoundingBox::new(32, 45, 32, 34, 47, 46),
@@ -2352,6 +2384,7 @@ mod tests {
                 igloo_piece,
                 procedural_piece,
                 buried_treasure_piece,
+                desert_pyramid_piece,
                 mineshaft_piece,
             ],
             TerrainAdjustment::None,
@@ -2367,7 +2400,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 5);
+        assert_eq!(loaded_start.pieces.len(), 6);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2434,8 +2467,18 @@ mod tests {
             StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure)
         ));
 
-        let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
+        let StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(payload)) =
             &loaded_start.pieces[4].payload
+        else {
+            panic!("desert pyramid payload should roundtrip");
+        };
+        assert_eq!(payload.height_position, Some(63));
+        assert_eq!(payload.has_placed_chest, [true, false, true, false]);
+        assert!(payload.potential_suspicious_sand_world_positions.is_empty());
+        assert_eq!(payload.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
+            &loaded_start.pieces[5].payload
         else {
             panic!("mineshaft payload should roundtrip");
         };

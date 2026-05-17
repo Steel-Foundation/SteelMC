@@ -1621,7 +1621,7 @@ impl StructureTemplate {
         let _ = region.set_block_entity_data(pos, block_entity_type, state, nbt);
     }
 
-    fn transform_state(
+    pub(crate) fn transform_state(
         registry: &Registry,
         state: BlockStateId,
         mirror: StructureMirror,

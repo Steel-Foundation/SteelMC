@@ -49,7 +49,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v12: Added igloo template marker, placement adjustment, and postprocess persistence.
 /// v13: Split template processor persistence and added ruined-portal processors.
 /// v14: Added buried treasure procedural piece persistence.
-pub const FORMAT_VERSION: u16 = 14;
+/// v15: Added desert pyramid procedural piece persistence.
+pub const FORMAT_VERSION: u16 = 15;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -511,26 +512,26 @@ pub struct PersistentTemplatePieceData {
     pub template_position: [i32; 3],
     /// Rotation: 0=none, `1=clockwise_90`, `2=clockwise_180`, `3=counterclockwise_90`.
     pub rotation: i8,
-    /// Mirror: 0=none, 1=front_back, 2=left_right.
+    /// Mirror: `0=none`, `1=front_back`, `2=left_right`.
     pub mirror: i8,
     /// Rotation pivot in template-local block coordinates.
     pub rotation_pivot: [i32; 3],
-    /// Early block-ignore processor: 0=none, 1=structure_block, 2=structure_and_air.
+    /// Early block-ignore processor: `0=none`, `1=structure_block`, `2=structure_and_air`.
     pub block_ignore: i8,
-    /// Late block-ignore processor: 0=none, 1=structure_block, 2=structure_and_air.
+    /// Late block-ignore processor: `0=none`, `1=structure_block`, `2=structure_and_air`.
     pub late_block_ignore: i8,
     /// Processors applied during block placement.
     pub processors: PersistentTemplateProcessorList,
     /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
     pub liquid_settings: i8,
-    /// Marker handling: 0=ignore, 1=data_markers, 2=shipwreck, 3=igloo.
+    /// Marker handling: `0=ignore`, `1=data_markers`, `2=shipwreck`, `3=igloo`.
     pub marker_handling: i8,
     /// Family-specific position adjustment before template block placement.
     pub placement_adjustment: PersistentTemplatePlacementAdjustment,
-    /// Placement clip: 0=center_chunk, 1=center_chunk_expanded_to_template,
-    /// 2=center_chunk_contains_template_center_expanded_to_template.
+    /// Placement clip: `0=center_chunk`, `1=center_chunk_expanded_to_template`,
+    /// `2=center_chunk_contains_template_center_expanded_to_template`.
     pub placement_clip: i8,
-    /// Postprocess: 0=none, 1=nether_fossil, 2=igloo_top, 3=ruined_portal.
+    /// Postprocess: `0=none`, `1=nether_fossil`, `2=igloo_top`, `3=ruined_portal`.
     pub post_process: i8,
 }
 
@@ -586,8 +587,19 @@ pub enum PersistentProceduralPieceData {
     Unimplemented,
     /// Buried treasure chest placement.
     BuriedTreasure,
+    /// Desert pyramid piece payload.
+    DesertPyramid(PersistentDesertPyramidPieceData),
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(PersistentMineshaftPieceData),
+}
+
+/// Persisted desert pyramid piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentDesertPyramidPieceData {
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`; -1 means not height-adjusted yet.
+    pub height_position: i32,
+    /// Chest placement flags ordered by `Direction.get2DDataValue`.
+    pub has_placed_chest: [bool; 4],
 }
 
 /// Persisted mineshaft piece payload.

@@ -4,7 +4,7 @@ use steel_registry::structure::{LiquidSettingsData, RuinedPortalPlacementData};
 use steel_registry::template_pool::Projection;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
-use super::{jigsaw, mineshaft};
+use super::{desert_pyramid, jigsaw, mineshaft};
 
 /// Vanilla's `StructurePiece` runtime state.
 #[derive(Debug, Clone)]
@@ -218,6 +218,8 @@ pub enum ProceduralPieceData {
     Unimplemented,
     /// Buried treasure chest placement.
     BuriedTreasure,
+    /// Desert pyramid piece payload.
+    DesertPyramid(desert_pyramid::DesertPyramidPieceData),
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(mineshaft::MineshaftPiecePayload),
 }
