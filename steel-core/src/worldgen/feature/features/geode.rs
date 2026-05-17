@@ -1,5 +1,10 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use rustc_hash::FxHashMap;
+use steel_utils::locks::SyncMutex;
+
+static GEODE_NOISE_BY_SEED: LazyLock<SyncMutex<FxHashMap<i64, NormalNoise>>> =
+    LazyLock::new(|| SyncMutex::new(FxHashMap::default()));
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_geode_feature(
@@ -10,8 +15,7 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
     ) -> bool {
         let num_points = config.distribution_points.sample(random);
-        let mut random_source = RandomSource::Legacy(LegacyRandom::from_seed(region.seed() as u64));
-        let noise = NormalNoise::create_from_random(&mut random_source, -4, &[1.0]);
+        let noise = Self::geode_noise(region.seed());
         let crack_size_adjustment =
             f64::from(num_points) / f64::from(config.outer_wall_distance.max());
         let layers = &config.layers;
@@ -154,6 +158,18 @@ impl FeatureDecorationRunner {
             &potential_crystal_placements,
         );
         true
+    }
+
+    fn geode_noise(seed: i64) -> NormalNoise {
+        let mut cache = GEODE_NOISE_BY_SEED.lock();
+        if let Some(noise) = cache.get(&seed) {
+            return noise.clone();
+        }
+
+        let mut random_source = RandomSource::Legacy(LegacyRandom::from_seed(seed as u64));
+        let noise = NormalNoise::create_from_random(&mut random_source, -4, &[1.0]);
+        cache.insert(seed, noise.clone());
+        noise
     }
 
     fn geode_distribution_points(

@@ -9,6 +9,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use steel_core::behavior::init_behaviors;
+use steel_core::block_entity::init_block_entities;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
@@ -16,6 +17,7 @@ use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
+use steel_core::entity::init_entities;
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{
@@ -43,6 +45,8 @@ fn ensure_registry() {
         registry.freeze();
         let _ = REGISTRY.init(registry);
         init_behaviors();
+        init_block_entities();
+        init_entities();
     });
 }
 

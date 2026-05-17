@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rustc_hash::FxHashMap;
 use steel_registry::biome::BiomeRef;
 use steel_registry::feature::PlacedFeatureEntryRef;
-use steel_registry::{Registry, RegistryExt as _};
+use steel_registry::{Registry, RegistryEntry as _, RegistryExt as _};
 
 /// Cached vanilla ordering for all placed features reachable from a biome source.
 #[derive(Debug)]
@@ -16,6 +16,7 @@ pub(super) struct FeatureSorter {
 pub(super) struct FeatureStepData {
     features: Box<[PlacedFeatureEntryRef]>,
     index_by_placed_feature_id: FxHashMap<usize, usize>,
+    feature_indices_by_biome_id: FxHashMap<usize, Box<[usize]>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -90,7 +91,7 @@ impl FeatureSorter {
         }
 
         let sorted_features = Self::topological_sort(&edges);
-        Self::from_sorted_features(&sorted_features, registry)
+        Self::from_sorted_features(&sorted_features, possible_biomes, registry)
     }
 
     #[must_use]
@@ -150,7 +151,11 @@ impl FeatureSorter {
     }
 
     #[must_use]
-    fn from_sorted_features(sorted_features: &[FeatureVertex], registry: &Registry) -> Self {
+    fn from_sorted_features(
+        sorted_features: &[FeatureVertex],
+        possible_biomes: &[BiomeRef],
+        registry: &Registry,
+    ) -> Self {
         let Some(max_step) = sorted_features.iter().map(|feature| feature.step).max() else {
             return Self {
                 steps: Box::new([]),
@@ -182,7 +187,48 @@ impl FeatureSorter {
             steps.push(FeatureStepData {
                 features: features.into_boxed_slice(),
                 index_by_placed_feature_id,
+                feature_indices_by_biome_id: FxHashMap::default(),
             });
+        }
+
+        for biome in possible_biomes {
+            let Some(biome_id) = biome.try_id() else {
+                panic!("possible biome {} is not registered", biome.key);
+            };
+
+            for (step, feature_stage) in biome.features.iter().enumerate() {
+                let Some(step_data) = steps.get_mut(step) else {
+                    continue;
+                };
+
+                let mut indices = Vec::with_capacity(feature_stage.len());
+                for feature_key in feature_stage {
+                    let Some(placed_feature_id) = registry.placed_features.id_from_key(feature_key)
+                    else {
+                        panic!(
+                            "biome {} references unknown placed feature {}",
+                            biome.key, feature_key
+                        );
+                    };
+                    let Some(feature_index) = step_data.feature_index(placed_feature_id) else {
+                        panic!(
+                            "placed feature {} from biome {} was not included in decoration step {}",
+                            feature_key, biome.key, step
+                        );
+                    };
+                    indices.push(feature_index);
+                }
+
+                if indices.is_empty() {
+                    continue;
+                }
+
+                indices.sort_unstable();
+                indices.dedup();
+                step_data
+                    .feature_indices_by_biome_id
+                    .insert(biome_id, indices.into_boxed_slice());
+            }
         }
 
         Self {
@@ -200,5 +246,11 @@ impl FeatureStepData {
 
     pub(super) fn feature(&self, index: usize) -> Option<PlacedFeatureEntryRef> {
         self.features.get(index).copied()
+    }
+
+    pub(super) fn feature_indices_for_biome(&self, biome_id: usize) -> Option<&[usize]> {
+        self.feature_indices_by_biome_id
+            .get(&biome_id)
+            .map(Box::as_ref)
     }
 }

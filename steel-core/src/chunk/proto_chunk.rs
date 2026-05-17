@@ -363,19 +363,19 @@ impl ProtoChunk {
             );
         }
 
-        let section_index = self.get_section_index(y);
-        let section = &self.sections.sections[section_index];
-
-        let was_empty = section.read().states.has_only_air();
-        if was_empty && state.is_air() {
-            return Some(state);
-        }
-
         let local_x = (pos.0.x & 15) as usize;
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        let old_state = section.write().states.set(local_x, local_y, local_z, state);
+        let section_index = self.get_section_index(y);
+        let section = &self.sections.sections[section_index];
+        let mut section_guard = section.write();
+        if section_guard.states.has_only_air() && state.is_air() {
+            return Some(state);
+        }
+
+        let old_state = section_guard.states.set(local_x, local_y, local_z, state);
+        drop(section_guard);
 
         if old_state == state {
             return None;
@@ -490,9 +490,10 @@ impl ProtoChunk {
 
         let section_index = self.get_section_index(y);
         let section = &self.sections.sections[section_index];
+        let section_guard = section.read();
 
         // Optimization: if section is empty, return air
-        if section.read().states.has_only_air() {
+        if section_guard.states.has_only_air() {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
 
@@ -500,7 +501,7 @@ impl ProtoChunk {
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        section.read().states.get(local_x, local_y, local_z)
+        section_guard.states.get(local_x, local_y, local_z)
     }
 }
 

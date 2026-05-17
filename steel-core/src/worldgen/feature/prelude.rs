@@ -1,6 +1,6 @@
 pub(super) use std::sync::LazyLock;
 
-pub(super) use rustc_hash::{FxHashMap, FxHashSet};
+pub(super) use rustc_hash::FxHashSet;
 pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
 pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{

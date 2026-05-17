@@ -6,6 +6,7 @@
 //! before CARVERS, final types after). When a proto chunk is promoted to a full `LevelChunk`,
 //! the final heightmaps are moved directly into `ChunkHeightmaps` via [`ChunkHeightmaps::from_proto`].
 
+use smallvec::SmallVec;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -419,11 +420,12 @@ impl ProtoHeightmaps {
         height: i32,
         sections: &[super::section::SectionHolder],
     ) {
-        let types_to_prime: Vec<HeightmapType> = types
-            .iter()
-            .filter(|&&hm_type| self.get(hm_type).is_none())
-            .copied()
-            .collect();
+        let mut types_to_prime = SmallVec::<[HeightmapType; 4]>::new();
+        for &hm_type in types {
+            if self.get(hm_type).is_none() {
+                types_to_prime.push(hm_type);
+            }
+        }
 
         if types_to_prime.is_empty() {
             return;
@@ -435,7 +437,7 @@ impl ProtoHeightmaps {
 
         for x in 0..16 {
             for z in 0..16 {
-                let mut pending: Vec<HeightmapType> = types_to_prime.clone();
+                let mut pending = types_to_prime.clone();
 
                 'sections: for section_idx in (0..sections.len()).rev() {
                     let guard = sections[section_idx].read();
@@ -448,7 +450,8 @@ impl ProtoHeightmaps {
                         if state.is_air() {
                             continue;
                         }
-                        pending.retain(|&hm_type| {
+                        pending.retain(|hm_type| {
+                            let hm_type = *hm_type;
                             if hm_type.is_opaque(state) {
                                 self.get_mut(hm_type)
                                     .expect("heightmap was just inserted")
@@ -478,11 +481,12 @@ impl ProtoHeightmaps {
         F: Fn(usize, i32, usize) -> BlockStateId,
     {
         // Collect types that need priming (don't exist yet)
-        let types_to_prime: Vec<HeightmapType> = types
-            .iter()
-            .filter(|&&hm_type| self.get(hm_type).is_none())
-            .copied()
-            .collect();
+        let mut types_to_prime = SmallVec::<[HeightmapType; 4]>::new();
+        for &hm_type in types {
+            if self.get(hm_type).is_none() {
+                types_to_prime.push(hm_type);
+            }
+        }
 
         if types_to_prime.is_empty() {
             return;
@@ -499,7 +503,7 @@ impl ProtoHeightmaps {
         for x in 0..16 {
             for z in 0..16 {
                 // Track which heightmaps still need to find their first opaque block
-                let mut pending: Vec<HeightmapType> = types_to_prime.clone();
+                let mut pending = types_to_prime.clone();
 
                 for y in (min_y..max_y).rev() {
                     if pending.is_empty() {
@@ -512,7 +516,8 @@ impl ProtoHeightmaps {
                     }
 
                     // Check each pending heightmap type
-                    pending.retain(|&hm_type| {
+                    pending.retain(|hm_type| {
+                        let hm_type = *hm_type;
                         if hm_type.is_opaque(state) {
                             self.get_mut(hm_type)
                                 .expect("heightmap was just inserted")

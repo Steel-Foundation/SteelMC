@@ -70,32 +70,328 @@ impl FeatureDecorationRunner {
             );
         };
 
-        let positions = Self::apply_placement_modifier(
-            region,
-            registry,
-            random,
-            origin,
-            biome_filter_feature_id,
-            modifier,
-            biome_zoom_seed,
-        );
-        if positions.is_empty() {
-            return false;
+        let mut placed = false;
+
+        match modifier {
+            PlacementModifier::Biome => {
+                if Self::biome_allows_feature(
+                    region,
+                    registry,
+                    biome_zoom_seed,
+                    origin,
+                    biome_filter_feature_id,
+                ) {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        origin,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::BlockPredicateFilter { predicate } => {
+                if Self::test_block_predicate(region, registry, predicate, origin) {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        origin,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::Count { count } => {
+                if let Ok(count) = usize::try_from(count.sample(random)) {
+                    for _ in 0..count {
+                        if Self::place_placed_feature_from_modifier(
+                            region,
+                            registry,
+                            random,
+                            origin,
+                            feature,
+                            biome_filter_feature_id,
+                            biome_zoom_seed,
+                            modifier_index + 1,
+                        ) {
+                            placed = true;
+                        }
+                    }
+                }
+            }
+            PlacementModifier::CountOnEveryLayer { count } => {
+                for position in Self::count_on_every_layer_positions(region, random, origin, count)
+                {
+                    if Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        position,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    ) {
+                        placed = true;
+                    }
+                }
+            }
+            PlacementModifier::EnvironmentScan {
+                direction_of_search,
+                target_condition,
+                allowed_search_condition,
+                max_steps,
+            } => {
+                if let Some(position) = Self::environment_scan_position(
+                    region,
+                    registry,
+                    origin,
+                    *direction_of_search,
+                    target_condition,
+                    allowed_search_condition.as_ref(),
+                    *max_steps,
+                ) {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        position,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::FixedPlacement { positions } => {
+                let chunk_x = SectionPos::block_to_section_coord(origin.x());
+                let chunk_z = SectionPos::block_to_section_coord(origin.z());
+                for position in positions {
+                    let position = BlockPos::new(position[0], position[1], position[2]);
+                    if chunk_x != SectionPos::block_to_section_coord(position.x())
+                        || chunk_z != SectionPos::block_to_section_coord(position.z())
+                    {
+                        continue;
+                    }
+                    if Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        position,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    ) {
+                        placed = true;
+                    }
+                }
+            }
+            PlacementModifier::HeightRange { height } => {
+                let position = BlockPos::new(
+                    origin.x(),
+                    height.sample(
+                        random,
+                        region.generation_min_y(),
+                        region.generation_height(),
+                    ),
+                    origin.z(),
+                );
+                placed = Self::place_placed_feature_from_modifier(
+                    region,
+                    registry,
+                    random,
+                    position,
+                    feature,
+                    biome_filter_feature_id,
+                    biome_zoom_seed,
+                    modifier_index + 1,
+                );
+            }
+            PlacementModifier::Heightmap { heightmap } => {
+                let height = region.height_at(
+                    Self::feature_heightmap_type(*heightmap),
+                    origin.x(),
+                    origin.z(),
+                );
+                if height > region.min_y() {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        BlockPos::new(origin.x(), height, origin.z()),
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::InSquare => {
+                let position = BlockPos::new(
+                    origin.x() + random.next_i32_bounded(16),
+                    origin.y(),
+                    origin.z() + random.next_i32_bounded(16),
+                );
+                placed = Self::place_placed_feature_from_modifier(
+                    region,
+                    registry,
+                    random,
+                    position,
+                    feature,
+                    biome_filter_feature_id,
+                    biome_zoom_seed,
+                    modifier_index + 1,
+                );
+            }
+            PlacementModifier::NoiseBasedCount {
+                noise_to_count_ratio,
+                noise_factor,
+                noise_offset,
+            } => {
+                let noise = Self::biome_info_noise_value(
+                    f64::from(origin.x()) / *noise_factor,
+                    f64::from(origin.z()) / *noise_factor,
+                );
+                let count =
+                    ((noise + *noise_offset) * f64::from(*noise_to_count_ratio)).ceil() as i32;
+                if let Ok(count) = usize::try_from(count) {
+                    for _ in 0..count {
+                        if Self::place_placed_feature_from_modifier(
+                            region,
+                            registry,
+                            random,
+                            origin,
+                            feature,
+                            biome_filter_feature_id,
+                            biome_zoom_seed,
+                            modifier_index + 1,
+                        ) {
+                            placed = true;
+                        }
+                    }
+                }
+            }
+            PlacementModifier::NoiseThresholdCount {
+                noise_level,
+                below_noise,
+                above_noise,
+            } => {
+                let noise = Self::biome_info_noise_value(
+                    f64::from(origin.x()) / 200.0,
+                    f64::from(origin.z()) / 200.0,
+                );
+                let count = if noise < *noise_level {
+                    *below_noise
+                } else {
+                    *above_noise
+                };
+                if let Ok(count) = usize::try_from(count) {
+                    for _ in 0..count {
+                        if Self::place_placed_feature_from_modifier(
+                            region,
+                            registry,
+                            random,
+                            origin,
+                            feature,
+                            biome_filter_feature_id,
+                            biome_zoom_seed,
+                            modifier_index + 1,
+                        ) {
+                            placed = true;
+                        }
+                    }
+                }
+            }
+            PlacementModifier::RandomOffset {
+                xz_spread,
+                y_spread,
+            } => {
+                let position = BlockPos::new(
+                    origin.x() + xz_spread.sample(random),
+                    origin.y() + y_spread.sample(random),
+                    origin.z() + xz_spread.sample(random),
+                );
+                placed = Self::place_placed_feature_from_modifier(
+                    region,
+                    registry,
+                    random,
+                    position,
+                    feature,
+                    biome_filter_feature_id,
+                    biome_zoom_seed,
+                    modifier_index + 1,
+                );
+            }
+            PlacementModifier::RarityFilter { chance } => {
+                assert!(
+                    *chance > 0,
+                    "rarity filter chance must be positive, got {chance}"
+                );
+                if random.next_f32() < 1.0 / (*chance as f32) {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        origin,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::SurfaceRelativeThresholdFilter {
+                heightmap,
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let surface_y = i64::from(region.height_at(
+                    Self::feature_heightmap_type(*heightmap),
+                    origin.x(),
+                    origin.z(),
+                ));
+                let min_y = surface_y + i64::from(min_inclusive.unwrap_or(i32::MIN));
+                let max_y = surface_y + i64::from(max_inclusive.unwrap_or(i32::MAX));
+                let origin_y = i64::from(origin.y());
+                if min_y <= origin_y && origin_y <= max_y {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        origin,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::SurfaceWaterDepthFilter { max_water_depth } => {
+                let ocean_floor =
+                    region.height_at(HeightmapType::OceanFloor, origin.x(), origin.z());
+                let surface = region.height_at(HeightmapType::WorldSurface, origin.x(), origin.z());
+                if surface - ocean_floor <= *max_water_depth {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        origin,
+                        feature,
+                        biome_filter_feature_id,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
         }
 
-        let mut placed = false;
-        for position in positions {
-            placed |= Self::place_placed_feature_from_modifier(
-                region,
-                registry,
-                random,
-                position,
-                feature,
-                biome_filter_feature_id,
-                biome_zoom_seed,
-                modifier_index + 1,
-            );
-        }
         placed
     }
 

@@ -13,14 +13,16 @@ use std::{
 };
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
-use rustc_hash::FxHashMap;
 use simdnbt::owned::NbtCompound;
+use smallvec::SmallVec;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
     blocks::block_state_ext::BlockStateExt as _, fluid::FluidRef, vanilla_blocks,
 };
 use steel_utils::random::RandomSource;
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos, types::UpdateFlags,
+};
 
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
@@ -30,7 +32,7 @@ use crate::chunk::{
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
     heightmap::HeightmapType,
-    section::{ChunkSection, SectionHolder},
+    section::{BlockStateSectionCounts, ChunkSection, SectionHolder},
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
@@ -49,6 +51,8 @@ pub struct WorldGenRegion<'a> {
     step: &'a ChunkStep,
     cache: &'a StaticCache2D<Arc<ChunkHolder>>,
     center: ChunkPos,
+    chunk_cache_radius: i32,
+    chunks: RefCell<Box<[Option<CachedWorldGenChunk<'a>>]>>,
     random: RandomSource,
     sub_tick_count: AtomicI64,
 }
@@ -61,7 +65,8 @@ pub struct WorldGenRegion<'a> {
 /// bypassing the worldgen dependency and write-radius checks.
 pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
     region: &'region WorldGenRegion<'world>,
-    chunks: FxHashMap<ChunkPos, CachedWorldGenChunk<'region>>,
+    chunk_cache_radius: i32,
+    chunks: SmallVec<[Option<CachedWorldGenChunk<'region>>; 9]>,
     air: BlockStateId,
     ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
 }
@@ -82,18 +87,27 @@ struct WritableSectionKey {
 impl<'a> WorldGenRegion<'a> {
     /// Creates a new region over the chunks collected for a generation step.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         context: &'a WorldGenContext,
         step: &'a ChunkStep,
         cache: &'a StaticCache2D<Arc<ChunkHolder>>,
         center: ChunkPos,
         random: RandomSource,
     ) -> Self {
+        let chunk_cache_radius =
+            i32::try_from(step.direct_dependencies.get_radius()).unwrap_or(i32::MAX);
+        let chunk_cache_size = chunk_cache_radius.saturating_mul(2).saturating_add(1);
+        let chunk_cache_len =
+            usize::try_from(chunk_cache_size.saturating_mul(chunk_cache_size)).unwrap_or(0);
+        let chunks = (0..chunk_cache_len).map(|_| None).collect();
+
         Self {
             context,
             step,
             cache,
             center,
+            chunk_cache_radius,
+            chunks: RefCell::new(chunks),
             random,
             sub_tick_count: AtomicI64::new(0),
         }
@@ -198,7 +212,7 @@ impl<'a> WorldGenRegion<'a> {
         chunk_x: i32,
         chunk_z: i32,
         status: ChunkStatus,
-    ) -> Option<RwLockReadGuard<'_, ChunkAccess>> {
+    ) -> Option<RwLockReadGuard<'a, ChunkAccess>> {
         let available_status = self.required_status_at(chunk_x, chunk_z)?;
         if status > available_status {
             return None;
@@ -218,7 +232,7 @@ impl<'a> WorldGenRegion<'a> {
         chunk_x: i32,
         chunk_z: i32,
         status: ChunkStatus,
-    ) -> RwLockReadGuard<'_, ChunkAccess> {
+    ) -> RwLockReadGuard<'a, ChunkAccess> {
         let Some(chunk) = self.try_chunk(chunk_x, chunk_z, status) else {
             let available = self.required_status_at(chunk_x, chunk_z);
             panic!(
@@ -231,6 +245,60 @@ impl<'a> WorldGenRegion<'a> {
         chunk
     }
 
+    fn with_cached_chunk<R>(
+        &self,
+        chunk_x: i32,
+        chunk_z: i32,
+        status: ChunkStatus,
+        f: impl FnOnce(&ChunkAccess) -> R,
+    ) -> R {
+        let Some(cache_index) = self.chunk_cache_index(chunk_x, chunk_z) else {
+            let chunk = self.chunk(chunk_x, chunk_z, status);
+            return f(&chunk);
+        };
+
+        let cache_needs_update = self.chunks.borrow().get(cache_index).is_none_or(|cached| {
+            cached
+                .as_ref()
+                .is_none_or(|cached| status > cached.verified_status)
+        });
+
+        if cache_needs_update {
+            let guard = self.chunk(chunk_x, chunk_z, status);
+            let mut chunks = self.chunks.borrow_mut();
+            let Some(slot) = chunks.get_mut(cache_index) else {
+                panic!("Worldgen region cache index {cache_index} escaped its storage");
+            };
+            if let Some(cached) = slot {
+                cached.verified_status = status;
+                drop(guard);
+            } else {
+                *slot = Some(CachedWorldGenChunk {
+                    guard,
+                    verified_status: status,
+                });
+            }
+        }
+
+        let chunks = self.chunks.borrow();
+        let Some(Some(cached)) = chunks.get(cache_index) else {
+            panic!("Worldgen region cache failed to store chunk ({chunk_x}, {chunk_z})");
+        };
+        f(&cached.guard)
+    }
+
+    fn chunk_cache_index(&self, chunk_x: i32, chunk_z: i32) -> Option<usize> {
+        let radius = self.chunk_cache_radius;
+        let size = radius.checked_mul(2)?.checked_add(1)?;
+        let rel_x = chunk_x.checked_sub(self.center.0.x)?.checked_add(radius)?;
+        let rel_z = chunk_z.checked_sub(self.center.0.y)?.checked_add(radius)?;
+        if rel_x < 0 || rel_x >= size || rel_z < 0 || rel_z >= size {
+            return None;
+        }
+
+        usize::try_from(rel_z.checked_mul(size)?.checked_add(rel_x)?).ok()
+    }
+
     /// Gets a block state through the region dependency contract.
     ///
     /// # Panics
@@ -239,8 +307,9 @@ impl<'a> WorldGenRegion<'a> {
     pub fn block_state(&self, pos: BlockPos) -> BlockStateId {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
-        self.chunk(chunk_x, chunk_z, ChunkStatus::Empty)
-            .get_block_state(pos)
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
+            chunk.get_block_state(pos)
+        })
     }
 
     /// Gets a block entity through the region dependency contract.
@@ -251,8 +320,9 @@ impl<'a> WorldGenRegion<'a> {
     pub fn block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
-        self.chunk(chunk_x, chunk_z, ChunkStatus::Empty)
-            .get_block_entity(pos)
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
+            chunk.get_block_entity(pos)
+        })
     }
 
     /// Gets the biome id at quart coordinates through the region dependency contract.
@@ -269,16 +339,17 @@ impl<'a> WorldGenRegion<'a> {
         let local_quart_x = (quart_x & 3) as usize;
         let local_quart_z = (quart_z & 3) as usize;
 
-        let chunk = self.chunk(chunk_x, chunk_z, ChunkStatus::Biomes);
-        let sections = chunk.sections();
-        let (section_index, local_quart_y) =
-            Self::biome_quart_y_indices(self.min_y(), sections.sections.len(), quart_y);
-        let section = &sections.sections[section_index];
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Biomes, |chunk| {
+            let sections = chunk.sections();
+            let (section_index, local_quart_y) =
+                Self::biome_quart_y_indices(self.min_y(), sections.sections.len(), quart_y);
+            let section = &sections.sections[section_index];
 
-        section
-            .read()
-            .biomes
-            .get(local_quart_x, local_quart_y, local_quart_z)
+            section
+                .read()
+                .biomes
+                .get(local_quart_x, local_quart_y, local_quart_z)
+        })
     }
 
     /// Sets a block state if the position is inside the step's write radius.
@@ -297,8 +368,9 @@ impl<'a> WorldGenRegion<'a> {
             return false;
         };
 
-        self.chunk(chunk_x, chunk_z, status)
-            .set_block_state(pos, state, flags);
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            chunk.set_block_state(pos, state, flags);
+        });
         if !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE)
             && let Some(postprocess_pos) = Self::postprocess_pos_for_state(state, pos)
         {
@@ -341,15 +413,16 @@ impl<'a> WorldGenRegion<'a> {
             return false;
         };
 
-        let chunk = self.chunk(chunk_x, chunk_z, status);
-        let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
-            block_entity_type,
-            chunk.level_weak(),
-            pos,
-            state,
-            nbt,
-        );
-        chunk.add_and_register_block_entity(entity);
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
+                block_entity_type,
+                chunk.level_weak(),
+                pos,
+                state,
+                nbt,
+            );
+            chunk.add_and_register_block_entity(entity);
+        });
         true
     }
 
@@ -362,8 +435,9 @@ impl<'a> WorldGenRegion<'a> {
             return false;
         };
 
-        self.chunk(chunk_x, chunk_z, status)
-            .remove_block_entity(pos);
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            chunk.remove_block_entity(pos);
+        });
         true
     }
 
@@ -376,7 +450,7 @@ impl<'a> WorldGenRegion<'a> {
             return false;
         };
 
-        self.chunk(chunk_x, chunk_z, status).add_entity(entity)
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| chunk.add_entity(entity))
     }
 
     /// Schedules a block tick through the same region write contract as block placement.
@@ -394,13 +468,9 @@ impl<'a> WorldGenRegion<'a> {
             return false;
         };
         let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
-        self.chunk(chunk_x, chunk_z, status).schedule_block_tick(
-            pos,
-            block,
-            delay,
-            priority,
-            sub_tick_order,
-        );
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            chunk.schedule_block_tick(pos, block, delay, priority, sub_tick_order);
+        });
         true
     }
 
@@ -425,13 +495,9 @@ impl<'a> WorldGenRegion<'a> {
             return false;
         };
         let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
-        self.chunk(chunk_x, chunk_z, status).schedule_fluid_tick(
-            pos,
-            fluid,
-            delay,
-            priority,
-            sub_tick_order,
-        );
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            chunk.schedule_fluid_tick(pos, fluid, delay, priority, sub_tick_order);
+        });
         true
     }
 
@@ -448,8 +514,9 @@ impl<'a> WorldGenRegion<'a> {
     pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
-        self.chunk(chunk_x, chunk_z, ChunkStatus::Empty)
-            .mark_pos_for_postprocessing(pos);
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
+            chunk.mark_pos_for_postprocessing(pos);
+        });
     }
 
     /// Gets the first available Y coordinate for a heightmap column.
@@ -463,8 +530,9 @@ impl<'a> WorldGenRegion<'a> {
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
 
-        self.chunk(chunk_x, chunk_z, ChunkStatus::Carvers)
-            .height_at(heightmap_type, local_x, local_z)
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Carvers, |chunk| {
+            chunk.height_at(heightmap_type, local_x, local_z)
+        })
     }
 
     pub(crate) fn bulk_section_access_for_ore<'profile>(
@@ -544,9 +612,16 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         region: &'region WorldGenRegion<'world>,
         ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
     ) -> Self {
+        let chunk_cache_radius = region.chunk_cache_radius;
+        let chunk_cache_size = chunk_cache_radius.saturating_mul(2).saturating_add(1);
+        let chunk_cache_len =
+            usize::try_from(chunk_cache_size.saturating_mul(chunk_cache_size)).unwrap_or(0);
+        let chunks = (0..chunk_cache_len).map(|_| None).collect();
+
         Self {
             region,
-            chunks: FxHashMap::default(),
+            chunk_cache_radius,
+            chunks,
             air: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
             ore_profile,
         }
@@ -582,7 +657,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     pub(crate) fn replace_ore_target_block_state(
         &mut self,
         pos: BlockPos,
-        replacement: impl FnOnce(BlockStateId) -> Option<BlockStateId>,
+        replacement: impl FnOnce(BlockStateId) -> Option<(BlockStateId, BlockStateSectionCounts)>,
     ) -> bool {
         self.with_ore_profile(OreFeatureStats::record_target_read);
         let ore_profile = self.ore_profile;
@@ -609,12 +684,18 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let local_y = Self::local_coord(pos.y());
         let local_z = Self::local_coord(pos.z());
         let old_state = section_guard.states.get(local_x, local_y, local_z);
-        let Some(state) = replacement(old_state) else {
+        let Some((state, state_counts)) = replacement(old_state) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
         };
 
-        let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+        let old_state = section_guard.set_block_state_with_known_new_counts(
+            local_x,
+            local_y,
+            local_z,
+            state,
+            state_counts,
+        );
         Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
         if old_state != state {
             chunk.guard.mark_dirty();
@@ -630,8 +711,8 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_x: i32,
         chunk_z: i32,
         section_index: usize,
-        positions: &[BlockPos],
-        mut replacement: impl FnMut(BlockStateId) -> Option<BlockStateId>,
+        positions: &[PackedSectionBlockPos],
+        mut replacement: impl FnMut(BlockStateId) -> Option<(BlockStateId, BlockStateSectionCounts)>,
     ) -> u64 {
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| std::time::Instant::now());
@@ -655,8 +736,6 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             status,
             section_index,
         };
-        let min_y = self.region.min_y();
-        let height = self.region.height();
         let chunk = self.chunk(chunk_x, chunk_z, status);
         let Some(section) = chunk.guard.sections().sections.get(section_index) else {
             panic!(
@@ -667,21 +746,44 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let mut section_guard = Self::ore_section_write_guard(ore_profile, section, key);
         let mut placed = 0_u64;
         let mut dirty = false;
-        for &pos in positions {
-            debug_assert_eq!(
-                Self::section_key_parts(min_y, height, pos),
-                Some((chunk_x, chunk_z, section_index))
-            );
-            Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_target_read);
-            let local_x = Self::local_coord(pos.x());
-            let local_y = Self::local_coord(pos.y());
-            let local_z = Self::local_coord(pos.z());
-            let old_state = section_guard.states.get(local_x, local_y, local_z);
-            if let Some(state) = replacement(old_state) {
-                let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
-                Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
-                dirty |= old_state != state;
-                placed += 1;
+
+        if let Some(profile) = ore_profile {
+            for &pos in positions {
+                Self::with_ore_profile_ref(Some(profile), OreFeatureStats::record_target_read);
+                let local_x = usize::from(pos.x());
+                let local_y = usize::from(pos.y());
+                let local_z = usize::from(pos.z());
+                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                if let Some((state, state_counts)) = replacement(old_state) {
+                    let old_state = section_guard.set_block_state_with_known_new_counts(
+                        local_x,
+                        local_y,
+                        local_z,
+                        state,
+                        state_counts,
+                    );
+                    Self::with_ore_profile_ref(Some(profile), OreFeatureStats::record_write);
+                    dirty |= old_state != state;
+                    placed += 1;
+                }
+            }
+        } else {
+            for &pos in positions {
+                let local_x = usize::from(pos.x());
+                let local_y = usize::from(pos.y());
+                let local_z = usize::from(pos.z());
+                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                if let Some((state, state_counts)) = replacement(old_state) {
+                    let old_state = section_guard.set_block_state_with_known_new_counts(
+                        local_x,
+                        local_y,
+                        local_z,
+                        state,
+                        state_counts,
+                    );
+                    dirty |= old_state != state;
+                    placed += 1;
+                }
             }
         }
 
@@ -806,14 +908,6 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         })
     }
 
-    fn section_key_parts(min_y: i32, height: i32, pos: BlockPos) -> Option<(i32, i32, usize)> {
-        Some((
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
-            Self::section_index(min_y, height, pos.y())?,
-        ))
-    }
-
     fn ore_section_write_guard<'section>(
         ore_profile: Option<&RefCell<OreFeatureStats>>,
         section: &'section SectionHolder,
@@ -856,35 +950,57 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_z: i32,
         status: ChunkStatus,
     ) -> &CachedWorldGenChunk<'region> {
-        let key = ChunkPos::new(chunk_x, chunk_z);
+        let Some(cache_index) = self.chunk_cache_index(chunk_x, chunk_z) else {
+            panic!(
+                "Worldgen bulk section requested chunk ({chunk_x}, {chunk_z}) outside the region cache centered on ({}, {})",
+                self.region.center.0.x, self.region.center.0.y
+            );
+        };
 
-        if !self.chunks.contains_key(&key) {
+        let cache_needs_insert = self.chunks.get(cache_index).is_none_or(Option::is_none);
+        if cache_needs_insert {
             self.with_ore_profile(OreFeatureStats::record_chunk_cache_miss);
             let guard = self.region.chunk(chunk_x, chunk_z, status);
-            self.chunks.insert(
-                key,
-                CachedWorldGenChunk {
-                    guard,
-                    verified_status: status,
-                },
-            );
-        } else if self
-            .chunks
-            .get(&key)
-            .is_some_and(|cached| status > cached.verified_status)
-        {
+            let Some(slot) = self.chunks.get_mut(cache_index) else {
+                panic!("Worldgen bulk section cache index {cache_index} escaped its storage");
+            };
+            *slot = Some(CachedWorldGenChunk {
+                guard,
+                verified_status: status,
+            });
+        } else if self.chunks.get(cache_index).is_some_and(|cached| {
+            cached
+                .as_ref()
+                .is_some_and(|cached| status > cached.verified_status)
+        }) {
             self.with_ore_profile(OreFeatureStats::record_chunk_status_upgrade);
             drop(self.region.chunk(chunk_x, chunk_z, status));
-            let Some(cached) = self.chunks.get_mut(&key) else {
+            let Some(Some(cached)) = self.chunks.get_mut(cache_index) else {
                 panic!("Worldgen bulk section cache lost verified chunk ({chunk_x}, {chunk_z})");
             };
             cached.verified_status = status;
         }
 
-        let Some(cached) = self.chunks.get(&key) else {
+        let Some(Some(cached)) = self.chunks.get(cache_index) else {
             panic!("Worldgen bulk section cache failed to store chunk ({chunk_x}, {chunk_z})");
         };
         cached
+    }
+
+    fn chunk_cache_index(&self, chunk_x: i32, chunk_z: i32) -> Option<usize> {
+        let radius = self.chunk_cache_radius;
+        let size = radius.checked_mul(2)?.checked_add(1)?;
+        let rel_x = chunk_x
+            .checked_sub(self.region.center.0.x)?
+            .checked_add(radius)?;
+        let rel_z = chunk_z
+            .checked_sub(self.region.center.0.y)?
+            .checked_add(radius)?;
+        if rel_x < 0 || rel_x >= size || rel_z < 0 || rel_z >= size {
+            return None;
+        }
+
+        usize::try_from(rel_z.checked_mul(size)?.checked_add(rel_x)?).ok()
     }
 
     fn section_index(min_y: i32, height: i32, y: i32) -> Option<usize> {

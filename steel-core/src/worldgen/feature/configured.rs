@@ -14,128 +14,6 @@ type ConfiguredFeaturePlacer = for<'a, 'region> fn(
     &ConfiguredFeatureKind,
 ) -> bool;
 
-struct ConfiguredFeatureRuntimeRegistry {
-    placers: FxHashMap<Identifier, ConfiguredFeaturePlacer>,
-    /// Placer foundations that compile but are intentionally inactive until a lower-level
-    /// worldgen contract is ready.
-    pending_placers: FxHashMap<Identifier, ConfiguredFeaturePlacer>,
-}
-
-impl ConfiguredFeatureRuntimeRegistry {
-    fn new_vanilla() -> Self {
-        let mut placers = FxHashMap::default();
-        let pending_placers = FxHashMap::default();
-        register(
-            &mut placers,
-            "random_boolean_selector",
-            place_random_boolean_selector,
-        );
-        register(&mut placers, "random_selector", place_random_selector);
-        register(
-            &mut placers,
-            "simple_random_selector",
-            place_simple_random_selector,
-        );
-        register(&mut placers, "bamboo", place_bamboo);
-        register(&mut placers, "simple_block", place_simple_block);
-        register(&mut placers, "block_blob", place_block_blob);
-        register(&mut placers, "block_column", place_block_column);
-        register(&mut placers, "block_pile", place_block_pile);
-        register(&mut placers, "disk", place_disk);
-        register(&mut placers, "basalt_columns", place_basalt_columns);
-        register(&mut placers, "basalt_pillar", place_basalt_pillar);
-        register(&mut placers, "blue_ice", place_blue_ice);
-        register(&mut placers, "bonus_chest", place_bonus_chest);
-        register(&mut placers, "chorus_plant", place_chorus_plant);
-        register(&mut placers, "coral_claw", place_coral_claw);
-        register(&mut placers, "coral_mushroom", place_coral_mushroom);
-        register(&mut placers, "coral_tree", place_coral_tree);
-        register(&mut placers, "delta_feature", place_delta_feature);
-        register(&mut placers, "desert_well", place_desert_well);
-        register(&mut placers, "end_gateway", place_end_gateway);
-        register(&mut placers, "end_island", place_end_island);
-        register(&mut placers, "end_platform", place_end_platform);
-        register(&mut placers, "end_spike", place_end_spike);
-        register(&mut placers, "geode", place_geode);
-        register(&mut placers, "glowstone_blob", place_glowstone_blob);
-        register(
-            &mut placers,
-            "huge_brown_mushroom",
-            place_huge_brown_mushroom,
-        );
-        register(&mut placers, "huge_red_mushroom", place_huge_red_mushroom);
-        register(&mut placers, "huge_fungus", place_huge_fungus);
-        register(&mut placers, "iceberg", place_iceberg);
-        register(
-            &mut placers,
-            "nether_forest_vegetation",
-            place_nether_forest_vegetation,
-        );
-        register(
-            &mut placers,
-            "netherrack_replace_blobs",
-            place_netherrack_replace_blobs,
-        );
-        register(&mut placers, "twisting_vines", place_twisting_vines);
-        register(&mut placers, "vines", place_vines);
-        register(
-            &mut placers,
-            "void_start_platform",
-            place_void_start_platform,
-        );
-        register(&mut placers, "weeping_vines", place_weeping_vines);
-        register(&mut placers, "spring_feature", place_spring_feature);
-        register(&mut placers, "kelp", place_kelp);
-        register(&mut placers, "lake", place_lake);
-        register(&mut placers, "monster_room", place_monster_room);
-        register(&mut placers, "multiface_growth", place_multiface_growth);
-        register(&mut placers, "sea_pickle", place_sea_pickle);
-        register(&mut placers, "seagrass", place_seagrass);
-        register(&mut placers, "underwater_magma", place_underwater_magma);
-        register(&mut placers, "pointed_dripstone", place_pointed_dripstone);
-        register(&mut placers, "dripstone_cluster", place_dripstone_cluster);
-        register(&mut placers, "large_dripstone", place_large_dripstone);
-        register(&mut placers, "spike", place_spike);
-        register(&mut placers, "ore", place_ore);
-        register(&mut placers, "scattered_ore", place_scattered_ore);
-        register(&mut placers, "sculk_patch", place_sculk_patch);
-        register(&mut placers, "tree", place_tree);
-        register(&mut placers, "vegetation_patch", place_vegetation_patch);
-        register(
-            &mut placers,
-            "waterlogged_vegetation_patch",
-            place_waterlogged_vegetation_patch,
-        );
-        register(&mut placers, "fallen_tree", place_fallen_tree);
-        register(&mut placers, "fossil", place_fossil);
-        register(&mut placers, "freeze_top_layer", place_freeze_top_layer);
-        register(&mut placers, "root_system", place_root_system);
-        Self {
-            placers,
-            pending_placers,
-        }
-    }
-
-    fn placer(&self, feature_type: &Identifier) -> Option<ConfiguredFeaturePlacer> {
-        self.placers.get(feature_type).copied()
-    }
-
-    fn pending_placer(&self, feature_type: &Identifier) -> Option<ConfiguredFeaturePlacer> {
-        self.pending_placers.get(feature_type).copied()
-    }
-}
-
-static CONFIGURED_FEATURES: LazyLock<ConfiguredFeatureRuntimeRegistry> =
-    LazyLock::new(ConfiguredFeatureRuntimeRegistry::new_vanilla);
-
-fn register(
-    placers: &mut FxHashMap<Identifier, ConfiguredFeaturePlacer>,
-    path: &'static str,
-    placer: ConfiguredFeaturePlacer,
-) {
-    placers.insert(Identifier::new_static("minecraft", path), placer);
-}
-
 impl FeatureDecorationRunner {
     pub(super) fn place_configured_feature(
         region: &mut WorldGenRegion<'_>,
@@ -157,14 +35,7 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
-        let feature_type = Self::configured_feature_type_id(kind);
-        let Some(placer) = CONFIGURED_FEATURES.placer(&feature_type) else {
-            if CONFIGURED_FEATURES.pending_placer(&feature_type).is_some() {
-                return false;
-            }
-            // TODO: Register concrete block-mutating feature implementations as they are added.
-            return false;
-        };
+        let placer = Self::configured_feature_placer(kind);
         let mut context = ConfiguredFeaturePlaceContext {
             region,
             registry,
@@ -190,141 +61,67 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn configured_feature_type_id(kind: &ConfiguredFeatureKind) -> Identifier {
+    fn configured_feature_placer(kind: &ConfiguredFeatureKind) -> ConfiguredFeaturePlacer {
         match kind {
-            ConfiguredFeatureKind::Bamboo(_) => Identifier::new_static("minecraft", "bamboo"),
-            ConfiguredFeatureKind::BasaltColumns(_) => {
-                Identifier::new_static("minecraft", "basalt_columns")
-            }
-            ConfiguredFeatureKind::BasaltPillar => {
-                Identifier::new_static("minecraft", "basalt_pillar")
-            }
-            ConfiguredFeatureKind::BlockBlob(_) => {
-                Identifier::new_static("minecraft", "block_blob")
-            }
-            ConfiguredFeatureKind::BlockColumn(_) => {
-                Identifier::new_static("minecraft", "block_column")
-            }
-            ConfiguredFeatureKind::BlockPile(_) => {
-                Identifier::new_static("minecraft", "block_pile")
-            }
-            ConfiguredFeatureKind::BlueIce => Identifier::new_static("minecraft", "blue_ice"),
-            ConfiguredFeatureKind::BonusChest => Identifier::new_static("minecraft", "bonus_chest"),
-            ConfiguredFeatureKind::ChorusPlant => {
-                Identifier::new_static("minecraft", "chorus_plant")
-            }
-            ConfiguredFeatureKind::CoralClaw => Identifier::new_static("minecraft", "coral_claw"),
-            ConfiguredFeatureKind::CoralMushroom => {
-                Identifier::new_static("minecraft", "coral_mushroom")
-            }
-            ConfiguredFeatureKind::CoralTree => Identifier::new_static("minecraft", "coral_tree"),
-            ConfiguredFeatureKind::DeltaFeature(_) => {
-                Identifier::new_static("minecraft", "delta_feature")
-            }
-            ConfiguredFeatureKind::DesertWell => Identifier::new_static("minecraft", "desert_well"),
-            ConfiguredFeatureKind::Disk(_) => Identifier::new_static("minecraft", "disk"),
-            ConfiguredFeatureKind::DripstoneCluster(_) => {
-                Identifier::new_static("minecraft", "dripstone_cluster")
-            }
-            ConfiguredFeatureKind::EndGateway(_) => {
-                Identifier::new_static("minecraft", "end_gateway")
-            }
-            ConfiguredFeatureKind::EndIsland => Identifier::new_static("minecraft", "end_island"),
-            ConfiguredFeatureKind::EndPlatform => {
-                Identifier::new_static("minecraft", "end_platform")
-            }
-            ConfiguredFeatureKind::EndSpike(_) => Identifier::new_static("minecraft", "end_spike"),
-            ConfiguredFeatureKind::FallenTree(_) => {
-                Identifier::new_static("minecraft", "fallen_tree")
-            }
-            ConfiguredFeatureKind::Fossil(_) => Identifier::new_static("minecraft", "fossil"),
-            ConfiguredFeatureKind::FreezeTopLayer => {
-                Identifier::new_static("minecraft", "freeze_top_layer")
-            }
-            ConfiguredFeatureKind::Geode(_) => Identifier::new_static("minecraft", "geode"),
-            ConfiguredFeatureKind::GlowstoneBlob => {
-                Identifier::new_static("minecraft", "glowstone_blob")
-            }
-            ConfiguredFeatureKind::HugeBrownMushroom(_) => {
-                Identifier::new_static("minecraft", "huge_brown_mushroom")
-            }
-            ConfiguredFeatureKind::HugeFungus(_) => {
-                Identifier::new_static("minecraft", "huge_fungus")
-            }
-            ConfiguredFeatureKind::HugeRedMushroom(_) => {
-                Identifier::new_static("minecraft", "huge_red_mushroom")
-            }
-            ConfiguredFeatureKind::Iceberg(_) => Identifier::new_static("minecraft", "iceberg"),
-            ConfiguredFeatureKind::Kelp => Identifier::new_static("minecraft", "kelp"),
-            ConfiguredFeatureKind::Lake(_) => Identifier::new_static("minecraft", "lake"),
-            ConfiguredFeatureKind::LargeDripstone(_) => {
-                Identifier::new_static("minecraft", "large_dripstone")
-            }
-            ConfiguredFeatureKind::MonsterRoom => {
-                Identifier::new_static("minecraft", "monster_room")
-            }
-            ConfiguredFeatureKind::MultifaceGrowth(_) => {
-                Identifier::new_static("minecraft", "multiface_growth")
-            }
-            ConfiguredFeatureKind::NetherForestVegetation(_) => {
-                Identifier::new_static("minecraft", "nether_forest_vegetation")
-            }
-            ConfiguredFeatureKind::NetherrackReplaceBlobs(_) => {
-                Identifier::new_static("minecraft", "netherrack_replace_blobs")
-            }
-            ConfiguredFeatureKind::Ore(_) => Identifier::new_static("minecraft", "ore"),
-            ConfiguredFeatureKind::PointedDripstone(_) => {
-                Identifier::new_static("minecraft", "pointed_dripstone")
-            }
-            ConfiguredFeatureKind::RandomBooleanSelector(_) => {
-                Identifier::new_static("minecraft", "random_boolean_selector")
-            }
-            ConfiguredFeatureKind::RandomSelector(_) => {
-                Identifier::new_static("minecraft", "random_selector")
-            }
-            ConfiguredFeatureKind::RootSystem(_) => {
-                Identifier::new_static("minecraft", "root_system")
-            }
-            ConfiguredFeatureKind::ScatteredOre(_) => {
-                Identifier::new_static("minecraft", "scattered_ore")
-            }
-            ConfiguredFeatureKind::SculkPatch(_) => {
-                Identifier::new_static("minecraft", "sculk_patch")
-            }
-            ConfiguredFeatureKind::SeaPickle(_) => {
-                Identifier::new_static("minecraft", "sea_pickle")
-            }
-            ConfiguredFeatureKind::Seagrass(_) => Identifier::new_static("minecraft", "seagrass"),
-            ConfiguredFeatureKind::SimpleBlock(_) => {
-                Identifier::new_static("minecraft", "simple_block")
-            }
-            ConfiguredFeatureKind::SimpleRandomSelector(_) => {
-                Identifier::new_static("minecraft", "simple_random_selector")
-            }
-            ConfiguredFeatureKind::Spike(_) => Identifier::new_static("minecraft", "spike"),
-            ConfiguredFeatureKind::SpringFeature(_) => {
-                Identifier::new_static("minecraft", "spring_feature")
-            }
-            ConfiguredFeatureKind::Tree(_) => Identifier::new_static("minecraft", "tree"),
-            ConfiguredFeatureKind::TwistingVines(_) => {
-                Identifier::new_static("minecraft", "twisting_vines")
-            }
-            ConfiguredFeatureKind::UnderwaterMagma(_) => {
-                Identifier::new_static("minecraft", "underwater_magma")
-            }
-            ConfiguredFeatureKind::VegetationPatch(_) => {
-                Identifier::new_static("minecraft", "vegetation_patch")
-            }
-            ConfiguredFeatureKind::Vines => Identifier::new_static("minecraft", "vines"),
-            ConfiguredFeatureKind::VoidStartPlatform => {
-                Identifier::new_static("minecraft", "void_start_platform")
-            }
+            ConfiguredFeatureKind::Bamboo(_) => place_bamboo,
+            ConfiguredFeatureKind::BasaltColumns(_) => place_basalt_columns,
+            ConfiguredFeatureKind::BasaltPillar => place_basalt_pillar,
+            ConfiguredFeatureKind::BlockBlob(_) => place_block_blob,
+            ConfiguredFeatureKind::BlockColumn(_) => place_block_column,
+            ConfiguredFeatureKind::BlockPile(_) => place_block_pile,
+            ConfiguredFeatureKind::BlueIce => place_blue_ice,
+            ConfiguredFeatureKind::BonusChest => place_bonus_chest,
+            ConfiguredFeatureKind::ChorusPlant => place_chorus_plant,
+            ConfiguredFeatureKind::CoralClaw => place_coral_claw,
+            ConfiguredFeatureKind::CoralMushroom => place_coral_mushroom,
+            ConfiguredFeatureKind::CoralTree => place_coral_tree,
+            ConfiguredFeatureKind::DeltaFeature(_) => place_delta_feature,
+            ConfiguredFeatureKind::DesertWell => place_desert_well,
+            ConfiguredFeatureKind::Disk(_) => place_disk,
+            ConfiguredFeatureKind::DripstoneCluster(_) => place_dripstone_cluster,
+            ConfiguredFeatureKind::EndGateway(_) => place_end_gateway,
+            ConfiguredFeatureKind::EndIsland => place_end_island,
+            ConfiguredFeatureKind::EndPlatform => place_end_platform,
+            ConfiguredFeatureKind::EndSpike(_) => place_end_spike,
+            ConfiguredFeatureKind::FallenTree(_) => place_fallen_tree,
+            ConfiguredFeatureKind::Fossil(_) => place_fossil,
+            ConfiguredFeatureKind::FreezeTopLayer => place_freeze_top_layer,
+            ConfiguredFeatureKind::Geode(_) => place_geode,
+            ConfiguredFeatureKind::GlowstoneBlob => place_glowstone_blob,
+            ConfiguredFeatureKind::HugeBrownMushroom(_) => place_huge_brown_mushroom,
+            ConfiguredFeatureKind::HugeFungus(_) => place_huge_fungus,
+            ConfiguredFeatureKind::HugeRedMushroom(_) => place_huge_red_mushroom,
+            ConfiguredFeatureKind::Iceberg(_) => place_iceberg,
+            ConfiguredFeatureKind::Kelp => place_kelp,
+            ConfiguredFeatureKind::Lake(_) => place_lake,
+            ConfiguredFeatureKind::LargeDripstone(_) => place_large_dripstone,
+            ConfiguredFeatureKind::MonsterRoom => place_monster_room,
+            ConfiguredFeatureKind::MultifaceGrowth(_) => place_multiface_growth,
+            ConfiguredFeatureKind::NetherForestVegetation(_) => place_nether_forest_vegetation,
+            ConfiguredFeatureKind::NetherrackReplaceBlobs(_) => place_netherrack_replace_blobs,
+            ConfiguredFeatureKind::Ore(_) => place_ore,
+            ConfiguredFeatureKind::PointedDripstone(_) => place_pointed_dripstone,
+            ConfiguredFeatureKind::RandomBooleanSelector(_) => place_random_boolean_selector,
+            ConfiguredFeatureKind::RandomSelector(_) => place_random_selector,
+            ConfiguredFeatureKind::RootSystem(_) => place_root_system,
+            ConfiguredFeatureKind::ScatteredOre(_) => place_scattered_ore,
+            ConfiguredFeatureKind::SculkPatch(_) => place_sculk_patch,
+            ConfiguredFeatureKind::SeaPickle(_) => place_sea_pickle,
+            ConfiguredFeatureKind::Seagrass(_) => place_seagrass,
+            ConfiguredFeatureKind::SimpleBlock(_) => place_simple_block,
+            ConfiguredFeatureKind::SimpleRandomSelector(_) => place_simple_random_selector,
+            ConfiguredFeatureKind::Spike(_) => place_spike,
+            ConfiguredFeatureKind::SpringFeature(_) => place_spring_feature,
+            ConfiguredFeatureKind::Tree(_) => place_tree,
+            ConfiguredFeatureKind::TwistingVines(_) => place_twisting_vines,
+            ConfiguredFeatureKind::UnderwaterMagma(_) => place_underwater_magma,
+            ConfiguredFeatureKind::VegetationPatch(_) => place_vegetation_patch,
+            ConfiguredFeatureKind::Vines => place_vines,
+            ConfiguredFeatureKind::VoidStartPlatform => place_void_start_platform,
             ConfiguredFeatureKind::WaterloggedVegetationPatch(_) => {
-                Identifier::new_static("minecraft", "waterlogged_vegetation_patch")
+                place_waterlogged_vegetation_patch
             }
-            ConfiguredFeatureKind::WeepingVines => {
-                Identifier::new_static("minecraft", "weeping_vines")
-            }
+            ConfiguredFeatureKind::WeepingVines => place_weeping_vines,
         }
     }
 }

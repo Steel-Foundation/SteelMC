@@ -1,5 +1,6 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
+use smallvec::SmallVec;
 
 impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
@@ -192,7 +193,7 @@ impl FeatureDecorationRunner {
         let Ok(capacity) = usize::try_from(local_variety) else {
             panic!("dual-noise provider local variety {local_variety} exceeds usize range");
         };
-        let mut possible_states = Vec::with_capacity(capacity);
+        let mut possible_states = SmallVec::<[BlockStateId; 8]>::with_capacity(capacity);
         for i in 0..local_variety {
             let offset_pos = pos.offset(i * 54_545, 0, i * 34_234);
             let slow_value = Self::noise_value(&slow_noise, offset_pos, provider.slow_scale);

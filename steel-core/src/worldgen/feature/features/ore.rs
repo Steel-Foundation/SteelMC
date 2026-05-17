@@ -1,9 +1,11 @@
 use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::chunk::section::{BlockStateSectionCounts, ChunkSection};
 use crate::worldgen::state_resolver::WorldgenStateResolver;
 use smallvec::SmallVec;
 use std::time::Instant;
+use steel_utils::PackedSectionBlockPos;
 use steel_utils::math::mth;
 
 impl FeatureDecorationRunner {
@@ -112,8 +114,7 @@ impl FeatureDecorationRunner {
             }
         }
 
-        let Some(search_volume) = OreSearchVolume::new(x_start, y_start, z_start, size_xz, size_y)
-        else {
+        let Some(search_volume) = OreSearchVolume::new(size_xz, size_y) else {
             return false;
         };
         let profile = OreFeatureProfile::new(config.size);
@@ -129,77 +130,43 @@ impl FeatureDecorationRunner {
             let mut sections = region.bulk_section_access_for_ore(profile.stats());
             let candidate_started_at = profile.stats().map(|_| Instant::now());
 
-            for node in vein_nodes {
-                let radius = node[3];
-                if radius < 0.0 {
-                    continue;
-                }
-
-                let x_min = floor(node[0] - radius).max(x_start);
-                let z_min = floor(node[2] - radius).max(z_start);
-                let x_max = floor(node[0] + radius).max(x_min);
-                let z_max = floor(node[2] + radius).max(z_min);
-                let raw_y_min = floor(node[1] - radius).max(y_start);
-                let raw_y_max = floor(node[1] + radius).max(raw_y_min);
-                let y_min = raw_y_min.max(min_y);
-                let y_max = raw_y_max.min(min_y + height - 1);
-                if y_min > y_max {
-                    continue;
-                }
-
-                for x in x_min..=x_max {
-                    let x_distance = (f64::from(x) + 0.5 - node[0]) / radius;
-                    let x_distance_squared = x_distance * x_distance;
-                    if x_distance_squared >= 1.0 {
-                        continue;
-                    }
-
-                    for y in y_min..=y_max {
-                        let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
-                        let xy_distance_squared = x_distance_squared + y_distance * y_distance;
-                        if xy_distance_squared >= 1.0 {
-                            continue;
-                        }
-
-                        for z in z_min..=z_max {
-                            let z_distance = (f64::from(z) + 0.5 - node[2]) / radius;
-                            if xy_distance_squared + z_distance * z_distance >= 1.0 {
-                                continue;
-                            }
-
-                            sections.record_ore_candidate_position();
-                            let Some(tested_index) = search_volume.index(x, y, z) else {
-                                continue;
-                            };
-                            if tested.insert(tested_index) {
-                                sections.record_ore_unique_position();
-                                let pos = BlockPos::new(x, y, z);
-                                if batch_no_air_exposure {
-                                    let section_key =
-                                        PendingOreSectionKey::from_in_height_pos(min_y, pos);
-                                    push_pending_ore_position(
-                                        &mut pending_no_air_sections,
-                                        section_key,
-                                        pos,
-                                    );
-                                } else if sections.can_write_to_pos(pos) {
-                                    sections.record_ore_write_allowed_position();
-                                    if Self::try_place_ore_block_in_bulk(
-                                        &mut sections,
-                                        registry,
-                                        random,
-                                        config,
-                                        &targets,
-                                        pos,
-                                    ) {
-                                        placed += 1;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            placed += if profile.stats().is_some() {
+                Self::collect_ore_candidates::<true>(
+                    &mut sections,
+                    registry,
+                    random,
+                    config,
+                    &targets,
+                    search_volume,
+                    vein_nodes,
+                    x_start,
+                    y_start,
+                    z_start,
+                    min_y,
+                    height,
+                    batch_no_air_exposure,
+                    &mut tested,
+                    &mut pending_no_air_sections,
+                )
+            } else {
+                Self::collect_ore_candidates::<false>(
+                    &mut sections,
+                    registry,
+                    random,
+                    config,
+                    &targets,
+                    search_volume,
+                    vein_nodes,
+                    x_start,
+                    y_start,
+                    z_start,
+                    min_y,
+                    height,
+                    batch_no_air_exposure,
+                    &mut tested,
+                    &mut pending_no_air_sections,
+                )
+            };
             if let Some(started_at) = candidate_started_at {
                 if let Some(stats) = profile.stats() {
                     stats
@@ -231,6 +198,119 @@ impl FeatureDecorationRunner {
 
         profile.finish(placed);
         placed > 0
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps the vanilla ore candidate loop monomorphized without hiding state"
+    )]
+    fn collect_ore_candidates<const PROFILE: bool>(
+        sections: &mut WorldGenBulkSectionAccess<'_, '_, '_>,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        config: &OreConfiguration,
+        targets: &ResolvedOreTargets,
+        search_volume: OreSearchVolume,
+        vein_nodes: SmallVec<[[f64; 4]; 32]>,
+        x_start: i32,
+        y_start: i32,
+        z_start: i32,
+        min_y: i32,
+        height: i32,
+        batch_no_air_exposure: bool,
+        tested: &mut OreTestedPositions,
+        pending_no_air_sections: &mut SmallVec<[PendingOreSection; 8]>,
+    ) -> u64 {
+        let mut placed = 0_u64;
+
+        for node in vein_nodes {
+            let radius = node[3];
+            if radius < 0.0 {
+                continue;
+            }
+
+            let x_min = floor(node[0] - radius).max(x_start);
+            let z_min = floor(node[2] - radius).max(z_start);
+            let x_max = floor(node[0] + radius).max(x_min);
+            let z_max = floor(node[2] + radius).max(z_min);
+            let raw_y_min = floor(node[1] - radius).max(y_start);
+            let raw_y_max = floor(node[1] + radius).max(raw_y_min);
+            let y_min = raw_y_min.max(min_y);
+            let y_max = raw_y_max.min(min_y + height - 1);
+            if y_min > y_max {
+                continue;
+            }
+
+            for x in x_min..=x_max {
+                let x_offset = i64::from(x) - i64::from(x_start);
+                let x_distance = (f64::from(x) + 0.5 - node[0]) / radius;
+                let x_distance_squared = x_distance * x_distance;
+                if x_distance_squared >= 1.0 {
+                    continue;
+                }
+
+                for y in y_min..=y_max {
+                    let y_offset = i64::from(y) - i64::from(y_start);
+                    let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
+                    let xy_distance_squared = x_distance_squared + y_distance * y_distance;
+                    if xy_distance_squared >= 1.0 {
+                        continue;
+                    }
+
+                    for z in z_min..=z_max {
+                        let z_offset = i64::from(z) - i64::from(z_start);
+                        let z_distance = (f64::from(z) + 0.5 - node[2]) / radius;
+                        if xy_distance_squared + z_distance * z_distance >= 1.0 {
+                            continue;
+                        }
+
+                        if PROFILE {
+                            sections.record_ore_candidate_position();
+                        }
+                        let Some(tested_index) =
+                            search_volume.index_from_offsets(x_offset, y_offset, z_offset)
+                        else {
+                            continue;
+                        };
+                        if tested.insert(tested_index) {
+                            if PROFILE {
+                                sections.record_ore_unique_position();
+                            }
+                            if batch_no_air_exposure {
+                                let section_key =
+                                    PendingOreSectionKey::from_in_height_coords(min_y, x, y, z);
+                                let Some(pos) = PackedSectionBlockPos::from_local_xyz(
+                                    (x & 15) as u8,
+                                    (y & 15) as u8,
+                                    (z & 15) as u8,
+                                ) else {
+                                    panic!("masked ore section-local position escaped section");
+                                };
+                                push_pending_ore_position(
+                                    pending_no_air_sections,
+                                    section_key,
+                                    pos,
+                                );
+                            } else {
+                                let pos = BlockPos::new(x, y, z);
+                                if sections.can_write_to_pos(pos) {
+                                    if PROFILE {
+                                        sections.record_ore_write_allowed_position();
+                                    }
+                                    if Self::try_place_ore_block_in_bulk(
+                                        sections, registry, random, config, targets, pos,
+                                    ) {
+                                        placed += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        placed
     }
 
     pub(in crate::worldgen::feature) fn place_scattered_ore_feature(
@@ -417,7 +497,7 @@ struct PendingOreSectionKey {
 
 struct PendingOreSection {
     key: PendingOreSectionKey,
-    positions: SmallVec<[BlockPos; 64]>,
+    positions: SmallVec<[PackedSectionBlockPos; 64]>,
 }
 
 struct ResolvedOreTargets {
@@ -427,6 +507,7 @@ struct ResolvedOreTargets {
 struct ResolvedOreTarget {
     matcher: ResolvedOreRuleTest,
     state: BlockStateId,
+    state_counts: BlockStateSectionCounts,
 }
 
 enum ResolvedOreRuleTest {
@@ -436,44 +517,36 @@ enum ResolvedOreRuleTest {
 
 #[derive(Clone, Copy)]
 struct OreSearchVolume {
-    x_start: i32,
-    y_start: i32,
-    z_start: i32,
     size_xz: i64,
-    size_y: i64,
+    size_xz_y: i64,
     tested_position_count: usize,
 }
 
 impl OreSearchVolume {
-    fn new(x_start: i32, y_start: i32, z_start: i32, size_xz: i32, size_y: i32) -> Option<Self> {
+    fn new(size_xz: i32, size_y: i32) -> Option<Self> {
         let size_xz = i64::from(size_xz);
         let size_y = i64::from(size_y);
         if size_xz <= 0 || size_y <= 0 {
             return None;
         }
 
-        let tested_position_count =
-            usize::try_from(size_xz.checked_mul(size_y)?.checked_mul(size_xz)?).ok()?;
+        let size_xz_y = size_xz.checked_mul(size_y)?;
+        let tested_position_count = usize::try_from(size_xz_y.checked_mul(size_xz)?).ok()?;
         Some(Self {
-            x_start,
-            y_start,
-            z_start,
             size_xz,
-            size_y,
+            size_xz_y,
             tested_position_count,
         })
     }
 
-    fn index(self, x: i32, y: i32, z: i32) -> Option<usize> {
-        let x_offset = i64::from(x) - i64::from(self.x_start);
-        let y_offset = i64::from(y) - i64::from(self.y_start);
-        let z_offset = i64::from(z) - i64::from(self.z_start);
+    #[inline]
+    fn index_from_offsets(self, x_offset: i64, y_offset: i64, z_offset: i64) -> Option<usize> {
         if x_offset < 0 || y_offset < 0 || z_offset < 0 {
             return None;
         }
 
         // Matches vanilla OreFeature's BitSet index layout.
-        let index = x_offset + y_offset * self.size_xz + z_offset * self.size_xz * self.size_y;
+        let index = x_offset + y_offset * self.size_xz + z_offset * self.size_xz_y;
         usize::try_from(index).ok()
     }
 }
@@ -498,13 +571,16 @@ impl ResolvedOreTargets {
                     ResolvedOreRuleTest::Tag(block_ids)
                 }
             };
+            let state = WorldgenStateResolver::block_state_from_data(
+                registry,
+                &target.state,
+                "ore feature",
+            );
+            let state_counts = ChunkSection::block_state_section_counts(state);
             targets.push(ResolvedOreTarget {
                 matcher,
-                state: WorldgenStateResolver::block_state_from_data(
-                    registry,
-                    &target.state,
-                    "ore feature",
-                ),
+                state,
+                state_counts,
             });
         }
 
@@ -519,11 +595,13 @@ impl ResolvedOreTargets {
         &self,
         registry: &Registry,
         state: BlockStateId,
-    ) -> Option<BlockStateId> {
+    ) -> Option<(BlockStateId, BlockStateSectionCounts)> {
         let block_id = self.block_id_for_state(registry, state);
-        self.targets
-            .iter()
-            .find_map(|target| target.matches_block_id(block_id).then_some(target.state))
+        self.targets.iter().find_map(|target| {
+            target
+                .matches_block_id(block_id)
+                .then_some((target.state, target.state_counts))
+        })
     }
 
     fn block_id_for_state(&self, registry: &Registry, state: BlockStateId) -> usize {
@@ -544,11 +622,11 @@ impl ResolvedOreTarget {
 }
 
 impl PendingOreSectionKey {
-    fn from_in_height_pos(min_y: i32, pos: BlockPos) -> Self {
+    fn from_in_height_coords(min_y: i32, x: i32, y: i32, z: i32) -> Self {
         Self {
-            chunk_x: SectionPos::block_to_section_coord(pos.x()),
-            chunk_z: SectionPos::block_to_section_coord(pos.z()),
-            section_index: ((pos.y() - min_y) / 16) as usize,
+            chunk_x: SectionPos::block_to_section_coord(x),
+            chunk_z: SectionPos::block_to_section_coord(z),
+            section_index: ((y - min_y) / 16) as usize,
         }
     }
 }
@@ -556,8 +634,15 @@ impl PendingOreSectionKey {
 fn push_pending_ore_position(
     sections: &mut SmallVec<[PendingOreSection; 8]>,
     key: PendingOreSectionKey,
-    pos: BlockPos,
+    pos: PackedSectionBlockPos,
 ) {
+    if let Some(section) = sections.last_mut()
+        && section.key == key
+    {
+        section.positions.push(pos);
+        return;
+    }
+
     if let Some(section) = sections.iter_mut().find(|section| section.key == key) {
         section.positions.push(pos);
         return;
@@ -599,15 +684,24 @@ mod tests {
 
     #[test]
     fn ore_tested_position_index_matches_vanilla_layout() {
-        let volume = OreSearchVolume::new(10, 60, 20, 4, 6);
-        assert_eq!(volume.and_then(|volume| volume.index(12, 63, 21)), Some(38));
+        let volume = OreSearchVolume::new(4, 6);
+        assert_eq!(
+            volume.and_then(|volume| volume.index_from_offsets(2, 3, 1)),
+            Some(38)
+        );
     }
 
     #[test]
     fn ore_tested_position_index_keeps_vanilla_inclusive_edge_layout() {
-        let volume = OreSearchVolume::new(10, 60, 20, 4, 6);
-        assert_eq!(volume.and_then(|volume| volume.index(14, 60, 20)), Some(4));
-        assert_eq!(volume.and_then(|volume| volume.index(10, 61, 20)), Some(4));
+        let volume = OreSearchVolume::new(4, 6);
+        assert_eq!(
+            volume.and_then(|volume| volume.index_from_offsets(4, 0, 0)),
+            Some(4)
+        );
+        assert_eq!(
+            volume.and_then(|volume| volume.index_from_offsets(0, 1, 0)),
+            Some(4)
+        );
     }
 
     #[test]
