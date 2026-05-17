@@ -32,6 +32,7 @@ use steel_utils::{
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
+use crate::world::structure::{StructureBlockIgnore, StructureMirror};
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::state_resolver::WorldgenStateResolver;
 
@@ -67,17 +68,6 @@ struct ProcessedBlockInfo {
     nbt: Option<NbtCompound>,
 }
 
-/// Hardcoded vanilla block-ignore processors used by structure pool elements.
-///
-/// Registry-backed processor lists cannot express these singleton instances in
-/// Steel yet because vanilla wires them directly in `SinglePoolElement`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StructureBlockIgnore {
-    None,
-    StructureBlock,
-    StructureAndAir,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StructureProcessorRandom {
     /// Vanilla `StructurePlaceSettings.setRandom(random)`.
@@ -87,7 +77,9 @@ pub(crate) enum StructureProcessorRandom {
 }
 
 pub(crate) struct StructurePlaceSettings<'a> {
+    pub(crate) mirror: StructureMirror,
     pub(crate) rotation: Rotation,
+    pub(crate) rotation_pivot: BlockPos,
     pub(crate) bounding_box: BoundingBox,
     pub(crate) processors: &'a [StructureProcessorKind],
     pub(crate) block_ignore: StructureBlockIgnore,
@@ -335,6 +327,45 @@ impl StructureTemplate {
         )
     }
 
+    pub(crate) const fn bounding_box_with_transform(
+        &self,
+        position: BlockPos,
+        rotation: Rotation,
+        mirror: StructureMirror,
+        pivot: BlockPos,
+    ) -> BoundingBox {
+        let corner1 = Self::transform_template_pos(BlockPos::ZERO, mirror, rotation, pivot);
+        let corner2 = Self::transform_template_pos(
+            BlockPos::new(self.size[0] - 1, self.size[1] - 1, self.size[2] - 1),
+            mirror,
+            rotation,
+            pivot,
+        );
+        BoundingBox::new(
+            position.x() + corner1.x(),
+            position.y() + corner1.y(),
+            position.z() + corner1.z(),
+            position.x() + corner2.x(),
+            position.y() + corner2.y(),
+            position.z() + corner2.z(),
+        )
+    }
+
+    const fn transform_template_pos(
+        pos: BlockPos,
+        mirror: StructureMirror,
+        rotation: Rotation,
+        pivot: BlockPos,
+    ) -> BlockPos {
+        let (x, z) = match mirror {
+            StructureMirror::None => (pos.x(), pos.z()),
+            StructureMirror::FrontBack => (-pos.x(), pos.z()),
+            StructureMirror::LeftRight => (pos.x(), -pos.z()),
+        };
+        let (x, y, z) = rotation.transform_pos(x, pos.y(), z, pivot.x(), pivot.z());
+        BlockPos::new(x, y, z)
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "structure placement call mirrors vanilla template placement context"
@@ -364,7 +395,7 @@ impl StructureTemplate {
             };
             let processed = ProcessedBlockInfo {
                 template_pos: block.pos,
-                world_pos: Self::transformed_position(position, block.pos, settings.rotation),
+                world_pos: Self::transformed_position(position, block.pos, settings),
                 state: block.state,
                 nbt: block.nbt.clone(),
             };
@@ -412,7 +443,12 @@ impl StructureTemplate {
                 continue;
             }
 
-            let final_state = Self::rotate_state(registry, processed.state, settings.rotation);
+            let final_state = Self::transform_state(
+                registry,
+                processed.state,
+                settings.mirror,
+                settings.rotation,
+            );
             let previous_fluid_state =
                 apply_waterlogging.then(|| Self::fluid_state_at(region, processed.world_pos));
             if processed.nbt.is_some() {
@@ -493,6 +529,39 @@ impl StructureTemplate {
         }
 
         placed_any
+    }
+
+    pub(crate) fn replace_jigsaw_final_states(
+        &self,
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        random: &mut WorldgenRandom,
+    ) {
+        let Some(palette) = self.palette(settings, position, random) else {
+            return;
+        };
+
+        for block in &palette.blocks {
+            if Self::block_for_state(registry, block.state) != &vanilla_blocks::JIGSAW {
+                continue;
+            }
+            let world_pos = Self::transformed_position(position, block.pos, settings);
+            if !settings.bounding_box.is_inside(world_pos) {
+                continue;
+            }
+            let Some(nbt) = block.nbt.as_ref() else {
+                continue;
+            };
+            let final_state = nbt
+                .string("final_state")
+                .map(|value| value.to_str())
+                .unwrap_or_else(|| "minecraft:air".into());
+            let state = Self::parse_block_state_string(registry, final_state.as_ref())
+                .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
+            let _ = region.set_block_state(world_pos, state, UpdateFlags::UPDATE_ALL);
+        }
     }
 
     fn update_shape_at_edge(
@@ -748,11 +817,15 @@ impl StructureTemplate {
     const fn transformed_position(
         position: BlockPos,
         template_pos: BlockPos,
-        rotation: Rotation,
+        settings: &StructurePlaceSettings<'_>,
     ) -> BlockPos {
-        let (x, y, z) =
-            rotation.transform_pos(template_pos.x(), template_pos.y(), template_pos.z(), 0, 0);
-        position.offset(x, y, z)
+        let transformed = Self::transform_template_pos(
+            template_pos,
+            settings.mirror,
+            settings.rotation,
+            settings.rotation_pivot,
+        );
+        position.offset(transformed.x(), transformed.y(), transformed.z())
     }
 
     fn process_block(
@@ -1185,8 +1258,13 @@ impl StructureTemplate {
         let _ = region.set_block_entity_data(pos, block_entity_type, state, nbt);
     }
 
-    fn rotate_state(registry: &Registry, state: BlockStateId, rotation: Rotation) -> BlockStateId {
-        if rotation == Rotation::None {
+    fn transform_state(
+        registry: &Registry,
+        state: BlockStateId,
+        mirror: StructureMirror,
+        rotation: Rotation,
+    ) -> BlockStateId {
+        if mirror == StructureMirror::None && rotation == Rotation::None {
             return state;
         }
 
@@ -1200,6 +1278,7 @@ impl StructureTemplate {
             .map(|(name, value)| (name.to_owned(), value.to_owned()))
             .collect::<Vec<_>>();
 
+        Self::mirror_string_properties(&mut properties, mirror);
         Self::rotate_string_properties(&mut properties, rotation);
         let property_refs = properties
             .iter()
@@ -1259,9 +1338,72 @@ impl StructureTemplate {
                         *value = (rotated & 15).to_string();
                     }
                 }
+                "shape" => {
+                    if let Some(rotated) = Self::rotate_rail_shape(value, rotation) {
+                        rotated.clone_into(value);
+                    }
+                }
                 "north" | "east" | "south" | "west" => {
                     let from = Self::direction_from_property_name(name);
                     let source = Self::inverse_rotate_direction(rotation, from);
+                    if let Some(source_name) = Self::property_name_from_direction(source)
+                        && let Some((_, source_value)) = original
+                            .iter()
+                            .find(|(original_name, _)| original_name == source_name)
+                    {
+                        value.clone_from(source_value);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn mirror_string_properties(properties: &mut [(String, String)], mirror: StructureMirror) {
+        if mirror == StructureMirror::None {
+            return;
+        }
+
+        let original = properties.to_vec();
+        let facing = original
+            .iter()
+            .find(|(name, _)| name == "facing")
+            .and_then(|(_, value)| Self::parse_direction(value));
+        let stair_shape = original
+            .iter()
+            .find(|(name, _)| name == "shape")
+            .and_then(|(_, value)| Self::parse_stair_shape(value));
+
+        let mirrored_stairs = facing
+            .zip(stair_shape)
+            .and_then(|(direction, shape)| Self::mirror_stair_shape(direction, shape, mirror));
+
+        for (name, value) in properties.iter_mut() {
+            match name.as_str() {
+                "facing" => {
+                    if let Some((mirrored_facing, _)) = mirrored_stairs {
+                        mirrored_facing.as_str().clone_into(value);
+                    } else if let Some(direction) = Self::parse_direction(value) {
+                        Self::mirror_direction(direction, mirror)
+                            .as_str()
+                            .clone_into(value);
+                    }
+                }
+                "rotation" => {
+                    if let Ok(segment) = value.parse::<i32>() {
+                        *value = Self::mirror_rotation_segment(segment, 16, mirror).to_string();
+                    }
+                }
+                "shape" => {
+                    if let Some((_, mirrored_shape)) = mirrored_stairs {
+                        mirrored_shape.clone_into(value);
+                    } else if let Some(mirrored_shape) = Self::mirror_rail_shape(value, mirror) {
+                        mirrored_shape.clone_into(value);
+                    }
+                }
+                "north" | "east" | "south" | "west" => {
+                    let from = Self::direction_from_property_name(name);
+                    let source = Self::mirror_direction(from, mirror);
                     if let Some(source_name) = Self::property_name_from_direction(source)
                         && let Some((_, source_value)) = original
                             .iter()
@@ -1296,6 +1438,36 @@ impl StructureTemplate {
         }
     }
 
+    const fn mirror_direction(direction: Direction, mirror: StructureMirror) -> Direction {
+        match mirror {
+            StructureMirror::FrontBack => match direction {
+                BlockPropertyDirection::West => BlockPropertyDirection::East,
+                BlockPropertyDirection::East => BlockPropertyDirection::West,
+                other => other,
+            },
+            StructureMirror::LeftRight => match direction {
+                BlockPropertyDirection::North => BlockPropertyDirection::South,
+                BlockPropertyDirection::South => BlockPropertyDirection::North,
+                other => other,
+            },
+            StructureMirror::None => direction,
+        }
+    }
+
+    fn mirror_rotation_segment(rotation: i32, steps: i32, mirror: StructureMirror) -> i32 {
+        let half_steps = steps / 2;
+        let corrected = if rotation > half_steps {
+            rotation - steps
+        } else {
+            rotation
+        };
+        match mirror {
+            StructureMirror::LeftRight => (half_steps - corrected + steps) % steps,
+            StructureMirror::FrontBack => (steps - corrected) % steps,
+            StructureMirror::None => rotation,
+        }
+    }
+
     const fn inverse_rotate_direction(rotation: Rotation, direction: Direction) -> Direction {
         match rotation {
             Rotation::None => direction,
@@ -1312,6 +1484,138 @@ impl StructureTemplate {
             BlockPropertyDirection::South => Some("south"),
             BlockPropertyDirection::West => Some("west"),
             BlockPropertyDirection::Down | BlockPropertyDirection::Up => None,
+        }
+    }
+
+    fn rotate_rail_shape(shape: &str, rotation: Rotation) -> Option<&'static str> {
+        match rotation {
+            Rotation::Clockwise180 => match shape {
+                "ascending_east" => Some("ascending_west"),
+                "ascending_west" => Some("ascending_east"),
+                "ascending_north" => Some("ascending_south"),
+                "ascending_south" => Some("ascending_north"),
+                "north_south" => Some("north_south"),
+                "east_west" => Some("east_west"),
+                "south_east" => Some("north_west"),
+                "south_west" => Some("north_east"),
+                "north_west" => Some("south_east"),
+                "north_east" => Some("south_west"),
+                _ => None,
+            },
+            Rotation::CounterClockwise90 => match shape {
+                "ascending_east" => Some("ascending_north"),
+                "ascending_west" => Some("ascending_south"),
+                "ascending_north" => Some("ascending_west"),
+                "ascending_south" => Some("ascending_east"),
+                "north_south" => Some("east_west"),
+                "east_west" => Some("north_south"),
+                "south_east" => Some("north_east"),
+                "south_west" => Some("south_east"),
+                "north_west" => Some("south_west"),
+                "north_east" => Some("north_west"),
+                _ => None,
+            },
+            Rotation::Clockwise90 => match shape {
+                "ascending_east" => Some("ascending_south"),
+                "ascending_west" => Some("ascending_north"),
+                "ascending_north" => Some("ascending_east"),
+                "ascending_south" => Some("ascending_west"),
+                "north_south" => Some("east_west"),
+                "east_west" => Some("north_south"),
+                "south_east" => Some("south_west"),
+                "south_west" => Some("north_west"),
+                "north_west" => Some("north_east"),
+                "north_east" => Some("south_east"),
+                _ => None,
+            },
+            Rotation::None => None,
+        }
+    }
+
+    fn mirror_rail_shape(shape: &str, mirror: StructureMirror) -> Option<&'static str> {
+        match mirror {
+            StructureMirror::LeftRight => match shape {
+                "ascending_north" => Some("ascending_south"),
+                "ascending_south" => Some("ascending_north"),
+                "north_south" => Some("north_south"),
+                "east_west" => Some("east_west"),
+                "south_east" => Some("north_east"),
+                "south_west" => Some("north_west"),
+                "north_west" => Some("south_west"),
+                "north_east" => Some("south_east"),
+                _ => None,
+            },
+            StructureMirror::FrontBack => match shape {
+                "ascending_east" => Some("ascending_west"),
+                "ascending_west" => Some("ascending_east"),
+                "ascending_north" => Some("ascending_north"),
+                "ascending_south" => Some("ascending_south"),
+                "north_south" => Some("north_south"),
+                "east_west" => Some("east_west"),
+                "south_east" => Some("south_west"),
+                "south_west" => Some("south_east"),
+                "north_west" => Some("north_east"),
+                "north_east" => Some("north_west"),
+                _ => None,
+            },
+            StructureMirror::None => None,
+        }
+    }
+
+    fn parse_stair_shape(shape: &str) -> Option<&'static str> {
+        match shape {
+            "straight" => Some("straight"),
+            "inner_left" => Some("inner_left"),
+            "inner_right" => Some("inner_right"),
+            "outer_left" => Some("outer_left"),
+            "outer_right" => Some("outer_right"),
+            _ => None,
+        }
+    }
+
+    fn mirror_stair_shape(
+        direction: Direction,
+        shape: &str,
+        mirror: StructureMirror,
+    ) -> Option<(Direction, &'static str)> {
+        match mirror {
+            StructureMirror::LeftRight
+                if matches!(
+                    direction,
+                    BlockPropertyDirection::North | BlockPropertyDirection::South
+                ) =>
+            {
+                Some((
+                    direction.opposite(),
+                    match shape {
+                        "outer_left" => "outer_right",
+                        "inner_right" => "inner_left",
+                        "inner_left" => "inner_right",
+                        "outer_right" => "outer_left",
+                        "straight" => "straight",
+                        _ => return None,
+                    },
+                ))
+            }
+            StructureMirror::FrontBack
+                if matches!(
+                    direction,
+                    BlockPropertyDirection::West | BlockPropertyDirection::East
+                ) =>
+            {
+                Some((
+                    direction.opposite(),
+                    match shape {
+                        "outer_left" => "outer_right",
+                        "outer_right" => "outer_left",
+                        "inner_left" => "inner_left",
+                        "inner_right" => "inner_right",
+                        "straight" => "straight",
+                        _ => return None,
+                    },
+                ))
+            }
+            StructureMirror::None | StructureMirror::LeftRight | StructureMirror::FrontBack => None,
         }
     }
 
@@ -1379,6 +1683,34 @@ mod tests {
         assert_eq!(
             template.zero_position_with_transform(zero, Rotation::CounterClockwise90),
             BlockPos::new(100, 64, 205)
+        );
+    }
+
+    #[test]
+    fn bounding_box_with_transform_matches_vanilla_mirror_rotation_pivot() {
+        let template = StructureTemplate {
+            size: [6, 10, 8],
+            palettes: Vec::new(),
+            entity_count: 0,
+        };
+
+        assert_eq!(
+            template.bounding_box_with_transform(
+                BlockPos::new(100, 64, 200),
+                Rotation::Clockwise90,
+                StructureMirror::FrontBack,
+                BlockPos::new(2, 0, 3),
+            ),
+            BoundingBox::new(98, 64, 196, 105, 73, 201)
+        );
+        assert_eq!(
+            template.bounding_box_with_transform(
+                BlockPos::new(100, 64, 200),
+                Rotation::CounterClockwise90,
+                StructureMirror::LeftRight,
+                BlockPos::new(2, 0, 3),
+            ),
+            BoundingBox::new(92, 64, 200, 99, 73, 205)
         );
     }
 

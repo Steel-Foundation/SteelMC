@@ -29,9 +29,9 @@ use crate::world::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
 use crate::world::structure::{
-    ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
-    StructureReferenceMap, StructureStart, StructureStartMap, TemplateMarkerHandling,
-    TemplatePieceData,
+    ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
+    StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
+    TemplateMarkerHandling, TemplatePieceData,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -148,6 +148,22 @@ const fn mirror_from_persistent(value: i8) -> StructureMirror {
         1 => StructureMirror::FrontBack,
         2 => StructureMirror::LeftRight,
         _ => StructureMirror::None,
+    }
+}
+
+const fn block_ignore_to_persistent(block_ignore: StructureBlockIgnore) -> i8 {
+    match block_ignore {
+        StructureBlockIgnore::None => 0,
+        StructureBlockIgnore::StructureBlock => 1,
+        StructureBlockIgnore::StructureAndAir => 2,
+    }
+}
+
+const fn block_ignore_from_persistent(value: i8) -> StructureBlockIgnore {
+    match value {
+        1 => StructureBlockIgnore::StructureBlock,
+        2 => StructureBlockIgnore::StructureAndAir,
+        _ => StructureBlockIgnore::None,
     }
 }
 
@@ -1162,6 +1178,13 @@ impl ChunkStorage {
                     ],
                     rotation: rotation_to_persistent(data.rotation),
                     mirror: mirror_to_persistent(data.mirror),
+                    rotation_pivot: [
+                        data.rotation_pivot.0,
+                        data.rotation_pivot.1,
+                        data.rotation_pivot.2,
+                    ],
+                    block_ignore: block_ignore_to_persistent(data.block_ignore),
+                    late_block_ignore: block_ignore_to_persistent(data.late_block_ignore),
                     processors: Self::processors_to_persistent(&data.processors),
                     liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
                     marker_handling: marker_handling_to_persistent(data.marker_handling),
@@ -1190,6 +1213,13 @@ impl ChunkStorage {
                     ),
                     rotation: rotation_from_persistent(data.rotation),
                     mirror: mirror_from_persistent(data.mirror),
+                    rotation_pivot: (
+                        data.rotation_pivot[0],
+                        data.rotation_pivot[1],
+                        data.rotation_pivot[2],
+                    ),
+                    block_ignore: block_ignore_from_persistent(data.block_ignore),
+                    late_block_ignore: block_ignore_from_persistent(data.late_block_ignore),
                     processors: Self::persistent_to_processors(&data.processors),
                     liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
                     marker_handling: marker_handling_from_persistent(data.marker_handling),
@@ -2066,6 +2096,9 @@ mod tests {
                 template_position: (1, 70, 2),
                 rotation: Rotation::Clockwise180,
                 mirror: StructureMirror::FrontBack,
+                rotation_pivot: (4, 0, 15),
+                block_ignore: StructureBlockIgnore::StructureAndAir,
+                late_block_ignore: StructureBlockIgnore::None,
                 processors: ProcessorList::Registry(processor_id.clone()),
                 liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
                 marker_handling: TemplateMarkerHandling::DataMarkers,
@@ -2127,6 +2160,9 @@ mod tests {
         assert_eq!(template.template_position, (1, 70, 2));
         assert_eq!(template.rotation, Rotation::Clockwise180);
         assert_eq!(template.mirror, StructureMirror::FrontBack);
+        assert_eq!(template.rotation_pivot, (4, 0, 15));
+        assert_eq!(template.block_ignore, StructureBlockIgnore::StructureAndAir);
+        assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
         assert_eq!(
             template.liquid_settings,
             LiquidSettingsData::IgnoreWaterlogging

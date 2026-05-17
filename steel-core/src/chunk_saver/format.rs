@@ -508,6 +508,12 @@ pub struct PersistentTemplatePieceData {
     pub rotation: i8,
     /// Mirror: 0=none, 1=front_back, 2=left_right.
     pub mirror: i8,
+    /// Rotation pivot in template-local block coordinates.
+    pub rotation_pivot: [i32; 3],
+    /// Early block-ignore processor: 0=none, 1=structure_block, 2=structure_and_air.
+    pub block_ignore: i8,
+    /// Late block-ignore processor: 0=none, 1=structure_block, 2=structure_and_air.
+    pub late_block_ignore: i8,
     /// Processors applied during block placement.
     pub processors: PersistentProcessorList,
     /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.

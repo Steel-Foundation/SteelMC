@@ -1,5 +1,6 @@
+use crate::world::structure::{StructureBlockIgnore, StructureMirror};
 use crate::worldgen::template::{
-    StructureBlockIgnore, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+    StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
 use steel_utils::{BoundingBox, Rotation};
 
@@ -70,7 +71,9 @@ impl FeatureDecorationRunner {
         );
 
         let fossil_settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
             rotation,
+            rotation_pivot: BlockPos::ZERO,
             bounding_box,
             processors: fossil_processors,
             block_ignore: StructureBlockIgnore::None,
@@ -91,7 +94,9 @@ impl FeatureDecorationRunner {
         );
 
         let overlay_settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
             rotation,
+            rotation_pivot: BlockPos::ZERO,
             bounding_box,
             processors: overlay_processors,
             block_ignore: StructureBlockIgnore::None,

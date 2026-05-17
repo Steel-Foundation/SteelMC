@@ -206,6 +206,12 @@ pub struct TemplatePieceData {
     pub rotation: Rotation,
     /// Template mirror mode.
     pub mirror: StructureMirror,
+    /// Rotation pivot in template-local block coordinates.
+    pub rotation_pivot: (i32, i32, i32),
+    /// Block-ignore processor applied before the registry processor list.
+    pub block_ignore: StructureBlockIgnore,
+    /// Block-ignore processor applied after the registry processor list.
+    pub late_block_ignore: StructureBlockIgnore,
     /// Processor list applied during placement.
     pub processors: ProcessorList,
     /// Liquid handling mode used by vanilla template placement.
@@ -223,6 +229,17 @@ pub enum StructureMirror {
     FrontBack,
     /// Mirror across the template left/right axis.
     LeftRight,
+}
+
+/// Hardcoded vanilla block-ignore processors used by template placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructureBlockIgnore {
+    /// Do not ignore any block states.
+    None,
+    /// Ignore structure blocks.
+    StructureBlock,
+    /// Ignore structure blocks and air.
+    StructureAndAir,
 }
 
 /// Marker handling requested by a template-backed structure piece.

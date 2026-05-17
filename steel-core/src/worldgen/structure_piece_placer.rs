@@ -14,11 +14,14 @@ use steel_registry::{Registry, RegistryExt};
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BoundingBox, Rotation, types::UpdateFlags};
 
-use crate::world::structure::{ProceduralPieceData, StructurePiece, StructurePiecePayload};
+use crate::world::structure::{
+    ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
+    StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+};
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
-    StructureBlockIgnore, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+    StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
 
 pub(crate) struct StructurePiecePlacer;
@@ -57,10 +60,8 @@ impl StructurePiecePlacer {
                 data.liquid_settings,
                 biome_zoom_seed,
             ),
-            StructurePiecePayload::Template(_data) => {
-                let _flags = Self::TEMPLATE_UPDATE_FLAGS;
-                // TODO: Implement full vanilla template-backed structure placement.
-                false
+            StructurePiecePayload::Template(data) => {
+                Self::place_template_piece(region, registry, data, reference_pos, clip, random)
             }
             StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(data)) => {
                 Self::place_mineshaft_piece(
@@ -192,7 +193,9 @@ impl StructurePiecePlacer {
         };
         let processor_list = Self::processors(registry, processors);
         let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
             rotation,
+            rotation_pivot: BlockPos::ZERO,
             bounding_box: clip,
             processors: processor_list,
             block_ignore,
@@ -227,5 +230,72 @@ impl StructurePiecePlacer {
                 &processor_list.data.processors
             }
         }
+    }
+
+    fn place_template_piece(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        data: &TemplatePieceData,
+        reference_pos: BlockPos,
+        clip: BoundingBox,
+        random: &mut WorldgenRandom,
+    ) -> bool {
+        if data.marker_handling == TemplateMarkerHandling::DataMarkers {
+            // TODO: Add family-specific data marker dispatch before enabling these pieces.
+            return false;
+        }
+
+        let template = match StructureTemplate::load_vanilla(registry, &data.template_id) {
+            Ok(template) => template,
+            Err(err) => panic!("{err}"),
+        };
+        let processor_list = Self::processors(registry, &data.processors);
+        let position = BlockPos::new(
+            data.template_position.0,
+            data.template_position.1,
+            data.template_position.2,
+        );
+        let settings = StructurePlaceSettings {
+            mirror: data.mirror,
+            rotation: data.rotation,
+            rotation_pivot: BlockPos::new(
+                data.rotation_pivot.0,
+                data.rotation_pivot.1,
+                data.rotation_pivot.2,
+            ),
+            bounding_box: clip,
+            processors: processor_list,
+            block_ignore: data.block_ignore,
+            late_block_ignore: data.late_block_ignore,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: data.liquid_settings,
+        };
+        if !template
+            .bounding_box_with_transform(
+                position,
+                data.rotation,
+                data.mirror,
+                settings.rotation_pivot,
+            )
+            .intersects(&clip)
+        {
+            return false;
+        }
+
+        let placed = template.place_in_world(
+            region,
+            registry,
+            position,
+            reference_pos,
+            &settings,
+            random,
+            Self::TEMPLATE_UPDATE_FLAGS,
+        );
+        if placed {
+            template.replace_jigsaw_final_states(region, registry, position, &settings, random);
+        }
+        placed
     }
 }
