@@ -3,9 +3,12 @@ use steel_registry::Registry;
 use super::runner::FeatureDecorationRunner;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::feature::FluidStateData;
+use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{vanilla_blocks, vanilla_fluids};
-use steel_utils::BlockPos;
+use steel_utils::random::{Random as _, worldgen_random::WorldgenRandom};
+use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier};
 
+use crate::world::structure::{StructurePiece, StructureReferenceMap, StructureStart};
 use crate::worldgen::BiomeSourceKind;
 
 #[test]
@@ -80,6 +83,130 @@ fn vanilla_feature_sorter_builds_for_all_builtin_biome_sources() {
         let runner = FeatureDecorationRunner::new(&possible_biomes, &registry);
         assert!(runner.sorter.step_count() > 0);
     }
+}
+
+#[test]
+fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
+    let mut registry = Registry::new_vanilla();
+    registry.freeze();
+
+    let underground = FeatureDecorationRunner::structures_for_decoration_step(&registry, 3);
+    let surface = FeatureDecorationRunner::structures_for_decoration_step(&registry, 4);
+    let underground_decoration =
+        FeatureDecorationRunner::structures_for_decoration_step(&registry, 7);
+
+    assert_eq!(
+        underground[0].key,
+        Identifier::vanilla_static("buried_treasure")
+    );
+    assert_eq!(
+        surface[0].key,
+        Identifier::vanilla_static("bastion_remnant")
+    );
+    assert_eq!(
+        underground_decoration[0].key,
+        Identifier::vanilla_static("ancient_city")
+    );
+
+    assert!(
+        underground
+            .iter()
+            .all(|structure| structure.step.decoration_ordinal() == 3)
+    );
+    assert!(
+        surface
+            .iter()
+            .all(|structure| structure.step.decoration_ordinal() == 4)
+    );
+    assert!(
+        underground_decoration
+            .iter()
+            .all(|structure| structure.step.decoration_ordinal() == 7)
+    );
+    assert!(FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).is_empty());
+}
+
+#[test]
+fn structure_start_resolution_uses_reference_insertion_order_and_filters_invalid_starts() {
+    let structure_id = Identifier::vanilla_static("village_plains");
+    let other_id = Identifier::vanilla_static("mineshaft");
+    let first = ChunkPos::new(3, 5);
+    let second = ChunkPos::new(4, 5);
+    let empty = ChunkPos::new(5, 5);
+    let mismatched = ChunkPos::new(6, 5);
+    let other = ChunkPos::new(7, 5);
+
+    let mut references = StructureReferenceMap::default();
+    let positions = references.entry(structure_id.clone()).or_default();
+    positions.insert(first);
+    positions.insert(second);
+    positions.insert(first);
+    positions.insert(empty);
+    positions.insert(mismatched);
+    references.entry(other_id).or_default().insert(other);
+
+    let mut lookup_order = Vec::new();
+    let starts = FeatureDecorationRunner::resolve_structure_starts_from_references(
+        &references,
+        &structure_id,
+        |source_pos, id| {
+            lookup_order.push(source_pos);
+            if source_pos == empty {
+                return Some(StructureStart::new(
+                    id.clone(),
+                    source_pos,
+                    Vec::new(),
+                    TerrainAdjustment::None,
+                ));
+            }
+
+            let start_pos = if source_pos == mismatched {
+                ChunkPos::new(99, 99)
+            } else {
+                source_pos
+            };
+            Some(StructureStart::new(
+                id.clone(),
+                start_pos,
+                vec![StructurePiece::non_jigsaw(
+                    Identifier::vanilla_static("test_piece"),
+                    BoundingBox::new(0, 0, 0, 0, 0, 0),
+                    0,
+                    None,
+                )],
+                TerrainAdjustment::None,
+            ))
+        },
+    );
+
+    assert_eq!(lookup_order, [first, second, empty, mismatched]);
+    assert_eq!(
+        starts
+            .iter()
+            .map(|start| start.chunk_pos)
+            .collect::<Vec<_>>(),
+        [first, second]
+    );
+}
+
+#[test]
+fn structure_step_seed_uses_vanilla_feature_seed_shape() {
+    let decoration_seed = 4_567_890_i64;
+    let mut actual = WorldgenRandom::from_seed(0);
+    FeatureDecorationRunner::set_structure_seed(&mut actual, decoration_seed, 2, 7);
+
+    let mut expected = WorldgenRandom::from_seed(0);
+    expected.set_feature_seed(decoration_seed, 2, 7);
+
+    assert_eq!(actual.next_i32(), expected.next_i32());
+}
+
+#[test]
+fn structure_piece_clip_box_is_center_chunk_build_height_box() {
+    assert_eq!(
+        FeatureDecorationRunner::chunk_writable_box(ChunkPos::new(-2, 3), -64, 320),
+        BoundingBox::new(-32, -64, 48, -17, 319, 63)
+    );
 }
 
 #[test]

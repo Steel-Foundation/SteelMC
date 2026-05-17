@@ -451,7 +451,8 @@ pub struct PersistentStructureStart {
 
 /// A structure piece stored with a chunk.
 ///
-/// Common fields are stored directly; type-specific data is in `nbt_data`.
+/// Common fields are stored directly; type-specific placement data is in
+/// `payload`.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentStructurePiece {
     /// Piece type identifier (e.g., "minecraft:jigsaw").
@@ -462,16 +463,25 @@ pub struct PersistentStructurePiece {
     pub gen_depth: i32,
     /// 2D direction orientation (-1 = none, 0-3 = south/west/north/east).
     pub orientation: i8,
-    /// Type-specific NBT data (simdnbt binary format).
-    pub nbt_data: Vec<u8>,
-    /// Typed jigsaw placement data. Present only for `minecraft:jigsaw` pieces.
-    pub jigsaw: Option<PersistentJigsawPieceData>,
+    /// Type-specific structure piece placement data.
+    pub payload: PersistentStructurePiecePayload,
     /// Offset from piece minY to terrain ground level.
     pub ground_level_delta: i32,
     /// Projection mode: -1 = none, 0 = rigid, 1 = terrain matching.
     pub projection: i8,
     /// Jigsaw junctions used by terrain adaptation.
     pub junctions: Vec<PersistentJigsawJunction>,
+}
+
+/// Persisted type-specific structure piece placement data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentStructurePiecePayload {
+    /// Jigsaw pool piece payload.
+    Jigsaw(PersistentJigsawPieceData),
+    /// Template-backed non-jigsaw payload.
+    Template(PersistentTemplatePieceData),
+    /// Procedural family payload.
+    Procedural(PersistentProceduralPieceData),
 }
 
 /// Steel-native persistent state for a jigsaw pool piece.
@@ -486,6 +496,29 @@ pub struct PersistentJigsawPieceData {
     /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
     pub liquid_settings: i8,
 }
+
+/// Persisted template-backed non-jigsaw piece data.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentTemplatePieceData {
+    /// Structure template identifier.
+    pub template_id: Identifier,
+    /// World-space template origin.
+    pub template_position: [i32; 3],
+    /// Rotation: 0=none, `1=clockwise_90`, `2=clockwise_180`, `3=counterclockwise_90`.
+    pub rotation: i8,
+    /// Mirror: 0=none, 1=front_back, 2=left_right.
+    pub mirror: i8,
+    /// Processors applied during block placement.
+    pub processors: PersistentProcessorList,
+    /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
+    pub liquid_settings: i8,
+    /// Marker handling: 0=ignore, 1=data_markers.
+    pub marker_handling: i8,
+}
+
+/// Persisted procedural piece data.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentProceduralPieceData;
 
 /// Persisted pool element selected during jigsaw assembly.
 #[derive(SchemaWrite, SchemaRead)]

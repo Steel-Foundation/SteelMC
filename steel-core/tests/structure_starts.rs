@@ -21,7 +21,7 @@ use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::world::structure::{
-    StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
 };
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
@@ -663,7 +663,7 @@ fn compare_jigsaw_state(
         return;
     }
 
-    let Some(jigsaw) = &actual.jigsaw else {
+    let StructurePiecePayload::Jigsaw(jigsaw) = &actual.payload else {
         diffs.push(format!(
             "piece[{index}].piece_data: expected typed jigsaw state, got none",
         ));

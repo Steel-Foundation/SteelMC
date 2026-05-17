@@ -1,8 +1,14 @@
 use smallvec::SmallVec;
 use steel_registry::biome::BiomeRef;
+use steel_registry::structure::StructureRef;
+use steel_utils::{BoundingBox, ChunkPos};
 
 use super::prelude::*;
 use super::sorter::{FeatureSorter, FeatureStepData};
+#[cfg(test)]
+use crate::world::structure::StructureReferenceMap;
+use crate::world::structure::StructureStart;
+use crate::worldgen::structure_piece_placer::StructurePiecePlacer;
 
 /// Runs the structure-piece and placed-feature decoration pass for a generator.
 #[derive(Debug)]
@@ -154,7 +160,7 @@ impl FeatureDecorationRunner {
         let step_count = DECORATION_STEP_COUNT.max(self.sorter.step_count());
 
         for step in 0..step_count {
-            Self::place_structures_for_step(region, step);
+            Self::place_structures_for_step(region, registry, decoration_seed, &mut random, step);
 
             let Some(step_features) = self.sorter.step(step) else {
                 continue;
@@ -201,8 +207,140 @@ impl FeatureDecorationRunner {
         biomes
     }
 
-    pub(super) const fn place_structures_for_step(_region: &mut WorldGenRegion<'_>, _step: usize) {
-        // TODO: Place generated structure pieces once template block payloads are extracted.
+    pub(super) fn structures_for_decoration_step(
+        registry: &Registry,
+        step: usize,
+    ) -> Vec<StructureRef> {
+        registry
+            .structures
+            .iter()
+            .map(|(_, structure)| structure)
+            .filter(|structure| structure.step.decoration_ordinal() == step)
+            .collect()
+    }
+
+    pub(super) fn center_chunk_writable_box(region: &WorldGenRegion<'_>) -> BoundingBox {
+        Self::chunk_writable_box(region.center(), region.min_y(), region.max_y_exclusive())
+    }
+
+    pub(super) const fn chunk_writable_box(
+        center: ChunkPos,
+        min_y: i32,
+        max_y_exclusive: i32,
+    ) -> BoundingBox {
+        let min_x = center.0.x * 16;
+        let min_z = center.0.y * 16;
+        BoundingBox::new(
+            min_x,
+            min_y,
+            min_z,
+            min_x + 15,
+            max_y_exclusive - 1,
+            min_z + 15,
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn resolve_structure_starts_from_references(
+        references: &StructureReferenceMap,
+        structure_id: &Identifier,
+        mut start_lookup: impl FnMut(steel_utils::ChunkPos, &Identifier) -> Option<StructureStart>,
+    ) -> Vec<StructureStart> {
+        let Some(source_positions) = references.get(structure_id) else {
+            return Vec::new();
+        };
+
+        let mut starts = Vec::new();
+        for &source_pos in source_positions {
+            let Some(start) = start_lookup(source_pos, structure_id) else {
+                continue;
+            };
+            if start.chunk_pos == source_pos && !start.pieces.is_empty() {
+                starts.push(start);
+            }
+        }
+        starts
+    }
+
+    fn starts_for_structure_in_region(
+        region: &WorldGenRegion<'_>,
+        structure_id: &Identifier,
+    ) -> Vec<StructureStart> {
+        let center = region.center();
+        let center_chunk = region.chunk(center.0.x, center.0.y, ChunkStatus::StructureStarts);
+        let references = center_chunk.structure_references();
+        let source_positions = references
+            .get(structure_id)
+            .map(|positions| positions.iter().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        drop(references);
+        drop(center_chunk);
+
+        // Copy starts out before dispatch so block-writing placers never hold
+        // source chunk read locks while mutating the region.
+        let mut starts = Vec::new();
+        for source_pos in source_positions {
+            let Some(source_chunk) =
+                region.try_chunk(source_pos.0.x, source_pos.0.y, ChunkStatus::StructureStarts)
+            else {
+                continue;
+            };
+            let source_starts = source_chunk.structure_starts();
+            let Some(start) = source_starts.get(structure_id) else {
+                continue;
+            };
+            if start.chunk_pos == source_pos && !start.pieces.is_empty() {
+                starts.push(start.clone());
+            }
+        }
+        starts
+    }
+
+    pub(super) fn place_structures_for_step(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        decoration_seed: i64,
+        random: &mut WorldgenRandom,
+        step: usize,
+    ) {
+        let writable_box = Self::center_chunk_writable_box(region);
+
+        for (structure_index, structure) in Self::structures_for_decoration_step(registry, step)
+            .into_iter()
+            .enumerate()
+        {
+            Self::set_structure_seed(random, decoration_seed, structure_index, step);
+
+            let starts = Self::starts_for_structure_in_region(region, &structure.key);
+            for start in starts {
+                for piece in &start.pieces {
+                    if piece.bounding_box.intersects(&writable_box) {
+                        StructurePiecePlacer::place_piece(
+                            region,
+                            registry,
+                            piece,
+                            writable_box,
+                            random,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn set_structure_seed(
+        random: &mut WorldgenRandom,
+        decoration_seed: i64,
+        structure_index: usize,
+        step: usize,
+    ) {
+        let Ok(structure_index_i32) = i32::try_from(structure_index) else {
+            panic!("structure index {structure_index} exceeds i32 range");
+        };
+        let Ok(step_i32) = i32::try_from(step) else {
+            panic!("decoration step {step} exceeds i32 range");
+        };
+        random.set_feature_seed(decoration_seed, structure_index_i32, step_i32);
     }
 
     #[expect(

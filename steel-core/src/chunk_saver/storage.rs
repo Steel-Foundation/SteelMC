@@ -26,7 +26,9 @@ use steel_utils::{
 
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
 use crate::world::structure::{
-    StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
+    ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
+    StructureReferenceMap, StructureStart, StructureStartMap, TemplateMarkerHandling,
+    TemplatePieceData,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -107,6 +109,36 @@ const fn liquid_settings_from_persistent(value: i8) -> LiquidSettingsData {
     }
 }
 
+const fn mirror_to_persistent(mirror: StructureMirror) -> i8 {
+    match mirror {
+        StructureMirror::None => 0,
+        StructureMirror::FrontBack => 1,
+        StructureMirror::LeftRight => 2,
+    }
+}
+
+const fn mirror_from_persistent(value: i8) -> StructureMirror {
+    match value {
+        1 => StructureMirror::FrontBack,
+        2 => StructureMirror::LeftRight,
+        _ => StructureMirror::None,
+    }
+}
+
+const fn marker_handling_to_persistent(marker_handling: TemplateMarkerHandling) -> i8 {
+    match marker_handling {
+        TemplateMarkerHandling::Ignore => 0,
+        TemplateMarkerHandling::DataMarkers => 1,
+    }
+}
+
+const fn marker_handling_from_persistent(value: i8) -> TemplateMarkerHandling {
+    match value {
+        1 => TemplateMarkerHandling::DataMarkers,
+        _ => TemplateMarkerHandling::Ignore,
+    }
+}
+
 fn compare_identifiers(a: &Identifier, b: &Identifier) -> CmpOrdering {
     a.namespace
         .cmp(&b.namespace)
@@ -118,8 +150,9 @@ use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
     PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentJigsawPieceData,
-    PersistentPoi, PersistentPoolElement, PersistentProcessorList, PersistentSection,
-    PersistentStructurePiece, PersistentStructureReference, PersistentStructureStart,
+    PersistentPoi, PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
+    PersistentStructureReference, PersistentStructureStart, PersistentTemplatePieceData,
     PersistentTick, PreparedChunkSave,
 };
 
@@ -999,6 +1032,62 @@ impl ChunkStorage {
         }
     }
 
+    fn structure_piece_payload_to_persistent(
+        payload: &StructurePiecePayload,
+    ) -> PersistentStructurePiecePayload {
+        match payload {
+            StructurePiecePayload::Jigsaw(data) => {
+                PersistentStructurePiecePayload::Jigsaw(Self::jigsaw_piece_data_to_persistent(data))
+            }
+            StructurePiecePayload::Template(data) => {
+                PersistentStructurePiecePayload::Template(PersistentTemplatePieceData {
+                    template_id: data.template_id.clone(),
+                    template_position: [
+                        data.template_position.0,
+                        data.template_position.1,
+                        data.template_position.2,
+                    ],
+                    rotation: rotation_to_persistent(data.rotation),
+                    mirror: mirror_to_persistent(data.mirror),
+                    processors: Self::processors_to_persistent(&data.processors),
+                    liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
+                    marker_handling: marker_handling_to_persistent(data.marker_handling),
+                })
+            }
+            StructurePiecePayload::Procedural(ProceduralPieceData) => {
+                PersistentStructurePiecePayload::Procedural(PersistentProceduralPieceData)
+            }
+        }
+    }
+
+    fn persistent_to_structure_piece_payload(
+        payload: &PersistentStructurePiecePayload,
+    ) -> StructurePiecePayload {
+        match payload {
+            PersistentStructurePiecePayload::Jigsaw(data) => {
+                StructurePiecePayload::Jigsaw(Self::persistent_to_jigsaw_piece_data(data))
+            }
+            PersistentStructurePiecePayload::Template(data) => {
+                StructurePiecePayload::Template(TemplatePieceData {
+                    template_id: data.template_id.clone(),
+                    template_position: (
+                        data.template_position[0],
+                        data.template_position[1],
+                        data.template_position[2],
+                    ),
+                    rotation: rotation_from_persistent(data.rotation),
+                    mirror: mirror_from_persistent(data.mirror),
+                    processors: Self::persistent_to_processors(&data.processors),
+                    liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
+                    marker_handling: marker_handling_from_persistent(data.marker_handling),
+                })
+            }
+            PersistentStructurePiecePayload::Procedural(PersistentProceduralPieceData) => {
+                StructurePiecePayload::Procedural(ProceduralPieceData)
+            }
+        }
+    }
+
     fn pool_element_to_persistent(element: &PoolElement) -> PersistentPoolElement {
         match element {
             PoolElement::Single {
@@ -1113,11 +1202,7 @@ impl ChunkStorage {
                         bounding_box: piece.bounding_box,
                         gen_depth: piece.gen_depth,
                         orientation: direction_to_2d(piece.orientation),
-                        nbt_data: piece.nbt_data.clone(),
-                        jigsaw: piece
-                            .jigsaw
-                            .as_ref()
-                            .map(Self::jigsaw_piece_data_to_persistent),
+                        payload: Self::structure_piece_payload_to_persistent(&piece.payload),
                         ground_level_delta: piece.ground_level_delta,
                         projection: projection_to_persistent(piece.projection),
                         junctions: piece
@@ -1152,12 +1237,11 @@ impl ChunkStorage {
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
                 references: {
-                    let mut packed: Vec<_> = positions
+                    let packed: Vec<_> = positions
                         .iter()
                         .copied()
                         .map(PackedChunkPos::from)
                         .collect();
-                    packed.sort_unstable();
                     packed
                 },
             })
@@ -1182,11 +1266,7 @@ impl ChunkStorage {
                         bounding_box: pp.bounding_box,
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
-                        nbt_data: pp.nbt_data.clone(),
-                        jigsaw: pp
-                            .jigsaw
-                            .as_ref()
-                            .map(Self::persistent_to_jigsaw_piece_data),
+                        payload: Self::persistent_to_structure_piece_payload(&pp.payload),
                         ground_level_delta: pp.ground_level_delta,
                         junctions: pp
                             .junctions
@@ -1368,7 +1448,7 @@ mod tests {
     use crate::block_entity::init_block_entities;
     use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
     use glam::DVec3;
-    use rustc_hash::{FxHashMap, FxHashSet};
+    use rustc_hash::FxHashMap;
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
     use steel_registry::vanilla_entities;
@@ -1397,8 +1477,7 @@ mod tests {
             bounding_box: steel_utils::BoundingBox::new(0, 64, 0, 1, 65, 1),
             gen_depth: 0,
             orientation: None,
-            nbt_data: Vec::new(),
-            jigsaw: None,
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData),
             ground_level_delta: 0,
             junctions: Vec::new(),
             projection: None,
@@ -1711,7 +1790,7 @@ mod tests {
         );
         references.insert(
             Identifier::new_static("minecraft", "empty"),
-            FxHashSet::default(),
+            Default::default(),
         );
 
         let persistent_references = ChunkStorage::structure_references_to_persistent(&references);
@@ -1727,8 +1806,8 @@ mod tests {
         assert_eq!(
             persistent_references[1].references,
             vec![
-                PackedChunkPos::from(ChunkPos::new(1, 0)),
-                PackedChunkPos::from(ChunkPos::new(2, 0))
+                PackedChunkPos::from(ChunkPos::new(2, 0)),
+                PackedChunkPos::from(ChunkPos::new(1, 0))
             ]
         );
     }
@@ -1751,8 +1830,7 @@ mod tests {
             bounding_box: steel_utils::BoundingBox::new(10, 64, 20, 15, 70, 25),
             gen_depth: 3,
             orientation: Some(Direction::North),
-            nbt_data: vec![1, 2, 3],
-            jigsaw: Some(JigsawPieceData {
+            payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
                 pool_element: PoolElement::List {
                     elements: vec![
                         PoolElement::LegacySingle {
@@ -1806,7 +1884,6 @@ mod tests {
         assert_eq!(loaded_piece.piece_type, piece_type);
         assert_eq!(loaded_piece.gen_depth, 3);
         assert_eq!(loaded_piece.orientation, Some(Direction::North));
-        assert_eq!(loaded_piece.nbt_data, [1, 2, 3]);
         assert_eq!(loaded_piece.ground_level_delta, 1);
         assert_eq!(loaded_piece.projection, Some(Projection::Rigid));
         assert_eq!(loaded_piece.junctions.len(), 1);
@@ -1815,10 +1892,9 @@ mod tests {
             Projection::TerrainMatching
         );
 
-        let jigsaw = loaded_piece
-            .jigsaw
-            .as_ref()
-            .expect("typed jigsaw state should roundtrip");
+        let StructurePiecePayload::Jigsaw(jigsaw) = &loaded_piece.payload else {
+            panic!("typed jigsaw state should roundtrip");
+        };
         assert_eq!(jigsaw.position, (10, 64, 20));
         assert_eq!(jigsaw.rotation, Rotation::Clockwise90);
         assert_eq!(
@@ -1857,5 +1933,83 @@ mod tests {
         };
         assert_eq!(feature, &Identifier::new_static("minecraft", "pile_hay"));
         assert_eq!(*projection, Projection::TerrainMatching);
+    }
+
+    #[test]
+    fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
+        init_registry();
+
+        let structure_id = Identifier::new_static("steel", "test_payload_variants");
+        let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");
+        let processor_id = Identifier::new_static("minecraft", "zombie_plains");
+
+        let template_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "shipwreck"),
+            bounding_box: steel_utils::BoundingBox::new(0, 70, 0, 12, 80, 12),
+            gen_depth: 2,
+            orientation: Some(Direction::East),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id: template_id.clone(),
+                template_position: (1, 70, 2),
+                rotation: Rotation::Clockwise180,
+                mirror: StructureMirror::FrontBack,
+                processors: ProcessorList::Registry(processor_id.clone()),
+                liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+                marker_handling: TemplateMarkerHandling::DataMarkers,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let procedural_piece = StructurePiece::non_jigsaw(
+            Identifier::new_static("minecraft", "mscorridor"),
+            steel_utils::BoundingBox::new(20, 40, 20, 30, 50, 30),
+            5,
+            Some(Direction::South),
+        );
+
+        let start = StructureStart::new(
+            structure_id.clone(),
+            ChunkPos::new(8, 9),
+            vec![template_piece, procedural_piece],
+            TerrainAdjustment::None,
+        );
+        let mut starts = FxHashMap::default();
+        starts.insert(structure_id.clone(), start);
+
+        let persistent = ChunkStorage::structure_starts_to_persistent(&starts);
+        let encoded = wincode::serialize(&persistent).expect("structure starts should serialize");
+        let decoded: Vec<PersistentStructureStart> =
+            wincode::deserialize(&encoded).expect("structure starts should deserialize");
+        let loaded = ChunkStorage::persistent_to_structure_starts(&decoded);
+        let loaded_start = loaded
+            .get(&structure_id)
+            .expect("structure start should roundtrip");
+        assert_eq!(loaded_start.pieces.len(), 2);
+
+        let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
+            panic!("template payload should roundtrip");
+        };
+        assert_eq!(template.template_id, template_id);
+        assert_eq!(template.template_position, (1, 70, 2));
+        assert_eq!(template.rotation, Rotation::Clockwise180);
+        assert_eq!(template.mirror, StructureMirror::FrontBack);
+        assert_eq!(
+            template.liquid_settings,
+            LiquidSettingsData::IgnoreWaterlogging
+        );
+        assert_eq!(
+            template.marker_handling,
+            TemplateMarkerHandling::DataMarkers
+        );
+        assert_eq!(
+            template.processors,
+            ProcessorList::Registry(processor_id.clone())
+        );
+
+        assert!(matches!(
+            loaded_start.pieces[1].payload,
+            StructurePiecePayload::Procedural(ProceduralPieceData)
+        ));
     }
 }

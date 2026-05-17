@@ -19,18 +19,18 @@ pub mod shipwreck;
 pub mod single_piece;
 pub mod stronghold;
 
-use std::cell::RefCell;
+use std::{cell::RefCell, slice};
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSplitter};
-use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
+use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier, Rotation};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
-use steel_registry::structure::{StructureData, TerrainAdjustment};
-use steel_registry::template_pool::{Projection, TemplateData, TemplatePoolData};
+use steel_registry::structure::{LiquidSettingsData, StructureData, TerrainAdjustment};
+use steel_registry::template_pool::{ProcessorList, Projection, TemplateData, TemplatePoolData};
 
 use crate::worldgen::ChunkBiomeSampler;
 use crate::worldgen::generators::vanilla::{
@@ -130,10 +130,8 @@ pub struct StructurePiece {
     pub gen_depth: i32,
     /// Horizontal orientation; `None` for unoriented pieces.
     pub orientation: Option<Direction>,
-    /// Type-specific NBT (simdnbt binary).
-    pub nbt_data: Vec<u8>,
-    /// Typed jigsaw placement data. `None` for non-jigsaw pieces.
-    pub jigsaw: Option<jigsaw::JigsawPieceData>,
+    /// Type-specific data used by the structure-piece placement stage.
+    pub payload: StructurePiecePayload,
     /// Offset from piece minY to ground level. Used by Beardifier. Default 0 for non-jigsaw.
     pub ground_level_delta: i32,
     /// Junctions for Beardifier terrain adaptation.
@@ -160,8 +158,7 @@ impl StructurePiece {
             bounding_box,
             gen_depth,
             orientation,
-            nbt_data: Vec::new(),
-            jigsaw: None,
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData),
             ground_level_delta: 0,
             junctions: Vec::new(),
             projection: None,
@@ -169,13 +166,141 @@ impl StructurePiece {
     }
 }
 
+/// Type-specific structure-piece placement payload.
+///
+/// This is Steel's boundary between structure-start generation and feature-stage
+/// block placement. Common vanilla fields stay on [`StructurePiece`]; placement
+/// implementations dispatch on this enum instead of inferring behavior from a
+/// bounding box or legacy NBT blob.
+#[derive(Debug, Clone)]
+pub enum StructurePiecePayload {
+    /// Pool piece produced by jigsaw assembly.
+    Jigsaw(jigsaw::JigsawPieceData),
+    /// Template-backed vanilla piece outside the jigsaw system.
+    Template(TemplatePieceData),
+    /// Code-generated piece family whose blocks are emitted procedurally.
+    Procedural(ProceduralPieceData),
+}
+
+/// Template-backed non-jigsaw placement data.
+#[derive(Debug, Clone)]
+pub struct TemplatePieceData {
+    /// Structure template identifier.
+    pub template_id: Identifier,
+    /// World-space template origin before rotation/mirror transforms.
+    pub template_position: (i32, i32, i32),
+    /// Template rotation.
+    pub rotation: Rotation,
+    /// Template mirror mode.
+    pub mirror: StructureMirror,
+    /// Processor list applied during placement.
+    pub processors: ProcessorList,
+    /// Liquid handling mode used by vanilla template placement.
+    pub liquid_settings: LiquidSettingsData,
+    /// How structure-template data markers are handled for this family.
+    pub marker_handling: TemplateMarkerHandling,
+}
+
+/// Vanilla `Mirror` modes used by template placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructureMirror {
+    /// No mirror transform.
+    None,
+    /// Mirror across the template front/back axis.
+    FrontBack,
+    /// Mirror across the template left/right axis.
+    LeftRight,
+}
+
+/// Marker handling requested by a template-backed structure piece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplateMarkerHandling {
+    /// Ignore data markers.
+    Ignore,
+    /// Dispatch data markers to the structure-family placement code.
+    DataMarkers,
+}
+
+/// Marker type for code-generated structure pieces.
+///
+/// Procedural families already encode their current vanilla identity in
+/// [`StructurePiece::piece_type`]. Family-specific placement state will be
+/// added here as each procedural placer is implemented.
+#[derive(Debug, Clone, Copy)]
+pub struct ProceduralPieceData;
+
 /// Structure starts keyed by structure id.
 pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;
 
 /// Structure references → origin chunk positions.
 ///
 /// Vanilla stores these as a `LongSet`, so duplicates are ignored by construction.
-pub type StructureReferenceMap = FxHashMap<Identifier, FxHashSet<ChunkPos>>;
+pub type StructureReferenceMap = FxHashMap<Identifier, StructureReferenceSet>;
+
+/// Insertion-ordered set of structure-start chunk positions.
+///
+/// Vanilla reference storage is set-like, but feature-stage structure placement
+/// consumes these positions while seeding per-structure RNG. Steel keeps the
+/// scan insertion order explicit instead of relying on hash-set iteration.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StructureReferenceSet {
+    positions: Vec<ChunkPos>,
+}
+
+impl StructureReferenceSet {
+    /// Inserts a chunk position if it was not already present.
+    pub fn insert(&mut self, pos: ChunkPos) -> bool {
+        if self.positions.contains(&pos) {
+            return false;
+        }
+        self.positions.push(pos);
+        true
+    }
+
+    /// Extends this set with insertion-order duplicate removal.
+    pub fn extend(&mut self, positions: impl IntoIterator<Item = ChunkPos>) {
+        for pos in positions {
+            self.insert(pos);
+        }
+    }
+
+    /// Returns an iterator over positions in insertion order.
+    pub fn iter(&self) -> slice::Iter<'_, ChunkPos> {
+        self.positions.iter()
+    }
+
+    /// Returns `true` when no positions are stored.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.positions.is_empty()
+    }
+}
+
+impl FromIterator<ChunkPos> for StructureReferenceSet {
+    fn from_iter<T: IntoIterator<Item = ChunkPos>>(iter: T) -> Self {
+        let mut set = Self::default();
+        set.extend(iter);
+        set
+    }
+}
+
+impl<'a> IntoIterator for &'a StructureReferenceSet {
+    type IntoIter = slice::Iter<'a, ChunkPos>;
+    type Item = &'a ChunkPos;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl IntoIterator for StructureReferenceSet {
+    type IntoIter = std::vec::IntoIter<ChunkPos>;
+    type Item = ChunkPos;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.positions.into_iter()
+    }
+}
 
 /// Block classification in the base-noise column (no surface rules).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

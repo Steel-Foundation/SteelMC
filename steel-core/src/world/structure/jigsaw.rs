@@ -16,7 +16,7 @@ use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece, StructurePiecePayload,
 };
 
 /// A placed piece produced by jigsaw assembly.
@@ -878,8 +878,7 @@ impl Structure for JigsawStructure {
                 // `genDepth = 0` for every jigsaw piece.
                 gen_depth: 0,
                 orientation: None,
-                nbt_data: Vec::new(),
-                jigsaw: Some(JigsawPieceData {
+                payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
                     pool_element: piece.element,
                     position: piece.position,
                     rotation: piece.rotation,

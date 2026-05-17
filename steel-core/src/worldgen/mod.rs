@@ -20,6 +20,7 @@ pub mod registry;
 pub(crate) mod stages;
 pub(crate) mod state_resolver;
 pub(crate) mod structure;
+pub(crate) mod structure_piece_placer;
 pub mod surface;
 pub(crate) mod template;
 
