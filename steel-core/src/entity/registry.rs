@@ -8,10 +8,12 @@ use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
+use steel_utils::{BlockPos, Direction};
 use uuid::Uuid;
 
 use super::entities::{
     BlockDisplayEntity, ChestMinecartEntity, DummyMobEntity, EndCrystalEntity, ItemEntity,
+    ItemFrameEntity,
 };
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
@@ -238,44 +240,54 @@ pub fn init_entities() {
         },
     );
 
-    // TODO: Replace dummy witch/cat registrations with full mob implementations.
-    registry.register(&vanilla_entities::WITCH, |id, pos, world| {
-        Arc::new(DummyMobEntity::new(
+    registry.register(&vanilla_entities::ITEM_FRAME, |id, pos, world| {
+        Arc::new(ItemFrameEntity::new(
             id,
-            pos,
+            BlockPos::new(
+                pos.x.floor() as i32,
+                pos.y.floor() as i32,
+                pos.z.floor() as i32,
+            ),
+            Direction::South,
             world,
-            &vanilla_entities::WITCH,
         ))
     });
     registry.register_load(
-        &vanilla_entities::WITCH,
+        &vanilla_entities::ITEM_FRAME,
         |id, pos, uuid, _velocity, rotation, _on_ground, world| {
-            Arc::new(DummyMobEntity::from_saved(
-                id,
-                pos,
-                uuid,
-                rotation,
-                world,
-                &vanilla_entities::WITCH,
-            ))
+            Arc::new(ItemFrameEntity::from_saved(id, pos, uuid, rotation, world))
         },
     );
-    registry.register(&vanilla_entities::CAT, |id, pos, world| {
-        Arc::new(DummyMobEntity::new(id, pos, world, &vanilla_entities::CAT))
-    });
-    registry.register_load(
-        &vanilla_entities::CAT,
-        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
-            Arc::new(DummyMobEntity::from_saved(
-                id,
-                pos,
-                uuid,
-                rotation,
-                world,
-                &vanilla_entities::CAT,
-            ))
-        },
-    );
+
+    macro_rules! register_dummy_mob {
+        ($entity_type:expr) => {
+            registry.register($entity_type, |id, pos, world| {
+                Arc::new(DummyMobEntity::new(id, pos, world, $entity_type))
+            });
+            registry.register_load(
+                $entity_type,
+                |id, pos, uuid, _velocity, rotation, _on_ground, world| {
+                    Arc::new(DummyMobEntity::from_saved(
+                        id,
+                        pos,
+                        uuid,
+                        rotation,
+                        world,
+                        $entity_type,
+                    ))
+                },
+            );
+        };
+    }
+
+    // TODO: Replace dummy worldgen mob registrations with full mob implementations.
+    register_dummy_mob!(&vanilla_entities::WITCH);
+    register_dummy_mob!(&vanilla_entities::CAT);
+    register_dummy_mob!(&vanilla_entities::DROWNED);
+    register_dummy_mob!(&vanilla_entities::SHULKER);
+    register_dummy_mob!(&vanilla_entities::EVOKER);
+    register_dummy_mob!(&vanilla_entities::VINDICATOR);
+    register_dummy_mob!(&vanilla_entities::ALLAY);
 
     assert!(
         ENTITIES.set(registry).is_ok(),

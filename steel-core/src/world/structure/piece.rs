@@ -1,6 +1,8 @@
 //! Runtime structure-piece payload model used by feature-stage placement.
 
-use steel_registry::structure::{LiquidSettingsData, RuinedPortalPlacementData};
+use steel_registry::structure::{
+    LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData,
+};
 use steel_registry::template_pool::Projection;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
@@ -107,6 +109,13 @@ pub enum TemplateProcessorList {
     Empty,
     /// Registry-backed vanilla processor list.
     Registry(Identifier),
+    /// Vanilla's hardcoded ocean-ruin block-rot and archaeology processors.
+    OceanRuin {
+        /// Warm/cold ruin variant controls suspicious sand/gravel and archaeology loot.
+        biome_temp: OceanRuinBiomeTempData,
+        /// `BlockRotProcessor` keep probability.
+        integrity: f32,
+    },
     /// Vanilla's hardcoded ruined-portal processor sequence.
     RuinedPortal {
         /// Vertical placement controls lava replacement.
@@ -162,10 +171,19 @@ pub enum TemplateMarkerHandling {
     Ignore,
     /// Dispatch data markers to the structure-family placement code.
     DataMarkers,
+    /// Ocean ruin chest and drowned markers.
+    OceanRuin {
+        /// Whether the ruin uses the large chest loot table.
+        is_large: bool,
+    },
     /// Shipwreck map, supply, and treasure chest markers.
     Shipwreck,
     /// Igloo basement chest marker.
     Igloo,
+    /// End-city chest, shulker, and Elytra frame markers.
+    EndCity,
+    /// Woodland mansion chest, illager, and allay markers.
+    WoodlandMansion,
 }
 
 /// Family-specific template position adjustment before block placement.
@@ -185,10 +203,16 @@ pub enum TemplatePlacementAdjustment {
         /// Vanilla template offset for this igloo piece.
         template_offset: (i32, i32, i32),
     },
+    /// Ocean ruin terrain height adjustment.
+    OceanRuin,
 }
 
 /// Vanilla bounding box adjustment before calling `StructureTemplate.placeInWorld`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variants intentionally name the center-chunk clipping basis used by vanilla structure placement"
+)]
 pub enum TemplatePlacementClip {
     /// Use the center chunk's writable box unchanged.
     CenterChunk,

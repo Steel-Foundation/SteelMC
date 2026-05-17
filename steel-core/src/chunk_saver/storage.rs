@@ -17,7 +17,9 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::structure::{LiquidSettingsData, RuinedPortalPlacementData, TerrainAdjustment};
+use steel_registry::structure::{
+    LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
+};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::{
@@ -33,9 +35,9 @@ use crate::world::structure::mineshaft::{
 use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::world::structure::{
     ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
-    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart,
-    StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
-    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureReferenceSet,
+    StructureStart, StructureStartMap, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -199,6 +201,10 @@ const fn marker_handling_to_persistent(marker_handling: TemplateMarkerHandling) 
         TemplateMarkerHandling::DataMarkers => 1,
         TemplateMarkerHandling::Shipwreck => 2,
         TemplateMarkerHandling::Igloo => 3,
+        TemplateMarkerHandling::OceanRuin { is_large: false } => 4,
+        TemplateMarkerHandling::OceanRuin { is_large: true } => 5,
+        TemplateMarkerHandling::EndCity => 6,
+        TemplateMarkerHandling::WoodlandMansion => 7,
     }
 }
 
@@ -207,7 +213,25 @@ const fn marker_handling_from_persistent(value: i8) -> TemplateMarkerHandling {
         1 => TemplateMarkerHandling::DataMarkers,
         2 => TemplateMarkerHandling::Shipwreck,
         3 => TemplateMarkerHandling::Igloo,
+        4 => TemplateMarkerHandling::OceanRuin { is_large: false },
+        5 => TemplateMarkerHandling::OceanRuin { is_large: true },
+        6 => TemplateMarkerHandling::EndCity,
+        7 => TemplateMarkerHandling::WoodlandMansion,
         _ => TemplateMarkerHandling::Ignore,
+    }
+}
+
+const fn ocean_ruin_biome_temp_to_persistent(biome_temp: OceanRuinBiomeTempData) -> i8 {
+    match biome_temp {
+        OceanRuinBiomeTempData::Warm => 0,
+        OceanRuinBiomeTempData::Cold => 1,
+    }
+}
+
+const fn ocean_ruin_biome_temp_from_persistent(value: i8) -> OceanRuinBiomeTempData {
+    match value {
+        1 => OceanRuinBiomeTempData::Cold,
+        _ => OceanRuinBiomeTempData::Warm,
     }
 }
 
@@ -228,6 +252,7 @@ const fn placement_adjustment_to_persistent(
                 template_offset: [template_offset.0, template_offset.1, template_offset.2],
             }
         }
+        TemplatePlacementAdjustment::OceanRuin => PersistentTemplatePlacementAdjustment::OceanRuin,
     }
 }
 
@@ -248,6 +273,7 @@ const fn placement_adjustment_from_persistent(
                 template_offset: (template_offset[0], template_offset[1], template_offset[2]),
             }
         }
+        PersistentTemplatePlacementAdjustment::OceanRuin => TemplatePlacementAdjustment::OceanRuin,
     }
 }
 
@@ -1262,7 +1288,7 @@ impl ChunkStorage {
             MineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => PersistentMineshaftPieceKind::Room {
-                child_entrance_boxes: child_entrance_boxes.to_vec(),
+                child_entrance_boxes: child_entrance_boxes.iter().copied().collect(),
             },
             MineshaftPieceKind::Corridor {
                 has_rails,
@@ -1291,7 +1317,7 @@ impl ChunkStorage {
             PersistentMineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => MineshaftPieceKind::Room {
-                child_entrance_boxes: child_entrance_boxes.to_vec(),
+                child_entrance_boxes: child_entrance_boxes.iter().copied().collect(),
             },
             PersistentMineshaftPieceKind::Corridor {
                 has_rails,
@@ -1499,6 +1525,13 @@ impl ChunkStorage {
             TemplateProcessorList::Registry(id) => {
                 PersistentTemplateProcessorList::Registry(id.clone())
             }
+            TemplateProcessorList::OceanRuin {
+                biome_temp,
+                integrity,
+            } => PersistentTemplateProcessorList::OceanRuin {
+                biome_temp: ocean_ruin_biome_temp_to_persistent(*biome_temp),
+                integrity: *integrity,
+            },
             TemplateProcessorList::RuinedPortal {
                 vertical_placement,
                 properties,
@@ -1522,6 +1555,13 @@ impl ChunkStorage {
             PersistentTemplateProcessorList::Registry(id) => {
                 TemplateProcessorList::Registry(id.clone())
             }
+            PersistentTemplateProcessorList::OceanRuin {
+                biome_temp,
+                integrity,
+            } => TemplateProcessorList::OceanRuin {
+                biome_temp: ocean_ruin_biome_temp_from_persistent(*biome_temp),
+                integrity: *integrity,
+            },
             PersistentTemplateProcessorList::RuinedPortal {
                 vertical_placement,
                 cold,
@@ -2150,7 +2190,7 @@ mod tests {
         );
         references.insert(
             Identifier::new_static("minecraft", "empty"),
-            Default::default(),
+            StructureReferenceSet::default(),
         );
 
         let persistent_references = ChunkStorage::structure_references_to_persistent(&references);
@@ -2296,12 +2336,17 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single roundtrip fixture covers every structure piece payload variant together"
+    )]
     fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
         init_registry();
 
         let structure_id = Identifier::new_static("steel", "test_payload_variants");
         let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");
         let igloo_template_id = Identifier::new_static("minecraft", "igloo/top");
+        let ocean_ruin_template_id = Identifier::new_static("minecraft", "underwater_ruin/warm_1");
         let processor_id = Identifier::new_static("minecraft", "zombie_plains");
 
         let template_piece = StructurePiece {
@@ -2352,6 +2397,33 @@ mod tests {
                 },
                 placement_clip: TemplatePlacementClip::CenterChunk,
                 post_process: TemplatePostProcess::IglooTop,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let ocean_ruin_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "orp"),
+            bounding_box: steel_utils::BoundingBox::new(12, 90, 12, 20, 96, 20),
+            gen_depth: 0,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id: ocean_ruin_template_id.clone(),
+                template_position: (12, 90, 12),
+                rotation: Rotation::CounterClockwise90,
+                mirror: StructureMirror::None,
+                rotation_pivot: (0, 0, 0),
+                block_ignore: StructureBlockIgnore::None,
+                late_block_ignore: StructureBlockIgnore::StructureAndAir,
+                processors: TemplateProcessorList::OceanRuin {
+                    biome_temp: OceanRuinBiomeTempData::Warm,
+                    integrity: 0.8,
+                },
+                liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+                marker_handling: TemplateMarkerHandling::OceanRuin { is_large: false },
+                placement_adjustment: TemplatePlacementAdjustment::OceanRuin,
+                placement_clip: TemplatePlacementClip::CenterChunk,
+                post_process: TemplatePostProcess::None,
             }),
             ground_level_delta: 0,
             junctions: Vec::new(),
@@ -2451,6 +2523,7 @@ mod tests {
             vec![
                 template_piece,
                 igloo_piece,
+                ocean_ruin_piece,
                 procedural_piece,
                 buried_treasure_piece,
                 desert_pyramid_piece,
@@ -2471,7 +2544,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 8);
+        assert_eq!(loaded_start.pieces.len(), 9);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2529,17 +2602,48 @@ mod tests {
         assert_eq!(template.placement_clip, TemplatePlacementClip::CenterChunk);
         assert_eq!(template.post_process, TemplatePostProcess::IglooTop);
 
+        let StructurePiecePayload::Template(template) = &loaded_start.pieces[2].payload else {
+            panic!("ocean ruin template payload should roundtrip");
+        };
+        assert_eq!(template.template_id, ocean_ruin_template_id);
+        assert_eq!(template.template_position, (12, 90, 12));
+        assert_eq!(template.rotation, Rotation::CounterClockwise90);
+        assert_eq!(template.mirror, StructureMirror::None);
+        assert_eq!(template.rotation_pivot, (0, 0, 0));
+        assert_eq!(template.block_ignore, StructureBlockIgnore::None);
+        assert_eq!(
+            template.late_block_ignore,
+            StructureBlockIgnore::StructureAndAir
+        );
+        assert_eq!(
+            template.processors,
+            TemplateProcessorList::OceanRuin {
+                biome_temp: OceanRuinBiomeTempData::Warm,
+                integrity: 0.8,
+            }
+        );
+        assert_eq!(
+            template.marker_handling,
+            TemplateMarkerHandling::OceanRuin { is_large: false }
+        );
+        assert_eq!(
+            template.placement_adjustment,
+            TemplatePlacementAdjustment::OceanRuin
+        );
+        assert_eq!(template.placement_clip, TemplatePlacementClip::CenterChunk);
+        assert_eq!(template.post_process, TemplatePostProcess::None);
+
         assert!(matches!(
-            loaded_start.pieces[2].payload,
+            loaded_start.pieces[3].payload,
             StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented)
         ));
         assert!(matches!(
-            loaded_start.pieces[3].payload,
+            loaded_start.pieces[4].payload,
             StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure)
         ));
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(payload)) =
-            &loaded_start.pieces[4].payload
+            &loaded_start.pieces[5].payload
         else {
             panic!("desert pyramid payload should roundtrip");
         };
@@ -2549,7 +2653,7 @@ mod tests {
         assert_eq!(payload.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(payload)) =
-            &loaded_start.pieces[5].payload
+            &loaded_start.pieces[6].payload
         else {
             panic!("jungle temple payload should roundtrip");
         };
@@ -2560,7 +2664,7 @@ mod tests {
         assert!(!payload.placed_trap2);
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
-            &loaded_start.pieces[6].payload
+            &loaded_start.pieces[7].payload
         else {
             panic!("mineshaft payload should roundtrip");
         };
@@ -2580,7 +2684,7 @@ mod tests {
         assert_eq!(*num_sections, 3);
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
-            &loaded_start.pieces[7].payload
+            &loaded_start.pieces[8].payload
         else {
             panic!("swamp hut payload should roundtrip");
         };
@@ -2591,6 +2695,14 @@ mod tests {
 
     #[test]
     fn template_processor_list_roundtrips_ruined_portal_processors() {
+        let ocean_ruin_processors = TemplateProcessorList::OceanRuin {
+            biome_temp: OceanRuinBiomeTempData::Cold,
+            integrity: 0.7,
+        };
+        let persistent = ChunkStorage::template_processors_to_persistent(&ocean_ruin_processors);
+        let loaded = ChunkStorage::persistent_to_template_processors(&persistent);
+        assert_eq!(loaded, ocean_ruin_processors);
+
         let processors = TemplateProcessorList::RuinedPortal {
             vertical_placement: RuinedPortalPlacementData::OnOceanFloor,
             properties: RuinedPortalProperties {
@@ -2618,6 +2730,18 @@ mod tests {
                 TemplatePostProcess::RuinedPortal
             )),
             TemplatePostProcess::RuinedPortal,
+        );
+        assert_eq!(
+            marker_handling_from_persistent(marker_handling_to_persistent(
+                TemplateMarkerHandling::EndCity
+            )),
+            TemplateMarkerHandling::EndCity,
+        );
+        assert_eq!(
+            marker_handling_from_persistent(marker_handling_to_persistent(
+                TemplateMarkerHandling::WoodlandMansion
+            )),
+            TemplateMarkerHandling::WoodlandMansion,
         );
     }
 }

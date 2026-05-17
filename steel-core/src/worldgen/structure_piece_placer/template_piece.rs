@@ -1,12 +1,25 @@
+use std::sync::Arc;
+
+use glam::DVec3;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
+use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{
+    Registry, TaggedRegistryExt, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
+    vanilla_entities, vanilla_items,
+};
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, types::UpdateFlags};
 
 use crate::chunk::heightmap::HeightmapType;
+use crate::entity::{
+    entities::{DummyMobEntity, ItemFrameEntity},
+    next_entity_id,
+};
 use crate::world::structure::{
     StructureMirror, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
     TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
@@ -37,7 +50,7 @@ impl StructurePiecePlacer {
             Ok(template) => template,
             Err(err) => panic!("{err}"),
         };
-        let position = Self::adjusted_template_position(region, &template, data, random);
+        let position = Self::adjusted_template_position(region, registry, &template, data, random);
         let mut hardcoded_processors = Vec::new();
         let processor_list =
             Self::template_processors(registry, &data.processors, &mut hardcoded_processors);
@@ -117,6 +130,7 @@ impl StructurePiecePlacer {
 
     fn adjusted_template_position(
         region: &WorldGenRegion<'_>,
+        registry: &Registry,
         template: &StructureTemplate,
         data: &mut TemplatePieceData,
         random: &mut WorldgenRandom,
@@ -162,10 +176,13 @@ impl StructurePiecePlacer {
                     *template_offset,
                 )
             }
+            TemplatePlacementAdjustment::OceanRuin => {
+                Self::adjusted_ocean_ruin_position(region, registry, template, data)
+            }
         }
     }
 
-    fn shipwreck_is_too_big_to_fit(template: &StructureTemplate) -> bool {
+    const fn shipwreck_is_too_big_to_fit(template: &StructureTemplate) -> bool {
         let size = template.size(Rotation::None);
         size[0] > 32 || size[1] > 32
     }
@@ -236,6 +253,85 @@ impl StructurePiecePlacer {
         raw_position.offset(0, height - IGLOO_GENERATION_HEIGHT - 1, 0)
     }
 
+    fn adjusted_ocean_ruin_position(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        template: &StructureTemplate,
+        data: &mut TemplatePieceData,
+    ) -> BlockPos {
+        let ocean_floor_y = region.height_at(
+            HeightmapType::OceanFloorWg,
+            data.template_position.0,
+            data.template_position.2,
+        );
+        let base = BlockPos::new(
+            data.template_position.0,
+            ocean_floor_y,
+            data.template_position.2,
+        );
+        let size = template.size(Rotation::None);
+        let (corner_x, _, corner_z) =
+            data.rotation
+                .transform_pos(size[0] - 1, 0, size[2] - 1, 0, 0);
+        let corner = base.offset(corner_x, 0, corner_z);
+        let y = Self::adjusted_ocean_ruin_height(region, registry, base, corner);
+        data.template_position.1 = y;
+        BlockPos::new(data.template_position.0, y, data.template_position.2)
+    }
+
+    fn adjusted_ocean_ruin_height(
+        region: &WorldGenRegion<'_>,
+        registry: &Registry,
+        base: BlockPos,
+        corner: BlockPos,
+    ) -> i32 {
+        let mut new_y = base.y();
+        let mut min_y = 512;
+        let top_y = new_y - 1;
+        let mut area = 0;
+        let x0 = base.x().min(corner.x());
+        let x1 = base.x().max(corner.x());
+        let z0 = base.z().min(corner.z());
+        let z1 = base.z().max(corner.z());
+
+        for z in z0..=z1 {
+            for x in x0..=x1 {
+                let mut floor_y = base.y() - 1;
+                let mut pos = BlockPos::new(x, floor_y, z);
+                let mut state = region.block_state(pos);
+                while (state.is_air()
+                    || Self::is_water_state(state)
+                    || registry
+                        .blocks
+                        .is_in_tag(state.get_block(), &vanilla_block_tags::ICE_TAG))
+                    && floor_y > region.min_y() + 1
+                {
+                    floor_y -= 1;
+                    pos = BlockPos::new(x, floor_y, z);
+                    state = region.block_state(pos);
+                }
+
+                min_y = min_y.min(floor_y);
+                if floor_y < top_y - 2 {
+                    area += 1;
+                }
+            }
+        }
+
+        let width = (base.x() - corner.x()).abs();
+        if top_y - min_y > 2 && area > width - 2 {
+            new_y = min_y + 1;
+        }
+        new_y
+    }
+
+    fn is_water_state(state: BlockStateId) -> bool {
+        state.get_block() == &vanilla_blocks::WATER
+            || state
+                .try_get_value(&BlockStateProperties::WATERLOGGED)
+                .unwrap_or(false)
+    }
+
     fn handle_template_data_markers(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
@@ -251,6 +347,12 @@ impl StructurePiecePlacer {
                 // TODO: Add family-specific data marker dispatch before enabling these pieces.
                 false
             }
+            TemplateMarkerHandling::OceanRuin { is_large } => {
+                for marker in template.data_markers(registry, position, settings, random) {
+                    Self::handle_ocean_ruin_marker(region, is_large, &marker, random);
+                }
+                true
+            }
             TemplateMarkerHandling::Shipwreck => {
                 for marker in template.data_markers(registry, position, settings, random) {
                     Self::handle_shipwreck_marker(region, &marker, random);
@@ -263,7 +365,78 @@ impl StructurePiecePlacer {
                 }
                 true
             }
+            TemplateMarkerHandling::EndCity => {
+                for marker in template.data_markers(registry, position, settings, random) {
+                    Self::handle_end_city_marker(region, settings, &marker, random);
+                }
+                true
+            }
+            TemplateMarkerHandling::WoodlandMansion => {
+                for marker in template.data_markers(registry, position, settings, random) {
+                    Self::handle_mansion_marker(region, settings, &marker, random);
+                }
+                true
+            }
         }
+    }
+
+    fn handle_ocean_ruin_marker(
+        region: &mut WorldGenRegion<'_>,
+        is_large: bool,
+        marker: &StructureDataMarker,
+        random: &mut WorldgenRandom,
+    ) {
+        match marker.metadata.as_str() {
+            "chest" => Self::place_ocean_ruin_marker_chest(region, is_large, marker.pos, random),
+            "drowned" => Self::spawn_ocean_ruin_drowned(region, marker.pos),
+            _ => {}
+        }
+    }
+
+    fn place_ocean_ruin_marker_chest(
+        region: &mut WorldGenRegion<'_>,
+        is_large: bool,
+        pos: BlockPos,
+        random: &mut WorldgenRandom,
+    ) {
+        let waterlogged = Self::is_water_state(region.block_state(pos));
+        let state = vanilla_blocks::CHEST
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, waterlogged);
+        let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
+
+        let loot_table = if is_large {
+            "minecraft:chests/underwater_ruin_big"
+        } else {
+            "minecraft:chests/underwater_ruin_small"
+        };
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", loot_table);
+        nbt.insert("LootTableSeed", random.next_i64());
+        let _ = region.set_block_entity_data(pos, &vanilla_block_entity_types::CHEST, state, nbt);
+    }
+
+    fn spawn_ocean_ruin_drowned(region: &mut WorldGenRegion<'_>, pos: BlockPos) {
+        let entity_pos = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + 0.5,
+        );
+        let entity = Arc::new(DummyMobEntity::new(
+            next_entity_id(),
+            entity_pos,
+            region.weak_world(),
+            &vanilla_entities::DROWNED,
+        ));
+        entity.snap_to(entity_pos, 0.0, 0.0);
+        let _ = region.add_fresh_entity(entity);
+
+        let replacement = if pos.y() > region.sea_level() {
+            vanilla_blocks::AIR.default_state()
+        } else {
+            vanilla_blocks::WATER.default_state()
+        };
+        let _ = region.set_block_state(pos, replacement, UpdateFlags::UPDATE_CLIENTS);
     }
 
     fn handle_shipwreck_marker(
@@ -317,6 +490,176 @@ impl StructurePiecePlacer {
             region.set_block_entity_data(chest_pos, &vanilla_block_entity_types::CHEST, state, nbt);
     }
 
+    fn handle_end_city_marker(
+        region: &mut WorldGenRegion<'_>,
+        settings: &StructurePlaceSettings<'_>,
+        marker: &StructureDataMarker,
+        random: &mut WorldgenRandom,
+    ) {
+        if marker.metadata.starts_with("Chest") {
+            Self::place_end_city_marker_chest(region, marker.pos.below(), random);
+            return;
+        }
+        if !Self::is_in_spawnable_bounds(marker.pos) {
+            return;
+        }
+        if marker.metadata.starts_with("Sentry") {
+            Self::spawn_end_city_shulker(region, marker.pos);
+        } else if marker.metadata.starts_with("Elytra") {
+            let direction = settings.rotation.rotate(Direction::South);
+            Self::spawn_end_city_elytra_frame(region, marker.pos, direction);
+        }
+    }
+
+    fn place_end_city_marker_chest(
+        region: &mut WorldGenRegion<'_>,
+        chest_pos: BlockPos,
+        random: &mut WorldgenRandom,
+    ) {
+        let state = region.block_state(chest_pos);
+        if state.get_block() != &vanilla_blocks::CHEST {
+            return;
+        }
+
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:chests/end_city_treasure");
+        nbt.insert("LootTableSeed", random.next_i64());
+        let _ =
+            region.set_block_entity_data(chest_pos, &vanilla_block_entity_types::CHEST, state, nbt);
+    }
+
+    fn spawn_end_city_shulker(region: &mut WorldGenRegion<'_>, pos: BlockPos) {
+        let entity_pos = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + 0.5,
+        );
+        let entity = Arc::new(DummyMobEntity::new(
+            next_entity_id(),
+            entity_pos,
+            region.weak_world(),
+            &vanilla_entities::SHULKER,
+        ));
+        entity.snap_to(entity_pos, 0.0, 0.0);
+        let _ = region.add_fresh_entity(entity);
+    }
+
+    fn spawn_end_city_elytra_frame(
+        region: &mut WorldGenRegion<'_>,
+        pos: BlockPos,
+        direction: Direction,
+    ) {
+        let entity = Arc::new(ItemFrameEntity::new(
+            next_entity_id(),
+            pos,
+            direction,
+            region.weak_world(),
+        ));
+        entity.set_item(ItemStack::new(&vanilla_items::ITEMS.elytra));
+        let _ = region.add_fresh_entity(entity);
+    }
+
+    fn handle_mansion_marker(
+        region: &mut WorldGenRegion<'_>,
+        settings: &StructurePlaceSettings<'_>,
+        marker: &StructureDataMarker,
+        random: &mut WorldgenRandom,
+    ) {
+        if marker.metadata.starts_with("Chest") {
+            let state =
+                Self::mansion_marker_chest_state(settings.rotation, marker.metadata.as_str());
+            Self::place_mansion_marker_chest(region, marker.pos, state, random);
+            return;
+        }
+
+        let (entity_type, count) = match marker.metadata.as_str() {
+            "Mage" => (&vanilla_entities::EVOKER, 1),
+            "Warrior" => (&vanilla_entities::VINDICATOR, 1),
+            "Group of Allays" => (
+                &vanilla_entities::ALLAY,
+                region.random_mut().next_i32_bounded(3) + 1,
+            ),
+            _ => return,
+        };
+        for _ in 0..count {
+            Self::spawn_mansion_marker_mob(region, marker.pos, entity_type);
+        }
+        let _ = region.set_block_state(
+            marker.pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        );
+    }
+
+    fn mansion_marker_chest_state(rotation: Rotation, marker: &str) -> BlockStateId {
+        let facing = match marker {
+            "ChestWest" => Some(rotation.rotate(Direction::West)),
+            "ChestEast" => Some(rotation.rotate(Direction::East)),
+            "ChestSouth" => Some(rotation.rotate(Direction::South)),
+            "ChestNorth" => Some(rotation.rotate(Direction::North)),
+            _ => None,
+        };
+        let state = vanilla_blocks::CHEST.default_state();
+        if let Some(facing) = facing {
+            state.set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
+        } else {
+            state
+        }
+    }
+
+    fn place_mansion_marker_chest(
+        region: &mut WorldGenRegion<'_>,
+        pos: BlockPos,
+        state: BlockStateId,
+        random: &mut WorldgenRandom,
+    ) {
+        if region.block_state(pos).get_block() == &vanilla_blocks::CHEST {
+            return;
+        }
+        if !region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS) {
+            return;
+        }
+
+        let _ = region.set_block_entity_data(
+            pos,
+            &vanilla_block_entity_types::CHEST,
+            state,
+            Self::loot_table_nbt("minecraft:chests/woodland_mansion", random.next_i64()),
+        );
+    }
+
+    fn spawn_mansion_marker_mob(
+        region: &mut WorldGenRegion<'_>,
+        pos: BlockPos,
+        entity_type: EntityTypeRef,
+    ) {
+        let entity_pos = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
+        let entity = Arc::new(DummyMobEntity::new(
+            next_entity_id(),
+            entity_pos,
+            region.weak_world(),
+            entity_type,
+        ));
+        entity.snap_to(entity_pos, 0.0, 0.0);
+        let _ = region.add_fresh_entity(entity);
+    }
+
+    fn loot_table_nbt(loot_table: &'static str, seed: i64) -> NbtCompound {
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", loot_table);
+        nbt.insert("LootTableSeed", seed);
+        nbt
+    }
+
+    const fn is_in_spawnable_bounds(pos: BlockPos) -> bool {
+        pos.y() >= -20_000_000
+            && pos.y() < 20_000_000
+            && pos.x() >= -30_000_000
+            && pos.z() >= -30_000_000
+            && pos.x() < 30_000_000
+            && pos.z() < 30_000_000
+    }
+
     const fn template_placement_clip(
         placement_clip: TemplatePlacementClip,
         center_clip: BoundingBox,
@@ -337,6 +680,10 @@ impl StructurePiecePlacer {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "postprocess needs the same placement context as vanilla TemplateStructurePiece after block placement"
+    )]
     fn post_process_template_piece(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,

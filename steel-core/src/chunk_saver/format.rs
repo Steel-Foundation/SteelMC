@@ -524,7 +524,9 @@ pub struct PersistentTemplatePieceData {
     pub processors: PersistentTemplateProcessorList,
     /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
     pub liquid_settings: i8,
-    /// Marker handling: `0=ignore`, `1=data_markers`, `2=shipwreck`, `3=igloo`.
+    /// Marker handling:
+    /// `0=ignore`, `1=data_markers`, `2=shipwreck`, `3=igloo`,
+    /// `4=ocean_ruin_small`, `5=ocean_ruin_large`, `6=end_city`, `7=woodland_mansion`.
     pub marker_handling: i8,
     /// Family-specific position adjustment before template block placement.
     pub placement_adjustment: PersistentTemplatePlacementAdjustment,
@@ -542,6 +544,13 @@ pub enum PersistentTemplateProcessorList {
     Empty,
     /// Registry-backed processor list.
     Registry(Identifier),
+    /// Vanilla's hardcoded ocean-ruin processor sequence.
+    OceanRuin {
+        /// Ocean ruin biome temperature: 0=warm, 1=cold.
+        biome_temp: i8,
+        /// Block-rot integrity.
+        integrity: f32,
+    },
     /// Vanilla's hardcoded ruined-portal processor sequence.
     RuinedPortal {
         /// Ruined-portal vertical placement.
@@ -578,6 +587,8 @@ pub enum PersistentTemplatePlacementAdjustment {
         /// Vanilla template offset for this igloo piece.
         template_offset: [i32; 3],
     },
+    /// Ocean ruin terrain height adjustment.
+    OceanRuin,
 }
 
 /// Persisted procedural piece data.

@@ -383,7 +383,7 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
         x_rot,
         y_rot,
         head_y_rot: y_rot,
-        data: 0,
+        data: entity.spawn_data(),
     };
 
     // Collect entity data before entering the bundle closure

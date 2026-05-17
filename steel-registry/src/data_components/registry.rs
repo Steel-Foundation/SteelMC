@@ -620,6 +620,30 @@ impl DataComponentPatch {
             }
         })
     }
+
+    /// Converts this component patch to NBT without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
+        use crate::{REGISTRY, RegistryExt};
+
+        let mut compound = NbtCompound::new();
+
+        for (key, entry) in &self.entries {
+            match entry {
+                ComponentPatchEntry::Set(data) => {
+                    if let Some(entry) = REGISTRY.data_components.by_key(key) {
+                        let nbt = (entry.nbt_writer)(data);
+                        compound.insert(key.to_string(), nbt);
+                    }
+                }
+                ComponentPatchEntry::Removed => {
+                    compound.insert(format!("!{key}"), NbtCompound::new());
+                }
+            }
+        }
+
+        OwnedNbtTag::Compound(compound)
+    }
 }
 
 // ==================== Network Serialization ====================
@@ -818,25 +842,7 @@ impl DataComponentPatch {
 
 impl ToNbtTag for DataComponentPatch {
     fn to_nbt_tag(self) -> OwnedNbtTag {
-        use crate::{REGISTRY, RegistryExt};
-
-        let mut compound = NbtCompound::new();
-
-        for (key, entry) in self.entries {
-            match entry {
-                ComponentPatchEntry::Set(data) => {
-                    if let Some(entry) = REGISTRY.data_components.by_key(&key) {
-                        let nbt = (entry.nbt_writer)(&data);
-                        compound.insert(key.to_string(), nbt);
-                    }
-                }
-                ComponentPatchEntry::Removed => {
-                    compound.insert(format!("!{key}"), NbtCompound::new());
-                }
-            }
-        }
-
-        OwnedNbtTag::Compound(compound)
+        self.to_nbt_tag_ref()
     }
 }
 

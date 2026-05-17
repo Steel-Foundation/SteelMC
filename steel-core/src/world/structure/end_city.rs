@@ -1,15 +1,17 @@
 //! End city. Vanilla's `EndCityPieces`: recursive template-based piece generation
 //! (base → towers → bridges → house towers/ships/fat towers), depth ≤ 8.
-//! Produces bounding boxes only.
 
 use rustc_hash::FxHashMap;
+use steel_registry::structure::LiquidSettingsData;
 use steel_registry::template_pool::TemplateData;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
+    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 use steel_registry::structure::StructureData;
 
@@ -26,6 +28,8 @@ pub struct EndCityPiece {
     pub rotation: Rotation,
     /// Gen-depth tag; overwritten when the parent's `recursiveChildren` finishes.
     pub gen_depth: i32,
+    /// Vanilla overwrite flag selecting structure-block-only vs structure-and-air ignore.
+    pub overwrite: bool,
 }
 
 type Templates = FxHashMap<Identifier, TemplateData>;
@@ -56,6 +60,7 @@ fn add_piece(
     offset: (i32, i32, i32),
     template_name: &str,
     rotation: Rotation,
+    overwrite: bool,
 ) -> EndCityPiece {
     let (rx, ry, rz) = parent
         .rotation
@@ -69,6 +74,7 @@ fn add_piece(
         ),
         rotation,
         gen_depth: 0,
+        overwrite,
     }
 }
 
@@ -158,25 +164,25 @@ fn generate_house_tower(
         return false;
     }
     let rotation = parent.rotation;
-    let mut last = add_piece(parent, offset, "base_floor", rotation);
+    let mut last = add_piece(parent, offset, "base_floor", rotation, true);
     pieces.push(last.clone());
     let num_floors = rng.next_i32_bounded(3);
 
-    let mut push = |last: &mut EndCityPiece, off, name| {
-        let p = add_piece(last, off, name, rotation);
+    let mut push = |last: &mut EndCityPiece, off, name, overwrite| {
+        let p = add_piece(last, off, name, rotation, overwrite);
         pieces.push(p.clone());
         *last = p;
     };
 
     if num_floors == 0 {
-        push(&mut last, (-1, 4, -1), "base_roof");
+        push(&mut last, (-1, 4, -1), "base_roof", true);
     } else {
-        push(&mut last, (-1, 0, -1), "second_floor_2");
+        push(&mut last, (-1, 0, -1), "second_floor_2", false);
         if num_floors == 1 {
-            push(&mut last, (-1, 8, -1), "second_roof");
+            push(&mut last, (-1, 8, -1), "second_roof", false);
         } else if num_floors == 2 {
-            push(&mut last, (-1, 4, -1), "third_floor_2");
-            push(&mut last, (-1, 8, -1), "third_roof");
+            push(&mut last, (-1, 4, -1), "third_floor_2", false);
+            push(&mut last, (-1, 8, -1), "third_roof", true);
         }
         if num_floors >= 1 {
             recursive_children(
@@ -219,9 +225,9 @@ fn generate_tower(
     let rotation = parent.rotation;
     let x_off = 3 + rng.next_i32_bounded(2);
     let z_off = 3 + rng.next_i32_bounded(2);
-    let mut last = add_piece(parent, (x_off, -3, z_off), "tower_base", rotation);
+    let mut last = add_piece(parent, (x_off, -3, z_off), "tower_base", rotation, true);
     pieces.push(last.clone());
-    let p = add_piece(&last, (0, 7, 0), "tower_piece", rotation);
+    let p = add_piece(&last, (0, 7, 0), "tower_piece", rotation, true);
     pieces.push(p.clone());
     last = p;
 
@@ -229,7 +235,7 @@ fn generate_tower(
         (rng.next_i32_bounded(3) == 0).then(|| last.clone());
     let tower_height = 1 + rng.next_i32_bounded(3);
     for i in 0..tower_height {
-        let p = add_piece(&last, (0, 4, 0), "tower_piece", rotation);
+        let p = add_piece(&last, (0, 4, 0), "tower_piece", rotation, true);
         pieces.push(p.clone());
         last = p;
         if i < tower_height - 1 && rng.next_bool() {
@@ -241,7 +247,7 @@ fn generate_tower(
         for (rot_offset, offset) in TOWER_BRIDGES {
             if rng.next_bool() {
                 let child_rot = rotation.then(rot_offset);
-                let bridge_start = add_piece(&bridge_anchor, offset, "bridge_end", child_rot);
+                let bridge_start = add_piece(&bridge_anchor, offset, "bridge_end", child_rot, true);
                 pieces.push(bridge_start.clone());
                 recursive_children(
                     templates,
@@ -255,7 +261,7 @@ fn generate_tower(
                 );
             }
         }
-        pieces.push(add_piece(&last, (-1, 4, -1), "tower_top", rotation));
+        pieces.push(add_piece(&last, (-1, 4, -1), "tower_top", rotation, true));
     } else if gen_depth != 7 {
         return recursive_children(
             templates,
@@ -268,7 +274,7 @@ fn generate_tower(
             rng,
         );
     } else {
-        pieces.push(add_piece(&last, (-1, 4, -1), "tower_top", rotation));
+        pieces.push(add_piece(&last, (-1, 4, -1), "tower_top", rotation, true));
     }
     true
 }
@@ -286,7 +292,7 @@ fn generate_tower_bridge(
 
     // Vanilla's setGenDepth(-1) marks the first/last bridge_piece as a "different
     // batch" to sub-recursion collision checks; childTag later overwrites it.
-    let mut first = add_piece(parent, (0, 0, -4), "bridge_piece", rotation);
+    let mut first = add_piece(parent, (0, 0, -4), "bridge_piece", rotation, true);
     first.gen_depth = -1;
     pieces.push(first.clone());
 
@@ -294,7 +300,7 @@ fn generate_tower_bridge(
     let mut last = first;
     for _ in 0..bridge_length {
         if rng.next_bool() {
-            let p = add_piece(&last, (0, next_y, -4), "bridge_piece", rotation);
+            let p = add_piece(&last, (0, next_y, -4), "bridge_piece", rotation, true);
             pieces.push(p.clone());
             last = p;
             next_y = 0;
@@ -304,7 +310,7 @@ fn generate_tower_bridge(
             } else {
                 ("bridge_gentle_stairs", -8)
             };
-            let p = add_piece(&last, (0, next_y, dz), name, rotation);
+            let p = add_piece(&last, (0, next_y, dz), name, rotation, true);
             pieces.push(p.clone());
             last = p;
             next_y = 4;
@@ -314,7 +320,13 @@ fn generate_tower_bridge(
     if !shared.ship_created && rng.next_i32_bounded(10 - gen_depth) == 0 {
         let ship_x = -8 + rng.next_i32_bounded(8);
         let ship_z = -70 + rng.next_i32_bounded(10);
-        pieces.push(add_piece(&last, (ship_x, next_y, ship_z), "ship", rotation));
+        pieces.push(add_piece(
+            &last,
+            (ship_x, next_y, ship_z),
+            "ship",
+            rotation,
+            true,
+        ));
         shared.ship_created = true;
     } else if !recursive_children(
         templates,
@@ -330,7 +342,7 @@ fn generate_tower_bridge(
     }
 
     let end_rot = rotation.then(Rotation::Clockwise180);
-    let mut end = add_piece(&last, (4, next_y, 0), "bridge_end", end_rot);
+    let mut end = add_piece(&last, (4, next_y, 0), "bridge_end", end_rot, true);
     end.gen_depth = -1;
     pieces.push(end);
     true
@@ -345,9 +357,9 @@ fn generate_fat_tower(
     rng: &mut LegacyRandom,
 ) -> bool {
     let rotation = parent.rotation;
-    let mut last = add_piece(parent, (-3, 4, -3), "fat_tower_base", rotation);
+    let mut last = add_piece(parent, (-3, 4, -3), "fat_tower_base", rotation, true);
     pieces.push(last.clone());
-    let p = add_piece(&last, (0, 4, 0), "fat_tower_middle", rotation);
+    let p = add_piece(&last, (0, 4, 0), "fat_tower_middle", rotation, true);
     pieces.push(p.clone());
     last = p;
 
@@ -357,14 +369,14 @@ fn generate_fat_tower(
         if rng.next_i32_bounded(3) == 0 {
             break;
         }
-        let p = add_piece(&last, (0, 8, 0), "fat_tower_middle", rotation);
+        let p = add_piece(&last, (0, 8, 0), "fat_tower_middle", rotation, true);
         pieces.push(p.clone());
         last = p;
 
         for (rot_offset, offset) in FAT_TOWER_BRIDGES {
             if rng.next_bool() {
                 let child_rot = rotation.then(rot_offset);
-                let bridge_start = add_piece(&last, offset, "bridge_end", child_rot);
+                let bridge_start = add_piece(&last, offset, "bridge_end", child_rot, true);
                 pieces.push(bridge_start.clone());
                 recursive_children(
                     templates,
@@ -379,7 +391,13 @@ fn generate_fat_tower(
             }
         }
     }
-    pieces.push(add_piece(&last, (-2, 8, -2), "fat_tower_top", rotation));
+    pieces.push(add_piece(
+        &last,
+        (-2, 8, -2),
+        "fat_tower_top",
+        rotation,
+        true,
+    ));
     true
 }
 
@@ -401,15 +419,16 @@ pub fn start_house_tower(
         template_position: origin,
         rotation,
         gen_depth: 0,
+        overwrite: true,
     };
     pieces.push(last.clone());
 
-    for (off, name) in [
-        ((-1, 0, -1), "second_floor_1"),
-        ((-1, 4, -1), "third_floor_1"),
-        ((-1, 8, -1), "third_roof"),
+    for (off, name, overwrite) in [
+        ((-1, 0, -1), "second_floor_1", false),
+        ((-1, 4, -1), "third_floor_1", false),
+        ((-1, 8, -1), "third_roof", true),
     ] {
-        let p = add_piece(&last, off, name, rotation);
+        let p = add_piece(&last, off, name, rotation, overwrite);
         pieces.push(p.clone());
         last = p;
     }
@@ -425,6 +444,46 @@ pub fn start_house_tower(
         rng,
     );
     pieces
+}
+
+fn make_end_city_structure_piece(templates: &Templates, piece: EndCityPiece) -> StructurePiece {
+    let template_id = Identifier::new("minecraft", format!("end_city/{}", piece.template_name));
+    let size = templates.get(&template_id).map_or([1, 1, 1], |t| t.size);
+    StructurePiece {
+        piece_type: Identifier::new_static("minecraft", "ecp"),
+        bounding_box: piece.rotation.get_bounding_box(
+            piece.template_position.0,
+            piece.template_position.1,
+            piece.template_position.2,
+            size[0],
+            size[1],
+            size[2],
+        ),
+        gen_depth: piece.gen_depth,
+        orientation: Some(Direction::North),
+        payload: StructurePiecePayload::Template(TemplatePieceData {
+            template_id,
+            template_position: piece.template_position,
+            rotation: piece.rotation,
+            mirror: StructureMirror::None,
+            rotation_pivot: (0, 0, 0),
+            block_ignore: if piece.overwrite {
+                StructureBlockIgnore::StructureBlock
+            } else {
+                StructureBlockIgnore::StructureAndAir
+            },
+            late_block_ignore: StructureBlockIgnore::None,
+            processors: TemplateProcessorList::Empty,
+            liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+            marker_handling: TemplateMarkerHandling::EndCity,
+            placement_adjustment: TemplatePlacementAdjustment::None,
+            placement_clip: TemplatePlacementClip::CenterChunk,
+            post_process: TemplatePostProcess::None,
+        }),
+        ground_level_delta: 0,
+        junctions: Vec::new(),
+        projection: None,
+    }
 }
 
 /// Registered under `"minecraft:end_city"`. Consumes rotation RNG first, then probes
@@ -466,25 +525,71 @@ impl Structure for EndCityStructure {
             position: (bx, lowest, bz),
             pieces: start_house_tower(ctx.templates(), (bx, lowest, bz), rotation, rng)
                 .into_iter()
-                .map(|p| {
-                    let tmpl_id =
-                        Identifier::new("minecraft", format!("end_city/{}", p.template_name));
-                    let size = ctx.templates().get(&tmpl_id).map_or([1, 1, 1], |t| t.size);
-                    StructurePiece::non_jigsaw(
-                        Identifier::new_static("minecraft", "ecp"),
-                        p.rotation.get_bounding_box(
-                            p.template_position.0,
-                            p.template_position.1,
-                            p.template_position.2,
-                            size[0],
-                            size[1],
-                            size[2],
-                        ),
-                        p.gen_depth,
-                        Some(Direction::North),
-                    )
-                })
+                .map(|p| make_end_city_structure_piece(ctx.templates(), p))
                 .collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn single_template(name: &str, size: [i32; 3]) -> Templates {
+        let mut templates = FxHashMap::default();
+        templates.insert(
+            Identifier::new("minecraft", format!("end_city/{name}")),
+            TemplateData {
+                size,
+                jigsaws: Vec::new(),
+            },
+        );
+        templates
+    }
+
+    #[test]
+    fn end_city_piece_uses_template_payload_and_overwrite_processor() {
+        let templates = single_template("third_roof", [6, 7, 8]);
+        let runtime_piece = make_end_city_structure_piece(
+            &templates,
+            EndCityPiece {
+                template_name: "third_roof".to_owned(),
+                template_position: (10, 70, 20),
+                rotation: Rotation::Clockwise90,
+                gen_depth: 4,
+                overwrite: true,
+            },
+        );
+
+        assert_eq!(runtime_piece.piece_type, Identifier::vanilla_static("ecp"));
+        assert_eq!(runtime_piece.gen_depth, 4);
+        let StructurePiecePayload::Template(data) = runtime_piece.payload else {
+            panic!("end city should use template payload");
+        };
+        assert_eq!(
+            data.template_id,
+            Identifier::vanilla_static("end_city/third_roof")
+        );
+        assert_eq!(data.template_position, (10, 70, 20));
+        assert_eq!(data.rotation, Rotation::Clockwise90);
+        assert_eq!(data.block_ignore, StructureBlockIgnore::StructureBlock);
+        assert_eq!(data.processors, TemplateProcessorList::Empty);
+        assert_eq!(data.marker_handling, TemplateMarkerHandling::EndCity);
+        assert_eq!(data.placement_clip, TemplatePlacementClip::CenterChunk);
+
+        let runtime_piece = make_end_city_structure_piece(
+            &templates,
+            EndCityPiece {
+                template_name: "third_roof".to_owned(),
+                template_position: (10, 70, 20),
+                rotation: Rotation::Clockwise90,
+                gen_depth: 4,
+                overwrite: false,
+            },
+        );
+        let StructurePiecePayload::Template(data) = runtime_piece.payload else {
+            panic!("end city should use template payload");
+        };
+        assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
     }
 }
