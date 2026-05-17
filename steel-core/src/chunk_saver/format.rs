@@ -48,7 +48,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v11: Added template piece placement adjustment persistence.
 /// v12: Added igloo template marker, placement adjustment, and postprocess persistence.
 /// v13: Split template processor persistence and added ruined-portal processors.
-pub const FORMAT_VERSION: u16 = 13;
+/// v14: Added buried treasure procedural piece persistence.
+pub const FORMAT_VERSION: u16 = 14;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -583,6 +584,8 @@ pub enum PersistentTemplatePlacementAdjustment {
 pub enum PersistentProceduralPieceData {
     /// Procedural family whose placement state has not been captured yet.
     Unimplemented,
+    /// Buried treasure chest placement.
+    BuriedTreasure,
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(PersistentMineshaftPieceData),
 }

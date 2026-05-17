@@ -7,8 +7,8 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
-    random_horizontal_direction,
+    GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
+    StructurePiecePayload, random_horizontal_direction,
 };
 
 /// Vanilla's `StructurePiece.makeBoundingBox`: N/S keep (w,d); E/W swap to (d,w).
@@ -86,6 +86,19 @@ impl Structure for SinglePieceStructure {
 /// Single 1×1×1 piece at `(chunkMinX+9, 90, chunkMinZ+9)`. Biome check at ocean-floor Y.
 pub struct BuriedTreasureStructure;
 
+fn buried_treasure_piece(x: i32, z: i32) -> StructurePiece {
+    StructurePiece {
+        piece_type: Identifier::new_static("minecraft", "btp"),
+        bounding_box: BoundingBox::new(x, 90, z, x, 90, z),
+        gen_depth: 0,
+        orientation: None,
+        payload: StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure),
+        ground_level_delta: 0,
+        junctions: Vec::new(),
+        projection: None,
+    }
+}
+
 impl Structure for BuriedTreasureStructure {
     fn find_generation_point(
         &self,
@@ -102,12 +115,29 @@ impl Structure for BuriedTreasureStructure {
         let (x, z) = (ctx.chunk_min_x() + 9, ctx.chunk_min_z() + 9);
         Some(GenerationStub {
             position: (x, 90, z),
-            pieces: vec![StructurePiece::non_jigsaw(
-                Identifier::new_static("minecraft", "btp"),
-                BoundingBox::new(x, 90, z, x, 90, z),
-                0,
-                None,
-            )],
+            pieces: vec![buried_treasure_piece(x, z)],
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buried_treasure_piece_uses_procedural_payload() {
+        let piece = buried_treasure_piece(25, -39);
+
+        assert_eq!(piece.piece_type, Identifier::new_static("minecraft", "btp"));
+        assert_eq!(
+            piece.bounding_box,
+            BoundingBox::new(25, 90, -39, 25, 90, -39)
+        );
+        assert_eq!(piece.gen_depth, 0);
+        assert_eq!(piece.orientation, None);
+        assert!(matches!(
+            piece.payload,
+            StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure)
+        ));
     }
 }

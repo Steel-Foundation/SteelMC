@@ -5,15 +5,18 @@
 //! that pass; individual family placers must fill in exact vanilla behavior
 //! before any payload variant starts writing blocks.
 
+mod buried_treasure;
 mod mineshaft;
 mod pool_element;
 mod ruined_portal;
 mod template_piece;
 mod template_processors;
 
-use steel_registry::Registry;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::{Registry, vanilla_blocks};
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BoundingBox, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
 
 use crate::world::structure::{ProceduralPieceData, StructurePiece, StructurePiecePayload};
 use crate::worldgen::region::WorldGenRegion;
@@ -77,9 +80,65 @@ impl StructurePiecePlacer {
                     biome_zoom_seed,
                 )
             }
+            StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure) => {
+                Self::place_buried_treasure_piece(region, &mut piece_bounding_box, clip, random)
+            }
             StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented) => false,
         };
         piece.bounding_box = piece_bounding_box;
         placed
+    }
+
+    const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
+        Direction::North,
+        Direction::East,
+        Direction::South,
+        Direction::West,
+    ];
+
+    pub(super) fn reorient_chest(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockStateId {
+        let mut solid_neighbor = None;
+
+        for direction in Self::VANILLA_HORIZONTAL_DIRECTIONS {
+            let relative_pos = pos.relative(direction);
+            let neighbor = region.block_state(relative_pos);
+            if neighbor.get_block() == &vanilla_blocks::CHEST {
+                return state;
+            }
+
+            if neighbor.is_solid_render() {
+                if solid_neighbor.is_some() {
+                    solid_neighbor = None;
+                    break;
+                }
+                solid_neighbor = Some(direction);
+            }
+        }
+
+        if let Some(direction) = solid_neighbor {
+            return state.set_value(
+                &BlockStateProperties::HORIZONTAL_FACING,
+                direction.opposite(),
+            );
+        }
+
+        let mut lock_dir = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let mut relative_pos = pos.relative(lock_dir);
+        if region.block_state(relative_pos).is_solid_render() {
+            lock_dir = lock_dir.opposite();
+            relative_pos = pos.relative(lock_dir);
+        }
+        if region.block_state(relative_pos).is_solid_render() {
+            lock_dir = lock_dir.rotate_y_clockwise();
+            relative_pos = pos.relative(lock_dir);
+        }
+        if region.block_state(relative_pos).is_solid_render() {
+            lock_dir = lock_dir.opposite();
+        }
+        state.set_value(&BlockStateProperties::HORIZONTAL_FACING, lock_dir)
     }
 }

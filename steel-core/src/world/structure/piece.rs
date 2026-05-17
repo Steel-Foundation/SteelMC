@@ -216,6 +216,8 @@ pub enum TemplatePostProcess {
 pub enum ProceduralPieceData {
     /// Procedural family whose placement implementation has not been enabled yet.
     Unimplemented,
+    /// Buried treasure chest placement.
+    BuriedTreasure,
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(mineshaft::MineshaftPiecePayload),
 }

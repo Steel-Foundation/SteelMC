@@ -1182,6 +1182,7 @@ impl ChunkStorage {
     ) -> PersistentProceduralPieceData {
         match data {
             ProceduralPieceData::Unimplemented => PersistentProceduralPieceData::Unimplemented,
+            ProceduralPieceData::BuriedTreasure => PersistentProceduralPieceData::BuriedTreasure,
             ProceduralPieceData::Mineshaft(data) => {
                 PersistentProceduralPieceData::Mineshaft(PersistentMineshaftPieceData {
                     mineshaft_type: mineshaft_type_to_persistent(data.mineshaft_type),
@@ -1196,6 +1197,7 @@ impl ChunkStorage {
     ) -> ProceduralPieceData {
         match data {
             PersistentProceduralPieceData::Unimplemented => ProceduralPieceData::Unimplemented,
+            PersistentProceduralPieceData::BuriedTreasure => ProceduralPieceData::BuriedTreasure,
             PersistentProceduralPieceData::Mineshaft(data) => {
                 ProceduralPieceData::Mineshaft(MineshaftPiecePayload {
                     mineshaft_type: mineshaft_type_from_persistent(data.mineshaft_type),
@@ -2311,6 +2313,16 @@ mod tests {
             5,
             Some(Direction::South),
         );
+        let buried_treasure_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "btp"),
+            bounding_box: steel_utils::BoundingBox::new(41, 90, 43, 41, 90, 43),
+            gen_depth: 0,
+            orientation: None,
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
         let mineshaft_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "mscorridor"),
             bounding_box: steel_utils::BoundingBox::new(32, 45, 32, 34, 47, 46),
@@ -2339,6 +2351,7 @@ mod tests {
                 template_piece,
                 igloo_piece,
                 procedural_piece,
+                buried_treasure_piece,
                 mineshaft_piece,
             ],
             TerrainAdjustment::None,
@@ -2354,7 +2367,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 4);
+        assert_eq!(loaded_start.pieces.len(), 5);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2416,9 +2429,13 @@ mod tests {
             loaded_start.pieces[2].payload,
             StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented)
         ));
+        assert!(matches!(
+            loaded_start.pieces[3].payload,
+            StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure)
+        ));
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
-            &loaded_start.pieces[3].payload
+            &loaded_start.pieces[4].payload
         else {
             panic!("mineshaft payload should roundtrip");
         };
