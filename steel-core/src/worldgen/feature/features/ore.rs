@@ -1,6 +1,7 @@
 use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use smallvec::SmallVec;
 use steel_utils::math::mth;
 
 impl FeatureDecorationRunner {
@@ -70,7 +71,7 @@ impl FeatureDecorationRunner {
         let Ok(size) = usize::try_from(config.size) else {
             return false;
         };
-        let mut vein_nodes = vec![[0.0; 4]; size];
+        let mut vein_nodes = SmallVec::<[[f64; 4]; 32]>::from_elem([0.0; 4], size);
 
         for i in 0..size {
             let step = i as f32 / config.size as f32;
@@ -116,6 +117,10 @@ impl FeatureDecorationRunner {
         let profile = OreFeatureProfile::new(config.size);
         let mut placed = 0_u64;
         let mut tested = OreTestedPositions::with_capacity(search_volume.tested_position_count);
+        let batch_no_air_exposure = config.discard_chance_on_air_exposure <= 0.0;
+        let mut pending_no_air_sections = SmallVec::<[PendingOreSection; 8]>::new();
+        let min_y = region.min_y();
+        let height = region.height();
 
         {
             let mut sections = region.bulk_section_access_for_ore(profile.stats());
@@ -166,19 +171,49 @@ impl FeatureDecorationRunner {
                                 let pos = BlockPos::new(x, y, z);
                                 if sections.can_write_to_pos(pos) {
                                     sections.record_ore_write_allowed_position();
-                                    if Self::try_place_ore_block_in_bulk(
-                                        &mut sections,
-                                        registry,
-                                        random,
-                                        config,
-                                        pos,
-                                    ) {
-                                        placed += 1;
+                                    if batch_no_air_exposure {
+                                        let Some(section_key) =
+                                            PendingOreSectionKey::from_pos(min_y, height, pos)
+                                        else {
+                                            continue;
+                                        };
+                                        push_pending_ore_position(
+                                            &mut pending_no_air_sections,
+                                            section_key,
+                                            pos,
+                                        );
+                                    } else {
+                                        if Self::try_place_ore_block_in_bulk(
+                                            &mut sections,
+                                            registry,
+                                            random,
+                                            config,
+                                            pos,
+                                        ) {
+                                            placed += 1;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            if batch_no_air_exposure {
+                for pending_section in &pending_no_air_sections {
+                    placed += sections.replace_ore_target_block_states_in_section(
+                        pending_section.key.chunk_x,
+                        pending_section.key.chunk_z,
+                        pending_section.key.section_index,
+                        &pending_section.positions,
+                        |block_state| {
+                            config.targets.iter().find_map(|target| {
+                                Self::rule_test_matches(registry, &target.target, block_state)
+                                    .then(|| Self::block_state_from_data(registry, &target.state))
+                            })
+                        },
+                    );
                 }
             }
         }
@@ -383,7 +418,19 @@ impl FeatureDecorationRunner {
 }
 
 struct OreTestedPositions {
-    words: Vec<u64>,
+    words: SmallVec<[u64; 16]>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PendingOreSectionKey {
+    chunk_x: i32,
+    chunk_z: i32,
+    section_index: usize,
+}
+
+struct PendingOreSection {
+    key: PendingOreSectionKey,
+    positions: SmallVec<[BlockPos; 64]>,
 }
 
 #[derive(Clone, Copy)]
@@ -436,10 +483,40 @@ impl OreSearchVolume {
     }
 }
 
+impl PendingOreSectionKey {
+    fn from_pos(min_y: i32, height: i32, pos: BlockPos) -> Option<Self> {
+        if pos.y() < min_y || pos.y() >= min_y + height {
+            return None;
+        }
+
+        Some(Self {
+            chunk_x: SectionPos::block_to_section_coord(pos.x()),
+            chunk_z: SectionPos::block_to_section_coord(pos.z()),
+            section_index: usize::try_from((pos.y() - min_y) / 16).ok()?,
+        })
+    }
+}
+
+fn push_pending_ore_position(
+    sections: &mut SmallVec<[PendingOreSection; 8]>,
+    key: PendingOreSectionKey,
+    pos: BlockPos,
+) {
+    if let Some(section) = sections.iter_mut().find(|section| section.key == key) {
+        section.positions.push(pos);
+        return;
+    }
+
+    sections.push(PendingOreSection {
+        key,
+        positions: smallvec::smallvec![pos],
+    });
+}
+
 impl OreTestedPositions {
     fn with_capacity(bit_count: usize) -> Self {
         Self {
-            words: vec![0; bit_count.div_ceil(u64::BITS as usize)],
+            words: smallvec::smallvec![0; bit_count.div_ceil(u64::BITS as usize)],
         }
     }
 

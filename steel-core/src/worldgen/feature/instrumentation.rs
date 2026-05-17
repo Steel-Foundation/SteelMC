@@ -28,29 +28,23 @@ pub(crate) fn ore_profile_enabled() -> bool {
 }
 
 pub(crate) struct OreFeatureProfile {
-    enabled: bool,
-    stats: RefCell<OreFeatureStats>,
+    stats: Option<RefCell<OreFeatureStats>>,
 }
 
 impl OreFeatureProfile {
     pub(crate) fn new(config_size: i32) -> Self {
         Self {
-            enabled: ore_profile_enabled(),
-            stats: RefCell::new(OreFeatureStats::new(config_size)),
+            stats: ore_profile_enabled().then(|| RefCell::new(OreFeatureStats::new(config_size))),
         }
     }
 
     pub(crate) fn stats(&self) -> Option<&RefCell<OreFeatureStats>> {
-        if self.enabled {
-            Some(&self.stats)
-        } else {
-            None
-        }
+        self.stats.as_ref()
     }
 
     pub(crate) fn finish(self, placed: u64) {
-        if self.enabled {
-            ORE_TOTALS.publish(self.stats.into_inner(), placed);
+        if let Some(stats) = self.stats {
+            ORE_TOTALS.publish(stats.into_inner(), placed);
         }
     }
 }

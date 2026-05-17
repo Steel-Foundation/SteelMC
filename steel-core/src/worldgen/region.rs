@@ -12,7 +12,7 @@ use std::{
     },
 };
 
-use parking_lot::RwLockReadGuard;
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
@@ -30,6 +30,7 @@ use crate::chunk::{
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
     heightmap::HeightmapType,
+    section::{ChunkSection, SectionHolder},
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
@@ -68,6 +69,14 @@ pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
 struct CachedWorldGenChunk<'region> {
     guard: RwLockReadGuard<'region, ChunkAccess>,
     verified_status: ChunkStatus,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct WritableSectionKey {
+    chunk_x: i32,
+    chunk_z: i32,
+    status: ChunkStatus,
+    section_index: usize,
 }
 
 impl<'a> WorldGenRegion<'a> {
@@ -578,49 +587,23 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         self.with_ore_profile(OreFeatureStats::record_target_read);
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| std::time::Instant::now());
-        let Some((chunk_x, chunk_z, status)) =
-            self.region.writable_chunk_for_pos(pos, "bulk write block")
-        else {
-            Self::record_ore_write_time(ore_profile, started_at);
-            return false;
-        };
-        let Some(section_index) =
-            Self::section_index(self.region.min_y(), self.region.height(), pos.y())
-        else {
+        let Some(key) = self.writable_section_key(pos) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
         };
 
-        let chunk = self.chunk(chunk_x, chunk_z, status);
-        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+        let chunk = self.chunk(key.chunk_x, key.chunk_z, key.status);
+        let Some(section) = chunk.guard.sections().sections.get(key.section_index) else {
             panic!(
-                "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {section_index}",
+                "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {}",
                 pos.x(),
                 pos.y(),
-                pos.z()
+                pos.z(),
+                key.section_index
             );
         };
 
-        Self::with_ore_profile_ref(ore_profile, |profile| {
-            profile.record_section_write_attempt(chunk_x, chunk_z, section_index);
-        });
-        let mut section_guard = if let Some(profile) = ore_profile {
-            if let Some(guard) = section.section.try_write() {
-                guard
-            } else {
-                if let Ok(mut profile) = profile.try_borrow_mut() {
-                    profile.record_section_write_contention();
-                }
-                let wait_started_at = std::time::Instant::now();
-                let guard = section.write();
-                if let Ok(mut profile) = profile.try_borrow_mut() {
-                    profile.record_write_contention_wait_time(wait_started_at.elapsed());
-                }
-                guard
-            }
-        } else {
-            section.write()
-        };
+        let mut section_guard = Self::ore_section_write_guard(ore_profile, section, key);
 
         let local_x = Self::local_coord(pos.x());
         let local_y = Self::local_coord(pos.y());
@@ -639,6 +622,73 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
         Self::record_ore_write_time(ore_profile, started_at);
         true
+    }
+
+    /// Replaces already-filtered ore target positions that all belong to one section.
+    pub(crate) fn replace_ore_target_block_states_in_section(
+        &mut self,
+        chunk_x: i32,
+        chunk_z: i32,
+        section_index: usize,
+        positions: &[BlockPos],
+        mut replacement: impl FnMut(BlockStateId) -> Option<BlockStateId>,
+    ) -> u64 {
+        let ore_profile = self.ore_profile;
+        let started_at = ore_profile.map(|_| std::time::Instant::now());
+        if !self.region.can_write_to_chunk(chunk_x, chunk_z) {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return 0;
+        }
+        let Some(status) = self.region.required_status_at(chunk_x, chunk_z) else {
+            panic!(
+                "Worldgen attempted to bulk write ore in chunk ({chunk_x}, {chunk_z}), \
+                 but {:?} declares no direct dependency for that chunk",
+                self.region.step.target_status,
+            );
+        };
+        let key = WritableSectionKey {
+            chunk_x,
+            chunk_z,
+            status,
+            section_index,
+        };
+        let min_y = self.region.min_y();
+        let height = self.region.height();
+        let chunk = self.chunk(chunk_x, chunk_z, status);
+        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+            panic!(
+                "Worldgen bulk section write in chunk ({chunk_x}, {chunk_z}) resolved missing section index {section_index}",
+            );
+        };
+
+        let mut section_guard = Self::ore_section_write_guard(ore_profile, section, key);
+        let mut placed = 0_u64;
+        let mut dirty = false;
+        for &pos in positions {
+            debug_assert_eq!(
+                Self::section_key_parts(min_y, height, pos),
+                Some((chunk_x, chunk_z, section_index))
+            );
+            Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_target_read);
+            let local_x = Self::local_coord(pos.x());
+            let local_y = Self::local_coord(pos.y());
+            let local_z = Self::local_coord(pos.z());
+            let old_state = section_guard.states.get(local_x, local_y, local_z);
+            if let Some(state) = replacement(old_state) {
+                let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+                Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
+                dirty |= old_state != state;
+                placed += 1;
+            }
+        }
+
+        drop(section_guard);
+        if dirty {
+            chunk.guard.mark_dirty();
+        }
+
+        Self::record_ore_write_time(ore_profile, started_at);
+        placed
     }
 
     /// Reads a block state through cached section access.
@@ -707,33 +757,69 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     pub(crate) fn set_block_state(&mut self, pos: BlockPos, state: BlockStateId) -> bool {
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| std::time::Instant::now());
-        let Some((chunk_x, chunk_z, status)) =
-            self.region.writable_chunk_for_pos(pos, "bulk write block")
-        else {
-            Self::record_ore_write_time(ore_profile, started_at);
-            return false;
-        };
-        let Some(section_index) =
-            Self::section_index(self.region.min_y(), self.region.height(), pos.y())
-        else {
+        let Some(key) = self.writable_section_key(pos) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
         };
 
-        let chunk = self.chunk(chunk_x, chunk_z, status);
-        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+        let chunk = self.chunk(key.chunk_x, key.chunk_z, key.status);
+        let Some(section) = chunk.guard.sections().sections.get(key.section_index) else {
             panic!(
-                "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {section_index}",
+                "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {}",
                 pos.x(),
                 pos.y(),
-                pos.z()
+                pos.z(),
+                key.section_index
             );
         };
 
+        let mut section_guard = Self::ore_section_write_guard(ore_profile, section, key);
+        let old_state = section_guard.set_block_state(
+            Self::local_coord(pos.x()),
+            Self::local_coord(pos.y()),
+            Self::local_coord(pos.z()),
+            state,
+        );
+        Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
+        if old_state != state {
+            chunk.guard.mark_dirty();
+        }
+
+        Self::record_ore_write_time(ore_profile, started_at);
+        true
+    }
+
+    fn writable_section_key(&self, pos: BlockPos) -> Option<WritableSectionKey> {
+        let (chunk_x, chunk_z, status) = self
+            .region
+            .writable_chunk_for_pos(pos, "bulk write block")?;
+        let section_index =
+            Self::section_index(self.region.min_y(), self.region.height(), pos.y())?;
+        Some(WritableSectionKey {
+            chunk_x,
+            chunk_z,
+            status,
+            section_index,
+        })
+    }
+
+    fn section_key_parts(min_y: i32, height: i32, pos: BlockPos) -> Option<(i32, i32, usize)> {
+        Some((
+            SectionPos::block_to_section_coord(pos.x()),
+            SectionPos::block_to_section_coord(pos.z()),
+            Self::section_index(min_y, height, pos.y())?,
+        ))
+    }
+
+    fn ore_section_write_guard<'section>(
+        ore_profile: Option<&RefCell<OreFeatureStats>>,
+        section: &'section SectionHolder,
+        key: WritableSectionKey,
+    ) -> RwLockWriteGuard<'section, ChunkSection> {
         Self::with_ore_profile_ref(ore_profile, |profile| {
-            profile.record_section_write_attempt(chunk_x, chunk_z, section_index);
+            profile.record_section_write_attempt(key.chunk_x, key.chunk_z, key.section_index);
         });
-        let mut section_guard = if let Some(profile) = ore_profile {
+        if let Some(profile) = ore_profile {
             if let Some(guard) = section.section.try_write() {
                 guard
             } else {
@@ -749,20 +835,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             }
         } else {
             section.write()
-        };
-        let old_state = section_guard.set_block_state(
-            Self::local_coord(pos.x()),
-            Self::local_coord(pos.y()),
-            Self::local_coord(pos.z()),
-            state,
-        );
-        Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
-        if old_state != state {
-            chunk.guard.mark_dirty();
         }
-
-        Self::record_ore_write_time(ore_profile, started_at);
-        true
     }
 
     /// Returns whether a section-local write would be allowed for this position.
