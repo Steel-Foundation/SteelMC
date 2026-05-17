@@ -101,7 +101,7 @@ impl Random for WorldgenRandom {
     fn next_i64(&mut self) -> i64 {
         let upper = self.next_i32();
         let lower = self.next_i32();
-        ((upper as i64) << 32).wrapping_add(lower as i64)
+        (i64::from(upper) << 32).wrapping_add(i64::from(lower))
     }
 
     fn next_f32(&mut self) -> f32 {

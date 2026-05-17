@@ -169,10 +169,10 @@ fn empty_proto_chunk(
     ChunkAccess::Proto(proto)
 }
 
-fn chunk_or_panic<'a>(
-    chunks: &'a FxHashMap<(i32, i32), ChunkAccess>,
+fn chunk_or_panic(
+    chunks: &FxHashMap<(i32, i32), ChunkAccess>,
     pos: (i32, i32),
-) -> &'a ChunkAccess {
+) -> &ChunkAccess {
     match chunks.get(&pos) {
         Some(chunk) => chunk,
         None => panic!("Missing test chunk ({}, {})", pos.0, pos.1),
