@@ -1,9 +1,13 @@
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use std::env;
 use std::hint::black_box;
-use std::sync::{Arc, Once, Weak};
-use std::time::Duration;
+use std::sync::{
+    Arc, LazyLock, Mutex, Once, Weak,
+    atomic::{AtomicU64, Ordering},
+};
+use std::time::{Duration, Instant};
 use steel_core::behavior::init_behaviors;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
@@ -25,6 +29,13 @@ use steel_utils::{ChunkPos, Identifier};
 use tokio::runtime::Builder as RuntimeBuilder;
 
 static INIT: Once = Once::new();
+static FEATURE_BATCH_PROFILE_LOGS: AtomicU64 = AtomicU64::new(0);
+static FEATURE_BATCH_PROFILE_LOG_LIMIT: LazyLock<u64> = LazyLock::new(|| {
+    env::var("STEEL_FEATURE_BATCH_PROFILE_LOG_LIMIT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(16)
+});
 
 fn ensure_registry() {
     INIT.call_once(|| {
@@ -526,6 +537,12 @@ struct ConcurrentFeatureFixture {
     _world: Arc<World>,
 }
 
+#[derive(Clone, Copy)]
+struct FeatureTaskWallTime {
+    pos: ChunkPos,
+    elapsed: Duration,
+}
+
 fn bench_features(c: &mut Criterion, name: &str, generator_key: Identifier) {
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
 
@@ -683,20 +700,119 @@ fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
                 )
             },
             |fixture| {
-                fixture.generation_pool.scope(|scope| {
-                    for target in &fixture.targets {
-                        let context = fixture.context.clone();
-                        let cache = fixture.cache.clone();
-                        let target = target.clone();
-                        scope.spawn(move |_| {
-                            ChunkStatusTasks::generate_features(context, step, &cache, target);
-                        });
-                    }
-                });
+                if env::var_os("STEEL_FEATURE_BATCH_PROFILE").is_some() {
+                    run_concurrent_feature_batch_profiled(fixture, step);
+                } else {
+                    fixture.generation_pool.scope(|scope| {
+                        for target in &fixture.targets {
+                            let context = fixture.context.clone();
+                            let cache = fixture.cache.clone();
+                            let target = target.clone();
+                            scope.spawn(move |_| {
+                                ChunkStatusTasks::generate_features(context, step, &cache, target);
+                            });
+                        }
+                    });
+                }
             },
             criterion::BatchSize::SmallInput,
         );
     });
+}
+
+fn run_concurrent_feature_batch_profiled(fixture: ConcurrentFeatureFixture, step: &ChunkStep) {
+    let task_times = Arc::new(Mutex::new(Vec::with_capacity(fixture.targets.len())));
+    let batch_started_at = Instant::now();
+    fixture.generation_pool.scope(|scope| {
+        for target in &fixture.targets {
+            let context = fixture.context.clone();
+            let cache = fixture.cache.clone();
+            let target = target.clone();
+            let task_times = task_times.clone();
+            scope.spawn(move |_| {
+                let pos = target.get_pos();
+                let started_at = Instant::now();
+                ChunkStatusTasks::generate_features(context, step, &cache, target);
+                task_times
+                    .lock()
+                    .expect("feature batch profile mutex poisoned")
+                    .push(FeatureTaskWallTime {
+                        pos,
+                        elapsed: started_at.elapsed(),
+                    });
+            });
+        }
+    });
+    let batch_elapsed = batch_started_at.elapsed();
+    let task_times = task_times
+        .lock()
+        .expect("feature batch profile mutex poisoned");
+    log_feature_batch_profile(batch_elapsed, &task_times);
+}
+
+fn log_feature_batch_profile(batch_elapsed: Duration, task_times: &[FeatureTaskWallTime]) {
+    if FEATURE_BATCH_PROFILE_LOGS.fetch_add(1, Ordering::Relaxed)
+        >= *FEATURE_BATCH_PROFILE_LOG_LIMIT
+    {
+        return;
+    }
+
+    if task_times.is_empty() {
+        eprintln!(
+            "feature batch profile tasks=0 batch_ms={:.3}",
+            duration_ms(batch_elapsed)
+        );
+        return;
+    }
+
+    let sum = task_times
+        .iter()
+        .map(|record| record.elapsed)
+        .fold(Duration::ZERO, |left, right| left + right);
+    let min = task_times
+        .iter()
+        .map(|record| record.elapsed)
+        .min()
+        .unwrap_or(Duration::ZERO);
+    let max = task_times
+        .iter()
+        .map(|record| record.elapsed)
+        .max()
+        .unwrap_or(Duration::ZERO);
+    let utilization = duration_ms(sum)
+        / (duration_ms(batch_elapsed) * CONCURRENT_FEATURE_THREAD_COUNT as f64).max(f64::EPSILON);
+
+    let mut slowest = task_times.to_vec();
+    slowest.sort_by_key(|record| std::cmp::Reverse(record.elapsed));
+    let slowest = slowest
+        .iter()
+        .take(4)
+        .map(|record| {
+            format!(
+                "({},{}):{:.3}ms",
+                record.pos.0.x,
+                record.pos.0.y,
+                duration_ms(record.elapsed)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    eprintln!(
+        "feature batch profile tasks={} batch_ms={:.3} sum_task_ms={:.3} min_task_ms={:.3} \
+         max_task_ms={:.3} utilization={:.3} slowest=[{}]",
+        task_times.len(),
+        duration_ms(batch_elapsed),
+        duration_ms(sum),
+        duration_ms(min),
+        duration_ms(max),
+        utilization,
+        slowest
+    );
+}
+
+fn duration_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
 }
 
 fn bench_nether_features(c: &mut Criterion) {

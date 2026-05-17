@@ -639,6 +639,9 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             Self::record_ore_write_time(ore_profile, started_at);
             return 0;
         }
+        Self::with_ore_profile_ref(ore_profile, |profile| {
+            profile.record_write_allowed_positions(positions.len() as u64);
+        });
         let Some(status) = self.region.required_status_at(chunk_x, chunk_z) else {
             panic!(
                 "Worldgen attempted to bulk write ore in chunk ({chunk_x}, {chunk_z}), \

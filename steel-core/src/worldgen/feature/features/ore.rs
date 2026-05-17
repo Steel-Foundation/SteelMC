@@ -1,7 +1,9 @@
 use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::worldgen::state_resolver::WorldgenStateResolver;
 use smallvec::SmallVec;
+use std::time::Instant;
 use steel_utils::math::mth;
 
 impl FeatureDecorationRunner {
@@ -117,6 +119,7 @@ impl FeatureDecorationRunner {
         let profile = OreFeatureProfile::new(config.size);
         let mut placed = 0_u64;
         let mut tested = OreTestedPositions::with_capacity(search_volume.tested_position_count);
+        let targets = ResolvedOreTargets::from_config(registry, config);
         let batch_no_air_exposure = config.discard_chance_on_air_exposure <= 0.0;
         let mut pending_no_air_sections = SmallVec::<[PendingOreSection; 8]>::new();
         let min_y = region.min_y();
@@ -124,6 +127,7 @@ impl FeatureDecorationRunner {
 
         {
             let mut sections = region.bulk_section_access_for_ore(profile.stats());
+            let candidate_started_at = profile.stats().map(|_| Instant::now());
 
             for node in vein_nodes {
                 let radius = node[3];
@@ -132,11 +136,16 @@ impl FeatureDecorationRunner {
                 }
 
                 let x_min = floor(node[0] - radius).max(x_start);
-                let y_min = floor(node[1] - radius).max(y_start);
                 let z_min = floor(node[2] - radius).max(z_start);
                 let x_max = floor(node[0] + radius).max(x_min);
-                let y_max = floor(node[1] + radius).max(y_min);
                 let z_max = floor(node[2] + radius).max(z_min);
+                let raw_y_min = floor(node[1] - radius).max(y_start);
+                let raw_y_max = floor(node[1] + radius).max(raw_y_min);
+                let y_min = raw_y_min.max(min_y);
+                let y_max = raw_y_max.min(min_y + height - 1);
+                if y_min > y_max {
+                    continue;
+                }
 
                 for x in x_min..=x_max {
                     let x_distance = (f64::from(x) + 0.5 - node[0]) / radius;
@@ -146,10 +155,6 @@ impl FeatureDecorationRunner {
                     }
 
                     for y in y_min..=y_max {
-                        if region.is_outside_build_height(y) {
-                            continue;
-                        }
-
                         let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
                         let xy_distance_squared = x_distance_squared + y_distance * y_distance;
                         if xy_distance_squared >= 1.0 {
@@ -169,29 +174,25 @@ impl FeatureDecorationRunner {
                             if tested.insert(tested_index) {
                                 sections.record_ore_unique_position();
                                 let pos = BlockPos::new(x, y, z);
-                                if sections.can_write_to_pos(pos) {
+                                if batch_no_air_exposure {
+                                    let section_key =
+                                        PendingOreSectionKey::from_in_height_pos(min_y, pos);
+                                    push_pending_ore_position(
+                                        &mut pending_no_air_sections,
+                                        section_key,
+                                        pos,
+                                    );
+                                } else if sections.can_write_to_pos(pos) {
                                     sections.record_ore_write_allowed_position();
-                                    if batch_no_air_exposure {
-                                        let Some(section_key) =
-                                            PendingOreSectionKey::from_pos(min_y, height, pos)
-                                        else {
-                                            continue;
-                                        };
-                                        push_pending_ore_position(
-                                            &mut pending_no_air_sections,
-                                            section_key,
-                                            pos,
-                                        );
-                                    } else {
-                                        if Self::try_place_ore_block_in_bulk(
-                                            &mut sections,
-                                            registry,
-                                            random,
-                                            config,
-                                            pos,
-                                        ) {
-                                            placed += 1;
-                                        }
+                                    if Self::try_place_ore_block_in_bulk(
+                                        &mut sections,
+                                        registry,
+                                        random,
+                                        config,
+                                        &targets,
+                                        pos,
+                                    ) {
+                                        placed += 1;
                                     }
                                 }
                             }
@@ -199,21 +200,31 @@ impl FeatureDecorationRunner {
                     }
                 }
             }
+            if let Some(started_at) = candidate_started_at {
+                if let Some(stats) = profile.stats() {
+                    stats
+                        .borrow_mut()
+                        .record_candidate_time(started_at.elapsed());
+                }
+            }
 
             if batch_no_air_exposure {
+                let batch_apply_started_at = profile.stats().map(|_| Instant::now());
                 for pending_section in &pending_no_air_sections {
                     placed += sections.replace_ore_target_block_states_in_section(
                         pending_section.key.chunk_x,
                         pending_section.key.chunk_z,
                         pending_section.key.section_index,
                         &pending_section.positions,
-                        |block_state| {
-                            config.targets.iter().find_map(|target| {
-                                Self::rule_test_matches(registry, &target.target, block_state)
-                                    .then(|| Self::block_state_from_data(registry, &target.state))
-                            })
-                        },
+                        |block_state| targets.matching_replacement(registry, block_state),
                     );
+                }
+                if let Some(started_at) = batch_apply_started_at {
+                    if let Some(stats) = profile.stats() {
+                        stats
+                            .borrow_mut()
+                            .record_batch_apply_time(started_at.elapsed());
+                    }
                 }
             }
         }
@@ -233,6 +244,7 @@ impl FeatureDecorationRunner {
             panic!("scattered ore size {} is negative", config.size);
         }
 
+        let targets = ResolvedOreTargets::from_config(registry, config);
         let tries = random.next_i32_bounded(config.size + 1);
         for i in 0..tries {
             let max_distance = i.min(7);
@@ -241,7 +253,8 @@ impl FeatureDecorationRunner {
                 Self::random_scattered_ore_offset(random, max_distance),
                 Self::random_scattered_ore_offset(random, max_distance),
             );
-            let _ = Self::try_place_ore_block(region, registry, random, config, pos);
+            let _ =
+                Self::try_place_resolved_ore_block(region, registry, random, config, &targets, pos);
         }
 
         true
@@ -258,18 +271,20 @@ impl FeatureDecorationRunner {
         (value + 0.5).floor() as i32
     }
 
-    pub(in crate::worldgen::feature) fn try_place_ore_block(
+    fn try_place_resolved_ore_block(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
+        targets: &ResolvedOreTargets,
         pos: BlockPos,
     ) -> bool {
         let block_state = region.block_state(pos);
-        for target in &config.targets {
-            if Self::can_place_ore(region, registry, random, config, target, pos, block_state) {
-                let state = Self::block_state_from_data(registry, &target.state);
-                return region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
+        let block_id = targets.block_id_for_state(registry, block_state);
+        for target in targets.iter() {
+            if Self::can_place_resolved_ore(region, registry, random, config, target, pos, block_id)
+            {
+                return region.set_block_state(pos, target.state, UpdateFlags::UPDATE_CLIENTS);
             }
         }
 
@@ -281,46 +296,38 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
+        targets: &ResolvedOreTargets,
         pos: BlockPos,
     ) -> bool {
         if config.discard_chance_on_air_exposure <= 0.0 {
             return sections.replace_ore_target_block_state(pos, |block_state| {
-                config.targets.iter().find_map(|target| {
-                    Self::rule_test_matches(registry, &target.target, block_state)
-                        .then(|| Self::block_state_from_data(registry, &target.state))
-                })
+                targets.matching_replacement(registry, block_state)
             });
         }
 
         let block_state = sections.ore_target_block_state(pos);
-        for target in &config.targets {
-            if Self::can_place_ore_in_bulk(
-                sections,
-                registry,
-                random,
-                config,
-                target,
-                pos,
-                block_state,
+        let block_id = targets.block_id_for_state(registry, block_state);
+        for target in targets.iter() {
+            if Self::can_place_resolved_ore_in_bulk(
+                sections, registry, random, config, target, pos, block_id,
             ) {
-                let state = Self::block_state_from_data(registry, &target.state);
-                return sections.set_block_state(pos, state);
+                return sections.set_block_state(pos, target.state);
             }
         }
 
         false
     }
 
-    pub(in crate::worldgen::feature) fn can_place_ore(
+    fn can_place_resolved_ore(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
-        target: &OreTarget,
+        target: &ResolvedOreTarget,
         pos: BlockPos,
-        block_state: BlockStateId,
+        block_id: usize,
     ) -> bool {
-        if !Self::rule_test_matches(registry, &target.target, block_state) {
+        if !target.matches_block_id(block_id) {
             return false;
         }
 
@@ -331,16 +338,16 @@ impl FeatureDecorationRunner {
         !Self::is_adjacent_to_air(region, registry, pos)
     }
 
-    pub(in crate::worldgen::feature) fn can_place_ore_in_bulk(
+    fn can_place_resolved_ore_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_, '_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
-        target: &OreTarget,
+        target: &ResolvedOreTarget,
         pos: BlockPos,
-        block_state: BlockStateId,
+        block_id: usize,
     ) -> bool {
-        if !Self::rule_test_matches(registry, &target.target, block_state) {
+        if !target.matches_block_id(block_id) {
             return false;
         }
 
@@ -349,26 +356,6 @@ impl FeatureDecorationRunner {
         }
 
         !Self::is_adjacent_to_air_in_bulk(sections, registry, pos)
-    }
-
-    pub(in crate::worldgen::feature) fn rule_test_matches(
-        registry: &Registry,
-        target: &RuleTest,
-        state: BlockStateId,
-    ) -> bool {
-        let Some(block) = registry.blocks.by_state_id(state) else {
-            panic!("ore feature received invalid block state id {}", state.0);
-        };
-
-        match target {
-            RuleTest::BlockMatch { block: block_key } => {
-                let Some(target_block) = registry.blocks.by_key(block_key) else {
-                    panic!("ore rule test references unknown block {block_key}");
-                };
-                block == target_block
-            }
-            RuleTest::TagMatch { tag } => registry.blocks.is_in_tag(block, tag),
-        }
     }
 
     pub(in crate::worldgen::feature) fn should_skip_air_check(
@@ -433,6 +420,20 @@ struct PendingOreSection {
     positions: SmallVec<[BlockPos; 64]>,
 }
 
+struct ResolvedOreTargets {
+    targets: SmallVec<[ResolvedOreTarget; 2]>,
+}
+
+struct ResolvedOreTarget {
+    matcher: ResolvedOreRuleTest,
+    state: BlockStateId,
+}
+
+enum ResolvedOreRuleTest {
+    Block(usize),
+    Tag(SmallVec<[usize; 8]>),
+}
+
 #[derive(Clone, Copy)]
 struct OreSearchVolume {
     x_start: i32,
@@ -472,28 +473,83 @@ impl OreSearchVolume {
         }
 
         // Matches vanilla OreFeature's BitSet index layout.
-        let index = x_offset
-            .checked_add(y_offset.checked_mul(self.size_xz)?)?
-            .checked_add(
-                z_offset
-                    .checked_mul(self.size_xz)?
-                    .checked_mul(self.size_y)?,
-            )?;
+        let index = x_offset + y_offset * self.size_xz + z_offset * self.size_xz * self.size_y;
         usize::try_from(index).ok()
     }
 }
 
-impl PendingOreSectionKey {
-    fn from_pos(min_y: i32, height: i32, pos: BlockPos) -> Option<Self> {
-        if pos.y() < min_y || pos.y() >= min_y + height {
-            return None;
+impl ResolvedOreTargets {
+    fn from_config(registry: &Registry, config: &OreConfiguration) -> Self {
+        let mut targets = SmallVec::with_capacity(config.targets.len());
+        for target in &config.targets {
+            let matcher = match &target.target {
+                RuleTest::BlockMatch { block: block_key } => {
+                    let Some(block) = registry.blocks.by_key(block_key) else {
+                        panic!("ore rule test references unknown block {block_key}");
+                    };
+                    ResolvedOreRuleTest::Block(block.id())
+                }
+                RuleTest::TagMatch { tag } => {
+                    let block_ids = registry
+                        .blocks
+                        .iter_tag(tag)
+                        .map(|block| block.id())
+                        .collect();
+                    ResolvedOreRuleTest::Tag(block_ids)
+                }
+            };
+            targets.push(ResolvedOreTarget {
+                matcher,
+                state: WorldgenStateResolver::block_state_from_data(
+                    registry,
+                    &target.state,
+                    "ore feature",
+                ),
+            });
         }
 
-        Some(Self {
+        Self { targets }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &ResolvedOreTarget> {
+        self.targets.iter()
+    }
+
+    fn matching_replacement(
+        &self,
+        registry: &Registry,
+        state: BlockStateId,
+    ) -> Option<BlockStateId> {
+        let block_id = self.block_id_for_state(registry, state);
+        self.targets
+            .iter()
+            .find_map(|target| target.matches_block_id(block_id).then_some(target.state))
+    }
+
+    fn block_id_for_state(&self, registry: &Registry, state: BlockStateId) -> usize {
+        let Some(&block_id) = registry.blocks.state_to_block_id.get(state.0 as usize) else {
+            panic!("ore feature received invalid block state id {}", state.0);
+        };
+        block_id
+    }
+}
+
+impl ResolvedOreTarget {
+    fn matches_block_id(&self, block_id: usize) -> bool {
+        match &self.matcher {
+            ResolvedOreRuleTest::Block(target_block_id) => block_id == *target_block_id,
+            ResolvedOreRuleTest::Tag(block_ids) => block_ids.contains(&block_id),
+        }
+    }
+}
+
+impl PendingOreSectionKey {
+    fn from_in_height_pos(min_y: i32, pos: BlockPos) -> Self {
+        Self {
             chunk_x: SectionPos::block_to_section_coord(pos.x()),
             chunk_z: SectionPos::block_to_section_coord(pos.z()),
-            section_index: usize::try_from((pos.y() - min_y) / 16).ok()?,
-        })
+            section_index: ((pos.y() - min_y) / 16) as usize,
+        }
     }
 }
 
@@ -545,6 +601,13 @@ mod tests {
     fn ore_tested_position_index_matches_vanilla_layout() {
         let volume = OreSearchVolume::new(10, 60, 20, 4, 6);
         assert_eq!(volume.and_then(|volume| volume.index(12, 63, 21)), Some(38));
+    }
+
+    #[test]
+    fn ore_tested_position_index_keeps_vanilla_inclusive_edge_layout() {
+        let volume = OreSearchVolume::new(10, 60, 20, 4, 6);
+        assert_eq!(volume.and_then(|volume| volume.index(14, 60, 20)), Some(4));
+        assert_eq!(volume.and_then(|volume| volume.index(10, 61, 20)), Some(4));
     }
 
     #[test]

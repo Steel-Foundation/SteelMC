@@ -21,7 +21,7 @@ pub(super) use steel_registry::feature::{
     LakeConfiguration, LargeDripstoneConfiguration, MangroveRootPlacement, MangroveRootPlacer,
     MultifaceGrowthConfiguration, NetherForestVegetationConfiguration,
     NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
-    OreTarget, PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
+    PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
     PlacementModifier, PointedDripstoneConfiguration, RandomSpreadFoliagePlacer, RootPlacer,
     RootSystemConfiguration, RuleTest, SculkPatchConfiguration, SeaPickleConfiguration,
     SeagrassConfiguration, SimpleBlockConfiguration, SpikeConfiguration, SpringConfiguration,

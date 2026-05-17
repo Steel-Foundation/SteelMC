@@ -64,6 +64,8 @@ pub(crate) struct OreFeatureStats {
     chunk_cache_misses: u64,
     chunk_status_upgrades: u64,
     writes: u64,
+    candidate_time: Duration,
+    batch_apply_time: Duration,
     read_time: Duration,
     write_time: Duration,
     read_contention_wait_time: Duration,
@@ -89,6 +91,8 @@ impl OreFeatureStats {
             chunk_cache_misses: 0,
             chunk_status_upgrades: 0,
             writes: 0,
+            candidate_time: Duration::ZERO,
+            batch_apply_time: Duration::ZERO,
             read_time: Duration::ZERO,
             write_time: Duration::ZERO,
             read_contention_wait_time: Duration::ZERO,
@@ -108,6 +112,10 @@ impl OreFeatureStats {
 
     pub(crate) fn record_write_allowed_position(&mut self) {
         self.write_allowed_positions += 1;
+    }
+
+    pub(crate) fn record_write_allowed_positions(&mut self, count: u64) {
+        self.write_allowed_positions += count;
     }
 
     pub(crate) fn record_target_read(&mut self) {
@@ -158,6 +166,14 @@ impl OreFeatureStats {
         self.writes += 1;
     }
 
+    pub(crate) fn record_candidate_time(&mut self, elapsed: Duration) {
+        self.candidate_time += elapsed;
+    }
+
+    pub(crate) fn record_batch_apply_time(&mut self, elapsed: Duration) {
+        self.batch_apply_time += elapsed;
+    }
+
     pub(crate) fn record_read_time(&mut self, elapsed: Duration) {
         self.read_time += elapsed;
     }
@@ -192,6 +208,8 @@ struct OreProfileTotals {
     chunk_cache_misses: AtomicU64,
     chunk_status_upgrades: AtomicU64,
     writes: AtomicU64,
+    candidate_time_nanos: AtomicU64,
+    batch_apply_time_nanos: AtomicU64,
     read_time_nanos: AtomicU64,
     write_time_nanos: AtomicU64,
     read_contention_wait_time_nanos: AtomicU64,
@@ -222,6 +240,8 @@ impl OreProfileTotals {
             chunk_cache_misses: AtomicU64::new(0),
             chunk_status_upgrades: AtomicU64::new(0),
             writes: AtomicU64::new(0),
+            candidate_time_nanos: AtomicU64::new(0),
+            batch_apply_time_nanos: AtomicU64::new(0),
             read_time_nanos: AtomicU64::new(0),
             write_time_nanos: AtomicU64::new(0),
             read_contention_wait_time_nanos: AtomicU64::new(0),
@@ -266,6 +286,10 @@ impl OreProfileTotals {
         self.chunk_status_upgrades
             .fetch_add(stats.chunk_status_upgrades, Ordering::Relaxed);
         self.writes.fetch_add(stats.writes, Ordering::Relaxed);
+        self.candidate_time_nanos
+            .fetch_add(duration_nanos(stats.candidate_time), Ordering::Relaxed);
+        self.batch_apply_time_nanos
+            .fetch_add(duration_nanos(stats.batch_apply_time), Ordering::Relaxed);
         self.read_time_nanos
             .fetch_add(duration_nanos(stats.read_time), Ordering::Relaxed);
         self.write_time_nanos
@@ -313,6 +337,8 @@ impl OreProfileTotals {
         let chunk_cache_misses = self.chunk_cache_misses.load(Ordering::Relaxed);
         let chunk_status_upgrades = self.chunk_status_upgrades.load(Ordering::Relaxed);
         let writes = self.writes.load(Ordering::Relaxed);
+        let candidate_time_ms = nanos_to_ms(self.candidate_time_nanos.load(Ordering::Relaxed));
+        let batch_apply_time_ms = nanos_to_ms(self.batch_apply_time_nanos.load(Ordering::Relaxed));
         let read_time_ms = nanos_to_ms(self.read_time_nanos.load(Ordering::Relaxed));
         let write_time_ms = nanos_to_ms(self.write_time_nanos.load(Ordering::Relaxed));
         let read_wait_ms =
@@ -337,7 +363,8 @@ impl OreProfileTotals {
              write_contentions={section_write_contentions} chunk_cache_misses={chunk_cache_misses} \
              chunk_status_upgrades={chunk_status_upgrades} avg_read_sections={avg_read_sections:.2} \
              avg_write_sections={avg_write_sections:.2} max_read_sections={max_read_sections} \
-             max_write_sections={max_write_sections} read_ms={read_time_ms:.2} \
+             max_write_sections={max_write_sections} candidate_ms={candidate_time_ms:.2} \
+             batch_apply_ms={batch_apply_time_ms:.2} read_ms={read_time_ms:.2} \
              write_ms={write_time_ms:.2} read_wait_ms={read_wait_ms:.2} \
              write_wait_ms={write_wait_ms:.2} elapsed_ms={elapsed_ms:.2}"
         );
