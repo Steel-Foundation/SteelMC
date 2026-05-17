@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{
-    Registry, RegistryExt, TaggedRegistryExt, vanilla_biome_tags, vanilla_block_entity_types,
-    vanilla_blocks,
+    Registry, RegistryExt, TaggedRegistryExt, vanilla_biome_tags, vanilla_blocks,
 };
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
@@ -616,32 +614,7 @@ impl MineshaftPlacer<'_, '_> {
     }
 
     fn set_spawner_entity(&mut self, pos: BlockPos, state: BlockStateId, entity_id: &'static str) {
-        let mut entity = NbtCompound::new();
-        entity.insert("id", entity_id);
-
-        let mut spawn_data = NbtCompound::new();
-        spawn_data.insert("entity", NbtTag::Compound(entity));
-
-        let mut nbt = NbtCompound::new();
-        nbt.insert("Delay", 20_i16);
-        nbt.insert("MinSpawnDelay", 200_i16);
-        nbt.insert("MaxSpawnDelay", 800_i16);
-        nbt.insert("SpawnCount", 4_i16);
-        nbt.insert("MaxNearbyEntities", 6_i16);
-        nbt.insert("RequiredPlayerRange", 16_i16);
-        nbt.insert("SpawnRange", 4_i16);
-        nbt.insert("SpawnData", NbtTag::Compound(spawn_data));
-        nbt.insert(
-            "SpawnPotentials",
-            NbtTag::List(NbtList::Compound(Vec::new())),
-        );
-
-        let _ = self.region.set_block_entity_data(
-            pos,
-            &vanilla_block_entity_types::MOB_SPAWNER,
-            state,
-            nbt,
-        );
+        let _ = StructurePiecePlacer::set_spawner_entity(self.region, pos, state, entity_id);
     }
 
     fn place_support(

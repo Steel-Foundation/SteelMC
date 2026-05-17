@@ -27,6 +27,7 @@ use steel_utils::{
 };
 
 use crate::world::structure::desert_pyramid::DesertPyramidPieceData;
+use crate::world::structure::fortress::FortressPieceData;
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
 use crate::world::structure::jungle_temple::JungleTemplePieceData;
 use crate::world::structure::mineshaft::{
@@ -35,9 +36,9 @@ use crate::world::structure::mineshaft::{
 use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::world::structure::{
     ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
-    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureReferenceSet,
-    StructureStart, StructureStartMap, TemplateMarkerHandling, TemplatePieceData,
-    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart,
+    StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
+    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -323,8 +324,8 @@ use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
     PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
-    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentPoi,
-    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
+    PersistentPoi, PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
     PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
     PersistentStructureReference, PersistentStructureStart, PersistentSwampHutPieceData,
     PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
@@ -1234,6 +1235,11 @@ impl ChunkStorage {
                     kind: Self::mineshaft_kind_to_persistent(&data.kind),
                 })
             }
+            ProceduralPieceData::NetherFortress(data) => {
+                PersistentProceduralPieceData::NetherFortress(
+                    Self::fortress_piece_data_to_persistent(*data),
+                )
+            }
             ProceduralPieceData::SwampHut(data) => {
                 PersistentProceduralPieceData::SwampHut(PersistentSwampHutPieceData {
                     height_position: data.height_position.unwrap_or(-1),
@@ -1273,6 +1279,9 @@ impl ChunkStorage {
                     kind: Self::persistent_to_mineshaft_kind(&data.kind),
                 })
             }
+            PersistentProceduralPieceData::NetherFortress(data) => {
+                ProceduralPieceData::NetherFortress(Self::persistent_to_fortress_piece_data(data))
+            }
             PersistentProceduralPieceData::SwampHut(data) => {
                 ProceduralPieceData::SwampHut(SwampHutPieceData {
                     height_position: (data.height_position >= 0).then_some(data.height_position),
@@ -1283,12 +1292,98 @@ impl ChunkStorage {
         }
     }
 
+    const fn fortress_piece_data_to_persistent(
+        data: FortressPieceData,
+    ) -> PersistentNetherFortressPieceData {
+        match data {
+            FortressPieceData::BridgeCrossing => PersistentNetherFortressPieceData::BridgeCrossing,
+            FortressPieceData::BridgeEndFiller { self_seed } => {
+                PersistentNetherFortressPieceData::BridgeEndFiller { self_seed }
+            }
+            FortressPieceData::BridgeStraight => PersistentNetherFortressPieceData::BridgeStraight,
+            FortressPieceData::CastleCorridorStairs => {
+                PersistentNetherFortressPieceData::CastleCorridorStairs
+            }
+            FortressPieceData::CastleCorridorTBalcony => {
+                PersistentNetherFortressPieceData::CastleCorridorTBalcony
+            }
+            FortressPieceData::CastleEntrance => PersistentNetherFortressPieceData::CastleEntrance,
+            FortressPieceData::CastleSmallCorridorCrossing => {
+                PersistentNetherFortressPieceData::CastleSmallCorridorCrossing
+            }
+            FortressPieceData::CastleSmallCorridorLeftTurn { is_needing_chest } => {
+                PersistentNetherFortressPieceData::CastleSmallCorridorLeftTurn { is_needing_chest }
+            }
+            FortressPieceData::CastleSmallCorridor => {
+                PersistentNetherFortressPieceData::CastleSmallCorridor
+            }
+            FortressPieceData::CastleSmallCorridorRightTurn { is_needing_chest } => {
+                PersistentNetherFortressPieceData::CastleSmallCorridorRightTurn { is_needing_chest }
+            }
+            FortressPieceData::CastleStalkRoom => {
+                PersistentNetherFortressPieceData::CastleStalkRoom
+            }
+            FortressPieceData::MonsterThrone { has_placed_spawner } => {
+                PersistentNetherFortressPieceData::MonsterThrone { has_placed_spawner }
+            }
+            FortressPieceData::RoomCrossing => PersistentNetherFortressPieceData::RoomCrossing,
+            FortressPieceData::StairsRoom => PersistentNetherFortressPieceData::StairsRoom,
+        }
+    }
+
+    const fn persistent_to_fortress_piece_data(
+        data: &PersistentNetherFortressPieceData,
+    ) -> FortressPieceData {
+        match data {
+            PersistentNetherFortressPieceData::BridgeCrossing => FortressPieceData::BridgeCrossing,
+            PersistentNetherFortressPieceData::BridgeEndFiller { self_seed } => {
+                FortressPieceData::BridgeEndFiller {
+                    self_seed: *self_seed,
+                }
+            }
+            PersistentNetherFortressPieceData::BridgeStraight => FortressPieceData::BridgeStraight,
+            PersistentNetherFortressPieceData::CastleCorridorStairs => {
+                FortressPieceData::CastleCorridorStairs
+            }
+            PersistentNetherFortressPieceData::CastleCorridorTBalcony => {
+                FortressPieceData::CastleCorridorTBalcony
+            }
+            PersistentNetherFortressPieceData::CastleEntrance => FortressPieceData::CastleEntrance,
+            PersistentNetherFortressPieceData::CastleSmallCorridorCrossing => {
+                FortressPieceData::CastleSmallCorridorCrossing
+            }
+            PersistentNetherFortressPieceData::CastleSmallCorridorLeftTurn { is_needing_chest } => {
+                FortressPieceData::CastleSmallCorridorLeftTurn {
+                    is_needing_chest: *is_needing_chest,
+                }
+            }
+            PersistentNetherFortressPieceData::CastleSmallCorridor => {
+                FortressPieceData::CastleSmallCorridor
+            }
+            PersistentNetherFortressPieceData::CastleSmallCorridorRightTurn {
+                is_needing_chest,
+            } => FortressPieceData::CastleSmallCorridorRightTurn {
+                is_needing_chest: *is_needing_chest,
+            },
+            PersistentNetherFortressPieceData::CastleStalkRoom => {
+                FortressPieceData::CastleStalkRoom
+            }
+            PersistentNetherFortressPieceData::MonsterThrone { has_placed_spawner } => {
+                FortressPieceData::MonsterThrone {
+                    has_placed_spawner: *has_placed_spawner,
+                }
+            }
+            PersistentNetherFortressPieceData::RoomCrossing => FortressPieceData::RoomCrossing,
+            PersistentNetherFortressPieceData::StairsRoom => FortressPieceData::StairsRoom,
+        }
+    }
+
     fn mineshaft_kind_to_persistent(kind: &MineshaftPieceKind) -> PersistentMineshaftPieceKind {
         match kind {
             MineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => PersistentMineshaftPieceKind::Room {
-                child_entrance_boxes: child_entrance_boxes.iter().copied().collect(),
+                child_entrance_boxes: Self::copy_bounding_boxes(child_entrance_boxes),
             },
             MineshaftPieceKind::Corridor {
                 has_rails,
@@ -1317,7 +1412,7 @@ impl ChunkStorage {
             PersistentMineshaftPieceKind::Room {
                 child_entrance_boxes,
             } => MineshaftPieceKind::Room {
-                child_entrance_boxes: child_entrance_boxes.iter().copied().collect(),
+                child_entrance_boxes: Self::copy_bounding_boxes(child_entrance_boxes),
             },
             PersistentMineshaftPieceKind::Corridor {
                 has_rails,
@@ -1339,6 +1434,14 @@ impl ChunkStorage {
             },
             PersistentMineshaftPieceKind::Stairs => MineshaftPieceKind::Stairs,
         }
+    }
+
+    fn copy_bounding_boxes(boxes: &[steel_utils::BoundingBox]) -> Vec<steel_utils::BoundingBox> {
+        let mut copied = Vec::with_capacity(boxes.len());
+        for bounding_box in boxes {
+            copied.push(*bounding_box);
+        }
+        copied
     }
 
     fn structure_piece_payload_to_persistent(
@@ -1847,6 +1950,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
     use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
+    use crate::world::structure::StructureReferenceSet;
     use glam::DVec3;
     use rustc_hash::FxHashMap;
     use steel_registry::vanilla_block_entity_types;
@@ -2500,6 +2604,20 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         };
+        let fortress_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "nemt"),
+            bounding_box: steel_utils::BoundingBox::new(48, 52, 48, 54, 59, 56),
+            gen_depth: 6,
+            orientation: Some(Direction::East),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(
+                FortressPieceData::MonsterThrone {
+                    has_placed_spawner: true,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
         let swamp_hut_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "tesh"),
             bounding_box: steel_utils::BoundingBox::new(80, 63, 80, 86, 69, 88),
@@ -2529,6 +2647,7 @@ mod tests {
                 desert_pyramid_piece,
                 jungle_temple_piece,
                 mineshaft_piece,
+                fortress_piece,
                 swamp_hut_piece,
             ],
             TerrainAdjustment::None,
@@ -2544,7 +2663,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 9);
+        assert_eq!(loaded_start.pieces.len(), 10);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2683,8 +2802,21 @@ mod tests {
         assert!(*has_placed_spider);
         assert_eq!(*num_sections, 3);
 
+        let StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(
+            fortress_payload,
+        )) = &loaded_start.pieces[8].payload
+        else {
+            panic!("nether fortress payload should roundtrip");
+        };
+        assert_eq!(
+            *fortress_payload,
+            FortressPieceData::MonsterThrone {
+                has_placed_spawner: true,
+            }
+        );
+
         let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
-            &loaded_start.pieces[8].payload
+            &loaded_start.pieces[9].payload
         else {
             panic!("swamp hut payload should roundtrip");
         };

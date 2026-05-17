@@ -604,8 +604,55 @@ pub enum PersistentProceduralPieceData {
     JungleTemple(PersistentJungleTemplePieceData),
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(PersistentMineshaftPieceData),
+    /// Nether fortress bridge/castle payload.
+    NetherFortress(PersistentNetherFortressPieceData),
     /// Swamp hut piece payload.
     SwampHut(PersistentSwampHutPieceData),
+}
+
+/// Persisted piece-specific nether fortress data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentNetherFortressPieceData {
+    /// Bridge crossing piece.
+    BridgeCrossing,
+    /// Dead-end bridge filler piece.
+    BridgeEndFiller {
+        /// Vanilla `BridgeEndFiller.selfSeed`.
+        self_seed: i32,
+    },
+    /// Straight bridge segment.
+    BridgeStraight,
+    /// Castle corridor stair segment.
+    CastleCorridorStairs,
+    /// Castle corridor T balcony segment.
+    CastleCorridorTBalcony,
+    /// Castle entrance room.
+    CastleEntrance,
+    /// Small castle corridor crossing.
+    CastleSmallCorridorCrossing,
+    /// Small castle corridor left turn.
+    CastleSmallCorridorLeftTurn {
+        /// Vanilla `isNeedingChest`.
+        is_needing_chest: bool,
+    },
+    /// Small straight castle corridor.
+    CastleSmallCorridor,
+    /// Small castle corridor right turn.
+    CastleSmallCorridorRightTurn {
+        /// Vanilla `isNeedingChest`.
+        is_needing_chest: bool,
+    },
+    /// Nether-wart stair room.
+    CastleStalkRoom,
+    /// Blaze-spawner throne room.
+    MonsterThrone {
+        /// Vanilla `hasPlacedSpawner`.
+        has_placed_spawner: bool,
+    },
+    /// Bridge room crossing.
+    RoomCrossing,
+    /// Bridge stair room.
+    StairsRoom,
 }
 
 /// Persisted desert pyramid piece payload.

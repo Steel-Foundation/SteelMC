@@ -6,7 +6,7 @@ use steel_registry::structure::{
 use steel_registry::template_pool::Projection;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
-use super::{desert_pyramid, jigsaw, jungle_temple, mineshaft, swamp_hut};
+use super::{desert_pyramid, fortress, jigsaw, jungle_temple, mineshaft, swamp_hut};
 
 /// Vanilla's `StructurePiece` runtime state.
 #[derive(Debug, Clone)]
@@ -248,6 +248,8 @@ pub enum ProceduralPieceData {
     JungleTemple(jungle_temple::JungleTemplePieceData),
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(mineshaft::MineshaftPiecePayload),
+    /// Nether fortress bridge/castle piece payload.
+    NetherFortress(fortress::FortressPieceData),
     /// Swamp hut piece payload.
     SwampHut(swamp_hut::SwampHutPieceData),
 }

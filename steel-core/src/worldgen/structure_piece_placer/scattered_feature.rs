@@ -2,7 +2,7 @@ use std::sync::Weak;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
+use steel_registry::{Registry, fluid::FluidRef, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
@@ -238,6 +238,40 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
             loot_table,
             random.next_i64(),
         )
+    }
+
+    pub(super) fn create_spawner(
+        &mut self,
+        x: i32,
+        y: i32,
+        z: i32,
+        entity_id: &'static str,
+    ) -> bool {
+        let pos = self.world_pos(x, y, z);
+        if !self.clip.is_inside(pos) {
+            return false;
+        }
+
+        let spawner = vanilla_blocks::SPAWNER.default_state();
+        if !self
+            .region
+            .set_block_state(pos, spawner, UpdateFlags::UPDATE_CLIENTS)
+        {
+            return false;
+        }
+        StructurePiecePlacer::set_spawner_entity(self.region, pos, spawner, entity_id)
+    }
+
+    pub(super) fn schedule_fluid_tick_default(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        fluid: FluidRef,
+        delay: i32,
+    ) -> bool {
+        let pos = self.world_pos(x, y, z);
+        self.clip.is_inside(pos) && self.region.schedule_fluid_tick_default(pos, fluid, delay)
     }
 
     pub(super) const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {

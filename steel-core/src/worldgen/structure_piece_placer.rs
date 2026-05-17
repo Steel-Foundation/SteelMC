@@ -7,6 +7,7 @@
 
 mod buried_treasure;
 mod desert_pyramid;
+mod fortress;
 mod jungle_temple;
 mod mineshaft;
 mod pool_element;
@@ -16,7 +17,7 @@ mod swamp_hut;
 mod template_piece;
 mod template_processors;
 
-use simdnbt::owned::NbtCompound;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -91,6 +92,17 @@ impl StructurePiecePlacer {
                     clip,
                     random,
                     biome_zoom_seed,
+                )
+            }
+            StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(data)) => {
+                Self::place_nether_fortress_piece(
+                    region,
+                    registry,
+                    piece_bounding_box,
+                    piece_orientation,
+                    data,
+                    clip,
+                    random,
                 )
             }
             StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure) => {
@@ -239,6 +251,35 @@ impl StructurePiecePlacer {
             nbt.insert("LootTableSeed", seed);
         }
         region.set_block_entity_data(pos, block_entity_type, state, nbt)
+    }
+
+    pub(super) fn set_spawner_entity(
+        region: &WorldGenRegion<'_>,
+        pos: BlockPos,
+        state: BlockStateId,
+        entity_id: &'static str,
+    ) -> bool {
+        let mut entity = NbtCompound::new();
+        entity.insert("id", entity_id);
+
+        let mut spawn_data = NbtCompound::new();
+        spawn_data.insert("entity", NbtTag::Compound(entity));
+
+        let mut nbt = NbtCompound::new();
+        nbt.insert("Delay", 20_i16);
+        nbt.insert("MinSpawnDelay", 200_i16);
+        nbt.insert("MaxSpawnDelay", 800_i16);
+        nbt.insert("SpawnCount", 4_i16);
+        nbt.insert("MaxNearbyEntities", 6_i16);
+        nbt.insert("RequiredPlayerRange", 16_i16);
+        nbt.insert("SpawnRange", 4_i16);
+        nbt.insert("SpawnData", NbtTag::Compound(spawn_data));
+        nbt.insert(
+            "SpawnPotentials",
+            NbtTag::List(NbtList::Compound(Vec::new())),
+        );
+
+        region.set_block_entity_data(pos, &vanilla_block_entity_types::MOB_SPAWNER, state, nbt)
     }
 
     pub(super) fn set_brushable_loot_table(
