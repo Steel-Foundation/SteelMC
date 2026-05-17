@@ -1,12 +1,10 @@
-use std::collections::BTreeMap;
-
 use steel_registry::Registry;
 
 use super::runner::FeatureDecorationRunner;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::feature::FluidStateData;
 use steel_registry::{vanilla_blocks, vanilla_fluids};
-use steel_utils::{BlockPos, Identifier};
+use steel_utils::BlockPos;
 
 use crate::worldgen::BiomeSourceKind;
 
@@ -101,11 +99,11 @@ fn spring_source_fluid_state_creates_vanilla_legacy_source_block() {
     registry.freeze();
 
     let data = FluidStateData {
-        name: Identifier::vanilla_static("water"),
-        properties: BTreeMap::from([("falling".to_owned(), "true".to_owned())]),
+        fluid: &vanilla_fluids::WATER,
+        properties: &[("falling", "true")],
     };
 
-    let fluid_state = FeatureDecorationRunner::fluid_state_from_data(&registry, &data);
+    let fluid_state = FeatureDecorationRunner::fluid_state_from_data(&data);
     assert_eq!(fluid_state.fluid_id, &vanilla_fluids::WATER);
     assert_eq!(fluid_state.amount, 8);
     assert!(fluid_state.falling);

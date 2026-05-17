@@ -20,6 +20,9 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 **Registries**
  - We should only generate what is needed. Does minecraft use a hardcoded transform? Then we do as well.
  - We should design everything with modding and abi compatibility in mind for the future. No requirement to add it while writing but it has to be thought out to be extendable. Every value/registry neoforge can change we should be able to change in the future
+ - Vanilla extracted registry/worldgen data should be compiled by build scripts into typed Rust data, not parsed from JSON at runtime. Prefer generated references like `vanilla_blocks::STONE`/`vanilla_fluids::WATER` and registry ref types over `Identifier` when the referenced vanilla value is known.
+ - Do not design for runtime datapack JSON loading. Future plugins should register their own typed blocks/features with their own refs; build scripts only need to generate vanilla data.
+ - Avoid raw `BlockStateId` in generated registry data. Use `BlockRef` plus explicit properties/default-state resolution so registry ordering can still evolve for plugin support.
 
 **Code standard**
  - Usually vanilla is decent at naming stuff, sometimes we want to deviate from this though in cases where names are bad or non descriptive. Or we want a whole other solution to the system at hand. In that case we should add a doc comment above the struct, method or module that clearly states the differences so next time someone new picks it up they have an easy time understanding your system.

@@ -1,5 +1,6 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use smallvec::SmallVec;
 
 #[derive(Clone, Copy)]
 enum MultifaceSpreadType {
@@ -12,6 +13,16 @@ struct MultifaceSpreadPos {
     pos: BlockPos,
     face: Direction,
 }
+
+struct ResolvedMultifaceGrowth<'a> {
+    raw: &'a MultifaceGrowthConfiguration,
+    place_block: BlockRef,
+    default_state: BlockStateId,
+    can_be_placed_on: &'a [BlockRef],
+    is_sculk_vein: bool,
+}
+
+type MultifaceDirections = SmallVec<[Direction; 6]>;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_multiface_growth_feature(
@@ -26,14 +37,15 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let search_directions = Self::multiface_shuffled_valid_directions(random, config);
+        let resolved_config = Self::resolve_multiface_growth_config(registry, config);
+        let search_directions = Self::multiface_shuffled_valid_directions(random, &resolved_config);
         if Self::place_multiface_growth_if_possible(
             region,
             registry,
             random,
             origin,
             origin_state,
-            config,
+            &resolved_config,
             &search_directions,
         ) {
             return true;
@@ -42,15 +54,15 @@ impl FeatureDecorationRunner {
         for search_direction in &search_directions {
             let placement_directions = Self::multiface_shuffled_valid_directions_except(
                 random,
-                config,
+                &resolved_config,
                 search_direction.opposite(),
             );
 
-            for _ in 0..config.search_range {
+            for _ in 0..resolved_config.raw.search_range {
                 let pos = origin.relative(*search_direction);
                 let state = region.block_state(pos);
                 if !Self::multiface_is_air_or_water(state)
-                    && !Self::multiface_is_place_block(registry, config, state)
+                    && !Self::multiface_is_place_block(&resolved_config, state)
                 {
                     break;
                 }
@@ -61,7 +73,7 @@ impl FeatureDecorationRunner {
                     random,
                     pos,
                     state,
-                    config,
+                    &resolved_config,
                     &placement_directions,
                 ) {
                     return true;
@@ -78,18 +90,17 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         pos: BlockPos,
         old_state: BlockStateId,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         placement_directions: &[Direction],
     ) -> bool {
         for placement_direction in placement_directions {
             let neighbor_state = region.block_state(pos.relative(*placement_direction));
-            if !Self::multiface_can_be_placed_on(registry, config, neighbor_state) {
+            if !Self::multiface_can_be_placed_on(config, neighbor_state) {
                 continue;
             }
 
             let Some(new_state) = Self::multiface_state_for_placement(
                 region,
-                registry,
                 config,
                 old_state,
                 pos,
@@ -100,7 +111,7 @@ impl FeatureDecorationRunner {
 
             let _ = region.set_block_state(pos, new_state, UpdateFlags::UPDATE_ALL);
             region.mark_pos_for_postprocessing(pos);
-            if random.next_f32() < config.chance_of_spreading {
+            if random.next_f32() < config.raw.chance_of_spreading {
                 let _ = Self::spread_multiface_from_face_toward_random_direction(
                     region,
                     registry,
@@ -123,7 +134,7 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         state: BlockStateId,
         pos: BlockPos,
         starting_face: Direction,
@@ -155,7 +166,7 @@ impl FeatureDecorationRunner {
     fn spread_multiface_from_face_toward_direction(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         state: BlockStateId,
         pos: BlockPos,
         starting_face: Direction,
@@ -171,7 +182,7 @@ impl FeatureDecorationRunner {
             starting_face,
             spread_direction,
         )?;
-        if Self::spread_multiface_to_face(region, registry, config, &spread_pos, post_process) {
+        if Self::spread_multiface_to_face(region, config, &spread_pos, post_process) {
             Some(spread_pos)
         } else {
             None
@@ -181,7 +192,7 @@ impl FeatureDecorationRunner {
     fn multiface_spread_from_face_toward_direction(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         state: BlockStateId,
         pos: BlockPos,
         starting_face: Direction,
@@ -191,7 +202,7 @@ impl FeatureDecorationRunner {
             return None;
         }
 
-        if !Self::multiface_is_other_block_valid_as_source(registry, config, state)
+        if !Self::multiface_is_other_block_valid_as_source(config, state)
             && (!Self::multiface_has_face(state, starting_face)
                 || Self::multiface_has_face(state, spread_direction))
         {
@@ -211,15 +222,13 @@ impl FeatureDecorationRunner {
 
     fn spread_multiface_to_face(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         spread_pos: &MultifaceSpreadPos,
         post_process: bool,
     ) -> bool {
         let old_state = region.block_state(spread_pos.pos);
         let Some(spread_state) = Self::multiface_state_for_placement(
             region,
-            registry,
             config,
             old_state,
             spread_pos.pos,
@@ -237,7 +246,7 @@ impl FeatureDecorationRunner {
     fn multiface_can_spread_into(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         source_pos: BlockPos,
         spread_pos: &MultifaceSpreadPos,
     ) -> bool {
@@ -252,7 +261,6 @@ impl FeatureDecorationRunner {
             existing_state,
         ) && Self::multiface_is_valid_state_for_placement(
             region,
-            registry,
             config,
             existing_state,
             spread_pos.pos,
@@ -267,13 +275,13 @@ impl FeatureDecorationRunner {
     fn multiface_state_can_be_replaced(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         source_pos: BlockPos,
         placement_pos: BlockPos,
         placement_direction: Direction,
         existing_state: BlockStateId,
     ) -> bool {
-        if Self::multiface_is_sculk_vein(registry, config) {
+        if config.is_sculk_vein {
             return Self::sculk_vein_state_can_be_replaced(
                 region,
                 registry,
@@ -284,7 +292,7 @@ impl FeatureDecorationRunner {
             );
         }
 
-        Self::default_multiface_state_can_be_replaced(registry, config, existing_state)
+        Self::default_multiface_state_can_be_replaced(config, existing_state)
     }
 
     fn sculk_vein_state_can_be_replaced(
@@ -333,12 +341,10 @@ impl FeatureDecorationRunner {
     }
 
     fn default_multiface_state_can_be_replaced(
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         existing_state: BlockStateId,
     ) -> bool {
-        let place_block = Self::multiface_place_block(registry, config);
-        Self::default_multiface_state_can_be_replaced_for_block(existing_state, place_block)
+        Self::default_multiface_state_can_be_replaced_for_block(existing_state, config.place_block)
     }
 
     fn default_multiface_state_can_be_replaced_for_block(
@@ -353,15 +359,13 @@ impl FeatureDecorationRunner {
 
     fn multiface_state_for_placement(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
     ) -> Option<BlockStateId> {
         if !Self::multiface_is_valid_state_for_placement(
             region,
-            registry,
             config,
             old_state,
             placement_pos,
@@ -370,16 +374,16 @@ impl FeatureDecorationRunner {
             return None;
         }
 
-        let place_block = Self::multiface_place_block(registry, config);
-        let mut new_state = if old_state.get_block() == place_block {
+        let mut new_state = if old_state.get_block() == config.place_block {
             old_state
         } else {
-            let state = registry.blocks.get_default_state_id(place_block);
             let fluid_state = get_fluid_state_from_block(old_state);
             if fluid_state.is_water() && fluid_state.is_source() {
-                state.set_value(&BlockStateProperties::WATERLOGGED, true)
+                config
+                    .default_state
+                    .set_value(&BlockStateProperties::WATERLOGGED, true)
             } else {
-                state
+                config.default_state
             }
         };
         new_state = new_state.set_value(Self::multiface_face_property(placement_direction), true);
@@ -388,14 +392,12 @@ impl FeatureDecorationRunner {
 
     fn multiface_is_valid_state_for_placement(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
     ) -> bool {
-        let place_block = Self::multiface_place_block(registry, config);
-        if old_state.get_block() == place_block
+        if old_state.get_block() == config.place_block
             && Self::multiface_has_face(old_state, placement_direction)
         {
             return false;
@@ -404,51 +406,41 @@ impl FeatureDecorationRunner {
         Self::can_attach_to_multiface(region, placement_pos, placement_direction)
     }
 
+    fn resolve_multiface_growth_config<'a>(
+        registry: &Registry,
+        config: &'a MultifaceGrowthConfiguration,
+    ) -> ResolvedMultifaceGrowth<'a> {
+        ResolvedMultifaceGrowth {
+            raw: config,
+            place_block: config.block,
+            default_state: registry.blocks.get_default_state_id(config.block),
+            can_be_placed_on: &config.can_be_placed_on,
+            is_sculk_vein: config.block == &vanilla_blocks::SCULK_VEIN,
+        }
+    }
+
     fn multiface_can_be_placed_on(
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         state: BlockStateId,
     ) -> bool {
-        config.can_be_placed_on.iter().any(|block_key| {
-            let Some(block) = registry.blocks.by_key(block_key) else {
-                panic!("multiface growth references unknown block {block_key}");
-            };
-            state.get_block() == block
-        })
+        config
+            .can_be_placed_on
+            .iter()
+            .any(|block| state.get_block() == *block)
     }
 
-    fn multiface_place_block(
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
-    ) -> BlockRef {
-        let Some(block) = registry.blocks.by_key(&config.block) else {
-            panic!("multiface growth references unknown block {}", config.block);
-        };
-        block
-    }
-
-    fn multiface_is_place_block(
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
-        state: BlockStateId,
-    ) -> bool {
-        state.get_block() == Self::multiface_place_block(registry, config)
-    }
-
-    fn multiface_is_sculk_vein(registry: &Registry, config: &MultifaceGrowthConfiguration) -> bool {
-        Self::multiface_place_block(registry, config) == &vanilla_blocks::SCULK_VEIN
+    fn multiface_is_place_block(config: &ResolvedMultifaceGrowth<'_>, state: BlockStateId) -> bool {
+        state.get_block() == config.place_block
     }
 
     fn multiface_is_other_block_valid_as_source(
-        registry: &Registry,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         state: BlockStateId,
     ) -> bool {
-        Self::multiface_is_sculk_vein(registry, config)
-            && state.get_block() != &vanilla_blocks::SCULK_VEIN
+        config.is_sculk_vein && state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
-    fn multiface_spread_types(_config: &MultifaceGrowthConfiguration) -> [MultifaceSpreadType; 3] {
+    fn multiface_spread_types(_config: &ResolvedMultifaceGrowth<'_>) -> [MultifaceSpreadType; 3] {
         [
             MultifaceSpreadType::SamePosition,
             MultifaceSpreadType::SamePlane,
@@ -480,8 +472,8 @@ impl FeatureDecorationRunner {
 
     fn multiface_shuffled_valid_directions(
         random: &mut WorldgenRandom,
-        config: &MultifaceGrowthConfiguration,
-    ) -> Vec<Direction> {
+        config: &ResolvedMultifaceGrowth<'_>,
+    ) -> MultifaceDirections {
         let mut directions = Self::multiface_valid_directions(config);
         Self::shuffle_multiface_directions(random, &mut directions);
         directions
@@ -489,27 +481,25 @@ impl FeatureDecorationRunner {
 
     fn multiface_shuffled_valid_directions_except(
         random: &mut WorldgenRandom,
-        config: &MultifaceGrowthConfiguration,
+        config: &ResolvedMultifaceGrowth<'_>,
         excluded: Direction,
-    ) -> Vec<Direction> {
-        let mut directions = Self::multiface_valid_directions(config)
-            .into_iter()
-            .filter(|direction| *direction != excluded)
-            .collect::<Vec<_>>();
+    ) -> MultifaceDirections {
+        let mut directions = Self::multiface_valid_directions(config);
+        directions.retain(|direction| *direction != excluded);
         Self::shuffle_multiface_directions(random, &mut directions);
         directions
     }
 
-    fn multiface_valid_directions(config: &MultifaceGrowthConfiguration) -> Vec<Direction> {
-        let mut directions = Vec::with_capacity(6);
-        if config.can_place_on_ceiling {
+    fn multiface_valid_directions(config: &ResolvedMultifaceGrowth<'_>) -> MultifaceDirections {
+        let mut directions = MultifaceDirections::new();
+        if config.raw.can_place_on_ceiling {
             directions.push(Direction::Up);
         }
-        if config.can_place_on_floor {
+        if config.raw.can_place_on_floor {
             directions.push(Direction::Down);
         }
-        if config.can_place_on_wall {
-            directions.extend(Self::VANILLA_HORIZONTAL_DIRECTIONS);
+        if config.raw.can_place_on_wall {
+            directions.extend_from_slice(&Self::VANILLA_HORIZONTAL_DIRECTIONS);
         }
         directions
     }

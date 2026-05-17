@@ -497,7 +497,7 @@ struct PendingOreSectionKey {
 
 struct PendingOreSection {
     key: PendingOreSectionKey,
-    positions: SmallVec<[PackedSectionBlockPos; 64]>,
+    positions: SmallVec<[PackedSectionBlockPos; 128]>,
 }
 
 struct ResolvedOreTargets {
@@ -556,12 +556,7 @@ impl ResolvedOreTargets {
         let mut targets = SmallVec::with_capacity(config.targets.len());
         for target in &config.targets {
             let matcher = match &target.target {
-                RuleTest::BlockMatch { block: block_key } => {
-                    let Some(block) = registry.blocks.by_key(block_key) else {
-                        panic!("ore rule test references unknown block {block_key}");
-                    };
-                    ResolvedOreRuleTest::Block(block.id())
-                }
+                RuleTest::BlockMatch { block } => ResolvedOreRuleTest::Block(block.id()),
                 RuleTest::TagMatch { tag } => {
                     let block_ids = registry
                         .blocks
@@ -571,7 +566,7 @@ impl ResolvedOreTargets {
                     ResolvedOreRuleTest::Tag(block_ids)
                 }
             };
-            let state = WorldgenStateResolver::block_state_from_data(
+            let state = WorldgenStateResolver::feature_block_state_from_data(
                 registry,
                 &target.state,
                 "ore feature",

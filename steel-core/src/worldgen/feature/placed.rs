@@ -10,16 +10,16 @@ impl FeatureDecorationRunner {
         feature: PlacedFeatureEntryRef,
         biome_zoom_seed: i64,
     ) -> bool {
-        let Some(feature_id) = feature.try_id() else {
+        if feature.try_id().is_none() {
             panic!("top-level placed feature {} is not registered", feature.key);
-        };
+        }
         Self::place_placed_feature_data(
             region,
             registry,
             random,
             origin,
             &feature.data,
-            Some(feature_id),
+            Some(&feature.key),
             biome_zoom_seed,
         )
     }
@@ -30,7 +30,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureData,
-        biome_filter_feature_id: Option<usize>,
+        biome_filter_feature_key: Option<&Identifier>,
         biome_zoom_seed: i64,
     ) -> bool {
         Self::place_placed_feature_from_modifier(
@@ -39,7 +39,7 @@ impl FeatureDecorationRunner {
             random,
             origin,
             feature,
-            biome_filter_feature_id,
+            biome_filter_feature_key,
             biome_zoom_seed,
             0,
         )
@@ -55,7 +55,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
         feature: &PlacedFeatureData,
-        biome_filter_feature_id: Option<usize>,
+        biome_filter_feature_key: Option<&Identifier>,
         biome_zoom_seed: i64,
         modifier_index: usize,
     ) -> bool {
@@ -79,7 +79,7 @@ impl FeatureDecorationRunner {
                     registry,
                     biome_zoom_seed,
                     origin,
-                    biome_filter_feature_id,
+                    biome_filter_feature_key,
                 ) {
                     placed = Self::place_placed_feature_from_modifier(
                         region,
@@ -87,7 +87,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -101,7 +101,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -116,7 +116,7 @@ impl FeatureDecorationRunner {
                             random,
                             origin,
                             feature,
-                            biome_filter_feature_id,
+                            biome_filter_feature_key,
                             biome_zoom_seed,
                             modifier_index + 1,
                         ) {
@@ -134,7 +134,7 @@ impl FeatureDecorationRunner {
                         random,
                         position,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     ) {
@@ -163,7 +163,7 @@ impl FeatureDecorationRunner {
                         random,
                         position,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -185,7 +185,7 @@ impl FeatureDecorationRunner {
                         random,
                         position,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     ) {
@@ -209,7 +209,7 @@ impl FeatureDecorationRunner {
                     random,
                     position,
                     feature,
-                    biome_filter_feature_id,
+                    biome_filter_feature_key,
                     biome_zoom_seed,
                     modifier_index + 1,
                 );
@@ -227,7 +227,7 @@ impl FeatureDecorationRunner {
                         random,
                         BlockPos::new(origin.x(), height, origin.z()),
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -245,7 +245,7 @@ impl FeatureDecorationRunner {
                     random,
                     position,
                     feature,
-                    biome_filter_feature_id,
+                    biome_filter_feature_key,
                     biome_zoom_seed,
                     modifier_index + 1,
                 );
@@ -269,7 +269,7 @@ impl FeatureDecorationRunner {
                             random,
                             origin,
                             feature,
-                            biome_filter_feature_id,
+                            biome_filter_feature_key,
                             biome_zoom_seed,
                             modifier_index + 1,
                         ) {
@@ -300,7 +300,7 @@ impl FeatureDecorationRunner {
                             random,
                             origin,
                             feature,
-                            biome_filter_feature_id,
+                            biome_filter_feature_key,
                             biome_zoom_seed,
                             modifier_index + 1,
                         ) {
@@ -324,7 +324,7 @@ impl FeatureDecorationRunner {
                     random,
                     position,
                     feature,
-                    biome_filter_feature_id,
+                    biome_filter_feature_key,
                     biome_zoom_seed,
                     modifier_index + 1,
                 );
@@ -341,7 +341,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -367,7 +367,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );
@@ -384,7 +384,7 @@ impl FeatureDecorationRunner {
                         random,
                         origin,
                         feature,
-                        biome_filter_feature_id,
+                        biome_filter_feature_key,
                         biome_zoom_seed,
                         modifier_index + 1,
                     );

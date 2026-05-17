@@ -1,9 +1,9 @@
 //! This module contains the `Sections` and `ChunkSection` structs.
-use std::{fmt::Debug, io::Cursor};
+use std::{fmt::Debug, io::Cursor, sync::LazyLock};
 
-use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_biomes;
+use steel_registry::{REGISTRY, RegistryEntry};
 use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
@@ -66,6 +66,20 @@ pub(crate) struct BlockStateSectionCounts {
     has_fluid: bool,
     randomly_ticking: bool,
 }
+
+static BLOCK_STATE_SECTION_COUNTS: LazyLock<Box<[BlockStateSectionCounts]>> = LazyLock::new(|| {
+    let mut counts = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
+    for state_index in 0..REGISTRY.blocks.state_to_block_lookup.len() {
+        let Ok(raw_state_id) = u16::try_from(state_index) else {
+            panic!("block state registry exceeded BlockStateId range");
+        };
+        counts.push(ChunkSection::block_state_section_counts_with(
+            BlockStateId(raw_state_id),
+            &BLOCK_BEHAVIORS,
+        ));
+    }
+    counts.into_boxed_slice()
+});
 
 impl Sections {
     /// Creates a new `Sections` from a box of owned `ChunkSection`s.
@@ -402,7 +416,10 @@ impl ChunkSection {
     /// Returns the cached-counter traits for a block state using the global
     /// behavior registry.
     pub(crate) fn block_state_section_counts(state: BlockStateId) -> BlockStateSectionCounts {
-        Self::block_state_section_counts_with(state, &BLOCK_BEHAVIORS)
+        let Some(&counts) = BLOCK_STATE_SECTION_COUNTS.get(state.0 as usize) else {
+            panic!("invalid block state id {}", state.0);
+        };
+        counts
     }
 
     fn block_state_section_counts_with(

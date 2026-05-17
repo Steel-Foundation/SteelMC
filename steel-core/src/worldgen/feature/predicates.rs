@@ -17,7 +17,7 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         biome_zoom_seed: i64,
         origin: BlockPos,
-        biome_filter_feature_id: Option<usize>,
+        biome_filter_feature_key: Option<&Identifier>,
     ) -> bool {
         let biome_id = fuzzed_biome_at_block(
             biome_zoom_seed,
@@ -29,15 +29,17 @@ impl FeatureDecorationRunner {
         let Some(biome) = registry.biomes.by_id(usize::from(biome_id)) else {
             panic!("biome filter resolved unknown biome id {biome_id}");
         };
-        let Some(feature_id) = biome_filter_feature_id else {
+        let Some(target_feature_key) = biome_filter_feature_key else {
             panic!(
                 "Tried to biome check an unregistered feature, or a feature that should not restrict the biome"
             );
         };
 
-        biome.features.iter().flatten().any(|feature_key| {
-            registry.placed_features.id_from_key(feature_key) == Some(feature_id)
-        })
+        biome
+            .features
+            .iter()
+            .flatten()
+            .any(|feature_key| feature_key == target_feature_key)
     }
 
     pub(super) fn test_block_predicate(
@@ -62,22 +64,12 @@ impl FeatureDecorationRunner {
             }
             BlockPredicate::MatchingBlocks { blocks, offset } => {
                 let state = region.block_state(Self::offset(origin, offset));
-                blocks.0.iter().any(|block_key| {
-                    let Some(block) = registry.blocks.by_key(block_key) else {
-                        panic!("block predicate references unknown block {block_key}");
-                    };
-                    state.get_block() == block
-                })
+                blocks.0.contains(&state.get_block())
             }
             BlockPredicate::MatchingFluids { fluids, offset } => {
                 let state = region.block_state(Self::offset(origin, offset));
                 let fluid_state = get_fluid_state_from_block(state);
-                fluids.0.iter().any(|fluid_key| {
-                    let Some(fluid) = registry.fluids.by_key(fluid_key) else {
-                        panic!("block predicate references unknown fluid {fluid_key}");
-                    };
-                    fluid_state.fluid_id == fluid
-                })
+                fluids.0.contains(&fluid_state.fluid_id)
             }
             BlockPredicate::Solid { offset } => {
                 region.block_state(Self::offset(origin, offset)).is_solid()

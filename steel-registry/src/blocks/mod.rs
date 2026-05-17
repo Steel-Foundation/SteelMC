@@ -253,16 +253,36 @@ impl BlockRegistry {
         id
     }
 
+    fn try_block_index(&self, block: BlockRef) -> Option<usize> {
+        if let Some(id) = block.id.get().copied()
+            && self
+                .blocks_by_id
+                .get(id)
+                .is_some_and(|registered| *registered == block)
+        {
+            return Some(id);
+        }
+
+        self.blocks_by_key.get(&block.key).copied()
+    }
+
+    fn block_index(&self, block: BlockRef) -> usize {
+        let Some(id) = self.try_block_index(block) else {
+            panic!("Block not found");
+        };
+        id
+    }
+
     #[must_use]
     pub fn get_base_state_id(&self, block: BlockRef) -> BlockStateId {
-        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        let id = self.block_index(block);
         BlockStateId(self.block_to_base_state[id])
     }
 
     /// Gets the default state ID for a block (base state + default offset)
     #[must_use]
     pub fn get_default_state_id(&self, block: BlockRef) -> BlockStateId {
-        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        let id = self.block_index(block);
         let base = self.block_to_base_state[id];
         BlockStateId(base + block.default_state_offset)
     }
@@ -319,7 +339,20 @@ impl BlockRegistry {
         properties: &[(&str, &str)],
     ) -> Option<BlockStateId> {
         let block = self.by_key(key)?;
-        let block_id = *self.blocks_by_key.get(key)?;
+        self.state_id_from_block_properties(block, properties)
+    }
+
+    /// Gets the state ID for a block with the given properties.
+    ///
+    /// Returns `None` if the block is not registered or if any property
+    /// name/value is invalid.
+    #[must_use]
+    pub fn state_id_from_block_properties(
+        &self,
+        block: BlockRef,
+        properties: &[(&str, &str)],
+    ) -> Option<BlockStateId> {
+        let block_id = self.try_block_index(block)?;
         let base_state_id = self.block_to_base_state[block_id];
 
         // If no properties, just return base state
@@ -578,7 +611,7 @@ impl BlockRegistry {
             .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
             .copied()
             .collect();
-        self.state_id_from_properties(&target.key, &matching)
+        self.state_id_from_block_properties(target, &matching)
             .unwrap_or_else(|| self.get_default_state_id(target))
     }
 }

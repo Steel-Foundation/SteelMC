@@ -3,55 +3,39 @@ use super::runner::FeatureDecorationRunner;
 use crate::worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
-    pub(super) fn block_matches_identifier_list(
-        registry: &Registry,
-        block: BlockRef,
-        identifiers: &IdentifierList,
-    ) -> bool {
-        identifiers.0.iter().any(|block_key| {
-            let Some(candidate) = registry.blocks.by_key(block_key) else {
-                panic!("configured feature references unknown block {block_key}");
-            };
-            block == candidate
-        })
+    pub(super) fn block_matches_ref_list(block: BlockRef, blocks: &BlockRefList) -> bool {
+        blocks.0.contains(&block)
     }
 
     pub(super) fn block_state_from_data(
         registry: &Registry,
         data: &BlockStateData,
     ) -> steel_utils::BlockStateId {
-        WorldgenStateResolver::block_state_from_data(registry, data, "block state provider")
+        WorldgenStateResolver::feature_block_state_from_data(registry, data, "block state provider")
     }
 
-    pub(super) fn fluid_state_from_data(registry: &Registry, data: &FluidStateData) -> FluidState {
-        let Some(fluid) = registry.fluids.by_key(&data.name) else {
-            panic!(
-                "fluid state provider references unknown fluid {}",
-                data.name
-            );
-        };
-
-        let mut amount = Self::default_fluid_amount(fluid);
+    pub(super) fn fluid_state_from_data(data: &FluidStateData) -> FluidState {
+        let mut amount = Self::default_fluid_amount(data.fluid);
         let mut falling = false;
 
-        for (property, value) in &data.properties {
-            match property.as_str() {
-                "falling" if !fluid.is_empty => {
-                    falling = Self::parse_fluid_bool_property(&data.name, property, value);
+        for &(property, value) in data.properties {
+            match property {
+                "falling" if !data.fluid.is_empty => {
+                    falling = Self::parse_fluid_bool_property(&data.fluid.key, property, value);
                 }
-                "level" if !fluid.is_empty && !fluid.is_source => {
-                    amount = Self::parse_flowing_fluid_level(&data.name, value);
+                "level" if !data.fluid.is_empty && !data.fluid.is_source => {
+                    amount = Self::parse_flowing_fluid_level(&data.fluid.key, value);
                 }
                 _ => {
                     panic!(
                         "fluid state provider references unknown property {property} on {}",
-                        data.name
+                        data.fluid.key
                     );
                 }
             }
         }
 
-        FluidState::new(fluid, amount, falling)
+        FluidState::new(data.fluid, amount, falling)
     }
 
     pub(super) const fn default_fluid_amount(fluid: FluidRef) -> u8 {

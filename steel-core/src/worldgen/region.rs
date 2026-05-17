@@ -14,7 +14,6 @@ use std::{
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use simdnbt::owned::NbtCompound;
-use smallvec::SmallVec;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
     blocks::block_state_ext::BlockStateExt as _, fluid::FluidRef, vanilla_blocks,
@@ -53,6 +52,7 @@ pub struct WorldGenRegion<'a> {
     center: ChunkPos,
     chunk_cache_radius: i32,
     chunks: RefCell<Box<[Option<CachedWorldGenChunk<'a>>]>>,
+    worldgen_heightmaps: RefCell<Box<[CachedWorldgenHeightmaps]>>,
     random: RandomSource,
     sub_tick_count: AtomicI64,
 }
@@ -66,7 +66,7 @@ pub struct WorldGenRegion<'a> {
 pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
     region: &'region WorldGenRegion<'world>,
     chunk_cache_radius: i32,
-    chunks: SmallVec<[Option<CachedWorldGenChunk<'region>>; 9]>,
+    chunks: Box<[Option<CachedWorldGenChunk<'region>>]>,
     air: BlockStateId,
     ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
 }
@@ -74,6 +74,37 @@ pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
 struct CachedWorldGenChunk<'region> {
     guard: RwLockReadGuard<'region, ChunkAccess>,
     verified_status: ChunkStatus,
+}
+
+#[derive(Default)]
+struct CachedWorldgenHeightmaps {
+    world_surface_wg: Option<Box<[i32; 256]>>,
+    ocean_floor_wg: Option<Box<[i32; 256]>>,
+}
+
+impl CachedWorldgenHeightmaps {
+    const fn supports(heightmap_type: HeightmapType) -> bool {
+        matches!(
+            heightmap_type,
+            HeightmapType::WorldSurfaceWg | HeightmapType::OceanFloorWg
+        )
+    }
+
+    fn get(&self, heightmap_type: HeightmapType) -> Option<&[i32; 256]> {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg.as_deref(),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg.as_deref(),
+            _ => None,
+        }
+    }
+
+    fn set(&mut self, heightmap_type: HeightmapType, columns: Box<[i32; 256]>) {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => self.world_surface_wg = Some(columns),
+            HeightmapType::OceanFloorWg => self.ocean_floor_wg = Some(columns),
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -100,6 +131,9 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_cache_len =
             usize::try_from(chunk_cache_size.saturating_mul(chunk_cache_size)).unwrap_or(0);
         let chunks = (0..chunk_cache_len).map(|_| None).collect();
+        let worldgen_heightmaps = (0..chunk_cache_len)
+            .map(|_| CachedWorldgenHeightmaps::default())
+            .collect();
 
         Self {
             context,
@@ -108,6 +142,7 @@ impl<'a> WorldGenRegion<'a> {
             center,
             chunk_cache_radius,
             chunks: RefCell::new(chunks),
+            worldgen_heightmaps: RefCell::new(worldgen_heightmaps),
             random,
             sub_tick_count: AtomicI64::new(0),
         }
@@ -529,10 +564,107 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_z = SectionPos::block_to_section_coord(z);
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
+        let column_index = local_x + local_z * 16;
+
+        if let Some(height) =
+            self.cached_worldgen_height_at(heightmap_type, chunk_x, chunk_z, column_index)
+        {
+            return height;
+        }
 
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Carvers, |chunk| {
             chunk.height_at(heightmap_type, local_x, local_z)
         })
+    }
+
+    fn cached_worldgen_height_at(
+        &self,
+        heightmap_type: HeightmapType,
+        chunk_x: i32,
+        chunk_z: i32,
+        column_index: usize,
+    ) -> Option<i32> {
+        if !CachedWorldgenHeightmaps::supports(heightmap_type) {
+            return None;
+        }
+        let cache_index = self.chunk_cache_index(chunk_x, chunk_z)?;
+
+        {
+            let heightmaps = self.worldgen_heightmaps.borrow();
+            let Some(cached) = heightmaps.get(cache_index) else {
+                panic!("Worldgen heightmap cache index {cache_index} escaped its storage");
+            };
+            if let Some(columns) = cached.get(heightmap_type) {
+                return Some(columns[column_index]);
+            }
+        }
+
+        let columns = self.load_worldgen_heightmap_columns(chunk_x, chunk_z, heightmap_type);
+        let height = columns[column_index];
+        let mut heightmaps = self.worldgen_heightmaps.borrow_mut();
+        let Some(cached) = heightmaps.get_mut(cache_index) else {
+            panic!("Worldgen heightmap cache index {cache_index} escaped its storage");
+        };
+        cached.set(heightmap_type, columns);
+        Some(height)
+    }
+
+    fn load_worldgen_heightmap_columns(
+        &self,
+        chunk_x: i32,
+        chunk_z: i32,
+        heightmap_type: HeightmapType,
+    ) -> Box<[i32; 256]> {
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Carvers, |chunk| {
+            Self::worldgen_heightmap_columns_from_chunk(chunk, heightmap_type)
+        })
+    }
+
+    fn worldgen_heightmap_columns_from_chunk(
+        chunk: &ChunkAccess,
+        heightmap_type: HeightmapType,
+    ) -> Box<[i32; 256]> {
+        let ChunkAccess::Proto(proto) = chunk else {
+            let mut columns = Box::new([0; 256]);
+            for local_z in 0..16 {
+                for local_x in 0..16 {
+                    columns[local_x + local_z * 16] =
+                        chunk.height_at(heightmap_type, local_x, local_z);
+                }
+            }
+            return columns;
+        };
+
+        {
+            let heightmaps = proto.heightmaps.read();
+            if let Some(heightmap) = heightmaps.get(heightmap_type) {
+                return Self::copy_heightmap_columns(heightmap, proto.min_y());
+            }
+        }
+
+        let mut heightmaps = proto.heightmaps.write();
+        heightmaps.prime_from_sections(
+            &[heightmap_type],
+            proto.min_y(),
+            proto.height(),
+            &proto.sections.sections,
+        );
+        let Some(heightmap) = heightmaps.get(heightmap_type) else {
+            panic!("heightmap {heightmap_type:?} missing after priming");
+        };
+
+        Self::copy_heightmap_columns(heightmap, proto.min_y())
+    }
+
+    fn copy_heightmap_columns(
+        heightmap: &crate::chunk::heightmap::Heightmap,
+        min_y: i32,
+    ) -> Box<[i32; 256]> {
+        let mut columns = Box::new([0; 256]);
+        for (index, &height) in heightmap.raw_data().iter().enumerate() {
+            columns[index] = i32::from(height) + min_y;
+        }
+        columns
     }
 
     pub(crate) fn bulk_section_access_for_ore<'profile>(

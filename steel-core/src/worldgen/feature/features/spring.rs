@@ -8,8 +8,7 @@ impl FeatureDecorationRunner {
         config: &SpringConfiguration,
         origin: BlockPos,
     ) -> bool {
-        if !Self::block_matches_identifier_list(
-            registry,
+        if !Self::block_matches_ref_list(
             region.block_state(origin.above()).get_block(),
             &config.valid_blocks,
         ) {
@@ -17,8 +16,7 @@ impl FeatureDecorationRunner {
         }
 
         if config.requires_block_below
-            && !Self::block_matches_identifier_list(
-                registry,
+            && !Self::block_matches_ref_list(
                 region.block_state(origin.below()).get_block(),
                 &config.valid_blocks,
             )
@@ -28,11 +26,7 @@ impl FeatureDecorationRunner {
 
         let current_state = region.block_state(origin);
         if !current_state.is_air()
-            && !Self::block_matches_identifier_list(
-                registry,
-                current_state.get_block(),
-                &config.valid_blocks,
-            )
+            && !Self::block_matches_ref_list(current_state.get_block(), &config.valid_blocks)
         {
             return false;
         }
@@ -46,11 +40,7 @@ impl FeatureDecorationRunner {
         ]
         .into_iter()
         .filter(|&pos| {
-            Self::block_matches_identifier_list(
-                registry,
-                region.block_state(pos).get_block(),
-                &config.valid_blocks,
-            )
+            Self::block_matches_ref_list(region.block_state(pos).get_block(), &config.valid_blocks)
         })
         .count();
 
@@ -82,7 +72,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let fluid_state = Self::fluid_state_from_data(registry, &config.state);
+        let fluid_state = Self::fluid_state_from_data(&config.state);
         let block_state = Self::legacy_block_from_fluid_state(registry, fluid_state);
         let placed = region.set_block_state(origin, block_state, UpdateFlags::UPDATE_CLIENTS);
         if placed {
