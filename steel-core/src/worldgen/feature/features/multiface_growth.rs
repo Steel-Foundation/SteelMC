@@ -268,10 +268,6 @@ impl FeatureDecorationRunner {
         )
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Mirrors vanilla MultifaceSpreader"
-    )]
     fn multiface_state_can_be_replaced(
         region: &WorldGenRegion<'_>,
         registry: &Registry,

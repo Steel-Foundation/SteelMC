@@ -123,7 +123,7 @@ impl FeatureDecorationRunner {
         mut cursor: BlockPos,
         mut limit: i32,
     ) -> Option<BlockPos> {
-        while cursor.y() <= region.max_y_exclusive() - 1 && limit > 0 {
+        while cursor.y() < region.max_y_exclusive() && limit > 0 {
             limit -= 1;
             let state = region.block_state(cursor);
             if Self::basalt_columns_cannot_place_on(state.get_block()) {

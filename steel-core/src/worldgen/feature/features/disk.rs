@@ -31,10 +31,6 @@ impl FeatureDecorationRunner {
         placed_any
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "matches vanilla disk column placement state"
-    )]
     pub(in crate::worldgen::feature) fn place_disk_column(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,

@@ -4,7 +4,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::env;
 use std::hint::black_box;
 use std::sync::{
-    Arc, LazyLock, Mutex, Once, Weak,
+    Arc, LazyLock, Once, Weak,
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
@@ -26,6 +26,7 @@ use steel_core::worldgen::{
 };
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -725,7 +726,7 @@ fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
 }
 
 fn run_concurrent_feature_batch_profiled(fixture: ConcurrentFeatureFixture, step: &ChunkStep) {
-    let task_times = Arc::new(Mutex::new(Vec::with_capacity(fixture.targets.len())));
+    let task_times = Arc::new(SyncMutex::new(Vec::with_capacity(fixture.targets.len())));
     let batch_started_at = Instant::now();
     fixture.generation_pool.scope(|scope| {
         for target in &fixture.targets {
@@ -737,20 +738,15 @@ fn run_concurrent_feature_batch_profiled(fixture: ConcurrentFeatureFixture, step
                 let pos = target.get_pos();
                 let started_at = Instant::now();
                 ChunkStatusTasks::generate_features(context, step, &cache, target);
-                task_times
-                    .lock()
-                    .expect("feature batch profile mutex poisoned")
-                    .push(FeatureTaskWallTime {
-                        pos,
-                        elapsed: started_at.elapsed(),
-                    });
+                task_times.lock().push(FeatureTaskWallTime {
+                    pos,
+                    elapsed: started_at.elapsed(),
+                });
             });
         }
     });
     let batch_elapsed = batch_started_at.elapsed();
-    let task_times = task_times
-        .lock()
-        .expect("feature batch profile mutex poisoned");
+    let task_times = task_times.lock();
     log_feature_batch_profile(batch_elapsed, &task_times);
 }
 

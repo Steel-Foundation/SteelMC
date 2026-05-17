@@ -48,29 +48,9 @@ impl WorldgenStateResolver {
         data_properties: impl IntoIterator<Item = (&'a str, &'a str)>,
         context: &str,
     ) -> BlockStateId {
-        let mut properties = registry
-            .blocks
-            .get_properties(registry.blocks.get_default_state_id(block))
-            .into_iter()
-            .map(|(key, value)| (key as &str, value as &str))
-            .collect::<Vec<_>>();
-
-        for (key, value) in data_properties {
-            let Some((_, property_value)) = properties
-                .iter_mut()
-                .find(|(property_key, _)| *property_key == key)
-            else {
-                panic!(
-                    "{context} references unknown property {key} on {}",
-                    block_name
-                );
-            };
-            *property_value = value;
-        }
-
         let Some(state) = registry
             .blocks
-            .state_id_from_block_properties(block, &properties)
+            .state_id_from_block_defaulted_properties(block, data_properties)
         else {
             panic!(
                 "{context} references unknown or invalid state {}",

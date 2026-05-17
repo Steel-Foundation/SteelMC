@@ -308,22 +308,11 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        // Decode the property indices from the relative state index.
-        // Properties are decoded in reverse order (last property = inner loop).
-        let mut index = relative_index;
-        let mut property_values = vec![("", ""); block.properties.len()];
-
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
-            let current_index = (index % count) as usize;
-
-            let possible_values = prop.get_possible_values();
-            property_values[i] = (prop.get_name(), possible_values[current_index]);
-
-            index /= count;
-        }
-
-        property_values
+        Self::decode_property_indices(block, relative_index)
+            .into_iter()
+            .zip(block.properties)
+            .map(|(value_index, prop)| (prop.get_name(), prop.get_possible_values()[value_index]))
+            .collect()
     }
 
     /// Gets the state ID for a block with the given properties.
@@ -355,34 +344,72 @@ impl BlockRegistry {
         let block_id = self.try_block_index(block)?;
         let base_state_id = self.block_to_base_state[block_id];
 
-        // If no properties, just return base state
-        if block.properties.is_empty() {
-            return Some(BlockStateId(base_state_id));
+        let mut property_indices = vec![0usize; block.properties.len()];
+        Self::apply_property_overrides(block, &mut property_indices, properties.iter().copied())?;
+
+        Some(BlockStateId(
+            base_state_id + Self::encode_property_indices(block, &property_indices),
+        ))
+    }
+
+    /// Gets the state ID for a block by applying properties over that block's
+    /// registered default state.
+    ///
+    /// Returns `None` if the block is not registered or if any property
+    /// name/value is invalid.
+    #[must_use]
+    pub fn state_id_from_block_defaulted_properties<'a>(
+        &self,
+        block: BlockRef,
+        properties: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Option<BlockStateId> {
+        let block_id = self.try_block_index(block)?;
+        let base_state_id = self.block_to_base_state[block_id];
+
+        let mut property_indices = Self::decode_property_indices(block, block.default_state_offset);
+        Self::apply_property_overrides(block, &mut property_indices, properties)?;
+
+        Some(BlockStateId(
+            base_state_id + Self::encode_property_indices(block, &property_indices),
+        ))
+    }
+
+    fn decode_property_indices(block: BlockRef, mut offset: u16) -> Vec<usize> {
+        let mut property_indices = vec![0; block.properties.len()];
+
+        for (i, prop) in block.properties.iter().enumerate().rev() {
+            let count = prop.get_possible_values().len() as u16;
+            property_indices[i] = (offset % count) as usize;
+            offset /= count;
         }
 
-        // Build property indices (start with defaults = 0)
-        let mut property_indices = vec![0usize; block.properties.len()];
+        property_indices
+    }
 
-        // Apply provided properties
+    fn apply_property_overrides<'a>(
+        block: BlockRef,
+        property_indices: &mut [usize],
+        properties: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Option<()> {
         for (prop_name, prop_value) in properties {
-            // Find this property in the block's property list
             let prop_idx = block
                 .properties
                 .iter()
-                .position(|p| p.get_name() == *prop_name)?;
+                .position(|p| p.get_name() == prop_name)?;
 
-            // Find the value index
             let prop = block.properties[prop_idx];
             let value_idx = prop
                 .get_possible_values()
                 .iter()
-                .position(|v| *v == *prop_value)?;
+                .position(|v| *v == prop_value)?;
 
             property_indices[prop_idx] = value_idx;
         }
 
-        // Encode property indices to state offset.
-        // Properties are processed in reverse order (last property = inner loop).
+        Some(())
+    }
+
+    fn encode_property_indices(block: BlockRef, property_indices: &[usize]) -> u16 {
         let mut offset = 0u16;
         let mut multiplier = 1u16;
         for (idx, prop) in property_indices.iter().zip(block.properties.iter()).rev() {
@@ -390,7 +417,7 @@ impl BlockRegistry {
             multiplier *= prop.get_possible_values().len() as u16;
         }
 
-        Some(BlockStateId(base_state_id + offset))
+        offset
     }
 
     // Panics if that property isn't supposed to be on this block.
@@ -786,6 +813,27 @@ mod tests {
     }
 
     #[test]
+    fn test_state_id_from_block_defaulted_properties_keeps_missing_defaults() {
+        let registry = create_test_registry();
+        let key = Identifier::vanilla_static("redstone_wire");
+        let block = registry.by_key(&key).expect("redstone_wire should exist");
+
+        let state_id = registry
+            .state_id_from_block_defaulted_properties(block, [("power", "10")])
+            .expect("Should find state");
+
+        let retrieved = registry.get_properties(state_id);
+
+        let power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
+        assert_eq!(power.1, "10");
+
+        for direction in ["east", "north", "south", "west"] {
+            let side = retrieved.iter().find(|(n, _)| *n == direction).unwrap();
+            assert_eq!(side.1, "none");
+        }
+    }
+
+    #[test]
     fn test_state_id_from_properties_empty() {
         let registry = create_test_registry();
         let key = Identifier::vanilla_static("redstone_wire");
@@ -838,6 +886,25 @@ mod tests {
         let invalid_props = [("power", "999")]; // Power only goes 0-15
         let result = registry.state_id_from_properties(&key, &invalid_props);
         assert!(result.is_none(), "Should return None for invalid value");
+    }
+
+    #[test]
+    fn test_state_id_from_properties_rejects_properties_on_propertyless_block() {
+        let registry = create_test_registry();
+        let key = Identifier::vanilla_static("stone");
+        let stone = registry.by_key(&key).expect("stone should exist");
+
+        let result = registry.state_id_from_properties(&key, &[("power", "1")]);
+        assert!(
+            result.is_none(),
+            "Should return None for invalid property on propertyless block"
+        );
+
+        let result = registry.state_id_from_block_defaulted_properties(stone, [("power", "1")]);
+        assert!(
+            result.is_none(),
+            "Should return None for invalid defaulted property on propertyless block"
+        );
     }
 
     #[test]

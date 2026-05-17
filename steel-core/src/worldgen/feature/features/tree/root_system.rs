@@ -30,10 +30,6 @@ impl FeatureDecorationRunner {
         true
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "mirrors vanilla RootSystemFeature.placeDirtAndTree state"
-    )]
     fn place_root_system_dirt_and_tree(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
