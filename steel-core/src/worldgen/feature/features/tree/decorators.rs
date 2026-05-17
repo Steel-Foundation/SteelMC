@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "tree decorators mirror vanilla decorator context"
+)]
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::super::super::vanilla_collections::JavaBlockPosSet;

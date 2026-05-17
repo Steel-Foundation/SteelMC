@@ -484,7 +484,7 @@ impl LevelChunk {
 
         // Add to chunk storage
         self.entities.add(entity.clone());
-        self.register_entity_with_world(&entity, &world);
+        Self::register_entity_with_world(&entity, &world);
 
         // Mark chunk dirty for persistence
         self.mark_unsaved();
@@ -498,13 +498,13 @@ impl LevelChunk {
         };
 
         for entity in self.entities.get_all() {
-            self.register_entity_with_world(&entity, &world);
+            Self::register_entity_with_world(&entity, &world);
         }
 
         true
     }
 
-    fn register_entity_with_world(&self, entity: &SharedEntity, world: &Arc<World>) {
+    fn register_entity_with_world(entity: &SharedEntity, world: &Arc<World>) {
         use crate::entity::EntityChunkCallback;
 
         // Set up callback for chunk/section tracking

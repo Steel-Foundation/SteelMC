@@ -116,10 +116,11 @@ pub use weeping_vines_block::WeepingVinesBlock;
 pub use weeping_vines_plant_block::WeepingVinesPlantBlock;
 pub use wither_rose_block::WitherRoseBlock;
 
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::blocks::shapes;
+use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::FluidState;
+use steel_registry::vanilla_block_tags;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
@@ -129,7 +130,6 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::LevelReader;
 
-pub(super) type BlockRef = steel_registry::blocks::BlockRef;
 pub(super) type BlockTagRef<'a> = &'a steel_utils::Identifier;
 
 pub(super) fn survives_on_tag(
@@ -173,7 +173,7 @@ pub(super) fn can_attach_to_multiface(
 }
 
 /// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
-pub(super) fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
+pub(super) const fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
     match direction {
         Direction::Up => &BlockStateProperties::UP,
         Direction::Down => &BlockStateProperties::DOWN,
@@ -254,7 +254,7 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     let attached_state = world.get_block_state(pos.below());
     if REGISTRY.blocks.is_in_tag(
         attached_state.get_block(),
-        &steel_registry::vanilla_block_tags::CANNOT_SUPPORT_KELP_TAG,
+        &vanilla_block_tags::CANNOT_SUPPORT_KELP_TAG,
     ) {
         return false;
     }

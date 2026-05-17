@@ -4,6 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 use crate::chunk::section::{BlockStateSectionCounts, ChunkSection};
 use crate::worldgen::state_resolver::WorldgenStateResolver;
 use smallvec::SmallVec;
+use std::f32::consts::PI;
 use std::time::Instant;
 use steel_utils::PackedSectionBlockPos;
 use steel_utils::math::mth;
@@ -19,10 +20,10 @@ impl FeatureDecorationRunner {
         if config.size <= 0 {
             return false;
         }
-        let direction = random.next_f32() * std::f32::consts::PI;
+        let direction = random.next_f32() * PI;
         let spread_xz = config.size as f32 / 8.0;
         let spread_xz_ceil = spread_xz.ceil() as i32;
-        let max_radius = ((config.size as f32 / 16.0 * 2.0 + 1.0) / 2.0).ceil() as i32;
+        let max_radius = f32::midpoint(config.size as f32 / 16.0 * 2.0, 1.0).ceil() as i32;
         let sin = f64::from(direction).sin();
         let cos = f64::from(direction).cos();
         let x0 = f64::from(origin.x()) + sin * f64::from(spread_xz);
@@ -53,6 +54,7 @@ impl FeatureDecorationRunner {
 
     #[expect(
         clippy::too_many_arguments,
+        clippy::too_many_lines,
         reason = "mirrors vanilla ore vein placement inputs"
     )]
     pub(in crate::worldgen::feature) fn do_place_ore(
@@ -80,7 +82,7 @@ impl FeatureDecorationRunner {
         for i in 0..size {
             let step = i as f32 / config.size as f32;
             let size_factor = random.next_f64() * f64::from(config.size) / 16.0;
-            let radius_wave = mth::sin(f64::from(std::f32::consts::PI * step)) + 1.0;
+            let radius_wave = mth::sin(f64::from(PI * step)) + 1.0;
             let radius = f64::from(radius_wave) * size_factor + 1.0;
             vein_nodes[i] = [
                 lerp(f64::from(step), x0, x1),
@@ -167,12 +169,12 @@ impl FeatureDecorationRunner {
                     &mut pending_no_air_sections,
                 )
             };
-            if let Some(started_at) = candidate_started_at {
-                if let Some(stats) = profile.stats() {
-                    stats
-                        .borrow_mut()
-                        .record_candidate_time(started_at.elapsed());
-                }
+            if let Some(started_at) = candidate_started_at
+                && let Some(stats) = profile.stats()
+            {
+                stats
+                    .borrow_mut()
+                    .record_candidate_time(started_at.elapsed());
             }
 
             if batch_no_air_exposure {
@@ -186,12 +188,12 @@ impl FeatureDecorationRunner {
                         |block_state| targets.matching_replacement(registry, block_state),
                     );
                 }
-                if let Some(started_at) = batch_apply_started_at {
-                    if let Some(stats) = profile.stats() {
-                        stats
-                            .borrow_mut()
-                            .record_batch_apply_time(started_at.elapsed());
-                    }
+                if let Some(started_at) = batch_apply_started_at
+                    && let Some(stats) = profile.stats()
+                {
+                    stats
+                        .borrow_mut()
+                        .record_batch_apply_time(started_at.elapsed());
                 }
             }
         }
@@ -252,15 +254,15 @@ impl FeatureDecorationRunner {
                 for y in y_min..=y_max {
                     let y_offset = i64::from(y) - i64::from(y_start);
                     let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
-                    let xy_distance_squared = x_distance_squared + y_distance * y_distance;
-                    if xy_distance_squared >= 1.0 {
+                    let x_y_distance_squared = x_distance_squared + y_distance * y_distance;
+                    if x_y_distance_squared >= 1.0 {
                         continue;
                     }
 
                     for z in z_min..=z_max {
                         let z_offset = i64::from(z) - i64::from(z_start);
                         let z_distance = (f64::from(z) + 0.5 - node[2]) / radius;
-                        if xy_distance_squared + z_distance * z_distance >= 1.0 {
+                        if x_y_distance_squared + z_distance * z_distance >= 1.0 {
                             continue;
                         }
 
@@ -320,9 +322,11 @@ impl FeatureDecorationRunner {
         config: &OreConfiguration,
         origin: BlockPos,
     ) -> bool {
-        if config.size < 0 {
-            panic!("scattered ore size {} is negative", config.size);
-        }
+        assert!(
+            config.size >= 0,
+            "scattered ore size {} is negative",
+            config.size
+        );
 
         let targets = ResolvedOreTargets::from_config(registry, config);
         let tries = random.next_i32_bounded(config.size + 1);
@@ -360,7 +364,7 @@ impl FeatureDecorationRunner {
         pos: BlockPos,
     ) -> bool {
         let block_state = region.block_state(pos);
-        let block_id = targets.block_id_for_state(registry, block_state);
+        let block_id = ResolvedOreTargets::block_id_for_state(registry, block_state);
         for target in targets.iter() {
             if Self::can_place_resolved_ore(region, registry, random, config, target, pos, block_id)
             {
@@ -386,7 +390,7 @@ impl FeatureDecorationRunner {
         }
 
         let block_state = sections.ore_target_block_state(pos);
-        let block_id = targets.block_id_for_state(registry, block_state);
+        let block_id = ResolvedOreTargets::block_id_for_state(registry, block_state);
         for target in targets.iter() {
             if Self::can_place_resolved_ore_in_bulk(
                 sections, registry, random, config, target, pos, block_id,
@@ -561,7 +565,7 @@ impl ResolvedOreTargets {
                     let block_ids = registry
                         .blocks
                         .iter_tag(tag)
-                        .map(|block| block.id())
+                        .map(steel_registry::RegistryEntry::id)
                         .collect();
                     ResolvedOreRuleTest::Tag(block_ids)
                 }
@@ -591,7 +595,7 @@ impl ResolvedOreTargets {
         registry: &Registry,
         state: BlockStateId,
     ) -> Option<(BlockStateId, BlockStateSectionCounts)> {
-        let block_id = self.block_id_for_state(registry, state);
+        let block_id = Self::block_id_for_state(registry, state);
         self.targets.iter().find_map(|target| {
             target
                 .matches_block_id(block_id)
@@ -599,7 +603,7 @@ impl ResolvedOreTargets {
         })
     }
 
-    fn block_id_for_state(&self, registry: &Registry, state: BlockStateId) -> usize {
+    fn block_id_for_state(registry: &Registry, state: BlockStateId) -> usize {
         let Some(&block_id) = registry.blocks.state_to_block_id.get(state.0 as usize) else {
             panic!("ore feature received invalid block state id {}", state.0);
         };
@@ -617,7 +621,7 @@ impl ResolvedOreTarget {
 }
 
 impl PendingOreSectionKey {
-    fn from_in_height_coords(min_y: i32, x: i32, y: i32, z: i32) -> Self {
+    const fn from_in_height_coords(min_y: i32, x: i32, y: i32, z: i32) -> Self {
         Self {
             chunk_x: SectionPos::block_to_section_coord(x),
             chunk_z: SectionPos::block_to_section_coord(z),

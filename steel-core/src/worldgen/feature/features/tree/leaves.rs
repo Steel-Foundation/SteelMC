@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "tree shape scanning mirrors vanilla neighbor update state"
+)]
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::super::super::vanilla_collections::JavaBlockPosSet;
@@ -249,7 +254,7 @@ impl FeatureDecorationRunner {
         Self::tree_optional_leaf_distance_at(registry, state).unwrap_or(7)
     }
 
-    fn tree_can_schedule_tick_at(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+    const fn tree_can_schedule_tick_at(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         region.can_write_to_chunk(
             SectionPos::block_to_section_coord(pos.x()),
             SectionPos::block_to_section_coord(pos.z()),

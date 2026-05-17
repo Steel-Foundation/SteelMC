@@ -1,3 +1,11 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "trunk placement helpers mirror vanilla placement state"
+)]
+
+use std::f32::consts::TAU;
+use std::f64::consts::PI;
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement, abs_i32};
@@ -352,7 +360,7 @@ impl FeatureDecorationRunner {
 
         let mut branch_height = tree_height - 2 - random.next_i32_bounded(4);
         while branch_height > tree_height / 2 {
-            let angle = random.next_f32() * std::f32::consts::TAU;
+            let angle = random.next_f32() * TAU;
             let mut branch_x = 0;
             let mut branch_z = 0;
 
@@ -809,7 +817,7 @@ impl FeatureDecorationRunner {
 
         for ox in -1..=2 {
             for oz in -1..=2 {
-                if ox >= 0 && ox <= 1 && oz >= 0 && oz <= 1 {
+                if (0..=1).contains(&ox) && (0..=1).contains(&oz) {
                     continue;
                 }
                 if random.next_i32_bounded(3) > 0 {
@@ -866,7 +874,7 @@ impl FeatureDecorationRunner {
                 for _ in 0..clusters_per_y {
                     let radius = f64::from(tree_shape)
                         * (f64::from(random.next_f32()) + FANCY_BRANCH_LENGTH_MAGIC);
-                    let angle = f64::from(random.next_f32() * 2.0_f32) * std::f64::consts::PI;
+                    let angle = f64::from(random.next_f32() * 2.0_f32) * PI;
                     let x = radius * angle.sin() + 0.5;
                     let z = radius * angle.cos() + 0.5;
                     let check_start = origin.offset(floor(x), relative_y - 1, floor(z));
@@ -1025,7 +1033,7 @@ impl FeatureDecorationRunner {
     }
 
     fn trim_fancy_tree_branch(height: i32, local_y: i32) -> bool {
-        local_y as f64 >= height as f64 * 0.2
+        f64::from(local_y) >= f64::from(height) * 0.2
     }
 
     fn make_fancy_tree_branches(
@@ -1213,11 +1221,19 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "fancy tree shape tests assert exact vanilla sentinel values"
+    )]
     fn fancy_tree_shape_rejects_lower_third() {
         assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 3), -1.0);
     }
 
     #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "fancy tree shape tests assert exact vanilla crown values"
+    )]
     fn fancy_tree_shape_uses_half_circle_crown() {
         assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 6), 3.0);
         assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 12), 0.0);

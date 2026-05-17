@@ -98,7 +98,7 @@ impl EndCrystalEntity {
         self.rotation.store((yaw, pitch));
     }
 
-    fn nbt_bool(value: bool) -> i8 {
+    const fn nbt_bool(value: bool) -> i8 {
         if value { 1 } else { 0 }
     }
 }

@@ -434,7 +434,7 @@ impl ChunkSection {
         }
     }
 
-    fn apply_count_change(
+    const fn apply_count_change(
         &mut self,
         old_counts: BlockStateSectionCounts,
         new_counts: BlockStateSectionCounts,

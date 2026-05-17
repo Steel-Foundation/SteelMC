@@ -251,7 +251,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn noise_state_index(state_count: usize, noise_value: f64) -> usize {
-        let placement_value = ((1.0 + noise_value) / 2.0).clamp(0.0, 0.9999);
+        let placement_value = f64::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
         (placement_value * state_count as f64) as usize
     }
 

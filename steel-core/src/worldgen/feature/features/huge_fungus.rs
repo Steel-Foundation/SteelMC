@@ -71,7 +71,7 @@ impl FeatureDecorationRunner {
         total_height: i32,
         is_huge: bool,
     ) {
-        let stem_radius: i32 = if is_huge { 1 } else { 0 };
+        let stem_radius: i32 = i32::from(is_huge);
 
         for dx in -stem_radius..=stem_radius {
             for dz in -stem_radius..=stem_radius {

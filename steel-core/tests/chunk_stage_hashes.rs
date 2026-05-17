@@ -7,11 +7,12 @@
 //! Tests all dimensions (overworld, nether, end) using the new JSON format
 //! with a `dimensions` wrapper.
 
+use std::env;
 use std::fmt::Write;
 use std::fs;
 use std::io::{BufReader, Cursor, Read as IoRead};
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use flate2::read::GzDecoder;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -32,6 +33,8 @@ use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
+use tokio::runtime::Runtime;
+use toml::map::Map;
 
 #[derive(Deserialize, Debug)]
 struct ChunkStageEntry {
@@ -103,7 +106,7 @@ fn debug_chunk_filter() -> Option<FxHashSet<(i32, i32)>> {
     let mut chunks = FxHashSet::default();
     chunks.extend(DEBUG_CHUNKS.iter().copied());
 
-    if let Ok(chunk) = std::env::var(DEBUG_CHUNK_ENV) {
+    if let Ok(chunk) = env::var(DEBUG_CHUNK_ENV) {
         let Some((x, z)) = chunk.split_once(',') else {
             panic!("{DEBUG_CHUNK_ENV} must be formatted as '<chunk_x>,<chunk_z>'");
         };
@@ -116,7 +119,7 @@ fn debug_chunk_filter() -> Option<FxHashSet<(i32, i32)>> {
         chunks.insert((chunk_x, chunk_z));
     }
 
-    if let Ok(cluster) = std::env::var(DEBUG_CLUSTER_ENV) {
+    if let Ok(cluster) = env::var(DEBUG_CLUSTER_ENV) {
         let Some((x, z)) = cluster.split_once(',') else {
             panic!("{DEBUG_CLUSTER_ENV} must be formatted as '<chunk_x>,<chunk_z>'");
         };
@@ -138,13 +141,13 @@ fn debug_chunk_filter() -> Option<FxHashSet<(i32, i32)>> {
 }
 
 fn debug_dimension_filter() -> Option<String> {
-    std::env::var(DEBUG_DIMENSION_ENV)
+    env::var(DEBUG_DIMENSION_ENV)
         .ok()
         .filter(|dimension| !dimension.is_empty())
 }
 
 fn debug_stage_filter() -> Option<String> {
-    std::env::var(DEBUG_STAGE_ENV)
+    env::var(DEBUG_STAGE_ENV)
         .ok()
         .filter(|stage| !stage.is_empty())
 }
@@ -164,15 +167,12 @@ fn empty_proto_chunk(
         ChunkPos::new(pos.0, pos.1),
         min_y,
         height,
-        std::sync::Weak::new(),
+        Weak::new(),
     );
     ChunkAccess::Proto(proto)
 }
 
-fn chunk_or_panic(
-    chunks: &FxHashMap<(i32, i32), ChunkAccess>,
-    pos: (i32, i32),
-) -> &ChunkAccess {
+fn chunk_or_panic(chunks: &FxHashMap<(i32, i32), ChunkAccess>, pos: (i32, i32)) -> &ChunkAccess {
     match chunks.get(&pos) {
         Some(chunk) => chunk,
         None => panic!("Missing test chunk ({}, {})", pos.0, pos.1),
@@ -185,9 +185,7 @@ fn create_test_world(
     seed: u64,
     generator: Arc<ChunkGeneratorType>,
 ) -> Arc<World> {
-    let runtime = Arc::new(
-        tokio::runtime::Runtime::new().expect("failed to create chunk-stage hash test runtime"),
-    );
+    let runtime = Arc::new(Runtime::new().expect("failed to create chunk-stage hash test runtime"));
     let generation_pool = Arc::new(
         rayon::ThreadPoolBuilder::new()
             .num_threads(1)
@@ -196,7 +194,7 @@ fn create_test_world(
             .expect("failed to create chunk-stage hash test rayon pool"),
     );
     let dim_short = dim_key.strip_prefix("minecraft:").unwrap_or(dim_key);
-    let empty_config = toml::Value::Table(toml::map::Map::new());
+    let empty_config = toml::Value::Table(Map::new());
     let generation_settings = WorldGenerationSettings::from_generator_config(
         Identifier::new(Identifier::VANILLA_NAMESPACE, dim_short.to_owned()),
         &empty_config,
@@ -665,7 +663,7 @@ fn chunk_stage_hashes_inner() {
         .get_radius_of(ChunkStatus::Carvers) as i32;
     let debug_dimension = debug_dimension_filter();
     let debug_stage = debug_stage_filter();
-    let stop_after_first_mismatch = std::env::var_os(DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV).is_some();
+    let stop_after_first_mismatch = env::var_os(DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV).is_some();
 
     for &dim_key in DIMENSION_ORDER {
         if debug_dimension
@@ -922,27 +920,21 @@ fn chunk_stage_hashes_inner() {
             };
 
             if stage == FEATURE_STAGE {
-                let holders = match &feature_holders {
-                    Some(holders) => holders,
-                    None => panic!("features stage missing chunk holders"),
+                let Some(holders) = &feature_holders else {
+                    panic!("features stage missing chunk holders");
                 };
-                let context = match &feature_context {
-                    Some(context) => context,
-                    None => panic!("features stage missing worldgen context"),
+                let Some(context) = &feature_context else {
+                    panic!("features stage missing worldgen context");
                 };
 
                 for &(chunk_x, chunk_z, _) in &stage_entries {
                     let center = ChunkPos::new(chunk_x, chunk_z);
-                    let center_holder = match holders.get(&(chunk_x, chunk_z)) {
-                        Some(holder) => holder,
-                        None => panic!("Missing feature center chunk ({chunk_x}, {chunk_z})"),
+                    let Some(center_holder) = holders.get(&(chunk_x, chunk_z)) else {
+                        panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
                     };
                     {
-                        let chunk = match center_holder.try_chunk(ChunkStatus::Carvers) {
-                            Some(chunk) => chunk,
-                            None => {
-                                panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing")
-                            }
+                        let Some(chunk) = center_holder.try_chunk(ChunkStatus::Carvers) else {
+                            panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                         };
                         chunk.prime_final_heightmaps();
                     }
@@ -971,17 +963,14 @@ fn chunk_stage_hashes_inner() {
 
             for (i, &(chunk_x, chunk_z, expected_hash)) in stage_entries.iter().enumerate() {
                 let actual_hash = if stage == FEATURE_STAGE {
-                    let holders = match &feature_holders {
-                        Some(holders) => holders,
-                        None => panic!("features stage missing chunk holders"),
+                    let Some(holders) = &feature_holders else {
+                        panic!("features stage missing chunk holders");
                     };
-                    let holder = match holders.get(&(chunk_x, chunk_z)) {
-                        Some(holder) => holder,
-                        None => panic!("Missing feature center chunk ({chunk_x}, {chunk_z})"),
+                    let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
+                        panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
                     };
-                    let chunk = match holder.try_chunk(ChunkStatus::Carvers) {
-                        Some(chunk) => chunk,
-                        None => panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing"),
+                    let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
+                        panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                     };
                     compute_block_hash(chunk.sections())
                 } else {
@@ -1031,21 +1020,14 @@ fn chunk_stage_hashes_inner() {
                         .and_then(|refs| refs.get(&(chunk_x, chunk_z)))
                         .map(|ref_data| {
                             if stage == FEATURE_STAGE {
-                                let holders = match &feature_holders {
-                                    Some(holders) => holders,
-                                    None => panic!("features stage missing chunk holders"),
+                                let Some(holders) = &feature_holders else {
+                                    panic!("features stage missing chunk holders");
                                 };
-                                let holder = match holders.get(&(chunk_x, chunk_z)) {
-                                    Some(holder) => holder,
-                                    None => panic!(
-                                        "Missing feature center chunk ({chunk_x}, {chunk_z})"
-                                    ),
+                                let Some(holder) = holders.get(&(chunk_x, chunk_z)) else {
+                                    panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
                                 };
-                                let chunk = match holder.try_chunk(ChunkStatus::Carvers) {
-                                    Some(chunk) => chunk,
-                                    None => panic!(
-                                        "Feature center chunk ({chunk_x}, {chunk_z}) missing"
-                                    ),
+                                let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
+                                    panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                                 };
                                 diff_chunk(chunk.sections(), ref_data, min_y)
                             } else {

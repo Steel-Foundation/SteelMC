@@ -1,6 +1,8 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
+use std::f32::consts::{PI, TAU};
 use steel_utils::math::mth;
+use steel_utils::value_providers::FloatProvider;
 
 struct LargeDripstone {
     root: BlockPos,
@@ -122,7 +124,7 @@ impl FeatureDecorationRunner {
 
         let angle_increment = 6.0 / xz_radius as f32;
         let mut angle = 0.0f32;
-        while angle < std::f32::consts::TAU {
+        while angle < TAU {
             let dx = (mth::cos(f64::from(angle)) * xz_radius as f32) as i32;
             let dz = (mth::sin(f64::from(angle)) * xz_radius as f32) as i32;
             if Self::is_empty_or_water_or_lava(region.block_state(center.offset(dx, 0, dz))) {
@@ -145,8 +147,8 @@ impl LargeDripstone {
         pointing_up: bool,
         random: &mut WorldgenRandom,
         radius: i32,
-        bluntness: steel_utils::value_providers::FloatProvider,
-        height_scale: steel_utils::value_providers::FloatProvider,
+        bluntness: FloatProvider,
+        height_scale: FloatProvider,
     ) -> Self {
         Self {
             root,
@@ -279,14 +281,9 @@ impl LargeDripstone {
 }
 
 impl WindOffsetter {
-    fn new(
-        origin_y: i32,
-        random: &mut WorldgenRandom,
-        wind_speed_range: steel_utils::value_providers::FloatProvider,
-    ) -> Self {
+    fn new(origin_y: i32, random: &mut WorldgenRandom, wind_speed_range: FloatProvider) -> Self {
         let speed = wind_speed_range.sample(random);
-        let direction =
-            FeatureDecorationRunner::random_f32_between(random, 0.0, std::f32::consts::PI);
+        let direction = FeatureDecorationRunner::random_f32_between(random, 0.0, PI);
         Self {
             origin_y,
             wind_speed: Some((

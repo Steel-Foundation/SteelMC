@@ -3,6 +3,7 @@ use steel_utils::{BoundingBox, Rotation};
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use steel_registry::structure_processor::StructureProcessorKind;
 
 const VANILLA_ROTATIONS: [Rotation; 4] = [
     Rotation::None,
@@ -19,16 +20,16 @@ impl FeatureDecorationRunner {
         config: &FossilConfiguration,
         origin: BlockPos,
     ) -> bool {
-        if config.fossil_structures.is_empty() || config.overlay_structures.is_empty() {
-            panic!("fossil feature must have at least one base and overlay structure");
-        }
-        if config.fossil_structures.len() != config.overlay_structures.len() {
-            panic!(
-                "fossil feature has {} base structures but {} overlay structures",
-                config.fossil_structures.len(),
-                config.overlay_structures.len()
-            );
-        }
+        assert!(
+            !(config.fossil_structures.is_empty() || config.overlay_structures.is_empty()),
+            "fossil feature must have at least one base and overlay structure"
+        );
+        assert!(
+            config.fossil_structures.len() == config.overlay_structures.len(),
+            "fossil feature has {} base structures but {} overlay structures",
+            config.fossil_structures.len(),
+            config.overlay_structures.len()
+        );
 
         let rotation = VANILLA_ROTATIONS[random.next_i32_bounded(4) as usize];
         let structure_count = config.fossil_structures.len();
@@ -109,7 +110,7 @@ impl FeatureDecorationRunner {
         registry: &'a Registry,
         key: &Identifier,
         context: &str,
-    ) -> &'a [steel_registry::structure_processor::StructureProcessorKind] {
+    ) -> &'a [StructureProcessorKind] {
         let Some(processor_list) = registry.structure_processors.by_key(key) else {
             panic!("{context} references unknown processor list {key}");
         };

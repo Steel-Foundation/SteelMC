@@ -193,7 +193,7 @@ impl FeatureDecorationRunner {
         )
     }
 
-    fn lake_index(x: i32, y: i32, z: i32) -> usize {
+    const fn lake_index(x: i32, y: i32, z: i32) -> usize {
         ((x * 16 + z) * 8 + y) as usize
     }
 }

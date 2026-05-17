@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "mangrove root simulation mirrors vanilla recursion state"
+)]
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::TreePlacement;

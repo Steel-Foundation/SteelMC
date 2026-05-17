@@ -165,6 +165,6 @@ impl fmt::Debug for BlockEntityStorage {
         f.debug_struct("BlockEntityStorage")
             .field("len", &self.len())
             .field("ticking_len", &self.tickers.lock().len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }

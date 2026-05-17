@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "geode placement is kept linear to preserve vanilla parity"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use rustc_hash::FxHashMap;

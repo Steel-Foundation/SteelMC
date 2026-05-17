@@ -1,5 +1,6 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use steel_registry::vanilla_block_entity_types;
 
 const SPAWN_BONUS_CHEST: &str = "minecraft:chests/spawn_bonus_chest";
 
@@ -27,7 +28,7 @@ impl FeatureDecorationRunner {
                     Self::set_loot_table_block_entity(
                         region,
                         chest_pos,
-                        &steel_registry::vanilla_block_entity_types::CHEST,
+                        &vanilla_block_entity_types::CHEST,
                         chest,
                         SPAWN_BONUS_CHEST,
                         random.next_i64(),

@@ -1,5 +1,6 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -45,7 +46,7 @@ impl ChorusPlantBlock {
         let block = state.get_block();
 
         state = state.set_value(
-            &steel_registry::blocks::properties::BlockStateProperties::DOWN,
+            &BlockStateProperties::DOWN,
             down.get_block() == block
                 || down.get_block() == &vanilla_blocks::CHORUS_FLOWER
                 || REGISTRY.blocks.is_in_tag(
@@ -54,23 +55,23 @@ impl ChorusPlantBlock {
                 ),
         );
         state = state.set_value(
-            &steel_registry::blocks::properties::BlockStateProperties::UP,
+            &BlockStateProperties::UP,
             up.get_block() == block || up.get_block() == &vanilla_blocks::CHORUS_FLOWER,
         );
         state = state.set_value(
-            &steel_registry::blocks::properties::BlockStateProperties::NORTH,
+            &BlockStateProperties::NORTH,
             north.get_block() == block || north.get_block() == &vanilla_blocks::CHORUS_FLOWER,
         );
         state = state.set_value(
-            &steel_registry::blocks::properties::BlockStateProperties::EAST,
+            &BlockStateProperties::EAST,
             east.get_block() == block || east.get_block() == &vanilla_blocks::CHORUS_FLOWER,
         );
         state = state.set_value(
-            &steel_registry::blocks::properties::BlockStateProperties::SOUTH,
+            &BlockStateProperties::SOUTH,
             south.get_block() == block || south.get_block() == &vanilla_blocks::CHORUS_FLOWER,
         );
         state.set_value(
-            &steel_registry::blocks::properties::BlockStateProperties::WEST,
+            &BlockStateProperties::WEST,
             west.get_block() == block || west.get_block() == &vanilla_blocks::CHORUS_FLOWER,
         )
     }

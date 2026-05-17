@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "dripstone cluster placement follows vanilla's linear algorithm"
+)]
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 

@@ -1,7 +1,12 @@
-use steel_registry::vanilla_block_entity_types;
+#![expect(
+    clippy::too_many_arguments,
+    reason = "sculk spreading helpers mirror vanilla cursor state"
+)]
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use core::mem;
+use steel_registry::vanilla_block_entity_types;
 
 const SCULK_DEFAULT_SPREAD_TYPES: [SculkSpreadType; 3] = [
     SculkSpreadType::SamePosition,
@@ -23,7 +28,7 @@ struct SculkSpreadPos {
 }
 
 #[derive(Clone, Copy)]
-enum SculkBehaviourKind {
+enum SculkBehaviorKind {
     Default,
     Sculk,
     SculkVein,
@@ -43,7 +48,7 @@ impl SculkSpreader {
     const MAX_CHARGE: i32 = 1000;
     const MAX_CURSORS: usize = 32;
 
-    fn worldgen() -> Self {
+    const fn worldgen() -> Self {
         Self {
             is_world_generation: true,
             replaceable_blocks: vanilla_block_tags::SCULK_REPLACEABLE_WORLD_GEN_TAG,
@@ -85,7 +90,7 @@ struct SculkChargeCursor {
 impl SculkChargeCursor {
     const MAX_CURSOR_DISTANCE: i32 = 1024;
 
-    fn new(pos: BlockPos, charge: i32) -> Self {
+    const fn new(pos: BlockPos, charge: i32) -> Self {
         Self {
             pos,
             charge,
@@ -179,7 +184,7 @@ impl FeatureDecorationRunner {
 
     fn can_sculk_spread_from(region: &WorldGenRegion<'_>, origin: BlockPos) -> bool {
         let start = region.block_state(origin);
-        if !matches!(Self::sculk_behaviour(start), SculkBehaviourKind::Default) {
+        if !matches!(Self::sculk_behavior(start), SculkBehaviorKind::Default) {
             return true;
         }
 
@@ -208,7 +213,7 @@ impl FeatureDecorationRunner {
             return;
         }
 
-        let cursors = core::mem::take(&mut spreader.cursors);
+        let cursors = mem::take(&mut spreader.cursors);
         for mut cursor in cursors {
             if Self::sculk_cursor_is_pos_unreasonable(cursor.pos, origin) {
                 continue;
@@ -248,7 +253,7 @@ impl FeatureDecorationRunner {
         }
 
         let mut current_state = region.block_state(cursor.pos);
-        let mut behaviour = Self::sculk_behaviour(current_state);
+        let mut behavior = Self::sculk_behavior(current_state);
         if spread_veins
             && Self::sculk_attempt_spread_vein(
                 region,
@@ -257,12 +262,12 @@ impl FeatureDecorationRunner {
                 current_state,
                 cursor.facings.as_deref(),
                 spreader.is_world_generation,
-                behaviour,
+                behavior,
             )
-            && Self::sculk_can_change_block_state_on_spread(behaviour)
+            && Self::sculk_can_change_block_state_on_spread(behavior)
         {
             current_state = region.block_state(cursor.pos);
-            behaviour = Self::sculk_behaviour(current_state);
+            behavior = Self::sculk_behavior(current_state);
         }
 
         cursor.charge = Self::sculk_attempt_use_charge(
@@ -273,7 +278,7 @@ impl FeatureDecorationRunner {
             spreader,
             spread_veins,
             cursor,
-            behaviour,
+            behavior,
         );
         if cursor.charge <= 0 {
             Self::sculk_on_discharged(region, current_state, cursor.pos);
@@ -294,14 +299,14 @@ impl FeatureDecorationRunner {
         }
 
         if !matches!(
-            Self::sculk_behaviour(current_state),
-            SculkBehaviourKind::Default
+            Self::sculk_behavior(current_state),
+            SculkBehaviorKind::Default
         ) {
             cursor.facings = Some(Self::sculk_available_faces(current_state));
         }
 
-        cursor.decay_delay = Self::sculk_update_decay_delay(behaviour, cursor.decay_delay);
-        cursor.update_delay = Self::sculk_spread_delay(behaviour);
+        cursor.decay_delay = Self::sculk_update_decay_delay(behavior, cursor.decay_delay);
+        cursor.update_delay = Self::sculk_spread_delay(behavior);
     }
 
     fn sculk_attempt_spread_vein(
@@ -311,10 +316,10 @@ impl FeatureDecorationRunner {
         state: BlockStateId,
         facings: Option<&[Direction]>,
         post_process: bool,
-        behaviour: SculkBehaviourKind,
+        behavior: SculkBehaviorKind,
     ) -> bool {
-        match behaviour {
-            SculkBehaviourKind::Default => match facings {
+        match behavior {
+            SculkBehaviorKind::Default => match facings {
                 None => {
                     Self::sculk_vein_spread_all(region, registry, state, pos, post_process, true)
                         > 0
@@ -330,7 +335,7 @@ impl FeatureDecorationRunner {
                         > 0
                 }
             },
-            SculkBehaviourKind::Sculk | SculkBehaviourKind::SculkVein => {
+            SculkBehaviorKind::Sculk | SculkBehaviorKind::SculkVein => {
                 Self::sculk_vein_spread_all(region, registry, state, pos, post_process, false) > 0
             }
         }
@@ -344,20 +349,20 @@ impl FeatureDecorationRunner {
         spreader: &SculkSpreader,
         spread_veins: bool,
         cursor: &SculkChargeCursor,
-        behaviour: SculkBehaviourKind,
+        behavior: SculkBehaviorKind,
     ) -> i32 {
-        match behaviour {
-            SculkBehaviourKind::Default => {
+        match behavior {
+            SculkBehaviorKind::Default => {
                 if cursor.decay_delay > 0 {
                     cursor.charge
                 } else {
                     0
                 }
             }
-            SculkBehaviourKind::Sculk => {
+            SculkBehaviorKind::Sculk => {
                 Self::sculk_block_attempt_use_charge(region, random, origin, spreader, cursor)
             }
-            SculkBehaviourKind::SculkVein => Self::sculk_vein_attempt_use_charge(
+            SculkBehaviorKind::SculkVein => Self::sculk_vein_attempt_use_charge(
                 region,
                 registry,
                 random,
@@ -785,10 +790,8 @@ impl FeatureDecorationRunner {
         for offset in Self::sculk_randomized_non_corner_neighbor_offsets(random) {
             let neighbor = pos.offset(offset.x(), offset.y(), offset.z());
             let transferee = region.block_state(neighbor);
-            if matches!(
-                Self::sculk_behaviour(transferee),
-                SculkBehaviourKind::Default
-            ) || !Self::sculk_is_movement_unobstructed(region, pos, neighbor)
+            if matches!(Self::sculk_behavior(transferee), SculkBehaviorKind::Default)
+                || !Self::sculk_is_movement_unobstructed(region, pos, neighbor)
             {
                 continue;
             }
@@ -866,7 +869,7 @@ impl FeatureDecorationRunner {
             .is_face_sturdy(direction.opposite())
     }
 
-    fn sculk_direction_from_axis_delta(axis: Axis, delta: i32) -> Direction {
+    const fn sculk_direction_from_axis_delta(axis: Axis, delta: i32) -> Direction {
         match (axis, delta < 0) {
             (Axis::X, true) => Direction::West,
             (Axis::X, false) => Direction::East,
@@ -1017,7 +1020,7 @@ impl FeatureDecorationRunner {
             > SculkChargeCursor::MAX_CURSOR_DISTANCE
     }
 
-    fn sculk_abs_diff(left: i32, right: i32) -> i32 {
+    const fn sculk_abs_diff(left: i32, right: i32) -> i32 {
         if left >= right {
             left - right
         } else {
@@ -1025,28 +1028,28 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn sculk_update_decay_delay(behaviour: SculkBehaviourKind, age: i32) -> i32 {
-        match behaviour {
-            SculkBehaviourKind::Default => (age - 1).max(0),
-            SculkBehaviourKind::Sculk | SculkBehaviourKind::SculkVein => 1,
+    fn sculk_update_decay_delay(behavior: SculkBehaviorKind, age: i32) -> i32 {
+        match behavior {
+            SculkBehaviorKind::Default => (age - 1).max(0),
+            SculkBehaviorKind::Sculk | SculkBehaviorKind::SculkVein => 1,
         }
     }
 
-    fn sculk_spread_delay(_behaviour: SculkBehaviourKind) -> i32 {
+    const fn sculk_spread_delay(_behavior: SculkBehaviorKind) -> i32 {
         1
     }
 
-    fn sculk_can_change_block_state_on_spread(behaviour: SculkBehaviourKind) -> bool {
-        !matches!(behaviour, SculkBehaviourKind::Sculk)
+    const fn sculk_can_change_block_state_on_spread(behavior: SculkBehaviorKind) -> bool {
+        !matches!(behavior, SculkBehaviorKind::Sculk)
     }
 
-    fn sculk_behaviour(state: BlockStateId) -> SculkBehaviourKind {
+    fn sculk_behavior(state: BlockStateId) -> SculkBehaviorKind {
         if state.get_block() == &vanilla_blocks::SCULK {
-            SculkBehaviourKind::Sculk
+            SculkBehaviorKind::Sculk
         } else if state.get_block() == &vanilla_blocks::SCULK_VEIN {
-            SculkBehaviourKind::SculkVein
+            SculkBehaviorKind::SculkVein
         } else {
-            SculkBehaviourKind::Default
+            SculkBehaviorKind::Default
         }
     }
 
@@ -1073,7 +1076,7 @@ impl FeatureDecorationRunner {
         state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
-    fn sculk_vein_spread_pos(
+    const fn sculk_vein_spread_pos(
         pos: BlockPos,
         spread_direction: Direction,
         from_face: Direction,
@@ -1107,7 +1110,7 @@ impl FeatureDecorationRunner {
             .unwrap_or(false)
     }
 
-    fn sculk_vein_face_property(direction: Direction) -> &'static BoolProperty {
+    const fn sculk_vein_face_property(direction: Direction) -> &'static BoolProperty {
         match direction {
             Direction::Up => &BlockStateProperties::UP,
             Direction::Down => &BlockStateProperties::DOWN,

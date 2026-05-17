@@ -38,7 +38,7 @@ impl RawBlockEntity {
 
     /// Creates a raw block entity with already-owned additional NBT.
     #[must_use]
-    pub fn with_data(
+    pub const fn with_data(
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
         pos: BlockPos,

@@ -21,9 +21,9 @@ impl FeatureDecorationRunner {
         BIOME_INFO_NOISE.get_value(x, z)
     }
 
-    pub(super) fn biome_at_block<'a>(
+    pub(super) fn biome_at_block(
         region: &WorldGenRegion<'_>,
-        registry: &'a Registry,
+        registry: &Registry,
         biome_zoom_seed: i64,
         pos: BlockPos,
     ) -> BiomeRef {

@@ -1,5 +1,11 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "iceberg placement is kept linear to preserve vanilla parity"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use std::f64::consts::PI;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_iceberg_feature(
@@ -12,7 +18,7 @@ impl FeatureDecorationRunner {
         let origin = BlockPos::new(origin.x(), region.sea_level(), origin.z());
         let snow_on_top = random.next_f64() > 0.7;
         let main_block_state = Self::block_state_from_data(registry, config);
-        let shape_angle = random.next_f64() * 2.0 * std::f64::consts::PI;
+        let shape_angle = random.next_f64() * 2.0 * PI;
         let shape_ellipse_a = 11 - random.next_i32_bounded(5);
         let shape_ellipse_c = 3 + random.next_i32_bounded(3);
         let is_ellipse = random.next_f64() > 0.7;
@@ -171,9 +177,9 @@ impl FeatureDecorationRunner {
 
         let local_origin = BlockPos::new(random_sign_x * x_offset, 0, random_sign_z * z_offset);
         let angle = if is_ellipse {
-            shape_angle + std::f64::consts::PI / 2.0
+            shape_angle + PI / 2.0
         } else {
-            random.next_f64() * 2.0 * std::f64::consts::PI
+            random.next_f64() * 2.0 * PI
         };
 
         for y_offset in 0..height - 3 {
@@ -356,7 +362,7 @@ impl FeatureDecorationRunner {
         Self::set_iceberg_block(region, pos, main_block_state);
     }
 
-    fn get_ellipse_c(y_offset: i32, height: i32, shape_ellipse_c: i32) -> i32 {
+    const fn get_ellipse_c(y_offset: i32, height: i32, shape_ellipse_c: i32) -> i32 {
         if y_offset > 0 && height - y_offset <= 3 {
             shape_ellipse_c - (4 - (height - y_offset))
         } else {

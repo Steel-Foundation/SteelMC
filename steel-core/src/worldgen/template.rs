@@ -3,6 +3,10 @@ use std::io::{Cursor, Read};
 use std::str::FromStr;
 
 use flate2::read::GzDecoder;
+use simdnbt::borrow::{
+    Nbt as BorrowedNbt, NbtCompound as BorrowedNbtCompound,
+    NbtCompoundList as BorrowedNbtCompoundList, NbtList as BorrowedNbtList, read as read_nbt,
+};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::properties::Direction as BlockPropertyDirection;
 use steel_registry::blocks::{self};
@@ -77,11 +81,11 @@ impl StructureTemplate {
             .read_to_end(&mut data)
             .map_err(|err| format!("failed to decompress structure template {context}: {err}"))?;
 
-        let nbt = simdnbt::borrow::read(&mut Cursor::new(&data))
+        let nbt = read_nbt(&mut Cursor::new(&data))
             .map_err(|err| format!("failed to parse structure template {context}: {err}"))?;
         let root = match nbt {
-            simdnbt::borrow::Nbt::Some(root) => root,
-            simdnbt::borrow::Nbt::None => {
+            BorrowedNbt::Some(root) => root,
+            BorrowedNbt::None => {
                 return Err(format!("structure template {context} is empty"));
             }
         };
@@ -114,7 +118,7 @@ impl StructureTemplate {
     }
 
     fn read_vec3(
-        list: Option<simdnbt::borrow::NbtList<'_, '_>>,
+        list: Option<BorrowedNbtList<'_, '_>>,
         context: &str,
         field: &str,
     ) -> Result<[i32; 3], String> {
@@ -131,7 +135,7 @@ impl StructureTemplate {
 
     fn read_palettes(
         registry: &Registry,
-        compound: &simdnbt::borrow::NbtCompound<'_, '_>,
+        compound: &BorrowedNbtCompound<'_, '_>,
         context: &str,
     ) -> Result<Vec<Vec<BlockStateId>>, String> {
         if let Some(palette) = compound.list("palette").and_then(|list| list.compounds()) {
@@ -162,7 +166,7 @@ impl StructureTemplate {
 
     fn read_palette(
         registry: &Registry,
-        entries: &simdnbt::borrow::NbtCompoundList<'_, '_>,
+        entries: &BorrowedNbtCompoundList<'_, '_>,
         context: &str,
     ) -> Result<Vec<BlockStateId>, String> {
         let mut states = Vec::with_capacity(entries.len());
@@ -198,7 +202,7 @@ impl StructureTemplate {
 
     fn read_blocks(
         registry: &Registry,
-        blocks: &simdnbt::borrow::NbtCompoundList<'_, '_>,
+        blocks: &BorrowedNbtCompoundList<'_, '_>,
         palette: &[BlockStateId],
         context: &str,
     ) -> Result<Vec<StructureBlockInfo>, String> {
@@ -268,12 +272,12 @@ impl StructureTemplate {
         });
     }
 
-    pub(crate) fn size(&self, rotation: Rotation) -> [i32; 3] {
+    pub(crate) const fn size(&self, rotation: Rotation) -> [i32; 3] {
         let (x, y, z) = rotation.rotate_size(self.size[0], self.size[1], self.size[2]);
         [x, y, z]
     }
 
-    pub(crate) fn zero_position_with_transform(
+    pub(crate) const fn zero_position_with_transform(
         &self,
         zero_pos: BlockPos,
         rotation: Rotation,
@@ -288,7 +292,7 @@ impl StructureTemplate {
         }
     }
 
-    pub(crate) fn bounding_box(&self, position: BlockPos, rotation: Rotation) -> BoundingBox {
+    pub(crate) const fn bounding_box(&self, position: BlockPos, rotation: Rotation) -> BoundingBox {
         rotation.get_bounding_box(
             position.x(),
             position.y(),
@@ -299,6 +303,10 @@ impl StructureTemplate {
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "structure placement call mirrors vanilla template placement context"
+    )]
     pub(crate) fn place_in_world(
         &self,
         region: &mut WorldGenRegion<'_>,
@@ -533,7 +541,7 @@ impl StructureTemplate {
         Some(&self.palettes[random.next_i32_bounded(bound) as usize])
     }
 
-    fn transformed_position(
+    const fn transformed_position(
         position: BlockPos,
         template_pos: BlockPos,
         rotation: Rotation,
@@ -727,7 +735,7 @@ impl StructureTemplate {
         current.nbt = match &rule.block_entity_modifier {
             RuleBlockEntityModifierData::Passthrough => current.nbt,
             RuleBlockEntityModifierData::AppendLoot { loot_table } => {
-                let mut nbt = current.nbt.unwrap_or_else(NbtCompound::new);
+                let mut nbt = current.nbt.unwrap_or_default();
                 nbt.insert("LootTable", NbtTag::String(loot_table.to_string().into()));
                 nbt.insert("LootTableSeed", NbtTag::Long(random.next_i64()));
                 Some(nbt)
@@ -810,14 +818,14 @@ impl StructureTemplate {
                     ) =>
                 {
                     match value.as_str() {
-                        "x" => *value = "z".to_owned(),
-                        "z" => *value = "x".to_owned(),
+                        "x" => "z".clone_into(value),
+                        "z" => "x".clone_into(value),
                         _ => {}
                     }
                 }
                 "facing" => {
                     if let Some(direction) = Self::parse_direction(value) {
-                        *value = rotation.rotate(direction).as_str().to_owned();
+                        rotation.rotate(direction).as_str().clone_into(value);
                     }
                 }
                 "rotation" => {
@@ -839,7 +847,7 @@ impl StructureTemplate {
                             .iter()
                             .find(|(original_name, _)| original_name == source_name)
                     {
-                        *value = source_value.clone();
+                        value.clone_from(source_value);
                     }
                 }
                 _ => {}
@@ -861,7 +869,6 @@ impl StructureTemplate {
 
     fn direction_from_property_name(name: &str) -> Direction {
         match name {
-            "north" => BlockPropertyDirection::North,
             "east" => BlockPropertyDirection::East,
             "south" => BlockPropertyDirection::South,
             "west" => BlockPropertyDirection::West,
@@ -869,7 +876,7 @@ impl StructureTemplate {
         }
     }
 
-    fn inverse_rotate_direction(rotation: Rotation, direction: Direction) -> Direction {
+    const fn inverse_rotate_direction(rotation: Rotation, direction: Direction) -> Direction {
         match rotation {
             Rotation::None => direction,
             Rotation::Clockwise90 => Rotation::CounterClockwise90.rotate(direction),
@@ -878,7 +885,7 @@ impl StructureTemplate {
         }
     }
 
-    fn property_name_from_direction(direction: Direction) -> Option<&'static str> {
+    const fn property_name_from_direction(direction: Direction) -> Option<&'static str> {
         match direction {
             BlockPropertyDirection::North => Some("north"),
             BlockPropertyDirection::East => Some("east"),

@@ -10,6 +10,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicI64, Ordering},
     },
+    time::Instant,
 };
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
@@ -30,7 +31,7 @@ use crate::chunk::{
     chunk_generation_task::StaticCache2D,
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
-    heightmap::HeightmapType,
+    heightmap::{Heightmap, HeightmapType},
     section::{BlockStateSectionCounts, ChunkSection, SectionHolder},
 };
 use crate::entity::SharedEntity;
@@ -155,7 +156,7 @@ impl<'a> WorldGenRegion<'a> {
     }
 
     /// Returns the random source exposed by vanilla `WorldGenRegion.getRandom()`.
-    pub fn random_mut(&mut self) -> &mut RandomSource {
+    pub const fn random_mut(&mut self) -> &mut RandomSource {
         &mut self.random
     }
 
@@ -207,6 +208,10 @@ impl<'a> WorldGenRegion<'a> {
     /// is not generated for the feature-stage proto chunks. Treating the region as dark keeps
     /// snow and freeze checks aligned with vanilla feature placement.
     #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "keeps light lookup callable through the region instance"
+    )]
     pub const fn block_light_at(&self, _pos: BlockPos) -> u8 {
         0
     }
@@ -656,10 +661,7 @@ impl<'a> WorldGenRegion<'a> {
         Self::copy_heightmap_columns(heightmap, proto.min_y())
     }
 
-    fn copy_heightmap_columns(
-        heightmap: &crate::chunk::heightmap::Heightmap,
-        min_y: i32,
-    ) -> Box<[i32; 256]> {
+    fn copy_heightmap_columns(heightmap: &Heightmap, min_y: i32) -> Box<[i32; 256]> {
         let mut columns = Box::new([0; 256]);
         for (index, &height) in heightmap.raw_data().iter().enumerate() {
             columns[index] = i32::from(height) + min_y;
@@ -793,7 +795,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     ) -> bool {
         self.with_ore_profile(OreFeatureStats::record_target_read);
         let ore_profile = self.ore_profile;
-        let started_at = ore_profile.map(|_| std::time::Instant::now());
+        let started_at = ore_profile.map(|_| Instant::now());
         let Some(key) = self.writable_section_key(pos) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
@@ -847,7 +849,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         mut replacement: impl FnMut(BlockStateId) -> Option<(BlockStateId, BlockStateSectionCounts)>,
     ) -> u64 {
         let ore_profile = self.ore_profile;
-        let started_at = ore_profile.map(|_| std::time::Instant::now());
+        let started_at = ore_profile.map(|_| Instant::now());
         if !self.region.can_write_to_chunk(chunk_x, chunk_z) {
             Self::record_ore_write_time(ore_profile, started_at);
             return 0;
@@ -934,7 +936,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     #[must_use]
     pub(crate) fn block_state(&mut self, pos: BlockPos) -> BlockStateId {
         let ore_profile = self.ore_profile;
-        let started_at = ore_profile.map(|_| std::time::Instant::now());
+        let started_at = ore_profile.map(|_| Instant::now());
         let air = self.air;
         let Some(section_index) =
             Self::section_index(self.region.min_y(), self.region.height(), pos.y())
@@ -961,7 +963,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 if let Ok(mut profile) = profile.try_borrow_mut() {
                     profile.record_section_read_contention();
                 }
-                let wait_started_at = std::time::Instant::now();
+                let wait_started_at = Instant::now();
                 let guard = section.read();
                 if let Ok(mut profile) = profile.try_borrow_mut() {
                     profile.record_read_contention_wait_time(wait_started_at.elapsed());
@@ -993,7 +995,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     #[must_use]
     pub(crate) fn set_block_state(&mut self, pos: BlockPos, state: BlockStateId) -> bool {
         let ore_profile = self.ore_profile;
-        let started_at = ore_profile.map(|_| std::time::Instant::now());
+        let started_at = ore_profile.map(|_| Instant::now());
         let Some(key) = self.writable_section_key(pos) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
@@ -1055,7 +1057,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 if let Ok(mut profile) = profile.try_borrow_mut() {
                     profile.record_section_write_contention();
                 }
-                let wait_started_at = std::time::Instant::now();
+                let wait_started_at = Instant::now();
                 let guard = section.write();
                 if let Ok(mut profile) = profile.try_borrow_mut() {
                     profile.record_write_contention_wait_time(wait_started_at.elapsed());
@@ -1069,7 +1071,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
     /// Returns whether a section-local write would be allowed for this position.
     #[must_use]
-    pub(crate) fn can_write_to_pos(&self, pos: BlockPos) -> bool {
+    pub(crate) const fn can_write_to_pos(&self, pos: BlockPos) -> bool {
         self.region.can_write_to_chunk(
             SectionPos::block_to_section_coord(pos.x()),
             SectionPos::block_to_section_coord(pos.z()),
@@ -1143,13 +1145,13 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         usize::try_from((y - min_y) / 16).ok()
     }
 
-    fn local_coord(coord: i32) -> usize {
+    const fn local_coord(coord: i32) -> usize {
         (coord & 15) as usize
     }
 
     fn record_ore_read_time(
         profile: Option<&RefCell<OreFeatureStats>>,
-        started_at: Option<std::time::Instant>,
+        started_at: Option<Instant>,
     ) {
         if let Some(started_at) = started_at {
             Self::with_ore_profile_ref(profile, |profile| {
@@ -1160,7 +1162,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
     fn record_ore_write_time(
         profile: Option<&RefCell<OreFeatureStats>>,
-        started_at: Option<std::time::Instant>,
+        started_at: Option<Instant>,
     ) {
         if let Some(started_at) = started_at {
             Self::with_ore_profile_ref(profile, |profile| {
@@ -1174,7 +1176,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             return;
         };
         if let Ok(mut profile) = profile.try_borrow_mut() {
-            f(&mut *profile);
+            f(&mut profile);
         }
     }
 
@@ -1186,7 +1188,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             return;
         };
         if let Ok(mut profile) = profile.try_borrow_mut() {
-            f(&mut *profile);
+            f(&mut profile);
         }
     }
 }

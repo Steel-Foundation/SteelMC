@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
+use simdnbt::borrow::NbtCompound as BorrowedRootNbtCompound;
 use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, read_compound as read_borrowed_compound,
 };
@@ -130,7 +131,7 @@ impl BlockEntityRegistry {
             entity.lock().load_additional(nbt);
             entity
         } else {
-            let nbt_view: simdnbt::borrow::NbtCompound<'_, '_> = nbt.into();
+            let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
             Arc::new(SyncMutex::new(RawBlockEntity::with_data(
                 block_entity_type,
                 level,

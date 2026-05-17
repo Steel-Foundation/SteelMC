@@ -1,3 +1,8 @@
+#![expect(
+    clippy::fn_params_excessive_bools,
+    reason = "mushroom cap side flags mirror vanilla block properties"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
@@ -285,7 +290,7 @@ impl FeatureDecorationRunner {
         state.set_value(&BlockStateProperties::SOUTH, south)
     }
 
-    fn huge_mushroom_tree_radius_for_height(
+    const fn huge_mushroom_tree_radius_for_height(
         kind: HugeMushroomKind,
         _trunk_height: i32,
         tree_height: i32,

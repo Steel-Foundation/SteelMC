@@ -52,10 +52,7 @@ impl WorldgenStateResolver {
             .blocks
             .state_id_from_block_defaulted_properties(block, data_properties)
         else {
-            panic!(
-                "{context} references unknown or invalid state {}",
-                block_name
-            );
+            panic!("{context} references unknown or invalid state {block_name}");
         };
         state
     }

@@ -1,6 +1,7 @@
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use std::cmp::Reverse;
 use std::env;
 use std::hint::black_box;
 use std::sync::{
@@ -30,6 +31,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use tokio::runtime::Builder as RuntimeBuilder;
+use toml::map::Map;
 
 static INIT: Once = Once::new();
 static FEATURE_BATCH_PROFILE_LOGS: AtomicU64 = AtomicU64::new(0);
@@ -63,7 +65,7 @@ fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAcc
         pos,
         dim.min_y,
         dim.height,
-        std::sync::Weak::new(),
+        Weak::new(),
     ))
 }
 
@@ -465,7 +467,7 @@ fn build_feature_fixture_at(
     seed: i64,
     center: ChunkPos,
 ) -> FeatureFixture {
-    let generator_config = toml::Value::Table(toml::map::Map::new());
+    let generator_config = toml::Value::Table(Map::new());
     let output = WorldGeneratorRegistry::new_with_builtins()
         .expect("built-in world generators should register")
         .create(&generator_key, &generator_config, seed)
@@ -609,7 +611,7 @@ fn build_concurrent_feature_fixture(
     generator_key: Identifier,
     seed: i64,
 ) -> ConcurrentFeatureFixture {
-    let generator_config = toml::Value::Table(toml::map::Map::new());
+    let generator_config = toml::Value::Table(Map::new());
     let output = WorldGeneratorRegistry::new_with_builtins()
         .expect("built-in world generators should register")
         .create(&generator_key, &generator_config, seed)
@@ -783,7 +785,7 @@ fn log_feature_batch_profile(batch_elapsed: Duration, task_times: &[FeatureTaskW
         / (duration_ms(batch_elapsed) * CONCURRENT_FEATURE_THREAD_COUNT as f64).max(f64::EPSILON);
 
     let mut slowest = task_times.to_vec();
-    slowest.sort_by_key(|record| std::cmp::Reverse(record.elapsed));
+    slowest.sort_by_key(|record| Reverse(record.elapsed));
     let slowest = slowest
         .iter()
         .take(4)

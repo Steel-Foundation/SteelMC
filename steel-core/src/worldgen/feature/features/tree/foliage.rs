@@ -1,3 +1,10 @@
+#![expect(
+    clippy::match_same_arms,
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "foliage dispatch keeps vanilla variant behavior explicit"
+)]
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement, abs_i32};
@@ -441,7 +448,7 @@ impl FeatureDecorationRunner {
             let y_offset = attachment.pos.y() - y;
             let smooth_radius = leaf_radius
                 + attachment.radius_offset
-                + floor(y_offset as f64 / foliage_height as f64 * 3.5);
+                + floor(f64::from(y_offset) / f64::from(foliage_height) * 3.5);
             let jagged_radius = if y_offset > 0 && smooth_radius == previous_radius && (y & 1) == 0
             {
                 smooth_radius + 1
@@ -662,7 +669,7 @@ impl FeatureDecorationRunner {
         double_trunk: bool,
         placement: &mut TreePlacement,
     ) {
-        let offset = if double_trunk { 1 } else { 0 };
+        let offset = i32::from(double_trunk);
         for dx in -current_radius..=current_radius + offset {
             for dz in -current_radius..=current_radius + offset {
                 if !Self::tree_foliage_should_skip_location(
@@ -711,7 +718,7 @@ impl FeatureDecorationRunner {
             placement,
         );
 
-        let offset = if double_trunk { 1 } else { 0 };
+        let offset = i32::from(double_trunk);
         let log_pos = origin.below();
         for along_edge in Self::VANILLA_HORIZONTAL_DIRECTIONS {
             let to_edge = along_edge.rotate_y_clockwise();

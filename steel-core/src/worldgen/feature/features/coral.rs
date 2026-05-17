@@ -94,8 +94,7 @@ impl FeatureDecorationRunner {
             for y in 0..=height {
                 for z in 0..=length {
                     let pos = origin.offset(x, y - sink_value, z);
-                    if ((x != 0 && x != width) || (y != 0 && y != height))
-                        && ((z != 0 && z != length) || (y != 0 && y != height))
+                    if (y != 0 && y != height || x != 0 && x != width && z != 0 && z != length)
                         && ((x != 0 && x != width) || (z != 0 && z != length))
                         && (x == 0 || x == width || y == 0 || y == height || z == 0 || z == length)
                         && random.next_f32() >= 0.1

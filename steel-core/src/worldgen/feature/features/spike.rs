@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "spike body placement mirrors vanilla feature state"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 

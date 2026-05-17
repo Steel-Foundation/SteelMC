@@ -459,7 +459,7 @@ impl ProtoHeightmaps {
             HeightmapType::WorldSurface => self.world_surface = Some(heightmap),
             HeightmapType::MotionBlocking => self.motion_blocking = Some(heightmap),
             HeightmapType::MotionBlockingNoLeaves => {
-                self.motion_blocking_no_leaves = Some(heightmap)
+                self.motion_blocking_no_leaves = Some(heightmap);
             }
             HeightmapType::OceanFloor => self.ocean_floor = Some(heightmap),
         }

@@ -38,7 +38,7 @@ impl OreFeatureProfile {
         }
     }
 
-    pub(crate) fn stats(&self) -> Option<&RefCell<OreFeatureStats>> {
+    pub(crate) const fn stats(&self) -> Option<&RefCell<OreFeatureStats>> {
         self.stats.as_ref()
     }
 
@@ -102,27 +102,27 @@ impl OreFeatureStats {
         }
     }
 
-    pub(crate) fn record_candidate_position(&mut self) {
+    pub(crate) const fn record_candidate_position(&mut self) {
         self.candidate_positions += 1;
     }
 
-    pub(crate) fn record_unique_position(&mut self) {
+    pub(crate) const fn record_unique_position(&mut self) {
         self.unique_positions += 1;
     }
 
-    pub(crate) fn record_write_allowed_position(&mut self) {
+    pub(crate) const fn record_write_allowed_position(&mut self) {
         self.write_allowed_positions += 1;
     }
 
-    pub(crate) fn record_write_allowed_positions(&mut self, count: u64) {
+    pub(crate) const fn record_write_allowed_positions(&mut self, count: u64) {
         self.write_allowed_positions += count;
     }
 
-    pub(crate) fn record_target_read(&mut self) {
+    pub(crate) const fn record_target_read(&mut self) {
         self.target_reads += 1;
     }
 
-    pub(crate) fn record_neighbor_read(&mut self) {
+    pub(crate) const fn record_neighbor_read(&mut self) {
         self.neighbor_reads += 1;
     }
 
@@ -136,7 +136,7 @@ impl OreFeatureStats {
         self.read_sections.insert((chunk_x, chunk_z, section));
     }
 
-    pub(crate) fn record_section_read_contention(&mut self) {
+    pub(crate) const fn record_section_read_contention(&mut self) {
         self.section_read_contentions += 1;
     }
 
@@ -150,19 +150,19 @@ impl OreFeatureStats {
         self.write_sections.insert((chunk_x, chunk_z, section));
     }
 
-    pub(crate) fn record_section_write_contention(&mut self) {
+    pub(crate) const fn record_section_write_contention(&mut self) {
         self.section_write_contentions += 1;
     }
 
-    pub(crate) fn record_chunk_cache_miss(&mut self) {
+    pub(crate) const fn record_chunk_cache_miss(&mut self) {
         self.chunk_cache_misses += 1;
     }
 
-    pub(crate) fn record_chunk_status_upgrade(&mut self) {
+    pub(crate) const fn record_chunk_status_upgrade(&mut self) {
         self.chunk_status_upgrades += 1;
     }
 
-    pub(crate) fn record_write(&mut self) {
+    pub(crate) const fn record_write(&mut self) {
         self.writes += 1;
     }
 

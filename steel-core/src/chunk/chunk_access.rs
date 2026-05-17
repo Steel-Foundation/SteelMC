@@ -675,7 +675,7 @@ mod tests {
             ChunkPos::new(0, 0),
             0,
             16,
-            std::sync::Weak::new(),
+            Weak::new(),
         );
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         let chunk = ChunkAccess::Proto(proto);
@@ -703,7 +703,7 @@ mod tests {
             ChunkPos::new(0, 0),
             0,
             16,
-            std::sync::Weak::new(),
+            Weak::new(),
         );
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         let chunk = ChunkAccess::Proto(proto);

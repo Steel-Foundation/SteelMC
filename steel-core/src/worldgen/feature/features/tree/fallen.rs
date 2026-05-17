@@ -136,13 +136,13 @@ impl FeatureDecorationRunner {
                 return false;
             }
 
-            if !Self::is_over_solid_ground_for_fallen_log(region, *log_start_pos) {
+            if Self::is_over_solid_ground_for_fallen_log(region, *log_start_pos) {
+                gap_in_ground = 0;
+            } else {
                 gap_in_ground += 1;
                 if gap_in_ground > 2 {
                     return false;
                 }
-            } else {
-                gap_in_ground = 0;
             }
 
             *log_start_pos = log_start_pos.relative(direction);

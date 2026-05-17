@@ -76,11 +76,12 @@ impl FeatureDecorationRunner {
         let mut surface = JavaBlockPosSet::default();
 
         for dx in -x_radius..=x_radius {
-            let is_x_edge = dx == -x_radius || dx == x_radius;
+            let at_longitude_limit = dx == -x_radius || dx == x_radius;
             for dz in -z_radius..=z_radius {
-                let is_z_edge = dz == -z_radius || dz == z_radius;
-                let is_corner = is_x_edge && is_z_edge;
-                let is_edge_but_not_corner = (is_x_edge || is_z_edge) && !is_corner;
+                let at_latitude_limit = dz == -z_radius || dz == z_radius;
+                let is_corner = at_longitude_limit && at_latitude_limit;
+                let is_edge_but_not_corner =
+                    (at_longitude_limit || at_latitude_limit) && !is_corner;
 
                 if is_corner {
                     continue;
@@ -113,13 +114,10 @@ impl FeatureDecorationRunner {
                 }
 
                 let sampled_depth = config.depth.sample(random);
-                let extra_depth = if config.extra_bottom_block_chance > 0.0
-                    && random.next_f32() < config.extra_bottom_block_chance
-                {
-                    1
-                } else {
-                    0
-                };
+                let extra_depth = i32::from(
+                    config.extra_bottom_block_chance > 0.0
+                        && random.next_f32() < config.extra_bottom_block_chance,
+                );
                 let depth = sampled_depth + extra_depth;
                 let mut ground_cursor = below_pos;
                 if Self::place_vegetation_patch_ground_column(

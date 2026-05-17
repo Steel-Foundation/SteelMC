@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -8,7 +9,7 @@ use crate::entity::{entities::EndCrystalEntity, next_entity_id};
 
 const END_SPIKE_COUNT: usize = 10;
 const END_SPIKE_DISTANCE: f64 = 42.0;
-const END_SPIKE_ANGLE_STEP: f64 = std::f64::consts::PI / 10.0;
+const END_SPIKE_ANGLE_STEP: f64 = PI / 10.0;
 const END_SPIKE_CLEAR_AIR_MIN_Y: i32 = 65;
 const END_SPIKE_CAGE_RADIUS: i32 = 2;
 const END_SPIKE_CAGE_HEIGHT: i32 = 3;
@@ -54,7 +55,7 @@ impl FeatureDecorationRunner {
             .iter()
             .enumerate()
             .map(|(index, size)| {
-                let angle = 2.0 * (-std::f64::consts::PI + END_SPIKE_ANGLE_STEP * index as f64);
+                let angle = 2.0 * (-PI + END_SPIKE_ANGLE_STEP * index as f64);
                 EndSpike {
                     center_x: floor(END_SPIKE_DISTANCE * angle.cos()),
                     center_z: floor(END_SPIKE_DISTANCE * angle.sin()),
@@ -66,7 +67,7 @@ impl FeatureDecorationRunner {
             .collect()
     }
 
-    fn end_spike_center_is_within_chunk(spike: &EndSpike, origin: BlockPos) -> bool {
+    const fn end_spike_center_is_within_chunk(spike: &EndSpike, origin: BlockPos) -> bool {
         SectionPos::block_to_section_coord(origin.x())
             == SectionPos::block_to_section_coord(spike.center_x)
             && SectionPos::block_to_section_coord(origin.z())
@@ -123,15 +124,15 @@ impl FeatureDecorationRunner {
         for dx in -END_SPIKE_CAGE_RADIUS..=END_SPIKE_CAGE_RADIUS {
             for dz in -END_SPIKE_CAGE_RADIUS..=END_SPIKE_CAGE_RADIUS {
                 for dy in 0..=END_SPIKE_CAGE_HEIGHT {
-                    let is_x_side = dx.abs() == END_SPIKE_CAGE_RADIUS;
-                    let is_z_side = dz.abs() == END_SPIKE_CAGE_RADIUS;
+                    let touches_width_limit = dx.abs() == END_SPIKE_CAGE_RADIUS;
+                    let touches_depth_limit = dz.abs() == END_SPIKE_CAGE_RADIUS;
                     let top = dy == END_SPIKE_CAGE_HEIGHT;
-                    if !is_x_side && !is_z_side && !top {
+                    if !touches_width_limit && !touches_depth_limit && !top {
                         continue;
                     }
 
-                    let x_edge = is_x_side || top;
-                    let z_edge = is_z_side || top;
+                    let x_edge = touches_width_limit || top;
+                    let z_edge = touches_depth_limit || top;
                     let state = Self::end_spike_iron_bars_state(x_edge, z_edge, dx, dz);
                     let pos =
                         BlockPos::new(spike.center_x + dx, spike.height + dy, spike.center_z + dz);

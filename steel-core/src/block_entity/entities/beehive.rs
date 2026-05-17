@@ -35,8 +35,9 @@ impl BeeOccupant {
     fn load(nbt: NbtCompoundView<'_, '_>) -> Self {
         let entity_data = nbt
             .compound("entity_data")
-            .map(|entity_data| entity_data.to_owned())
-            .unwrap_or_else(default_bee_entity_data);
+            .map_or_else(default_bee_entity_data, |entity_data| {
+                entity_data.to_owned()
+            });
         let ticks_in_hive = nbt.int("ticks_in_hive").unwrap_or(0);
         let min_ticks_in_hive = nbt
             .int("min_ticks_in_hive")
@@ -79,7 +80,7 @@ pub struct BeehiveBlockEntity {
 impl BeehiveBlockEntity {
     /// Creates a new beehive block entity.
     #[must_use]
-    pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
+    pub const fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
         Self {
             level,
             pos,
@@ -100,13 +101,13 @@ impl BeehiveBlockEntity {
 
     /// Returns the number of stored occupants.
     #[must_use]
-    pub fn occupant_count(&self) -> usize {
+    pub const fn occupant_count(&self) -> usize {
         self.stored.len()
     }
 
     /// Returns whether the hive currently stores no occupants.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.stored.is_empty()
     }
 

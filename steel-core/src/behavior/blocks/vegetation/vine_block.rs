@@ -6,7 +6,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
 
@@ -122,7 +122,7 @@ impl BlockBehavior for VineBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &dyn crate::world::ScheduledTickAccess,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

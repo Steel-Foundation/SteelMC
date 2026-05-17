@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "desert well placement is kept linear to mirror vanilla"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 

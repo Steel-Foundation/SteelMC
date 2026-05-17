@@ -507,6 +507,8 @@ impl ProtoChunk {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Weak;
+
     use super::ProtoChunk;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::TickPriority;
@@ -536,7 +538,7 @@ mod tests {
             ChunkPos::new(0, 0),
             0,
             16,
-            std::sync::Weak::new(),
+            Weak::new(),
         );
         let pos = BlockPos::new(3, 4, 5);
 

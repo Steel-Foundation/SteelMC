@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_arguments,
+    reason = "multiface spread helpers thread vanilla placement state explicitly"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
@@ -436,7 +441,9 @@ impl FeatureDecorationRunner {
         config.is_sculk_vein && state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
-    fn multiface_spread_types(_config: &ResolvedMultifaceGrowth<'_>) -> [MultifaceSpreadType; 3] {
+    const fn multiface_spread_types(
+        _config: &ResolvedMultifaceGrowth<'_>,
+    ) -> [MultifaceSpreadType; 3] {
         [
             MultifaceSpreadType::SamePosition,
             MultifaceSpreadType::SamePlane,
@@ -444,7 +451,7 @@ impl FeatureDecorationRunner {
         ]
     }
 
-    fn multiface_spread_pos(
+    const fn multiface_spread_pos(
         pos: BlockPos,
         spread_direction: Direction,
         from_face: Direction,
@@ -516,7 +523,7 @@ impl FeatureDecorationRunner {
             .unwrap_or(false)
     }
 
-    fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
+    const fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
         match direction {
             Direction::Up => &BlockStateProperties::UP,
             Direction::Down => &BlockStateProperties::DOWN,

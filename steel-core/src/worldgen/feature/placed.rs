@@ -1,3 +1,8 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "placed feature modifier chaining mirrors vanilla placement flow"
+)]
+
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 
@@ -10,9 +15,11 @@ impl FeatureDecorationRunner {
         feature: PlacedFeatureEntryRef,
         biome_zoom_seed: i64,
     ) -> bool {
-        if feature.try_id().is_none() {
-            panic!("top-level placed feature {} is not registered", feature.key);
-        }
+        assert!(
+            feature.try_id().is_some(),
+            "top-level placed feature {} is not registered",
+            feature.key
+        );
         Self::place_placed_feature_data(
             region,
             registry,

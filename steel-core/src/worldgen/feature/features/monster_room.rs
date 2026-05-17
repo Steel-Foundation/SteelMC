@@ -1,5 +1,11 @@
+#![expect(
+    clippy::too_many_lines,
+    reason = "monster room placement is kept linear to mirror vanilla"
+)]
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use steel_registry::vanilla_block_entity_types;
 
 const SIMPLE_DUNGEON: &str = "minecraft:chests/simple_dungeon";
 const MONSTER_ROOM_MOBS: [&str; 4] = [
@@ -118,7 +124,7 @@ impl FeatureDecorationRunner {
                             Self::set_loot_table_block_entity(
                                 region,
                                 chest_pos,
-                                &steel_registry::vanilla_block_entity_types::CHEST,
+                                &vanilla_block_entity_types::CHEST,
                                 chest,
                                 SIMPLE_DUNGEON,
                                 random.next_i64(),
