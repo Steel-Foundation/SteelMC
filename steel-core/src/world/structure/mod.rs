@@ -29,8 +29,10 @@ use steel_utils::{BlockPos, BoundingBox, ChunkPos, Direction, Identifier, Rotati
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
-use steel_registry::structure::{LiquidSettingsData, StructureData, TerrainAdjustment};
-use steel_registry::template_pool::{ProcessorList, Projection, TemplateData, TemplatePoolData};
+use steel_registry::structure::{
+    LiquidSettingsData, RuinedPortalPlacementData, StructureData, TerrainAdjustment,
+};
+use steel_registry::template_pool::{Projection, TemplateData, TemplatePoolData};
 
 use crate::worldgen::ChunkBiomeSampler;
 use crate::worldgen::generators::vanilla::{
@@ -213,7 +215,7 @@ pub struct TemplatePieceData {
     /// Block-ignore processor applied after the registry processor list.
     pub late_block_ignore: StructureBlockIgnore,
     /// Processor list applied during placement.
-    pub processors: ProcessorList,
+    pub processors: TemplateProcessorList,
     /// Liquid handling mode used by vanilla template placement.
     pub liquid_settings: LiquidSettingsData,
     /// How structure-template data markers are handled for this family.
@@ -224,6 +226,39 @@ pub struct TemplatePieceData {
     pub placement_clip: TemplatePlacementClip,
     /// Family-specific work done after the template blocks are placed.
     pub post_process: TemplatePostProcess,
+}
+
+/// Processors for template-backed non-jigsaw pieces.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateProcessorList {
+    /// No processors.
+    Empty,
+    /// Registry-backed vanilla processor list.
+    Registry(Identifier),
+    /// Vanilla's hardcoded ruined-portal processor sequence.
+    RuinedPortal {
+        /// Vertical placement controls lava replacement.
+        vertical_placement: RuinedPortalPlacementData,
+        /// Ruined portal setup properties.
+        properties: RuinedPortalProperties,
+    },
+}
+
+/// Vanilla ruined-portal piece properties used by processors and postprocess.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RuinedPortalProperties {
+    /// Whether cold lava/netherrack behavior is active.
+    pub cold: bool,
+    /// Vanilla block-age processor mossiness.
+    pub mossiness: f32,
+    /// Whether structure air is preserved.
+    pub air_pocket: bool,
+    /// Whether netherrack can grow jungle leaves.
+    pub overgrown: bool,
+    /// Whether vines can be added to sturdy sides.
+    pub vines: bool,
+    /// Whether stone ruin blocks are replaced with blackstone variants.
+    pub replace_with_blackstone: bool,
 }
 
 /// Vanilla `Mirror` modes used by template placement.

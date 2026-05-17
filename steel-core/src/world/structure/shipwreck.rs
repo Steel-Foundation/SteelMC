@@ -2,7 +2,6 @@
 //! places at `(chunkMinX, 90, chunkMinZ)` with random rotation and pivot `(4, 15)`.
 
 use steel_registry::structure::{LiquidSettingsData, StructureConfigData, StructureData};
-use steel_registry::template_pool::ProcessorList;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Direction, Identifier, Rotation};
@@ -10,7 +9,7 @@ use steel_utils::{Direction, Identifier, Rotation};
 use crate::world::structure::{
     GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
     StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
-    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 static BEACHED: &[&str] = &[
@@ -75,7 +74,7 @@ fn make_shipwreck_piece(
             rotation_pivot: (4, 0, 15),
             block_ignore: StructureBlockIgnore::StructureAndAir,
             late_block_ignore: StructureBlockIgnore::None,
-            processors: ProcessorList::Empty,
+            processors: TemplateProcessorList::Empty,
             liquid_settings: LiquidSettingsData::ApplyWaterlogging,
             marker_handling: TemplateMarkerHandling::Shipwreck,
             placement_adjustment: TemplatePlacementAdjustment::Shipwreck {
@@ -177,7 +176,7 @@ mod tests {
         assert_eq!(data.rotation_pivot, (4, 0, 15));
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
-        assert_eq!(data.processors, ProcessorList::Empty);
+        assert_eq!(data.processors, TemplateProcessorList::Empty);
         assert_eq!(data.liquid_settings, LiquidSettingsData::ApplyWaterlogging);
         assert_eq!(data.marker_handling, TemplateMarkerHandling::Shipwreck);
         assert_eq!(

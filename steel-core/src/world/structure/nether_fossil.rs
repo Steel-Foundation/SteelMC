@@ -5,7 +5,6 @@
 use steel_registry::structure::{
     HeightProviderData, LiquidSettingsData, StructureConfigData, StructureData, VerticalAnchorData,
 };
-use steel_registry::template_pool::ProcessorList;
 use steel_utils::Direction;
 use steel_utils::Identifier;
 use steel_utils::Rotation;
@@ -16,6 +15,7 @@ use crate::world::structure::{
     ColumnBlock, GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext,
     StructureMirror, StructurePiece, StructurePiecePayload, TemplateMarkerHandling,
     TemplatePieceData, TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess,
+    TemplateProcessorList,
 };
 
 /// Fossil templates count (`minecraft:nether_fossils/fossil_N`).
@@ -137,7 +137,7 @@ fn make_nether_fossil_piece(
             rotation_pivot: (0, 0, 0),
             block_ignore: StructureBlockIgnore::StructureAndAir,
             late_block_ignore: StructureBlockIgnore::None,
-            processors: ProcessorList::Empty,
+            processors: TemplateProcessorList::Empty,
             liquid_settings: LiquidSettingsData::ApplyWaterlogging,
             marker_handling: TemplateMarkerHandling::Ignore,
             placement_adjustment: TemplatePlacementAdjustment::None,
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(data.rotation_pivot, (0, 0, 0));
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
-        assert_eq!(data.processors, ProcessorList::Empty);
+        assert_eq!(data.processors, TemplateProcessorList::Empty);
         assert_eq!(data.liquid_settings, LiquidSettingsData::ApplyWaterlogging);
         assert_eq!(data.marker_handling, TemplateMarkerHandling::Ignore);
         assert_eq!(data.placement_adjustment, TemplatePlacementAdjustment::None);

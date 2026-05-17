@@ -17,7 +17,7 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::structure::{LiquidSettingsData, TerrainAdjustment};
+use steel_registry::structure::{LiquidSettingsData, RuinedPortalPlacementData, TerrainAdjustment};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::{
@@ -29,10 +29,10 @@ use crate::world::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
 use crate::world::structure::{
-    ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
-    StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
-    TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment, TemplatePlacementClip,
-    TemplatePostProcess,
+    ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart,
+    StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
+    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -133,6 +133,28 @@ const fn liquid_settings_from_persistent(value: i8) -> LiquidSettingsData {
     match value {
         1 => LiquidSettingsData::IgnoreWaterlogging,
         _ => LiquidSettingsData::ApplyWaterlogging,
+    }
+}
+
+const fn ruined_portal_placement_to_persistent(placement: RuinedPortalPlacementData) -> i8 {
+    match placement {
+        RuinedPortalPlacementData::OnLandSurface => 0,
+        RuinedPortalPlacementData::PartlyBuried => 1,
+        RuinedPortalPlacementData::Underground => 2,
+        RuinedPortalPlacementData::InMountain => 3,
+        RuinedPortalPlacementData::OnOceanFloor => 4,
+        RuinedPortalPlacementData::InNether => 5,
+    }
+}
+
+const fn ruined_portal_placement_from_persistent(value: i8) -> RuinedPortalPlacementData {
+    match value {
+        1 => RuinedPortalPlacementData::PartlyBuried,
+        2 => RuinedPortalPlacementData::Underground,
+        3 => RuinedPortalPlacementData::InMountain,
+        4 => RuinedPortalPlacementData::OnOceanFloor,
+        5 => RuinedPortalPlacementData::InNether,
+        _ => RuinedPortalPlacementData::OnLandSurface,
     }
 }
 
@@ -271,7 +293,8 @@ use super::{
     PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
     PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
     PersistentStructureReference, PersistentStructureStart, PersistentTemplatePieceData,
-    PersistentTemplatePlacementAdjustment, PersistentTick, PreparedChunkSave,
+    PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
+    PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -1260,7 +1283,7 @@ impl ChunkStorage {
                     ],
                     block_ignore: block_ignore_to_persistent(data.block_ignore),
                     late_block_ignore: block_ignore_to_persistent(data.late_block_ignore),
-                    processors: Self::processors_to_persistent(&data.processors),
+                    processors: Self::template_processors_to_persistent(&data.processors),
                     liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
                     marker_handling: marker_handling_to_persistent(data.marker_handling),
                     placement_adjustment: placement_adjustment_to_persistent(
@@ -1300,7 +1323,7 @@ impl ChunkStorage {
                     ),
                     block_ignore: block_ignore_from_persistent(data.block_ignore),
                     late_block_ignore: block_ignore_from_persistent(data.late_block_ignore),
-                    processors: Self::persistent_to_processors(&data.processors),
+                    processors: Self::persistent_to_template_processors(&data.processors),
                     liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
                     marker_handling: marker_handling_from_persistent(data.marker_handling),
                     placement_adjustment: placement_adjustment_from_persistent(
@@ -1409,6 +1432,59 @@ impl ChunkStorage {
         match processors {
             PersistentProcessorList::Empty => ProcessorList::Empty,
             PersistentProcessorList::Registry(id) => ProcessorList::Registry(id.clone()),
+        }
+    }
+
+    fn template_processors_to_persistent(
+        processors: &TemplateProcessorList,
+    ) -> PersistentTemplateProcessorList {
+        match processors {
+            TemplateProcessorList::Empty => PersistentTemplateProcessorList::Empty,
+            TemplateProcessorList::Registry(id) => {
+                PersistentTemplateProcessorList::Registry(id.clone())
+            }
+            TemplateProcessorList::RuinedPortal {
+                vertical_placement,
+                properties,
+            } => PersistentTemplateProcessorList::RuinedPortal {
+                vertical_placement: ruined_portal_placement_to_persistent(*vertical_placement),
+                cold: properties.cold,
+                mossiness: properties.mossiness,
+                air_pocket: properties.air_pocket,
+                overgrown: properties.overgrown,
+                vines: properties.vines,
+                replace_with_blackstone: properties.replace_with_blackstone,
+            },
+        }
+    }
+
+    fn persistent_to_template_processors(
+        processors: &PersistentTemplateProcessorList,
+    ) -> TemplateProcessorList {
+        match processors {
+            PersistentTemplateProcessorList::Empty => TemplateProcessorList::Empty,
+            PersistentTemplateProcessorList::Registry(id) => {
+                TemplateProcessorList::Registry(id.clone())
+            }
+            PersistentTemplateProcessorList::RuinedPortal {
+                vertical_placement,
+                cold,
+                mossiness,
+                air_pocket,
+                overgrown,
+                vines,
+                replace_with_blackstone,
+            } => TemplateProcessorList::RuinedPortal {
+                vertical_placement: ruined_portal_placement_from_persistent(*vertical_placement),
+                properties: RuinedPortalProperties {
+                    cold: *cold,
+                    mossiness: *mossiness,
+                    air_pocket: *air_pocket,
+                    overgrown: *overgrown,
+                    vines: *vines,
+                    replace_with_blackstone: *replace_with_blackstone,
+                },
+            },
         }
     }
 
@@ -2185,7 +2261,7 @@ mod tests {
                 rotation_pivot: (4, 0, 15),
                 block_ignore: StructureBlockIgnore::StructureAndAir,
                 late_block_ignore: StructureBlockIgnore::None,
-                processors: ProcessorList::Registry(processor_id.clone()),
+                processors: TemplateProcessorList::Registry(processor_id.clone()),
                 liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
                 marker_handling: TemplateMarkerHandling::DataMarkers,
                 placement_adjustment: TemplatePlacementAdjustment::Shipwreck {
@@ -2212,7 +2288,7 @@ mod tests {
                 rotation_pivot: (3, 5, 5),
                 block_ignore: StructureBlockIgnore::StructureBlock,
                 late_block_ignore: StructureBlockIgnore::None,
-                processors: ProcessorList::Empty,
+                processors: TemplateProcessorList::Empty,
                 liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
                 marker_handling: TemplateMarkerHandling::Igloo,
                 placement_adjustment: TemplatePlacementAdjustment::Igloo {
@@ -2308,7 +2384,7 @@ mod tests {
         assert_eq!(template.post_process, TemplatePostProcess::NetherFossil);
         assert_eq!(
             template.processors,
-            ProcessorList::Registry(processor_id.clone())
+            TemplateProcessorList::Registry(processor_id.clone())
         );
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[1].payload else {
@@ -2321,7 +2397,7 @@ mod tests {
         assert_eq!(template.rotation_pivot, (3, 5, 5));
         assert_eq!(template.block_ignore, StructureBlockIgnore::StructureBlock);
         assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
-        assert_eq!(template.processors, ProcessorList::Empty);
+        assert_eq!(template.processors, TemplateProcessorList::Empty);
         assert_eq!(template.marker_handling, TemplateMarkerHandling::Igloo);
         assert_eq!(
             template.placement_adjustment,
@@ -2356,5 +2432,25 @@ mod tests {
         assert!(!*spider_corridor);
         assert!(*has_placed_spider);
         assert_eq!(*num_sections, 3);
+    }
+
+    #[test]
+    fn template_processor_list_roundtrips_ruined_portal_processors() {
+        let processors = TemplateProcessorList::RuinedPortal {
+            vertical_placement: RuinedPortalPlacementData::OnOceanFloor,
+            properties: RuinedPortalProperties {
+                cold: true,
+                mossiness: 0.8,
+                air_pocket: false,
+                overgrown: true,
+                vines: true,
+                replace_with_blackstone: false,
+            },
+        };
+
+        let persistent = ChunkStorage::template_processors_to_persistent(&processors);
+        let loaded = ChunkStorage::persistent_to_template_processors(&persistent);
+
+        assert_eq!(loaded, processors);
     }
 }

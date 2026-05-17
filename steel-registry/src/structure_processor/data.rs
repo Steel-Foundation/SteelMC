@@ -38,6 +38,15 @@ pub enum StructureProcessorKind {
     /// Applies the first matching rule.
     #[serde(rename = "minecraft:rule")]
     Rule { rules: Vec<ProcessorRuleData> },
+    /// Ages stone/obsidian structure blocks, used by ruined portals.
+    #[serde(rename = "minecraft:block_age")]
+    BlockAge { mossiness: f32 },
+    /// Keeps non-full structure blocks submerged in existing lava.
+    #[serde(rename = "minecraft:lava_submerged_block")]
+    LavaSubmergedBlock,
+    /// Replaces stone ruin blocks with blackstone variants.
+    #[serde(rename = "minecraft:blackstone_replace")]
+    BlackstoneReplace,
     /// Delegates to another processor but caps successful modifications.
     #[serde(rename = "minecraft:capped")]
     Capped {

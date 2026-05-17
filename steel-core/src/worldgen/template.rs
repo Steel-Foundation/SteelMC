@@ -8,8 +8,8 @@ use simdnbt::borrow::{
     NbtCompoundList as BorrowedNbtCompoundList, NbtList as BorrowedNbtList, read as read_nbt,
 };
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::properties::Direction as BlockPropertyDirection;
+use steel_registry::blocks::properties::{BlockStateProperties, Half};
 use steel_registry::blocks::{self};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
@@ -21,7 +21,8 @@ use steel_registry::structure_processor::{
 };
 use steel_registry::template_pool::Projection;
 use steel_registry::{
-    Registry, RegistryExt, TaggedRegistryExt, vanilla_blocks, vanilla_template_pools,
+    Registry, RegistryExt, TaggedRegistryExt, vanilla_block_tags, vanilla_blocks,
+    vanilla_template_pools,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
@@ -963,7 +964,323 @@ impl StructureTemplate {
                 }
                 Some(current)
             }
+            StructureProcessorKind::BlockAge { mossiness } => Some(Self::process_block_age(
+                registry, current, *mossiness, settings, random,
+            )),
+            StructureProcessorKind::LavaSubmergedBlock => Some(Self::process_lava_submerged_block(
+                registry,
+                region.block_state(current.world_pos),
+                current,
+            )),
+            StructureProcessorKind::BlackstoneReplace => {
+                Some(Self::process_blackstone_replace(registry, current))
+            }
             StructureProcessorKind::Capped { .. } => Some(current),
+        }
+    }
+
+    fn process_block_age(
+        registry: &Registry,
+        current: ProcessedBlockInfo,
+        mossiness: f32,
+        settings: &StructurePlaceSettings<'_>,
+        random: &mut WorldgenRandom,
+    ) -> ProcessedBlockInfo {
+        match settings.processor_random {
+            StructureProcessorRandom::Placement => {
+                Self::process_block_age_with_random(registry, current, mossiness, random)
+            }
+            StructureProcessorRandom::Positional => {
+                let mut random =
+                    LegacyRandom::from_seed(Self::block_pos_seed(current.world_pos) as u64);
+                Self::process_block_age_with_random(registry, current, mossiness, &mut random)
+            }
+        }
+    }
+
+    fn process_block_age_with_random(
+        registry: &Registry,
+        mut current: ProcessedBlockInfo,
+        mossiness: f32,
+        random: &mut impl Random,
+    ) -> ProcessedBlockInfo {
+        let block = Self::block_for_state(registry, current.state);
+        let new_state = if block == &vanilla_blocks::STONE_BRICKS
+            || block == &vanilla_blocks::STONE
+            || block == &vanilla_blocks::CHISELED_STONE_BRICKS
+        {
+            Self::maybe_replace_full_stone_block(registry, mossiness, random)
+        } else if registry
+            .blocks
+            .is_in_tag(block, &vanilla_block_tags::STAIRS_TAG)
+        {
+            Self::maybe_replace_stairs(registry, current.state, mossiness, random)
+        } else if registry
+            .blocks
+            .is_in_tag(block, &vanilla_block_tags::SLABS_TAG)
+        {
+            Self::maybe_replace_slab(registry, current.state, mossiness, random)
+        } else if registry
+            .blocks
+            .is_in_tag(block, &vanilla_block_tags::WALLS_TAG)
+        {
+            Self::maybe_replace_wall(registry, current.state, mossiness, random)
+        } else if block == &vanilla_blocks::OBSIDIAN {
+            Self::maybe_replace_obsidian(registry, random)
+        } else {
+            None
+        };
+
+        if let Some(new_state) = new_state {
+            current.state = new_state;
+        }
+        current
+    }
+
+    fn maybe_replace_full_stone_block(
+        registry: &Registry,
+        mossiness: f32,
+        random: &mut impl Random,
+    ) -> Option<BlockStateId> {
+        if random.next_f32() >= 0.5 {
+            return None;
+        }
+
+        let non_mossy = [
+            registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::CRACKED_STONE_BRICKS),
+            Self::random_facing_stairs(registry, &vanilla_blocks::STONE_BRICK_STAIRS, random),
+        ];
+        let mossy = [
+            registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::MOSSY_STONE_BRICKS),
+            Self::random_facing_stairs(registry, &vanilla_blocks::MOSSY_STONE_BRICK_STAIRS, random),
+        ];
+        let candidates = if random.next_f32() < mossiness {
+            mossy
+        } else {
+            non_mossy
+        };
+        Some(candidates[random.next_i32_bounded(2) as usize])
+    }
+
+    fn maybe_replace_stairs(
+        registry: &Registry,
+        state: BlockStateId,
+        mossiness: f32,
+        random: &mut impl Random,
+    ) -> Option<BlockStateId> {
+        if random.next_f32() >= 0.5 {
+            return None;
+        }
+
+        let non_mossy = [
+            registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::STONE_SLAB),
+            registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::STONE_BRICK_SLAB),
+        ];
+        let mossy = [
+            registry
+                .blocks
+                .copy_matching_properties(state, &vanilla_blocks::MOSSY_STONE_BRICK_STAIRS),
+            registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::MOSSY_STONE_BRICK_SLAB),
+        ];
+        let candidates = if random.next_f32() < mossiness {
+            mossy
+        } else {
+            non_mossy
+        };
+        Some(candidates[random.next_i32_bounded(2) as usize])
+    }
+
+    fn maybe_replace_slab(
+        registry: &Registry,
+        state: BlockStateId,
+        mossiness: f32,
+        random: &mut impl Random,
+    ) -> Option<BlockStateId> {
+        (random.next_f32() < mossiness).then(|| {
+            registry
+                .blocks
+                .copy_matching_properties(state, &vanilla_blocks::MOSSY_STONE_BRICK_SLAB)
+        })
+    }
+
+    fn maybe_replace_wall(
+        registry: &Registry,
+        state: BlockStateId,
+        mossiness: f32,
+        random: &mut impl Random,
+    ) -> Option<BlockStateId> {
+        (random.next_f32() < mossiness).then(|| {
+            registry
+                .blocks
+                .copy_matching_properties(state, &vanilla_blocks::MOSSY_STONE_BRICK_WALL)
+        })
+    }
+
+    fn maybe_replace_obsidian(
+        registry: &Registry,
+        random: &mut impl Random,
+    ) -> Option<BlockStateId> {
+        (random.next_f32() < 0.15).then(|| {
+            registry
+                .blocks
+                .get_default_state_id(&vanilla_blocks::CRYING_OBSIDIAN)
+        })
+    }
+
+    fn random_facing_stairs(
+        registry: &Registry,
+        block: BlockRef,
+        random: &mut impl Random,
+    ) -> BlockStateId {
+        const HORIZONTAL_DIRECTIONS: [BlockPropertyDirection; 4] = [
+            BlockPropertyDirection::North,
+            BlockPropertyDirection::East,
+            BlockPropertyDirection::South,
+            BlockPropertyDirection::West,
+        ];
+
+        let facing = HORIZONTAL_DIRECTIONS[random.next_i32_bounded(4) as usize];
+        let half = if random.next_i32_bounded(2) == 0 {
+            Half::Top
+        } else {
+            Half::Bottom
+        };
+        let state = registry.blocks.get_default_state_id(block);
+        let state = registry
+            .blocks
+            .set_property(state, &BlockStateProperties::FACING, facing);
+        registry
+            .blocks
+            .set_property(state, &BlockStateProperties::HALF, half)
+    }
+
+    fn process_lava_submerged_block(
+        registry: &Registry,
+        existing_state: BlockStateId,
+        mut current: ProcessedBlockInfo,
+    ) -> ProcessedBlockInfo {
+        if Self::block_for_state(registry, existing_state) == &vanilla_blocks::LAVA
+            && !blocks::shapes::is_shape_full_block(
+                registry.blocks.get_outline_shape(current.state),
+            )
+        {
+            current.state = registry.blocks.get_default_state_id(&vanilla_blocks::LAVA);
+        }
+        current
+    }
+
+    fn process_blackstone_replace(
+        registry: &Registry,
+        mut current: ProcessedBlockInfo,
+    ) -> ProcessedBlockInfo {
+        let Some(block) =
+            Self::blackstone_replacement_block(Self::block_for_state(registry, current.state))
+        else {
+            return current;
+        };
+
+        let mut new_state = registry.blocks.get_default_state_id(block);
+        if let Some(facing) = registry
+            .blocks
+            .try_get_property(current.state, &BlockStateProperties::FACING)
+            && registry
+                .blocks
+                .try_get_property(new_state, &BlockStateProperties::FACING)
+                .is_some()
+        {
+            new_state =
+                registry
+                    .blocks
+                    .set_property(new_state, &BlockStateProperties::FACING, facing);
+        }
+        if let Some(half) = registry
+            .blocks
+            .try_get_property(current.state, &BlockStateProperties::HALF)
+            && registry
+                .blocks
+                .try_get_property(new_state, &BlockStateProperties::HALF)
+                .is_some()
+        {
+            new_state = registry
+                .blocks
+                .set_property(new_state, &BlockStateProperties::HALF, half);
+        }
+        if let Some(slab_type) = registry
+            .blocks
+            .try_get_property(current.state, &BlockStateProperties::SLAB_TYPE)
+            && registry
+                .blocks
+                .try_get_property(new_state, &BlockStateProperties::SLAB_TYPE)
+                .is_some()
+        {
+            new_state = registry.blocks.set_property(
+                new_state,
+                &BlockStateProperties::SLAB_TYPE,
+                slab_type,
+            );
+        }
+
+        current.state = new_state;
+        current
+    }
+
+    fn blackstone_replacement_block(block: BlockRef) -> Option<BlockRef> {
+        if block == &vanilla_blocks::COBBLESTONE || block == &vanilla_blocks::MOSSY_COBBLESTONE {
+            Some(&vanilla_blocks::BLACKSTONE)
+        } else if block == &vanilla_blocks::STONE {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE)
+        } else if block == &vanilla_blocks::STONE_BRICKS
+            || block == &vanilla_blocks::MOSSY_STONE_BRICKS
+        {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE_BRICKS)
+        } else if block == &vanilla_blocks::COBBLESTONE_STAIRS
+            || block == &vanilla_blocks::MOSSY_COBBLESTONE_STAIRS
+        {
+            Some(&vanilla_blocks::BLACKSTONE_STAIRS)
+        } else if block == &vanilla_blocks::STONE_STAIRS {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE_STAIRS)
+        } else if block == &vanilla_blocks::STONE_BRICK_STAIRS
+            || block == &vanilla_blocks::MOSSY_STONE_BRICK_STAIRS
+        {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE_BRICK_STAIRS)
+        } else if block == &vanilla_blocks::COBBLESTONE_SLAB
+            || block == &vanilla_blocks::MOSSY_COBBLESTONE_SLAB
+        {
+            Some(&vanilla_blocks::BLACKSTONE_SLAB)
+        } else if block == &vanilla_blocks::SMOOTH_STONE_SLAB
+            || block == &vanilla_blocks::STONE_SLAB
+        {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE_SLAB)
+        } else if block == &vanilla_blocks::STONE_BRICK_SLAB
+            || block == &vanilla_blocks::MOSSY_STONE_BRICK_SLAB
+        {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE_BRICK_SLAB)
+        } else if block == &vanilla_blocks::STONE_BRICK_WALL
+            || block == &vanilla_blocks::MOSSY_STONE_BRICK_WALL
+        {
+            Some(&vanilla_blocks::POLISHED_BLACKSTONE_BRICK_WALL)
+        } else if block == &vanilla_blocks::COBBLESTONE_WALL
+            || block == &vanilla_blocks::MOSSY_COBBLESTONE_WALL
+        {
+            Some(&vanilla_blocks::BLACKSTONE_WALL)
+        } else if block == &vanilla_blocks::CHISELED_STONE_BRICKS {
+            Some(&vanilla_blocks::CHISELED_POLISHED_BLACKSTONE)
+        } else if block == &vanilla_blocks::CRACKED_STONE_BRICKS {
+            Some(&vanilla_blocks::CRACKED_POLISHED_BLACKSTONE_BRICKS)
+        } else if block == &vanilla_blocks::IRON_BARS {
+            Some(&vanilla_blocks::IRON_CHAIN)
+        } else {
+            None
         }
     }
 
@@ -1704,6 +2021,7 @@ impl StructureBlockIgnore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::blocks::properties::SlabType;
 
     #[test]
     fn zero_position_with_transform_matches_vanilla_rotation_offsets() {
@@ -1833,6 +2151,101 @@ mod tests {
         assert!(StructureBlockIgnore::StructureAndAir.ignores(&registry, structure_block));
         assert!(StructureBlockIgnore::StructureAndAir.ignores(&registry, air));
         assert!(!StructureBlockIgnore::StructureAndAir.ignores(&registry, stone));
+    }
+
+    #[test]
+    fn block_age_processor_preserves_slab_properties() {
+        let registry = Registry::new_vanilla();
+        let slab = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::STONE_BRICK_SLAB);
+        let slab =
+            registry
+                .blocks
+                .set_property(slab, &BlockStateProperties::SLAB_TYPE, SlabType::Top);
+        let current = ProcessedBlockInfo {
+            template_pos: BlockPos::ZERO,
+            world_pos: BlockPos::new(12, 70, -4),
+            state: slab,
+            nbt: None,
+        };
+        let mut random = LegacyRandom::from_seed(1);
+
+        let processed =
+            StructureTemplate::process_block_age_with_random(&registry, current, 1.0, &mut random);
+
+        assert_eq!(
+            StructureTemplate::block_for_state(&registry, processed.state),
+            &vanilla_blocks::MOSSY_STONE_BRICK_SLAB
+        );
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(processed.state, &BlockStateProperties::SLAB_TYPE),
+            Some(SlabType::Top),
+        );
+    }
+
+    #[test]
+    fn lava_submerged_processor_keeps_non_full_blocks_as_lava() {
+        let registry = Registry::new_vanilla();
+        let slab = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::STONE_BRICK_SLAB);
+        let current = ProcessedBlockInfo {
+            template_pos: BlockPos::ZERO,
+            world_pos: BlockPos::new(0, 64, 0),
+            state: slab,
+            nbt: None,
+        };
+        let lava = registry.blocks.get_default_state_id(&vanilla_blocks::LAVA);
+
+        let processed = StructureTemplate::process_lava_submerged_block(&registry, lava, current);
+
+        assert_eq!(
+            StructureTemplate::block_for_state(&registry, processed.state),
+            &vanilla_blocks::LAVA
+        );
+    }
+
+    #[test]
+    fn blackstone_replace_processor_preserves_stair_orientation() {
+        let registry = Registry::new_vanilla();
+        let stairs = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::STONE_BRICK_STAIRS);
+        let stairs =
+            registry
+                .blocks
+                .set_property(stairs, &BlockStateProperties::FACING, Direction::East);
+        let stairs = registry
+            .blocks
+            .set_property(stairs, &BlockStateProperties::HALF, Half::Top);
+        let current = ProcessedBlockInfo {
+            template_pos: BlockPos::ZERO,
+            world_pos: BlockPos::new(0, 64, 0),
+            state: stairs,
+            nbt: None,
+        };
+
+        let processed = StructureTemplate::process_blackstone_replace(&registry, current);
+
+        assert_eq!(
+            StructureTemplate::block_for_state(&registry, processed.state),
+            &vanilla_blocks::POLISHED_BLACKSTONE_BRICK_STAIRS,
+        );
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(processed.state, &BlockStateProperties::FACING),
+            Some(Direction::East),
+        );
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(processed.state, &BlockStateProperties::HALF),
+            Some(Half::Top),
+        );
     }
 
     #[test]

@@ -47,7 +47,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v10: Added template piece clip and postprocess persistence.
 /// v11: Added template piece placement adjustment persistence.
 /// v12: Added igloo template marker, placement adjustment, and postprocess persistence.
-pub const FORMAT_VERSION: u16 = 12;
+/// v13: Split template processor persistence and added ruined-portal processors.
+pub const FORMAT_VERSION: u16 = 13;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -518,7 +519,7 @@ pub struct PersistentTemplatePieceData {
     /// Late block-ignore processor: 0=none, 1=structure_block, 2=structure_and_air.
     pub late_block_ignore: i8,
     /// Processors applied during block placement.
-    pub processors: PersistentProcessorList,
+    pub processors: PersistentTemplateProcessorList,
     /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
     pub liquid_settings: i8,
     /// Marker handling: 0=ignore, 1=data_markers, 2=shipwreck, 3=igloo.
@@ -529,6 +530,32 @@ pub struct PersistentTemplatePieceData {
     pub placement_clip: i8,
     /// Postprocess: 0=none, 1=nether_fossil, 2=igloo_top.
     pub post_process: i8,
+}
+
+/// Persisted processors for template-backed non-jigsaw pieces.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentTemplateProcessorList {
+    /// Direct empty processor list.
+    Empty,
+    /// Registry-backed processor list.
+    Registry(Identifier),
+    /// Vanilla's hardcoded ruined-portal processor sequence.
+    RuinedPortal {
+        /// Ruined-portal vertical placement.
+        vertical_placement: i8,
+        /// Whether cold lava/aging behavior is active.
+        cold: bool,
+        /// Block age processor mossiness.
+        mossiness: f32,
+        /// Whether structure air is preserved.
+        air_pocket: bool,
+        /// Whether netherrack can grow leaves.
+        overgrown: bool,
+        /// Whether vines can be added.
+        vines: bool,
+        /// Whether blackstone replacement is active.
+        replace_with_blackstone: bool,
+    },
 }
 
 /// Persisted template position adjustment.

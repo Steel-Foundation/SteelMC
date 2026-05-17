@@ -2,7 +2,6 @@
 //! ladder segments, depth ∈ [4, 11]).
 
 use steel_registry::structure::{LiquidSettingsData, StructureData};
-use steel_registry::template_pool::ProcessorList;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Direction, Identifier, Rotation};
@@ -10,7 +9,7 @@ use steel_utils::{Direction, Identifier, Rotation};
 use crate::world::structure::{
     GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
     StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
-    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 const TOP_SIZE: [i32; 3] = [7, 5, 8];
@@ -54,7 +53,7 @@ fn make_igloo_piece(
             rotation_pivot: pivot,
             block_ignore: StructureBlockIgnore::StructureBlock,
             late_block_ignore: StructureBlockIgnore::None,
-            processors: ProcessorList::Empty,
+            processors: TemplateProcessorList::Empty,
             liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
             marker_handling: TemplateMarkerHandling::Igloo,
             placement_adjustment: TemplatePlacementAdjustment::Igloo {
@@ -179,7 +178,7 @@ mod tests {
         assert_eq!(data.rotation_pivot, TOP_PIVOT);
         assert_eq!(data.block_ignore, StructureBlockIgnore::StructureBlock);
         assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
-        assert_eq!(data.processors, ProcessorList::Empty);
+        assert_eq!(data.processors, TemplateProcessorList::Empty);
         assert_eq!(data.liquid_settings, LiquidSettingsData::IgnoreWaterlogging);
         assert_eq!(data.marker_handling, TemplateMarkerHandling::Igloo);
         assert_eq!(

@@ -7,22 +7,30 @@
 
 mod mineshaft;
 
+use std::collections::BTreeMap;
+
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::structure::LiquidSettingsData;
-use steel_registry::structure_processor::StructureProcessorKind;
+use steel_registry::shared_structs::BlockStateData;
+use steel_registry::structure::{LiquidSettingsData, RuinedPortalPlacementData};
+use steel_registry::structure_processor::{
+    PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorKind,
+    StructureRuleTestData,
+};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
-use steel_registry::{Registry, RegistryExt, vanilla_block_entity_types, vanilla_blocks};
+use steel_registry::{
+    Registry, RegistryExt, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
+};
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random};
-use steel_utils::{BlockPos, BoundingBox, Rotation, types::UpdateFlags};
+use steel_utils::{BlockPos, BoundingBox, Identifier, Rotation, types::UpdateFlags};
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::world::structure::{
-    ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
-    StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
-    TemplatePlacementClip, TemplatePostProcess,
+    ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
+    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::region::WorldGenRegion;
@@ -206,7 +214,7 @@ impl StructurePiecePlacer {
             Ok(template) => template,
             Err(err) => panic!("{err}"),
         };
-        let processor_list = Self::processors(registry, processors);
+        let processor_list = Self::pool_processors(registry, processors);
         let settings = StructurePlaceSettings {
             mirror: StructureMirror::None,
             rotation,
@@ -232,7 +240,7 @@ impl StructurePiecePlacer {
         )
     }
 
-    fn processors<'a>(
+    fn pool_processors<'a>(
         registry: &'a Registry,
         processors: &'a ProcessorList,
     ) -> &'a [StructureProcessorKind] {
@@ -244,6 +252,113 @@ impl StructurePiecePlacer {
                 };
                 &processor_list.data.processors
             }
+        }
+    }
+
+    fn template_processors<'a>(
+        registry: &'a Registry,
+        processors: &'a TemplateProcessorList,
+        hardcoded_processors: &'a mut Vec<StructureProcessorKind>,
+    ) -> &'a [StructureProcessorKind] {
+        match processors {
+            TemplateProcessorList::Empty => &[],
+            TemplateProcessorList::Registry(key) => {
+                let Some(processor_list) = registry.structure_processors.by_key(key) else {
+                    panic!("template piece references unknown processor list {key}");
+                };
+                &processor_list.data.processors
+            }
+            TemplateProcessorList::RuinedPortal {
+                vertical_placement,
+                properties,
+            } => {
+                hardcoded_processors.extend(Self::ruined_portal_processors(
+                    *vertical_placement,
+                    *properties,
+                ));
+                hardcoded_processors.as_slice()
+            }
+        }
+    }
+
+    fn ruined_portal_processors(
+        vertical_placement: RuinedPortalPlacementData,
+        properties: RuinedPortalProperties,
+    ) -> Vec<StructureProcessorKind> {
+        let mut rules = vec![
+            Self::random_block_replace_rule("gold_block", 0.3, "air"),
+            Self::ruined_portal_lava_rule(vertical_placement, properties),
+        ];
+        if !properties.cold {
+            rules.push(Self::random_block_replace_rule(
+                "netherrack",
+                0.07,
+                "magma_block",
+            ));
+        }
+
+        let mut processors = vec![
+            StructureProcessorKind::Rule { rules },
+            StructureProcessorKind::BlockAge {
+                mossiness: properties.mossiness,
+            },
+            StructureProcessorKind::ProtectedBlocks {
+                cannot_replace: vanilla_block_tags::FEATURES_CANNOT_REPLACE_TAG,
+            },
+            StructureProcessorKind::LavaSubmergedBlock,
+        ];
+        if properties.replace_with_blackstone {
+            processors.push(StructureProcessorKind::BlackstoneReplace);
+        }
+        processors
+    }
+
+    fn ruined_portal_lava_rule(
+        vertical_placement: RuinedPortalPlacementData,
+        properties: RuinedPortalProperties,
+    ) -> ProcessorRuleData {
+        if vertical_placement == RuinedPortalPlacementData::OnOceanFloor {
+            Self::block_replace_rule("lava", "magma_block")
+        } else if properties.cold {
+            Self::block_replace_rule("lava", "netherrack")
+        } else {
+            Self::random_block_replace_rule("lava", 0.2, "magma_block")
+        }
+    }
+
+    fn block_replace_rule(source: &'static str, target: &'static str) -> ProcessorRuleData {
+        ProcessorRuleData {
+            input_predicate: StructureRuleTestData::BlockMatch {
+                block: Identifier::vanilla_static(source),
+            },
+            location_predicate: StructureRuleTestData::AlwaysTrue,
+            position_predicate: PosRuleTestData::AlwaysTrue,
+            output_state: Self::block_state_data(target),
+            block_entity_modifier: RuleBlockEntityModifierData::Passthrough,
+        }
+    }
+
+    fn random_block_replace_rule(
+        source: &'static str,
+        probability: f32,
+        target: &'static str,
+    ) -> ProcessorRuleData {
+        ProcessorRuleData {
+            input_predicate: StructureRuleTestData::RandomBlockMatch {
+                block: Identifier::vanilla_static(source),
+                probability,
+            },
+            location_predicate: StructureRuleTestData::AlwaysTrue,
+            position_predicate: PosRuleTestData::AlwaysTrue,
+            output_state: Self::block_state_data(target),
+            block_entity_modifier: RuleBlockEntityModifierData::Passthrough,
+        }
+    }
+
+    fn block_state_data(block: &'static str) -> BlockStateData {
+        BlockStateData {
+            name: Identifier::vanilla_static(block),
+            properties: BTreeMap::new(),
         }
     }
 
@@ -266,7 +381,9 @@ impl StructurePiecePlacer {
             Err(err) => panic!("{err}"),
         };
         let position = Self::adjusted_template_position(region, &template, data, random);
-        let processor_list = Self::processors(registry, &data.processors);
+        let mut hardcoded_processors = Vec::new();
+        let processor_list =
+            Self::template_processors(registry, &data.processors, &mut hardcoded_processors);
         let settings = StructurePlaceSettings {
             mirror: data.mirror,
             rotation: data.rotation,
