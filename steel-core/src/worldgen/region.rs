@@ -565,6 +565,82 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         self.block_state(pos)
     }
 
+    /// Replaces an ore target block after reading it under the section write lock.
+    ///
+    /// This is only suitable for ore paths that do not need neighbor reads while deciding
+    /// whether the replacement is allowed.
+    #[must_use]
+    pub(crate) fn replace_ore_target_block_state(
+        &mut self,
+        pos: BlockPos,
+        replacement: impl FnOnce(BlockStateId) -> Option<BlockStateId>,
+    ) -> bool {
+        self.with_ore_profile(OreFeatureStats::record_target_read);
+        let ore_profile = self.ore_profile;
+        let started_at = ore_profile.map(|_| std::time::Instant::now());
+        let Some((chunk_x, chunk_z, status)) =
+            self.region.writable_chunk_for_pos(pos, "bulk write block")
+        else {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return false;
+        };
+        let Some(section_index) =
+            Self::section_index(self.region.min_y(), self.region.height(), pos.y())
+        else {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return false;
+        };
+
+        let chunk = self.chunk(chunk_x, chunk_z, status);
+        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+            panic!(
+                "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {section_index}",
+                pos.x(),
+                pos.y(),
+                pos.z()
+            );
+        };
+
+        Self::with_ore_profile_ref(ore_profile, |profile| {
+            profile.record_section_write_attempt(chunk_x, chunk_z, section_index);
+        });
+        let mut section_guard = if let Some(profile) = ore_profile {
+            if let Some(guard) = section.section.try_write() {
+                guard
+            } else {
+                if let Ok(mut profile) = profile.try_borrow_mut() {
+                    profile.record_section_write_contention();
+                }
+                let wait_started_at = std::time::Instant::now();
+                let guard = section.write();
+                if let Ok(mut profile) = profile.try_borrow_mut() {
+                    profile.record_write_contention_wait_time(wait_started_at.elapsed());
+                }
+                guard
+            }
+        } else {
+            section.write()
+        };
+
+        let local_x = Self::local_coord(pos.x());
+        let local_y = Self::local_coord(pos.y());
+        let local_z = Self::local_coord(pos.z());
+        let old_state = section_guard.states.get(local_x, local_y, local_z);
+        let Some(state) = replacement(old_state) else {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return false;
+        };
+
+        let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
+        Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
+        if old_state != state {
+            chunk.guard.mark_dirty();
+        }
+
+        Self::record_ore_write_time(ore_profile, started_at);
+        true
+    }
+
     /// Reads a block state through cached section access.
     ///
     /// Out-of-height reads return air, matching vanilla `BulkSectionAccess.getBlockState`.

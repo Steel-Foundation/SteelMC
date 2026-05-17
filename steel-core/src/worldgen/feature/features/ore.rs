@@ -135,24 +135,25 @@ impl FeatureDecorationRunner {
 
                 for x in x_min..=x_max {
                     let x_distance = (f64::from(x) + 0.5 - node[0]) / radius;
-                    if x_distance * x_distance >= 1.0 {
+                    let x_distance_squared = x_distance * x_distance;
+                    if x_distance_squared >= 1.0 {
                         continue;
                     }
 
                     for y in y_min..=y_max {
+                        if region.is_outside_build_height(y) {
+                            continue;
+                        }
+
                         let y_distance = (f64::from(y) + 0.5 - node[1]) / radius;
-                        if x_distance * x_distance + y_distance * y_distance >= 1.0 {
+                        let xy_distance_squared = x_distance_squared + y_distance * y_distance;
+                        if xy_distance_squared >= 1.0 {
                             continue;
                         }
 
                         for z in z_min..=z_max {
                             let z_distance = (f64::from(z) + 0.5 - node[2]) / radius;
-                            if x_distance * x_distance
-                                + y_distance * y_distance
-                                + z_distance * z_distance
-                                >= 1.0
-                                || region.is_outside_build_height(y)
-                            {
+                            if xy_distance_squared + z_distance * z_distance >= 1.0 {
                                 continue;
                             }
 
@@ -240,13 +241,22 @@ impl FeatureDecorationRunner {
         false
     }
 
-    pub(in crate::worldgen::feature) fn try_place_ore_block_in_bulk(
+    fn try_place_ore_block_in_bulk(
         sections: &mut WorldGenBulkSectionAccess<'_, '_, '_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &OreConfiguration,
         pos: BlockPos,
     ) -> bool {
+        if config.discard_chance_on_air_exposure <= 0.0 {
+            return sections.replace_ore_target_block_state(pos, |block_state| {
+                config.targets.iter().find_map(|target| {
+                    Self::rule_test_matches(registry, &target.target, block_state)
+                        .then(|| Self::block_state_from_data(registry, &target.state))
+                })
+            });
+        }
+
         let block_state = sections.ore_target_block_state(pos);
         for target in &config.targets {
             if Self::can_place_ore_in_bulk(
