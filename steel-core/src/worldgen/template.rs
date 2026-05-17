@@ -68,6 +68,11 @@ struct ProcessedBlockInfo {
     nbt: Option<NbtCompound>,
 }
 
+pub(crate) struct StructureDataMarker {
+    pub(crate) metadata: String,
+    pub(crate) pos: BlockPos,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StructureProcessorRandom {
     /// Vanilla `StructurePlaceSettings.setRandom(random)`.
@@ -562,6 +567,47 @@ impl StructureTemplate {
                 .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
             let _ = region.set_block_state(world_pos, state, UpdateFlags::UPDATE_ALL);
         }
+    }
+
+    pub(crate) fn data_markers(
+        &self,
+        registry: &Registry,
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        random: &mut WorldgenRandom,
+    ) -> Vec<StructureDataMarker> {
+        let Some(palette) = self.palette(settings, position, random) else {
+            return Vec::new();
+        };
+
+        let mut markers = Vec::new();
+        for block in &palette.blocks {
+            if Self::block_for_state(registry, block.state) != &vanilla_blocks::STRUCTURE_BLOCK {
+                continue;
+            }
+            let world_pos = Self::transformed_position(position, block.pos, settings);
+            if !settings.bounding_box.is_inside(world_pos) {
+                continue;
+            }
+            let Some(nbt) = block.nbt.as_ref() else {
+                continue;
+            };
+            if nbt
+                .string("mode")
+                .is_none_or(|mode| mode.to_str().as_ref() != "DATA")
+            {
+                continue;
+            }
+            let metadata = nbt
+                .string("metadata")
+                .map(|metadata| metadata.to_str().into_owned())
+                .unwrap_or_default();
+            markers.push(StructureDataMarker {
+                metadata,
+                pos: world_pos,
+            });
+        }
+        markers
     }
 
     fn update_shape_at_edge(
@@ -1787,5 +1833,38 @@ mod tests {
         assert!(StructureBlockIgnore::StructureAndAir.ignores(&registry, structure_block));
         assert!(StructureBlockIgnore::StructureAndAir.ignores(&registry, air));
         assert!(!StructureBlockIgnore::StructureAndAir.ignores(&registry, stone));
+    }
+
+    #[test]
+    fn data_markers_read_shipwreck_structure_blocks() {
+        let registry = Registry::new_vanilla();
+        let template = StructureTemplate::load_vanilla(
+            &registry,
+            &Identifier::vanilla_static("shipwreck/with_mast"),
+        )
+        .expect("shipwreck template should be bundled");
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::Clockwise90,
+            rotation_pivot: BlockPos::new(4, 0, 15),
+            bounding_box: BoundingBox::new(-64, 0, -64, 64, 128, 64),
+            processors: &[],
+            block_ignore: StructureBlockIgnore::StructureAndAir,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+        };
+        let mut random = WorldgenRandom::from_seed(0);
+
+        let mut markers = template
+            .data_markers(&registry, BlockPos::ZERO, &settings, &mut random)
+            .into_iter()
+            .map(|marker| marker.metadata)
+            .collect::<Vec<_>>();
+        markers.sort();
+
+        assert_eq!(markers, ["map_chest", "supply_chest", "treasure_chest"]);
     }
 }

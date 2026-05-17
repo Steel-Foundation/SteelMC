@@ -15,7 +15,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use crate::world::structure::{
     ColumnBlock, GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext,
     StructureMirror, StructurePiece, StructurePiecePayload, TemplateMarkerHandling,
-    TemplatePieceData, TemplatePlacementClip, TemplatePostProcess,
+    TemplatePieceData, TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess,
 };
 
 /// Fossil templates count (`minecraft:nether_fossils/fossil_N`).
@@ -140,6 +140,7 @@ fn make_nether_fossil_piece(
             processors: ProcessorList::Empty,
             liquid_settings: LiquidSettingsData::ApplyWaterlogging,
             marker_handling: TemplateMarkerHandling::Ignore,
+            placement_adjustment: TemplatePlacementAdjustment::None,
             placement_clip: TemplatePlacementClip::CenterChunkExpandedToTemplate,
             post_process: TemplatePostProcess::NetherFossil,
         }),
@@ -240,6 +241,7 @@ mod tests {
         assert_eq!(data.processors, ProcessorList::Empty);
         assert_eq!(data.liquid_settings, LiquidSettingsData::ApplyWaterlogging);
         assert_eq!(data.marker_handling, TemplateMarkerHandling::Ignore);
+        assert_eq!(data.placement_adjustment, TemplatePlacementAdjustment::None);
         assert_eq!(
             data.placement_clip,
             TemplatePlacementClip::CenterChunkExpandedToTemplate

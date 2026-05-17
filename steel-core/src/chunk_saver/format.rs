@@ -45,7 +45,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v8: Added typed jigsaw piece-state persistence.
 /// v9: Added proto chunk carving mask persistence and typed packed chunk references.
 /// v10: Added template piece clip and postprocess persistence.
-pub const FORMAT_VERSION: u16 = 10;
+/// v11: Added template piece placement adjustment persistence.
+pub const FORMAT_VERSION: u16 = 11;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -521,10 +522,26 @@ pub struct PersistentTemplatePieceData {
     pub liquid_settings: i8,
     /// Marker handling: 0=ignore, 1=data_markers.
     pub marker_handling: i8,
+    /// Family-specific position adjustment before template block placement.
+    pub placement_adjustment: PersistentTemplatePlacementAdjustment,
     /// Placement clip: 0=center_chunk, 1=center_chunk_expanded_to_template.
     pub placement_clip: i8,
     /// Postprocess: 0=none, 1=nether_fossil.
     pub post_process: i8,
+}
+
+/// Persisted template position adjustment.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentTemplatePlacementAdjustment {
+    /// Place at the persisted template position.
+    None,
+    /// Shipwreck height adjustment state.
+    Shipwreck {
+        /// Whether this is the beached shipwreck variant.
+        is_beached: bool,
+        /// Vanilla `height_adjusted` flag.
+        height_adjusted: bool,
+    },
 }
 
 /// Persisted procedural piece data.

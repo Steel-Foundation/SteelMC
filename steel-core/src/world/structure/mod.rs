@@ -218,6 +218,8 @@ pub struct TemplatePieceData {
     pub liquid_settings: LiquidSettingsData,
     /// How structure-template data markers are handled for this family.
     pub marker_handling: TemplateMarkerHandling,
+    /// Family-specific position adjustment before template block placement.
+    pub placement_adjustment: TemplatePlacementAdjustment,
     /// Bounding box passed to vanilla template placement.
     pub placement_clip: TemplatePlacementClip,
     /// Family-specific work done after the template blocks are placed.
@@ -253,6 +255,22 @@ pub enum TemplateMarkerHandling {
     Ignore,
     /// Dispatch data markers to the structure-family placement code.
     DataMarkers,
+    /// Shipwreck map, supply, and treasure chest markers.
+    Shipwreck,
+}
+
+/// Family-specific template position adjustment before block placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemplatePlacementAdjustment {
+    /// Place at the persisted template position.
+    None,
+    /// Shipwreck height adjustment, persisted after the first placement call.
+    Shipwreck {
+        /// Whether this is the beached shipwreck variant.
+        is_beached: bool,
+        /// Vanilla `height_adjusted` flag.
+        height_adjusted: bool,
+    },
 }
 
 /// Vanilla bounding box adjustment before calling `StructureTemplate.placeInWorld`.

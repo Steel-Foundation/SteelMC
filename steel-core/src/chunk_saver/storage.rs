@@ -31,7 +31,8 @@ use crate::world::structure::mineshaft::{
 use crate::world::structure::{
     ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
     StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
-    TemplateMarkerHandling, TemplatePieceData, TemplatePlacementClip, TemplatePostProcess,
+    TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment, TemplatePlacementClip,
+    TemplatePostProcess,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -171,13 +172,45 @@ const fn marker_handling_to_persistent(marker_handling: TemplateMarkerHandling) 
     match marker_handling {
         TemplateMarkerHandling::Ignore => 0,
         TemplateMarkerHandling::DataMarkers => 1,
+        TemplateMarkerHandling::Shipwreck => 2,
     }
 }
 
 const fn marker_handling_from_persistent(value: i8) -> TemplateMarkerHandling {
     match value {
         1 => TemplateMarkerHandling::DataMarkers,
+        2 => TemplateMarkerHandling::Shipwreck,
         _ => TemplateMarkerHandling::Ignore,
+    }
+}
+
+const fn placement_adjustment_to_persistent(
+    adjustment: TemplatePlacementAdjustment,
+) -> PersistentTemplatePlacementAdjustment {
+    match adjustment {
+        TemplatePlacementAdjustment::None => PersistentTemplatePlacementAdjustment::None,
+        TemplatePlacementAdjustment::Shipwreck {
+            is_beached,
+            height_adjusted,
+        } => PersistentTemplatePlacementAdjustment::Shipwreck {
+            is_beached,
+            height_adjusted,
+        },
+    }
+}
+
+const fn placement_adjustment_from_persistent(
+    adjustment: &PersistentTemplatePlacementAdjustment,
+) -> TemplatePlacementAdjustment {
+    match adjustment {
+        PersistentTemplatePlacementAdjustment::None => TemplatePlacementAdjustment::None,
+        PersistentTemplatePlacementAdjustment::Shipwreck {
+            is_beached,
+            height_adjusted,
+        } => TemplatePlacementAdjustment::Shipwreck {
+            is_beached: *is_beached,
+            height_adjusted: *height_adjusted,
+        },
     }
 }
 
@@ -224,7 +257,7 @@ use super::{
     PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
     PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
     PersistentStructureReference, PersistentStructureStart, PersistentTemplatePieceData,
-    PersistentTick, PreparedChunkSave,
+    PersistentTemplatePlacementAdjustment, PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -1216,6 +1249,9 @@ impl ChunkStorage {
                     processors: Self::processors_to_persistent(&data.processors),
                     liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
                     marker_handling: marker_handling_to_persistent(data.marker_handling),
+                    placement_adjustment: placement_adjustment_to_persistent(
+                        data.placement_adjustment,
+                    ),
                     placement_clip: placement_clip_to_persistent(data.placement_clip),
                     post_process: post_process_to_persistent(data.post_process),
                 })
@@ -1253,6 +1289,9 @@ impl ChunkStorage {
                     processors: Self::persistent_to_processors(&data.processors),
                     liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
                     marker_handling: marker_handling_from_persistent(data.marker_handling),
+                    placement_adjustment: placement_adjustment_from_persistent(
+                        &data.placement_adjustment,
+                    ),
                     placement_clip: placement_clip_from_persistent(data.placement_clip),
                     post_process: post_process_from_persistent(data.post_process),
                 })
@@ -2134,6 +2173,10 @@ mod tests {
                 processors: ProcessorList::Registry(processor_id.clone()),
                 liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
                 marker_handling: TemplateMarkerHandling::DataMarkers,
+                placement_adjustment: TemplatePlacementAdjustment::Shipwreck {
+                    is_beached: true,
+                    height_adjusted: false,
+                },
                 placement_clip: TemplatePlacementClip::CenterChunkExpandedToTemplate,
                 post_process: TemplatePostProcess::NetherFossil,
             }),
@@ -2204,6 +2247,13 @@ mod tests {
         assert_eq!(
             template.marker_handling,
             TemplateMarkerHandling::DataMarkers
+        );
+        assert_eq!(
+            template.placement_adjustment,
+            TemplatePlacementAdjustment::Shipwreck {
+                is_beached: true,
+                height_adjusted: false,
+            }
         );
         assert_eq!(
             template.placement_clip,

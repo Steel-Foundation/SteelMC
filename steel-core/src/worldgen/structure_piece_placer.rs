@@ -7,25 +7,27 @@
 
 mod mineshaft;
 
+use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::structure_processor::StructureProcessorKind;
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
-use steel_registry::{Registry, RegistryExt, vanilla_blocks};
+use steel_registry::{Registry, RegistryExt, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BoundingBox, Rotation, types::UpdateFlags};
 
+use crate::chunk::heightmap::HeightmapType;
 use crate::world::structure::{
     ProceduralPieceData, StructureBlockIgnore, StructureMirror, StructurePiece,
-    StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementClip,
-    TemplatePostProcess,
+    StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
+    TemplatePlacementClip, TemplatePostProcess,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
-    StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+    StructureDataMarker, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
 
 pub(crate) struct StructurePiecePlacer;
@@ -51,7 +53,7 @@ impl StructurePiecePlacer {
         random: &mut WorldgenRandom,
         biome_zoom_seed: i64,
     ) -> bool {
-        let piece_bounding_box = piece.bounding_box;
+        let mut piece_bounding_box = piece.bounding_box;
         let piece_orientation = piece.orientation;
         let placed = match &mut piece.payload {
             StructurePiecePayload::Jigsaw(data) => Self::place_pool_element(
@@ -66,9 +68,15 @@ impl StructurePiecePlacer {
                 data.liquid_settings,
                 biome_zoom_seed,
             ),
-            StructurePiecePayload::Template(data) => {
-                Self::place_template_piece(region, registry, data, reference_pos, clip, random)
-            }
+            StructurePiecePayload::Template(data) => Self::place_template_piece(
+                region,
+                registry,
+                data,
+                &mut piece_bounding_box,
+                reference_pos,
+                clip,
+                random,
+            ),
             StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(data)) => {
                 Self::place_mineshaft_piece(
                     region,
@@ -83,6 +91,7 @@ impl StructurePiecePlacer {
             }
             StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented) => false,
         };
+        piece.bounding_box = piece_bounding_box;
         placed
     }
 
@@ -241,7 +250,8 @@ impl StructurePiecePlacer {
     fn place_template_piece(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
-        data: &TemplatePieceData,
+        data: &mut TemplatePieceData,
+        piece_bounding_box: &mut BoundingBox,
         reference_pos: BlockPos,
         clip: BoundingBox,
         random: &mut WorldgenRandom,
@@ -255,6 +265,7 @@ impl StructurePiecePlacer {
             Ok(template) => template,
             Err(err) => panic!("{err}"),
         };
+        Self::adjust_template_position(region, &template, data, random);
         let processor_list = Self::processors(registry, &data.processors);
         let position = BlockPos::new(
             data.template_position.0,
@@ -284,6 +295,7 @@ impl StructurePiecePlacer {
             data.mirror,
             settings.rotation_pivot,
         );
+        *piece_bounding_box = template_box;
         let placement_clip = Self::template_placement_clip(data.placement_clip, clip, template_box);
         let settings = StructurePlaceSettings {
             bounding_box: placement_clip,
@@ -303,6 +315,17 @@ impl StructurePiecePlacer {
             Self::TEMPLATE_UPDATE_FLAGS,
         );
         if placed {
+            if !Self::handle_template_data_markers(
+                region,
+                registry,
+                &template,
+                data.marker_handling,
+                position,
+                &settings,
+                random,
+            ) {
+                return false;
+            }
             template.replace_jigsaw_final_states(region, registry, position, &settings, random);
             Self::post_process_template_piece(
                 region,
@@ -313,6 +336,123 @@ impl StructurePiecePlacer {
             );
         }
         placed
+    }
+
+    fn adjust_template_position(
+        region: &WorldGenRegion<'_>,
+        template: &StructureTemplate,
+        data: &mut TemplatePieceData,
+        random: &mut WorldgenRandom,
+    ) {
+        match &mut data.placement_adjustment {
+            TemplatePlacementAdjustment::None => {}
+            TemplatePlacementAdjustment::Shipwreck {
+                is_beached,
+                height_adjusted,
+            } => {
+                if *height_adjusted || Self::shipwreck_is_too_big_to_fit(template) {
+                    return;
+                }
+                let new_y = Self::adjusted_shipwreck_y(
+                    region,
+                    template,
+                    data.template_position,
+                    *is_beached,
+                    random,
+                );
+                data.template_position.1 = new_y;
+                *height_adjusted = true;
+            }
+        }
+    }
+
+    fn shipwreck_is_too_big_to_fit(template: &StructureTemplate) -> bool {
+        let size = template.size(Rotation::None);
+        size[0] > 32 || size[1] > 32
+    }
+
+    fn adjusted_shipwreck_y(
+        region: &WorldGenRegion<'_>,
+        template: &StructureTemplate,
+        position: (i32, i32, i32),
+        is_beached: bool,
+        random: &mut WorldgenRandom,
+    ) -> i32 {
+        let size = template.size(Rotation::None);
+        let heightmap_type = if is_beached {
+            HeightmapType::WorldSurfaceWg
+        } else {
+            HeightmapType::OceanFloorWg
+        };
+        let base_area = size[0] * size[2];
+        if base_area == 0 {
+            return region.height_at(heightmap_type, position.0, position.2);
+        }
+
+        let mut min_y = region.max_y_exclusive();
+        let mut mean = 0;
+        for z in position.2..position.2 + size[2] {
+            for x in position.0..position.0 + size[0] {
+                let height = region.height_at(heightmap_type, x, z);
+                mean += height;
+                min_y = min_y.min(height);
+            }
+        }
+        mean /= base_area;
+
+        if is_beached {
+            min_y - size[1] / 2 - random.next_i32_bounded(3)
+        } else {
+            mean
+        }
+    }
+
+    fn handle_template_data_markers(
+        region: &mut WorldGenRegion<'_>,
+        registry: &Registry,
+        template: &StructureTemplate,
+        marker_handling: TemplateMarkerHandling,
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+        random: &mut WorldgenRandom,
+    ) -> bool {
+        match marker_handling {
+            TemplateMarkerHandling::Ignore => true,
+            TemplateMarkerHandling::DataMarkers => {
+                // TODO: Add family-specific data marker dispatch before enabling these pieces.
+                false
+            }
+            TemplateMarkerHandling::Shipwreck => {
+                for marker in template.data_markers(registry, position, settings, random) {
+                    Self::handle_shipwreck_marker(region, &marker, random);
+                }
+                true
+            }
+        }
+    }
+
+    fn handle_shipwreck_marker(
+        region: &mut WorldGenRegion<'_>,
+        marker: &StructureDataMarker,
+        random: &mut WorldgenRandom,
+    ) {
+        let loot_table = match marker.metadata.as_str() {
+            "map_chest" => "minecraft:chests/shipwreck_map",
+            "treasure_chest" => "minecraft:chests/shipwreck_treasure",
+            "supply_chest" => "minecraft:chests/shipwreck_supply",
+            _ => return,
+        };
+        let chest_pos = marker.pos.below();
+        let state = region.block_state(chest_pos);
+        if state.get_block() != &vanilla_blocks::CHEST {
+            return;
+        }
+
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", loot_table);
+        nbt.insert("LootTableSeed", random.next_i64());
+        let _ =
+            region.set_block_entity_data(chest_pos, &vanilla_block_entity_types::CHEST, state, nbt);
     }
 
     const fn template_placement_clip(
