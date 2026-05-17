@@ -2,11 +2,12 @@ use std::sync::Weak;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{Registry, fluid::FluidRef, vanilla_block_entity_types, vanilla_blocks};
+use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
 
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::SharedEntity;
 use crate::world::World;
@@ -185,6 +186,12 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         if StructurePiecePlacer::needs_structure_shape_postprocessing(state) {
             self.region.mark_pos_for_postprocessing(pos);
         }
+        let fluid_state = state.get_fluid_state();
+        if !fluid_state.is_empty() {
+            let _ = self
+                .region
+                .schedule_fluid_tick_default(pos, fluid_state.fluid_id, 0);
+        }
     }
 
     pub(super) fn create_chest(
@@ -260,18 +267,6 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
             return false;
         }
         StructurePiecePlacer::set_spawner_entity(self.region, pos, spawner, entity_id)
-    }
-
-    pub(super) fn schedule_fluid_tick_default(
-        &self,
-        x: i32,
-        y: i32,
-        z: i32,
-        fluid: FluidRef,
-        delay: i32,
-    ) -> bool {
-        let pos = self.world_pos(x, y, z);
-        self.clip.is_inside(pos) && self.region.schedule_fluid_tick_default(pos, fluid, delay)
     }
 
     pub(super) const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {

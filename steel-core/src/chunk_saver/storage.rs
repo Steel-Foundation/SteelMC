@@ -33,6 +33,7 @@ use crate::world::structure::jungle_temple::JungleTemplePieceData;
 use crate::world::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
+use crate::world::structure::stronghold::{StrongholdPieceData, StrongholdSmallDoorType};
 use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::world::structure::{
     ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
@@ -326,10 +327,11 @@ use super::{
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
     PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentPoi, PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
-    PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
-    PersistentStructureReference, PersistentStructureStart, PersistentSwampHutPieceData,
-    PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
-    PersistentTemplateProcessorList, PersistentTick, PreparedChunkSave,
+    PersistentSection, PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType,
+    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
+    PersistentStructureStart, PersistentSwampHutPieceData, PersistentTemplatePieceData,
+    PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
+    PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -1240,6 +1242,9 @@ impl ChunkStorage {
                     Self::fortress_piece_data_to_persistent(*data),
                 )
             }
+            ProceduralPieceData::Stronghold(data) => PersistentProceduralPieceData::Stronghold(
+                Self::stronghold_piece_data_to_persistent(*data),
+            ),
             ProceduralPieceData::SwampHut(data) => {
                 PersistentProceduralPieceData::SwampHut(PersistentSwampHutPieceData {
                     height_position: data.height_position.unwrap_or(-1),
@@ -1281,6 +1286,9 @@ impl ChunkStorage {
             }
             PersistentProceduralPieceData::NetherFortress(data) => {
                 ProceduralPieceData::NetherFortress(Self::persistent_to_fortress_piece_data(data))
+            }
+            PersistentProceduralPieceData::Stronghold(data) => {
+                ProceduralPieceData::Stronghold(Self::persistent_to_stronghold_piece_data(data))
             }
             PersistentProceduralPieceData::SwampHut(data) => {
                 ProceduralPieceData::SwampHut(SwampHutPieceData {
@@ -1375,6 +1383,196 @@ impl ChunkStorage {
             }
             PersistentNetherFortressPieceData::RoomCrossing => FortressPieceData::RoomCrossing,
             PersistentNetherFortressPieceData::StairsRoom => FortressPieceData::StairsRoom,
+        }
+    }
+
+    const fn stronghold_door_to_persistent(
+        door: StrongholdSmallDoorType,
+    ) -> PersistentStrongholdSmallDoorType {
+        match door {
+            StrongholdSmallDoorType::Opening => PersistentStrongholdSmallDoorType::Opening,
+            StrongholdSmallDoorType::WoodDoor => PersistentStrongholdSmallDoorType::WoodDoor,
+            StrongholdSmallDoorType::Grates => PersistentStrongholdSmallDoorType::Grates,
+            StrongholdSmallDoorType::IronDoor => PersistentStrongholdSmallDoorType::IronDoor,
+        }
+    }
+
+    const fn persistent_to_stronghold_door(
+        door: &PersistentStrongholdSmallDoorType,
+    ) -> StrongholdSmallDoorType {
+        match door {
+            PersistentStrongholdSmallDoorType::Opening => StrongholdSmallDoorType::Opening,
+            PersistentStrongholdSmallDoorType::WoodDoor => StrongholdSmallDoorType::WoodDoor,
+            PersistentStrongholdSmallDoorType::Grates => StrongholdSmallDoorType::Grates,
+            PersistentStrongholdSmallDoorType::IronDoor => StrongholdSmallDoorType::IronDoor,
+        }
+    }
+
+    const fn stronghold_piece_data_to_persistent(
+        data: StrongholdPieceData,
+    ) -> PersistentStrongholdPieceData {
+        match data {
+            StrongholdPieceData::Straight {
+                entry_door,
+                left_child,
+                right_child,
+            } => PersistentStrongholdPieceData::Straight {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                left_child,
+                right_child,
+            },
+            StrongholdPieceData::PrisonHall { entry_door } => {
+                PersistentStrongholdPieceData::PrisonHall {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::LeftTurn { entry_door } => {
+                PersistentStrongholdPieceData::LeftTurn {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::RightTurn { entry_door } => {
+                PersistentStrongholdPieceData::RightTurn {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::RoomCrossing {
+                entry_door,
+                crossing_type,
+            } => PersistentStrongholdPieceData::RoomCrossing {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                crossing_type,
+            },
+            StrongholdPieceData::StraightStairsDown { entry_door } => {
+                PersistentStrongholdPieceData::StraightStairsDown {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::StairsDown {
+                entry_door,
+                is_source,
+            } => PersistentStrongholdPieceData::StairsDown {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                is_source,
+            },
+            StrongholdPieceData::FiveCrossing {
+                entry_door,
+                left_low,
+                left_high,
+                right_low,
+                right_high,
+            } => PersistentStrongholdPieceData::FiveCrossing {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                left_low,
+                left_high,
+                right_low,
+                right_high,
+            },
+            StrongholdPieceData::ChestCorridor {
+                entry_door,
+                has_placed_chest,
+            } => PersistentStrongholdPieceData::ChestCorridor {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                has_placed_chest,
+            },
+            StrongholdPieceData::Library {
+                entry_door,
+                is_tall,
+            } => PersistentStrongholdPieceData::Library {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                is_tall,
+            },
+            StrongholdPieceData::PortalRoom { has_placed_spawner } => {
+                PersistentStrongholdPieceData::PortalRoom { has_placed_spawner }
+            }
+            StrongholdPieceData::FillerCorridor { steps } => {
+                PersistentStrongholdPieceData::FillerCorridor { steps }
+            }
+        }
+    }
+
+    const fn persistent_to_stronghold_piece_data(
+        data: &PersistentStrongholdPieceData,
+    ) -> StrongholdPieceData {
+        match data {
+            PersistentStrongholdPieceData::Straight {
+                entry_door,
+                left_child,
+                right_child,
+            } => StrongholdPieceData::Straight {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                left_child: *left_child,
+                right_child: *right_child,
+            },
+            PersistentStrongholdPieceData::PrisonHall { entry_door } => {
+                StrongholdPieceData::PrisonHall {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::LeftTurn { entry_door } => {
+                StrongholdPieceData::LeftTurn {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::RightTurn { entry_door } => {
+                StrongholdPieceData::RightTurn {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::RoomCrossing {
+                entry_door,
+                crossing_type,
+            } => StrongholdPieceData::RoomCrossing {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                crossing_type: *crossing_type,
+            },
+            PersistentStrongholdPieceData::StraightStairsDown { entry_door } => {
+                StrongholdPieceData::StraightStairsDown {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::StairsDown {
+                entry_door,
+                is_source,
+            } => StrongholdPieceData::StairsDown {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                is_source: *is_source,
+            },
+            PersistentStrongholdPieceData::FiveCrossing {
+                entry_door,
+                left_low,
+                left_high,
+                right_low,
+                right_high,
+            } => StrongholdPieceData::FiveCrossing {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                left_low: *left_low,
+                left_high: *left_high,
+                right_low: *right_low,
+                right_high: *right_high,
+            },
+            PersistentStrongholdPieceData::ChestCorridor {
+                entry_door,
+                has_placed_chest,
+            } => StrongholdPieceData::ChestCorridor {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                has_placed_chest: *has_placed_chest,
+            },
+            PersistentStrongholdPieceData::Library {
+                entry_door,
+                is_tall,
+            } => StrongholdPieceData::Library {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                is_tall: *is_tall,
+            },
+            PersistentStrongholdPieceData::PortalRoom { has_placed_spawner } => {
+                StrongholdPieceData::PortalRoom {
+                    has_placed_spawner: *has_placed_spawner,
+                }
+            }
+            PersistentStrongholdPieceData::FillerCorridor { steps } => {
+                StrongholdPieceData::FillerCorridor { steps: *steps }
+            }
         }
     }
 
@@ -2618,6 +2816,21 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         };
+        let stronghold_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "shrc"),
+            bounding_box: steel_utils::BoundingBox::new(55, 35, 55, 65, 41, 65),
+            gen_depth: 7,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(
+                StrongholdPieceData::RoomCrossing {
+                    entry_door: StrongholdSmallDoorType::IronDoor,
+                    crossing_type: 2,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
         let swamp_hut_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "tesh"),
             bounding_box: steel_utils::BoundingBox::new(80, 63, 80, 86, 69, 88),
@@ -2648,6 +2861,7 @@ mod tests {
                 jungle_temple_piece,
                 mineshaft_piece,
                 fortress_piece,
+                stronghold_piece,
                 swamp_hut_piece,
             ],
             TerrainAdjustment::None,
@@ -2663,7 +2877,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 10);
+        assert_eq!(loaded_start.pieces.len(), 11);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2815,8 +3029,21 @@ mod tests {
             }
         );
 
-        let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(stronghold_payload)) =
             &loaded_start.pieces[9].payload
+        else {
+            panic!("stronghold payload should roundtrip");
+        };
+        assert_eq!(
+            *stronghold_payload,
+            StrongholdPieceData::RoomCrossing {
+                entry_door: StrongholdSmallDoorType::IronDoor,
+                crossing_type: 2,
+            }
+        );
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
+            &loaded_start.pieces[10].payload
         else {
             panic!("swamp hut payload should roundtrip");
         };

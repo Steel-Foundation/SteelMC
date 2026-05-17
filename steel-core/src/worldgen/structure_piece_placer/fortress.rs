@@ -1,6 +1,6 @@
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{Registry, vanilla_blocks, vanilla_fluids};
+use steel_registry::{Registry, vanilla_blocks};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
@@ -457,7 +457,6 @@ fn place_castle_entrance(placer: &mut ScatteredFeaturePlacer<'_, '_>) {
     placer.generate_box(6, 1, 6, 6, 4, 6, air, air, false);
     placer.place_block(bricks, 6, 0, 6);
     placer.place_block(lava(), 6, 5, 6);
-    let _ = placer.schedule_fluid_tick_default(6, 5, 6, &vanilla_fluids::LAVA, 0);
 }
 
 fn place_castle_small_corridor_crossing(placer: &mut ScatteredFeaturePlacer<'_, '_>) {

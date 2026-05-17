@@ -606,8 +606,108 @@ pub enum PersistentProceduralPieceData {
     Mineshaft(PersistentMineshaftPieceData),
     /// Nether fortress bridge/castle payload.
     NetherFortress(PersistentNetherFortressPieceData),
+    /// Stronghold recursive piece payload.
+    Stronghold(PersistentStrongholdPieceData),
     /// Swamp hut piece payload.
     SwampHut(PersistentSwampHutPieceData),
+}
+
+/// Persisted stronghold door variant.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentStrongholdSmallDoorType {
+    /// Three-block cave-air opening.
+    Opening,
+    /// Oak door framed by stone bricks.
+    WoodDoor,
+    /// Iron-bar grate opening.
+    Grates,
+    /// Iron door with stone buttons.
+    IronDoor,
+}
+
+/// Persisted piece-specific stronghold data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentStrongholdPieceData {
+    /// Straight corridor with optional side exits.
+    Straight {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `leftChild`.
+        left_child: bool,
+        /// Vanilla `rightChild`.
+        right_child: bool,
+    },
+    /// Prison hall.
+    PrisonHall {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Left turn.
+    LeftTurn {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Right turn.
+    RightTurn {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Room crossing with one of five vanilla decorations.
+    RoomCrossing {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `type`.
+        crossing_type: i32,
+    },
+    /// Straight stair corridor.
+    StraightStairsDown {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Descending stairs, including the source/start piece.
+    StairsDown {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `isSource`.
+        is_source: bool,
+    },
+    /// Five-way crossing with low/high side exits.
+    FiveCrossing {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `leftLow`.
+        left_low: bool,
+        /// Vanilla `leftHigh`.
+        left_high: bool,
+        /// Vanilla `rightLow`.
+        right_low: bool,
+        /// Vanilla `rightHigh`.
+        right_high: bool,
+    },
+    /// Corridor containing a loot chest.
+    ChestCorridor {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `hasPlacedChest`.
+        has_placed_chest: bool,
+    },
+    /// Library room.
+    Library {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `isTall`.
+        is_tall: bool,
+    },
+    /// End portal room.
+    PortalRoom {
+        /// Vanilla `hasPlacedSpawner`.
+        has_placed_spawner: bool,
+    },
+    /// Collision filler corridor.
+    FillerCorridor {
+        /// Vanilla `steps`.
+        steps: i32,
+    },
 }
 
 /// Persisted piece-specific nether fortress data.

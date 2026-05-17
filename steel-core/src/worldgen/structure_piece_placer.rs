@@ -13,6 +13,7 @@ mod mineshaft;
 mod pool_element;
 mod ruined_portal;
 mod scattered_feature;
+mod stronghold;
 mod swamp_hut;
 mod template_piece;
 mod template_processors;
@@ -96,6 +97,17 @@ impl StructurePiecePlacer {
             }
             StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(data)) => {
                 Self::place_nether_fortress_piece(
+                    region,
+                    registry,
+                    piece_bounding_box,
+                    piece_orientation,
+                    data,
+                    clip,
+                    random,
+                )
+            }
+            StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(data)) => {
+                Self::place_stronghold_piece(
                     region,
                     registry,
                     piece_bounding_box,
