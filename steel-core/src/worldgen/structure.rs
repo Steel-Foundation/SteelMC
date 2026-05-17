@@ -18,6 +18,7 @@ use crate::world::structure::end_city::EndCityStructure;
 use crate::world::structure::fortress::NetherFortressStructure;
 use crate::world::structure::igloo::IglooStructure;
 use crate::world::structure::jigsaw::JigsawStructure;
+use crate::world::structure::jungle_temple::JungleTempleStructure;
 use crate::world::structure::mansion::WoodlandMansionStructure;
 use crate::world::structure::mineshaft::MineshaftStructure;
 use crate::world::structure::nether_fossil::NetherFossilStructure;
@@ -29,8 +30,9 @@ use crate::world::structure::placement::{
 };
 use crate::world::structure::ruined_portal::RuinedPortalStructure;
 use crate::world::structure::shipwreck::ShipwreckStructure;
-use crate::world::structure::single_piece::{BuriedTreasureStructure, SinglePieceStructure};
+use crate::world::structure::single_piece::BuriedTreasureStructure;
 use crate::world::structure::stronghold::StrongholdStructure;
+use crate::world::structure::swamp_hut::SwampHutStructure;
 use crate::world::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructureStart,
 };
@@ -802,22 +804,8 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
     reg("ocean_monument", Box::new(OceanMonumentStructure));
     reg("mineshaft", Box::new(MineshaftStructure));
     reg("desert_pyramid", Box::new(DesertPyramidStructure));
-    reg(
-        "jungle_temple",
-        Box::new(SinglePieceStructure {
-            size: (12, 10, 15),
-            piece_id: "tejp",
-            require_above_sea: true,
-        }),
-    );
-    reg(
-        "swamp_hut",
-        Box::new(SinglePieceStructure {
-            size: (7, 7, 9),
-            piece_id: "tesh",
-            require_above_sea: false,
-        }),
-    );
+    reg("jungle_temple", Box::new(JungleTempleStructure));
+    reg("swamp_hut", Box::new(SwampHutStructure));
     reg("buried_treasure", Box::new(BuriedTreasureStructure));
     reg("shipwreck", Box::new(ShipwreckStructure));
     reg("igloo", Box::new(IglooStructure));

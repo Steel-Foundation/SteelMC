@@ -26,9 +26,11 @@ use steel_utils::{
 
 use crate::world::structure::desert_pyramid::DesertPyramidPieceData;
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
+use crate::world::structure::jungle_temple::JungleTemplePieceData;
 use crate::world::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
+use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::world::structure::{
     ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
     StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart,
@@ -294,11 +296,12 @@ use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
     PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
-    PersistentJigsawJunction, PersistentJigsawPieceData, PersistentMineshaftPieceData,
-    PersistentMineshaftPieceKind, PersistentPoi, PersistentPoolElement,
-    PersistentProceduralPieceData, PersistentProcessorList, PersistentSection,
-    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
-    PersistentStructureStart, PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
+    PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
+    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentPoi,
+    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentSection, PersistentStructurePiece, PersistentStructurePiecePayload,
+    PersistentStructureReference, PersistentStructureStart, PersistentSwampHutPieceData,
+    PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
     PersistentTemplateProcessorList, PersistentTick, PreparedChunkSave,
 };
 
@@ -1190,10 +1193,26 @@ impl ChunkStorage {
                     has_placed_chest: data.has_placed_chest,
                 })
             }
+            ProceduralPieceData::JungleTemple(data) => {
+                PersistentProceduralPieceData::JungleTemple(PersistentJungleTemplePieceData {
+                    height_position: data.height_position.unwrap_or(-1),
+                    placed_main_chest: data.placed_main_chest,
+                    placed_hidden_chest: data.placed_hidden_chest,
+                    placed_trap1: data.placed_trap1,
+                    placed_trap2: data.placed_trap2,
+                })
+            }
             ProceduralPieceData::Mineshaft(data) => {
                 PersistentProceduralPieceData::Mineshaft(PersistentMineshaftPieceData {
                     mineshaft_type: mineshaft_type_to_persistent(data.mineshaft_type),
                     kind: Self::mineshaft_kind_to_persistent(&data.kind),
+                })
+            }
+            ProceduralPieceData::SwampHut(data) => {
+                PersistentProceduralPieceData::SwampHut(PersistentSwampHutPieceData {
+                    height_position: data.height_position.unwrap_or(-1),
+                    spawned_witch: data.spawned_witch,
+                    spawned_cat: data.spawned_cat,
                 })
             }
         }
@@ -1213,10 +1232,26 @@ impl ChunkStorage {
                     random_collapsed_roof_pos: BlockPos::new(0, 0, 0),
                 })
             }
+            PersistentProceduralPieceData::JungleTemple(data) => {
+                ProceduralPieceData::JungleTemple(JungleTemplePieceData {
+                    height_position: (data.height_position >= 0).then_some(data.height_position),
+                    placed_main_chest: data.placed_main_chest,
+                    placed_hidden_chest: data.placed_hidden_chest,
+                    placed_trap1: data.placed_trap1,
+                    placed_trap2: data.placed_trap2,
+                })
+            }
             PersistentProceduralPieceData::Mineshaft(data) => {
                 ProceduralPieceData::Mineshaft(MineshaftPiecePayload {
                     mineshaft_type: mineshaft_type_from_persistent(data.mineshaft_type),
                     kind: Self::persistent_to_mineshaft_kind(&data.kind),
+                })
+            }
+            PersistentProceduralPieceData::SwampHut(data) => {
+                ProceduralPieceData::SwampHut(SwampHutPieceData {
+                    height_position: (data.height_position >= 0).then_some(data.height_position),
+                    spawned_witch: data.spawned_witch,
+                    spawned_cat: data.spawned_cat,
                 })
             }
         }
@@ -2355,6 +2390,24 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         };
+        let jungle_temple_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "tejp"),
+            bounding_box: steel_utils::BoundingBox::new(64, 63, 64, 75, 72, 78),
+            gen_depth: 0,
+            orientation: Some(Direction::South),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(
+                JungleTemplePieceData {
+                    height_position: Some(64),
+                    placed_main_chest: true,
+                    placed_hidden_chest: false,
+                    placed_trap1: true,
+                    placed_trap2: false,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
         let mineshaft_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "mscorridor"),
             bounding_box: steel_utils::BoundingBox::new(32, 45, 32, 34, 47, 46),
@@ -2375,6 +2428,22 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         };
+        let swamp_hut_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "tesh"),
+            bounding_box: steel_utils::BoundingBox::new(80, 63, 80, 86, 69, 88),
+            gen_depth: 0,
+            orientation: Some(Direction::West),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(
+                SwampHutPieceData {
+                    height_position: Some(62),
+                    spawned_witch: true,
+                    spawned_cat: false,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
 
         let start = StructureStart::new(
             structure_id.clone(),
@@ -2385,7 +2454,9 @@ mod tests {
                 procedural_piece,
                 buried_treasure_piece,
                 desert_pyramid_piece,
+                jungle_temple_piece,
                 mineshaft_piece,
+                swamp_hut_piece,
             ],
             TerrainAdjustment::None,
         );
@@ -2400,7 +2471,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 6);
+        assert_eq!(loaded_start.pieces.len(), 8);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2477,8 +2548,19 @@ mod tests {
         assert!(payload.potential_suspicious_sand_world_positions.is_empty());
         assert_eq!(payload.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
 
-        let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
+        let StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(payload)) =
             &loaded_start.pieces[5].payload
+        else {
+            panic!("jungle temple payload should roundtrip");
+        };
+        assert_eq!(payload.height_position, Some(64));
+        assert!(payload.placed_main_chest);
+        assert!(!payload.placed_hidden_chest);
+        assert!(payload.placed_trap1);
+        assert!(!payload.placed_trap2);
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
+            &loaded_start.pieces[6].payload
         else {
             panic!("mineshaft payload should roundtrip");
         };
@@ -2496,6 +2578,15 @@ mod tests {
         assert!(!*spider_corridor);
         assert!(*has_placed_spider);
         assert_eq!(*num_sections, 3);
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
+            &loaded_start.pieces[7].payload
+        else {
+            panic!("swamp hut payload should roundtrip");
+        };
+        assert_eq!(payload.height_position, Some(62));
+        assert!(payload.spawned_witch);
+        assert!(!payload.spawned_cat);
     }
 
     #[test]

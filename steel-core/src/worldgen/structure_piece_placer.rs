@@ -7,9 +7,12 @@
 
 mod buried_treasure;
 mod desert_pyramid;
+mod jungle_temple;
 mod mineshaft;
 mod pool_element;
 mod ruined_portal;
+mod scattered_feature;
+mod swamp_hut;
 mod template_piece;
 mod template_processors;
 
@@ -95,6 +98,28 @@ impl StructurePiecePlacer {
             }
             StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(data)) => {
                 Self::place_desert_pyramid_piece(
+                    region,
+                    registry,
+                    &mut piece_bounding_box,
+                    piece_orientation,
+                    data,
+                    clip,
+                    random,
+                )
+            }
+            StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(data)) => {
+                Self::place_jungle_temple_piece(
+                    region,
+                    registry,
+                    &mut piece_bounding_box,
+                    piece_orientation,
+                    data,
+                    clip,
+                    random,
+                )
+            }
+            StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(data)) => {
+                Self::place_swamp_hut_piece(
                     region,
                     registry,
                     &mut piece_bounding_box,

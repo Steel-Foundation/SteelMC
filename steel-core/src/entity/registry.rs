@@ -10,7 +10,9 @@ use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
 use uuid::Uuid;
 
-use super::entities::{BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity};
+use super::entities::{
+    BlockDisplayEntity, ChestMinecartEntity, DummyMobEntity, EndCrystalEntity, ItemEntity,
+};
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
 
@@ -232,6 +234,45 @@ pub fn init_entities() {
         |id, pos, uuid, velocity, rotation, on_ground, world| {
             Arc::new(ChestMinecartEntity::from_saved(
                 id, pos, uuid, velocity, rotation, on_ground, world,
+            ))
+        },
+    );
+
+    // TODO: Replace dummy witch/cat registrations with full mob implementations.
+    registry.register(&vanilla_entities::WITCH, |id, pos, world| {
+        Arc::new(DummyMobEntity::new(
+            id,
+            pos,
+            world,
+            &vanilla_entities::WITCH,
+        ))
+    });
+    registry.register_load(
+        &vanilla_entities::WITCH,
+        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
+            Arc::new(DummyMobEntity::from_saved(
+                id,
+                pos,
+                uuid,
+                rotation,
+                world,
+                &vanilla_entities::WITCH,
+            ))
+        },
+    );
+    registry.register(&vanilla_entities::CAT, |id, pos, world| {
+        Arc::new(DummyMobEntity::new(id, pos, world, &vanilla_entities::CAT))
+    });
+    registry.register_load(
+        &vanilla_entities::CAT,
+        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
+            Arc::new(DummyMobEntity::from_saved(
+                id,
+                pos,
+                uuid,
+                rotation,
+                world,
+                &vanilla_entities::CAT,
             ))
         },
     );

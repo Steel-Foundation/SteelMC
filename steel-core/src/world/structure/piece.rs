@@ -4,7 +4,7 @@ use steel_registry::structure::{LiquidSettingsData, RuinedPortalPlacementData};
 use steel_registry::template_pool::Projection;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
-use super::{desert_pyramid, jigsaw, mineshaft};
+use super::{desert_pyramid, jigsaw, jungle_temple, mineshaft, swamp_hut};
 
 /// Vanilla's `StructurePiece` runtime state.
 #[derive(Debug, Clone)]
@@ -220,6 +220,10 @@ pub enum ProceduralPieceData {
     BuriedTreasure,
     /// Desert pyramid piece payload.
     DesertPyramid(desert_pyramid::DesertPyramidPieceData),
+    /// Jungle temple piece payload.
+    JungleTemple(jungle_temple::JungleTemplePieceData),
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(mineshaft::MineshaftPiecePayload),
+    /// Swamp hut piece payload.
+    SwampHut(swamp_hut::SwampHutPieceData),
 }

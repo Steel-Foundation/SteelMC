@@ -49,7 +49,7 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v12: Added igloo template marker, placement adjustment, and postprocess persistence.
 /// v13: Split template processor persistence and added ruined-portal processors.
 /// v14: Added buried treasure procedural piece persistence.
-/// v15: Added desert pyramid procedural piece persistence.
+/// v15: Added procedural structure-piece payload persistence.
 pub const FORMAT_VERSION: u16 = 15;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
@@ -589,8 +589,12 @@ pub enum PersistentProceduralPieceData {
     BuriedTreasure,
     /// Desert pyramid piece payload.
     DesertPyramid(PersistentDesertPyramidPieceData),
+    /// Jungle temple piece payload.
+    JungleTemple(PersistentJungleTemplePieceData),
     /// Mineshaft room/corridor/crossing/stairs payload.
     Mineshaft(PersistentMineshaftPieceData),
+    /// Swamp hut piece payload.
+    SwampHut(PersistentSwampHutPieceData),
 }
 
 /// Persisted desert pyramid piece payload.
@@ -600,6 +604,21 @@ pub struct PersistentDesertPyramidPieceData {
     pub height_position: i32,
     /// Chest placement flags ordered by `Direction.get2DDataValue`.
     pub has_placed_chest: [bool; 4],
+}
+
+/// Persisted jungle temple piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJungleTemplePieceData {
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`; -1 means not height-adjusted yet.
+    pub height_position: i32,
+    /// Whether the main chest has already been placed.
+    pub placed_main_chest: bool,
+    /// Whether the hidden chest has already been placed.
+    pub placed_hidden_chest: bool,
+    /// Whether the first arrow-dispenser trap has already been placed.
+    pub placed_trap1: bool,
+    /// Whether the second arrow-dispenser trap has already been placed.
+    pub placed_trap2: bool,
 }
 
 /// Persisted mineshaft piece payload.
@@ -639,6 +658,17 @@ pub enum PersistentMineshaftPieceKind {
     },
     /// Stair segment.
     Stairs,
+}
+
+/// Persisted swamp hut piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentSwampHutPieceData {
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`; -1 means not height-adjusted yet.
+    pub height_position: i32,
+    /// Whether the structure witch has already been spawned.
+    pub spawned_witch: bool,
+    /// Whether the structure black cat has already been spawned.
+    pub spawned_cat: bool,
 }
 
 /// Persisted pool element selected during jigsaw assembly.

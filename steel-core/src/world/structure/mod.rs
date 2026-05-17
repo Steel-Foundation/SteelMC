@@ -9,6 +9,7 @@ pub mod end_city;
 pub mod fortress;
 pub mod igloo;
 pub mod jigsaw;
+pub mod jungle_temple;
 pub mod mansion;
 pub mod mineshaft;
 pub mod nether_fossil;
@@ -20,6 +21,7 @@ pub mod ruined_portal;
 pub mod shipwreck;
 pub mod single_piece;
 pub mod stronghold;
+pub mod swamp_hut;
 
 use std::{cell::RefCell, slice, vec};
 

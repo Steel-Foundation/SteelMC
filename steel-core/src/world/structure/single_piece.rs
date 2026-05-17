@@ -1,6 +1,4 @@
-//! "Single piece" structures: one piece at chunk origin with fixed size + random
-//! horizontal rotation. Jungle temple (12×10×15), swamp hut (7×7×9), and
-//! buried treasure (1×1×1 at `(chunkMinX+9, 90, chunkMinZ+9)`).
+//! Single-piece buried treasure structure start generation.
 
 use steel_registry::structure::StructureData;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -8,66 +6,8 @@ use steel_utils::{BoundingBox, Identifier};
 
 use crate::world::structure::{
     GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
-    StructurePiecePayload, make_oriented_piece_bounding_box, random_horizontal_direction,
+    StructurePiecePayload,
 };
-
-/// Jungle temple / swamp hut: one piece at `(chunkMinX, 64, chunkMinZ)`
-/// with random rotation and a lowest-corner height check.
-pub struct SinglePieceStructure {
-    /// Template dimensions (width, height, depth).
-    pub size: (i32, i32, i32),
-    /// Vanilla `StructurePieceType` id (`"tedp"`, `"tejp"`, `"tesh"`, ...).
-    pub piece_id: &'static str,
-    /// If `true`, reject when any footprint corner is below `sea_level`.
-    pub require_above_sea: bool,
-}
-
-impl Structure for SinglePieceStructure {
-    fn find_generation_point(
-        &self,
-        ctx: &mut dyn StructureGenerationContext,
-        structure: &StructureData,
-        rng: &mut LegacyRandom,
-    ) -> Option<GenerationStub> {
-        let (w, h, d) = self.size;
-
-        if self.require_above_sea {
-            let (x0, z0) = (ctx.chunk_min_x(), ctx.chunk_min_z());
-            let h0 = ctx.base_height(x0, z0, false) - 1;
-            let h1 = ctx.base_height(x0, z0 + d, false) - 1;
-            let h2 = ctx.base_height(x0 + w, z0, false) - 1;
-            let h3 = ctx.base_height(x0 + w, z0 + d, false) - 1;
-            if h0.min(h1).min(h2).min(h3) < ctx.sea_level() {
-                return None;
-            }
-        }
-
-        let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
-        if !structure.allowed_biomes.contains(&biome.key) {
-            return None;
-        }
-
-        let orientation = random_horizontal_direction(rng);
-        Some(GenerationStub {
-            position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
-            pieces: vec![StructurePiece::non_jigsaw(
-                Identifier::new_static("minecraft", self.piece_id),
-                make_oriented_piece_bounding_box(
-                    ctx.chunk_min_x(),
-                    64,
-                    ctx.chunk_min_z(),
-                    orientation,
-                    w,
-                    h,
-                    d,
-                ),
-                0,
-                Some(orientation),
-            )],
-        })
-    }
-}
 
 /// Single 1×1×1 piece at `(chunkMinX+9, 90, chunkMinZ+9)`. Biome check at ocean-floor Y.
 pub struct BuriedTreasureStructure;
