@@ -339,8 +339,8 @@ impl StructureTemplate {
         mirror: StructureMirror,
         pivot: BlockPos,
     ) -> BoundingBox {
-        let corner1 = Self::transform_template_pos(BlockPos::ZERO, mirror, rotation, pivot);
-        let corner2 = Self::transform_template_pos(
+        let corner1 = Self::calculate_relative_position(BlockPos::ZERO, mirror, rotation, pivot);
+        let corner2 = Self::calculate_relative_position(
             BlockPos::new(self.size[0] - 1, self.size[1] - 1, self.size[2] - 1),
             mirror,
             rotation,
@@ -356,7 +356,7 @@ impl StructureTemplate {
         )
     }
 
-    const fn transform_template_pos(
+    pub(crate) const fn calculate_relative_position(
         pos: BlockPos,
         mirror: StructureMirror,
         rotation: Rotation,
@@ -865,7 +865,7 @@ impl StructureTemplate {
         template_pos: BlockPos,
         settings: &StructurePlaceSettings<'_>,
     ) -> BlockPos {
-        let transformed = Self::transform_template_pos(
+        let transformed = Self::calculate_relative_position(
             template_pos,
             settings.mirror,
             settings.rotation,
@@ -1866,5 +1866,35 @@ mod tests {
         markers.sort();
 
         assert_eq!(markers, ["map_chest", "supply_chest", "treasure_chest"]);
+    }
+
+    #[test]
+    fn data_markers_read_igloo_chest_structure_block() {
+        let registry = Registry::new_vanilla();
+        let template =
+            StructureTemplate::load_vanilla(&registry, &Identifier::vanilla_static("igloo/bottom"))
+                .expect("igloo bottom template should be bundled");
+        let settings = StructurePlaceSettings {
+            mirror: StructureMirror::None,
+            rotation: Rotation::Clockwise180,
+            rotation_pivot: BlockPos::new(3, 6, 7),
+            bounding_box: BoundingBox::new(-64, 0, -64, 64, 128, 64),
+            processors: &[],
+            block_ignore: StructureBlockIgnore::StructureBlock,
+            late_block_ignore: StructureBlockIgnore::None,
+            replace_jigsaws: false,
+            projection: None,
+            processor_random: StructureProcessorRandom::Positional,
+            liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        };
+        let mut random = WorldgenRandom::from_seed(0);
+
+        let markers = template
+            .data_markers(&registry, BlockPos::ZERO, &settings, &mut random)
+            .into_iter()
+            .map(|marker| marker.metadata)
+            .collect::<Vec<_>>();
+
+        assert_eq!(markers, ["chest"]);
     }
 }

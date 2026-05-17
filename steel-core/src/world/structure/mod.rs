@@ -257,6 +257,8 @@ pub enum TemplateMarkerHandling {
     DataMarkers,
     /// Shipwreck map, supply, and treasure chest markers.
     Shipwreck,
+    /// Igloo basement chest marker.
+    Igloo,
 }
 
 /// Family-specific template position adjustment before block placement.
@@ -270,6 +272,11 @@ pub enum TemplatePlacementAdjustment {
         is_beached: bool,
         /// Vanilla `height_adjusted` flag.
         height_adjusted: bool,
+    },
+    /// Igloo per-placement height adjustment.
+    Igloo {
+        /// Vanilla template offset for this igloo piece.
+        template_offset: (i32, i32, i32),
     },
 }
 
@@ -289,6 +296,8 @@ pub enum TemplatePostProcess {
     None,
     /// Nether fossil dried-ghast placement.
     NetherFossil,
+    /// Igloo top-piece trapdoor snow-block fixup.
+    IglooTop,
 }
 
 /// Family-specific state for code-generated structure pieces.

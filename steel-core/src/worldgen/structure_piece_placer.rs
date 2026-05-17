@@ -265,13 +265,8 @@ impl StructurePiecePlacer {
             Ok(template) => template,
             Err(err) => panic!("{err}"),
         };
-        Self::adjust_template_position(region, &template, data, random);
+        let position = Self::adjusted_template_position(region, &template, data, random);
         let processor_list = Self::processors(registry, &data.processors);
-        let position = BlockPos::new(
-            data.template_position.0,
-            data.template_position.1,
-            data.template_position.2,
-        );
         let settings = StructurePlaceSettings {
             mirror: data.mirror,
             rotation: data.rotation,
@@ -331,6 +326,8 @@ impl StructurePiecePlacer {
                 region,
                 registry,
                 data.post_process,
+                position,
+                &settings,
                 template_box,
                 placement_clip,
             );
@@ -338,30 +335,52 @@ impl StructurePiecePlacer {
         placed
     }
 
-    fn adjust_template_position(
+    fn adjusted_template_position(
         region: &WorldGenRegion<'_>,
         template: &StructureTemplate,
         data: &mut TemplatePieceData,
         random: &mut WorldgenRandom,
-    ) {
+    ) -> BlockPos {
         match &mut data.placement_adjustment {
-            TemplatePlacementAdjustment::None => {}
+            TemplatePlacementAdjustment::None => BlockPos::new(
+                data.template_position.0,
+                data.template_position.1,
+                data.template_position.2,
+            ),
             TemplatePlacementAdjustment::Shipwreck {
                 is_beached,
                 height_adjusted,
             } => {
-                if *height_adjusted || Self::shipwreck_is_too_big_to_fit(template) {
-                    return;
+                if !*height_adjusted && !Self::shipwreck_is_too_big_to_fit(template) {
+                    let new_y = Self::adjusted_shipwreck_y(
+                        region,
+                        template,
+                        data.template_position,
+                        *is_beached,
+                        random,
+                    );
+                    data.template_position.1 = new_y;
+                    *height_adjusted = true;
                 }
-                let new_y = Self::adjusted_shipwreck_y(
+                BlockPos::new(
+                    data.template_position.0,
+                    data.template_position.1,
+                    data.template_position.2,
+                )
+            }
+            TemplatePlacementAdjustment::Igloo { template_offset } => {
+                Self::adjusted_igloo_position(
                     region,
-                    template,
                     data.template_position,
-                    *is_beached,
-                    random,
-                );
-                data.template_position.1 = new_y;
-                *height_adjusted = true;
+                    data.mirror,
+                    data.rotation,
+                    BlockPos::new(
+                        data.rotation_pivot.0,
+                        data.rotation_pivot.1,
+                        data.rotation_pivot.2,
+                    ),
+                    *template_offset,
+                )
             }
         }
     }
@@ -407,6 +426,36 @@ impl StructurePiecePlacer {
         }
     }
 
+    fn adjusted_igloo_position(
+        region: &WorldGenRegion<'_>,
+        position: (i32, i32, i32),
+        mirror: StructureMirror,
+        rotation: Rotation,
+        pivot: BlockPos,
+        template_offset: (i32, i32, i32),
+    ) -> BlockPos {
+        const IGLOO_GENERATION_HEIGHT: i32 = 90;
+
+        let raw_position = BlockPos::new(position.0, position.1, position.2);
+        let entrance_relative = StructureTemplate::calculate_relative_position(
+            BlockPos::new(3 - template_offset.0, 0, -template_offset.2),
+            mirror,
+            rotation,
+            pivot,
+        );
+        let entrance_pos = raw_position.offset(
+            entrance_relative.x(),
+            entrance_relative.y(),
+            entrance_relative.z(),
+        );
+        let height = region.height_at(
+            HeightmapType::WorldSurfaceWg,
+            entrance_pos.x(),
+            entrance_pos.z(),
+        );
+        raw_position.offset(0, height - IGLOO_GENERATION_HEIGHT - 1, 0)
+    }
+
     fn handle_template_data_markers(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
@@ -425,6 +474,12 @@ impl StructurePiecePlacer {
             TemplateMarkerHandling::Shipwreck => {
                 for marker in template.data_markers(registry, position, settings, random) {
                     Self::handle_shipwreck_marker(region, &marker, random);
+                }
+                true
+            }
+            TemplateMarkerHandling::Igloo => {
+                for marker in template.data_markers(registry, position, settings, random) {
+                    Self::handle_igloo_marker(region, &marker, random);
                 }
                 true
             }
@@ -455,6 +510,33 @@ impl StructurePiecePlacer {
             region.set_block_entity_data(chest_pos, &vanilla_block_entity_types::CHEST, state, nbt);
     }
 
+    fn handle_igloo_marker(
+        region: &mut WorldGenRegion<'_>,
+        marker: &StructureDataMarker,
+        random: &mut WorldgenRandom,
+    ) {
+        if marker.metadata != "chest" {
+            return;
+        }
+
+        let _ = region.set_block_state(
+            marker.pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        let chest_pos = marker.pos.below();
+        let state = region.block_state(chest_pos);
+        if state.get_block() != &vanilla_blocks::CHEST {
+            return;
+        }
+
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:chests/igloo_chest");
+        nbt.insert("LootTableSeed", random.next_i64());
+        let _ =
+            region.set_block_entity_data(chest_pos, &vanilla_block_entity_types::CHEST, state, nbt);
+    }
+
     const fn template_placement_clip(
         placement_clip: TemplatePlacementClip,
         center_clip: BoundingBox,
@@ -472,6 +554,8 @@ impl StructurePiecePlacer {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         post_process: TemplatePostProcess,
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
         template_box: BoundingBox,
         placement_clip: BoundingBox,
     ) {
@@ -485,7 +569,38 @@ impl StructurePiecePlacer {
                     placement_clip,
                 );
             }
+            TemplatePostProcess::IglooTop => {
+                Self::post_process_igloo_top(region, position, settings);
+            }
         }
+    }
+
+    fn post_process_igloo_top(
+        region: &mut WorldGenRegion<'_>,
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+    ) {
+        let trapdoor_relative = StructureTemplate::calculate_relative_position(
+            BlockPos::new(3, 0, 5),
+            settings.mirror,
+            settings.rotation,
+            settings.rotation_pivot,
+        );
+        let trapdoor_pos = position.offset(
+            trapdoor_relative.x(),
+            trapdoor_relative.y(),
+            trapdoor_relative.z(),
+        );
+        let below_state = region.block_state(trapdoor_pos.below());
+        if below_state.is_air() || below_state.get_block() == &vanilla_blocks::LADDER {
+            return;
+        }
+
+        let _ = region.set_block_state(
+            trapdoor_pos,
+            vanilla_blocks::SNOW_BLOCK.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
     }
 
     fn place_nether_fossil_dried_ghast(

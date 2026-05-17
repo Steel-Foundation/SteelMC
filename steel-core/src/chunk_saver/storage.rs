@@ -173,6 +173,7 @@ const fn marker_handling_to_persistent(marker_handling: TemplateMarkerHandling) 
         TemplateMarkerHandling::Ignore => 0,
         TemplateMarkerHandling::DataMarkers => 1,
         TemplateMarkerHandling::Shipwreck => 2,
+        TemplateMarkerHandling::Igloo => 3,
     }
 }
 
@@ -180,6 +181,7 @@ const fn marker_handling_from_persistent(value: i8) -> TemplateMarkerHandling {
     match value {
         1 => TemplateMarkerHandling::DataMarkers,
         2 => TemplateMarkerHandling::Shipwreck,
+        3 => TemplateMarkerHandling::Igloo,
         _ => TemplateMarkerHandling::Ignore,
     }
 }
@@ -196,6 +198,11 @@ const fn placement_adjustment_to_persistent(
             is_beached,
             height_adjusted,
         },
+        TemplatePlacementAdjustment::Igloo { template_offset } => {
+            PersistentTemplatePlacementAdjustment::Igloo {
+                template_offset: [template_offset.0, template_offset.1, template_offset.2],
+            }
+        }
     }
 }
 
@@ -211,6 +218,11 @@ const fn placement_adjustment_from_persistent(
             is_beached: *is_beached,
             height_adjusted: *height_adjusted,
         },
+        PersistentTemplatePlacementAdjustment::Igloo { template_offset } => {
+            TemplatePlacementAdjustment::Igloo {
+                template_offset: (template_offset[0], template_offset[1], template_offset[2]),
+            }
+        }
     }
 }
 
@@ -232,12 +244,14 @@ const fn post_process_to_persistent(post_process: TemplatePostProcess) -> i8 {
     match post_process {
         TemplatePostProcess::None => 0,
         TemplatePostProcess::NetherFossil => 1,
+        TemplatePostProcess::IglooTop => 2,
     }
 }
 
 const fn post_process_from_persistent(value: i8) -> TemplatePostProcess {
     match value {
         1 => TemplatePostProcess::NetherFossil,
+        2 => TemplatePostProcess::IglooTop,
         _ => TemplatePostProcess::None,
     }
 }
@@ -2155,6 +2169,7 @@ mod tests {
 
         let structure_id = Identifier::new_static("steel", "test_payload_variants");
         let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");
+        let igloo_template_id = Identifier::new_static("minecraft", "igloo/top");
         let processor_id = Identifier::new_static("minecraft", "zombie_plains");
 
         let template_piece = StructurePiece {
@@ -2179,6 +2194,32 @@ mod tests {
                 },
                 placement_clip: TemplatePlacementClip::CenterChunkExpandedToTemplate,
                 post_process: TemplatePostProcess::NetherFossil,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let igloo_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "iglu"),
+            bounding_box: steel_utils::BoundingBox::new(4, 80, 4, 10, 84, 11),
+            gen_depth: 0,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id: igloo_template_id.clone(),
+                template_position: (4, 90, 4),
+                rotation: Rotation::Clockwise90,
+                mirror: StructureMirror::None,
+                rotation_pivot: (3, 5, 5),
+                block_ignore: StructureBlockIgnore::StructureBlock,
+                late_block_ignore: StructureBlockIgnore::None,
+                processors: ProcessorList::Empty,
+                liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+                marker_handling: TemplateMarkerHandling::Igloo,
+                placement_adjustment: TemplatePlacementAdjustment::Igloo {
+                    template_offset: (0, 0, 0),
+                },
+                placement_clip: TemplatePlacementClip::CenterChunk,
+                post_process: TemplatePostProcess::IglooTop,
             }),
             ground_level_delta: 0,
             junctions: Vec::new(),
@@ -2214,7 +2255,12 @@ mod tests {
         let start = StructureStart::new(
             structure_id.clone(),
             ChunkPos::new(8, 9),
-            vec![template_piece, procedural_piece, mineshaft_piece],
+            vec![
+                template_piece,
+                igloo_piece,
+                procedural_piece,
+                mineshaft_piece,
+            ],
             TerrainAdjustment::None,
         );
         let mut starts = FxHashMap::default();
@@ -2228,7 +2274,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 3);
+        assert_eq!(loaded_start.pieces.len(), 4);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -2265,13 +2311,34 @@ mod tests {
             ProcessorList::Registry(processor_id.clone())
         );
 
+        let StructurePiecePayload::Template(template) = &loaded_start.pieces[1].payload else {
+            panic!("igloo template payload should roundtrip");
+        };
+        assert_eq!(template.template_id, igloo_template_id);
+        assert_eq!(template.template_position, (4, 90, 4));
+        assert_eq!(template.rotation, Rotation::Clockwise90);
+        assert_eq!(template.mirror, StructureMirror::None);
+        assert_eq!(template.rotation_pivot, (3, 5, 5));
+        assert_eq!(template.block_ignore, StructureBlockIgnore::StructureBlock);
+        assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
+        assert_eq!(template.processors, ProcessorList::Empty);
+        assert_eq!(template.marker_handling, TemplateMarkerHandling::Igloo);
+        assert_eq!(
+            template.placement_adjustment,
+            TemplatePlacementAdjustment::Igloo {
+                template_offset: (0, 0, 0),
+            }
+        );
+        assert_eq!(template.placement_clip, TemplatePlacementClip::CenterChunk);
+        assert_eq!(template.post_process, TemplatePostProcess::IglooTop);
+
         assert!(matches!(
-            loaded_start.pieces[1].payload,
+            loaded_start.pieces[2].payload,
             StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented)
         ));
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
-            &loaded_start.pieces[2].payload
+            &loaded_start.pieces[3].payload
         else {
             panic!("mineshaft payload should roundtrip");
         };
