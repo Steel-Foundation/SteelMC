@@ -32,6 +32,7 @@ use uuid::Uuid;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::{Entity, EntityBase, RemovalReason};
 use crate::fluid::state::{fluid_state_to_block, get_fluid_state_from_block};
+use crate::fluid::FluidStateExt;
 use crate::physics::MoverType;
 use crate::world::RaytraceAction;
 use crate::world::World;
@@ -254,6 +255,9 @@ impl FallingBlockEntity {
             if entity.id() == self.base.id() {
                 continue;
             }
+            if entity.is_removed() {
+                continue;
+            }
             // Vanilla: EntitySelector.NO_CREATIVE_OR_SPECTATOR
             if let Some(player) = entity.clone().as_player() {
                 let gm = player.game_mode.load();
@@ -261,7 +265,7 @@ impl FallingBlockEntity {
                     continue;
                 }
             }
-            // TODO: EntitySelector.LIVING_ENTITY_STILL_ALIVE — requires is_living() + health check
+            // TODO: EntitySelector.LIVING_ENTITY_STILL_ALIVE — requires is_living() on Entity trait
             entity.hurt(&source, damage);
         }
 
@@ -508,7 +512,7 @@ impl Entity for FallingBlockEntity {
 
         let time = self.time.load(Ordering::Relaxed);
         let cur = self.position();
-        let pos = BlockPos::containing(cur.x, cur.y, cur.z);
+        let mut pos = BlockPos::containing(cur.x, cur.y, cur.z);
         let block_ref = block_state.get_block();
 
         // Concrete powder: if moving fast enough, raycast to detect water traversal.
@@ -517,13 +521,14 @@ impl Entity for FallingBlockEntity {
 
         let mut is_stuck_in_water = false;
         if is_concrete_powder {
-            let cur_pos = self.position();
             let fluid = crate::fluid::state::get_fluid_state(&world, pos);
-            is_stuck_in_water = is_water_source_fluid(fluid);
+            // Vanilla: getFluidState(pos).is(FluidTags.WATER) — any water, not just source
+            is_stuck_in_water = fluid.is_water();
 
-            // High-speed water detection via raycast (vanilla: ClipContext.Fluid.SOURCE_ONLY)
-            if !is_stuck_in_water && prev_vel.length_squared() > 1.0 {
-                let (hit_pos, _) = world.raytrace(prev_pos, cur_pos, |check_pos, w| {
+            // High-speed water detection via raycast (vanilla: ClipContext.Fluid.SOURCE_ONLY).
+            // vel_for_fall matches vanilla's getDeltaMovement() after applyGravity()+move().
+            if !is_stuck_in_water && vel_for_fall.length_squared() > 1.0 {
+                let (hit_pos, _) = world.raytrace(prev_pos, cur, |check_pos, w| {
                     let state = w.get_block_state(check_pos);
                     if is_water_source_block(state) {
                         RaytraceAction::ImmediateHit
@@ -531,12 +536,10 @@ impl Entity for FallingBlockEntity {
                         RaytraceAction::Pass
                     }
                 });
+                // Vanilla: pos = clip.getBlockPos() — all landing logic uses the water pos
                 if let Some(water_pos) = hit_pos {
-                    let fluid_at_hit =
-                        crate::fluid::state::get_fluid_state(&world, water_pos);
-                    if is_water_source_fluid(fluid_at_hit) {
-                        is_stuck_in_water = true;
-                    }
+                    pos = water_pos;
+                    is_stuck_in_water = true;
                 }
             }
         }
@@ -621,9 +624,9 @@ impl Entity for FallingBlockEntity {
                             behavior.on_land(&world, pos, place_state, current_state, self);
                             // TODO: load block_data into block entity when has_block_entity() works
                         } else if self.drop_item.load(Ordering::Relaxed) && self.entity_drops_enabled(&world) {
+                            self.set_removed(RemovalReason::Killed);
                             self.call_on_broken_after_fall(&world, pos);
                             self.try_drop_block_item(&world);
-                            self.set_removed(RemovalReason::Killed);
                         } else {
                             self.set_removed(RemovalReason::Killed);
                         }
@@ -762,19 +765,10 @@ impl Entity for FallingBlockEntity {
     }
 }
 
-/// Returns true if this fluid state is a water source.
-fn is_water_source_fluid(fluid: crate::fluid::FluidState) -> bool {
-    fluid.fluid_id == crate::fluid::water_id() && fluid.is_source()
-}
-
-/// Returns true if this block state is a water source block or waterlogged.
+/// Returns true if the block contains a water source, matching vanilla's
+/// `ClipContext.Fluid.SOURCE_ONLY` behavior: source water (level 0) and
+/// waterlogged blocks qualify; flowing water (level 1-7) does not.
 fn is_water_source_block(state: BlockStateId) -> bool {
-    use steel_registry::vanilla_blocks;
-    if state.get_block() == &vanilla_blocks::WATER {
-        return true;
-    }
-    matches!(
-        state.try_get_value(&BlockStateProperties::WATERLOGGED),
-        Some(true)
-    )
+    let fluid = get_fluid_state_from_block(state);
+    crate::fluid::is_water_fluid(fluid.fluid_id) && fluid.is_source()
 }
