@@ -8,7 +8,9 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::random::{Random as _, worldgen_random::WorldgenRandom};
 use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier};
 
-use crate::world::structure::{StructurePiece, StructureReferenceMap, StructureStart};
+use crate::world::structure::{
+    StructurePiece, StructureReferenceMap, StructureReferenceSet, StructureStart,
+};
 use crate::worldgen::BiomeSourceKind;
 
 #[test]
@@ -169,7 +171,7 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
 }
 
 #[test]
-fn structure_start_resolution_uses_reference_insertion_order_and_filters_invalid_starts() {
+fn structure_start_resolution_uses_vanilla_reference_order_and_filters_invalid_starts() {
     let structure_id = Identifier::vanilla_static("village_plains");
     let other_id = Identifier::vanilla_static("mineshaft");
     let first = ChunkPos::new(3, 5);
@@ -221,13 +223,34 @@ fn structure_start_resolution_uses_reference_insertion_order_and_filters_invalid
         },
     );
 
-    assert_eq!(lookup_order, [first, second, empty, mismatched]);
+    assert_eq!(lookup_order, [empty, first, second, mismatched]);
     assert_eq!(
         starts
             .iter()
             .map(|start| start.chunk_pos)
             .collect::<Vec<_>>(),
         [first, second]
+    );
+}
+
+#[test]
+fn structure_reference_set_iterates_like_vanilla_long_open_hash_set() {
+    let first = ChunkPos::new(-349429, 434509);
+    let second = ChunkPos::new(-349428, 434514);
+    let third = ChunkPos::new(-349423, 434513);
+
+    let references: StructureReferenceSet = [first, second, third].into_iter().collect();
+
+    assert_eq!(
+        references.iter().copied().collect::<Vec<_>>(),
+        [third, second, first]
+    );
+    assert_eq!(
+        references
+            .insertion_order_iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [first, second, third]
     );
 }
 
@@ -247,7 +270,7 @@ fn structure_step_seed_uses_vanilla_feature_seed_shape() {
 fn structure_piece_clip_box_is_center_chunk_build_height_box() {
     assert_eq!(
         FeatureDecorationRunner::chunk_writable_box(ChunkPos::new(-2, 3), -64, 320),
-        BoundingBox::new(-32, -64, 48, -17, 319, 63)
+        BoundingBox::new(-32, -63, 48, -17, 319, 63)
     );
 }
 

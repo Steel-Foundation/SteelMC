@@ -239,7 +239,7 @@ impl FeatureDecorationRunner {
         let min_z = center.0.y * 16;
         BoundingBox::new(
             min_x,
-            min_y,
+            min_y + 1,
             min_z,
             min_x + 15,
             max_y_exclusive - 1,

@@ -175,26 +175,31 @@ pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;
 
 /// Structure references → origin chunk positions.
 ///
-/// Vanilla stores these as a `LongSet`, so duplicates are ignored by construction.
+/// Vanilla stores these as a fastutil `LongOpenHashSet`, so duplicates are
+/// ignored and feature-stage iteration follows that table order.
 pub type StructureReferenceMap = FxHashMap<Identifier, StructureReferenceSet>;
 
-/// Insertion-ordered set of structure-start chunk positions.
+/// Set of structure-start chunk positions with vanilla iteration order.
 ///
-/// Vanilla reference storage is set-like, but feature-stage structure placement
-/// consumes these positions while seeding per-structure RNG. Steel keeps the
-/// scan insertion order explicit instead of relying on hash-set iteration.
+/// Reference generation discovers sources in a stable scan order, but vanilla
+/// stores the packed chunk longs in fastutil's `LongOpenHashSet`. Feature-stage
+/// placement consumes the set through that table iteration order, so Steel keeps
+/// the insertion order for persistence and exposes the vanilla iteration order
+/// for worldgen.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StructureReferenceSet {
-    positions: Vec<ChunkPos>,
+    insertion_order: Vec<ChunkPos>,
+    iteration_order: Vec<ChunkPos>,
 }
 
 impl StructureReferenceSet {
     /// Inserts a chunk position if it was not already present.
     pub fn insert(&mut self, pos: ChunkPos) -> bool {
-        if self.positions.contains(&pos) {
+        if self.insertion_order.contains(&pos) {
             return false;
         }
-        self.positions.push(pos);
+        self.insertion_order.push(pos);
+        self.rebuild_iteration_order();
         true
     }
 
@@ -205,15 +210,105 @@ impl StructureReferenceSet {
         }
     }
 
-    /// Returns an iterator over positions in insertion order.
+    /// Returns an iterator over positions in vanilla `LongOpenHashSet` order.
     pub fn iter(&self) -> slice::Iter<'_, ChunkPos> {
-        self.positions.iter()
+        self.iteration_order.iter()
+    }
+
+    /// Returns an iterator over positions in discovery order.
+    pub fn insertion_order_iter(&self) -> slice::Iter<'_, ChunkPos> {
+        self.insertion_order.iter()
     }
 
     /// Returns `true` when no positions are stored.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.positions.is_empty()
+        self.insertion_order.is_empty()
+    }
+
+    fn rebuild_iteration_order(&mut self) {
+        self.iteration_order = Self::vanilla_long_open_hash_set_order(&self.insertion_order);
+    }
+
+    fn vanilla_long_open_hash_set_order(insertion_order: &[ChunkPos]) -> Vec<ChunkPos> {
+        let Some(table_size) = Self::vanilla_long_open_hash_set_table_size(insertion_order.len())
+        else {
+            return Vec::new();
+        };
+        let mask = (table_size - 1) as u64;
+        let mut table = vec![None; table_size];
+        let mut zero_key = None;
+
+        for &pos in insertion_order {
+            let packed = Self::pack_chunk_pos(pos);
+            if packed == 0 {
+                zero_key = Some(pos);
+                continue;
+            }
+
+            let mut slot = (Self::fastutil_mix(packed) & mask) as usize;
+            loop {
+                if table[slot].is_none() {
+                    table[slot] = Some(pos);
+                    break;
+                }
+                slot = (slot + 1) & (table_size - 1);
+            }
+        }
+
+        let mut ordered = Vec::with_capacity(insertion_order.len());
+        if let Some(pos) = zero_key {
+            ordered.push(pos);
+        }
+        for slot in (0..table_size).rev() {
+            if let Some(pos) = table[slot] {
+                ordered.push(pos);
+            }
+        }
+        ordered
+    }
+
+    fn vanilla_long_open_hash_set_table_size(len: usize) -> Option<usize> {
+        if len == 0 {
+            return None;
+        }
+
+        let mut table_size = Self::fastutil_array_size(16);
+        let mut max_fill = Self::fastutil_max_fill(table_size);
+        let mut size = 0;
+        for _ in 0..len {
+            let old_size = size;
+            size += 1;
+            if old_size >= max_fill {
+                table_size = Self::fastutil_array_size(size + 1);
+                max_fill = Self::fastutil_max_fill(table_size);
+            }
+        }
+        Some(table_size)
+    }
+
+    fn fastutil_array_size(expected: usize) -> usize {
+        let needed = ((expected as f64) / 0.75).ceil() as usize;
+        needed.max(2).next_power_of_two()
+    }
+
+    const fn fastutil_max_fill(table_size: usize) -> usize {
+        let fill = table_size - table_size / 4;
+        if fill < table_size {
+            fill
+        } else {
+            table_size - 1
+        }
+    }
+
+    const fn pack_chunk_pos(pos: ChunkPos) -> u64 {
+        (pos.0.x as u32 as u64) | ((pos.0.y as u32 as u64) << 32)
+    }
+
+    const fn fastutil_mix(value: u64) -> u64 {
+        let mixed = value.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let mixed = mixed ^ (mixed >> 32);
+        mixed ^ (mixed >> 16)
     }
 }
 
@@ -239,7 +334,7 @@ impl IntoIterator for StructureReferenceSet {
     type Item = ChunkPos;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.positions.into_iter()
+        self.iteration_order.into_iter()
     }
 }
 

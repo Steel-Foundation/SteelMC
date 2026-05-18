@@ -394,8 +394,8 @@ impl MineshaftPlacer<'_, '_> {
 
         for x in x0..=x1 {
             for z in z0..=z1 {
-                if self.block_state(BlockPos::new(x, y0, z)).has_fluid()
-                    || self.block_state(BlockPos::new(x, y1, z)).has_fluid()
+                if self.is_liquid_block(BlockPos::new(x, y0, z))
+                    || self.is_liquid_block(BlockPos::new(x, y1, z))
                 {
                     return true;
                 }
@@ -404,8 +404,8 @@ impl MineshaftPlacer<'_, '_> {
 
         for x in x0..=x1 {
             for y in y0..=y1 {
-                if self.block_state(BlockPos::new(x, y, z0)).has_fluid()
-                    || self.block_state(BlockPos::new(x, y, z1)).has_fluid()
+                if self.is_liquid_block(BlockPos::new(x, y, z0))
+                    || self.is_liquid_block(BlockPos::new(x, y, z1))
                 {
                     return true;
                 }
@@ -414,8 +414,8 @@ impl MineshaftPlacer<'_, '_> {
 
         for z in z0..=z1 {
             for y in y0..=y1 {
-                if self.block_state(BlockPos::new(x0, y, z)).has_fluid()
-                    || self.block_state(BlockPos::new(x1, y, z)).has_fluid()
+                if self.is_liquid_block(BlockPos::new(x0, y, z))
+                    || self.is_liquid_block(BlockPos::new(x1, y, z))
                 {
                     return true;
                 }
@@ -901,6 +901,10 @@ impl MineshaftPlacer<'_, '_> {
         }
     }
 
+    fn is_liquid_block(&self, pos: BlockPos) -> bool {
+        self.block_state(pos).get_block().config.liquid
+    }
+
     fn can_be_replaced(&self, x: i32, y: i32, z: i32) -> bool {
         let state = self.get_block(x, y, z);
         let block = state.get_block();
@@ -912,7 +916,7 @@ impl MineshaftPlacer<'_, '_> {
 
     fn is_replaceable_by_structures(&self, state: BlockStateId) -> bool {
         state.is_air()
-            || state.has_fluid()
+            || state.get_block().config.liquid
             || state.get_block() == &vanilla_blocks::GLOW_LICHEN
             || state.get_block() == &vanilla_blocks::SEAGRASS
             || state.get_block() == &vanilla_blocks::TALL_SEAGRASS

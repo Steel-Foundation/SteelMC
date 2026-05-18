@@ -2162,7 +2162,7 @@ impl ChunkStorage {
                 structure: structure.clone(),
                 references: {
                     let packed: Vec<_> = positions
-                        .iter()
+                        .insertion_order_iter()
                         .copied()
                         .map(PackedChunkPos::from)
                         .collect();
