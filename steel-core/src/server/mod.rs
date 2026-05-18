@@ -15,7 +15,7 @@ use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{SharedEntity, init_entities};
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
-use crate::level_data::WorldGenerationSettings;
+use crate::level_data::{LevelDataManager, WorldGenerationSettings};
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentPlayerData;
@@ -214,13 +214,6 @@ impl Server {
         );
 
         for world_entry in &resolved_worlds.worlds {
-            let generator_output = generator_registry
-                .create(
-                    &world_entry.generator,
-                    &world_entry.generator_config,
-                    world_entry.seed,
-                )
-                .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let default_world_path = resolved_worlds
                 .save_path
                 .join(&world_entry.domain)
@@ -233,12 +226,30 @@ impl Server {
                     Path::new(&default_world_path),
                 )
                 .map_err(|e| format!("failed to create storage for {}: {e}", world_entry.key))?;
+            let world_seed = LevelDataManager::load_seed_or_default(
+                storage_output.level_data_path.as_deref(),
+                world_entry.seed,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "failed to load level data seed for {}: {e}",
+                    world_entry.key
+                )
+            })?;
+            let generator_output = generator_registry
+                .create(
+                    &world_entry.generator,
+                    &world_entry.generator_config,
+                    world_seed,
+                )
+                .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config(
                 chunk_runtime.clone(),
                 world_entry.key.clone(),
                 generator_output.dimension_type,
-                world_entry.seed,
+                world_seed,
                 WorldConfig {
                     storage: storage_output.storage,
                     level_data_path: storage_output

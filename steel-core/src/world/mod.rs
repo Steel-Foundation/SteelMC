@@ -2164,7 +2164,7 @@ impl World {
     /// - Marking the chunk dirty
     pub fn add_entity(self: &Arc<Self>, entity: SharedEntity) {
         let pos = entity.position();
-        let chunk_pos = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+        let chunk_pos = ChunkPos::from_entity_pos(pos);
 
         self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             if let Some(c) = chunk.as_full() {
@@ -2383,11 +2383,7 @@ impl World {
         // Unregister from cache
         if let Some(entity) = entity {
             let pos = entity.position();
-            let section = SectionPos::new(
-                (pos.x as i32) >> 4,
-                (pos.y as i32) >> 4,
-                (pos.z as i32) >> 4,
-            );
+            let section = SectionPos::from_entity_pos(pos);
             self.entity_cache
                 .unregister(entity_id, entity.uuid(), section);
 

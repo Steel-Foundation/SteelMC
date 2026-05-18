@@ -1004,9 +1004,8 @@ impl ChunkStorage {
         }
 
         // Validate position is within expected chunk (sanity check)
-        let expected_chunk_x = (pos.x as i32) >> 4;
-        let expected_chunk_z = (pos.z as i32) >> 4;
-        if chunk_pos.0.x != expected_chunk_x || chunk_pos.0.y != expected_chunk_z {
+        let expected_chunk = ChunkPos::from_entity_pos(pos);
+        if chunk_pos != expected_chunk {
             tracing::warn!(
                 ?uuid,
                 "Entity position {:?} doesn't match chunk {:?}, loading anyway",
