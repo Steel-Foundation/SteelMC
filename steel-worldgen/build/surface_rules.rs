@@ -7,6 +7,7 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+use std::mem;
 
 // ── JSON types ──────────────────────────────────────────────────────────────
 
@@ -113,6 +114,18 @@ pub enum VerticalAnchorJson {
 pub struct SurfaceRuleTranspiler {
     /// Collected noise IDs referenced by `NoiseThreshold` conditions.
     pub noise_ids: Vec<String>,
+    /// Collected random IDs referenced by `VerticalGradient` conditions.
+    pub gradient_ids: Vec<String>,
+    /// Collected block state names returned by block-result rules.
+    pub block_state_names: Vec<String>,
+    /// Whether generated conditions read `ctx.biome_id` directly or indirectly.
+    pub uses_biome: bool,
+    /// Whether generated conditions use `ctx.min_surface_level`.
+    pub uses_preliminary_surface: bool,
+    /// Whether generated conditions use `ctx.surface_secondary`.
+    pub uses_surface_secondary: bool,
+    /// Whether generated conditions use `ctx.steep`.
+    pub uses_steep: bool,
     /// Min Y for this dimension.
     min_y: i32,
     /// Height for this dimension.
@@ -120,9 +133,15 @@ pub struct SurfaceRuleTranspiler {
 }
 
 impl SurfaceRuleTranspiler {
-    pub const fn new(min_y: i32, height: i32) -> Self {
+    pub const fn new(min_y: i32, height: i32, uses_preliminary_surface: bool) -> Self {
         Self {
             noise_ids: Vec::new(),
+            gradient_ids: Vec::new(),
+            block_state_names: Vec::new(),
+            uses_biome: false,
+            uses_preliminary_surface,
+            uses_surface_secondary: false,
+            uses_steep: false,
             min_y,
             height,
         }
@@ -130,17 +149,24 @@ impl SurfaceRuleTranspiler {
 
     /// Transpile a surface rule tree into a Rust function body.
     ///
-    /// Generated code references `ctx: &SurfaceRuleContext` from `steel_utils`.
+    /// Generated code references `ctx: &mut SurfaceRuleContext` from `steel_utils`.
     pub fn transpile_rule(&mut self, rule: &SurfaceRuleJson) -> TokenStream {
         match rule {
             SurfaceRuleJson::Block { result_state } => {
-                let block_name = result_state
-                    .name
-                    .strip_prefix("minecraft:")
-                    .unwrap_or(&result_state.name);
-                let ident = Ident::new(&block_name.to_uppercase(), Span::call_site());
+                let block_name = result_state.name.as_str();
+                let block_state_index = if let Some(idx) = self
+                    .block_state_names
+                    .iter()
+                    .position(|name| name == block_name)
+                {
+                    idx
+                } else {
+                    let idx = self.block_state_names.len();
+                    self.block_state_names.push(block_name.to_owned());
+                    idx
+                };
                 quote! {
-                    return Some(steel_registry::vanilla_blocks::#ident.default_state());
+                    return Some(ctx.block_state(#block_state_index));
                 }
             }
             SurfaceRuleJson::Sequence { sequence } => {
@@ -185,6 +211,7 @@ impl SurfaceRuleTranspiler {
                 };
 
                 if *secondary_depth_range > 0 {
+                    self.uses_surface_secondary = true;
                     let range = *secondary_depth_range;
                     if *add_surface_depth {
                         quote! {
@@ -208,9 +235,11 @@ impl SurfaceRuleTranspiler {
                 }
             }
             SurfaceConditionJson::AbovePreliminarySurface {} => {
+                self.uses_preliminary_surface = true;
                 quote! { ctx.block_y >= ctx.min_surface_level }
             }
             SurfaceConditionJson::BiomeIs { biome_is } => {
+                self.uses_biome = true;
                 let checks: Vec<_> = biome_is
                     .iter()
                     .map(|b| {
@@ -220,17 +249,23 @@ impl SurfaceRuleTranspiler {
                             .unwrap_or(b.as_str());
                         let upper = biome_name.to_uppercase();
                         let biome_ident = Ident::new(&upper, Span::call_site());
-                        quote! { ctx.biome_id == steel_registry::RegistryEntry::id(&*steel_registry::vanilla_biomes::#biome_ident) as u16 }
+                        quote! { biome_id == steel_registry::RegistryEntry::id(&*steel_registry::vanilla_biomes::#biome_ident) as u16 }
                     })
                     .collect();
-                if checks.len() == 1 {
-                    checks
-                        .into_iter()
-                        .next()
-                        .expect("single biome condition should have one generated check")
+                let check = if checks.is_empty() {
+                    quote! { false }
+                } else if checks.len() == 1 {
+                    let mut checks = checks;
+                    checks.remove(0)
                 } else {
                     quote! { ( #(#checks)||* ) }
-                }
+                };
+                let biome_id = if self.uses_preliminary_surface {
+                    quote! { ctx.biome_id() }
+                } else {
+                    quote! { ctx.known_biome_id() }
+                };
+                quote! { #biome_id.is_some_and(|biome_id| #check) }
             }
             SurfaceConditionJson::NoiseThreshold {
                 noise,
@@ -250,7 +285,7 @@ impl SurfaceRuleTranspiler {
                 let max_f = *max_threshold;
                 quote! {
                     {
-                        let v = ctx.system.get_noise(#noise_index, ctx.block_x, ctx.block_z);
+                        let v = ctx.condition_noise(#noise_index);
                         v >= #min_f && v <= #max_f
                     }
                 }
@@ -260,15 +295,17 @@ impl SurfaceRuleTranspiler {
                 true_at_and_below,
                 false_at_and_above,
             } => {
+                let gradient_index =
+                    if let Some(idx) = self.gradient_ids.iter().position(|id| id == random_name) {
+                        idx
+                    } else {
+                        let idx = self.gradient_ids.len();
+                        self.gradient_ids.push(random_name.to_owned());
+                        idx
+                    };
                 let true_y = self.resolve_anchor(true_at_and_below);
                 let false_y = self.resolve_anchor(false_at_and_above);
-                let name_lit = random_name.as_str();
-                quote! {
-                    {
-                        const NAME_HASH: steel_utils::random::name_hash::NameHash = steel_utils::random::name_hash::NameHash::new(#name_lit);
-                        ctx.system.vertical_gradient(&NAME_HASH, ctx.block_x, ctx.block_y, ctx.block_z, #true_y, #false_y)
-                    }
-                }
+                quote! { ctx.system.vertical_gradient(#gradient_index, ctx.block_x, ctx.block_y, ctx.block_z, #true_y, #false_y) }
             }
             SurfaceConditionJson::YAbove {
                 anchor,
@@ -311,9 +348,11 @@ impl SurfaceRuleTranspiler {
                 }
             }
             SurfaceConditionJson::Temperature {} => {
-                quote! { ctx.cold_enough_to_snow }
+                self.uses_biome = true;
+                quote! { ctx.cold_enough_to_snow() }
             }
             SurfaceConditionJson::Steep {} => {
+                self.uses_steep = true;
                 quote! { ctx.steep }
             }
             SurfaceConditionJson::Hole {} => {
@@ -336,28 +375,83 @@ impl SurfaceRuleTranspiler {
     }
 }
 
+fn rule_uses_preliminary_surface(rule: &SurfaceRuleJson) -> bool {
+    match rule {
+        SurfaceRuleJson::Block { .. } | SurfaceRuleJson::Bandlands {} => false,
+        SurfaceRuleJson::Sequence { sequence } => {
+            sequence.iter().any(rule_uses_preliminary_surface)
+        }
+        SurfaceRuleJson::Condition { if_true, then_run } => {
+            condition_uses_preliminary_surface(if_true) || rule_uses_preliminary_surface(then_run)
+        }
+    }
+}
+
+fn condition_uses_preliminary_surface(condition: &SurfaceConditionJson) -> bool {
+    match condition {
+        SurfaceConditionJson::AbovePreliminarySurface {} => true,
+        SurfaceConditionJson::Not { invert } => condition_uses_preliminary_surface(invert),
+        SurfaceConditionJson::StoneDepth { .. }
+        | SurfaceConditionJson::BiomeIs { .. }
+        | SurfaceConditionJson::NoiseThreshold { .. }
+        | SurfaceConditionJson::VerticalGradient { .. }
+        | SurfaceConditionJson::YAbove { .. }
+        | SurfaceConditionJson::Water { .. }
+        | SurfaceConditionJson::Temperature {}
+        | SurfaceConditionJson::Steep {}
+        | SurfaceConditionJson::Hole {} => false,
+    }
+}
+
 /// Generate the complete `try_apply_surface_rule` function for a dimension.
 ///
-/// Returns the function token stream and the list of noise IDs needed.
+/// Returns the function token stream, condition noise IDs, and returned block states.
+type SurfaceRuleFunctionArtifacts = (
+    TokenStream,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    bool,
+    bool,
+    bool,
+    bool,
+);
+
 pub fn generate_surface_rule_function(
     rule: &SurfaceRuleJson,
     min_y: i32,
     height: i32,
-) -> (TokenStream, Vec<String>) {
-    let mut transpiler = SurfaceRuleTranspiler::new(min_y, height);
+) -> SurfaceRuleFunctionArtifacts {
+    let uses_preliminary_surface = rule_uses_preliminary_surface(rule);
+    let mut transpiler = SurfaceRuleTranspiler::new(min_y, height, uses_preliminary_surface);
     let body = transpiler.transpile_rule(rule);
-    let noise_ids = transpiler.noise_ids.clone();
+    let noise_ids = mem::take(&mut transpiler.noise_ids);
+    let gradient_ids = mem::take(&mut transpiler.gradient_ids);
+    let block_state_names = mem::take(&mut transpiler.block_state_names);
+    let uses_biome = transpiler.uses_biome;
+    let uses_preliminary_surface = transpiler.uses_preliminary_surface;
+    let uses_surface_secondary = transpiler.uses_surface_secondary;
+    let uses_steep = transpiler.uses_steep;
 
     let func = quote! {
         /// Apply this dimension's surface rule at the current context position.
         #[allow(clippy::collapsible_if, clippy::needless_return, clippy::erasing_op, unused_comparisons)]
         fn apply_surface_rule_impl(
-            ctx: &steel_worldgen::surface::SurfaceRuleContext<'_>,
+            ctx: &mut steel_worldgen::surface::SurfaceRuleContext<'_>,
         ) -> Option<steel_utils::BlockStateId> {
             #body
             None
         }
     };
 
-    (func, noise_ids)
+    (
+        func,
+        noise_ids,
+        gradient_ids,
+        block_state_names,
+        uses_biome,
+        uses_preliminary_surface,
+        uses_surface_secondary,
+        uses_steep,
+    )
 }

@@ -1,6 +1,7 @@
 //! This module contains the `LevelChunk` struct, which is a chunk that is ready to be sent to the client.
 use std::{
     io::Cursor,
+    mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
@@ -16,13 +17,13 @@ use steel_registry::{
     REGISTRY, RegistryEntry, blocks::block_state_ext::BlockStateExt, vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, SectionPos, codec::BitSet, locks::SyncRwLock,
-    types::UpdateFlags,
+    BlockPos, BlockStateId, ChunkPos, Direction, PackedChunkLocalXZ, SectionPos, codec::BitSet,
+    locks::SyncRwLock, types::UpdateFlags,
 };
 
 use steel_utils::locks::SyncMutex;
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS};
 use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
     heightmap::{ChunkHeightmaps, HeightmapType},
@@ -33,6 +34,11 @@ use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
+
+fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
+    let section_count = (height / 16) as usize;
+    (0..section_count).map(|_| Vec::new()).collect()
+}
 
 /// A chunk that is ready to be sent to the client.
 ///
@@ -66,6 +72,8 @@ pub struct LevelChunk {
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks (carried from proto).
     pub structure_references: SyncRwLock<StructureReferenceMap>,
+    /// Vanilla proto postprocessing offsets carried through promotion and drained once.
+    postprocessing: SyncMutex<Box<[Vec<u16>]>>,
 }
 
 impl LevelChunk {
@@ -203,6 +211,7 @@ impl LevelChunk {
 
         let structure_starts = proto_chunk.structure_starts.into_inner();
         let structure_references = proto_chunk.structure_references.into_inner();
+        let postprocessing = proto_chunk.postprocessing.into_inner();
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
@@ -220,6 +229,7 @@ impl LevelChunk {
             fluid_ticks: SyncMutex::new(FluidTickList::new()),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
+            postprocessing: SyncMutex::new(postprocessing),
         }
     }
 
@@ -277,6 +287,7 @@ impl LevelChunk {
             fluid_ticks: SyncMutex::new(fluid_ticks),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
+            postprocessing: SyncMutex::new(empty_postprocessing(height)),
         }
     }
 
@@ -295,6 +306,76 @@ impl LevelChunk {
     #[must_use]
     pub fn level_weak(&self) -> Weak<World> {
         self.level.clone()
+    }
+
+    /// Drains the vanilla proto postprocessing offsets carried through promotion.
+    pub(crate) fn take_postprocessing(&self) -> Option<Box<[Vec<u16>]>> {
+        let mut postprocessing = self.postprocessing.lock();
+        if postprocessing.iter().all(Vec::is_empty) {
+            return None;
+        }
+
+        Some(mem::replace(
+            &mut *postprocessing,
+            empty_postprocessing(self.height),
+        ))
+    }
+
+    /// Runs vanilla proto postprocessing after this chunk has been promoted to full.
+    pub(crate) fn post_process_generation(
+        world: &Arc<World>,
+        chunk_pos: ChunkPos,
+        min_y: i32,
+        postprocessing: Box<[Vec<u16>]>,
+    ) {
+        for (section_index, packed_offsets) in postprocessing.into_vec().into_iter().enumerate() {
+            if packed_offsets.is_empty() {
+                continue;
+            }
+
+            let section_y = Self::section_y_from_section_index(min_y, section_index);
+            for packed in packed_offsets {
+                let pos = ProtoChunk::unpack_postprocessing_offset(packed, section_y, chunk_pos);
+                let state = world.get_postprocessing_block_state(pos);
+                let fluid_state = state.get_fluid_state();
+
+                if !fluid_state.is_empty() {
+                    FLUID_BEHAVIORS
+                        .get_behavior(fluid_state.fluid_id)
+                        .tick(world, pos);
+                }
+
+                if state.get_block().config.liquid {
+                    BLOCK_BEHAVIORS
+                        .get_behavior(state.get_block())
+                        .tick(state, world, pos);
+                } else {
+                    let new_state = Self::update_from_neighbor_shapes(world, state, pos);
+                    if new_state != state {
+                        let flags = UpdateFlags::UPDATE_INVISIBLE
+                            | UpdateFlags::UPDATE_KNOWN_SHAPE
+                            | UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
+                        world.set_block(pos, new_state, flags);
+                    }
+                }
+            }
+        }
+    }
+
+    fn update_from_neighbor_shapes(
+        world: &Arc<World>,
+        state: BlockStateId,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let mut updated = state;
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            let neighbor_state = world.get_postprocessing_block_state(neighbor_pos);
+            let behavior = BLOCK_BEHAVIORS.get_behavior(updated.get_block());
+            updated =
+                behavior.update_shape(updated, world, pos, direction, neighbor_pos, neighbor_state);
+        }
+        updated
     }
 
     /// Scans chunk sections for POI block states and populates world POI storage.
@@ -338,6 +419,11 @@ impl LevelChunk {
     #[must_use]
     const fn get_section_index(&self, y: i32) -> usize {
         ((y - self.min_y) / 16) as usize
+    }
+
+    #[must_use]
+    const fn section_y_from_section_index(min_y: i32, index: usize) -> i32 {
+        min_y.div_euclid(16) + index as i32
     }
 
     /// Marks the chunk as unsaved.
@@ -665,13 +751,8 @@ impl LevelChunk {
                 let type_id = guard.get_type().id() as i32;
                 let update_tag = guard.get_update_tag();
 
-                // Pack local X and Z coordinates into a single byte
-                let local_x = (pos.0.x & 15) as u8;
-                let local_z = (pos.0.z & 15) as u8;
-                let packed_xz = (local_x << 4) | local_z;
-
                 BlockEntityInfo {
-                    packed_xz,
+                    packed_xz: PackedChunkLocalXZ::from_block_pos(pos),
                     y: pos.0.y as i16,
                     type_id,
                     data: update_tag.into(),

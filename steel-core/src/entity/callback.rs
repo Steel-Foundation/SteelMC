@@ -6,7 +6,7 @@ use std::sync::{
 };
 
 use glam::DVec3;
-use steel_utils::{ChunkPos, SectionPos};
+use steel_utils::{ChunkPos, PackedChunkPos, PackedSectionPos, SectionPos};
 
 use super::SharedEntity;
 use crate::world::World;
@@ -85,7 +85,7 @@ impl PlayerEntityCallback {
         Self {
             entity_id,
             world,
-            last_section: AtomicI64::new(section_pos.as_i64()),
+            last_section: AtomicI64::new(PackedSectionPos::from(section_pos).as_raw()),
         }
     }
 }
@@ -102,10 +102,11 @@ impl EntityLevelCallback for PlayerEntityCallback {
             (new_pos.z as i32) >> 4,
         );
 
-        let old_packed = self
-            .last_section
-            .swap(new_section.as_i64(), Ordering::AcqRel);
-        let old_section = SectionPos::from_i64(old_packed);
+        let old_packed = self.last_section.swap(
+            PackedSectionPos::from(new_section).as_raw(),
+            Ordering::AcqRel,
+        );
+        let old_section = PackedSectionPos::from_raw(old_packed).to_section_pos();
 
         // Update section cache if section changed
         if old_section != new_section {
@@ -149,15 +150,15 @@ impl EntityChunkCallback {
         Self {
             entity_id: entity.id(),
             world,
-            last_chunk: AtomicI64::new(chunk_pos.as_i64()),
-            last_section: AtomicI64::new(section_pos.as_i64()),
+            last_chunk: AtomicI64::new(PackedChunkPos::from(chunk_pos).as_raw()),
+            last_section: AtomicI64::new(PackedSectionPos::from(section_pos).as_raw()),
             removed: AtomicBool::new(false),
         }
     }
 
     /// Gets the current chunk position from stored state.
     fn current_chunk(&self) -> ChunkPos {
-        ChunkPos::from_i64(self.last_chunk.load(Ordering::Acquire))
+        PackedChunkPos::from_raw(self.last_chunk.load(Ordering::Acquire)).to_chunk_pos()
     }
 }
 
@@ -181,10 +182,11 @@ impl EntityLevelCallback for EntityChunkCallback {
 
         // Update section cache if section changed
         if old_section != new_section {
-            let old_packed = self
-                .last_section
-                .swap(new_section.as_i64(), Ordering::AcqRel);
-            let actual_old_section = SectionPos::from_i64(old_packed);
+            let old_packed = self.last_section.swap(
+                PackedSectionPos::from(new_section).as_raw(),
+                Ordering::AcqRel,
+            );
+            let actual_old_section = PackedSectionPos::from_raw(old_packed).to_section_pos();
 
             world
                 .entity_cache()
@@ -197,8 +199,10 @@ impl EntityLevelCallback for EntityChunkCallback {
 
         // Move Arc between chunks if chunk changed
         if old_chunk != new_chunk {
-            let old_packed = self.last_chunk.swap(new_chunk.as_i64(), Ordering::AcqRel);
-            let actual_old_chunk = ChunkPos::from_i64(old_packed);
+            let old_packed = self
+                .last_chunk
+                .swap(PackedChunkPos::from(new_chunk).as_raw(), Ordering::AcqRel);
+            let actual_old_chunk = PackedChunkPos::from_raw(old_packed).to_chunk_pos();
 
             world.move_entity_between_chunks(self.entity_id, actual_old_chunk, new_chunk);
 

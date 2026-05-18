@@ -14,6 +14,55 @@ use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::{clamp, map, map_clamped};
 
+/// Deferred [`Aquifer`]. Used by `create_structures` so chunks where no structure
+/// queries the aquifer skip its (expensive) `max_preliminary_surface_level` scan.
+pub struct LazyAquifer<'a, N: DimensionNoises> {
+    chunk_min_x: i32,
+    chunk_min_z: i32,
+    splitter: &'a RandomSplitter,
+    noises: &'a N,
+    inner: Option<Aquifer<N>>,
+}
+
+impl<'a, N: DimensionNoises> LazyAquifer<'a, N> {
+    /// Deferred aquifer for the given chunk.
+    #[must_use]
+    pub const fn new(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        splitter: &'a RandomSplitter,
+        noises: &'a N,
+    ) -> Self {
+        Self {
+            chunk_min_x,
+            chunk_min_z,
+            splitter,
+            noises,
+            inner: None,
+        }
+    }
+
+    /// Build on first call; `height_cache` is cloned into the aquifer's own cache.
+    ///
+    /// # Panics
+    /// Never — `inner` is initialized above if it was `None`.
+    pub fn ensure(&mut self, height_cache: &N::ColumnCache) -> &mut Aquifer<N> {
+        if self.inner.is_none() {
+            self.inner = Some(Aquifer::<N>::new(
+                self.chunk_min_x,
+                self.chunk_min_z,
+                <N::Settings as NoiseSettings>::MIN_Y,
+                <N::Settings as NoiseSettings>::HEIGHT,
+                self.splitter,
+                self.noises,
+                height_cache.clone(),
+            ));
+        }
+        #[expect(clippy::unwrap_used, reason = "just initialized above")]
+        self.inner.as_mut().unwrap()
+    }
+}
+
 // Grid spacing
 const Y_SPACING: i32 = 12;
 
@@ -30,6 +79,7 @@ const SAMPLE_OFFSET_Z: i32 = -5;
 const LAVA_LEVEL: i32 = -54;
 /// Sentinel for "no fluid" — well below any real Y coordinate.
 const WAY_BELOW_MIN_Y: i32 = -32512;
+const FLOWING_UPDATE_SIMILARITY: f64 = 1.0 - ((12 * 12 - 10 * 10) as f64) / 25.0;
 
 /// Chunk offsets (in chunks, ×16 for blocks) used when sampling
 /// preliminary surface levels around an aquifer cell center.
@@ -111,6 +161,8 @@ pub struct Aquifer<N: DimensionNoises> {
     lava_id: BlockStateId,
     /// The dimension's default fluid (water for overworld, lava for nether).
     default_fluid_id: BlockStateId,
+    /// Vanilla's `shouldScheduleFluidUpdate` flag from the most recent substance lookup.
+    should_schedule_fluid_update: bool,
 }
 
 // Grid coordinate conversions
@@ -213,7 +265,7 @@ fn global_fluid(
 }
 
 impl<N: DimensionNoises> Aquifer<N> {
-    /// Create a new aquifer for a chunk.
+    /// Create an aquifer for a full 16×16 chunk.
     ///
     /// `chunk_min_x/z` are the block coordinates of the chunk's NW corner.
     /// `min_block_y` and `y_block_size` define the vertical range.
@@ -224,6 +276,36 @@ impl<N: DimensionNoises> Aquifer<N> {
     pub fn new(
         chunk_min_x: i32,
         chunk_min_z: i32,
+        min_block_y: i32,
+        y_block_size: i32,
+        splitter: &RandomSplitter,
+        noises: &N,
+        cache: N::ColumnCache,
+    ) -> Self {
+        Self::new_sized(
+            chunk_min_x,
+            chunk_min_z,
+            16,
+            16,
+            min_block_y,
+            y_block_size,
+            splitter,
+            noises,
+            cache,
+        )
+    }
+
+    /// Create an aquifer with custom XZ extent (in blocks).
+    /// Vanilla's iterateNoiseColumn uses width=cellWidth (4) for single-column queries.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla's Aquifer constructor shape"
+    )]
+    pub fn new_sized(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        width_x: i32,
+        width_z: i32,
         min_block_y: i32,
         y_block_size: i32,
         splitter: &RandomSplitter,
@@ -258,11 +340,12 @@ impl<N: DimensionNoises> Aquifer<N> {
                 water_id,
                 lava_id,
                 default_fluid_id,
+                should_schedule_fluid_update: false,
             };
         }
 
-        let chunk_max_x = chunk_min_x + 15;
-        let chunk_max_z = chunk_min_z + 15;
+        let chunk_max_x = chunk_min_x + width_x - 1;
+        let chunk_max_z = chunk_min_z + width_z - 1;
 
         let min_grid_x = grid_x(chunk_min_x + SAMPLE_OFFSET_X);
         let max_grid_x = grid_x(chunk_max_x + SAMPLE_OFFSET_X) + 1;
@@ -308,6 +391,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             water_id,
             lava_id,
             default_fluid_id,
+            should_schedule_fluid_update: false,
         }
     }
 
@@ -359,12 +443,14 @@ impl<N: DimensionNoises> Aquifer<N> {
     ) -> AquiferResult {
         // Solid block — let the caller decide (stone or ore)
         if density > 0.0 {
+            self.should_schedule_fluid_update = false;
             return AquiferResult::Solid;
         }
 
         // Disabled aquifers (nether/end): use global fluid picker directly,
         // matching vanilla's `Aquifer.createDisabled`.
         if !N::Settings::AQUIFERS_ENABLED {
+            self.should_schedule_fluid_update = false;
             let gf = global_fluid(world_y, self.sea_level, self.lava_id, self.default_fluid_id);
             return match gf.at(world_y) {
                 Some(id) => AquiferResult::Fluid(id),
@@ -376,6 +462,7 @@ impl<N: DimensionNoises> Aquifer<N> {
 
         // Above the skip threshold: use global fluid directly
         if world_y > self.skip_sampling_above_y {
+            self.should_schedule_fluid_update = false;
             return match gf.at(world_y) {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
@@ -384,6 +471,7 @@ impl<N: DimensionNoises> Aquifer<N> {
 
         // If global fluid is lava here, return lava
         if gf.fluid_type == self.lava_id && world_y < gf.fluid_level {
+            self.should_schedule_fluid_update = false;
             return AquiferResult::Fluid(self.lava_id);
         }
 
@@ -459,7 +547,13 @@ impl<N: DimensionNoises> Aquifer<N> {
         let fluid_at = status1.at(world_y);
 
         if sim12 <= 0.0 {
-            // Not near a boundary — return closest fluid
+            if sim12 >= FLOWING_UPDATE_SIMILARITY {
+                let status2 = self.get_aquifer_status(closest_idx[1], noises);
+                self.should_schedule_fluid_update = status1 != status2;
+            } else {
+                self.should_schedule_fluid_update = false;
+            }
+
             return match fluid_at {
                 Some(id) => AquiferResult::Fluid(id),
                 None => AquiferResult::Air,
@@ -477,6 +571,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                 self.default_fluid_id,
             );
             if below.fluid_type == self.lava_id && (world_y - 1) < below.fluid_level {
+                self.should_schedule_fluid_update = true;
                 return AquiferResult::Fluid(id);
             }
         }
@@ -495,6 +590,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                 status2,
             );
         if density + barrier12 > 0.0 {
+            self.should_schedule_fluid_update = false;
             return AquiferResult::Solid;
         }
 
@@ -513,6 +609,7 @@ impl<N: DimensionNoises> Aquifer<N> {
                     status3,
                 );
             if density + barrier13 > 0.0 {
+                self.should_schedule_fluid_update = false;
                 return AquiferResult::Solid;
             }
         }
@@ -531,8 +628,20 @@ impl<N: DimensionNoises> Aquifer<N> {
                     status3,
                 );
             if density + barrier23 > 0.0 {
+                self.should_schedule_fluid_update = false;
                 return AquiferResult::Solid;
             }
+        }
+
+        let may_flow12 = status1 != status2;
+        let may_flow23 = sim23 >= FLOWING_UPDATE_SIMILARITY && status2 != status3;
+        let may_flow13 = sim13 >= FLOWING_UPDATE_SIMILARITY && status1 != status3;
+        if may_flow12 || may_flow23 || may_flow13 {
+            self.should_schedule_fluid_update = true;
+        } else {
+            self.should_schedule_fluid_update = sim13 >= FLOWING_UPDATE_SIMILARITY
+                && similarity(dist_sq[0], dist_sq[3]) >= FLOWING_UPDATE_SIMILARITY
+                && status1 != self.get_aquifer_status(closest_idx[3], noises);
         }
 
         // Return the closest fluid
@@ -540,6 +649,12 @@ impl<N: DimensionNoises> Aquifer<N> {
             Some(id) => AquiferResult::Fluid(id),
             None => AquiferResult::Air,
         }
+    }
+
+    /// Returns whether the most recent substance lookup needs postprocessing for placed fluids.
+    #[must_use]
+    pub const fn should_schedule_fluid_update(&self) -> bool {
+        self.should_schedule_fluid_update
     }
 
     /// Get or compute the fluid status for the aquifer cell at the given cache index.

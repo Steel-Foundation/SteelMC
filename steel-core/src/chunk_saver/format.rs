@@ -28,7 +28,7 @@
 //! Block data uses power-of-2 bit packing (1, 2, 4, 8, 16 bits) to avoid entries
 //! spanning u64 boundaries.
 
-use steel_utils::{BoundingBox, Identifier};
+use steel_utils::{BoundingBox, Identifier, PackedChunkPos};
 use wincode::{SchemaRead, SchemaWrite};
 
 use crate::chunk::chunk_access::ChunkStatus;
@@ -42,7 +42,9 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v5: Added heightmap persistence (`PersistentHeightmap`).
 /// v6: Added structure start and structure reference persistence.
 /// v7: Added POI persistence (`PersistentPoi`).
-pub const FORMAT_VERSION: u16 = 7;
+/// v8: Added typed jigsaw piece-state persistence.
+/// v9: Added proto chunk carving mask persistence and typed packed chunk references.
+pub const FORMAT_VERSION: u16 = 9;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -311,6 +313,10 @@ pub struct PersistentChunk {
     pub fluid_ticks: Vec<PersistentTick>,
     /// Final heightmaps for full chunks (empty for proto chunks).
     pub heightmaps: Vec<PersistentHeightmap>,
+    /// Proto chunk carving mask as Steel's packed bitset layout.
+    pub carving_mask: Option<Vec<u64>>,
+    /// Proto chunk postprocessing offsets grouped by section index.
+    pub postprocessing: Vec<Vec<u16>>,
     /// Structure starts originating in this chunk.
     pub structure_starts: Vec<PersistentStructureStart>,
     /// References to structures from nearby origin chunks.
@@ -458,18 +464,101 @@ pub struct PersistentStructurePiece {
     pub orientation: i8,
     /// Type-specific NBT data (simdnbt binary format).
     pub nbt_data: Vec<u8>,
+    /// Typed jigsaw placement data. Present only for `minecraft:jigsaw` pieces.
+    pub jigsaw: Option<PersistentJigsawPieceData>,
+    /// Offset from piece minY to terrain ground level.
+    pub ground_level_delta: i32,
+    /// Projection mode: -1 = none, 0 = rigid, 1 = terrain matching.
+    pub projection: i8,
+    /// Jigsaw junctions used by terrain adaptation.
+    pub junctions: Vec<PersistentJigsawJunction>,
+}
+
+/// Steel-native persistent state for a jigsaw pool piece.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJigsawPieceData {
+    /// Selected pool element.
+    pub pool_element: PersistentPoolElement,
+    /// World-space template origin.
+    pub position: [i32; 3],
+    /// Rotation: 0=none, `1=clockwise_90`, `2=clockwise_180`, `3=counterclockwise_90`.
+    pub rotation: i8,
+    /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
+    pub liquid_settings: i8,
+}
+
+/// Persisted pool element selected during jigsaw assembly.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentPoolElement {
+    /// Single structure template piece.
+    Single {
+        /// Template location.
+        location: Identifier,
+        /// Processors applied during block placement.
+        processors: PersistentProcessorList,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+    /// Legacy single piece.
+    LegacySingle {
+        /// Template location.
+        location: Identifier,
+        /// Processors applied during block placement.
+        processors: PersistentProcessorList,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+    /// Empty placeholder element.
+    Empty,
+    /// Placed feature element.
+    Feature {
+        /// Feature identifier.
+        feature: Identifier,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+    /// Group of sub-elements.
+    List {
+        /// Sub-elements.
+        elements: Vec<PersistentPoolElement>,
+        /// Projection mode: 0 = rigid, 1 = terrain matching.
+        projection: i8,
+    },
+}
+
+/// Persisted processor list holder for single pool elements.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentProcessorList {
+    /// Direct empty processor list.
+    Empty,
+    /// Registry-backed processor list.
+    Registry(Identifier),
+}
+
+/// A persisted jigsaw junction used by Beardifier terrain adaptation.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJigsawJunction {
+    /// World X.
+    pub source_x: i32,
+    /// Ground-adjusted Y.
+    pub source_ground_y: i32,
+    /// World Z.
+    pub source_z: i32,
+    /// Y delta between source and target.
+    pub delta_y: i32,
+    /// Destination projection: 0 = rigid, 1 = terrain matching.
+    pub dest_projection: i8,
 }
 
 /// A structure reference entry stored with a chunk.
 ///
 /// References point to structure starts in nearby origin chunks.
-/// The packed chunk positions use [`ChunkPos::as_i64`] encoding.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentStructureReference {
     /// Structure type identifier.
     pub structure: Identifier,
     /// Packed chunk positions of origin chunks.
-    pub references: Vec<i64>,
+    pub references: Vec<PackedChunkPos>,
 }
 
 /// A point of interest's occupancy state stored with a chunk.

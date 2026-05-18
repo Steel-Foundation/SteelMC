@@ -280,6 +280,18 @@ impl ChunkAccess {
         }
     }
 
+    /// Marks a proto chunk block position for vanilla postprocessing after promotion.
+    ///
+    /// # Panics
+    /// Panics if the chunk is already full.
+    pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
+        match self {
+            Self::Proto(proto) => proto.mark_pos_for_postprocessing(pos),
+            Self::Full(_) => panic!("mark_pos_for_postprocessing not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns a reference to the sections.
     #[must_use]
     pub const fn sections(&self) -> &Sections {

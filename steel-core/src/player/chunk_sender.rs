@@ -15,7 +15,7 @@ use steel_protocol::packets::game::{
     CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk, CLevelChunkWithLight,
 };
 use steel_protocol::utils::ConnectionProtocol;
-use steel_utils::ChunkPos;
+use steel_utils::{ChunkPos, PackedChunkPos};
 
 use crate::{
     chunk::{
@@ -70,7 +70,12 @@ impl ChunkSender {
     /// Drops a chunk from the client's view.
     pub fn drop_chunk(&mut self, connection: &PlayerConnection, pos: ChunkPos) {
         if !self.pending_chunks.remove(&pos) && !connection.closed() {
-            Self::send_packet(connection, CForgetLevelChunk { pos });
+            Self::send_packet(
+                connection,
+                CForgetLevelChunk {
+                    pos: PackedChunkPos::from(pos),
+                },
+            );
         }
     }
 

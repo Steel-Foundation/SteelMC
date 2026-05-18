@@ -220,6 +220,25 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// conditions. Used to construct the `SurfaceSystem`'s condition noises.
     fn surface_noise_ids() -> &'static [&'static str];
 
+    /// Random IDs referenced by this dimension's surface rule `VerticalGradient`
+    /// conditions. Used to construct reusable positional random factories.
+    fn surface_gradient_ids() -> &'static [&'static str];
+
+    /// Block states returned by this dimension's generated surface rules.
+    fn surface_rule_block_states() -> &'static [BlockStateId];
+
+    /// Whether the generated surface rule reads biome-dependent context.
+    fn surface_rule_uses_biome() -> bool;
+
+    /// Whether the generated surface rule reads preliminary surface level.
+    fn surface_rule_uses_preliminary_surface() -> bool;
+
+    /// Whether the generated surface rule reads surface secondary noise.
+    fn surface_rule_uses_surface_secondary() -> bool;
+
+    /// Whether the generated surface rule reads steep-column context.
+    fn surface_rule_uses_steep() -> bool;
+
     /// Apply the transpiled surface rule at the given context position.
-    fn try_apply_surface_rule(ctx: &SurfaceRuleContext<'_>) -> Option<BlockStateId>;
+    fn try_apply_surface_rule(ctx: &mut SurfaceRuleContext<'_>) -> Option<BlockStateId>;
 }

@@ -7,6 +7,7 @@ use crate::{
     biome::BiomeRegistry,
     block_entity_type::BlockEntityTypeRegistry,
     blocks::BlockRegistry,
+    carver::ConfiguredCarverRegistry,
     cat_sound_variant::CatSoundVariantRegistry,
     cat_variant::CatVariantRegistry,
     chat_type::ChatTypeRegistry,
@@ -34,6 +35,7 @@ use crate::{
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
+    structure::StructureRegistry,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
@@ -48,6 +50,7 @@ pub mod banner_pattern;
 pub mod biome;
 pub mod block_entity_type;
 pub mod blocks;
+pub mod carver;
 pub mod cat_sound_variant;
 pub mod cat_variant;
 pub mod chat_type;
@@ -77,6 +80,9 @@ pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
+pub mod structure;
+pub mod structure_set;
+pub mod template_pool;
 pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
@@ -346,6 +352,25 @@ pub mod sound_types;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_structures.rs"]
+pub mod vanilla_structures;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_tags.rs"]
+pub mod vanilla_structure_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_sets.rs"]
+pub mod vanilla_structure_sets;
+
+#[rustfmt::skip]
+#[path = "generated/vanilla_template_pools.rs"]
+pub mod vanilla_template_pools;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_packets.rs"]
 pub mod packets;
 
@@ -354,6 +379,11 @@ pub mod packets;
 #[path = "generated/vanilla_world_clocks.rs"]
 pub mod vanilla_world_clocks;
 pub mod shared_structs;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_configured_carvers.rs"]
+pub mod vanilla_configured_carvers;
 
 pub struct RegistryLock(OnceLock<Registry>);
 
@@ -453,6 +483,9 @@ pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
 pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_interest_type");
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
+pub const CONFIGURED_CARVER_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/configured_carver");
+pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -494,6 +527,8 @@ pub struct Registry {
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
+    pub configured_carvers: ConfiguredCarverRegistry,
+    pub structures: StructureRegistry,
 }
 
 impl Debug for Registry {
@@ -577,11 +612,17 @@ impl Registry {
         vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
+        vanilla_structures::register_structures(&mut registry.structures);
+        vanilla_structure_tags::register_structure_tags(&mut registry.structures);
+
+        vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
 
         registry
     }
 
     pub fn freeze(&mut self) {
+        self.validate_references();
+
         self.attributes.freeze();
         self.blocks.freeze();
         self.data_components.freeze();
@@ -621,6 +662,21 @@ impl Registry {
         self.poi_types.freeze();
         self.enchantments.freeze();
         self.world_clocks.freeze();
+        self.configured_carvers.freeze();
+        self.structures.freeze();
+    }
+
+    fn validate_references(&self) {
+        for (_, biome) in self.biomes.iter() {
+            for carver_key in &biome.carvers {
+                assert!(
+                    self.configured_carvers.by_key(carver_key).is_some(),
+                    "biome {} references unknown configured carver {}",
+                    biome.key,
+                    carver_key
+                );
+            }
+        }
     }
 
     #[must_use]
@@ -665,6 +721,64 @@ impl Registry {
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
+            configured_carvers: ConfiguredCarverRegistry::new(),
+            structures: StructureRegistry::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::OnceLock;
+
+    use rustc_hash::FxHashMap;
+    use steel_utils::Identifier;
+
+    use crate::biome::{Biome, BiomeEffects, GrassColorModifier, TemperatureModifier};
+
+    use super::Registry;
+
+    fn biome_with_carvers(carvers: Vec<Identifier>) -> &'static Biome {
+        Box::leak(Box::new(Biome {
+            key: Identifier::new_static("test", "missing_carver_biome"),
+            has_precipitation: false,
+            temperature: 0.5,
+            downfall: 0.0,
+            temperature_modifier: TemperatureModifier::None,
+            effects: BiomeEffects {
+                fog_color: 0,
+                sky_color: 0,
+                water_color: 0,
+                water_fog_color: 0,
+                foliage_color: None,
+                grass_color: None,
+                dry_foliage_color: None,
+                grass_color_modifier: GrassColorModifier::None,
+                music: None,
+                ambient_sound: None,
+                additions_sound: None,
+                mood_sound: None,
+                particle: None,
+            },
+            creature_spawn_probability: 0.0,
+            spawners: FxHashMap::default(),
+            spawn_costs: FxHashMap::default(),
+            carvers,
+            features: Vec::new(),
+            id: OnceLock::new(),
+        }))
+    }
+
+    #[test]
+    #[should_panic(expected = "references unknown configured carver")]
+    fn freeze_rejects_missing_biome_carver_reference() {
+        let mut registry = Registry::new_empty();
+        registry
+            .biomes
+            .register(biome_with_carvers(vec![Identifier::vanilla_static(
+                "missing_carver",
+            )]));
+
+        registry.freeze();
     }
 }

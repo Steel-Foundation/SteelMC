@@ -7,7 +7,7 @@
 
 use rustc_hash::FxHashMap;
 use steel_registry::{REGISTRY, RegistryExt};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos};
 
 use super::poi_instance::PointOfInterest;
 use super::poi_set::PointOfInterestSet;
@@ -55,14 +55,10 @@ impl Default for PointOfInterestStorage {
 }
 
 #[inline]
-const fn resolve_pos(pos: BlockPos) -> (ChunkPos, i32, u16) {
+const fn resolve_pos(pos: BlockPos) -> (ChunkPos, i32, PackedSectionBlockPos) {
     let section_pos = SectionPos::from_block_pos(pos);
     let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
-    let packed = PointOfInterestSet::pack_local_pos(
-        (pos.0.x & 15) as u8,
-        (pos.0.y & 15) as u8,
-        (pos.0.z & 15) as u8,
-    );
+    let packed = PackedSectionBlockPos::from_block_pos(pos);
     (chunk_pos, section_pos.y(), packed)
 }
 
@@ -395,7 +391,7 @@ impl PointOfInterestStorage {
                         (section_pos.y() << 4) + i32::from(y),
                         (section_pos.z() << 4) + i32::from(z),
                     );
-                    let packed = PointOfInterestSet::pack_local_pos(x, y, z);
+                    let packed = PackedSectionBlockPos::from_block_pos(block_pos);
                     set.add(
                         packed,
                         PointOfInterest::new(block_pos, poi_type_id, poi_type.ticket_count),
@@ -462,11 +458,7 @@ impl PointOfInterestStorage {
         };
         for &(pos, free_tickets) in tickets {
             let section_y = SectionPos::block_to_section_coord(pos.0.y);
-            let packed = PointOfInterestSet::pack_local_pos(
-                (pos.0.x & 15) as u8,
-                (pos.0.y & 15) as u8,
-                (pos.0.z & 15) as u8,
-            );
+            let packed = PackedSectionBlockPos::from_block_pos(pos);
             if let Some(set) = column.get_mut(&section_y)
                 && let Some(poi) = set.get_mut(packed)
             {

@@ -10,6 +10,7 @@ pub mod integer;
 pub mod item;
 pub mod player;
 pub mod rotation;
+pub mod structure;
 pub mod text_component;
 pub mod time;
 pub mod vector2;

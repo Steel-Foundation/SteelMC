@@ -8,6 +8,8 @@ use crate::worldgen::context::{
     ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
 };
 use crate::worldgen::generators::{EmptyChunkGenerator, FlatChunkGenerator};
+use crate::worldgen::noise::beardifier::Beardifier;
+use crate::worldgen::structure::StructureGenerator;
 
 /// A trait for generating chunks.
 #[enum_dispatch]
@@ -23,6 +25,11 @@ pub trait ChunkGenerator: Send + Sync {
         64
     }
 
+    /// Returns the structure generator used for placement and locate queries.
+    fn structure_generator(&self) -> Option<&StructureGenerator> {
+        None
+    }
+
     /// Creates the structures in a chunk.
     fn create_structures(&self, chunk: &ChunkAccess);
 
@@ -30,7 +37,13 @@ pub trait ChunkGenerator: Send + Sync {
     fn create_biomes(&self, chunk: &ChunkAccess);
 
     /// Fills the chunk with noise.
-    fn fill_from_noise(&self, chunk: &ChunkAccess);
+    ///
+    /// `beardifier` carries pre-collected structure-piece terrain adaptation. The caller
+    /// (production: noise stage; tests: harness) is responsible for walking the chunk's
+    /// structure references and building the beardifier — this trait stays free of any
+    /// cross-chunk lookup. `None` skips the integration entirely (cheaper than passing
+    /// an empty beardifier).
+    fn fill_from_noise(&self, chunk: &ChunkAccess, beardifier: Option<&Beardifier>);
 
     /// Builds the surface of the chunk.
     ///

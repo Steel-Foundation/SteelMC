@@ -2882,6 +2882,7 @@ dependencies = [
 name = "steel-registry"
 version = "0.5.0+mc26.1"
 dependencies = [
+ "flate2",
  "glam",
  "heck",
  "log",
