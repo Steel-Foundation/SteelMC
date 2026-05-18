@@ -12,10 +12,9 @@ use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::world::structure::{
-    ColumnBlock, GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext,
-    StructureMirror, StructurePiece, StructurePiecePayload, TemplateMarkerHandling,
-    TemplatePieceData, TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess,
-    TemplateProcessorList,
+    GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
+    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// Fossil templates count (`minecraft:nether_fossils/fossil_N`).
@@ -79,32 +78,16 @@ pub fn find_generation_point<F>(
     height: &HeightProviderData,
     min_gen_y: i32,
     gen_depth: i32,
-    mut get_column_state: F,
+    mut solid_block_below_air: F,
 ) -> Option<FossilResult>
 where
-    F: FnMut(i32, i32, i32) -> ColumnBlock,
+    F: FnMut(i32, i32, i32, i32) -> Option<i32>,
 {
     let block_x = (chunk_x << 4) + rng.next_i32_bounded(16);
     let block_z = (chunk_z << 4) + rng.next_i32_bounded(16);
 
-    let mut y = sample_height(height, rng, min_gen_y, gen_depth);
-
-    // Base-noise column has no soul_sand, so the vanilla sturdy-face check = Solid.
-    let mut found = false;
-    while y > SEA_LEVEL {
-        let current = get_column_state(block_x, y, block_z);
-        y -= 1;
-        if current == ColumnBlock::Air
-            && get_column_state(block_x, y, block_z) == ColumnBlock::Solid
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found || y <= SEA_LEVEL {
-        return None;
-    }
+    let start_y = sample_height(height, rng, min_gen_y, gen_depth);
+    let y = solid_block_below_air(block_x, block_z, start_y, SEA_LEVEL + 1)?;
 
     let rotation = Rotation::get_random(rng);
     let fossil_idx = rng.next_i32_bounded(FOSSIL_COUNT) + 1;
@@ -174,7 +157,7 @@ impl Structure for NetherFossilStructure {
             height,
             min_gen_y,
             gen_depth,
-            |x, y, z| ctx.column_state(x, y, z),
+            |x, z, start_y, min_solid_y| ctx.solid_block_below_air(x, z, start_y, min_solid_y),
         )?;
 
         let (bx, by, bz) = result.biome_check_pos;

@@ -230,6 +230,156 @@ pub(crate) fn column_interpolated_density<N: DimensionNoises>(
     interpolated_density::<N>(cache, noises, x, y, z, cell_w, cell_h)
 }
 
+/// Finds the highest solid block below air in a single base-noise column.
+///
+/// Used by structure placement probes such as nether fossils. This preserves the
+/// same base terrain classification as repeated `column_state` calls, but shares
+/// the eight cell-corner density evaluations across adjacent Y positions.
+pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    aquifer: &mut Aquifer<N>,
+    block_x: i32,
+    block_z: i32,
+    start_y: i32,
+    min_solid_y: i32,
+) -> Option<i32> {
+    if start_y <= min_solid_y {
+        return None;
+    }
+
+    const MAX_INTERP: usize = 16;
+
+    let cell_w = N::Settings::CELL_WIDTH;
+    let cell_h = N::Settings::CELL_HEIGHT;
+    let min_y = N::Settings::MIN_Y;
+    let height = N::Settings::HEIGHT;
+    let cell_min_y = min_y.div_euclid(cell_h);
+    let cell_count_y = height.div_euclid(cell_h);
+
+    let cell_x = block_x.div_euclid(cell_w);
+    let cell_z = block_z.div_euclid(cell_w);
+    let factor_x = f64::from(block_x.rem_euclid(cell_w)) / f64::from(cell_w);
+    let factor_z = f64::from(block_z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let x0 = cell_x * cell_w;
+    let x1 = x0 + cell_w;
+    let z0 = cell_z * cell_w;
+    let z1 = z0 + cell_w;
+
+    let interp_count = N::interpolated_count();
+
+    let mut c000 = [0.0f64; MAX_INTERP];
+    let mut c100 = [0.0f64; MAX_INTERP];
+    let mut c010 = [0.0f64; MAX_INTERP];
+    let mut c110 = [0.0f64; MAX_INTERP];
+    let mut c001 = [0.0f64; MAX_INTERP];
+    let mut c101 = [0.0f64; MAX_INTERP];
+    let mut c011 = [0.0f64; MAX_INTERP];
+    let mut c111 = [0.0f64; MAX_INTERP];
+    let mut interpolated = [0.0f64; MAX_INTERP];
+
+    macro_rules! fill {
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
+            cache.ensure($ex, $ez, noises);
+            noises.fill_cell_corner_densities(
+                &mut *cache,
+                $ex,
+                $ey,
+                $ez,
+                $blended,
+                &mut $out[..interp_count],
+            );
+        }};
+    }
+
+    let max_cell_y_idx = {
+        let raw = start_y.div_euclid(cell_h) - cell_min_y;
+        raw.clamp(0, cell_count_y - 1)
+    };
+    let min_cell_y_idx = {
+        let raw = min_solid_y.div_euclid(cell_h) - cell_min_y;
+        raw.clamp(0, cell_count_y - 1)
+    };
+
+    let mut above_is_air = false;
+    let mut have_above = false;
+    let mut blended_scratch = [0.0_f64; 2];
+
+    for cell_y_idx in (min_cell_y_idx..=max_cell_y_idx).rev() {
+        let y0 = (cell_min_y + cell_y_idx) * cell_h;
+        let y1 = y0 + cell_h;
+        let ys = [y0, y1];
+
+        noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
+        let b000 = blended_scratch[0];
+        let b010 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
+        let b100 = blended_scratch[0];
+        let b110 = blended_scratch[1];
+        noises.compute_noise_column(x0, &ys, z1, &mut blended_scratch);
+        let b001 = blended_scratch[0];
+        let b011 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z1, &mut blended_scratch);
+        let b101 = blended_scratch[0];
+        let b111 = blended_scratch[1];
+
+        fill!(c000, x0, y0, z0, b000);
+        fill!(c100, x1, y0, z0, b100);
+        fill!(c010, x0, y1, z0, b010);
+        fill!(c110, x1, y1, z0, b110);
+        fill!(c001, x0, y0, z1, b001);
+        fill!(c101, x1, y0, z1, b101);
+        fill!(c011, x0, y1, z1, b011);
+        fill!(c111, x1, y1, z1, b111);
+
+        let top_y_in_cell = if cell_y_idx == max_cell_y_idx {
+            (start_y - y0).clamp(0, cell_h - 1)
+        } else {
+            cell_h - 1
+        };
+        let bottom_y_in_cell = if cell_y_idx == min_cell_y_idx {
+            (min_solid_y - y0).clamp(0, cell_h - 1)
+        } else {
+            0
+        };
+
+        for y_in_cell in (bottom_y_in_cell..=top_y_in_cell).rev() {
+            let pos_y = y0 + y_in_cell;
+            let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
+
+            for ch in 0..interp_count {
+                let d00 = lerp(factor_y, c000[ch], c010[ch]);
+                let d10 = lerp(factor_y, c100[ch], c110[ch]);
+                let d01 = lerp(factor_y, c001[ch], c011[ch]);
+                let d11 = lerp(factor_y, c101[ch], c111[ch]);
+                let d0 = lerp(factor_x, d00, d10);
+                let d1 = lerp(factor_x, d01, d11);
+                interpolated[ch] = lerp(factor_z, d0, d1);
+            }
+
+            let density = noises.combine_interpolated(
+                &mut *cache,
+                &interpolated[..interp_count],
+                0,
+                pos_y,
+                0,
+            );
+            let state = aquifer.compute_substance(noises, block_x, pos_y, block_z, density);
+            let is_air = matches!(state, AquiferResult::Air);
+            let is_solid = matches!(state, AquiferResult::Solid);
+
+            if have_above && above_is_air && is_solid {
+                return Some(pos_y);
+            }
+
+            above_is_air = is_air;
+            have_above = true;
+        }
+    }
+
+    None
+}
+
 /// Same as `iterate_noise_column_with_aquifer` but only scans Y values up to
 /// `max_y_inclusive`. Used by `base_height` with an estimate from
 /// `preliminary_surface_level + 16` to skip empty upper atmosphere — reducing

@@ -1,6 +1,7 @@
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use futures::future::join_all;
 use std::cmp::Reverse;
 use std::env;
 use std::hint::black_box;
@@ -14,6 +15,7 @@ use steel_core::block_entity::init_block_entities;
 use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
+use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::proto_chunk::ProtoChunk;
@@ -30,13 +32,20 @@ use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
-use tokio::runtime::Builder as RuntimeBuilder;
+use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
 
 static INIT: Once = Once::new();
 static FEATURE_BATCH_PROFILE_LOGS: AtomicU64 = AtomicU64::new(0);
 static FEATURE_BATCH_PROFILE_LOG_LIMIT: LazyLock<u64> = LazyLock::new(|| {
     env::var("STEEL_FEATURE_BATCH_PROFILE_LOG_LIMIT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(16)
+});
+static FULL_PIPELINE_PROFILE_LOGS: AtomicU64 = AtomicU64::new(0);
+static FULL_PIPELINE_PROFILE_LOG_LIMIT: LazyLock<u64> = LazyLock::new(|| {
+    env::var("STEEL_FULL_PIPELINE_PROFILE_LOG_LIMIT")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(16)
@@ -550,6 +559,28 @@ struct FeatureTaskWallTime {
     elapsed: Duration,
 }
 
+struct FullPipelineStage {
+    step: &'static ChunkStep,
+    holders: Vec<Arc<ChunkHolder>>,
+}
+
+struct ConcurrentFullPipelineFixture {
+    chunk_runtime: Arc<Runtime>,
+    chunk_map: Arc<ChunkMap>,
+    cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    stages: Vec<FullPipelineStage>,
+    generation_pool: Arc<rayon::ThreadPool>,
+    targets: Vec<Arc<ChunkHolder>>,
+    _world: Arc<World>,
+}
+
+#[derive(Clone, Copy)]
+struct FullPipelineStageWallTime {
+    status: ChunkStatus,
+    chunks: usize,
+    elapsed: Duration,
+}
+
 fn bench_features(c: &mut Criterion, name: &str, generator_key: Identifier) {
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
 
@@ -585,6 +616,21 @@ const PROFILE_FEATURE_SEED: i64 = 2_965_282_071_327_931_563;
 const CONCURRENT_FEATURE_GRID_MIN: i32 = -1;
 const CONCURRENT_FEATURE_GRID_MAX: i32 = 2;
 const CONCURRENT_FEATURE_THREAD_COUNT: usize = 8;
+const FULL_PIPELINE_THREAD_COUNT: usize = CONCURRENT_FEATURE_THREAD_COUNT;
+const FULL_PIPELINE_STATUSES: [ChunkStatus; 12] = [
+    ChunkStatus::Empty,
+    ChunkStatus::StructureStarts,
+    ChunkStatus::StructureReferences,
+    ChunkStatus::Biomes,
+    ChunkStatus::Noise,
+    ChunkStatus::Surface,
+    ChunkStatus::Carvers,
+    ChunkStatus::Features,
+    ChunkStatus::InitializeLight,
+    ChunkStatus::Light,
+    ChunkStatus::Spawn,
+    ChunkStatus::Full,
+];
 
 fn concurrent_feature_centers() -> Vec<ChunkPos> {
     let side = CONCURRENT_FEATURE_GRID_MAX - CONCURRENT_FEATURE_GRID_MIN + 1;
@@ -605,6 +651,60 @@ fn concurrent_feature_cache_radius(centers: &[ChunkPos]) -> i32 {
         .map(|center| center.0.x.abs().max(center.0.y.abs()) + 8)
         .max()
         .unwrap_or(8)
+}
+
+fn concurrent_full_pipeline_cache_radius(centers: &[ChunkPos]) -> i32 {
+    let target_step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Full);
+    let dependency_radius = target_step.get_accumulated_radius_of(ChunkStatus::Empty) as i32;
+
+    centers
+        .iter()
+        .map(|center| center.0.x.abs().max(center.0.y.abs()) + dependency_radius)
+        .max()
+        .unwrap_or(dependency_radius)
+}
+
+fn full_pipeline_positions_for_status(
+    centers: &[ChunkPos],
+    target_step: &ChunkStep,
+    status: ChunkStatus,
+) -> Vec<ChunkPos> {
+    let radius = target_step.get_accumulated_radius_of(status) as i32;
+    let mut positions = Vec::new();
+
+    for center in centers {
+        for z in (center.0.y - radius)..=(center.0.y + radius) {
+            for x in (center.0.x - radius)..=(center.0.x + radius) {
+                positions.push(ChunkPos::new(x, z));
+            }
+        }
+    }
+
+    positions.sort_by_key(|pos| (pos.0.y, pos.0.x));
+    positions.dedup();
+    positions
+}
+
+fn full_pipeline_stages(
+    cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
+    centers: &[ChunkPos],
+) -> Vec<FullPipelineStage> {
+    let target_step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Full);
+
+    FULL_PIPELINE_STATUSES
+        .into_iter()
+        .map(|status| {
+            let holders = full_pipeline_positions_for_status(centers, target_step, status)
+                .into_iter()
+                .map(|pos| cache.get(pos.0.x, pos.0.y).clone())
+                .collect();
+
+            FullPipelineStage {
+                step: GENERATION_PYRAMID.get_step_to(status),
+                holders,
+            }
+        })
+        .collect()
 }
 
 fn build_concurrent_feature_fixture(
@@ -694,6 +794,94 @@ fn build_concurrent_feature_fixture(
     }
 }
 
+fn build_concurrent_full_pipeline_fixture(
+    generator_key: Identifier,
+    seed: i64,
+) -> ConcurrentFullPipelineFixture {
+    let generator_config = toml::Value::Table(Map::new());
+    let output = WorldGeneratorRegistry::new_with_builtins()
+        .expect("built-in world generators should register")
+        .create(&generator_key, &generator_config, seed)
+        .expect("full-pipeline benchmark should use a built-in generator");
+    let dim = output.dimension_type;
+    let generator = Arc::new(output.generator);
+    let generation_settings = WorldGenerationSettings::from_generator_config(
+        generator_key.clone(),
+        &output.config,
+        dim.key.clone(),
+        dim.min_y,
+        dim.height,
+    );
+    let chunk_runtime = Arc::new(
+        RuntimeBuilder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("full-pipeline benchmark runtime should build"),
+    );
+    let generation_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(FULL_PIPELINE_THREAD_COUNT)
+            .thread_name(|index| format!("bench-full-pipeline-{index}"))
+            .build()
+            .expect("full-pipeline benchmark generation pool should build"),
+    );
+    let world_config = WorldConfig {
+        storage: WorldStorageConfig::RamOnly,
+        level_data_path: None,
+        generator: generator.clone(),
+        generation_settings,
+        view_distance: 10,
+        simulation_distance: 10,
+        compression: None,
+        is_flat: false,
+        sea_level: output.sea_level,
+        default_gamemode: GameType::Survival,
+        difficulty: Difficulty::Normal,
+    };
+    let world_key = Identifier::new(
+        "bench",
+        format!("{}_full_pipeline_concurrent", generator_key.path),
+    );
+    let world = chunk_runtime
+        .block_on(World::new_with_config(
+            chunk_runtime.clone(),
+            world_key,
+            dim,
+            seed,
+            world_config,
+            generation_pool.clone(),
+        ))
+        .expect("full-pipeline benchmark world should build");
+    let chunk_map = world.chunk_map.clone();
+
+    let centers = concurrent_feature_centers();
+    let cache_radius = concurrent_full_pipeline_cache_radius(&centers);
+    let chunk_map_for_factory = chunk_map.clone();
+    let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
+        let pos = ChunkPos::new(x, z);
+        let holder = Arc::new(ChunkHolder::new(pos, 0, dim.min_y, dim.height));
+        let _ = chunk_map_for_factory
+            .chunks
+            .insert_sync(pos, holder.clone());
+        holder
+    }));
+    let stages = full_pipeline_stages(&cache, &centers);
+    let targets = centers
+        .iter()
+        .map(|center| cache.get(center.0.x, center.0.y).clone())
+        .collect();
+
+    ConcurrentFullPipelineFixture {
+        chunk_runtime,
+        chunk_map,
+        cache,
+        stages,
+        generation_pool,
+        targets,
+        _world: world,
+    }
+}
+
 fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
     ensure_registry();
     let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
@@ -722,6 +910,23 @@ fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
                     });
                 }
             },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
+    ensure_registry();
+
+    c.bench_function("overworld_full_pipeline_concurrent_overlap", |b| {
+        b.iter_batched(
+            || {
+                build_concurrent_full_pipeline_fixture(
+                    Identifier::vanilla_static("overworld"),
+                    PROFILE_FEATURE_SEED,
+                )
+            },
+            run_concurrent_full_pipeline_batch,
             criterion::BatchSize::SmallInput,
         );
     });
@@ -810,6 +1015,94 @@ fn log_feature_batch_profile(batch_elapsed: Duration, task_times: &[FeatureTaskW
         duration_ms(max),
         utilization,
         slowest
+    );
+}
+
+fn run_concurrent_full_pipeline_batch(fixture: ConcurrentFullPipelineFixture) {
+    let mut stage_times = env::var_os("STEEL_FULL_PIPELINE_PROFILE")
+        .is_some()
+        .then(Vec::new);
+    let batch_started_at = Instant::now();
+
+    for stage in &fixture.stages {
+        let stage_started_at = Instant::now();
+        run_full_pipeline_stage(&fixture, stage);
+
+        if let Some(stage_times) = &mut stage_times {
+            stage_times.push(FullPipelineStageWallTime {
+                status: stage.step.target_status,
+                chunks: stage.holders.len(),
+                elapsed: stage_started_at.elapsed(),
+            });
+        }
+    }
+
+    for target in &fixture.targets {
+        assert!(
+            target.try_chunk(ChunkStatus::Full).is_some(),
+            "full-pipeline target chunk did not reach Full"
+        );
+    }
+
+    if let Some(stage_times) = stage_times {
+        log_full_pipeline_profile(batch_started_at.elapsed(), &stage_times);
+    }
+}
+
+fn run_full_pipeline_stage(fixture: &ConcurrentFullPipelineFixture, stage: &FullPipelineStage) {
+    fixture.chunk_runtime.block_on(async {
+        let futures = stage
+            .holders
+            .iter()
+            .filter_map(|holder| {
+                holder.apply_step(
+                    stage.step,
+                    &fixture.chunk_map,
+                    &fixture.cache,
+                    fixture.generation_pool.clone(),
+                    fixture.chunk_map.cancel_token.child_token(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let results = join_all(futures).await;
+        assert!(
+            results.iter().all(Option::is_some),
+            "full-pipeline stage {:?} did not complete",
+            stage.step.target_status
+        );
+    });
+}
+
+fn log_full_pipeline_profile(batch_elapsed: Duration, stage_times: &[FullPipelineStageWallTime]) {
+    if FULL_PIPELINE_PROFILE_LOGS.fetch_add(1, Ordering::Relaxed)
+        >= *FULL_PIPELINE_PROFILE_LOG_LIMIT
+    {
+        return;
+    }
+
+    let total_stage_time = stage_times
+        .iter()
+        .map(|record| record.elapsed)
+        .fold(Duration::ZERO, |left, right| left + right);
+    let stage_summary = stage_times
+        .iter()
+        .map(|record| {
+            format!(
+                "{:?}:{}:{:.3}ms",
+                record.status,
+                record.chunks,
+                duration_ms(record.elapsed)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    eprintln!(
+        "full pipeline profile batch_ms={:.3} sum_stage_ms={:.3} stages=[{}]",
+        duration_ms(batch_elapsed),
+        duration_ms(total_stage_time),
+        stage_summary
     );
 }
 
@@ -1145,4 +1438,12 @@ criterion_group! {
         .measurement_time(Duration::from_secs(20));
     targets = bench_overworld_features_concurrent_overlap
 }
-criterion_main!(benches, feature_distribution_benches);
+criterion_group! {
+    name = full_pipeline_benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(10));
+    targets = bench_overworld_full_pipeline_concurrent_overlap
+}
+criterion_main!(benches, feature_distribution_benches, full_pipeline_benches);

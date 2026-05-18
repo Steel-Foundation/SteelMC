@@ -38,7 +38,8 @@ use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 
 use crate::worldgen::ChunkBiomeSampler;
 use crate::worldgen::generators::vanilla::{
-    column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
+    column_base_height, column_interpolated_density, find_solid_block_below_air,
+    iterate_noise_column_with_aquifer,
 };
 use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, LazyAquifer};
 
@@ -375,6 +376,28 @@ pub trait StructureGenerationContext {
     fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef;
     /// Classify a block in the generator's base terrain.
     fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock;
+    /// Highest solid base-terrain block directly below air in `[min_solid_y, start_y)`.
+    fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        if start_y <= min_solid_y {
+            return None;
+        }
+
+        let mut above = self.column_state(x, start_y, z);
+        for y in (min_solid_y..start_y).rev() {
+            let current = self.column_state(x, y, z);
+            if above == ColumnBlock::Air && current == ColumnBlock::Solid {
+                return Some(y);
+            }
+            above = current;
+        }
+        None
+    }
     /// Chunk-center surface Y, memoised by the concrete context.
     fn surface_y(&mut self) -> i32;
     /// Surface height for off-chunk terrain queries used by piece placement.
@@ -446,6 +469,27 @@ where
             AquiferResult::Fluid(_) => ColumnBlock::Fluid,
             AquiferResult::Air => ColumnBlock::Air,
         }
+    }
+
+    /// Highest solid base-terrain block directly below air in `[min_solid_y, start_y)`.
+    pub fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        self.ensure_height_cache_grid();
+        let aq = self.aquifer.ensure(self.height_cache);
+        find_solid_block_below_air::<N>(
+            self.height_cache,
+            self.noises,
+            aq,
+            x,
+            z,
+            start_y,
+            min_solid_y,
+        )
     }
 
     /// Surface Y at chunk center, memoised across per-structure contexts.
@@ -531,6 +575,16 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
 
     fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
         GenerationContext::column_state(self, x, y, z)
+    }
+
+    fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        GenerationContext::solid_block_below_air(self, x, z, start_y, min_solid_y)
     }
 
     fn surface_y(&mut self) -> i32 {
