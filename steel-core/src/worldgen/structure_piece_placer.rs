@@ -10,6 +10,7 @@ mod desert_pyramid;
 mod fortress;
 mod jungle_temple;
 mod mineshaft;
+mod ocean_monument;
 mod pool_element;
 mod ruined_portal;
 mod scattered_feature;
@@ -50,6 +51,10 @@ impl StructurePiecePlacer {
     /// Returns whether the vanilla placement call succeeded. Later milestones
     /// must implement each remaining payload variant completely before it can
     /// return `true`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single dispatch boundary for all structure piece payload families"
+    )]
     pub(crate) fn place_piece(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
@@ -97,6 +102,17 @@ impl StructurePiecePlacer {
             }
             StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(data)) => {
                 Self::place_nether_fortress_piece(
+                    region,
+                    registry,
+                    piece_bounding_box,
+                    piece_orientation,
+                    data,
+                    clip,
+                    random,
+                )
+            }
+            StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(data)) => {
+                Self::place_ocean_monument_piece(
                     region,
                     registry,
                     piece_bounding_box,

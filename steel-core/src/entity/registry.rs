@@ -284,6 +284,7 @@ pub fn init_entities() {
     register_dummy_mob!(&vanilla_entities::WITCH);
     register_dummy_mob!(&vanilla_entities::CAT);
     register_dummy_mob!(&vanilla_entities::DROWNED);
+    register_dummy_mob!(&vanilla_entities::ELDER_GUARDIAN);
     register_dummy_mob!(&vanilla_entities::SHULKER);
     register_dummy_mob!(&vanilla_entities::EVOKER);
     register_dummy_mob!(&vanilla_entities::VINDICATOR);

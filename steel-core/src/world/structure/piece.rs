@@ -6,7 +6,10 @@ use steel_registry::structure::{
 use steel_registry::template_pool::Projection;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
-use super::{desert_pyramid, fortress, jigsaw, jungle_temple, mineshaft, stronghold, swamp_hut};
+use super::{
+    desert_pyramid, fortress, jigsaw, jungle_temple, mineshaft, ocean_monument, stronghold,
+    swamp_hut,
+};
 
 /// Vanilla's `StructurePiece` runtime state.
 #[derive(Debug, Clone)]
@@ -250,6 +253,8 @@ pub enum ProceduralPieceData {
     Mineshaft(mineshaft::MineshaftPiecePayload),
     /// Nether fortress bridge/castle piece payload.
     NetherFortress(fortress::FortressPieceData),
+    /// Ocean monument building payload.
+    OceanMonument(ocean_monument::OceanMonumentPieceData),
     /// Stronghold recursive piece payload.
     Stronghold(stronghold::StrongholdPieceData),
     /// Swamp hut piece payload.

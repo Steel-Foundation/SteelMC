@@ -33,6 +33,10 @@ use crate::world::structure::jungle_temple::JungleTemplePieceData;
 use crate::world::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
+use crate::world::structure::ocean_monument::{
+    OceanMonumentChildPiece, OceanMonumentChildPieceKind, OceanMonumentPieceData,
+    OceanMonumentRoomData,
+};
 use crate::world::structure::stronghold::{StrongholdPieceData, StrongholdSmallDoorType};
 use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::world::structure::{
@@ -326,7 +330,9 @@ use super::{
     PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
     PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
-    PersistentPoi, PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
+    PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
+    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
     PersistentSection, PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType,
     PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
     PersistentStructureStart, PersistentSwampHutPieceData, PersistentTemplatePieceData,
@@ -1242,6 +1248,11 @@ impl ChunkStorage {
                     Self::fortress_piece_data_to_persistent(*data),
                 )
             }
+            ProceduralPieceData::OceanMonument(data) => {
+                PersistentProceduralPieceData::OceanMonument(
+                    Self::ocean_monument_data_to_persistent(data),
+                )
+            }
             ProceduralPieceData::Stronghold(data) => PersistentProceduralPieceData::Stronghold(
                 Self::stronghold_piece_data_to_persistent(*data),
             ),
@@ -1287,6 +1298,9 @@ impl ChunkStorage {
             PersistentProceduralPieceData::NetherFortress(data) => {
                 ProceduralPieceData::NetherFortress(Self::persistent_to_fortress_piece_data(data))
             }
+            PersistentProceduralPieceData::OceanMonument(data) => {
+                ProceduralPieceData::OceanMonument(Self::persistent_to_ocean_monument_data(data))
+            }
             PersistentProceduralPieceData::Stronghold(data) => {
                 ProceduralPieceData::Stronghold(Self::persistent_to_stronghold_piece_data(data))
             }
@@ -1297,6 +1311,216 @@ impl ChunkStorage {
                     spawned_cat: data.spawned_cat,
                 })
             }
+        }
+    }
+
+    fn ocean_monument_data_to_persistent(
+        data: &OceanMonumentPieceData,
+    ) -> PersistentOceanMonumentPieceData {
+        PersistentOceanMonumentPieceData {
+            child_pieces: data
+                .child_pieces
+                .iter()
+                .map(Self::ocean_monument_child_to_persistent)
+                .collect(),
+        }
+    }
+
+    fn persistent_to_ocean_monument_data(
+        data: &PersistentOceanMonumentPieceData,
+    ) -> OceanMonumentPieceData {
+        OceanMonumentPieceData {
+            child_pieces: data
+                .child_pieces
+                .iter()
+                .map(Self::persistent_to_ocean_monument_child)
+                .collect(),
+        }
+    }
+
+    const fn ocean_monument_child_to_persistent(
+        child: &OceanMonumentChildPiece,
+    ) -> PersistentOceanMonumentChildPiece {
+        PersistentOceanMonumentChildPiece {
+            bounding_box: child.bounding_box,
+            kind: Self::ocean_monument_child_kind_to_persistent(&child.kind),
+        }
+    }
+
+    const fn persistent_to_ocean_monument_child(
+        child: &PersistentOceanMonumentChildPiece,
+    ) -> OceanMonumentChildPiece {
+        OceanMonumentChildPiece {
+            bounding_box: child.bounding_box,
+            kind: Self::persistent_to_ocean_monument_child_kind(&child.kind),
+        }
+    }
+
+    const fn ocean_monument_child_kind_to_persistent(
+        kind: &OceanMonumentChildPieceKind,
+    ) -> PersistentOceanMonumentChildPieceKind {
+        match kind {
+            OceanMonumentChildPieceKind::EntryRoom { room } => {
+                PersistentOceanMonumentChildPieceKind::EntryRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                }
+            }
+            OceanMonumentChildPieceKind::CoreRoom => {
+                PersistentOceanMonumentChildPieceKind::CoreRoom
+            }
+            OceanMonumentChildPieceKind::DoubleXRoom { west, east } => {
+                PersistentOceanMonumentChildPieceKind::DoubleXRoom {
+                    west: Self::ocean_monument_room_to_persistent(*west),
+                    east: Self::ocean_monument_room_to_persistent(*east),
+                }
+            }
+            OceanMonumentChildPieceKind::DoubleXYRoom {
+                west,
+                east,
+                west_up,
+                east_up,
+            } => PersistentOceanMonumentChildPieceKind::DoubleXYRoom {
+                west: Self::ocean_monument_room_to_persistent(*west),
+                east: Self::ocean_monument_room_to_persistent(*east),
+                west_up: Self::ocean_monument_room_to_persistent(*west_up),
+                east_up: Self::ocean_monument_room_to_persistent(*east_up),
+            },
+            OceanMonumentChildPieceKind::DoubleYRoom { room, above } => {
+                PersistentOceanMonumentChildPieceKind::DoubleYRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                    above: Self::ocean_monument_room_to_persistent(*above),
+                }
+            }
+            OceanMonumentChildPieceKind::DoubleYZRoom {
+                south,
+                north,
+                south_up,
+                north_up,
+            } => PersistentOceanMonumentChildPieceKind::DoubleYZRoom {
+                south: Self::ocean_monument_room_to_persistent(*south),
+                north: Self::ocean_monument_room_to_persistent(*north),
+                south_up: Self::ocean_monument_room_to_persistent(*south_up),
+                north_up: Self::ocean_monument_room_to_persistent(*north_up),
+            },
+            OceanMonumentChildPieceKind::DoubleZRoom { south, north } => {
+                PersistentOceanMonumentChildPieceKind::DoubleZRoom {
+                    south: Self::ocean_monument_room_to_persistent(*south),
+                    north: Self::ocean_monument_room_to_persistent(*north),
+                }
+            }
+            OceanMonumentChildPieceKind::SimpleRoom { room, main_design } => {
+                PersistentOceanMonumentChildPieceKind::SimpleRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                    main_design: *main_design,
+                }
+            }
+            OceanMonumentChildPieceKind::SimpleTopRoom { room } => {
+                PersistentOceanMonumentChildPieceKind::SimpleTopRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                }
+            }
+            OceanMonumentChildPieceKind::WingRoom { main_design } => {
+                PersistentOceanMonumentChildPieceKind::WingRoom {
+                    main_design: *main_design,
+                }
+            }
+            OceanMonumentChildPieceKind::Penthouse => {
+                PersistentOceanMonumentChildPieceKind::Penthouse
+            }
+        }
+    }
+
+    const fn persistent_to_ocean_monument_child_kind(
+        kind: &PersistentOceanMonumentChildPieceKind,
+    ) -> OceanMonumentChildPieceKind {
+        match kind {
+            PersistentOceanMonumentChildPieceKind::EntryRoom { room } => {
+                OceanMonumentChildPieceKind::EntryRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::CoreRoom => {
+                OceanMonumentChildPieceKind::CoreRoom
+            }
+            PersistentOceanMonumentChildPieceKind::DoubleXRoom { west, east } => {
+                OceanMonumentChildPieceKind::DoubleXRoom {
+                    west: Self::persistent_to_ocean_monument_room(west),
+                    east: Self::persistent_to_ocean_monument_room(east),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::DoubleXYRoom {
+                west,
+                east,
+                west_up,
+                east_up,
+            } => OceanMonumentChildPieceKind::DoubleXYRoom {
+                west: Self::persistent_to_ocean_monument_room(west),
+                east: Self::persistent_to_ocean_monument_room(east),
+                west_up: Self::persistent_to_ocean_monument_room(west_up),
+                east_up: Self::persistent_to_ocean_monument_room(east_up),
+            },
+            PersistentOceanMonumentChildPieceKind::DoubleYRoom { room, above } => {
+                OceanMonumentChildPieceKind::DoubleYRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                    above: Self::persistent_to_ocean_monument_room(above),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::DoubleYZRoom {
+                south,
+                north,
+                south_up,
+                north_up,
+            } => OceanMonumentChildPieceKind::DoubleYZRoom {
+                south: Self::persistent_to_ocean_monument_room(south),
+                north: Self::persistent_to_ocean_monument_room(north),
+                south_up: Self::persistent_to_ocean_monument_room(south_up),
+                north_up: Self::persistent_to_ocean_monument_room(north_up),
+            },
+            PersistentOceanMonumentChildPieceKind::DoubleZRoom { south, north } => {
+                OceanMonumentChildPieceKind::DoubleZRoom {
+                    south: Self::persistent_to_ocean_monument_room(south),
+                    north: Self::persistent_to_ocean_monument_room(north),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::SimpleRoom { room, main_design } => {
+                OceanMonumentChildPieceKind::SimpleRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                    main_design: *main_design,
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::SimpleTopRoom { room } => {
+                OceanMonumentChildPieceKind::SimpleTopRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::WingRoom { main_design } => {
+                OceanMonumentChildPieceKind::WingRoom {
+                    main_design: *main_design,
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::Penthouse => {
+                OceanMonumentChildPieceKind::Penthouse
+            }
+        }
+    }
+
+    const fn ocean_monument_room_to_persistent(
+        room: OceanMonumentRoomData,
+    ) -> PersistentOceanMonumentRoomData {
+        PersistentOceanMonumentRoomData {
+            index: room.index,
+            has_opening: room.has_opening,
+            has_up_connection: room.has_up_connection,
+        }
+    }
+
+    const fn persistent_to_ocean_monument_room(
+        room: &PersistentOceanMonumentRoomData,
+    ) -> OceanMonumentRoomData {
+        OceanMonumentRoomData {
+            index: room.index,
+            has_opening: room.has_opening,
+            has_up_connection: room.has_up_connection,
         }
     }
 
@@ -2816,6 +3040,41 @@ mod tests {
             junctions: Vec::new(),
             projection: None,
         };
+        let ocean_monument_room = OceanMonumentRoomData {
+            index: 12,
+            has_opening: [false, true, true, false, true, false],
+            has_up_connection: true,
+        };
+        let ocean_monument_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "omb"),
+            bounding_box: steel_utils::BoundingBox::new(64, 39, 64, 121, 61, 121),
+            gen_depth: 0,
+            orientation: Some(Direction::South),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(
+                OceanMonumentPieceData {
+                    child_pieces: vec![
+                        OceanMonumentChildPiece {
+                            bounding_box: steel_utils::BoundingBox::new(73, 39, 86, 80, 42, 93),
+                            kind: OceanMonumentChildPieceKind::SimpleRoom {
+                                room: ocean_monument_room,
+                                main_design: 2,
+                            },
+                        },
+                        OceanMonumentChildPiece {
+                            bounding_box: steel_utils::BoundingBox::new(65, 40, 65, 87, 47, 85),
+                            kind: OceanMonumentChildPieceKind::WingRoom { main_design: 1 },
+                        },
+                        OceanMonumentChildPiece {
+                            bounding_box: steel_utils::BoundingBox::new(86, 52, 86, 99, 56, 99),
+                            kind: OceanMonumentChildPieceKind::Penthouse,
+                        },
+                    ],
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
         let stronghold_piece = StructurePiece {
             piece_type: Identifier::new_static("minecraft", "shrc"),
             bounding_box: steel_utils::BoundingBox::new(55, 35, 55, 65, 41, 65),
@@ -2861,6 +3120,7 @@ mod tests {
                 jungle_temple_piece,
                 mineshaft_piece,
                 fortress_piece,
+                ocean_monument_piece,
                 stronghold_piece,
                 swamp_hut_piece,
             ],
@@ -2877,7 +3137,7 @@ mod tests {
         let loaded_start = loaded
             .get(&structure_id)
             .expect("structure start should roundtrip");
-        assert_eq!(loaded_start.pieces.len(), 11);
+        assert_eq!(loaded_start.pieces.len(), 12);
 
         let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
             panic!("template payload should roundtrip");
@@ -3029,8 +3289,30 @@ mod tests {
             }
         );
 
-        let StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(stronghold_payload)) =
+        let StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(payload)) =
             &loaded_start.pieces[9].payload
+        else {
+            panic!("ocean monument payload should roundtrip");
+        };
+        assert_eq!(payload.child_pieces.len(), 3);
+        let OceanMonumentChildPieceKind::SimpleRoom { room, main_design } =
+            &payload.child_pieces[0].kind
+        else {
+            panic!("ocean monument simple room child should roundtrip");
+        };
+        assert_eq!(*room, ocean_monument_room);
+        assert_eq!(*main_design, 2);
+        assert!(matches!(
+            payload.child_pieces[1].kind,
+            OceanMonumentChildPieceKind::WingRoom { main_design: 1 }
+        ));
+        assert!(matches!(
+            payload.child_pieces[2].kind,
+            OceanMonumentChildPieceKind::Penthouse
+        ));
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(stronghold_payload)) =
+            &loaded_start.pieces[10].payload
         else {
             panic!("stronghold payload should roundtrip");
         };
@@ -3043,7 +3325,7 @@ mod tests {
         );
 
         let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
-            &loaded_start.pieces[10].payload
+            &loaded_start.pieces[11].payload
         else {
             panic!("swamp hut payload should roundtrip");
         };

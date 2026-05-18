@@ -289,6 +289,25 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         self.clip
     }
 
+    pub(super) fn sea_level(&self) -> i32 {
+        self.region.sea_level()
+    }
+
+    pub(super) fn block_at(&self, x: i32, y: i32, z: i32) -> BlockStateId {
+        self.get_block(x, y, z)
+    }
+
+    pub(super) fn chunk_intersects(&self, x0: i32, z0: i32, x1: i32, z1: i32) -> bool {
+        let pos0 = self.world_pos(x0, 0, z0);
+        let pos1 = self.world_pos(x1, 0, z1);
+        self.clip.intersects_xz(
+            pos0.x().min(pos1.x()),
+            pos0.z().min(pos1.z()),
+            pos0.x().max(pos1.x()),
+            pos0.z().max(pos1.z()),
+        )
+    }
+
     pub(super) fn weak_world(&self) -> Weak<World> {
         self.region.weak_world()
     }
