@@ -251,10 +251,12 @@ impl ChunkHolder {
     /// Gets access to the chunk if it has reached the given status.
     #[inline]
     pub fn try_chunk(&self, status: ChunkStatus) -> Option<RwLockReadGuard<'_, ChunkAccess>> {
-        match &*self.chunk_result.borrow() {
-            ChunkResult::Ok(s) if status <= *s => Some(self.data.read()),
-            _ => None,
-        }
+        let ready = {
+            let chunk_result = self.chunk_result.borrow();
+            matches!(&*chunk_result, ChunkResult::Ok(s) if status <= *s)
+        };
+
+        if ready { Some(self.data.read()) } else { None }
     }
 
     /// Waits until the chunk has reached the given status.
@@ -265,9 +267,12 @@ impl ChunkHolder {
         let mut subscriber = self.sender.subscribe();
         async move {
             loop {
-                if let ChunkResult::Ok(s) = &*subscriber.borrow_and_update()
-                    && status <= *s
-                {
+                let ready = {
+                    let chunk_result = subscriber.borrow_and_update();
+                    matches!(&*chunk_result, ChunkResult::Ok(s) if status <= *s)
+                };
+
+                if ready {
                     return Some(self.data.read());
                 }
 
@@ -285,7 +290,8 @@ impl ChunkHolder {
 
     /// Gets the persisted status of the chunk.
     pub fn persisted_status(&self) -> Option<ChunkStatus> {
-        match &*self.chunk_result.borrow() {
+        let chunk_result = self.chunk_result.borrow();
+        match &*chunk_result {
             ChunkResult::Ok(s) => Some(*s),
             ChunkResult::Unloaded => None,
         }
@@ -478,7 +484,7 @@ impl ChunkHolder {
 
     /// Finishes a generated status on the async scheduler after the Rayon task returns.
     fn finish_generation_status(&self, status: ChunkStatus) {
-        self.sender.send_modify(|chunk| {
+        {
             let stored_chunk = self.data.read();
             if let ChunkAccess::Proto(proto_chunk) = &*stored_chunk
                 && proto_chunk.status() < status
@@ -486,16 +492,16 @@ impl ChunkHolder {
                 proto_chunk.set_status(status);
                 stored_chunk.mark_dirty();
             }
+        }
 
-            match chunk {
-                ChunkResult::Ok(current_status) if *current_status < status => {
-                    *current_status = status;
-                }
-                ChunkResult::Unloaded => {
-                    *chunk = ChunkResult::Ok(status);
-                }
-                ChunkResult::Ok(_) => {}
+        self.sender.send_modify(|chunk| match chunk {
+            ChunkResult::Ok(current_status) if *current_status < status => {
+                *current_status = status;
             }
+            ChunkResult::Unloaded => {
+                *chunk = ChunkResult::Ok(status);
+            }
+            ChunkResult::Ok(_) => {}
         });
 
         self.post_publish_status_hooks(status);
