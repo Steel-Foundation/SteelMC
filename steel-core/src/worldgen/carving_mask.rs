@@ -62,7 +62,7 @@ impl CarvingMask {
         let idx = self.index(x, y, z);
         let lane = idx / 64;
         let bit = idx % 64;
-        self.bits[lane] |= 1u64 << bit;
+        self.bits[lane] |= 1 << bit;
     }
 
     /// Marks `(x, y, z)` as carved if it was not already marked.
@@ -73,7 +73,7 @@ impl CarvingMask {
     pub fn set_if_unset(&mut self, x: i32, y: i32, z: i32) -> bool {
         let idx = self.index(x, y, z);
         let lane = idx / 64;
-        let bit = 1u64 << (idx % 64);
+        let bit = 1 << (idx % 64);
         if self.bits[lane] & bit != 0 {
             return false;
         }

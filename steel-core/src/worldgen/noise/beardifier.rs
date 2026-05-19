@@ -30,7 +30,7 @@ const KERNEL_TOTAL: usize = KERNEL_SIZE * KERNEL_SIZE * KERNEL_SIZE; // 13824
 /// Pre-computed gaussian beard kernel.
 /// Layout: `[z][x][y]` where indices go from 0..24, representing offsets -12..+11.
 static BEARD_KERNEL: LazyLock<[f32; KERNEL_TOTAL]> = LazyLock::new(|| {
-    let mut kernel = [0.0f32; KERNEL_TOTAL];
+    let mut kernel = [0.0; KERNEL_TOTAL];
     for zi in 0..KERNEL_SIZE {
         let dz = zi as i32 - KERNEL_RADIUS;
         for xi in 0..KERNEL_SIZE {
@@ -51,11 +51,11 @@ static BEARD_KERNEL: LazyLock<[f32; KERNEL_TOTAL]> = LazyLock::new(|| {
 /// Vanilla's `Mth.fastInvSqrt` — the Quake III fast inverse square root, ported exactly.
 #[inline]
 fn fast_inv_sqrt(x: f64) -> f64 {
-    let xhalf = 0.5f64 * x;
+    let xhalf = 0.5 * x;
     let i = f64::to_bits(x) as i64;
-    let i = 0x5FE6_EB50_C7B5_37A9_i64 - (i >> 1);
+    let i = 0x5FE6_EB50_C7B5_37A9 - (i >> 1);
     let mut x = f64::from_bits(i as u64);
-    x *= 1.5f64 - xhalf * x * x;
+    x *= 1.5 - xhalf * x * x;
     x
 }
 

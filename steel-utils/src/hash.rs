@@ -166,7 +166,7 @@ impl ComponentHasher {
         // Write each UTF-16 code unit as little-endian (low byte first, then high byte)
         // This matches Guava's putUnencodedChars behavior
         for c in value.chars() {
-            let mut buf = [0u16; 2];
+            let mut buf = [0; 2];
             let encoded = c.encode_utf16(&mut buf);
             for code_unit in encoded {
                 self.data.extend_from_slice(&code_unit.to_le_bytes());

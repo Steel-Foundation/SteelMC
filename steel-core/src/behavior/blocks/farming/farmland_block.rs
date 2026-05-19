@@ -97,7 +97,7 @@ impl BlockBehavior for FarmlandBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::MOISTURE, 0u8),
+                .set_value(&BlockStateProperties::MOISTURE, 0),
         )
     }
 

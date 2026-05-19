@@ -75,7 +75,7 @@ impl Structure for IglooStructure {
         };
 
         let mut pieces = Vec::new();
-        if rng.next_f64() < 0.5_f64 {
+        if rng.next_f64() < 0.5 {
             let depth = rng.next_i32_bounded(8) + 4;
             pieces.push(mk(BOT_OFF, depth * 3, BOT_SIZE, BOT_PIVOT));
             for i in 0..depth - 1 {

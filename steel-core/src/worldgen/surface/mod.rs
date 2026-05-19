@@ -282,7 +282,7 @@ impl SurfaceSystem {
 
         // Orange terracotta bands — vanilla loop increments i in both the
         // for-header and body: `for(int i = 0; i < len; ++i) { i += rand(5)+1; ... }`
-        let mut i = 0usize;
+        let mut i = 0;
         while i < CLAY_BAND_LENGTH {
             i += random.next_i32_bounded(5) as usize + 1;
             if i < CLAY_BAND_LENGTH {
@@ -298,7 +298,7 @@ impl SurfaceSystem {
         // White + light gray terracotta bands
         let white_count = random.next_i32_between(9, 15);
         let mut placed = 0;
-        let mut start = 0usize;
+        let mut start = 0;
         while placed < white_count && start < CLAY_BAND_LENGTH {
             bands[start] = white;
             if start > 1 && random.next_bool() {

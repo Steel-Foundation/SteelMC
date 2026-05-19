@@ -123,7 +123,7 @@ pub(crate) fn build() -> TokenStream {
 /// The JSON values are f64, but vanilla uses f32 arithmetic for quantization.
 /// Casting to f32 first ensures bit-exact matching with Java's float precision.
 fn quantize(v: f64) -> i64 {
-    ((v as f32) * 10000.0f32) as i64
+    ((v as f32) * 10000.0) as i64
 }
 
 /// Convert a biome name like `"minecraft:plains"` to the `vanilla_biomes` constant

@@ -74,7 +74,7 @@ impl CropBlock {
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
     fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
-        let mut speed = 1.0f32;
+        let mut speed = 1.0;
         let below = pos.below();
 
         // Check 3x3 area of farmland below
@@ -82,7 +82,7 @@ impl CropBlock {
             for dz in -1..=1 {
                 let check_pos = below.offset(dx, 0, dz);
                 let block_state = world.get_block_state(check_pos);
-                let mut block_speed = 0.0f32;
+                let mut block_speed = 0.0;
 
                 if steel_registry::REGISTRY.blocks.is_in_tag(
                     block_state.get_block(),

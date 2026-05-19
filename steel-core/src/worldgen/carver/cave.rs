@@ -172,7 +172,7 @@ where
                 yd <= floor_level || xd * xd + yd * yd + zd * zd >= 1.0
             };
 
-            let mut tunnels = 1i32;
+            let mut tunnels = 1;
             if random.next_i32_bounded(4) == 0 {
                 let y_scale = f64::from(config.base.y_scale.sample(random));
                 let thickness = 1.0 + random.next_f32() * 6.0;

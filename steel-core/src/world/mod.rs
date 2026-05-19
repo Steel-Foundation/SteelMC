@@ -1727,7 +1727,7 @@ impl World {
             return (None, None);
         }
 
-        let adjust = -1.0e-7f64;
+        let adjust = -1.0e-7;
         let to = end_pos.lerp(start_pos, adjust);
         let from = start_pos.lerp(end_pos, adjust);
 

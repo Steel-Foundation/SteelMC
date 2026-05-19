@@ -104,7 +104,7 @@ impl OverworldClimateSampler {
         max_radius: f32,
         radius_increment: f32,
     ) -> SpawnSearchResult {
-        let mut angle = 0.0_f32;
+        let mut angle: f32 = 0.0;
         let mut radius = radius_increment;
         let origin = result.pos;
 
@@ -152,7 +152,7 @@ impl OverworldClimateSampler {
 
         SpawnSearchResult {
             pos: BlockPos::new(block_x, 0, block_z),
-            fitness: min_fitness * 2048_i64 * 2048_i64 + distance_bias,
+            fitness: min_fitness * 2048 * 2048 + distance_bias,
         }
     }
 }

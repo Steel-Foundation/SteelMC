@@ -294,7 +294,8 @@ impl<'a> MessageSignatureUpdater<'a> {
 impl SignatureUpdater for MessageSignatureUpdater<'_> {
     fn update(&self, output: &mut dyn SignatureOutput) -> Result<(), CryptError> {
         // Version number (always 1 as a 4-byte int, 00 00 00 01)
-        output.update(&1i32.to_be_bytes())?;
+        let version: i32 = 1;
+        output.update(&version.to_be_bytes())?;
 
         // Link data
         self.link.update_signature(output)?;

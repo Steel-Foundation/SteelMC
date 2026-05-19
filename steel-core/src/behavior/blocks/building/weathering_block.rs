@@ -92,8 +92,8 @@ impl WeatheringCopper {
         pos: BlockPos,
     ) -> Option<BlockStateId> {
         let own_age = self.weather_state as i32;
-        let mut same_age_count = 0i32;
-        let mut older_count = 0i32;
+        let mut same_age_count = 0;
+        let mut older_count = 0;
 
         for dx in -SCAN_DISTANCE..=SCAN_DISTANCE {
             for dy in -SCAN_DISTANCE..=SCAN_DISTANCE {

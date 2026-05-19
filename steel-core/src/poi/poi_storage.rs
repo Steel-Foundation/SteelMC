@@ -375,9 +375,9 @@ impl PointOfInterestStorage {
         let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
         let set = self.get_or_create_set(chunk_pos, section_pos.y());
 
-        for y in 0..16u8 {
-            for z in 0..16u8 {
-                for x in 0..16u8 {
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
                     let state_id = section.states.get(x as usize, y as usize, z as usize);
 
                     let Some(poi_type_id) = registry.type_id_for_state(state_id) else {
@@ -387,9 +387,9 @@ impl PointOfInterestStorage {
                         .by_id(poi_type_id)
                         .expect("POI type ID from state lookup must be valid");
                     let block_pos = BlockPos::new(
-                        (section_pos.x() << 4) + i32::from(x),
-                        (section_pos.y() << 4) + i32::from(y),
-                        (section_pos.z() << 4) + i32::from(z),
+                        (section_pos.x() << 4) + x,
+                        (section_pos.y() << 4) + y,
+                        (section_pos.z() << 4) + z,
                     );
                     let packed = PackedSectionBlockPos::from_block_pos(block_pos);
                     set.add(

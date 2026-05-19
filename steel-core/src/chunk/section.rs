@@ -121,7 +121,7 @@ impl Sections {
     #[must_use]
     pub fn read_all_biomes(&self) -> Box<[u16]> {
         let total = self.sections.len() * 64;
-        let mut biomes = vec![0u16; total];
+        let mut biomes = vec![0; total];
         for (i, holder) in self.sections.iter().enumerate() {
             let guard = holder.read();
             let base = i * 64;

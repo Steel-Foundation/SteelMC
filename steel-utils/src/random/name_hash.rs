@@ -41,7 +41,7 @@ impl NameHash {
 /// Vanilla uses UTF-16 code units, but for ASCII strings each byte maps 1:1.
 const fn java_hash_code(s: &str) -> i32 {
     let bytes = s.as_bytes();
-    let mut hash = 0_i32;
+    let mut hash: i32 = 0;
     let mut i = 0;
     while i < bytes.len() {
         hash = hash.wrapping_mul(31).wrapping_add(bytes[i] as i32);
@@ -92,7 +92,7 @@ const fn const_md5(data: &[u8]) -> [u8; 16] {
     );
 
     // Pad into a single 64-byte block
-    let mut block = [0u8; 64];
+    let mut block = [0; 64];
     let mut i = 0;
     while i < data.len() {
         block[i] = data[i];
@@ -110,7 +110,7 @@ const fn const_md5(data: &[u8]) -> [u8; 16] {
     }
 
     // Parse into 16 little-endian u32 words
-    let mut m = [0u32; 16];
+    let mut m = [0; 16];
     i = 0;
     while i < 16 {
         m[i] = u32::from_le_bytes([

@@ -135,7 +135,7 @@ impl BlockBehavior for CactusBlock {
         }
 
         // Count cactus blocks below
-        let mut height = 1u32;
+        let mut height = 1;
         let age = state.get_value(&BlockStateProperties::AGE_15);
 
         while world

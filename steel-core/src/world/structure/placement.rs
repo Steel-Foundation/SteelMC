@@ -73,7 +73,7 @@ impl FrequencyReductionMethod {
                     clippy::cast_possible_truncation,
                     reason = "vanilla: truncates reciprocal probability to i32 bound"
                 )]
-                let bound = (1.0_f32 / probability) as i32;
+                let bound = (1.0 / probability) as i32;
                 rng.next_i32_bounded(bound) == 0
             }
             Self::LegacyType2 => {

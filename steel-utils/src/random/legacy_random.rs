@@ -113,7 +113,7 @@ impl Random for LegacyRandom {
     }
 
     fn next_f32(&mut self) -> f32 {
-        self.next(24) as f32 * 5.960_464_5e-8_f32
+        self.next(24) as f32 * 5.960_464_5e-8
     }
 
     fn next_f64(&mut self) -> f64 {

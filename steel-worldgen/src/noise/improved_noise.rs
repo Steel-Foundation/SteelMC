@@ -37,7 +37,7 @@ impl ImprovedNoise {
         let yo = random.next_f64() * 256.0;
         let zo = random.next_f64() * 256.0;
 
-        let mut p = [0u8; 256];
+        let mut p = [0; 256];
         #[expect(
             clippy::needless_range_loop,
             reason = "index is used as the initial permutation value"
@@ -275,14 +275,14 @@ impl ImprovedNoise {
             ys_floor[3] as i32,
         ];
 
-        let mut h000 = [0usize; 4];
-        let mut h100 = [0usize; 4];
-        let mut h010 = [0usize; 4];
-        let mut h110 = [0usize; 4];
-        let mut h001 = [0usize; 4];
-        let mut h101 = [0usize; 4];
-        let mut h011 = [0usize; 4];
-        let mut h111 = [0usize; 4];
+        let mut h000 = [0; 4];
+        let mut h100 = [0; 4];
+        let mut h010 = [0; 4];
+        let mut h110 = [0; 4];
+        let mut h001 = [0; 4];
+        let mut h101 = [0; 4];
+        let mut h011 = [0; 4];
+        let mut h111 = [0; 4];
 
         for i in 0..4 {
             let y = yf[i];
@@ -480,9 +480,9 @@ fn lerp3_4x(
 /// then compute the dot product with the given position vectors.
 #[inline]
 fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
-    let mut gx = [0.0f64; 4];
-    let mut gy = [0.0f64; 4];
-    let mut gz = [0.0f64; 4];
+    let mut gx = [0.0; 4];
+    let mut gy = [0.0; 4];
+    let mut gz = [0.0; 4];
     for i in 0..4 {
         let g = &GRADIENT[hashes[i] & 15];
         gx[i] = g[0];

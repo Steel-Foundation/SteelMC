@@ -88,7 +88,7 @@ impl Completer {
         let width = (super::terminal_width() / 20).max(1);
         let grid_size = width * 3;
         let start = (self.selected / grid_size) * grid_size;
-        let mut height = 0u16;
+        let mut height = 0;
         'outer: for w in 0..width {
             for h in 0..3 {
                 let pos = start + w * 3 + h;

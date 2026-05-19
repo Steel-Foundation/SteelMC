@@ -524,7 +524,7 @@ pub fn generate_pieces(
     let west = chunk_x * 16 + 2;
     let north = chunk_z * 16 + 2;
 
-    let mut tries = 0i64;
+    let mut tries = 0;
     loop {
         let mut rng = LegacyRandom::from_seed(0);
         rng.set_large_feature_seed(seed.wrapping_add(tries), chunk_x, chunk_z);

@@ -72,7 +72,7 @@ fn enchant(
         )));
     }
 
-    let mut success = 0u32;
+    let mut success: u32 = 0;
     let enchantment_key = enchantment.key.clone();
 
     for target in targets {

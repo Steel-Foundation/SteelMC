@@ -259,7 +259,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
 fn pack_bits(indices: &[u32], bits: usize) -> Vec<u64> {
     let values_per_long = 64 / bits;
     let len = indices.len().div_ceil(values_per_long);
-    let mut data = vec![0u64; len];
+    let mut data = vec![0; len];
 
     for (i, &index) in indices.iter().enumerate() {
         let array_index = i / values_per_long;

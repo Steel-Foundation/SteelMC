@@ -30,7 +30,7 @@ const TABLE_MASK: i64 = 0xFFFF;
 /// The `Mth.SIN` table (one entry per 2π / 65536 radians, float-valued).
 static SIN_TABLE: LazyLock<Box<[f32; TABLE_LEN]>> = LazyLock::new(|| {
     // Box on the heap to keep the binary's .bss section small.
-    let mut table: Box<[f32; TABLE_LEN]> = vec![0.0_f32; TABLE_LEN]
+    let mut table: Box<[f32; TABLE_LEN]> = vec![0.0; TABLE_LEN]
         .into_boxed_slice()
         .try_into()
         .expect("65536-element vec");

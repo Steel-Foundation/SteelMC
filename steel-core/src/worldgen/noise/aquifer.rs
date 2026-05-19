@@ -481,7 +481,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         let z_anchor = grid_z(world_z + SAMPLE_OFFSET_Z);
 
         let mut dist_sq = [i32::MAX; 4];
-        let mut closest_idx = [0usize; 4];
+        let mut closest_idx = [0; 4];
 
         for x1 in 0..=1 {
             for y1 in -1..=1 {

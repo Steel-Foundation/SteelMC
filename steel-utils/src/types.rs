@@ -537,8 +537,8 @@ impl PackedBlockPos {
     const Y_BITS: u32 = 12;
     const X_OFFSET: u32 = Self::HORIZONTAL_BITS + Self::Y_BITS;
     const Z_OFFSET: u32 = Self::Y_BITS;
-    const XZ_MASK: i64 = (1i64 << Self::HORIZONTAL_BITS) - 1;
-    const Y_MASK: i64 = (1i64 << Self::Y_BITS) - 1;
+    const XZ_MASK: i64 = (1 << Self::HORIZONTAL_BITS) - 1;
+    const Y_MASK: i64 = (1 << Self::Y_BITS) - 1;
 
     /// Creates a packed block position from its raw representation.
     #[must_use]
@@ -607,8 +607,8 @@ impl PackedSectionPos {
     const Y_BITS: u32 = 20;
     const X_OFFSET: u32 = Self::XZ_BITS + Self::Y_BITS;
     const Z_OFFSET: u32 = Self::Y_BITS;
-    const XZ_MASK: i64 = (1i64 << Self::XZ_BITS) - 1;
-    const Y_MASK: i64 = (1i64 << Self::Y_BITS) - 1;
+    const XZ_MASK: i64 = (1 << Self::XZ_BITS) - 1;
+    const Y_MASK: i64 = (1 << Self::Y_BITS) - 1;
 
     /// Creates a packed section position from its raw representation.
     #[must_use]
