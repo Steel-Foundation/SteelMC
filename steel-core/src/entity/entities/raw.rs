@@ -1,4 +1,4 @@
-//! Minimal persistent mob entity used before full mob behavior exists.
+//! NBT-preserving fallback entity.
 
 use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,12 +15,11 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase};
 use crate::world::World;
 
-/// Placeholder for mobs that must exist for vanilla worldgen side effects.
+/// Steel-specific fallback for entity types whose runtime behavior is not implemented yet.
 ///
-/// This intentionally differs from vanilla entity classes: it preserves identity,
-/// type, position, rotation, dimensions, and persistence, but does not implement
-/// AI, attributes, equipment, sounds, or combat yet.
-pub struct DummyMobEntity {
+/// Vanilla has concrete classes for every entity type. Steel uses this only to preserve
+/// worldgen and disk NBT until the corresponding typed implementation is added.
+pub struct RawEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     rotation: AtomicCell<(f32, f32)>,
@@ -29,22 +28,13 @@ pub struct DummyMobEntity {
     data: SyncMutex<NbtCompound>,
 }
 
-impl DummyMobEntity {
-    /// Creates a fresh dummy mob.
+impl RawEntity {
+    /// Creates a raw entity from base entity data.
     #[must_use]
-    pub fn new(id: i32, position: DVec3, world: Weak<World>, entity_type: EntityTypeRef) -> Self {
-        Self {
-            base: EntityBase::new(id, position, world),
-            entity_type,
-            rotation: AtomicCell::new((0.0, 0.0)),
-            velocity: SyncMutex::new(DVec3::ZERO),
-            on_ground: AtomicBool::new(false),
-            data: SyncMutex::new(NbtCompound::new()),
-        }
-    }
-
-    /// Creates a dummy mob from persistent entity data.
-    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "raw fallback must preserve all persisted base entity fields"
+    )]
     pub fn from_saved(
         id: i32,
         position: DVec3,
@@ -64,15 +54,9 @@ impl DummyMobEntity {
             data: SyncMutex::new(NbtCompound::new()),
         }
     }
-
-    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
-    pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
-        self.set_position(position);
-        self.rotation.store((yaw, pitch));
-    }
 }
 
-impl Entity for DummyMobEntity {
+impl Entity for RawEntity {
     fn base(&self) -> Option<&EntityBase> {
         Some(&self.base)
     }
@@ -117,7 +101,7 @@ impl Entity for DummyMobEntity {
     }
 
     fn tick(&self) {
-        // TODO: Replace dummy mob ticking with full vanilla mob behavior.
+        // TODO: Replace raw entity ticking with full vanilla behavior for this entity type.
     }
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {

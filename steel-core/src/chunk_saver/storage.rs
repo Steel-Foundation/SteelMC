@@ -1028,15 +1028,6 @@ impl ChunkStorage {
         // Look up entity type
         let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
 
-        // Check if we have a load factory for this entity type
-        if !ENTITIES.has_load_factory(entity_type) {
-            tracing::debug!(
-                entity_type = %persistent.entity_type,
-                "No load factory for entity type, skipping"
-            );
-            return None;
-        }
-
         // Parse NBT from bytes (or use empty compound data)
         let nbt_bytes = if persistent.nbt_data.is_empty() {
             // Empty NBT compound: type byte (10 = compound), empty name (2 zero bytes), end tag (0)
@@ -1050,7 +1041,7 @@ impl ChunkStorage {
             return None;
         };
 
-        ENTITIES.create_and_load(
+        Some(ENTITIES.create_and_load_or_raw(
             entity_type,
             pos,
             uuid,
@@ -1059,7 +1050,7 @@ impl ChunkStorage {
             persistent.on_ground,
             level,
             &nbt,
-        )
+        ))
     }
 
     /// Converts block ticks to persistent format for saving.

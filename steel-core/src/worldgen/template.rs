@@ -3,15 +3,19 @@ use std::io::{Cursor, Read};
 use std::str::FromStr;
 
 use flate2::read::GzDecoder;
+use glam::DVec3;
 use simdnbt::borrow::{
     Nbt as BorrowedNbt, NbtCompound as BorrowedNbtCompound,
     NbtCompoundList as BorrowedNbtCompoundList, NbtList as BorrowedNbtList, read as read_nbt,
+    read_compound as read_borrowed_compound,
 };
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::properties::Direction as BlockPropertyDirection;
 use steel_registry::blocks::properties::{BlockStateProperties, Half};
 use steel_registry::blocks::{self};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
+use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::fluid::FluidState;
 use steel_registry::shared_structs::BlockStateData;
 use steel_registry::structure::LiquidSettingsData;
@@ -21,8 +25,8 @@ use steel_registry::structure_processor::{
 };
 use steel_registry::template_pool::Projection;
 use steel_registry::{
-    Registry, RegistryExt, TaggedRegistryExt, vanilla_block_tags, vanilla_blocks,
-    vanilla_template_pools,
+    Registry, RegistryExt, TaggedRegistryExt, vanilla_block_entity_types, vanilla_block_tags,
+    vanilla_blocks, vanilla_template_pools,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
@@ -31,9 +35,11 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{
     BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
 };
+use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
+use crate::entity::ENTITIES;
 use crate::world::structure::{StructureBlockIgnore, StructureMirror};
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::state_resolver::WorldgenStateResolver;
@@ -47,7 +53,7 @@ use crate::worldgen::state_resolver::WorldgenStateResolver;
 pub(crate) struct StructureTemplate {
     size: [i32; 3],
     palettes: Vec<StructureTemplatePalette>,
-    entity_count: usize,
+    entities: Vec<StructureEntityInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +66,17 @@ struct StructureBlockInfo {
     pos: BlockPos,
     state: BlockStateId,
     nbt: Option<NbtCompound>,
+}
+
+#[derive(Debug, Clone)]
+struct StructureEntityInfo {
+    pos: DVec3,
+    block_pos: BlockPos,
+    entity_type: EntityTypeRef,
+    rotation: (f32, f32),
+    velocity: DVec3,
+    on_ground: bool,
+    nbt: NbtCompound,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,15 +153,12 @@ impl StructureTemplate {
             });
         }
 
-        let entity_count = compound
-            .list("entities")
-            .and_then(|list| list.compounds())
-            .map_or(0, |entities| entities.len());
+        let entities = Self::read_entities(registry, &compound, context)?;
 
         Ok(Self {
             size,
             palettes: loaded_palettes,
-            entity_count,
+            entities,
         })
     }
 
@@ -162,6 +176,22 @@ impl StructureTemplate {
             ));
         }
         Ok([ints[0], ints[1], ints[2]])
+    }
+
+    fn read_vec3d(
+        list: Option<BorrowedNbtList<'_, '_>>,
+        context: &str,
+        field: &str,
+    ) -> Result<DVec3, String> {
+        let doubles = list
+            .and_then(|list| list.doubles())
+            .ok_or_else(|| format!("structure template {context} has non-double {field} list"))?;
+        if doubles.len() < 3 {
+            return Err(format!(
+                "structure template {context} {field} list has fewer than 3 entries"
+            ));
+        }
+        Ok(DVec3::new(doubles[0], doubles[1], doubles[2]))
     }
 
     fn read_palettes(
@@ -285,6 +315,77 @@ impl StructureTemplate {
         Ok(full_blocks)
     }
 
+    fn read_entities(
+        registry: &Registry,
+        compound: &BorrowedNbtCompound<'_, '_>,
+        context: &str,
+    ) -> Result<Vec<StructureEntityInfo>, String> {
+        let Some(entities) = compound.list("entities").and_then(|list| list.compounds()) else {
+            return Ok(Vec::new());
+        };
+
+        let mut result = Vec::with_capacity(entities.len());
+        for entity in entities.clone() {
+            let pos = Self::read_vec3d(entity.list("pos"), context, "entity pos")?;
+            let block_pos = Self::read_vec3(entity.list("blockPos"), context, "entity blockPos")?;
+            let entity_nbt = entity.compound("nbt").ok_or_else(|| {
+                format!("structure template {context} has entity entry without nbt")
+            })?;
+            let id = entity_nbt
+                .string("id")
+                .ok_or_else(|| format!("structure template {context} has entity nbt without id"))?;
+            let id = Identifier::from_str(id.to_str().as_ref()).map_err(|err| {
+                format!("structure template {context} has invalid entity identifier: {err}")
+            })?;
+            let entity_type = registry.entity_types.by_key(&id).ok_or_else(|| {
+                format!("structure template {context} references unknown entity type {id}")
+            })?;
+            let rotation = Self::read_entity_rotation(&entity_nbt);
+            let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
+            let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
+            let mut nbt = entity_nbt.to_owned();
+            Self::strip_entity_base_fields(&mut nbt);
+
+            result.push(StructureEntityInfo {
+                pos,
+                block_pos: BlockPos::new(block_pos[0], block_pos[1], block_pos[2]),
+                entity_type,
+                rotation,
+                velocity,
+                on_ground,
+                nbt,
+            });
+        }
+
+        Ok(result)
+    }
+
+    fn read_entity_rotation(nbt: &BorrowedNbtCompound<'_, '_>) -> (f32, f32) {
+        let Some(rotation) = nbt.list("Rotation").and_then(|list| list.floats()) else {
+            return (0.0, 0.0);
+        };
+        if rotation.len() < 2 {
+            return (0.0, 0.0);
+        }
+        (rotation[0], rotation[1])
+    }
+
+    fn read_optional_vec3d(nbt: &BorrowedNbtCompound<'_, '_>, field: &str) -> DVec3 {
+        let Some(values) = nbt.list(field).and_then(|list| list.doubles()) else {
+            return DVec3::ZERO;
+        };
+        if values.len() < 3 {
+            return DVec3::ZERO;
+        }
+        DVec3::new(values[0], values[1], values[2])
+    }
+
+    fn strip_entity_base_fields(nbt: &mut NbtCompound) {
+        for field in ["id", "Pos", "Motion", "Rotation", "UUID", "OnGround"] {
+            let _ = nbt.remove(field);
+        }
+    }
+
     fn is_static_full_block(registry: &Registry, state: BlockStateId) -> bool {
         let Some(block) = registry.blocks.by_state_id(state) else {
             return false;
@@ -371,6 +472,111 @@ impl StructureTemplate {
         };
         let (x, y, z) = rotation.transform_pos(x, pos.y(), z, pivot.x(), pivot.z());
         BlockPos::new(x, y, z)
+    }
+
+    fn transform_entity_position(
+        pos: DVec3,
+        mirror: StructureMirror,
+        rotation: Rotation,
+        pivot: BlockPos,
+    ) -> DVec3 {
+        let mut x = pos.x;
+        let y = pos.y;
+        let mut z = pos.z;
+        match mirror {
+            StructureMirror::LeftRight => z = 1.0 - z,
+            StructureMirror::FrontBack => x = 1.0 - x,
+            StructureMirror::None => {}
+        }
+
+        let pivot_x = f64::from(pivot.x());
+        let pivot_z = f64::from(pivot.z());
+        match rotation {
+            Rotation::CounterClockwise90 => {
+                DVec3::new(pivot_x - pivot_z + z, y, pivot_x + pivot_z + 1.0 - x)
+            }
+            Rotation::Clockwise90 => {
+                DVec3::new(pivot_x + pivot_z + 1.0 - z, y, pivot_z - pivot_x + x)
+            }
+            Rotation::Clockwise180 => {
+                DVec3::new(pivot_x + pivot_x + 1.0 - x, y, pivot_z + pivot_z + 1.0 - z)
+            }
+            Rotation::None => DVec3::new(x, y, z),
+        }
+    }
+
+    fn transform_entity_rotation(
+        (yaw, pitch): (f32, f32),
+        mirror: StructureMirror,
+        rotation: Rotation,
+    ) -> (f32, f32) {
+        let yaw = Self::wrap_degrees(yaw);
+        let rotated = match rotation {
+            Rotation::Clockwise180 => yaw + 180.0,
+            Rotation::CounterClockwise90 => yaw + 270.0,
+            Rotation::Clockwise90 => yaw + 90.0,
+            Rotation::None => yaw,
+        };
+        let mirrored = match mirror {
+            StructureMirror::LeftRight => -yaw,
+            StructureMirror::FrontBack => 180.0 - yaw,
+            StructureMirror::None => yaw,
+        };
+        (rotated + mirrored - yaw, pitch)
+    }
+
+    fn transform_entity_additional_nbt(
+        nbt: &mut NbtCompound,
+        mirror: StructureMirror,
+        rotation: Rotation,
+    ) {
+        let Some(facing) = Self::entity_facing(nbt) else {
+            return;
+        };
+        let facing = rotation.rotate(Self::mirror_direction(facing, mirror));
+        let _ = nbt.remove("Facing");
+        nbt.insert("Facing", Self::entity_facing_value(facing));
+    }
+
+    fn entity_facing(nbt: &NbtCompound) -> Option<Direction> {
+        nbt.byte("Facing")
+            .map(i32::from)
+            .or_else(|| nbt.int("Facing"))
+            .and_then(Self::direction_from_entity_facing)
+    }
+
+    const fn direction_from_entity_facing(value: i32) -> Option<Direction> {
+        match value {
+            0 => Some(Direction::Down),
+            1 => Some(Direction::Up),
+            2 => Some(Direction::North),
+            3 => Some(Direction::South),
+            4 => Some(Direction::West),
+            5 => Some(Direction::East),
+            _ => None,
+        }
+    }
+
+    const fn entity_facing_value(direction: Direction) -> i8 {
+        match direction {
+            Direction::Down => 0,
+            Direction::Up => 1,
+            Direction::North => 2,
+            Direction::South => 3,
+            Direction::West => 4,
+            Direction::East => 5,
+        }
+    }
+
+    fn wrap_degrees(mut degrees: f32) -> f32 {
+        degrees %= 360.0;
+        if degrees >= 180.0 {
+            degrees -= 360.0;
+        }
+        if degrees < -180.0 {
+            degrees += 360.0;
+        }
+        degrees
     }
 
     #[expect(
@@ -488,10 +694,18 @@ impl StructureTemplate {
             placed_positions.push(processed.world_pos);
 
             if let Some(mut nbt) = processed.nbt {
-                if nbt.contains("LootTable") {
+                let block_entity_type =
+                    Self::block_entity_type_for_nbt_or_state(registry, final_state, &nbt);
+                if Self::should_reseed_template_loot(block_entity_type, &nbt) {
                     nbt.insert("LootTableSeed", NbtTag::Long(random.next_i64()));
                 }
-                Self::place_block_entity(region, registry, processed.world_pos, final_state, nbt);
+                Self::place_block_entity(
+                    region,
+                    processed.world_pos,
+                    final_state,
+                    block_entity_type,
+                    nbt,
+                );
             } else {
                 let _ = region.remove_block_entity(processed.world_pos);
             }
@@ -535,11 +749,74 @@ impl StructureTemplate {
             }
         }
 
-        if self.entity_count != 0 {
-            // TODO: Place structure template entities when structure pieces use full template placement.
-        }
+        self.place_entities(region, position, settings);
 
         placed_any
+    }
+
+    fn place_entities(
+        &self,
+        region: &mut WorldGenRegion<'_>,
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+    ) {
+        if self.entities.is_empty() {
+            return;
+        }
+
+        let world_offset = DVec3::new(
+            f64::from(position.x()),
+            f64::from(position.y()),
+            f64::from(position.z()),
+        );
+        for entity in &self.entities {
+            let block_pos = Self::calculate_relative_position(
+                entity.block_pos,
+                settings.mirror,
+                settings.rotation,
+                settings.rotation_pivot,
+            )
+            .offset(position.x(), position.y(), position.z());
+            if !settings.bounding_box.is_inside(block_pos) {
+                continue;
+            }
+
+            let pos = Self::transform_entity_position(
+                entity.pos,
+                settings.mirror,
+                settings.rotation,
+                settings.rotation_pivot,
+            ) + world_offset;
+            let rotation = Self::transform_entity_rotation(
+                entity.rotation,
+                settings.mirror,
+                settings.rotation,
+            );
+            let mut nbt = entity.nbt.clone();
+            Self::transform_entity_additional_nbt(&mut nbt, settings.mirror, settings.rotation);
+
+            let mut nbt_bytes = Vec::new();
+            nbt.write(&mut nbt_bytes);
+            let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) else {
+                log::warn!(
+                    "failed to reborrow owned NBT for structure template entity {}",
+                    entity.entity_type.key
+                );
+                continue;
+            };
+
+            let runtime_entity = ENTITIES.create_and_load_or_raw(
+                entity.entity_type,
+                pos,
+                Uuid::new_v4(),
+                entity.velocity,
+                rotation,
+                entity.on_ground,
+                region.weak_world(),
+                &nbt,
+            );
+            let _ = region.add_fresh_entity(runtime_entity);
+        }
     }
 
     pub(crate) fn replace_jigsaw_final_states(
@@ -1606,23 +1883,59 @@ impl StructureTemplate {
 
     fn place_block_entity(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         state: BlockStateId,
+        block_entity_type: Option<BlockEntityTypeRef>,
         nbt: NbtCompound,
     ) {
-        let Some(id) = nbt.string("id") else {
-            // TODO: Infer block entity type from the placed block state once block entity type
-            // ownership is stored on blocks. Vanilla creates the block entity during setBlock.
-            return;
-        };
-        let Ok(id) = Identifier::from_str(id.to_str().as_ref()) else {
-            return;
-        };
-        let Some(block_entity_type) = registry.block_entity_types.by_key(&id) else {
+        let Some(block_entity_type) = block_entity_type else {
             return;
         };
         let _ = region.set_block_entity_data(pos, block_entity_type, state, nbt);
+    }
+
+    fn block_entity_type_for_nbt_or_state(
+        registry: &Registry,
+        state: BlockStateId,
+        nbt: &NbtCompound,
+    ) -> Option<BlockEntityTypeRef> {
+        if let Some(id) = nbt.string("id") {
+            let id = Identifier::from_str(id.to_str().as_ref()).ok()?;
+            return registry.block_entity_types.by_key(&id);
+        }
+        Self::block_entity_type_for_state(registry, state)
+    }
+
+    fn block_entity_type_for_state(
+        registry: &Registry,
+        state: BlockStateId,
+    ) -> Option<BlockEntityTypeRef> {
+        let block = Self::block_for_state(registry, state);
+        if block == &vanilla_blocks::SUSPICIOUS_SAND || block == &vanilla_blocks::SUSPICIOUS_GRAVEL
+        {
+            return Some(&vanilla_block_entity_types::BRUSHABLE_BLOCK);
+        }
+        None
+    }
+
+    fn should_reseed_template_loot(
+        block_entity_type: Option<BlockEntityTypeRef>,
+        nbt: &NbtCompound,
+    ) -> bool {
+        nbt.contains("LootTable")
+            && block_entity_type.is_some_and(Self::is_randomizable_container_block_entity)
+    }
+
+    fn is_randomizable_container_block_entity(block_entity_type: BlockEntityTypeRef) -> bool {
+        let key = &block_entity_type.key;
+        key == &vanilla_block_entity_types::BARREL.key
+            || key == &vanilla_block_entity_types::CHEST.key
+            || key == &vanilla_block_entity_types::TRAPPED_CHEST.key
+            || key == &vanilla_block_entity_types::DISPENSER.key
+            || key == &vanilla_block_entity_types::DROPPER.key
+            || key == &vanilla_block_entity_types::HOPPER.key
+            || key == &vanilla_block_entity_types::SHULKER_BOX.key
+            || key == &vanilla_block_entity_types::CRAFTER.key
     }
 
     pub(crate) fn transform_state(
@@ -2031,13 +2344,14 @@ impl StructureBlockIgnore {
 mod tests {
     use super::*;
     use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
+    use steel_registry::vanilla_entities;
 
     #[test]
     fn zero_position_with_transform_matches_vanilla_rotation_offsets() {
         let template = StructureTemplate {
             size: [6, 10, 8],
             palettes: Vec::new(),
-            entity_count: 0,
+            entities: Vec::new(),
         };
         let zero = BlockPos::new(100, 64, 200);
 
@@ -2064,7 +2378,7 @@ mod tests {
         let template = StructureTemplate {
             size: [6, 10, 8],
             palettes: Vec::new(),
-            entity_count: 0,
+            entities: Vec::new(),
         };
 
         assert_eq!(
@@ -2092,6 +2406,94 @@ mod tests {
         assert_eq!(
             StructureTemplate::block_pos_seed(BlockPos::new(12, -3, 45)),
             103_080_484_998_711
+        );
+    }
+
+    #[test]
+    fn village_template_loads_entity_payloads() {
+        let registry = Registry::new_vanilla();
+        let template = StructureTemplate::load_vanilla(
+            &registry,
+            &Identifier::vanilla_static("village/plains/villagers/unemployed"),
+        )
+        .expect("villager template should be bundled");
+
+        assert_eq!(template.entities.len(), 1);
+        assert_eq!(
+            &template.entities[0].entity_type.key,
+            &vanilla_entities::VILLAGER.key
+        );
+        assert!(template.entities[0].nbt.contains("VillagerData"));
+        assert!(!template.entities[0].nbt.contains("id"));
+    }
+
+    #[test]
+    fn brushable_append_loot_infers_block_entity_without_container_reseed() {
+        let registry = Registry::new_vanilla();
+        let suspicious_sand = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SUSPICIOUS_SAND);
+        let mut brushable_nbt = NbtCompound::new();
+        brushable_nbt.insert("LootTable", "minecraft:archaeology/ocean_ruin_warm");
+        brushable_nbt.insert("LootTableSeed", 42_i64);
+
+        let brushable_type = StructureTemplate::block_entity_type_for_nbt_or_state(
+            &registry,
+            suspicious_sand,
+            &brushable_nbt,
+        )
+        .expect("suspicious sand should infer brushable block entity");
+
+        assert_eq!(
+            &brushable_type.key,
+            &vanilla_block_entity_types::BRUSHABLE_BLOCK.key
+        );
+        assert!(!StructureTemplate::should_reseed_template_loot(
+            Some(brushable_type),
+            &brushable_nbt
+        ));
+
+        let mut chest_nbt = NbtCompound::new();
+        chest_nbt.insert("id", "minecraft:chest");
+        chest_nbt.insert("LootTable", "minecraft:chests/village/village_weaponsmith");
+        let chest_type = StructureTemplate::block_entity_type_for_nbt_or_state(
+            &registry,
+            registry.blocks.get_default_state_id(&vanilla_blocks::CHEST),
+            &chest_nbt,
+        )
+        .expect("chest nbt should resolve block entity type");
+
+        assert!(StructureTemplate::should_reseed_template_loot(
+            Some(chest_type),
+            &chest_nbt
+        ));
+    }
+
+    #[test]
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla entity transform formulas use exact half/block offset values in this case"
+    )]
+    fn entity_position_and_rotation_transform_match_vanilla_offsets() {
+        let pos = DVec3::new(1.25, 2.0, 3.75);
+        let pivot = BlockPos::new(2, 0, 3);
+
+        assert_eq!(
+            StructureTemplate::transform_entity_position(
+                pos,
+                StructureMirror::FrontBack,
+                Rotation::Clockwise90,
+                pivot,
+            ),
+            DVec3::new(2.25, 2.0, 0.75)
+        );
+        assert_eq!(
+            StructureTemplate::transform_entity_rotation(
+                (30.0, 10.0),
+                StructureMirror::LeftRight,
+                Rotation::Clockwise90,
+            ),
+            (60.0, 10.0)
         );
     }
 
