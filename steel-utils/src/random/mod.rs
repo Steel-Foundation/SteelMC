@@ -98,11 +98,11 @@ pub enum RandomSplitter {
 #[must_use]
 pub fn get_seed(x: i32, y: i32, z: i32) -> i64 {
     let l = i64::from(x.wrapping_mul(3_129_871))
-        ^ (i64::from(z).wrapping_mul(116_129_781_i64))
+        ^ (i64::from(z).wrapping_mul(116_129_781))
         ^ i64::from(y);
     let l = l
         .wrapping_mul(l)
-        .wrapping_mul(42_317_861_i64)
+        .wrapping_mul(42_317_861)
         .wrapping_add(l.wrapping_mul(11));
     l >> 16
 }

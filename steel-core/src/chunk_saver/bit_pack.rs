@@ -39,9 +39,9 @@ pub fn pack_indices(indices: &[u32], bits: u8) -> Box<[u64]> {
     let bits = bits as usize;
     let values_per_u64 = 64 / bits;
     let num_u64s = indices.len().div_ceil(values_per_u64);
-    let mut data = vec![0u64; num_u64s];
+    let mut data = vec![0; num_u64s];
     for (i, chunk) in indices.chunks(values_per_u64).enumerate() {
-        let mut word = 0u64;
+        let mut word = 0;
         for (j, &index) in chunk.iter().enumerate() {
             word |= u64::from(index) << (j * bits);
         }
@@ -61,7 +61,7 @@ pub fn pack_indices(indices: &[u32], bits: u8) -> Box<[u64]> {
 #[inline]
 pub fn unpack_indices(data: &[u64], bits: u8) -> impl Iterator<Item = u32> {
     let bits = bits as usize;
-    let mask = (1u64 << bits) - 1;
+    let mask = (1 << bits) - 1;
     let values_per_u64 = 64 / bits;
     data.iter().flat_map(move |&word| {
         (0..values_per_u64).map(move |j| ((word >> (j * bits)) & mask) as u32)

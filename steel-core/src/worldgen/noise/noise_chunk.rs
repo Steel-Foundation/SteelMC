@@ -136,16 +136,16 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
         let block_x = cell_x * cell_width;
 
-        let mut values = [0.0f64; MAX_INTERP];
+        let mut values = [0.0; MAX_INTERP];
 
         // Collect Y values for SIMD precomputation.
-        let mut block_ys = [0i32; MAX_SLICE_LEN];
+        let mut block_ys = [0; MAX_SLICE_LEN];
         for (cy, y) in block_ys[..corners_y].iter_mut().enumerate() {
             *y = (cy as i32 + self.cell_min_y) * cell_height;
         }
         let block_ys = &block_ys[..corners_y];
 
-        let mut blended_column = [0.0f64; MAX_SLICE_LEN];
+        let mut blended_column = [0.0; MAX_SLICE_LEN];
 
         for cz in 0..=self.cell_count_xz {
             let cell_z = self.first_cell_z + cz as i32;
@@ -214,7 +214,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         // Fill initial X slice (slice0)
         self.fill_slice(true, self.first_cell_x, noises, cache);
 
-        let mut interpolated = [0.0f64; MAX_INTERP];
+        let mut interpolated = [0.0; MAX_INTERP];
 
         for cell_x_idx in 0..cell_count_xz {
             // Fill next X slice (slice1)

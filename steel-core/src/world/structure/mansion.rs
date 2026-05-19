@@ -844,7 +844,7 @@ fn generate_mansion_pieces(
     );
 
     // Interior: corridors, walls, doors, rooms for 3 floors
-    for floor_num in 0..3_usize {
+    for floor_num in 0..3 {
         let floor_origin = above(
             origin,
             8 * floor_num as i32 + if floor_num == 2 { 3 } else { 0 },

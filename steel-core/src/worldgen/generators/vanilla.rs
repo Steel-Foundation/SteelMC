@@ -422,15 +422,15 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
 
     let interp_count = N::interpolated_count();
 
-    let mut c000 = [0.0f64; MAX_INTERP];
-    let mut c100 = [0.0f64; MAX_INTERP];
-    let mut c010 = [0.0f64; MAX_INTERP];
-    let mut c110 = [0.0f64; MAX_INTERP];
-    let mut c001 = [0.0f64; MAX_INTERP];
-    let mut c101 = [0.0f64; MAX_INTERP];
-    let mut c011 = [0.0f64; MAX_INTERP];
-    let mut c111 = [0.0f64; MAX_INTERP];
-    let mut interpolated = [0.0f64; MAX_INTERP];
+    let mut c000 = [0.0; MAX_INTERP];
+    let mut c100 = [0.0; MAX_INTERP];
+    let mut c010 = [0.0; MAX_INTERP];
+    let mut c110 = [0.0; MAX_INTERP];
+    let mut c001 = [0.0; MAX_INTERP];
+    let mut c101 = [0.0; MAX_INTERP];
+    let mut c011 = [0.0; MAX_INTERP];
+    let mut c111 = [0.0; MAX_INTERP];
+    let mut interpolated = [0.0; MAX_INTERP];
 
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
@@ -456,7 +456,7 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
         (max_y_inclusive - (cell_min_y + max_cell_y_idx) * cell_h).clamp(0, cell_h - 1);
 
     // Precompute blended noise per corner (x, z) × two Y levels per cell.
-    let mut blended_scratch = [0.0_f64; 2];
+    let mut blended_scratch = [0.0; 2];
     for cell_y_idx in (0..=max_cell_y_idx).rev() {
         let y0 = (cell_min_y + cell_y_idx) * cell_h;
         let y1 = y0 + cell_h;
@@ -565,15 +565,15 @@ fn interpolated_density<N: DimensionNoises>(
 
     let interp_count = N::interpolated_count();
 
-    let mut c000 = [0.0f64; MAX_INTERP];
-    let mut c100 = [0.0f64; MAX_INTERP];
-    let mut c010 = [0.0f64; MAX_INTERP];
-    let mut c110 = [0.0f64; MAX_INTERP];
-    let mut c001 = [0.0f64; MAX_INTERP];
-    let mut c101 = [0.0f64; MAX_INTERP];
-    let mut c011 = [0.0f64; MAX_INTERP];
-    let mut c111 = [0.0f64; MAX_INTERP];
-    let mut interpolated = [0.0f64; MAX_INTERP];
+    let mut c000 = [0.0; MAX_INTERP];
+    let mut c100 = [0.0; MAX_INTERP];
+    let mut c010 = [0.0; MAX_INTERP];
+    let mut c110 = [0.0; MAX_INTERP];
+    let mut c001 = [0.0; MAX_INTERP];
+    let mut c101 = [0.0; MAX_INTERP];
+    let mut c011 = [0.0; MAX_INTERP];
+    let mut c111 = [0.0; MAX_INTERP];
+    let mut interpolated = [0.0; MAX_INTERP];
 
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
@@ -591,7 +591,7 @@ fn interpolated_density<N: DimensionNoises>(
 
     // Precompute blended noise at each corner (x, z) for the two cell Y levels.
     let ys = [y0, y1];
-    let mut blended_scratch = [0.0_f64; 2];
+    let mut blended_scratch = [0.0; 2];
     noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
     let (b000, b010) = (blended_scratch[0], blended_scratch[1]);
     noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
@@ -706,13 +706,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             let section = &chunk.sections().sections[section_index];
             let mut section_guard = section.write();
 
-            for local_quart_x in 0..4i32 {
+            for local_quart_x in 0..4 {
                 let quart_x = chunk_x * 4 + local_quart_x;
 
-                for local_quart_y in 0..4i32 {
+                for local_quart_y in 0..4 {
                     let quart_y = section_y * 4 + local_quart_y;
 
-                    for local_quart_z in 0..4i32 {
+                    for local_quart_z in 0..4 {
                         let quart_z = chunk_z * 4 + local_quart_z;
 
                         let biome = sampler.sample(quart_x, quart_y, quart_z);
@@ -907,8 +907,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let condition_noise_cache =
             SurfaceConditionNoiseCache::new(&condition_noise_values, &condition_noise_initialized);
 
-        for local_x in 0..16usize {
-            for local_z in 0..16usize {
+        for local_x in 0..16 {
+            for local_z in 0..16 {
                 let block_x = chunk_min_x + local_x as i32;
                 let block_z = chunk_min_z + local_z as i32;
 
@@ -1215,8 +1215,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         // biome gives the same carver keys without 289 climate lookups.
         let mut biome_sampler = self.biome_source.chunk_sampler();
         let mut source_biomes: SmallVec<[SourceChunk; CARVER_SOURCE_CHUNK_COUNT]> = SmallVec::new();
-        for dx in -8i32..=8 {
-            for dz in -8i32..=8 {
+        for dx in -8..=8 {
+            for dz in -8..=8 {
                 let sx = pos.0.x + dx;
                 let sz = pos.0.y + dz;
                 let biome = if let Some(biome) = self.uniform_carver_biome {
@@ -1369,10 +1369,10 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
     let fract_y = f64::from(abs_y & 3) / 4.0;
     let fract_z = f64::from(abs_z & 3) / 4.0;
 
-    let mut min_i = 0usize;
+    let mut min_i = 0;
     let mut min_dist = f64::INFINITY;
 
-    for i in 0..8usize {
+    for i in 0..8 {
         let x_even = (i & 4) == 0;
         let y_even = (i & 2) == 0;
         let z_even = (i & 1) == 0;
@@ -1495,7 +1495,7 @@ impl<'a> FuzzedBiomeColumn<'a> {
     #[inline]
     fn compute_cy_group(&mut self, cy: i32, high: bool) {
         let base_idx = if high { 2 } else { 0 };
-        for cx_idx in 0..2usize {
+        for cx_idx in 0..2 {
             let cx = self.parent_x + cx_idx as i32;
             let dx = if cx_idx == 0 {
                 self.fract_x
@@ -1503,7 +1503,7 @@ impl<'a> FuzzedBiomeColumn<'a> {
                 self.fract_x - 1.0
             };
             let rval_cy = lcg_next(self.rval_after_cx[cx_idx], i64::from(cy));
-            for cz_off in 0..2usize {
+            for cz_off in 0..2 {
                 let cz = self.parent_z + cz_off as i32;
                 let dz = if cz_off == 0 {
                     self.fract_z
@@ -1562,9 +1562,9 @@ impl<'a> FuzzedBiomeColumn<'a> {
             self.recompute_candidates(parent_y);
         }
 
-        let mut min_i = 0usize;
+        let mut min_i = 0;
         let mut min_dist = f64::INFINITY;
-        for i in 0..8usize {
+        for i in 0..8 {
             let (fy, xz_partial) = self.candidates[i];
             let dy = if (i & 2) == 0 { fract_y } else { fract_y - 1.0 };
             let dist = xz_partial + (dy + fy) * (dy + fy);

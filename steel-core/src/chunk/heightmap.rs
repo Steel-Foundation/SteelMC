@@ -329,8 +329,8 @@ impl Heightmap {
         let values_per_long = 64 / bits_per_value;
         let num_longs = 256_usize.div_ceil(values_per_long);
 
-        let mut result = vec![0i64; num_longs];
-        let mask = (1u64 << bits_per_value) - 1;
+        let mut result = vec![0; num_longs];
+        let mask = (1 << bits_per_value) - 1;
 
         for (i, &height) in self.data.iter().enumerate() {
             let long_index = i / values_per_long;
@@ -356,7 +356,7 @@ impl Heightmap {
             return;
         }
 
-        let mask = (1u64 << bits_per_value) - 1;
+        let mask = (1 << bits_per_value) - 1;
 
         for i in 0..256 {
             let long_index = i / values_per_long;

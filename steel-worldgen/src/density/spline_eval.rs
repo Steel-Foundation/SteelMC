@@ -9,7 +9,7 @@
 #[inline]
 #[must_use]
 pub fn find_interval(locations: &[f32], input: f32) -> i32 {
-    let mut lo = 0i32;
+    let mut lo = 0;
     let mut hi = locations.len() as i32;
     while lo < hi {
         let mid = i32::midpoint(lo, hi);

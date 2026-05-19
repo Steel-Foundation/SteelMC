@@ -42,7 +42,7 @@ impl SimplexNoise {
         let yo = random.next_f64() * 256.0;
         let zo = random.next_f64() * 256.0;
 
-        let mut p = [0i32; 512];
+        let mut p = [0; 512];
 
         // Initialize identity permutation
         for (i, val) in p.iter_mut().enumerate().take(256) {

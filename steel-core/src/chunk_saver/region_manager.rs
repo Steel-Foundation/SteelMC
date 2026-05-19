@@ -96,7 +96,7 @@ impl RegionManager {
             .await?;
 
         // Read and verify magic + version
-        let mut header_bytes = [0u8; FILE_HEADER_SIZE];
+        let mut header_bytes = [0; FILE_HEADER_SIZE];
         file.read_exact(&mut header_bytes).await?;
 
         let magic = &header_bytes[0..4];
@@ -122,7 +122,7 @@ impl RegionManager {
         }
 
         // Read chunk table
-        let mut table_bytes = vec![0u8; CHUNK_TABLE_SIZE];
+        let mut table_bytes = vec![0; CHUNK_TABLE_SIZE];
         file.read_exact(&mut table_bytes).await?;
         let header = RegionHeader::from_bytes(&table_bytes);
 
@@ -153,7 +153,7 @@ impl RegionManager {
             .await?;
 
         // Write header
-        let mut header_bytes = [0u8; FILE_HEADER_SIZE];
+        let mut header_bytes = [0; FILE_HEADER_SIZE];
         header_bytes[0..4].copy_from_slice(&REGION_MAGIC);
         header_bytes[4..6].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
         file.write_all(&header_bytes).await?;
@@ -190,7 +190,7 @@ impl RegionManager {
         let byte_offset = u64::from(sector_offset) * SECTOR_SIZE as u64;
         file.seek(io::SeekFrom::Start(byte_offset)).await?;
 
-        let mut compressed = vec![0u8; size as usize];
+        let mut compressed = vec![0; size as usize];
         file.read_exact(&mut compressed).await?;
         Ok(compressed)
     }
@@ -465,7 +465,7 @@ impl RegionManager {
 
         // Read just the one entry we need (8 bytes at index * 8)
         file.seek(io::SeekFrom::Current((index * 8) as i64)).await?;
-        let mut entry_bytes = [0u8; 8];
+        let mut entry_bytes = [0; 8];
         file.read_exact(&mut entry_bytes).await?;
 
         let entry = super::format::ChunkEntry::from_bytes(entry_bytes);

@@ -12,7 +12,7 @@ use crate::command::sender::CommandSender;
 use crate::player::Player;
 use text_components::TextComponent;
 
-const MAX_FLY_SPEED: f32 = 30f32;
+const MAX_FLY_SPEED: f32 = 30.0;
 
 /// Handler for the "flyspeed" command.
 #[must_use]

@@ -257,9 +257,9 @@ impl ChunkGenerator for FlatChunkGenerator {
             let section = &chunk.sections().sections[section_index];
             let mut section_guard = section.write();
 
-            for local_quart_x in 0..4usize {
-                for local_quart_y in 0..4usize {
-                    for local_quart_z in 0..4usize {
+            for local_quart_x in 0..4 {
+                for local_quart_y in 0..4 {
+                    for local_quart_z in 0..4 {
                         section_guard.biomes.set(
                             local_quart_x,
                             local_quart_y,

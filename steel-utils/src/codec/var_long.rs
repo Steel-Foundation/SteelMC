@@ -13,7 +13,7 @@ impl VarLong {
 
 impl ReadFrom for VarLong {
     fn read(read: &mut Cursor<&[u8]>) -> Result<Self, Error> {
-        let mut val = 0i64;
+        let mut val = 0;
         for i in 0..Self::MAX_SIZE {
             let byte = u8::read(read)?;
             val |= (i64::from(byte) & 0x7F) << (i * 7);

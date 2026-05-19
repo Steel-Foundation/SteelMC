@@ -91,7 +91,7 @@ impl ChunkDependencies {
         deps: &[Option<ChunkStatus>; MAX_RADIUS],
         len: usize,
     ) -> [usize; STATUS_COUNT] {
-        let mut radius_by_dependency = [0usize; STATUS_COUNT];
+        let mut radius_by_dependency = [0; STATUS_COUNT];
         let mut radius = 0;
         while radius < len {
             if let Some(dep) = deps[radius] {

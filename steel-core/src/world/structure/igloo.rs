@@ -92,7 +92,7 @@ impl Structure for IglooStructure {
         let (start_x, start_z) = (ctx.chunk_min_x(), ctx.chunk_min_z());
 
         let mut pieces = Vec::new();
-        if rng.next_f64() < 0.5_f64 {
+        if rng.next_f64() < 0.5 {
             let depth = rng.next_i32_bounded(8) + 4;
             pieces.push(make_igloo_piece(
                 "igloo/bottom",

@@ -74,7 +74,7 @@ fn build_parameter_space(children: &[RTreeNode]) -> [Parameter; PARAMETER_COUNT]
 
 /// Calculate the cost of a bounding box (sum of range widths).
 fn cost(parameter_space: &[Parameter; PARAMETER_COUNT]) -> i64 {
-    let mut result = 0i64;
+    let mut result = 0;
     for p in parameter_space {
         result += (p.max - p.min).abs();
     }
@@ -225,7 +225,7 @@ fn expected_children_count(total: usize) -> usize {
 fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
     let expected = expected_children_count(entries.len());
     let mut buckets = Vec::new();
-    let mut total_cost = 0i64;
+    let mut total_cost = 0;
     let mut start = 0;
     while start < entries.len() {
         let end = (start + expected).min(entries.len());
@@ -280,7 +280,7 @@ impl FlatNode {
         reason = "indexing into parallel min/max arrays; iterator zip would be less clear"
     )]
     fn distance(&self, target: &[i64; PARAMETER_COUNT]) -> i64 {
-        let mut d = 0i64;
+        let mut d = 0;
         for i in 0..PARAMETER_COUNT {
             let di = (target[i] - self.maxs[i])
                 .max(self.mins[i] - target[i])
@@ -495,7 +495,7 @@ impl<T> ParameterList<T> {
         let (mut best_dist, init_idx) = match *cache {
             Some(idx) => {
                 let ps = &self.param_spaces[idx];
-                let mut d = 0i64;
+                let mut d = 0;
                 for i in 0..PARAMETER_COUNT {
                     let di = ps[i].distance(target_array[i]);
                     d += di * di;

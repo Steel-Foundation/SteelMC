@@ -1180,7 +1180,7 @@ impl ChunkStorage {
                 );
                 continue;
             }
-            let mut data = Box::new([0u16; 256]);
+            let mut data = Box::new([0; 256]);
             data.copy_from_slice(&ph.data);
             *heightmaps.get_mut(hm_type) = Heightmap::from_raw_data(hm_type, min_y, height, data);
         }
@@ -2316,7 +2316,7 @@ impl ChunkStorage {
                     .iter()
                     .map(|&idx| Self::resolve_biome(chunk, idx))
                     .collect();
-                let mut cube = [[[0u16; 4]; 4]; 4];
+                let mut cube = [[[0; 4]; 4]; 4];
                 for plane in &mut cube {
                     for row in plane {
                         for cell in row {

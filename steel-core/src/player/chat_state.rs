@@ -221,7 +221,7 @@ impl Player {
         if let Some(sig_box) = &signature
             && sig_box.len() == 256
         {
-            let mut sig_array = [0u8; 256];
+            let mut sig_array = [0; 256];
             sig_array.copy_from_slice(&sig_box[..]);
 
             let last_seen = if let Some(Ok((_, ref last_seen))) = verification_result {

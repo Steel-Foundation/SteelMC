@@ -24,8 +24,8 @@ pub fn get_new_liquid(
     drop_off: u8,
 ) -> FluidState {
     let behavior = FLUID_BEHAVIORS.get_behavior(fluid_id);
-    let mut max_incoming_amount = 0u8;
-    let mut source_count = 0u8;
+    let mut max_incoming_amount: u8 = 0;
+    let mut source_count: u8 = 0;
 
     for direction in [
         Direction::North,

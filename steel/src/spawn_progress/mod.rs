@@ -239,7 +239,7 @@ async fn generate_with_display(
 async fn generate_pregen(world: &Arc<World>, center_chunk: ChunkPos, radius: i32) {
     let total_chunks = ((radius * 2 + 1) * (radius * 2 + 1)) as usize;
     let mut last_report = Instant::now();
-    let mut last_completed = 0usize;
+    let mut last_completed = 0;
     let start = Instant::now();
 
     loop {
