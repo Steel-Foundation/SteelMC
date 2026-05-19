@@ -17,7 +17,7 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, type
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
-    entities::{DummyMobEntity, ItemFrameEntity},
+    entities::{ItemFrameEntity, RawEntity},
     next_entity_id,
 };
 use crate::world::structure::{
@@ -422,12 +422,13 @@ impl StructurePiecePlacer {
             f64::from(pos.y()),
             f64::from(pos.z()) + 0.5,
         );
-        let entity = Arc::new(DummyMobEntity::new(
+        let entity = Arc::new(RawEntity::new(
             next_entity_id(),
             entity_pos,
             region.weak_world(),
             &vanilla_entities::DROWNED,
         ));
+        entity.set_persistence_required();
         entity.snap_to(entity_pos, 0.0, 0.0);
         let _ = region.add_fresh_entity(entity);
 
@@ -534,7 +535,7 @@ impl StructurePiecePlacer {
             f64::from(pos.y()),
             f64::from(pos.z()) + 0.5,
         );
-        let entity = Arc::new(DummyMobEntity::new(
+        let entity = Arc::new(RawEntity::new(
             next_entity_id(),
             entity_pos,
             region.weak_world(),
@@ -634,12 +635,13 @@ impl StructurePiecePlacer {
         entity_type: EntityTypeRef,
     ) {
         let entity_pos = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-        let entity = Arc::new(DummyMobEntity::new(
+        let entity = Arc::new(RawEntity::new(
             next_entity_id(),
             entity_pos,
             region.weak_world(),
             entity_type,
         ));
+        entity.set_persistence_required();
         entity.snap_to(entity_pos, 0.0, 0.0);
         let _ = region.add_fresh_entity(entity);
     }

@@ -7,7 +7,7 @@ use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
-use crate::entity::{entities::DummyMobEntity, next_entity_id};
+use crate::entity::{entities::RawEntity, next_entity_id};
 use crate::world::structure::ocean_monument::{
     OceanMonumentChildPiece, OceanMonumentChildPieceKind, OceanMonumentPieceData,
     OceanMonumentRoomData,
@@ -1687,7 +1687,7 @@ fn spawn_elder(placer: &mut ScatteredFeaturePlacer<'_, '_>, x: i32, y: i32, z: i
         return;
     }
 
-    let entity = Arc::new(DummyMobEntity::new(
+    let entity = Arc::new(RawEntity::new(
         next_entity_id(),
         DVec3::new(
             f64::from(pos.x()) + 0.5,
@@ -1697,6 +1697,7 @@ fn spawn_elder(placer: &mut ScatteredFeaturePlacer<'_, '_>, x: i32, y: i32, z: i
         placer.weak_world(),
         &vanilla_entities::ELDER_GUARDIAN,
     ));
+    entity.set_persistence_required();
     entity.snap_to(
         DVec3::new(
             f64::from(pos.x()) + 0.5,

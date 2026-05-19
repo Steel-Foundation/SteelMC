@@ -12,8 +12,8 @@ use steel_utils::{BlockPos, Direction};
 use uuid::Uuid;
 
 use super::entities::{
-    BlockDisplayEntity, ChestMinecartEntity, DummyMobEntity, EndCrystalEntity, ItemEntity,
-    ItemFrameEntity, RawEntity,
+    BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity, ItemFrameEntity,
+    RawEntity,
 };
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
@@ -297,39 +297,6 @@ pub fn init_entities() {
             Arc::new(ItemFrameEntity::from_saved(id, pos, uuid, rotation, world))
         },
     );
-
-    macro_rules! register_dummy_mob {
-        ($entity_type:expr) => {
-            registry.register($entity_type, |id, pos, world| {
-                Arc::new(DummyMobEntity::new(id, pos, world, $entity_type))
-            });
-            registry.register_load(
-                $entity_type,
-                |id, pos, uuid, velocity, rotation, on_ground, world| {
-                    Arc::new(DummyMobEntity::from_saved(
-                        id,
-                        pos,
-                        uuid,
-                        velocity,
-                        rotation,
-                        on_ground,
-                        world,
-                        $entity_type,
-                    ))
-                },
-            );
-        };
-    }
-
-    // TODO: Replace dummy worldgen mob registrations with full mob implementations.
-    register_dummy_mob!(&vanilla_entities::WITCH);
-    register_dummy_mob!(&vanilla_entities::CAT);
-    register_dummy_mob!(&vanilla_entities::DROWNED);
-    register_dummy_mob!(&vanilla_entities::ELDER_GUARDIAN);
-    register_dummy_mob!(&vanilla_entities::SHULKER);
-    register_dummy_mob!(&vanilla_entities::EVOKER);
-    register_dummy_mob!(&vanilla_entities::VINDICATOR);
-    register_dummy_mob!(&vanilla_entities::ALLAY);
 
     assert!(
         ENTITIES.set(registry).is_ok(),

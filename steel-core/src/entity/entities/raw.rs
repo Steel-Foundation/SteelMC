@@ -29,6 +29,19 @@ pub struct RawEntity {
 }
 
 impl RawEntity {
+    /// Creates a fresh raw entity for an entity type Steel cannot behaviorally model yet.
+    #[must_use]
+    pub fn new(id: i32, position: DVec3, world: Weak<World>, entity_type: EntityTypeRef) -> Self {
+        Self {
+            base: EntityBase::new(id, position, world),
+            entity_type,
+            rotation: AtomicCell::new((0.0, 0.0)),
+            velocity: SyncMutex::new(DVec3::ZERO),
+            on_ground: AtomicBool::new(false),
+            data: SyncMutex::new(NbtCompound::new()),
+        }
+    }
+
     /// Creates a raw entity from base entity data.
     #[must_use]
     #[expect(
@@ -53,6 +66,17 @@ impl RawEntity {
             on_ground: AtomicBool::new(on_ground),
             data: SyncMutex::new(NbtCompound::new()),
         }
+    }
+
+    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
+    pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
+        self.set_position(position);
+        self.rotation.store((yaw, pitch));
+    }
+
+    /// Marks a raw mob as persistent when vanilla structure generation would do so.
+    pub fn set_persistence_required(&self) {
+        self.data.lock().insert("PersistenceRequired", 1_i8);
     }
 }
 

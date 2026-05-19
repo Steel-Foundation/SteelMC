@@ -481,14 +481,14 @@ impl<'a> WorldGenRegion<'a> {
         true
     }
 
-    /// Adds an entity at a writable worldgen position.
+    /// Adds an entity to the chunk that owns its position.
+    ///
+    /// Vanilla `WorldGenRegion.addFreshEntity` does not call `ensureCanWrite`, so entity
+    /// insertion is allowed anywhere covered by the generation step's chunk dependencies.
     #[must_use]
     pub fn add_fresh_entity(&self, entity: SharedEntity) -> bool {
         let pos = BlockPos::from(entity.position());
-        let Some((chunk_x, chunk_z, status)) = self.writable_chunk_for_pos(pos, "add entity")
-        else {
-            return false;
-        };
+        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "add entity");
 
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| chunk.add_entity(entity))
     }
