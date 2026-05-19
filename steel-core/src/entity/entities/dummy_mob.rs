@@ -45,6 +45,10 @@ impl DummyMobEntity {
 
     /// Creates a dummy mob from persistent entity data.
     #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "dummy mobs preserve persisted base fields plus their registry type"
+    )]
     pub fn from_saved(
         id: i32,
         position: DVec3,

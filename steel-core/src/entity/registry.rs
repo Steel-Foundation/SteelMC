@@ -354,10 +354,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "test uses exact constructor values for persisted base fields"
-    )]
     fn create_and_load_or_raw_preserves_unregistered_entity_data() {
         init_registry();
         let registry = EntityRegistry::new();

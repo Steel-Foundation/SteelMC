@@ -422,12 +422,7 @@ impl FeatureDecorationRunner {
         biome_zoom_seed: i64,
     ) -> bool {
         let feature_data = match feature {
-            PlacedFeatureRef::Reference(key) => {
-                let Some(feature) = registry.placed_features.by_key(key) else {
-                    panic!("configured selector references unknown placed feature {key}");
-                };
-                &feature.data
-            }
+            PlacedFeatureRef::Reference(feature) => &feature.data,
             PlacedFeatureRef::Inline(feature) => feature,
         };
 

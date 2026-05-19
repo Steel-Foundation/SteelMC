@@ -5,6 +5,7 @@
 //! Runtime data stores typed registry refs where the referenced vanilla entry is
 //! known at build time.
 
+use super::{ConfiguredFeatureEntryRef, PlacedFeatureEntryRef};
 use crate::blocks::BlockRef;
 use crate::fluid::FluidRef;
 use steel_utils::{
@@ -12,20 +13,20 @@ use steel_utils::{
     value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
 };
 
-/// A configured feature reference, either a registry key or an inline configured feature.
+/// A configured feature reference, either a registry entry or an inline configured feature.
 #[derive(Debug, Clone)]
 pub enum ConfiguredFeatureRef {
     /// Registry-backed configured feature.
-    Reference(Identifier),
+    Reference(ConfiguredFeatureEntryRef),
     /// Inline configured feature.
     Inline(Box<ConfiguredFeatureKind>),
 }
 
-/// A placed feature reference, either a registry key or an inline placed feature.
+/// A placed feature reference, either a registry entry or an inline placed feature.
 #[derive(Debug, Clone)]
 pub enum PlacedFeatureRef {
     /// Registry-backed placed feature.
-    Reference(Identifier),
+    Reference(PlacedFeatureEntryRef),
     /// Inline placed feature.
     Inline(Box<PlacedFeatureData>),
 }

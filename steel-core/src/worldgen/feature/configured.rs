@@ -23,7 +23,7 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
-        let kind = Self::configured_feature_kind(registry, feature);
+        let kind = Self::configured_feature_kind(feature);
         Self::place_configured_feature_kind(region, registry, random, kind, origin, biome_zoom_seed)
     }
 
@@ -53,17 +53,11 @@ impl FeatureDecorationRunner {
         placer(&mut context, kind)
     }
 
-    pub(super) fn configured_feature_kind<'a>(
-        registry: &'a Registry,
-        feature: &'a ConfiguredFeatureRef,
-    ) -> &'a ConfiguredFeatureKind {
+    pub(super) fn configured_feature_kind(
+        feature: &ConfiguredFeatureRef,
+    ) -> &ConfiguredFeatureKind {
         match feature {
-            ConfiguredFeatureRef::Reference(key) => {
-                let Some(configured_feature) = registry.configured_features.by_key(key) else {
-                    panic!("placed feature references unknown configured feature {key}");
-                };
-                &configured_feature.kind
-            }
+            ConfiguredFeatureRef::Reference(configured_feature) => &configured_feature.kind,
             ConfiguredFeatureRef::Inline(configured_feature) => configured_feature,
         }
     }

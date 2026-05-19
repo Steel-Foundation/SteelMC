@@ -63,6 +63,16 @@ fn generate_fluid_ref(identifier: &Identifier) -> TokenStream {
     quote! { &vanilla_fluids::#ident }
 }
 
+fn generate_configured_feature_entry_ref(identifier: &Identifier) -> TokenStream {
+    let ident = vanilla_registry_ident(identifier, "configured feature");
+    quote! { &crate::vanilla_configured_features::#ident }
+}
+
+fn generate_placed_feature_entry_ref(identifier: &Identifier) -> TokenStream {
+    let ident = vanilla_registry_ident(identifier, "placed feature");
+    quote! { &crate::vanilla_placed_features::#ident }
+}
+
 fn generate_vec<T>(values: &[T], f: impl Fn(&T) -> TokenStream) -> TokenStream {
     let values = values.iter().map(f);
     quote! { vec![#(#values),*] }
@@ -552,8 +562,8 @@ fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStream {
 fn generate_configured_feature_ref(feature: &ConfiguredFeatureRef) -> TokenStream {
     match feature {
         ConfiguredFeatureRef::Reference(identifier) => {
-            let identifier = generate_identifier(identifier);
-            quote! { ConfiguredFeatureRef::Reference(#identifier) }
+            let reference = generate_configured_feature_entry_ref(identifier);
+            quote! { ConfiguredFeatureRef::Reference(#reference) }
         }
         ConfiguredFeatureRef::Inline(kind) => {
             let kind = generate_box(kind.as_ref(), generate_configured_feature_kind);
@@ -565,8 +575,8 @@ fn generate_configured_feature_ref(feature: &ConfiguredFeatureRef) -> TokenStrea
 fn generate_placed_feature_ref(feature: &PlacedFeatureRef) -> TokenStream {
     match feature {
         PlacedFeatureRef::Reference(identifier) => {
-            let identifier = generate_identifier(identifier);
-            quote! { PlacedFeatureRef::Reference(#identifier) }
+            let reference = generate_placed_feature_entry_ref(identifier);
+            quote! { PlacedFeatureRef::Reference(#reference) }
         }
         PlacedFeatureRef::Inline(data) => {
             let data = generate_box(data.as_ref(), generate_placed_feature_data);

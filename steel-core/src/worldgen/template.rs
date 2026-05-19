@@ -1731,7 +1731,8 @@ impl StructureTemplate {
         let block = registry.blocks.by_key(&id)?;
 
         let mut parsed_properties = Vec::new();
-        if let Some(properties) = Self::read_block_state_properties_prefix(rest)? {
+        if rest.starts_with('[') {
+            let properties = Self::read_block_state_properties_prefix(rest)?;
             if !properties.is_empty() {
                 for property in properties.split(',') {
                     let (key, value) = property.split_once('=')?;
@@ -1755,13 +1756,10 @@ impl StructureTemplate {
         (end > 0).then_some((&value[..end], &value[end..]))
     }
 
-    fn read_block_state_properties_prefix(rest: &str) -> Option<Option<&str>> {
-        if !rest.starts_with('[') {
-            return Some(None);
-        }
-        let rest = &rest[1..];
+    fn read_block_state_properties_prefix(rest: &str) -> Option<&str> {
+        let rest = rest.strip_prefix('[')?;
         let end = rest.find(']')?;
-        Some(Some(&rest[..end]))
+        Some(&rest[..end])
     }
 
     fn apply_terrain_matching_projection(
@@ -2485,10 +2483,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "vanilla entity transform formulas use exact half/block offset values in this case"
-    )]
     fn entity_position_and_rotation_transform_match_vanilla_offsets() {
         let pos = DVec3::new(1.25, 2.0, 3.75);
         let pivot = BlockPos::new(2, 0, 3);

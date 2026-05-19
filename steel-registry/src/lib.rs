@@ -755,7 +755,8 @@ impl Registry {
 
     fn validate_placed_feature_ref(&self, feature: &PlacedFeatureRef) {
         match feature {
-            PlacedFeatureRef::Reference(key) => {
+            PlacedFeatureRef::Reference(feature) => {
+                let key = &feature.key;
                 assert!(
                     self.placed_features.by_key(key).is_some(),
                     "unknown placed feature reference {key}"
@@ -771,7 +772,8 @@ impl Registry {
 
     fn validate_configured_feature_ref(&self, feature: &ConfiguredFeatureRef) {
         match feature {
-            ConfiguredFeatureRef::Reference(key) => {
+            ConfiguredFeatureRef::Reference(feature) => {
+                let key = &feature.key;
                 assert!(
                     self.configured_features.by_key(key).is_some(),
                     "unknown configured feature reference {key}"
