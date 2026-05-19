@@ -162,7 +162,7 @@ impl FeatureDecorationRunner {
     ) -> BlockStateId {
         let noise = Self::normal_noise(&provider.noise, provider.seed);
         let noise_value = Self::noise_value(&noise, pos, provider.scale);
-        if noise_value < provider.threshold {
+        if noise_value < f64::from(provider.threshold) {
             Self::random_block_state_from_data_list(registry, random, &provider.low_states)
         } else if random.next_f32() < provider.high_chance {
             Self::random_block_state_from_data_list(registry, random, &provider.high_states)
@@ -218,7 +218,8 @@ impl FeatureDecorationRunner {
         )
     }
 
-    pub(super) fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f64) -> f64 {
+    pub(super) fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f32) -> f64 {
+        let scale = f64::from(scale);
         noise.get_value(
             f64::from(pos.x()) * scale,
             f64::from(pos.y()) * scale,
@@ -251,7 +252,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn noise_state_index(state_count: usize, noise_value: f64) -> usize {
-        let placement_value = f64::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
+        let placement_value = ((1.0 + noise_value) / 2.0).clamp(0.0, 0.9999);
         (placement_value * state_count as f64) as usize
     }
 
@@ -283,5 +284,25 @@ impl FeatureDecorationRunner {
     ) -> f64 {
         let inverse_lerp = ((value - from_low) / (from_high - from_low)).clamp(0.0, 1.0);
         to_low + inverse_lerp * (to_high - to_low)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FeatureDecorationRunner;
+
+    #[test]
+    fn noise_state_index_uses_vanilla_placement_value_formula() {
+        for (state_count, noise_value) in
+            [(2, -1.5), (4, -0.5), (8, 0.0), (16, 0.75), (32, 1.5)] as [(usize, f64); 5]
+        {
+            let placement_value = ((1.0 + noise_value) / 2.0).clamp(0.0, 0.9999);
+            let expected = (placement_value * state_count as f64) as usize;
+
+            assert_eq!(
+                FeatureDecorationRunner::noise_state_index(state_count, noise_value),
+                expected
+            );
+        }
     }
 }

@@ -370,10 +370,6 @@ impl ProtoChunk {
         let section_index = self.get_section_index(y);
         let section = &self.sections.sections[section_index];
         let mut section_guard = section.write();
-        if section_guard.states.has_only_air() && state.is_air() {
-            return Some(state);
-        }
-
         let old_state = section_guard.states.set(local_x, local_y, local_z, state);
         drop(section_guard);
 
@@ -492,11 +488,6 @@ impl ProtoChunk {
         let section = &self.sections.sections[section_index];
         let section_guard = section.read();
 
-        // Optimization: if section is empty, return air
-        if section_guard.states.has_only_air() {
-            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
-        }
-
         let local_x = (pos.0.x & 15) as usize;
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
@@ -510,6 +501,7 @@ mod tests {
     use std::sync::Weak;
 
     use super::ProtoChunk;
+    use crate::behavior::init_behaviors;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::TickPriority;
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
@@ -554,5 +546,30 @@ mod tests {
         assert_eq!(tick.tick_type, &vanilla_blocks::DIRT);
         assert_eq!(tick.delay, 0);
         assert_eq!(tick.priority, TickPriority::Normal);
+    }
+
+    #[test]
+    fn proto_chunk_preserves_distinct_air_states_in_empty_sections() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(3, 4, 5);
+        let cave_air = vanilla_blocks::CAVE_AIR.default_state();
+
+        proto.set_block_state(
+            pos,
+            cave_air,
+            steel_utils::types::UpdateFlags::UPDATE_CLIENTS,
+        );
+
+        assert_eq!(proto.get_block_state(pos), cave_air);
     }
 }

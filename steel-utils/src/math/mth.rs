@@ -19,7 +19,6 @@
 //! `65536 / (2π)` rounded to a double, and the table is indexed by the
 //! low 16 bits of the scaled angle.
 
-use std::f64::consts::TAU;
 use std::sync::LazyLock;
 
 /// `65536 / (2π)` — Mojang's stored constant.
@@ -34,9 +33,8 @@ static SIN_TABLE: LazyLock<Box<[f32; TABLE_LEN]>> = LazyLock::new(|| {
         .into_boxed_slice()
         .try_into()
         .expect("65536-element vec");
-    let step = TAU / TABLE_LEN as f64;
     for (i, slot) in table.iter_mut().enumerate() {
-        *slot = (i as f64 * step).sin() as f32;
+        *slot = (i as f64 / INDEX_SCALE).sin() as f32;
     }
     table
 });
@@ -78,9 +76,8 @@ mod test {
         // Index 0 is sin(0), should be 0.
         // Index 16384 is sin(π/2), should be 1.
         // Verify a few well-known table entries.
-        let step = TAU / TABLE_LEN as f64;
         for &i in &[0usize, 1000, 16_384, 32_768, 49_152] {
-            let expected = (i as f64 * step).sin() as f32;
+            let expected = (i as f64 / INDEX_SCALE).sin() as f32;
             assert_eq!(SIN_TABLE[i], expected);
         }
     }

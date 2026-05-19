@@ -48,6 +48,15 @@ impl FeatureDecorationRunner {
         check_neighbors: bool,
     ) -> bool {
         let biome = Self::biome_at_block(region, registry, biome_zoom_seed, pos);
+        Self::should_freeze_in_biome(region, biome, pos, check_neighbors)
+    }
+
+    pub(super) fn should_freeze_in_biome(
+        region: &WorldGenRegion<'_>,
+        biome: BiomeRef,
+        pos: BlockPos,
+        check_neighbors: bool,
+    ) -> bool {
         if Self::warm_enough_to_rain(region, biome, pos)
             || region.is_outside_build_height(pos.y())
             || region.block_light_at(pos) >= 10
@@ -72,13 +81,11 @@ impl FeatureDecorationRunner {
             && Self::is_water_at(region, pos.south()))
     }
 
-    pub(super) fn should_snow(
+    pub(super) fn should_snow_in_biome(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        biome_zoom_seed: i64,
+        biome: BiomeRef,
         pos: BlockPos,
     ) -> bool {
-        let biome = Self::biome_at_block(region, registry, biome_zoom_seed, pos);
         if !biome.has_precipitation
             || Self::warm_enough_to_rain(region, biome, pos)
             || region.is_outside_build_height(pos.y())

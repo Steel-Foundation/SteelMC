@@ -237,7 +237,7 @@ impl FeatureDecorationRunner {
             for z_offset in -a..a {
                 let signed_distance =
                     Self::signed_distance_ellipse(x_offset, z_offset, local_origin, a, c, angle);
-                if signed_distance >= 0.0 {
+                if signed_distance.partial_cmp(&0.0) != Some(std::cmp::Ordering::Less) {
                     continue;
                 }
 
@@ -299,7 +299,7 @@ impl FeatureDecorationRunner {
             Self::signed_distance_circle(x_offset, z_offset, BlockPos::ZERO, radius, random)
         };
 
-        if signed_distance >= 0.0 {
+        if signed_distance.partial_cmp(&0.0) != Some(std::cmp::Ordering::Less) {
             return;
         }
 

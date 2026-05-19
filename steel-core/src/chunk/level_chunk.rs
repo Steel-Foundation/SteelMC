@@ -606,11 +606,6 @@ impl LevelChunk {
 
         let section = &self.sections.sections[section_index];
 
-        let was_empty = section.read().is_empty();
-        if was_empty && state.is_air() {
-            return None;
-        }
-
         let local_x = (pos.0.x & 15) as usize;
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;

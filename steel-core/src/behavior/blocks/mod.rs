@@ -13,8 +13,9 @@ mod redstone;
 mod vegetation;
 
 pub use building::{
-    FenceBlock, RotatedPillarBlock, StairBlock, WeatherState, WeatheringCopper,
-    WeatheringCopperFullBlock, WeatheringCopperStairBlock,
+    DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, StairBlock, WeatherState,
+    WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
+    WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
 };
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
@@ -29,12 +30,13 @@ pub use vegetation::{
     AzaleaBlock, BambooStalkBlock, BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock,
     BigDripleafBlock, BigDripleafStemBlock, BushBlock, CarpetBlock, CaveVinesBlock,
     CaveVinesPlantBlock, ChorusFlowerBlock, ChorusPlantBlock, CoralFanBlock, CoralPlantBlock,
-    CoralWallFanBlock, DoublePlantBlock, DryVegetationBlock, FireflyBushBlock, FlowerBedBlock,
-    FlowerBlock, GlowLichenBlock, HangingMossBlock, HangingRootsBlock, KelpBlock, KelpPlantBlock,
-    LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock, MossyCarpetBlock, MushroomBlock,
-    NetherFungusBlock, NetherRootsBlock, NetherSproutsBlock, PointedDripstoneBlock, SaplingBlock,
-    SculkVeinBlock, SeaPickleBlock, SeagrassBlock, ShortDryGrassBlock, SmallDripleafBlock,
-    SnowLayerBlock, SporeBlossomBlock, SugarCaneBlock, SweetBerryBushBlock, TallDryGrassBlock,
-    TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TwistingVinesBlock,
-    TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
+    CoralWallFanBlock, DoublePlantBlock, DryVegetationBlock, EyeblossomBlock, EyeblossomType,
+    FireflyBushBlock, FlowerBedBlock, FlowerBlock, GlowLichenBlock, HangingMossBlock,
+    HangingRootsBlock, KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock,
+    MangrovePropaguleBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
+    NetherSproutsBlock, PointedDripstoneBlock, SaplingBlock, SculkVeinBlock, SeaPickleBlock,
+    SeagrassBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock, SporeBlossomBlock,
+    SugarCaneBlock, SweetBerryBushBlock, TallDryGrassBlock, TallFlowerBlock, TallGrassBlock,
+    TallSeagrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock,
+    WeepingVinesPlantBlock, WitherRoseBlock,
 };

@@ -77,15 +77,15 @@ impl Structure for JungleTempleStructure {
     ) -> Option<GenerationStub> {
         let x0 = ctx.chunk_min_x();
         let z0 = ctx.chunk_min_z();
-        let h0 = ctx.base_height(x0, z0, false);
-        let h1 = ctx.base_height(x0, z0 + JUNGLE_TEMPLE_DEPTH, false);
-        let h2 = ctx.base_height(x0 + JUNGLE_TEMPLE_WIDTH, z0, false);
-        let h3 = ctx.base_height(x0 + JUNGLE_TEMPLE_WIDTH, z0 + JUNGLE_TEMPLE_DEPTH, false);
+        let h0 = ctx.base_height(x0, z0, false) - 1;
+        let h1 = ctx.base_height(x0, z0 + JUNGLE_TEMPLE_DEPTH, false) - 1;
+        let h2 = ctx.base_height(x0 + JUNGLE_TEMPLE_WIDTH, z0, false) - 1;
+        let h3 = ctx.base_height(x0 + JUNGLE_TEMPLE_WIDTH, z0 + JUNGLE_TEMPLE_DEPTH, false) - 1;
         if h0.min(h1).min(h2).min(h3) < ctx.sea_level() {
             return None;
         }
 
-        let center_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), false);
+        let center_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), false) - 1;
         let biome = ctx.biome_at(ctx.center_block_x(), center_y, ctx.center_block_z());
         if !structure.allowed_biomes.contains(&biome.key) {
             return None;

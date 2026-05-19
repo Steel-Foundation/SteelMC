@@ -18,12 +18,13 @@ impl FeatureDecorationRunner {
                 let y = region.height_at(HeightmapType::MotionBlocking, x, z);
                 let top_pos = BlockPos::new(x, y, z);
                 let below_pos = top_pos.below();
+                let biome = Self::biome_at_block(region, registry, biome_zoom_seed, top_pos);
 
-                if Self::should_freeze(region, registry, biome_zoom_seed, below_pos, false) {
+                if Self::should_freeze_in_biome(region, biome, below_pos, false) {
                     let _ = region.set_block_state(below_pos, ice, UpdateFlags::UPDATE_CLIENTS);
                 }
 
-                if Self::should_snow(region, registry, biome_zoom_seed, top_pos) {
+                if Self::should_snow_in_biome(region, biome, top_pos) {
                     let _ = region.set_block_state(top_pos, snow, UpdateFlags::UPDATE_CLIENTS);
                     Self::set_snowy_below(region, below_pos);
                 }

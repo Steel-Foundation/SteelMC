@@ -709,6 +709,8 @@ impl ChunkMap {
                         map_clone.save_chunk(&holder_clone).await;
                     });
                     true // keep until clean
+                } else if holder.try_chunk(ChunkStatus::Empty).is_none() {
+                    false
                 } else {
                     // Clean and no refs - release region handle and remove
                     let pos = *pos;

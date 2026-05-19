@@ -35,6 +35,13 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
+        if !region.can_write_to_chunk(
+            SectionPos::block_to_section_coord(origin.x()),
+            SectionPos::block_to_section_coord(origin.z()),
+        ) {
+            return false;
+        }
+
         let placer = Self::configured_feature_placer(kind);
         let mut context = ConfiguredFeaturePlaceContext {
             region,

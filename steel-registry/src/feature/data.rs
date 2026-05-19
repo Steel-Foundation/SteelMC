@@ -227,7 +227,7 @@ pub struct FeatureNoiseParameters {
 #[derive(Debug, Clone)]
 pub struct NoiseProvider {
     pub noise: FeatureNoiseParameters,
-    pub scale: f64,
+    pub scale: f32,
     pub seed: i64,
     pub states: Vec<BlockStateData>,
 }
@@ -235,9 +235,9 @@ pub struct NoiseProvider {
 #[derive(Debug, Clone)]
 pub struct NoiseThresholdProvider {
     pub noise: FeatureNoiseParameters,
-    pub scale: f64,
+    pub scale: f32,
     pub seed: i64,
-    pub threshold: f64,
+    pub threshold: f32,
     pub high_chance: f32,
     pub default_state: BlockStateData,
     pub low_states: Vec<BlockStateData>,
@@ -247,10 +247,10 @@ pub struct NoiseThresholdProvider {
 #[derive(Debug, Clone)]
 pub struct DualNoiseProvider {
     pub noise: FeatureNoiseParameters,
-    pub scale: f64,
+    pub scale: f32,
     pub seed: i64,
     pub slow_noise: FeatureNoiseParameters,
-    pub slow_scale: f64,
+    pub slow_scale: f32,
     pub states: Vec<BlockStateData>,
     pub variety: [i32; 2],
 }

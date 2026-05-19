@@ -1,5 +1,6 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::behavior::blocks::MossyCarpetBlock;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_simple_block_feature(
@@ -18,7 +19,6 @@ impl FeatureDecorationRunner {
         ) else {
             return false;
         };
-
         let behavior = BLOCK_BEHAVIORS.get_behavior(state_to_place.get_block());
         if !behavior.can_survive(state_to_place, region, origin) {
             return false;
@@ -102,14 +102,14 @@ impl FeatureDecorationRunner {
     ) {
         let simple_carpet_layer = vanilla_blocks::PALE_MOSS_CARPET.default_state();
         let adjusted_carpet_layer =
-            Self::updated_mossy_carpet_state(region, simple_carpet_layer, pos, true);
+            MossyCarpetBlock::updated_state(region, simple_carpet_layer, pos, true);
         let _ = region.set_block_state(pos, adjusted_carpet_layer, UpdateFlags::UPDATE_CLIENTS);
 
         let topper = Self::create_mossy_carpet_topper(region, pos);
         if !topper.is_air() {
             let _ = region.set_block_state(pos.above(), topper, UpdateFlags::UPDATE_CLIENTS);
             let update_bottom =
-                Self::updated_mossy_carpet_state(region, adjusted_carpet_layer, pos, true);
+                MossyCarpetBlock::updated_state(region, adjusted_carpet_layer, pos, true);
             let _ = region.set_block_state(pos, update_bottom, UpdateFlags::UPDATE_CLIENTS);
         }
     }
@@ -130,10 +130,10 @@ impl FeatureDecorationRunner {
                 .default_state()
                 .set_value(&BlockStateProperties::BOTTOM, false);
             let mut above_state =
-                Self::updated_mossy_carpet_state(region, no_base_state, above, true);
+                MossyCarpetBlock::updated_state(region, no_base_state, above, true);
 
-            for direction in Self::HORIZONTAL_DIRECTIONS {
-                let property = Self::mossy_carpet_wall_property(direction);
+            for direction in MossyCarpetBlock::HORIZONTAL_DIRECTIONS {
+                let property = MossyCarpetBlock::wall_property(direction);
                 if above_state.get_value(&property) != WallSide::None
                     && !region.random_mut().next_bool()
                 {
@@ -141,7 +141,7 @@ impl FeatureDecorationRunner {
                 }
             }
 
-            if Self::mossy_carpet_has_faces(above_state) && above_state != above_previous_state {
+            if MossyCarpetBlock::has_faces(above_state) && above_state != above_previous_state {
                 above_state
             } else {
                 vanilla_blocks::AIR.default_state()
@@ -149,80 +149,6 @@ impl FeatureDecorationRunner {
         } else {
             vanilla_blocks::AIR.default_state()
         }
-    }
-
-    pub(in crate::worldgen::feature) fn updated_mossy_carpet_state(
-        region: &WorldGenRegion<'_>,
-        mut state: BlockStateId,
-        pos: BlockPos,
-        create_sides: bool,
-    ) -> BlockStateId {
-        let create_sides = create_sides || state.get_value(&BlockStateProperties::BOTTOM);
-
-        for direction in Self::HORIZONTAL_DIRECTIONS {
-            let property = Self::mossy_carpet_wall_property(direction);
-            let mut side = if Self::mossy_carpet_can_support_at_face(region, pos, direction) {
-                if create_sides {
-                    WallSide::Low
-                } else {
-                    state.get_value(&property)
-                }
-            } else {
-                WallSide::None
-            };
-
-            if side == WallSide::Low {
-                let above_state = region.block_state(pos.above());
-                if above_state.get_block() == &vanilla_blocks::PALE_MOSS_CARPET
-                    && above_state.get_value(&property) != WallSide::None
-                    && !above_state.get_value(&BlockStateProperties::BOTTOM)
-                {
-                    side = WallSide::Tall;
-                }
-
-                if !state.get_value(&BlockStateProperties::BOTTOM) {
-                    let below_state = region.block_state(pos.below());
-                    if below_state.get_block() == &vanilla_blocks::PALE_MOSS_CARPET
-                        && below_state.get_value(&property) == WallSide::None
-                    {
-                        side = WallSide::None;
-                    }
-                }
-            }
-
-            state = state.set_value(&property, side);
-        }
-
-        state
-    }
-
-    const HORIZONTAL_DIRECTIONS: [Direction; 4] = [
-        Direction::North,
-        Direction::East,
-        Direction::South,
-        Direction::West,
-    ];
-
-    pub(in crate::worldgen::feature) fn mossy_carpet_wall_property(
-        direction: Direction,
-    ) -> EnumProperty<WallSide> {
-        match direction {
-            Direction::North => BlockStateProperties::NORTH_WALL,
-            Direction::East => BlockStateProperties::EAST_WALL,
-            Direction::South => BlockStateProperties::SOUTH_WALL,
-            Direction::West => BlockStateProperties::WEST_WALL,
-            Direction::Down | Direction::Up => {
-                panic!("mossy carpet has no wall property for vertical direction")
-            }
-        }
-    }
-
-    pub(in crate::worldgen::feature) fn mossy_carpet_can_support_at_face(
-        region: &WorldGenRegion<'_>,
-        pos: BlockPos,
-        direction: Direction,
-    ) -> bool {
-        direction != Direction::Up && Self::can_attach_to_multiface(region, pos, direction)
     }
 
     pub(in crate::worldgen::feature) fn can_attach_to_multiface(
@@ -235,20 +161,5 @@ impl FeatureDecorationRunner {
         let support_direction = direction_towards_neighbor.opposite();
         shapes::is_face_full(neighbor_state.get_support_shape(), support_direction)
             || shapes::is_face_full(neighbor_state.get_collision_shape(), support_direction)
-    }
-
-    pub(in crate::worldgen::feature) fn mossy_carpet_has_faces(state: BlockStateId) -> bool {
-        if state.get_value(&BlockStateProperties::BOTTOM) {
-            return true;
-        }
-
-        for direction in Self::HORIZONTAL_DIRECTIONS {
-            let property = Self::mossy_carpet_wall_property(direction);
-            if state.get_value(&property) != WallSide::None {
-                return true;
-            }
-        }
-
-        false
     }
 }

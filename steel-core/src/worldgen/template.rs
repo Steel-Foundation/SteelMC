@@ -1757,6 +1757,11 @@ impl StructureTemplate {
                         *value = Self::mirror_rotation_segment(segment, 16, mirror).to_string();
                     }
                 }
+                "hinge" => match value.as_str() {
+                    "left" => "right".clone_into(value),
+                    "right" => "left".clone_into(value),
+                    _ => {}
+                },
                 "shape" => {
                     if let Some((_, mirrored_shape)) = mirrored_stairs {
                         mirrored_shape.clone_into(value);
@@ -2021,7 +2026,7 @@ impl StructureBlockIgnore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::blocks::properties::SlabType;
+    use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
 
     #[test]
     fn zero_position_with_transform_matches_vanilla_rotation_offsets() {
@@ -2083,6 +2088,44 @@ mod tests {
         assert_eq!(
             StructureTemplate::block_pos_seed(BlockPos::new(12, -3, 45)),
             103_080_484_998_711
+        );
+    }
+
+    #[test]
+    fn mirrored_door_transform_toggles_hinge() {
+        let registry = Registry::new_vanilla();
+        let door = registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SPRUCE_DOOR);
+        let door = registry.blocks.set_property(
+            door,
+            &BlockStateProperties::HORIZONTAL_FACING,
+            Direction::East,
+        );
+        let door = registry.blocks.set_property(
+            door,
+            &BlockStateProperties::DOOR_HINGE,
+            DoorHingeSide::Left,
+        );
+
+        let mirrored = StructureTemplate::transform_state(
+            &registry,
+            door,
+            StructureMirror::FrontBack,
+            Rotation::None,
+        );
+
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(mirrored, &BlockStateProperties::HORIZONTAL_FACING),
+            Some(Direction::West),
+        );
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(mirrored, &BlockStateProperties::DOOR_HINGE),
+            Some(DoorHingeSide::Right),
         );
     }
 
