@@ -1,13 +1,17 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_block_tags, vanilla_blocks};
-use steel_utils::math::Axis;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, math::Axis, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, ScheduledTickAccess};
+use crate::fluid::{FluidStateExt as _, get_fluid_state};
+use crate::player::Player;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
@@ -23,6 +27,24 @@ impl DoublePlantBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
+    }
+
+    pub(super) fn copy_waterlogged_from(
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockStateId {
+        if state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+        {
+            state.set_value(
+                &BlockStateProperties::WATERLOGGED,
+                get_fluid_state(world, pos).is_water(),
+            )
+        } else {
+            state
+        }
     }
 }
 
@@ -66,6 +88,26 @@ impl BlockBehavior for DoublePlantBlock {
         }
 
         survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_VEGETATION_TAG)
+    }
+
+    fn set_placed_by(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _player: Option<&Player>,
+        _item_stack: &ItemStack,
+    ) {
+        let upper_pos = pos.above();
+        let upper_state = Self::copy_waterlogged_from(
+            world,
+            upper_pos,
+            self.block.default_state().set_value(
+                &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                DoubleBlockHalf::Upper,
+            ),
+        );
+        world.set_block(upper_pos, upper_state, UpdateFlags::UPDATE_ALL);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

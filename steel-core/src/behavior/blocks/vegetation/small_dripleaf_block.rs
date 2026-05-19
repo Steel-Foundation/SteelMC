@@ -1,13 +1,17 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, DoubleBlockHalf};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
-use crate::world::LevelReader;
+use crate::player::Player;
+use crate::world::{LevelReader, World};
 
 use super::{BlockRef, DoublePlantBlock};
 
@@ -70,5 +74,31 @@ impl BlockBehavior for SmallDripleafBlock {
                 &BlockStateProperties::WATERLOGGED,
                 context.is_water_source(),
             ))
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _player: Option<&Player>,
+        _item_stack: &ItemStack,
+    ) {
+        let upper_pos = pos.above();
+        let upper_state = DoublePlantBlock::copy_waterlogged_from(
+            world,
+            upper_pos,
+            self.block
+                .default_state()
+                .set_value(
+                    &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                    DoubleBlockHalf::Upper,
+                )
+                .set_value(
+                    &BlockStateProperties::HORIZONTAL_FACING,
+                    state.get_value(&BlockStateProperties::HORIZONTAL_FACING),
+                ),
+        );
+        world.set_block(upper_pos, upper_state, UpdateFlags::UPDATE_ALL);
     }
 }

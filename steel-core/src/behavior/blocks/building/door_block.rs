@@ -14,13 +14,21 @@ use steel_registry::{
         properties::{BlockStateProperties, Direction, DoorHingeSide, DoubleBlockHalf},
         shapes,
     },
+    item_stack::ItemStack,
     vanilla_blocks,
 };
-use steel_utils::{BlockPos, BlockStateId, math::Axis, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId,
+    math::Axis,
+    types::{InteractionHand, UpdateFlags},
+};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::{
-    behavior::{BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult},
+    behavior::{
+        BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
+    },
+    fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -129,6 +137,41 @@ impl DoorBlock {
         false
     }
 
+    fn has_correct_tool_for_drops(player: &Player, state: BlockStateId) -> bool {
+        let inv = player.inventory.lock();
+        let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
+        main_hand.is_correct_tool_for_drops(state)
+            || !state.get_block().config.requires_correct_tool_for_drops
+    }
+
+    fn prevent_drop_from_bottom_part(
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        player: &Player,
+    ) {
+        if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) != DoubleBlockHalf::Upper {
+            return;
+        }
+
+        let bottom_pos = pos.below();
+        let bottom_state = world.get_block_state(bottom_pos);
+        if bottom_state.get_block() != state.get_block()
+            || bottom_state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
+                != DoubleBlockHalf::Lower
+        {
+            return;
+        }
+
+        let replacement = fluid_state_to_block(bottom_state.get_fluid_state());
+        world.set_block(
+            bottom_pos,
+            replacement,
+            UpdateFlags::UPDATE_ALL | UpdateFlags::UPDATE_SUPPRESS_DROPS,
+        );
+        world.destroy_block_effect(bottom_pos, u32::from(bottom_state.0), Some(player.id));
+    }
+
     fn play_sound(&self, world: &Arc<World>, pos: BlockPos, open: bool, exclude: Option<i32>) {
         let sound = if open {
             self.sound_open
@@ -209,6 +252,37 @@ impl BlockBehavior for DoorBlock {
         } else {
             below_state.get_block() == self.block
         }
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _player: Option<&Player>,
+        _item_stack: &ItemStack,
+    ) {
+        world.set_block(
+            pos.above(),
+            state.set_value(
+                &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                DoubleBlockHalf::Upper,
+            ),
+            UpdateFlags::UPDATE_ALL,
+        );
+    }
+
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+    ) -> BlockStateId {
+        if player.has_infinite_materials() || !Self::has_correct_tool_for_drops(player, state) {
+            Self::prevent_drop_from_bottom_part(world, pos, state, player);
+        }
+        state
     }
 
     fn use_without_item(
@@ -330,6 +404,28 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         self.door().can_survive(state, world, pos)
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: Option<&Player>,
+        item_stack: &ItemStack,
+    ) {
+        self.door()
+            .set_placed_by(state, world, pos, player, item_stack);
+    }
+
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+    ) -> BlockStateId {
+        self.door().player_will_destroy(state, world, pos, player)
     }
 
     fn use_without_item(
