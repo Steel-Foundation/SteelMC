@@ -59,7 +59,7 @@ impl FeatureDecorationRunner {
         let min_y = origin.y().min(trunk_origin.y());
         let max_y = origin.y().max(trunk_origin.y()) + tree_height + 1;
 
-        if min_y < region.min_y() + 1 || max_y > region.max_y_exclusive() + 1 {
+        if min_y < region.min_y() + 1 || max_y > region.max_y_exclusive() {
             return false;
         }
 

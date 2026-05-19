@@ -258,7 +258,7 @@ impl<'a> WorldGenRegion<'a> {
             return None;
         }
 
-        self.cache.get(chunk_x, chunk_z).try_chunk(status)
+        self.cache.get(chunk_x, chunk_z).try_chunk(available_status)
     }
 
     /// Gets a chunk or panics if generation requested an undeclared dependency.
@@ -493,7 +493,11 @@ impl<'a> WorldGenRegion<'a> {
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| chunk.add_entity(entity))
     }
 
-    /// Schedules a block tick through the same region write contract as block placement.
+    /// Schedules a block tick in the chunk that owns the target position.
+    ///
+    /// Vanilla `WorldGenTickAccess` resolves the owning chunk directly and does not apply
+    /// `WorldGenRegion.ensureCanWrite`, so ticks can be recorded outside the block write radius
+    /// as long as the generation step declared the chunk dependency.
     #[must_use]
     pub fn schedule_block_tick(
         &self,
@@ -502,11 +506,7 @@ impl<'a> WorldGenRegion<'a> {
         delay: i32,
         priority: TickPriority,
     ) -> bool {
-        let Some((chunk_x, chunk_z, status)) =
-            self.writable_chunk_for_pos(pos, "schedule block tick")
-        else {
-            return false;
-        };
+        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule block tick");
         let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
             chunk.schedule_block_tick(pos, block, delay, priority, sub_tick_order);
@@ -520,7 +520,9 @@ impl<'a> WorldGenRegion<'a> {
         self.schedule_block_tick(pos, block, delay, TickPriority::Normal)
     }
 
-    /// Schedules a fluid tick through the same region write contract as block placement.
+    /// Schedules a fluid tick in the chunk that owns the target position.
+    ///
+    /// This mirrors vanilla tick scheduling and intentionally does not apply the block write radius.
     #[must_use]
     pub fn schedule_fluid_tick(
         &self,
@@ -529,11 +531,7 @@ impl<'a> WorldGenRegion<'a> {
         delay: i32,
         priority: TickPriority,
     ) -> bool {
-        let Some((chunk_x, chunk_z, status)) =
-            self.writable_chunk_for_pos(pos, "schedule fluid tick")
-        else {
-            return false;
-        };
+        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule fluid tick");
         let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
             chunk.schedule_fluid_tick(pos, fluid, delay, priority, sub_tick_order);
@@ -711,6 +709,23 @@ impl<'a> WorldGenRegion<'a> {
         };
 
         Some((chunk_x, chunk_z, status))
+    }
+
+    fn dependency_chunk_for_pos(&self, pos: BlockPos, action: &str) -> (i32, i32, ChunkStatus) {
+        let chunk_x = SectionPos::block_to_section_coord(pos.x());
+        let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        let Some(status) = self.required_status_at(chunk_x, chunk_z) else {
+            panic!(
+                "Worldgen attempted to {action} at ({}, {}, {}) in chunk ({chunk_x}, {chunk_z}), \
+                 but {:?} declares no direct dependency for that chunk",
+                pos.x(),
+                pos.y(),
+                pos.z(),
+                self.step.target_status,
+            );
+        };
+
+        (chunk_x, chunk_z, status)
     }
 
     const fn chessboard_distance(center: ChunkPos, chunk_x: i32, chunk_z: i32) -> usize {

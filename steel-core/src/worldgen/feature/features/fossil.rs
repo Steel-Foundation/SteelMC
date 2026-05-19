@@ -179,8 +179,11 @@ impl FeatureDecorationRunner {
             for y in [bounding_box.min_y, bounding_box.max_y] {
                 for z in [bounding_box.min_z, bounding_box.max_z] {
                     let state = region.block_state(BlockPos::new(x, y, z));
-                    let fluid = get_fluid_state_from_block(state);
-                    if state.is_air() || fluid.is_lava() || fluid.is_water() {
+                    let block = state.get_block();
+                    if state.is_air()
+                        || block == &vanilla_blocks::LAVA
+                        || block == &vanilla_blocks::WATER
+                    {
                         count += 1;
                     }
                 }

@@ -518,8 +518,8 @@ impl StructureTemplate {
             Rotation::None => yaw,
         };
         let mirrored = match mirror {
-            StructureMirror::LeftRight => -yaw,
-            StructureMirror::FrontBack => 180.0 - yaw,
+            StructureMirror::FrontBack => -yaw,
+            StructureMirror::LeftRight => 180.0 - yaw,
             StructureMirror::None => yaw,
         };
         (rotated + mirrored - yaw, pitch)
@@ -533,7 +533,7 @@ impl StructureTemplate {
         let Some(facing) = Self::entity_facing(nbt) else {
             return;
         };
-        let facing = rotation.rotate(Self::mirror_direction(facing, mirror));
+        let facing = Self::mirror_direction(rotation.rotate(facing), mirror);
         let _ = nbt.remove("Facing");
         nbt.insert("Facing", Self::entity_facing_value(facing));
     }
@@ -600,6 +600,11 @@ impl StructureTemplate {
         let Some(palette) = self.palette(settings, position, random) else {
             return false;
         };
+        if (palette.blocks.is_empty() && self.entities.is_empty())
+            || self.size.iter().any(|&axis| axis < 1)
+        {
+            return false;
+        }
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
@@ -751,7 +756,7 @@ impl StructureTemplate {
 
         self.place_entities(region, position, settings);
 
-        placed_any
+        true
     }
 
     fn place_entities(
@@ -2502,7 +2507,35 @@ mod tests {
                 StructureMirror::LeftRight,
                 Rotation::Clockwise90,
             ),
+            (240.0, 10.0)
+        );
+        assert_eq!(
+            StructureTemplate::transform_entity_rotation(
+                (30.0, 10.0),
+                StructureMirror::FrontBack,
+                Rotation::Clockwise90,
+            ),
             (60.0, 10.0)
+        );
+    }
+
+    #[test]
+    fn hanging_entity_facing_applies_rotation_before_mirror() {
+        let mut nbt = NbtCompound::new();
+        nbt.insert(
+            "Facing",
+            StructureTemplate::entity_facing_value(Direction::North),
+        );
+
+        StructureTemplate::transform_entity_additional_nbt(
+            &mut nbt,
+            StructureMirror::LeftRight,
+            Rotation::Clockwise90,
+        );
+
+        assert_eq!(
+            nbt.byte("Facing"),
+            Some(StructureTemplate::entity_facing_value(Direction::East))
         );
     }
 
