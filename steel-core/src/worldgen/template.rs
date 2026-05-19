@@ -26,7 +26,8 @@ use steel_registry::{
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::random::{PositionalRandom, Random};
+use steel_utils::random::{PositionalRandom, Random, RandomSource};
+use steel_utils::value_providers::IntProvider;
 use steel_utils::{
     BlockPos, BlockStateId, BoundingBox, Direction, Identifier, Rotation, types::UpdateFlags,
 };
@@ -376,6 +377,10 @@ impl StructureTemplate {
         clippy::too_many_arguments,
         reason = "structure placement call mirrors vanilla template placement context"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "template placement follows vanilla's single-pass block placement flow"
+    )]
     pub(crate) fn place_in_world(
         &self,
         region: &mut WorldGenRegion<'_>,
@@ -562,8 +567,7 @@ impl StructureTemplate {
             };
             let final_state = nbt
                 .string("final_state")
-                .map(|value| value.to_str())
-                .unwrap_or_else(|| "minecraft:air".into());
+                .map_or_else(|| "minecraft:air".into(), |value| value.to_str());
             let state = Self::parse_block_state_string(registry, final_state.as_ref())
                 .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
             let _ = region.set_block_state(world_pos, state, UpdateFlags::UPDATE_ALL);
@@ -914,6 +918,10 @@ impl StructureTemplate {
         Some(current)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "processor calls mirror vanilla StructureProcessor.processBlock inputs"
+    )]
     fn process_block_with_processor(
         region: &WorldGenRegion<'_>,
         registry: &Registry,
@@ -1327,7 +1335,7 @@ impl StructureTemplate {
         position: BlockPos,
         reference_pos: BlockPos,
         delegate: &StructureProcessorKind,
-        limit: &steel_utils::value_providers::IntProvider,
+        limit: &IntProvider,
         original_blocks: &[ProcessedBlockInfo],
         mut processed_blocks: Vec<ProcessedBlockInfo>,
         settings: &StructurePlaceSettings<'_>,
@@ -1399,10 +1407,7 @@ impl StructureTemplate {
         }
     }
 
-    fn capped_processor_random(
-        world_seed: i64,
-        position: BlockPos,
-    ) -> steel_utils::random::RandomSource {
+    fn capped_processor_random(world_seed: i64, position: BlockPos) -> RandomSource {
         LegacyRandom::from_seed(world_seed as u64)
             .next_positional()
             .at(position.x(), position.y(), position.z())
@@ -1434,8 +1439,7 @@ impl StructureTemplate {
         };
         let final_state = nbt
             .string("final_state")
-            .map(|value| value.to_str())
-            .unwrap_or_else(|| "minecraft:air".into());
+            .map_or_else(|| "minecraft:air".into(), |value| value.to_str());
         current.state = Self::parse_block_state_string(registry, final_state.as_ref())
             .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
         current.nbt = None;
@@ -1822,7 +1826,7 @@ impl StructureTemplate {
         }
     }
 
-    fn mirror_rotation_segment(rotation: i32, steps: i32, mirror: StructureMirror) -> i32 {
+    const fn mirror_rotation_segment(rotation: i32, steps: i32, mirror: StructureMirror) -> i32 {
         let half_steps = steps / 2;
         let corrected = if rotation > half_steps {
             rotation - steps

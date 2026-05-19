@@ -3,9 +3,11 @@
     reason = "iceberg placement is kept linear to preserve vanilla parity"
 )]
 
+use std::cmp::Ordering;
+use std::f64::consts::PI;
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
-use std::f64::consts::PI;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_iceberg_feature(
@@ -237,7 +239,7 @@ impl FeatureDecorationRunner {
             for z_offset in -a..a {
                 let signed_distance =
                     Self::signed_distance_ellipse(x_offset, z_offset, local_origin, a, c, angle);
-                if signed_distance.partial_cmp(&0.0) != Some(std::cmp::Ordering::Less) {
+                if signed_distance.partial_cmp(&0.0) != Some(Ordering::Less) {
                     continue;
                 }
 
@@ -299,7 +301,7 @@ impl FeatureDecorationRunner {
             Self::signed_distance_circle(x_offset, z_offset, BlockPos::ZERO, radius, random)
         };
 
-        if signed_distance.partial_cmp(&0.0) != Some(std::cmp::Ordering::Less) {
+        if signed_distance.partial_cmp(&0.0) != Some(Ordering::Less) {
             return;
         }
 

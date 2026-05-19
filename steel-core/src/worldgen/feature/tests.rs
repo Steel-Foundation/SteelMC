@@ -235,9 +235,9 @@ fn structure_start_resolution_uses_vanilla_reference_order_and_filters_invalid_s
 
 #[test]
 fn structure_reference_set_iterates_like_vanilla_long_open_hash_set() {
-    let first = ChunkPos::new(-349429, 434509);
-    let second = ChunkPos::new(-349428, 434514);
-    let third = ChunkPos::new(-349423, 434513);
+    let first = ChunkPos::new(-349_429, 434_509);
+    let second = ChunkPos::new(-349_428, 434_514);
+    let third = ChunkPos::new(-349_423, 434_513);
 
     let references: StructureReferenceSet = [first, second, third].into_iter().collect();
 

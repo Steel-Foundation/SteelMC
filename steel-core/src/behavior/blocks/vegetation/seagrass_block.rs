@@ -75,6 +75,7 @@ impl BlockBehavior for SeagrassBlock {
 mod tests {
     use std::cell::Cell;
 
+    use steel_registry::fluid::FluidRef;
     use steel_registry::{REGISTRY, Registry, vanilla_blocks, vanilla_fluids};
 
     use super::*;
@@ -116,7 +117,7 @@ mod tests {
     }
 
     impl ScheduledTickAccess for SingleSupportLevel {
-        fn fluid_tick_delay(&self, _fluid: steel_registry::fluid::FluidRef) -> i32 {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
             5
         }
 
@@ -132,7 +133,7 @@ mod tests {
         fn schedule_fluid_tick_default(
             &self,
             _pos: BlockPos,
-            fluid: steel_registry::fluid::FluidRef,
+            fluid: FluidRef,
             _delay: i32,
         ) -> bool {
             let is_water = fluid == &vanilla_fluids::WATER;

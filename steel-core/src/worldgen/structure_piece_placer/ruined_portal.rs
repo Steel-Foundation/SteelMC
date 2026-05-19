@@ -1,3 +1,4 @@
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::blocks::shapes;
@@ -158,7 +159,7 @@ impl StructurePiecePlacer {
             RuinedPortalPlacementData::OnLandSurface | RuinedPortalPlacementData::OnOceanFloor
         );
         let center = portal_box.get_center();
-        let average_width = (portal_box.get_x_span() + portal_box.get_z_span()) / 2;
+        let average_width = i32::midpoint(portal_box.get_x_span(), portal_box.get_z_span());
         let distance_adjustment = random.next_i32_bounded(1.max(8 - average_width / 2));
         let max_distance =
             i32::try_from(NETHERRACK_PROBABILITY_BY_DISTANCE.len()).unwrap_or(i32::MAX);
@@ -225,7 +226,7 @@ impl StructurePiecePlacer {
     fn can_block_be_replaced_with_ruined_portal_netherrack_or_magma(
         registry: &Registry,
         vertical_placement: RuinedPortalPlacementData,
-        block: steel_registry::blocks::BlockRef,
+        block: BlockRef,
     ) -> bool {
         block != &vanilla_blocks::AIR
             && block != &vanilla_blocks::OBSIDIAN

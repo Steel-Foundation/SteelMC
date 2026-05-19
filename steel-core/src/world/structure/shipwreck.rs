@@ -49,7 +49,7 @@ static OCEAN: &[&str] = &[
     "shipwreck/rightsideup_backhalf_degraded",
 ];
 
-fn make_shipwreck_piece(
+const fn make_shipwreck_piece(
     template_id: Identifier,
     position: (i32, i32, i32),
     rotation: Rotation,

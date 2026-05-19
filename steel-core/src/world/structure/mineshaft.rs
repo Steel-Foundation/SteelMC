@@ -408,7 +408,7 @@ fn push_piece(
     });
 }
 
-fn corridor_num_sections(bb: BoundingBox, dir: Dir) -> i32 {
+const fn corridor_num_sections(bb: BoundingBox, dir: Dir) -> i32 {
     match dir {
         Dir::North | Dir::South => (bb.max_z - bb.min_z + 1) / 5,
         Dir::West | Dir::East => (bb.max_x - bb.min_x + 1) / 5,

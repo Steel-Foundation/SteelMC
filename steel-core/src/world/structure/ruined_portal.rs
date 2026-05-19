@@ -288,6 +288,10 @@ pub fn find_generation_point(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "ruined portal piece construction mirrors vanilla template-piece fields"
+)]
 fn make_ruined_portal_piece(
     template_id: Identifier,
     position: (i32, i32, i32),
@@ -417,7 +421,7 @@ impl Structure for RuinedPortalStructure {
             return None;
         }
 
-        let Some(result) = find_generation_point(
+        let result = find_generation_point(
             rng,
             ctx.chunk_x(),
             ctx.chunk_z(),
@@ -430,9 +434,7 @@ impl Structure for RuinedPortalStructure {
                     .map(|(_, size)| *size)
             },
             &mut terrain,
-        ) else {
-            return None;
-        };
+        )?;
 
         let (bx, by, bz) = result.biome_check_pos;
         let biome = ctx.biome_at(bx, by, bz);

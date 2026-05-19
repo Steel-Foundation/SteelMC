@@ -79,7 +79,7 @@ impl DoorBlock {
             && state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower
     }
 
-    fn hinge_for_placement(&self, context: &BlockPlaceContext<'_>) -> DoorHingeSide {
+    fn hinge_for_placement(context: &BlockPlaceContext<'_>) -> DoorHingeSide {
         let pos = context.relative_pos;
         let above_pos = pos.above();
         let place_direction = context.horizontal_direction;
@@ -132,7 +132,7 @@ impl DoorBlock {
         }
     }
 
-    fn has_neighbor_signal<L: LevelReader + ?Sized>(_world: &L, _pos: BlockPos) -> bool {
+    const fn has_neighbor_signal<L: LevelReader + ?Sized>(_world: &L, _pos: BlockPos) -> bool {
         // TODO: Query redstone neighbor signal once Steel has redstone power propagation.
         false
     }
@@ -203,7 +203,7 @@ impl BlockBehavior for DoorBlock {
                 )
                 .set_value(
                     &BlockStateProperties::DOOR_HINGE,
-                    self.hinge_for_placement(context),
+                    Self::hinge_for_placement(context),
                 )
                 .set_value(&BlockStateProperties::POWERED, powered)
                 .set_value(&BlockStateProperties::OPEN, powered)
@@ -374,7 +374,7 @@ impl WeatheringCopperDoorBlock {
         }
     }
 
-    fn door(&self) -> DoorBlock {
+    const fn door(&self) -> DoorBlock {
         DoorBlock::new(
             self.block,
             self.can_open_by_hand,
@@ -465,6 +465,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::fluid::FluidRef;
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
@@ -491,7 +492,7 @@ mod tests {
     }
 
     impl ScheduledTickAccess for EmptyLevel {
-        fn fluid_tick_delay(&self, _fluid: steel_registry::fluid::FluidRef) -> i32 {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
             5
         }
 
@@ -507,7 +508,7 @@ mod tests {
         fn schedule_fluid_tick_default(
             &self,
             _pos: BlockPos,
-            _fluid: steel_registry::fluid::FluidRef,
+            _fluid: FluidRef,
             _delay: i32,
         ) -> bool {
             true

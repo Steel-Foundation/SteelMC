@@ -124,7 +124,7 @@ impl StructurePiecePlacer {
         }
     }
 
-    fn block_replace_rule(source: &'static str, target: &'static str) -> ProcessorRuleData {
+    const fn block_replace_rule(source: &'static str, target: &'static str) -> ProcessorRuleData {
         ProcessorRuleData {
             input_predicate: StructureRuleTestData::BlockMatch {
                 block: Identifier::vanilla_static(source),
@@ -136,7 +136,7 @@ impl StructurePiecePlacer {
         }
     }
 
-    fn random_block_replace_rule(
+    const fn random_block_replace_rule(
         source: &'static str,
         probability: f32,
         target: &'static str,
@@ -153,7 +153,7 @@ impl StructurePiecePlacer {
         }
     }
 
-    fn append_loot_replace_rule(
+    const fn append_loot_replace_rule(
         source: &'static str,
         target: &'static str,
         loot_table: Identifier,
@@ -169,7 +169,7 @@ impl StructurePiecePlacer {
         }
     }
 
-    fn block_state_data(block: &'static str) -> BlockStateData {
+    const fn block_state_data(block: &'static str) -> BlockStateData {
         BlockStateData {
             name: Identifier::vanilla_static(block),
             properties: BTreeMap::new(),

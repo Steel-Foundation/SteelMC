@@ -505,7 +505,7 @@ mod tests {
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::TickPriority;
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-    use steel_utils::{BlockPos, ChunkPos};
+    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
     #[test]
     fn postprocessing_offset_pack_unpack_matches_vanilla_layout() {
@@ -564,11 +564,7 @@ mod tests {
         let pos = BlockPos::new(3, 4, 5);
         let cave_air = vanilla_blocks::CAVE_AIR.default_state();
 
-        proto.set_block_state(
-            pos,
-            cave_air,
-            steel_utils::types::UpdateFlags::UPDATE_CLIENTS,
-        );
+        proto.set_block_state(pos, cave_air, UpdateFlags::UPDATE_CLIENTS);
 
         assert_eq!(proto.get_block_state(pos), cave_air);
     }

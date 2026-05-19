@@ -462,6 +462,7 @@ mod tests {
     use std::{
         env, fs as std_fs,
         path::PathBuf,
+        process,
         time::{SystemTime, UNIX_EPOCH},
     };
     use steel_registry::Registry;
@@ -497,7 +498,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!(
             "steel-level-data-{test_name}-{}-{unique}",
-            std::process::id()
+            process::id()
         ));
         std_fs::create_dir_all(&path).expect("temp level data dir should be created");
         path

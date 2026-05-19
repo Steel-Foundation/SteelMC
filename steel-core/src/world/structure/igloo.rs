@@ -23,7 +23,11 @@ const MID_OFF: (i32, i32, i32) = (2, -3, 4);
 const BOT_OFF: (i32, i32, i32) = (0, -3, -2);
 const GEN_Y: i32 = 90;
 
-fn make_igloo_piece(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "igloo piece construction mirrors vanilla template-piece constants"
+)]
+const fn make_igloo_piece(
     template_path: &'static str,
     start_x: i32,
     start_z: i32,

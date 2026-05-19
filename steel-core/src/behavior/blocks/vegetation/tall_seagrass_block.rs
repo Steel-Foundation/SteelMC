@@ -107,6 +107,7 @@ impl BlockBehavior for TallSeagrassBlock {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::fluid::FluidRef;
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 
     use super::*;
@@ -147,7 +148,7 @@ mod tests {
     }
 
     impl ScheduledTickAccess for TallSeagrassLevel {
-        fn fluid_tick_delay(&self, _fluid: steel_registry::fluid::FluidRef) -> i32 {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
             5
         }
 
@@ -163,7 +164,7 @@ mod tests {
         fn schedule_fluid_tick_default(
             &self,
             _pos: BlockPos,
-            _fluid: steel_registry::fluid::FluidRef,
+            _fluid: FluidRef,
             _delay: i32,
         ) -> bool {
             true

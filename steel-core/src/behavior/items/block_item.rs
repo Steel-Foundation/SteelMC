@@ -84,7 +84,7 @@ impl BlockItem {
         InteractionResult::Success
     }
 
-    fn place_block(&self, context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
+    fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
         context
             .world
             .set_block(context.relative_pos, state, Self::PLACE_BLOCK_FLAGS)
@@ -94,7 +94,7 @@ impl BlockItem {
 impl ItemBehavior for BlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.place_with(context, |place_context, state| {
-            self.place_block(place_context, state)
+            Self::place_block(place_context, state)
         })
     }
 }
@@ -126,7 +126,7 @@ impl DoubleHighBlockItem {
         }
     }
 
-    fn place_block(&self, context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
+    fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
         let above = context.relative_pos.above();
         let above_state = if get_fluid_state(context.world, above).is_water() {
             vanilla_blocks::WATER.default_state()
@@ -137,14 +137,14 @@ impl DoubleHighBlockItem {
             .world
             .set_block(above, above_state, Self::PREPARE_UPPER_FLAGS);
 
-        self.base.place_block(context, state)
+        BlockItem::place_block(context, state)
     }
 }
 
 impl ItemBehavior for DoubleHighBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.base.place_with(context, |place_context, state| {
-            self.place_block(place_context, state)
+            Self::place_block(place_context, state)
         })
     }
 }

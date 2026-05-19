@@ -235,6 +235,10 @@ pub(crate) fn column_interpolated_density<N: DimensionNoises>(
 /// Used by structure placement probes such as nether fossils. This preserves the
 /// same base terrain classification as repeated `column_state` calls, but shares
 /// the eight cell-corner density evaluations across adjacent Y positions.
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps the vanilla density interpolation flow in one readable pass"
+)]
 pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
     noises: &N,
@@ -244,11 +248,11 @@ pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
     start_y: i32,
     min_solid_y: i32,
 ) -> Option<i32> {
+    const MAX_INTERP: usize = 16;
+
     if start_y <= min_solid_y {
         return None;
     }
-
-    const MAX_INTERP: usize = 16;
 
     let cell_w = N::Settings::CELL_WIDTH;
     let cell_h = N::Settings::CELL_HEIGHT;

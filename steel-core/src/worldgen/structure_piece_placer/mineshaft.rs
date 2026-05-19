@@ -7,6 +7,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{
     Registry, RegistryExt, TaggedRegistryExt, vanilla_biome_tags, vanilla_blocks,
 };
+use steel_utils::math::Axis;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, types::UpdateFlags};
@@ -71,7 +72,7 @@ impl StructurePiecePlacer {
                 *num_sections,
             ),
             MineshaftPieceKind::Crossing { is_two_floored, .. } => {
-                placer.place_crossing(mineshaft_type, *is_two_floored)
+                placer.place_crossing(mineshaft_type, *is_two_floored);
             }
             MineshaftPieceKind::Stairs => placer.place_stairs(),
         }
@@ -98,8 +99,8 @@ impl MineshaftPlacer<'_, '_> {
             self.bounding_box.max_x,
             (self.bounding_box.min_y + 3).min(self.bounding_box.max_y),
             self.bounding_box.max_z,
-            self.cave_air(),
-            self.cave_air(),
+            Self::cave_air(),
+            Self::cave_air(),
             false,
         );
 
@@ -111,8 +112,8 @@ impl MineshaftPlacer<'_, '_> {
                 entrance_box.max_x,
                 entrance_box.max_y,
                 entrance_box.max_z,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
         }
@@ -124,7 +125,7 @@ impl MineshaftPlacer<'_, '_> {
             self.bounding_box.max_x,
             self.bounding_box.max_y,
             self.bounding_box.max_z,
-            self.cave_air(),
+            Self::cave_air(),
             false,
         );
     }
@@ -139,7 +140,7 @@ impl MineshaftPlacer<'_, '_> {
         num_sections: i32,
     ) {
         let length = num_sections * 5 - 1;
-        let planks = self.planks_state(mineshaft_type);
+        let planks = Self::planks_state(mineshaft_type);
         self.generate_box(
             0,
             0,
@@ -147,8 +148,8 @@ impl MineshaftPlacer<'_, '_> {
             2,
             1,
             length,
-            self.cave_air(),
-            self.cave_air(),
+            Self::cave_air(),
+            Self::cave_air(),
             false,
         );
         self.generate_maybe_box(
@@ -160,8 +161,8 @@ impl MineshaftPlacer<'_, '_> {
             2,
             2,
             length,
-            self.cave_air(),
-            self.cave_air(),
+            Self::cave_air(),
+            Self::cave_air(),
             false,
             false,
         );
@@ -175,8 +176,8 @@ impl MineshaftPlacer<'_, '_> {
                 2,
                 1,
                 length,
-                self.cobweb(),
-                self.cave_air(),
+                Self::cobweb(),
+                Self::cave_air(),
                 false,
                 true,
             );
@@ -206,7 +207,7 @@ impl MineshaftPlacer<'_, '_> {
                 let pos = self.world_pos(1, 0, new_z);
                 if self.clip.is_inside(pos) && self.is_interior(1, 0, new_z) {
                     *has_placed_spider = true;
-                    let spawner = self.spawner();
+                    let spawner = Self::spawner();
                     let _ = self
                         .region
                         .set_block_state(pos, spawner, UpdateFlags::UPDATE_CLIENTS);
@@ -227,9 +228,8 @@ impl MineshaftPlacer<'_, '_> {
         }
 
         if has_rails {
-            let rail = self
-                .rail()
-                .set_value(&BlockStateProperties::RAIL_SHAPE, RailShape::NorthSouth);
+            let rail =
+                Self::rail().set_value(&BlockStateProperties::RAIL_SHAPE, RailShape::NorthSouth);
             for z in 0..=length {
                 let floor = self.get_block(1, -1, z);
                 if !floor.is_air() && floor.is_solid_render() {
@@ -240,8 +240,12 @@ impl MineshaftPlacer<'_, '_> {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "crossing placement follows vanilla's imperative piece layout"
+    )]
     fn place_crossing(&mut self, mineshaft_type: MineshaftType, is_two_floored: bool) {
-        let planks = self.planks_state(mineshaft_type);
+        let planks = Self::planks_state(mineshaft_type);
         if is_two_floored {
             self.generate_box(
                 self.bounding_box.min_x + 1,
@@ -250,8 +254,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x - 1,
                 self.bounding_box.min_y + 2,
                 self.bounding_box.max_z,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
             self.generate_box(
@@ -261,8 +265,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x,
                 self.bounding_box.min_y + 2,
                 self.bounding_box.max_z - 1,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
             self.generate_box(
@@ -272,8 +276,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x - 1,
                 self.bounding_box.max_y,
                 self.bounding_box.max_z,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
             self.generate_box(
@@ -283,8 +287,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x,
                 self.bounding_box.max_y,
                 self.bounding_box.max_z - 1,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
             self.generate_box(
@@ -294,8 +298,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x - 1,
                 self.bounding_box.min_y + 3,
                 self.bounding_box.max_z - 1,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
         } else {
@@ -306,8 +310,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x - 1,
                 self.bounding_box.max_y,
                 self.bounding_box.max_z,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
             self.generate_box(
@@ -317,8 +321,8 @@ impl MineshaftPlacer<'_, '_> {
                 self.bounding_box.max_x,
                 self.bounding_box.max_y,
                 self.bounding_box.max_z - 1,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
         }
@@ -361,8 +365,8 @@ impl MineshaftPlacer<'_, '_> {
     }
 
     fn place_stairs(&mut self) {
-        self.generate_box(0, 5, 0, 2, 7, 1, self.cave_air(), self.cave_air(), false);
-        self.generate_box(0, 0, 7, 2, 2, 8, self.cave_air(), self.cave_air(), false);
+        self.generate_box(0, 5, 0, 2, 7, 1, Self::cave_air(), Self::cave_air(), false);
+        self.generate_box(0, 0, 7, 2, 2, 8, Self::cave_air(), Self::cave_air(), false);
         for i in 0..5 {
             let min_y = 5 - i - i32::from(i < 4);
             self.generate_box(
@@ -372,8 +376,8 @@ impl MineshaftPlacer<'_, '_> {
                 2,
                 7 - i,
                 2 + i,
-                self.cave_air(),
-                self.cave_air(),
+                Self::cave_air(),
+                Self::cave_air(),
                 false,
             );
         }
@@ -387,7 +391,11 @@ impl MineshaftPlacer<'_, '_> {
         let y1 = (self.bounding_box.max_y + 1).min(self.clip.max_y);
         let z1 = (self.bounding_box.max_z + 1).min(self.clip.max_z);
 
-        let biome_pos = BlockPos::new((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+        let biome_pos = BlockPos::new(
+            i32::midpoint(x0, x1),
+            i32::midpoint(y0, y1),
+            i32::midpoint(z0, z1),
+        );
         if self.is_mineshaft_blocking_biome(biome_pos) {
             return true;
         }
@@ -441,6 +449,10 @@ impl MineshaftPlacer<'_, '_> {
             .is_in_tag(biome, &vanilla_biome_tags::MINESHAFT_BLOCKING_TAG)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "box fill helpers use vanilla min/max coordinate signatures"
+    )]
     fn generate_box(
         &mut self,
         x0: i32,
@@ -576,7 +588,7 @@ impl MineshaftPlacer<'_, '_> {
             && random.next_f32() < probability
             && self.has_sturdy_neighbors(x, y, z, 2)
         {
-            self.place_block(self.cobweb(), x, y, z);
+            self.place_block(Self::cobweb(), x, y, z);
         }
     }
 
@@ -594,9 +606,7 @@ impl MineshaftPlacer<'_, '_> {
         } else {
             RailShape::EastWest
         };
-        let rail = self
-            .rail()
-            .set_value(&BlockStateProperties::RAIL_SHAPE, shape);
+        let rail = Self::rail().set_value(&BlockStateProperties::RAIL_SHAPE, shape);
         self.place_block(rail, x, y, z);
         let loot_seed = random.next_i64();
         let chest = Arc::new(ChestMinecartEntity::new(
@@ -617,6 +627,10 @@ impl MineshaftPlacer<'_, '_> {
         let _ = StructurePiecePlacer::set_spawner_entity(self.region, pos, state, entity_id);
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "support placement follows vanilla coordinate parameters"
+    )]
     fn place_support(
         &mut self,
         random: &mut WorldgenRandom,
@@ -631,8 +645,8 @@ impl MineshaftPlacer<'_, '_> {
             return;
         }
 
-        let planks = self.planks_state(mineshaft_type);
-        let fence = self.fence_state(mineshaft_type);
+        let planks = Self::planks_state(mineshaft_type);
+        let fence = Self::fence_state(mineshaft_type);
         self.generate_box(
             x0,
             y0,
@@ -641,7 +655,7 @@ impl MineshaftPlacer<'_, '_> {
             y1 - 1,
             z,
             fence.set_value(&BlockStateProperties::WEST, true),
-            self.cave_air(),
+            Self::cave_air(),
             false,
         );
         self.generate_box(
@@ -652,22 +666,21 @@ impl MineshaftPlacer<'_, '_> {
             y1 - 1,
             z,
             fence.set_value(&BlockStateProperties::EAST, true),
-            self.cave_air(),
+            Self::cave_air(),
             false,
         );
         if random.next_i32_bounded(4) == 0 {
-            self.generate_box(x0, y1, z, x0, y1, z, planks, self.cave_air(), false);
-            self.generate_box(x1, y1, z, x1, y1, z, planks, self.cave_air(), false);
+            self.generate_box(x0, y1, z, x0, y1, z, planks, Self::cave_air(), false);
+            self.generate_box(x1, y1, z, x1, y1, z, planks, Self::cave_air(), false);
         } else {
-            self.generate_box(x0, y1, z, x1, y1, z, planks, self.cave_air(), false);
+            self.generate_box(x0, y1, z, x1, y1, z, planks, Self::cave_air(), false);
             self.maybe_generate_block(
                 random,
                 0.05,
                 x0 + 1,
                 y1,
                 z - 1,
-                self.wall_torch()
-                    .set_value(&BlockStateProperties::FACING, Direction::South),
+                Self::wall_torch().set_value(&BlockStateProperties::FACING, Direction::South),
             );
             self.maybe_generate_block(
                 random,
@@ -675,8 +688,7 @@ impl MineshaftPlacer<'_, '_> {
                 x0 + 1,
                 y1,
                 z + 1,
-                self.wall_torch()
-                    .set_value(&BlockStateProperties::FACING, Direction::North),
+                Self::wall_torch().set_value(&BlockStateProperties::FACING, Direction::North),
             );
         }
     }
@@ -723,8 +735,8 @@ impl MineshaftPlacer<'_, '_> {
         y: i32,
         z: i32,
     ) {
-        let wood = self.wood_state(mineshaft_type);
-        let planks = self.planks_state(mineshaft_type);
+        let wood = Self::wood_state(mineshaft_type);
+        let planks = Self::planks_state(mineshaft_type);
         if self.get_block(x, y, z).get_block() == planks.get_block() {
             self.fill_pillar_down_or_chain_up(mineshaft_type, wood, x, y, z);
         }
@@ -754,9 +766,9 @@ impl MineshaftPlacer<'_, '_> {
             if check_below {
                 let below_pos = BlockPos::new(pos.x(), world_y - distance, pos.z());
                 let below_state = self.block_state(below_pos);
-                let empty_below = self.is_replaceable_by_structures(below_state)
+                let empty_below = Self::is_replaceable_by_structures(below_state)
                     && below_state.get_block() != &vanilla_blocks::LAVA;
-                if !empty_below && self.can_place_column_on_top_of(below_state) {
+                if !empty_below && Self::can_place_column_on_top_of(below_state) {
                     self.fill_column_between(
                         pillar_state,
                         pos.x(),
@@ -773,16 +785,16 @@ impl MineshaftPlacer<'_, '_> {
             if check_above {
                 let above_pos = BlockPos::new(pos.x(), world_y + distance, pos.z());
                 let above_state = self.block_state(above_pos);
-                let empty_above = self.is_replaceable_by_structures(above_state);
-                if !empty_above && self.can_hang_chain_below(above_state) {
+                let empty_above = Self::is_replaceable_by_structures(above_state);
+                if !empty_above && Self::can_hang_chain_below(above_state) {
                     let fence_pos = BlockPos::new(pos.x(), world_y + 1, pos.z());
                     let _ = self.region.set_block_state(
                         fence_pos,
-                        self.fence_state(mineshaft_type),
+                        Self::fence_state(mineshaft_type),
                         UpdateFlags::UPDATE_CLIENTS,
                     );
                     self.fill_column_between(
-                        self.chain(),
+                        Self::chain(),
                         pos.x(),
                         pos.z(),
                         world_y + 2,
@@ -815,11 +827,11 @@ impl MineshaftPlacer<'_, '_> {
         }
     }
 
-    fn can_place_column_on_top_of(&self, state_below: BlockStateId) -> bool {
+    fn can_place_column_on_top_of(state_below: BlockStateId) -> bool {
         state_below.is_face_sturdy(Direction::Up)
     }
 
-    fn can_hang_chain_below(&self, state_above: BlockStateId) -> bool {
+    fn can_hang_chain_below(state_above: BlockStateId) -> bool {
         state_above.is_face_sturdy_for(Direction::Down, SupportType::Center)
             && !Self::is_falling_block(state_above)
     }
@@ -840,8 +852,8 @@ impl MineshaftPlacer<'_, '_> {
                 x,
                 y1,
                 z,
-                self.planks_state(mineshaft_type),
-                self.cave_air(),
+                Self::planks_state(mineshaft_type),
+                Self::cave_air(),
                 false,
             );
         }
@@ -889,13 +901,13 @@ impl MineshaftPlacer<'_, '_> {
         if self.clip.is_inside(pos) {
             self.block_state(pos)
         } else {
-            self.air()
+            Self::air()
         }
     }
 
     fn block_state(&self, pos: BlockPos) -> BlockStateId {
         if self.region.is_outside_build_height(pos.y()) {
-            self.air()
+            Self::air()
         } else {
             self.region.block_state(pos)
         }
@@ -908,13 +920,13 @@ impl MineshaftPlacer<'_, '_> {
     fn can_be_replaced(&self, x: i32, y: i32, z: i32) -> bool {
         let state = self.get_block(x, y, z);
         let block = state.get_block();
-        block != self.planks_state(self.mineshaft_type).get_block()
-            && block != self.wood_state(self.mineshaft_type).get_block()
-            && block != self.fence_state(self.mineshaft_type).get_block()
+        block != Self::planks_state(self.mineshaft_type).get_block()
+            && block != Self::wood_state(self.mineshaft_type).get_block()
+            && block != Self::fence_state(self.mineshaft_type).get_block()
             && block != &vanilla_blocks::IRON_CHAIN
     }
 
-    fn is_replaceable_by_structures(&self, state: BlockStateId) -> bool {
+    fn is_replaceable_by_structures(state: BlockStateId) -> bool {
         state.is_air()
             || state.get_block().config.liquid
             || state.get_block() == &vanilla_blocks::GLOW_LICHEN
@@ -922,19 +934,18 @@ impl MineshaftPlacer<'_, '_> {
             || state.get_block() == &vanilla_blocks::TALL_SEAGRASS
     }
 
-    fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
+    const fn world_pos(&self, x: i32, y: i32, z: i32) -> BlockPos {
         let world_y = if self.orientation.is_some() {
             y + self.bounding_box.min_y
         } else {
             y
         };
         let (world_x, world_z) = match self.orientation {
-            None => (x, z),
             Some(Direction::North) => (self.bounding_box.min_x + x, self.bounding_box.max_z - z),
             Some(Direction::South) => (self.bounding_box.min_x + x, self.bounding_box.min_z + z),
             Some(Direction::West) => (self.bounding_box.max_x - z, self.bounding_box.min_z + x),
             Some(Direction::East) => (self.bounding_box.min_x + z, self.bounding_box.min_z + x),
-            Some(Direction::Up | Direction::Down) => (x, z),
+            None | Some(Direction::Up | Direction::Down) => (x, z),
         };
         BlockPos::new(world_x, world_y, world_z)
     }
@@ -1011,7 +1022,7 @@ impl MineshaftPlacer<'_, '_> {
         }
     }
 
-    fn transform_direction(&self, direction: Direction) -> Direction {
+    const fn transform_direction(&self, direction: Direction) -> Direction {
         let mirrored = match self.orientation {
             Some(Direction::South | Direction::West) => Self::mirror_left_right(direction),
             _ => direction,
@@ -1030,63 +1041,63 @@ impl MineshaftPlacer<'_, '_> {
         }
     }
 
-    fn transform_rail_shape(&self, shape: RailShape) -> RailShape {
+    const fn transform_rail_shape(&self, shape: RailShape) -> RailShape {
         match shape {
             RailShape::NorthSouth => match self.transform_direction(Direction::North).axis() {
-                steel_utils::math::Axis::X => RailShape::EastWest,
+                Axis::X => RailShape::EastWest,
                 _ => RailShape::NorthSouth,
             },
             RailShape::EastWest => match self.transform_direction(Direction::East).axis() {
-                steel_utils::math::Axis::Z => RailShape::NorthSouth,
+                Axis::Z => RailShape::NorthSouth,
                 _ => RailShape::EastWest,
             },
             other => other,
         }
     }
 
-    fn air(&self) -> BlockStateId {
+    fn air() -> BlockStateId {
         vanilla_blocks::AIR.default_state()
     }
 
-    fn cave_air(&self) -> BlockStateId {
+    fn cave_air() -> BlockStateId {
         vanilla_blocks::CAVE_AIR.default_state()
     }
 
-    fn cobweb(&self) -> BlockStateId {
+    fn cobweb() -> BlockStateId {
         vanilla_blocks::COBWEB.default_state()
     }
 
-    fn rail(&self) -> BlockStateId {
+    fn rail() -> BlockStateId {
         vanilla_blocks::RAIL.default_state()
     }
 
-    fn spawner(&self) -> BlockStateId {
+    fn spawner() -> BlockStateId {
         vanilla_blocks::SPAWNER.default_state()
     }
 
-    fn chain(&self) -> BlockStateId {
+    fn chain() -> BlockStateId {
         vanilla_blocks::IRON_CHAIN.default_state()
     }
 
-    fn wall_torch(&self) -> BlockStateId {
+    fn wall_torch() -> BlockStateId {
         vanilla_blocks::WALL_TORCH.default_state()
     }
 
-    fn wood_state(&self, mineshaft_type: MineshaftType) -> BlockStateId {
+    fn wood_state(mineshaft_type: MineshaftType) -> BlockStateId {
         match mineshaft_type {
             MineshaftType::Normal => vanilla_blocks::OAK_LOG.default_state(),
             MineshaftType::Mesa => vanilla_blocks::DARK_OAK_LOG.default_state(),
         }
     }
 
-    fn planks_state(&self, mineshaft_type: MineshaftType) -> BlockStateId {
+    fn planks_state(mineshaft_type: MineshaftType) -> BlockStateId {
         match mineshaft_type {
             MineshaftType::Normal => vanilla_blocks::OAK_PLANKS.default_state(),
             MineshaftType::Mesa => vanilla_blocks::DARK_OAK_PLANKS.default_state(),
         }
     }
 
-    fn fence_state(&self, mineshaft_type: MineshaftType) -> BlockStateId {
+    fn fence_state(mineshaft_type: MineshaftType) -> BlockStateId {
         match mineshaft_type {
             MineshaftType::Normal => vanilla_blocks::OAK_FENCE.default_state(),
             MineshaftType::Mesa => vanilla_blocks::DARK_OAK_FENCE.default_state(),

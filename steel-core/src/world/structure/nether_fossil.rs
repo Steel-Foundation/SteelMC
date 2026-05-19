@@ -99,7 +99,7 @@ where
     })
 }
 
-fn make_nether_fossil_piece(
+const fn make_nether_fossil_piece(
     template_id: Identifier,
     position: (i32, i32, i32),
     rotation: Rotation,
