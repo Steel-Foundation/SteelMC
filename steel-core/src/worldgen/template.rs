@@ -1726,27 +1726,42 @@ impl StructureTemplate {
     }
 
     fn parse_block_state_string(registry: &Registry, value: &str) -> Option<BlockStateId> {
-        let (name, properties) = match value.split_once('[') {
-            Some((name, rest)) => {
-                let rest = rest.strip_suffix(']')?;
-                (name, Some(rest))
-            }
-            None => (value, None),
-        };
+        let (name, rest) = Self::read_block_identifier_prefix(value)?;
         let id = Identifier::from_str(name).ok()?;
         let block = registry.blocks.by_key(&id)?;
 
         let mut parsed_properties = Vec::new();
-        if let Some(properties) = properties {
-            for property in properties.split(',') {
-                let (key, value) = property.split_once('=')?;
-                parsed_properties.push((key, value));
+        if let Some(properties) = Self::read_block_state_properties_prefix(rest)? {
+            if !properties.is_empty() {
+                for property in properties.split(',') {
+                    let (key, value) = property.split_once('=')?;
+                    parsed_properties.push((key, value));
+                }
             }
         }
 
         registry
             .blocks
             .state_id_from_block_defaulted_properties(block, parsed_properties)
+    }
+
+    fn read_block_identifier_prefix(value: &str) -> Option<(&str, &str)> {
+        let end = value
+            .char_indices()
+            .find_map(|(index, char)| {
+                (char != ':' && !Identifier::valid_char(char)).then_some(index)
+            })
+            .unwrap_or(value.len());
+        (end > 0).then_some((&value[..end], &value[end..]))
+    }
+
+    fn read_block_state_properties_prefix(rest: &str) -> Option<Option<&str>> {
+        if !rest.starts_with('[') {
+            return Some(None);
+        }
+        let rest = &rest[1..];
+        let end = rest.find(']')?;
+        Some(Some(&rest[..end]))
     }
 
     fn apply_terrain_matching_projection(
@@ -2563,6 +2578,18 @@ mod tests {
                 "minecraft:oak_stairs[facing=east,half=top]"
             )
             .expect("test final state should parse")
+        );
+    }
+
+    #[test]
+    fn jigsaw_replacement_accepts_trailing_text_like_vanilla_parser() {
+        let registry = Registry::new_vanilla();
+        let final_state = "minecraft:acacia_fence[east=false,north=false,south=false,waterlogged=false,west=false]]";
+        let expected = "minecraft:acacia_fence[east=false,north=false,south=false,waterlogged=false,west=false]";
+
+        assert_eq!(
+            StructureTemplate::parse_block_state_string(&registry, final_state),
+            StructureTemplate::parse_block_state_string(&registry, expected)
         );
     }
 
