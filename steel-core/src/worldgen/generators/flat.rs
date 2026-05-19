@@ -8,8 +8,6 @@ use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::world::structure::{ColumnBlock, StructureGenerationContext};
-use crate::worldgen::biomes::obfuscate_biome_seed;
-use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
@@ -26,14 +24,10 @@ pub struct FlatChunkGenerator {
     biome_id: u16,
     /// World seed for structure placement.
     seed: i64,
-    /// Obfuscated seed for `BiomeManager` biome zoom fuzzing.
-    biome_zoom_seed: i64,
     /// Sea level for this flat generator's dimension type.
     sea_level: i32,
     /// Optional structure engine from flat structure overrides.
     structure_generator: Option<StructureGenerator>,
-    /// Cached placed-feature order for biome decoration.
-    feature_runner: FeatureDecorationRunner,
 }
 
 impl FlatChunkGenerator {
@@ -66,10 +60,8 @@ impl FlatChunkGenerator {
             layers,
             biome_id,
             seed,
-            biome_zoom_seed: obfuscate_biome_seed(seed),
             sea_level,
             structure_generator,
-            feature_runner: FeatureDecorationRunner::new(&[&vanilla_biomes::PLAINS], &REGISTRY),
         }
     }
 }
@@ -304,8 +296,5 @@ impl ChunkGenerator for FlatChunkGenerator {
         xoroshiro_worldgen_region_random(world_seed, center)
     }
 
-    fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
-        self.feature_runner
-            .decorate(region, &REGISTRY, self.seed, self.biome_zoom_seed);
-    }
+    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {}
 }
