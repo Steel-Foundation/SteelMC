@@ -8,9 +8,13 @@ use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
+use steel_utils::{BlockPos, Direction};
 use uuid::Uuid;
 
-use super::entities::{BlockDisplayEntity, ItemEntity};
+use super::entities::{
+    BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity, ItemFrameEntity,
+    RawEntity,
+};
 use super::{SharedEntity, next_entity_id};
 use crate::world::World;
 
@@ -132,6 +136,45 @@ impl EntityRegistry {
         Some(entity)
     }
 
+    /// Creates an entity from persisted data, falling back to raw NBT preservation.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all fields are required to reconstruct a persisted entity"
+    )]
+    pub fn create_and_load_or_raw(
+        &self,
+        entity_type: EntityTypeRef,
+        pos: DVec3,
+        uuid: Uuid,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        on_ground: bool,
+        world: Weak<World>,
+        nbt: &BorrowedNbtCompound<'_>,
+    ) -> SharedEntity {
+        let id = entity_type.id();
+        if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
+            let entity_id = next_entity_id();
+            let entity = load_factory(entity_id, pos, uuid, velocity, rotation, on_ground, world);
+            entity.load_additional(nbt);
+            return entity;
+        }
+
+        let entity: SharedEntity = Arc::new(RawEntity::from_saved(
+            next_entity_id(),
+            pos,
+            uuid,
+            velocity,
+            rotation,
+            on_ground,
+            world,
+            entity_type,
+        ));
+        entity.load_additional(nbt);
+        entity
+    }
+
     /// Returns whether a factory is registered for the given type.
     #[must_use]
     pub fn has_factory(&self, entity_type: EntityTypeRef) -> bool {
@@ -212,8 +255,104 @@ pub fn init_entities() {
         },
     );
 
+    // Register end crystal entity factory
+    registry.register(&vanilla_entities::END_CRYSTAL, |id, pos, world| {
+        Arc::new(EndCrystalEntity::new(id, pos, world))
+    });
+    registry.register_load(
+        &vanilla_entities::END_CRYSTAL,
+        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
+            Arc::new(EndCrystalEntity::from_saved(id, pos, uuid, rotation, world))
+        },
+    );
+
+    // Register chest minecart entity factory
+    registry.register(&vanilla_entities::CHEST_MINECART, |id, pos, world| {
+        Arc::new(ChestMinecartEntity::new(id, pos, world))
+    });
+    registry.register_load(
+        &vanilla_entities::CHEST_MINECART,
+        |id, pos, uuid, velocity, rotation, on_ground, world| {
+            Arc::new(ChestMinecartEntity::from_saved(
+                id, pos, uuid, velocity, rotation, on_ground, world,
+            ))
+        },
+    );
+
+    registry.register(&vanilla_entities::ITEM_FRAME, |id, pos, world| {
+        Arc::new(ItemFrameEntity::new(
+            id,
+            BlockPos::new(
+                pos.x.floor() as i32,
+                pos.y.floor() as i32,
+                pos.z.floor() as i32,
+            ),
+            Direction::South,
+            world,
+        ))
+    });
+    registry.register_load(
+        &vanilla_entities::ITEM_FRAME,
+        |id, pos, uuid, _velocity, rotation, _on_ground, world| {
+            Arc::new(ItemFrameEntity::from_saved(id, pos, uuid, rotation, world))
+        },
+    );
+
     assert!(
         ENTITIES.set(registry).is_ok(),
         "Entity registry already initialized"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use simdnbt::owned::NbtCompound;
+    use steel_registry::Registry;
+
+    use super::*;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn create_and_load_or_raw_preserves_unregistered_entity_data() {
+        init_registry();
+        let registry = EntityRegistry::new();
+        let mut nbt = NbtCompound::new();
+        nbt.insert("CustomName", "raw");
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed =
+            read_borrowed_compound(&mut Cursor::new(&bytes)).expect("test nbt should reborrow");
+
+        let entity = registry.create_and_load_or_raw(
+            &vanilla_entities::VILLAGER,
+            DVec3::new(1.0, 2.0, 3.0),
+            Uuid::from_u128(1),
+            DVec3::new(0.1, 0.0, 0.2),
+            (45.0, 10.0),
+            true,
+            Weak::new(),
+            &borrowed,
+        );
+
+        assert_eq!(&entity.entity_type().key, &vanilla_entities::VILLAGER.key);
+        assert_eq!(entity.position(), DVec3::new(1.0, 2.0, 3.0));
+        assert_eq!(entity.velocity(), DVec3::new(0.1, 0.0, 0.2));
+        assert_eq!(entity.rotation(), (45.0, 10.0));
+        assert!(entity.on_ground());
+
+        let mut saved = NbtCompound::new();
+        entity.save_additional(&mut saved);
+        assert_eq!(
+            saved.string("CustomName").map(ToString::to_string),
+            Some("raw".to_owned())
+        );
+    }
 }

@@ -25,7 +25,7 @@ use steel_registry::{
 use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 
-use crate::config::STEEL_CONFIG;
+use steel_protocol::packet_traits::CompressionInfo;
 
 /// Caches compressed registry packets to avoid re-compressing them for every player.
 pub struct RegistryCache {
@@ -35,21 +35,15 @@ pub struct RegistryCache {
     pub tags_packet: Arc<EncodedPacket>,
 }
 
-impl Default for RegistryCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl RegistryCache {
     /// Creates a new `RegistryCache` from the given registry.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(compression: Option<CompressionInfo>) -> Self {
         let registry_packets = Self::build_registry_packets(&REGISTRY);
         let tags_by_registry_packet = Self::build_tags_packet(&REGISTRY);
 
         let (registry_packets, tags_packet) =
-            build_compressed_packets(registry_packets, tags_by_registry_packet);
+            build_compressed_packets(registry_packets, tags_by_registry_packet, compression);
 
         Self {
             registry_packets,
@@ -158,11 +152,13 @@ impl RegistryCache {
 }
 
 /// Compresses a packet.
-fn compress_packet<P: ClientPacket>(packet: P) -> Option<EncodedPacket> {
-    let compression_info = STEEL_CONFIG.compression;
+fn compress_packet<P: ClientPacket>(
+    packet: P,
+    compression: Option<CompressionInfo>,
+) -> Option<EncodedPacket> {
     let id = packet.get_id(ConnectionProtocol::Config);
 
-    EncodedPacket::from_bare(packet, compression_info, ConnectionProtocol::Config)
+    EncodedPacket::from_bare(packet, compression, ConnectionProtocol::Config)
         .map_err(|_| {
             log::error!("Failed to encode packet: {id:?}");
         })
@@ -175,15 +171,17 @@ fn compress_packet<P: ClientPacket>(packet: P) -> Option<EncodedPacket> {
 pub fn build_compressed_packets(
     registry_packets: Vec<CRegistryData>,
     tags_packet: CUpdateTags,
+    compression: Option<CompressionInfo>,
 ) -> (Arc<[EncodedPacket]>, EncodedPacket) {
     let mut compressed_packets = Vec::with_capacity(registry_packets.len());
 
     for packet in registry_packets {
-        compressed_packets.push(compress_packet(packet).expect("Failed to compress packet"));
+        compressed_packets
+            .push(compress_packet(packet, compression).expect("Failed to compress packet"));
     }
 
     let compressed_tags_packet =
-        compress_packet(tags_packet).expect("Failed to compress tags packet");
+        compress_packet(tags_packet, compression).expect("Failed to compress tags packet");
 
     (compressed_packets.into(), compressed_tags_packet)
 }

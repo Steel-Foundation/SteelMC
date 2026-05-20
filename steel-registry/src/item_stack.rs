@@ -845,6 +845,14 @@ impl ToNbtTag for ItemStack {
     /// }
     /// ```
     fn to_nbt_tag(self) -> simdnbt::owned::NbtTag {
+        self.to_nbt_tag_ref()
+    }
+}
+
+impl ItemStack {
+    /// Converts this item stack to an NBT tag for persistent storage without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> simdnbt::owned::NbtTag {
         if self.is_empty() {
             // Empty stacks are represented as an empty compound
             return simdnbt::owned::NbtTag::Compound(NbtCompound::new());
@@ -860,7 +868,7 @@ impl ToNbtTag for ItemStack {
 
         // components: The component patch (only if non-empty)
         if !self.patch.is_empty() {
-            compound.insert("components", self.patch.to_nbt_tag());
+            compound.insert("components", self.patch.to_nbt_tag_ref());
         }
 
         simdnbt::owned::NbtTag::Compound(compound)

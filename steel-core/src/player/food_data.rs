@@ -3,7 +3,16 @@
 //! Manages food level, saturation, and exhaustion — the three values that
 //! control natural health regeneration and starvation damage.
 
+use std::sync::atomic::Ordering;
+
+use steel_registry::game_rules::GameRuleValue;
+use steel_registry::vanilla_damage_types;
+use steel_registry::vanilla_game_rules::NATURAL_HEALTH_REGENERATION;
 use steel_utils::types::Difficulty;
+
+use crate::entity::LivingEntity;
+use crate::entity::damage::DamageSource;
+use crate::player::Player;
 
 /// All food-system constants bundled in one place.
 pub mod food_constants {
@@ -250,6 +259,92 @@ pub enum FoodTickResult {
     },
     /// The player should take 1 point of starvation damage
     Starve,
+}
+
+impl Player {
+    /// Ticks food/hunger regeneration and starvation.
+    pub(super) fn tick_regeneration(&self) {
+        let world = self.get_world();
+        let difficulty = world.level_data.read().data().difficulty;
+        let natural_regen =
+            world.get_game_rule(&NATURAL_HEALTH_REGENERATION) == GameRuleValue::Bool(true);
+        let tick = self.tick_count.load(Ordering::Relaxed);
+
+        if difficulty == Difficulty::Peaceful && natural_regen {
+            if tick % 20 == 0 {
+                if self.is_hurt() {
+                    self.heal(1.0);
+                }
+
+                let mut food = self.food_data.lock();
+                if food.saturation_level < food_constants::MAX_SATURATION {
+                    food.saturation_level += 1.0;
+                }
+            }
+
+            if tick % 10 == 0 {
+                let mut food = self.food_data.lock();
+                if food.needs_food() {
+                    food.food_level += 1;
+                }
+            }
+        }
+
+        let current_health = self.get_health();
+        let max_health = self.get_max_health();
+
+        let mut food = self.food_data.lock();
+        let result = food.tick(difficulty, natural_regen, current_health, max_health);
+
+        match result {
+            FoodTickResult::Heal { amount, exhaustion } => {
+                food.add_exhaustion(exhaustion);
+
+                drop(food);
+                self.heal(amount);
+            }
+            FoodTickResult::Starve => {
+                drop(food);
+
+                self.hurt(
+                    &DamageSource::environment(&vanilla_damage_types::STARVE),
+                    1.0,
+                );
+            }
+            FoodTickResult::None => {}
+        }
+    }
+
+    /// Adds food exhaustion, gated by invulnerability.
+    pub fn cause_food_exhaustion(&self, amount: f32) {
+        if !self.abilities.lock().invulnerable {
+            self.food_data.lock().add_exhaustion(amount);
+        }
+    }
+
+    /// Returns `true` if the player is alive but below max health.
+    pub fn is_hurt(&self) -> bool {
+        let health = self.get_health();
+        health > 0.0 && health < self.get_max_health()
+    }
+
+    /// If the player's health is at or below zero (e.g. they disconnected while dead),
+    /// resets health to max so they don't enter a zombie state on rejoin.
+    /// Returns `true` if health was reset.
+    pub fn reset_health_if_dead(&self) -> bool {
+        let mut entity_data = self.entity_data.lock();
+        let health = *entity_data.health.get();
+        if health <= 0.0 {
+            entity_data.health.set(self.get_max_health());
+            drop(entity_data);
+
+            let mut living_base = self.living_base.lock();
+            living_base.reset_death_state();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]

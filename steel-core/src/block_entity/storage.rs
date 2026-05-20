@@ -1,5 +1,7 @@
 //! Block entity storage for chunks.
 
+use std::fmt;
+
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockPos, locks::SyncMutex, locks::SyncRwLock};
 
@@ -155,5 +157,14 @@ impl BlockEntityStorage {
 impl Default for BlockEntityStorage {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl fmt::Debug for BlockEntityStorage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BlockEntityStorage")
+            .field("len", &self.len())
+            .field("ticking_len", &self.tickers.lock().len())
+            .finish_non_exhaustive()
     }
 }

@@ -10,6 +10,7 @@ build = "build/build.rs"
 #default = ["stand-alone"]
 stand-alone = []
 slow_chunk_gen = []
+flint = []
 
 [dependencies]
 # Internal crates
@@ -18,6 +19,7 @@ steel-macros.workspace = true
 steel-protocol.workspace = true
 steel-registry.workspace = true
 steel-utils.workspace = true
+steel-worldgen.workspace = true
 
 # Async runtime
 tokio.workspace = true
@@ -27,6 +29,7 @@ futures.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 wincode.workspace = true
 
 # Error handling

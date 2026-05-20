@@ -191,6 +191,11 @@ pub trait Entity: Send + Sync {
         (0.0, 0.0)
     }
 
+    /// Extra spawn-packet data used by vanilla for entity-specific construction.
+    fn spawn_data(&self) -> i32 {
+        0
+    }
+
     /// Gets the eye height for this entity.
     ///
     /// Default implementation returns the eye height from the entity type dimensions.
@@ -389,13 +394,13 @@ pub trait Entity: Send + Sync {
         false
     }
 
-    /// Teleports an entity from one dimension to another.
+    /// Teleports an entity from one loaded world to another.
     ///
     /// The default implementation logs a warning — non-player entity teleportation
     /// is not yet implemented. Override in entity types that support it.
     fn change_world(self: Arc<Self>, _teleport_transition: &TeleportTransition) {
         log::warn!(
-            "change_world called on entity {} which does not implement dimension changes",
+            "change_world called on entity {} which does not implement world changes",
             self.id(),
         );
     }

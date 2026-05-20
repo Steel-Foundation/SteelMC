@@ -120,7 +120,7 @@ pub use c_level_event::CLevelEvent;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
-    CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, calc_delta, to_angle_byte,
+    CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
 };
 pub use c_open_screen::COpenScreen;
 pub use c_open_sign_editor::COpenSignEditor;

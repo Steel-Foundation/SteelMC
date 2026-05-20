@@ -28,19 +28,14 @@ impl World {
         let start = Instant::now();
 
         // Save player data before removal
-        if let Some(server) = player.server.upgrade()
-            && let Err(e) = server.player_data_storage.save(&player).await
-        {
+        let server = player.server();
+        if let Err(e) = server.player_data_storage.save(&player).await {
             log::error!("Failed to save player data for {uuid}: {e}");
         }
 
         // Unregister from entity cache
         let pos = player.position();
-        let section = SectionPos::new(
-            (pos.x as i32) >> 4,
-            (pos.y as i32) >> 4,
-            (pos.z as i32) >> 4,
-        );
+        let section = SectionPos::from_entity_pos(pos);
         self.entity_cache.unregister(entity_id, uuid, section);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
@@ -55,11 +50,11 @@ impl World {
         log::info!("Player {uuid} removed in {:?}", start.elapsed());
     }
 
-    /// Removes a player from the world during a dimension change.
+    /// Removes a player from the world during a world change.
     ///
     /// Unlike `remove_player`, this is synchronous and skips player data saving and tab list
     /// removal — the player stays in the global tab list since they are only switching worlds.
-    pub fn remove_player_for_dimension_change(self: &Arc<Self>, player: &Arc<Player>) {
+    pub fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
         let uuid = player.gameprofile.id;
         let entity_id = player.id;
 
@@ -68,11 +63,7 @@ impl World {
         }
 
         let pos = player.position();
-        let section = SectionPos::new(
-            (pos.x as i32) >> 4,
-            (pos.y as i32) >> 4,
-            (pos.z as i32) >> 4,
-        );
+        let section = SectionPos::from_entity_pos(pos);
         self.entity_cache.unregister(entity_id, uuid, section);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(player);
@@ -84,7 +75,7 @@ impl World {
     /// Adds a player to the world.
     ///
     /// On `InitialJoin`, sends full tab list + entity spawn synchronization to/from all
-    /// players. On `DimensionChange`, this is skipped — the player already exists in all
+    /// players. On `WorldChange`, this is skipped — the player already exists in all
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
     pub fn add_player(self: &Arc<Self>, player: Arc<Player>, reason: ResetReason) {
         if !self.players.insert(player.clone()) {

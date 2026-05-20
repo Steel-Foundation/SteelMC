@@ -2,13 +2,7 @@
 //!
 //! This crate contains a collection of utilities used by the Steel Minecraft server.
 
-#![feature(
-    const_trait_impl,
-    const_cmp,
-    derive_const,
-    array_try_from_fn,
-    portable_simd
-)]
+#![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = "26.1";
@@ -16,8 +10,6 @@ pub const MC_VERSION: &str = "26.1";
 /// Climate system for biome selection.
 pub mod climate;
 pub mod codec;
-/// Density function system for world generation.
-pub mod density;
 /// Direction enum for the six cardinal directions.
 pub mod direction;
 mod front_vec;
@@ -28,19 +20,19 @@ pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
 pub mod math;
-/// Noise generation utilities for world generation.
-pub mod noise;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;
+pub mod rotation;
 pub mod serial;
-/// Surface rule context types for generated code.
-pub mod surface;
 pub mod text;
 /// A module for common types.
 pub mod types;
 /// UUID extension trait for Minecraft NBT serialization.
 pub mod uuid_ext;
+/// Vanilla-compatible value provider types (`VerticalAnchor`,
+/// `HeightProvider`, `FloatProvider`).
+pub mod value_providers;
 
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/ids.rs"]
@@ -57,10 +49,16 @@ pub mod entity_events;
 
 pub use direction::Direction;
 pub use front_vec::FrontVec;
+pub use rotation::Rotation;
 pub use types::BlockPos;
 pub use types::BlockStateId;
 pub use types::BoundingBox;
 pub use types::ChunkPos;
 pub use types::Identifier;
+pub use types::PackedBlockPos;
+pub use types::PackedChunkLocalXZ;
+pub use types::PackedChunkPos;
+pub use types::PackedSectionBlockPos;
+pub use types::PackedSectionPos;
 pub use types::SectionPos;
 pub use uuid_ext::UuidExt;

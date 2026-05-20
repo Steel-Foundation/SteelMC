@@ -7,8 +7,8 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_dimension_types;
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_blocks};
 use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
@@ -16,7 +16,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 /// Behavior for fire blocks.
 #[block_behavior]
@@ -31,10 +31,13 @@ impl FireBlock {
         Self { block }
     }
 
-    /// Returns true if the dimension supports nether portal creation (Overworld or Nether).
-    pub(crate) fn in_portal_dimension(world: &World) -> bool {
-        world.dimension == &vanilla_dimension_types::OVERWORLD
-            || world.dimension == &vanilla_dimension_types::THE_NETHER
+    /// Returns true if the world supports nether portal creation.
+    ///
+    /// Vanilla expresses this in terms of dimensions; Steel checks the loaded
+    /// world's vanilla dimension type.
+    pub(crate) fn in_portal_world(world: &World) -> bool {
+        world.dimension_type == &vanilla_dimension_types::OVERWORLD
+            || world.dimension_type == &vanilla_dimension_types::THE_NETHER
     }
 
     /// Checks if fire can be placed at `pos`, matching vanilla's `BaseFireBlock.canBePlacedAt`.
@@ -52,7 +55,7 @@ impl FireBlock {
 
     /// Matches vanilla's `FireBlock.canSurvive`: block below has a sturdy top face,
     /// or an adjacent block is flammable.
-    fn can_survive_at(world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive_at(world: &dyn LevelReader, pos: BlockPos) -> bool {
         world
             .get_block_state(pos.below())
             .is_face_sturdy(Direction::Up)
@@ -60,9 +63,9 @@ impl FireBlock {
     }
 
     /// Matches vanilla's `BaseFireBlock.isPortal`: checks if placing fire here could form a portal.
-    /// Requires portal dimension, adjacent obsidian, and a valid empty portal shape.
+    /// Requires a portal-capable world, adjacent obsidian, and a valid empty portal shape.
     fn is_portal(world: &Arc<World>, pos: BlockPos, forward_dir: Direction) -> bool {
-        if !Self::in_portal_dimension(world) {
+        if !Self::in_portal_world(world) {
             return false;
         }
 
@@ -92,7 +95,7 @@ impl BlockBehavior for FireBlock {
         Some(self.block.default_state())
     }
 
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::can_survive_at(world, pos)
     }
 
@@ -109,7 +112,7 @@ impl BlockBehavior for FireBlock {
             return;
         }
 
-        if Self::in_portal_dimension(world)
+        if Self::in_portal_world(world)
             && let Some(shape) =
                 PortalShape::find_empty_portal_shape(world, pos, &nether_portal_config())
         {
@@ -124,5 +127,38 @@ impl BlockBehavior for FireBlock {
                 UpdateFlags::UPDATE_ALL,
             );
         }
+    }
+}
+
+/// Behavior for soul fire survival.
+///
+/// Vanilla keeps this as `SoulFireBlock`, separate from normal `FireBlock`.
+/// Spread/burn behavior is still TODO with the rest of fire ticking.
+// TODO: Implement full vanilla behavior beyond can_survive.
+#[block_behavior]
+pub struct SoulFireBlock {
+    block: BlockRef,
+}
+
+impl SoulFireBlock {
+    /// Creates a new soul fire block behavior.
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self { block }
+    }
+}
+
+impl BlockBehavior for SoulFireBlock {
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let state = self.block.default_state();
+        self.can_survive(state, context.world, context.relative_pos)
+            .then_some(state)
+    }
+
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        REGISTRY.blocks.is_in_tag(
+            world.get_block_state(pos.below()).get_block(),
+            &vanilla_block_tags::SOUL_FIRE_BASE_BLOCKS_TAG,
+        )
     }
 }

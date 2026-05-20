@@ -129,9 +129,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         // `DIM*DIM*DIM` `V`s, so casting its base pointer to `*const V` and
         // building a slice of that length is sound. `cube` is a live `Box`, so
         // the pointer is valid for the lifetime of the slice.
-        let flat: &[V] = unsafe {
-            std::slice::from_raw_parts(cube.as_ptr().cast::<V>(), total)
-        };
+        let flat: &[V] = unsafe { std::slice::from_raw_parts(cube.as_ptr().cast::<V>(), total) };
 
         let mut i = 0;
         while i < total {
@@ -215,10 +213,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
             // `DIM*DIM*DIM` `V`s; the cast preserves the live `&mut Box`'s
             // borrow because the returned slice cannot outlive `self`.
             Some(unsafe {
-                std::slice::from_raw_parts_mut(
-                    cube.as_mut_ptr().cast::<V>(),
-                    DIM * DIM * DIM,
-                )
+                std::slice::from_raw_parts_mut(cube.as_mut_ptr().cast::<V>(), DIM * DIM * DIM)
             })
         } else {
             None

@@ -1,5 +1,6 @@
 use std::fs;
 
+use crate::generator_functions::generate_identifier;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -10,12 +11,6 @@ use steel_utils::Identifier;
 pub struct BannerPatternJson {
     asset_id: Identifier,
     translation_key: String,
-}
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
 }
 
 pub(crate) fn build() -> TokenStream {

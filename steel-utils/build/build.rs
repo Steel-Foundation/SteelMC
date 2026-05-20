@@ -7,7 +7,7 @@ use text_components::build::build_translations;
 mod entity_events;
 mod translations;
 
-const FMT: bool = true;
+const FMT: bool = cfg!(feature = "fmt");
 
 const OUT_DIR: &str = "src/generated";
 const IDS: &str = "vanilla_translations/ids";

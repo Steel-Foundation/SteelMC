@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use steel_core::config::{STEEL_CONFIG, ServerLinks};
 use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
 use steel_core::player::networking::JavaConnection;
@@ -56,14 +55,14 @@ impl JavaTcpClient {
         .await;
 
         // Send server links if enabled and configured
-        if let Some(server_links) = ServerLinks::from_config() {
+        if let Some(server_links) = self.server.config.server_links_packet() {
             self.send_bare_packet_now(server_links).await;
         }
 
         self.send_bare_packet_now(CSelectKnownPacks::new(vec![KnownPack::new(
             "minecraft".to_string(),
             "core".to_string(),
-            STEEL_CONFIG.mc_version.to_string(),
+            steel_utils::MC_VERSION.to_string(),
         )]))
         .await;
     }
@@ -120,6 +119,7 @@ impl JavaTcpClient {
                 connection,
                 world,
                 Arc::downgrade(&self.server),
+                self.server.config.clone(),
                 entity_id,
                 player_weak,
                 client_info,

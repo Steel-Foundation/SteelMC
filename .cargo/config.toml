@@ -3,7 +3,7 @@
 [build]
 rustflags = ["-Zthreads=0", "-Ctarget-cpu=native"]
 # TODO: remove once nightly ICE with incremental cache is fixed
-incremental = false
+#incremental = false
 
 # Cargo NOTE: per-target rustflags replace (not extend) `build.rustflags`.
 # Repeat `-Ctarget-cpu=native` and `-Zthreads=0` here so they aren't dropped.

@@ -22,7 +22,7 @@ use steel_utils::{
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, InteractionResult},
     player,
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
 const CANDLES_PROPERTY: IntProperty = BlockStateProperties::CANDLES;
@@ -49,7 +49,7 @@ impl BlockBehavior for CandleBlock {
     fn can_survive(
         &self,
         _state: steel_utils::BlockStateId,
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
         world
@@ -71,7 +71,7 @@ impl BlockBehavior for CandleBlock {
     fn update_shape(
         &self,
         state: steel_utils::BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

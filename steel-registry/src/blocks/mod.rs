@@ -21,8 +21,16 @@ pub struct Block {
     pub default_state_offset: u16,
     /// Function to get collision shape for a state offset
     pub collision_shape: ShapeFn,
+    /// Function to get block support shape for a state offset
+    pub support_shape: ShapeFn,
     /// Function to get outline shape for a state offset
     pub outline_shape: ShapeFn,
+    /// Function to get occlusion shape for a state offset
+    pub occlusion_shape: ShapeFn,
+    /// Function to get interaction shape for a state offset
+    pub interaction_shape: ShapeFn,
+    /// Function to get visual shape for a state offset
+    pub visual_shape: ShapeFn,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
 }
@@ -43,6 +51,11 @@ const fn full_block_shape(_offset: u16) -> &'static [shapes::AABB] {
     &[shapes::AABB::FULL_BLOCK]
 }
 
+/// Default interaction shape function that returns an empty shape.
+const fn empty_shape(_offset: u16) -> &'static [shapes::AABB] {
+    &[]
+}
+
 impl Block {
     pub const fn new(
         key: Identifier,
@@ -55,15 +68,31 @@ impl Block {
             properties,
             default_state_offset: 0,
             collision_shape: full_block_shape,
+            support_shape: full_block_shape,
             outline_shape: full_block_shape,
+            occlusion_shape: full_block_shape,
+            interaction_shape: empty_shape,
+            visual_shape: full_block_shape,
             id: OnceLock::new(),
         }
     }
 
     /// Sets the shape functions for this block.
-    pub const fn with_shapes(mut self, collision: ShapeFn, outline: ShapeFn) -> Self {
+    pub const fn with_shapes(
+        mut self,
+        collision: ShapeFn,
+        support: ShapeFn,
+        outline: ShapeFn,
+        occlusion: ShapeFn,
+        interaction: ShapeFn,
+        visual: ShapeFn,
+    ) -> Self {
         self.collision_shape = collision;
+        self.support_shape = support;
         self.outline_shape = outline;
+        self.occlusion_shape = occlusion;
+        self.interaction_shape = interaction;
+        self.visual_shape = visual;
         self
     }
 
@@ -73,10 +102,34 @@ impl Block {
         (self.collision_shape)(offset)
     }
 
+    /// Gets the block support shape for a given state offset.
+    #[inline]
+    pub fn get_support_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.support_shape)(offset)
+    }
+
     /// Gets the outline shape for a given state offset.
     #[inline]
     pub fn get_outline_shape(&self, offset: u16) -> &'static [shapes::AABB] {
         (self.outline_shape)(offset)
+    }
+
+    /// Gets the occlusion shape for a given state offset.
+    #[inline]
+    pub fn get_occlusion_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.occlusion_shape)(offset)
+    }
+
+    /// Gets the interaction shape for a given state offset.
+    #[inline]
+    pub fn get_interaction_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.interaction_shape)(offset)
+    }
+
+    /// Gets the visual shape for a given state offset.
+    #[inline]
+    pub fn get_visual_shape(&self, offset: u16) -> &'static [shapes::AABB] {
+        (self.visual_shape)(offset)
     }
 
     /// Sets the default state offset for this block.
@@ -200,16 +253,36 @@ impl BlockRegistry {
         id
     }
 
+    fn try_block_index(&self, block: BlockRef) -> Option<usize> {
+        if let Some(id) = block.id.get().copied()
+            && self
+                .blocks_by_id
+                .get(id)
+                .is_some_and(|registered| *registered == block)
+        {
+            return Some(id);
+        }
+
+        self.blocks_by_key.get(&block.key).copied()
+    }
+
+    fn block_index(&self, block: BlockRef) -> usize {
+        let Some(id) = self.try_block_index(block) else {
+            panic!("Block not found");
+        };
+        id
+    }
+
     #[must_use]
     pub fn get_base_state_id(&self, block: BlockRef) -> BlockStateId {
-        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        let id = self.block_index(block);
         BlockStateId(self.block_to_base_state[id])
     }
 
     /// Gets the default state ID for a block (base state + default offset)
     #[must_use]
     pub fn get_default_state_id(&self, block: BlockRef) -> BlockStateId {
-        let id = *self.blocks_by_key.get(&block.key).expect("Block not found");
+        let id = self.block_index(block);
         let base = self.block_to_base_state[id];
         BlockStateId(base + block.default_state_offset)
     }
@@ -235,22 +308,11 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        // Decode the property indices from the relative state index.
-        // Properties are decoded in reverse order (last property = inner loop).
-        let mut index = relative_index;
-        let mut property_values = vec![("", ""); block.properties.len()];
-
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
-            let current_index = (index % count) as usize;
-
-            let possible_values = prop.get_possible_values();
-            property_values[i] = (prop.get_name(), possible_values[current_index]);
-
-            index /= count;
-        }
-
-        property_values
+        Self::decode_property_indices(block, relative_index)
+            .into_iter()
+            .zip(block.properties)
+            .map(|(value_index, prop)| (prop.get_name(), prop.get_possible_values()[value_index]))
+            .collect()
     }
 
     /// Gets the state ID for a block with the given properties.
@@ -266,37 +328,88 @@ impl BlockRegistry {
         properties: &[(&str, &str)],
     ) -> Option<BlockStateId> {
         let block = self.by_key(key)?;
-        let block_id = *self.blocks_by_key.get(key)?;
+        self.state_id_from_block_properties(block, properties)
+    }
+
+    /// Gets the state ID for a block with the given properties.
+    ///
+    /// Returns `None` if the block is not registered or if any property
+    /// name/value is invalid.
+    #[must_use]
+    pub fn state_id_from_block_properties(
+        &self,
+        block: BlockRef,
+        properties: &[(&str, &str)],
+    ) -> Option<BlockStateId> {
+        let block_id = self.try_block_index(block)?;
         let base_state_id = self.block_to_base_state[block_id];
 
-        // If no properties, just return base state
-        if block.properties.is_empty() {
-            return Some(BlockStateId(base_state_id));
+        let mut property_indices = vec![0usize; block.properties.len()];
+        Self::apply_property_overrides(block, &mut property_indices, properties.iter().copied())?;
+
+        Some(BlockStateId(
+            base_state_id + Self::encode_property_indices(block, &property_indices),
+        ))
+    }
+
+    /// Gets the state ID for a block by applying properties over that block's
+    /// registered default state.
+    ///
+    /// Returns `None` if the block is not registered or if any property
+    /// name/value is invalid.
+    #[must_use]
+    pub fn state_id_from_block_defaulted_properties<'a>(
+        &self,
+        block: BlockRef,
+        properties: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Option<BlockStateId> {
+        let block_id = self.try_block_index(block)?;
+        let base_state_id = self.block_to_base_state[block_id];
+
+        let mut property_indices = Self::decode_property_indices(block, block.default_state_offset);
+        Self::apply_property_overrides(block, &mut property_indices, properties)?;
+
+        Some(BlockStateId(
+            base_state_id + Self::encode_property_indices(block, &property_indices),
+        ))
+    }
+
+    fn decode_property_indices(block: BlockRef, mut offset: u16) -> Vec<usize> {
+        let mut property_indices = vec![0; block.properties.len()];
+
+        for (i, prop) in block.properties.iter().enumerate().rev() {
+            let count = prop.get_possible_values().len() as u16;
+            property_indices[i] = (offset % count) as usize;
+            offset /= count;
         }
 
-        // Build property indices (start with defaults = 0)
-        let mut property_indices = vec![0usize; block.properties.len()];
+        property_indices
+    }
 
-        // Apply provided properties
+    fn apply_property_overrides<'a>(
+        block: BlockRef,
+        property_indices: &mut [usize],
+        properties: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Option<()> {
         for (prop_name, prop_value) in properties {
-            // Find this property in the block's property list
             let prop_idx = block
                 .properties
                 .iter()
-                .position(|p| p.get_name() == *prop_name)?;
+                .position(|p| p.get_name() == prop_name)?;
 
-            // Find the value index
             let prop = block.properties[prop_idx];
             let value_idx = prop
                 .get_possible_values()
                 .iter()
-                .position(|v| *v == *prop_value)?;
+                .position(|v| *v == prop_value)?;
 
             property_indices[prop_idx] = value_idx;
         }
 
-        // Encode property indices to state offset.
-        // Properties are processed in reverse order (last property = inner loop).
+        Some(())
+    }
+
+    fn encode_property_indices(block: BlockRef, property_indices: &[usize]) -> u16 {
         let mut offset = 0u16;
         let mut multiplier = 1u16;
         for (idx, prop) in property_indices.iter().zip(block.properties.iter()).rev() {
@@ -304,7 +417,7 @@ impl BlockRegistry {
             multiplier *= prop.get_possible_values().len() as u16;
         }
 
-        Some(BlockStateId(base_state_id + offset))
+        offset
     }
 
     // Panics if that property isn't supposed to be on this block.
@@ -331,24 +444,12 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        // Decode the property indices from the relative state index.
-        // Properties are decoded in reverse order (last property = inner loop).
-        let mut index = relative_index;
-        let mut property_value_index = 0;
+        let property_indices = Self::decode_property_indices(block, relative_index);
+        let block_property = block.properties[property_index];
+        let block_values = block_property.get_possible_values();
+        let block_value = block_values[property_indices[property_index]];
 
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
-            let current_index = (index % count) as usize;
-
-            if i == property_index {
-                property_value_index = current_index;
-            }
-
-            index /= count;
-        }
-
-        // Convert the index back to the actual value
-        Some(property.value_from_index(property_value_index))
+        property.get_value(block_value)
     }
 
     // Panics if that property isn't supposed to be on this block.
@@ -391,8 +492,18 @@ impl BlockRegistry {
             index /= count;
         }
 
-        // Update the specific property's index
-        let new_value_index = property.get_internal_index(&value);
+        let caller_value_index = property.get_internal_index(&value);
+        let caller_values = property.as_dyn().get_possible_values();
+        let value_name = caller_values[caller_value_index];
+        let block_values = block.properties[property_index].get_possible_values();
+        let Some(new_value_index) = block_values.iter().position(|v| *v == value_name) else {
+            panic!(
+                "Value {} for property {} not found on block {}",
+                value_name,
+                property.as_dyn().get_name(),
+                block.key
+            );
+        };
         property_indices[property_index] = new_value_index;
 
         // Re-encode the property indices back to a state ID.
@@ -431,13 +542,11 @@ crate::impl_tagged_registry!(BlockRegistry, blocks_by_key, "block");
 
 // Shape lookup methods
 impl BlockRegistry {
-    /// Gets the collision shape for a block state.
-    ///
-    /// Returns a slice of AABBs that make up the collision shape.
-    /// For simple blocks this is typically a single full-block AABB.
-    /// For complex blocks like fences, this may be multiple AABBs.
-    #[must_use]
-    pub fn get_collision_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+    fn shape_for_state(
+        &self,
+        state_id: BlockStateId,
+        shape: fn(&Block, u16) -> &'static [shapes::AABB],
+    ) -> &'static [shapes::AABB] {
         let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
         let Some(block) = block else {
             return &[shapes::AABB::FULL_BLOCK];
@@ -449,7 +558,26 @@ impl BlockRegistry {
             .unwrap_or(0);
         let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
         let offset = state_id.0.saturating_sub(base_state);
-        block.get_collision_shape(offset)
+        shape(block, offset)
+    }
+
+    /// Gets the collision shape for a block state.
+    ///
+    /// Returns a slice of AABBs that make up the collision shape.
+    /// For simple blocks this is typically a single full-block AABB.
+    /// For complex blocks like fences, this may be multiple AABBs.
+    #[must_use]
+    pub fn get_collision_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_collision_shape)
+    }
+
+    /// Gets the block support shape for a block state.
+    ///
+    /// Vanilla support checks use `BlockState.getBlockSupportShape`, not collision shape,
+    /// for `isFaceSturdy` and multiface side attachment.
+    #[must_use]
+    pub fn get_support_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_support_shape)
     }
 
     /// Gets the outline shape for a block state.
@@ -458,26 +586,46 @@ impl BlockRegistry {
     /// Often the same as collision shape, but can differ (e.g., fences).
     #[must_use]
     pub fn get_outline_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
-        let block = self.state_to_block_lookup.get(state_id.0 as usize).copied();
-        let Some(block) = block else {
-            return &[shapes::AABB::FULL_BLOCK];
-        };
-        let block_id = self
-            .state_to_block_id
-            .get(state_id.0 as usize)
-            .copied()
-            .unwrap_or(0);
-        let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
-        let offset = state_id.0.saturating_sub(base_state);
-        block.get_outline_shape(offset)
+        self.shape_for_state(state_id, Block::get_outline_shape)
     }
 
-    /// Gets both collision and outline shapes for a block state.
+    /// Gets the occlusion shape for a block state.
+    ///
+    /// Vanilla caches this as `BlockState.getOcclusionShape()` and uses it for
+    /// `isSolidRender`, light occlusion, and face occlusion.
+    #[must_use]
+    pub fn get_occlusion_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_occlusion_shape)
+    }
+
+    /// Gets the interaction shape for a block state.
+    ///
+    /// Vanilla uses this as an interaction hit override after the primary raycast
+    /// shape has already hit.
+    #[must_use]
+    pub fn get_interaction_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_interaction_shape)
+    }
+
+    /// Gets the visual shape for a block state.
+    ///
+    /// Vanilla uses this for visual raycasts; it defaults to collision shape but
+    /// differs for a few blocks such as fences, mud, soul sand, and powder snow.
+    #[must_use]
+    pub fn get_visual_shape(&self, state_id: BlockStateId) -> &'static [shapes::AABB] {
+        self.shape_for_state(state_id, Block::get_visual_shape)
+    }
+
+    /// Gets all static shape channels for a block state.
     #[must_use]
     pub fn get_shapes(&self, state_id: BlockStateId) -> shapes::BlockShapes {
         shapes::BlockShapes::new(
             self.get_collision_shape(state_id),
+            self.get_support_shape(state_id),
             self.get_outline_shape(state_id),
+            self.get_occlusion_shape(state_id),
+            self.get_interaction_shape(state_id),
+            self.get_visual_shape(state_id),
         )
     }
 
@@ -488,7 +636,7 @@ impl BlockRegistry {
             .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
             .copied()
             .collect();
-        self.state_id_from_properties(&target.key, &matching)
+        self.state_id_from_block_properties(target, &matching)
             .unwrap_or_else(|| self.get_default_state_id(target))
     }
 }
@@ -530,6 +678,7 @@ use steel_utils::{BlockStateId, Identifier};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blocks::properties::{BlockStateProperties, Direction};
     use crate::vanilla_blocks;
 
     fn create_test_registry() -> BlockRegistry {
@@ -663,6 +812,27 @@ mod tests {
     }
 
     #[test]
+    fn test_state_id_from_block_defaulted_properties_keeps_missing_defaults() {
+        let registry = create_test_registry();
+        let key = Identifier::vanilla_static("redstone_wire");
+        let block = registry.by_key(&key).expect("redstone_wire should exist");
+
+        let state_id = registry
+            .state_id_from_block_defaulted_properties(block, [("power", "10")])
+            .expect("Should find state");
+
+        let retrieved = registry.get_properties(state_id);
+
+        let power = retrieved.iter().find(|(n, _)| *n == "power").unwrap();
+        assert_eq!(power.1, "10");
+
+        for direction in ["east", "north", "south", "west"] {
+            let side = retrieved.iter().find(|(n, _)| *n == direction).unwrap();
+            assert_eq!(side.1, "none");
+        }
+    }
+
+    #[test]
     fn test_state_id_from_properties_empty() {
         let registry = create_test_registry();
         let key = Identifier::vanilla_static("redstone_wire");
@@ -715,6 +885,53 @@ mod tests {
         let invalid_props = [("power", "999")]; // Power only goes 0-15
         let result = registry.state_id_from_properties(&key, &invalid_props);
         assert!(result.is_none(), "Should return None for invalid value");
+    }
+
+    #[test]
+    fn same_named_direction_properties_translate_by_value_name() {
+        let registry = create_test_registry();
+        let wall_torch = registry.get_default_state_id(&vanilla_blocks::WALL_TORCH);
+
+        let south_torch = registry.set_property(
+            wall_torch,
+            &BlockStateProperties::HORIZONTAL_FACING,
+            Direction::South,
+        );
+        let facing_from_six_way_property =
+            registry.try_get_property(south_torch, &BlockStateProperties::FACING);
+        assert_eq!(facing_from_six_way_property, Some(Direction::South));
+
+        let west_torch =
+            registry.set_property(south_torch, &BlockStateProperties::FACING, Direction::West);
+        let facing_from_horizontal_property =
+            registry.try_get_property(west_torch, &BlockStateProperties::HORIZONTAL_FACING);
+        assert_eq!(facing_from_horizontal_property, Some(Direction::West));
+
+        let dispenser = registry.get_default_state_id(&vanilla_blocks::DISPENSER);
+        let upward_dispenser =
+            registry.set_property(dispenser, &BlockStateProperties::FACING, Direction::Up);
+        let horizontal_facing =
+            registry.try_get_property(upward_dispenser, &BlockStateProperties::HORIZONTAL_FACING);
+        assert_eq!(horizontal_facing, None);
+    }
+
+    #[test]
+    fn test_state_id_from_properties_rejects_properties_on_propertyless_block() {
+        let registry = create_test_registry();
+        let key = Identifier::vanilla_static("stone");
+        let stone = registry.by_key(&key).expect("stone should exist");
+
+        let result = registry.state_id_from_properties(&key, &[("power", "1")]);
+        assert!(
+            result.is_none(),
+            "Should return None for invalid property on propertyless block"
+        );
+
+        let result = registry.state_id_from_block_defaulted_properties(stone, [("power", "1")]);
+        assert!(
+            result.is_none(),
+            "Should return None for invalid defaulted property on propertyless block"
+        );
     }
 
     #[test]
