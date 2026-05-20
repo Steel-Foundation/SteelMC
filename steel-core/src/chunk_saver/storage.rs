@@ -2358,6 +2358,22 @@ impl ChunkStorage {
 mod tests {
     use super::*;
     use std::sync::{Arc, Once};
+<<<<<<< HEAD
+=======
+
+    use crate::behavior::init_behaviors;
+    use crate::block_entity::init_block_entities;
+    use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
+    use crate::world::structure::StructureReferenceSet;
+    use glam::DVec3;
+    use rustc_hash::FxHashMap;
+    use steel_registry::vanilla_block_entity_types;
+    use steel_registry::vanilla_blocks;
+    use steel_registry::vanilla_entities;
+    use steel_utils::types::UpdateFlags;
+
+    static RUNTIME_REGISTRIES: Once = Once::new();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
@@ -2375,6 +2391,15 @@ mod tests {
 
     fn init_runtime_registries() {
         init_test_registry();
+        RUNTIME_REGISTRIES.call_once(|| {
+            init_behaviors();
+            init_block_entities();
+            init_entities();
+        });
+    }
+
+    fn init_runtime_registries() {
+        init_registry();
         RUNTIME_REGISTRIES.call_once(|| {
             init_behaviors();
             init_block_entities();
@@ -2852,7 +2877,11 @@ mod tests {
         reason = "single roundtrip fixture covers every structure piece payload variant together"
     )]
     fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
+<<<<<<< HEAD
         init_test_registry();
+=======
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
         let structure_id = Identifier::new_static("steel", "test_payload_variants");
         let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");

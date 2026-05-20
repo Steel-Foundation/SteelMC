@@ -194,11 +194,27 @@ impl FluidReplaceableExt for BlockStateId {
 #[cfg(test)]
 mod tests {
     use super::*;
+<<<<<<< HEAD
     use crate::blocks::properties::BlockStateProperties;
     use crate::blocks::shapes::SupportType;
     use crate::test_support::init_test_registry;
     use steel_utils::Direction;
 
+=======
+    use crate::Registry;
+    use crate::blocks::properties::BlockStateProperties;
+    use crate::blocks::shapes::SupportType;
+    use steel_utils::Direction;
+
+    fn init_test_registry() {
+        REGISTRY.get_or_init(|| {
+            let mut registry = Registry::new_vanilla();
+            registry.freeze();
+            registry
+        });
+    }
+
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     #[test]
     fn solid_render_uses_occlusion_shape_not_collision_shape() {
         init_test_registry();

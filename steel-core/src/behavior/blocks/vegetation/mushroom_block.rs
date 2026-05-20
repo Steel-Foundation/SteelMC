@@ -62,7 +62,11 @@ impl BlockBehavior for MushroomBlock {
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
+=======
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
     use super::*;
 
@@ -104,9 +108,21 @@ mod tests {
         }
     }
 
+<<<<<<< HEAD
     #[test]
     fn mushroom_survival_uses_solid_render_support() {
         init_test_registry();
+=======
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn mushroom_survival_uses_solid_render_support() {
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
         let mushroom = MushroomBlock::new(&vanilla_blocks::BROWN_MUSHROOM);
         let state = REGISTRY

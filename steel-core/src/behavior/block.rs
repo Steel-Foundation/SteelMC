@@ -122,8 +122,11 @@ pub trait BlockBehavior: Send + Sync {
     /// Called by block items after this block has been placed by an entity.
     ///
     /// Vanilla parity: `Block.setPlacedBy(Level, BlockPos, BlockState, LivingEntity, ItemStack)`.
+<<<<<<< HEAD
     /// Steel passes lazy inventory access instead of a borrowed stack so the
     /// caller does not hold the inventory lock while dispatching block behavior.
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     /// This is intentionally separate from [`on_place`], which fires for any
     /// world block mutation.
     #[expect(
@@ -136,7 +139,11 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         player: Option<&Player>,
+<<<<<<< HEAD
         inv: &InventoryAccess,
+=======
+        item_stack: &ItemStack,
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     ) {
         // Default: no-op
     }

@@ -150,15 +150,31 @@ impl BlockBehavior for WeatheringCopperSlabBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::{
+<<<<<<< HEAD
         blocks::block_state_ext::BlockStateExt as _, test_support::init_test_registry,
         vanilla_blocks,
+=======
+        REGISTRY, Registry, blocks::block_state_ext::BlockStateExt as _, vanilla_blocks,
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     };
 
     use super::*;
 
+<<<<<<< HEAD
     #[test]
     fn double_slabs_cannot_be_waterlogged() {
         init_test_registry();
+=======
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn double_slabs_cannot_be_waterlogged() {
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let double_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()
@@ -170,7 +186,11 @@ mod tests {
 
     #[test]
     fn single_slabs_accept_source_water_when_not_waterlogged() {
+<<<<<<< HEAD
         init_test_registry();
+=======
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()

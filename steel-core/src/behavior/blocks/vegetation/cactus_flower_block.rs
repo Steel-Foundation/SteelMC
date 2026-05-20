@@ -2,6 +2,11 @@
 //!
 //! Cactus flower is a vegetation block that can be placed on cactus, farmland,
 //! or any block with a sturdy center face on top.
+<<<<<<< HEAD:steel-core/src/behavior/blocks/vegetation/cactus_flower_block.rs
+=======
+//!
+//! Vanilla equivalent: `CactusFlowerBlock` extends `VegetationBlock`.
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183)):steel-core/src/behavior/blocks/farming/cactus_flower_block.rs
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -36,7 +41,14 @@ impl BlockBehavior for CactusFlowerBlock {
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts the support-override tag
     /// or any block with a sturdy center face on top.
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+<<<<<<< HEAD:steel-core/src/behavior/blocks/vegetation/cactus_flower_block.rs
         let below = world.get_block_state(pos.below());
+=======
+        let below_pos = pos.below();
+        let below = world.get_block_state(below_pos);
+        let below_block = below.get_block();
+
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183)):steel-core/src/behavior/blocks/farming/cactus_flower_block.rs
         steel_registry::REGISTRY.blocks.is_in_tag(
             below.get_block(),
             &vanilla_block_tags::SUPPORT_OVERRIDE_CACTUS_FLOWER_TAG,

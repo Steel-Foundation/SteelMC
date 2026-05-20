@@ -9,7 +9,11 @@ mod decoration;
 mod fluid;
 mod portal;
 mod redstone;
+<<<<<<< HEAD
 pub mod vegetation;
+=======
+mod vegetation;
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
 pub use building::{
     DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, StairBlock, WeatherState,
@@ -25,6 +29,7 @@ pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
+<<<<<<< HEAD
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
     CactusFlowerBlock, CarrotBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock,
     NetherWartBlock, PitcherCropBlock, PotatoBlock, SeagrassBlock, SugarCaneBlock,
@@ -41,4 +46,18 @@ pub use vegetation::{
     SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock,
     SporeBlossomBlock, TallDryGrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock,
     WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
+=======
+    AzaleaBlock, BambooStalkBlock, BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock,
+    BigDripleafBlock, BigDripleafStemBlock, BushBlock, CarpetBlock, CaveVinesBlock,
+    CaveVinesPlantBlock, ChorusFlowerBlock, ChorusPlantBlock, CoralFanBlock, CoralPlantBlock,
+    CoralWallFanBlock, DoublePlantBlock, DryVegetationBlock, EyeblossomBlock, EyeblossomType,
+    FireflyBushBlock, FlowerBedBlock, FlowerBlock, GlowLichenBlock, HangingMossBlock,
+    HangingRootsBlock, KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock,
+    MangrovePropaguleBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
+    NetherSproutsBlock, PointedDripstoneBlock, SaplingBlock, SculkVeinBlock, SeaPickleBlock,
+    SeagrassBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock, SporeBlossomBlock,
+    SugarCaneBlock, SweetBerryBushBlock, TallDryGrassBlock, TallFlowerBlock, TallGrassBlock,
+    TallSeagrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock,
+    WeepingVinesPlantBlock, WitherRoseBlock,
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 };

@@ -343,6 +343,81 @@ impl ChunkAccess {
     /// # Lock ordering
     /// Acquires heightmap write lock, then section read locks. Callers must not
     /// hold a section write lock when calling this, or a deadlock will occur.
+<<<<<<< HEAD
+=======
+    ///
+    /// # Panics
+    /// Panics if the chunk is not a proto chunk.
+    pub fn prime_final_heightmaps(&self) {
+        match self {
+            Self::Proto(proto) => {
+                let mut heightmaps = proto.heightmaps.write();
+                heightmaps.prime_from_sections(
+                    HeightmapType::final_types(),
+                    proto.min_y(),
+                    proto.height(),
+                    &proto.sections.sections,
+                );
+            }
+            Self::Full(_) => panic!("prime_final_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Gets the first available Y coordinate for a heightmap column.
+    ///
+    /// Missing proto heightmaps are primed lazily, matching vanilla
+    /// `ChunkAccess.getHeight`. Full chunks map worldgen heightmap queries to
+    /// their final equivalents, matching vanilla `ImposterProtoChunk`.
+    #[must_use]
+    pub fn height_at(&self, heightmap_type: HeightmapType, local_x: usize, local_z: usize) -> i32 {
+        match self {
+            Self::Full(chunk) => chunk.get_height(
+                Self::full_chunk_heightmap_type(heightmap_type),
+                local_x,
+                local_z,
+            ),
+            Self::Proto(proto) => Self::proto_height_at(proto, heightmap_type, local_x, local_z),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    const fn full_chunk_heightmap_type(heightmap_type: HeightmapType) -> HeightmapType {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => HeightmapType::WorldSurface,
+            HeightmapType::OceanFloorWg => HeightmapType::OceanFloor,
+            other => other,
+        }
+    }
+
+    fn proto_height_at(
+        proto: &ProtoChunk,
+        heightmap_type: HeightmapType,
+        local_x: usize,
+        local_z: usize,
+    ) -> i32 {
+        {
+            let heightmaps = proto.heightmaps.read();
+            if let Some(heightmap) = heightmaps.get(heightmap_type) {
+                return heightmap.get_first_available(local_x, local_z);
+            }
+        }
+
+        let mut heightmaps = proto.heightmaps.write();
+        heightmaps.prime_from_sections(
+            &[heightmap_type],
+            proto.min_y(),
+            proto.height(),
+            &proto.sections.sections,
+        );
+        let Some(heightmap) = heightmaps.get(heightmap_type) else {
+            panic!("heightmap {heightmap_type:?} missing after priming");
+        };
+        heightmap.get_first_available(local_x, local_z)
+    }
+
+    /// Marks a proto chunk block position for vanilla postprocessing after promotion.
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     ///
     /// # Panics
     /// Panics if the chunk is not a proto chunk.
@@ -656,6 +731,7 @@ impl ChunkAccess {
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
@@ -668,6 +744,22 @@ mod tests {
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
         init_test_registry();
+=======
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+    use crate::chunk::section::{ChunkSection, Sections};
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn proto_height_at_primes_missing_heightmap() {
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -695,7 +787,11 @@ mod tests {
 
     #[test]
     fn generation_relative_write_updates_proto_heightmaps() {
+<<<<<<< HEAD
         init_test_registry();
+=======
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -733,6 +829,7 @@ mod tests {
             HeightmapType::MotionBlocking
         );
     }
+<<<<<<< HEAD
 
     #[test]
     fn full_chunk_postprocessing_mark_is_vanilla_noop() {
@@ -753,4 +850,6 @@ mod tests {
 
         chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
     }
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 }

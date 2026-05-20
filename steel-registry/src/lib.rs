@@ -1010,6 +1010,7 @@ mod tests {
                 .is_some()
         );
     }
+<<<<<<< HEAD
 
     #[test]
     fn vanilla_game_events_initialize_in_vanilla_order() {
@@ -1031,4 +1032,6 @@ mod tests {
             Some(&resonate_10)
         );
     }
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 }

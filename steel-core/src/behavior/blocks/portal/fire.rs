@@ -165,6 +165,7 @@ impl SoulFireBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+<<<<<<< HEAD
 
     fn can_survive_at(world: &dyn LevelReader, pos: BlockPos) -> bool {
         REGISTRY.blocks.is_in_tag(
@@ -172,6 +173,8 @@ impl SoulFireBlock {
             &vanilla_block_tags::SOUL_FIRE_BASE_BLOCKS_TAG,
         )
     }
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 }
 
 impl BlockBehavior for SoulFireBlock {
@@ -182,6 +185,7 @@ impl BlockBehavior for SoulFireBlock {
     }
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+<<<<<<< HEAD
         Self::can_survive_at(world, pos)
     }
 }
@@ -256,5 +260,11 @@ mod tests {
             FireBlock::get_state(&level, SingleSupportLevel::POS).get_block(),
             &vanilla_blocks::FIRE
         );
+=======
+        REGISTRY.blocks.is_in_tag(
+            world.get_block_state(pos.below()).get_block(),
+            &vanilla_block_tags::SOUL_FIRE_BASE_BLOCKS_TAG,
+        )
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     }
 }

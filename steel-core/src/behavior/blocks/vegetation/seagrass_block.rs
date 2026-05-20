@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -16,6 +17,24 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 use super::{BlockRef, water_source_fluid_state};
 
 /// Behavior for seagrass blocks.
+=======
+use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::Direction;
+use steel_registry::fluid::FluidState;
+use steel_registry::vanilla_block_tags;
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_blocks, vanilla_fluids};
+use steel_utils::{BlockPos, BlockStateId};
+
+use crate::behavior::block::BlockBehavior;
+use crate::behavior::context::BlockPlaceContext;
+use crate::world::{LevelReader, ScheduledTickAccess};
+
+use super::{BlockRef, water_source_fluid_state};
+
+/// Vanilla `SeagrassBlock` survival and fluid state.
+// TODO: Implement full vanilla behavior beyond can_survive and get_fluid_state.
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 #[block_behavior]
 pub struct SeagrassBlock {
     block: BlockRef,
@@ -71,6 +90,7 @@ impl BlockBehavior for SeagrassBlock {
     fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
         water_source_fluid_state()
     }
+<<<<<<< HEAD
 
     fn place_liquid(
         &self,
@@ -119,6 +139,8 @@ impl Bonemealable for SeagrassBlock {
         world.set_block(pos, lower_state, UpdateFlags::UPDATE_CLIENTS);
         world.set_block(pos.above(), upper_state, UpdateFlags::UPDATE_CLIENTS);
     }
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 }
 
 #[cfg(test)]
@@ -126,13 +148,20 @@ mod tests {
     use std::cell::Cell;
 
     use steel_registry::fluid::FluidRef;
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+=======
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks, vanilla_fluids};
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
     use super::*;
 
     struct SingleSupportLevel {
         support: BlockStateId,
+<<<<<<< HEAD
         above: BlockStateId,
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         scheduled_water_tick: Cell<bool>,
     }
 
@@ -140,6 +169,7 @@ mod tests {
         fn new(support: BlockStateId) -> Self {
             Self {
                 support,
+<<<<<<< HEAD
                 above: vanilla_blocks::AIR.default_state(),
                 scheduled_water_tick: Cell::new(false),
             }
@@ -149,14 +179,22 @@ mod tests {
             self.above = above;
             self
         }
+=======
+                scheduled_water_tick: Cell::new(false),
+            }
+        }
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     }
 
     impl LevelReader for SingleSupportLevel {
         fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
             if pos == BlockPos::ZERO.below() {
                 self.support
+<<<<<<< HEAD
             } else if pos == BlockPos::ZERO.above() {
                 self.above
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
             } else {
                 vanilla_blocks::AIR.default_state()
             }
@@ -201,9 +239,21 @@ mod tests {
         }
     }
 
+<<<<<<< HEAD
     #[test]
     fn seagrass_update_shape_breaks_without_support() {
         init_test_registry();
+=======
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn seagrass_update_shape_breaks_without_support() {
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let level = SingleSupportLevel::new(vanilla_blocks::AIR.default_state());
         let state = vanilla_blocks::SEAGRASS.default_state();
@@ -223,7 +273,11 @@ mod tests {
 
     #[test]
     fn seagrass_update_shape_schedules_water_when_it_survives() {
+<<<<<<< HEAD
         init_test_registry();
+=======
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let level = SingleSupportLevel::new(vanilla_blocks::DIRT.default_state());
         let state = vanilla_blocks::SEAGRASS.default_state();
@@ -240,6 +294,7 @@ mod tests {
         assert_eq!(updated, state);
         assert!(level.scheduled_water_tick.get());
     }
+<<<<<<< HEAD
 
     #[test]
     fn seagrass_bonemeal_requires_water_block_above() {
@@ -258,4 +313,6 @@ mod tests {
             .with_above(waterlogged_slab);
         assert!(!behavior.is_valid_bonemeal_target(state, &waterlogged_level, BlockPos::ZERO));
     }
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 }

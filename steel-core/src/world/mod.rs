@@ -11,8 +11,11 @@ use std::{
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+<<<<<<< HEAD
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -79,8 +82,11 @@ use crate::{
     poi::PointOfInterestStorage,
 };
 
+<<<<<<< HEAD
 pub mod game_event_context;
 pub mod game_event_listener;
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 mod level_reader;
 mod player_area_map;
 mod player_map;
@@ -2442,6 +2448,65 @@ impl World {
         );
         self.game_event_listeners
             .dispatch(self, event, source_pos, context);
+    }
+}
+
+impl LevelReader for World {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        Self::get_block_state(self, pos)
+    }
+
+    fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
+        let sky_light = if self.dimension_type.has_skylight {
+            15_u8.saturating_sub(sky_darkening)
+        } else {
+            0
+        };
+
+        // TODO: Include block light once Steel has a live light engine.
+        sky_light
+    }
+
+    fn min_y(&self) -> i32 {
+        self.get_min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.get_height()
+    }
+}
+
+impl LevelReader for Arc<World> {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.as_ref().get_block_state(pos)
+    }
+
+    fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+        self.as_ref().raw_brightness(pos, sky_darkening)
+    }
+
+    fn min_y(&self) -> i32 {
+        self.as_ref().get_min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.as_ref().get_height()
+    }
+}
+
+impl ScheduledTickAccess for Arc<World> {
+    fn fluid_tick_delay(&self, fluid: FluidRef) -> i32 {
+        FLUID_BEHAVIORS.get_behavior(fluid).tick_delay(self)
+    }
+
+    fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool {
+        self.as_ref().schedule_block_tick_default(pos, block, delay);
+        true
+    }
+
+    fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
+        self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
+        true
     }
 }
 

@@ -310,6 +310,7 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
+<<<<<<< HEAD
     use steel_registry::test_support::init_test_registry;
 
     use super::*;
@@ -317,6 +318,21 @@ mod tests {
     #[test]
     fn create_and_load_or_raw_preserves_unregistered_entity_data() {
         init_test_registry();
+=======
+    use steel_registry::Registry;
+
+    use super::*;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn create_and_load_or_raw_preserves_unregistered_entity_data() {
+        init_registry();
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
         let registry = EntityRegistry::new();
         let mut nbt = NbtCompound::new();
         nbt.insert("CustomName", "raw");

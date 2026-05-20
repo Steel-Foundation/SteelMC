@@ -1,4 +1,5 @@
 use steel_macros::block_behavior;
+<<<<<<< HEAD
 use steel_registry::{
     TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -18,6 +19,19 @@ use crate::{
 };
 
 /// Behavior for azalea blocks.
+=======
+use steel_registry::vanilla_block_tags;
+use steel_utils::{BlockPos, BlockStateId};
+
+use crate::behavior::block::BlockBehavior;
+use crate::behavior::context::BlockPlaceContext;
+use crate::world::LevelReader;
+
+use super::{BlockRef, default_surviving_state, survives_on_tag};
+
+/// Vanilla `AzaleaBlock` survival.
+// TODO: Implement full vanilla behavior beyond can_survive.
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 #[block_behavior]
 pub struct AzaleaBlock {
     block: BlockRef,
@@ -32,6 +46,7 @@ impl AzaleaBlock {
 }
 
 impl BlockBehavior for AzaleaBlock {
+<<<<<<< HEAD
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -46,12 +61,17 @@ impl BlockBehavior for AzaleaBlock {
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
+=======
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_AZALEA_TAG)
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         default_surviving_state(self.block, self, context)
     }
 }
+<<<<<<< HEAD
 
 impl Vegetation for AzaleaBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
@@ -60,3 +80,5 @@ impl Vegetation for AzaleaBlock {
             .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_AZALEA_TAG)
     }
 }
+=======
+>>>>>>> 3643c5b7e (Add worldgen features stage (#183))
