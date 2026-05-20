@@ -17,7 +17,11 @@ use steel_utils::{
 
 use crate::{
     behavior::{
+<<<<<<< HEAD
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
+=======
+        BlockBehavior, BlockPlaceContext, InteractionResult,
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
@@ -113,18 +117,28 @@ impl BlockBehavior for SweetBerryBushBlock {
 
     fn use_item_on(
         &self,
+<<<<<<< HEAD
+=======
+        item_stack: &ItemStack,
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
         _player: &Player,
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
+<<<<<<< HEAD
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let is_bone_meal =
             inv.with_item(|item_stack| item_stack.is(&vanilla_items::ITEMS.bone_meal));
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age != 3 && is_bone_meal {
+=======
+    ) -> InteractionResult {
+        let age = state.get_value(&BlockStateProperties::AGE_3);
+        if age != 3 && item_stack.is(&vanilla_items::ITEMS.bone_meal) {
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
             InteractionResult::Pass
         } else {
             InteractionResult::TryEmptyHandInteraction
@@ -138,7 +152,10 @@ impl BlockBehavior for SweetBerryBushBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+<<<<<<< HEAD
         _inv: &mut InventoryAccess,
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
     ) -> InteractionResult {
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age <= 1 {

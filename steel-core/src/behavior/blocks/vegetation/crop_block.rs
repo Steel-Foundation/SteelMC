@@ -298,7 +298,11 @@ impl<T: CropLike> Vegetation for T {
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+=======
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
     use super::*;
 
@@ -340,9 +344,21 @@ mod tests {
         }
     }
 
+<<<<<<< HEAD
     #[test]
     fn crop_survival_requires_vanilla_minimum_light() {
         init_test_registry();
+=======
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn crop_survival_requires_vanilla_minimum_light() {
+        init_registry();
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
         let crop = CropBlock::new(&vanilla_blocks::WHEAT);
         let state = vanilla_blocks::WHEAT.default_state();

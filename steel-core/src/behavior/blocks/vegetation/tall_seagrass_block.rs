@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -10,20 +11,30 @@ use steel_registry::vanilla_block_tags;
 use steel_registry::vanilla_blocks;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_items};
 =======
+=======
+use std::sync::Arc;
+
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
-use steel_registry::fluid::{FluidState, FluidStateExt as _};
+use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags;
 use steel_registry::vanilla_blocks;
+<<<<<<< HEAD
 use steel_registry::{REGISTRY, TaggedRegistryExt};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_items};
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 use steel_utils::math::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::get_fluid_state_from_block;
+<<<<<<< HEAD
 <<<<<<< HEAD
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -38,6 +49,13 @@ use super::{BlockRef, water_source_fluid_state};
 /// Vanilla `TallSeagrassBlock` survival and fluid state.
 // TODO: Implement full vanilla behavior beyond can_survive and get_fluid_state.
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+use crate::world::{LevelReader, ScheduledTickAccess, World};
+
+use super::{BlockRef, water_source_fluid_state};
+
+/// Behavior for tall seagrass blocks.
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 #[block_behavior]
 pub struct TallSeagrassBlock {
     block: BlockRef,
@@ -83,10 +101,14 @@ impl BlockBehavior for TallSeagrassBlock {
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
             let below = world.get_block_state(pos.below());
 <<<<<<< HEAD
+<<<<<<< HEAD
             return below.get_block() == self.block
 =======
             return below.get_block() == &vanilla_blocks::TALL_SEAGRASS
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+            return below.get_block() == self.block
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
                 && below.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
                     == DoubleBlockHalf::Lower;
         }
@@ -94,10 +116,14 @@ impl BlockBehavior for TallSeagrassBlock {
         let below = world.get_block_state(pos.below());
         let current = world.get_block_state(pos);
 <<<<<<< HEAD
+<<<<<<< HEAD
         let fluid = if current.get_block() == self.block {
 =======
         let fluid = if current.get_block() == &vanilla_blocks::TALL_SEAGRASS {
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        let fluid = if current.get_block() == self.block {
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
             water_source_fluid_state()
         } else {
             get_fluid_state_from_block(current)
@@ -112,6 +138,7 @@ impl BlockBehavior for TallSeagrassBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+<<<<<<< HEAD
 <<<<<<< HEAD
         if context.relative_pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
@@ -134,21 +161,37 @@ impl BlockBehavior for TallSeagrassBlock {
         );
 <<<<<<< HEAD
 =======
+=======
+        if context.relative_pos.y() >= context.world.max_y_exclusive() - 1 {
+            return None;
+        }
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         if !context.is_water_source() {
             return None;
         }
 
-        let above = context.world.get_block_state(context.relative_pos.above());
-        if above.get_block() != &vanilla_blocks::WATER {
+        let above_fluid =
+            get_fluid_state_from_block(context.world.get_block_state(context.relative_pos.above()));
+        if !above_fluid.is_water() || !above_fluid.is_source() {
             return None;
         }
 
+<<<<<<< HEAD
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        let state = self.block.default_state().set_value(
+            &BlockStateProperties::DOUBLE_BLOCK_HALF,
+            DoubleBlockHalf::Lower,
+        );
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         self.can_survive(state, context.world, context.relative_pos)
             .then_some(state)
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
@@ -175,11 +218,14 @@ impl BlockBehavior for TallSeagrassBlock {
     fn can_place_liquid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
         false
     }
+<<<<<<< HEAD
 =======
     fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
         water_source_fluid_state()
     }
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 }
 
 #[cfg(test)]

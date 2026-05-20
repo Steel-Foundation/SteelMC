@@ -12,7 +12,10 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
+<<<<<<< HEAD
 use crate::behavior::InventoryAccess;
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;

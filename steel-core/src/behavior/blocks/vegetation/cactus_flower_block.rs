@@ -2,11 +2,14 @@
 //!
 //! Cactus flower is a vegetation block that can be placed on cactus, farmland,
 //! or any block with a sturdy center face on top.
+<<<<<<< HEAD
 <<<<<<< HEAD:steel-core/src/behavior/blocks/vegetation/cactus_flower_block.rs
 =======
 //!
 //! Vanilla equivalent: `CactusFlowerBlock` extends `VegetationBlock`.
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183)):steel-core/src/behavior/blocks/farming/cactus_flower_block.rs
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -41,6 +44,7 @@ impl BlockBehavior for CactusFlowerBlock {
     /// Vanilla `CactusFlowerBlock.mayPlaceOn`: accepts the support-override tag
     /// or any block with a sturdy center face on top.
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+<<<<<<< HEAD
 <<<<<<< HEAD:steel-core/src/behavior/blocks/vegetation/cactus_flower_block.rs
         let below = world.get_block_state(pos.below());
 =======
@@ -49,6 +53,9 @@ impl BlockBehavior for CactusFlowerBlock {
         let below_block = below.get_block();
 
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183)):steel-core/src/behavior/blocks/farming/cactus_flower_block.rs
+=======
+        let below = world.get_block_state(pos.below());
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         steel_registry::REGISTRY.blocks.is_in_tag(
             below.get_block(),
             &vanilla_block_tags::SUPPORT_OVERRIDE_CACTUS_FLOWER_TAG,

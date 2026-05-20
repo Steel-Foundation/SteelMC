@@ -4,6 +4,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 <<<<<<< HEAD
+<<<<<<< HEAD
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -11,9 +12,13 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
 =======
+=======
+use steel_registry::{REGISTRY, RegistryExt};
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 use crate::player::Player;
@@ -21,6 +26,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, DoublePlantBlock};
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 /// Behavior for two-block-tall flowers.
 #[block_behavior]
@@ -32,6 +38,12 @@ pub struct TallFlowerBlock {
 #[block_behavior]
 pub struct TallFlowerBlock {
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+/// Behavior for two-block-tall flowers.
+#[block_behavior]
+pub struct TallFlowerBlock {
+    block: BlockRef,
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
     base: DoublePlantBlock,
 }
 
@@ -41,9 +53,13 @@ impl TallFlowerBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self {
 <<<<<<< HEAD
+<<<<<<< HEAD
             block,
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+            block,
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
             base: DoublePlantBlock::new(block),
         }
     }
@@ -89,6 +105,9 @@ impl BlockBehavior for TallFlowerBlock {
         self.base.get_state_for_placement(context)
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
@@ -116,6 +135,9 @@ impl Bonemealable for TallFlowerBlock {
             world.pop_resource(pos, ItemStack::new(item));
         }
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 }

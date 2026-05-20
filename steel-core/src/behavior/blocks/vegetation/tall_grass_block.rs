@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -29,21 +30,45 @@ use crate::{
 
 /// Behavior for short grass and fern blocks.
 =======
+=======
+use std::sync::Arc;
+
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 use steel_macros::block_behavior;
-use steel_registry::blocks::properties::Direction;
-use steel_registry::vanilla_block_tags;
-use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::{
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt,
+        properties::{BlockStateProperties, DoubleBlockHalf},
+    },
+    vanilla_blocks,
+};
+use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehavior;
-use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, ScheduledTickAccess};
+use crate::{
+    behavior::{
+        BlockBehavior, BlockPlaceContext,
+        blocks::vegetation::{
+            Vegetation,
+            bonemealable::Bonemealable,
+            default_surviving_state,
+            vegetation_block::{
+                double_plant_can_survive, vegetation_can_survive, vegetation_update_shape,
+            },
+        },
+    },
+    world::{LevelReader, ScheduledTickAccess, World},
+};
 
+<<<<<<< HEAD
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
 /// Vanilla `VegetationBlock` survival for normal grass/bush-style plants.
 // TODO: Implement full vanilla behavior beyond can_survive.
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+/// Behavior for short grass and fern blocks.
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 #[block_behavior]
 pub struct TallGrassBlock {
     block: BlockRef,
@@ -51,15 +76,22 @@ pub struct TallGrassBlock {
 
 impl TallGrassBlock {
 <<<<<<< HEAD
+<<<<<<< HEAD
     /// Creates a new tall grass behavior.
 =======
     /// Creates a new tall grass block behavior.
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    /// Creates a new tall grass behavior.
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
     fn large_variant(state: BlockStateId) -> BlockRef {
         if state.get_block() == &vanilla_blocks::FERN {
@@ -68,8 +100,11 @@ impl TallGrassBlock {
             &vanilla_blocks::TALL_GRASS
         }
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 }
 
 impl BlockBehavior for TallGrassBlock {
@@ -82,6 +117,7 @@ impl BlockBehavior for TallGrassBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
+<<<<<<< HEAD
 <<<<<<< HEAD
         vegetation_update_shape(self, state, world, pos)
     }
@@ -99,12 +135,22 @@ impl BlockBehavior for TallGrassBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_VEGETATION_TAG)
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        vegetation_update_shape(self, state, world, pos)
+    }
+
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        vegetation_can_survive(self, state, world, pos)
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         default_surviving_state(self.block, self, context)
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
@@ -165,7 +211,11 @@ impl Bonemealable for TallGrassBlock {
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use steel_registry::test_support::init_test_registry;
+=======
+    use steel_registry::{REGISTRY, Registry};
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 
     use super::*;
 
@@ -193,14 +243,29 @@ mod tests {
         }
     }
 
+<<<<<<< HEAD
     #[test]
     fn tall_grass_bonemeal_rejects_top_build_height() {
         init_test_registry();
+=======
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn tall_grass_bonemeal_rejects_top_build_height() {
+        init_registry();
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         let behavior = TallGrassBlock::new(&vanilla_blocks::SHORT_GRASS);
         let state = vanilla_blocks::SHORT_GRASS.default_state();
 
         assert!(!behavior.is_valid_bonemeal_target(state, &OneBlockTallLevel, BlockPos::ZERO));
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 }

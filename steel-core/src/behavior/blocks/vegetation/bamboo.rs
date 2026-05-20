@@ -73,10 +73,15 @@ impl BambooStalkBlock {
         height: i32,
     ) {
         let state_below = world.get_block_state(pos.below());
+<<<<<<< HEAD
+=======
+        let block_below = state_below.get_block();
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         let state_two_below = world.get_block_state(pos.below_n(2));
         let leaves = if height == 0 {
             BambooLeaves::None
         } else {
+<<<<<<< HEAD
             let leaves = Self::leaves_for_new_segment(state_below);
             if leaves == BambooLeaves::Large
                 && state_two_below.get_block() == &vanilla_blocks::BAMBOO
@@ -93,6 +98,27 @@ impl BambooStalkBlock {
                 );
             }
             leaves
+=======
+            let leaves_below = state_below.get_value(&BAMBOO_LEAVES_PROPERTY);
+
+            if block_below != &vanilla_blocks::BAMBOO || leaves_below == BambooLeaves::None {
+                BambooLeaves::Small
+            } else {
+                if state_two_below.get_block() == &vanilla_blocks::BAMBOO {
+                    world.set_block(
+                        pos.below(),
+                        state_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
+                        UpdateFlags::UPDATE_ALL,
+                    );
+                    world.set_block(
+                        pos.below_n(2),
+                        state_two_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::None),
+                        UpdateFlags::UPDATE_ALL,
+                    );
+                }
+                BambooLeaves::Large
+            }
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
         };
 
         let new_age = u8::from(
@@ -112,6 +138,7 @@ impl BambooStalkBlock {
             UpdateFlags::UPDATE_ALL,
         );
     }
+<<<<<<< HEAD
 
     fn leaves_for_new_segment(state_below: BlockStateId) -> BambooLeaves {
         if state_below.get_block() != &vanilla_blocks::BAMBOO
@@ -122,6 +149,8 @@ impl BambooStalkBlock {
             BambooLeaves::Large
         }
     }
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
 }
 
 impl Bonemealable for BambooStalkBlock {
@@ -244,7 +273,11 @@ impl BlockBehavior for BambooStalkBlock {
             && world.get_block_state(pos.above()).is_air()
             && world.raw_brightness(pos.above(), 0) >= 9
         {
+<<<<<<< HEAD
             let height = Self::stalk_segments_below(world, pos) + 1;
+=======
+            let height = Self::stalk_segments_below(world, pos);
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
             if height < 16 {
                 Self::grow(world, pos, state, &mut rng, height);
             }
@@ -279,6 +312,7 @@ impl BlockBehavior for BambooStalkBlock {
         Some(self)
     }
 }
+<<<<<<< HEAD
 
 #[cfg(test)]
 mod tests {
@@ -297,3 +331,5 @@ mod tests {
         );
     }
 }
+=======
+>>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
