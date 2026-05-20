@@ -121,9 +121,10 @@ impl BlockBehavior for SweetBerryBushBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let item_stack = inv.item();
+        let is_bone_meal =
+            inv.with_item(|item_stack| item_stack.is(&vanilla_items::ITEMS.bone_meal));
         let age = state.get_value(&BlockStateProperties::AGE_3);
-        if age != 3 && item_stack.is(&vanilla_items::ITEMS.bone_meal) {
+        if age != 3 && is_bone_meal {
             InteractionResult::Pass
         } else {
             InteractionResult::TryEmptyHandInteraction

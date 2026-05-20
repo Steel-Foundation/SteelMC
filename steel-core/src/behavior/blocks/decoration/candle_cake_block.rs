@@ -61,13 +61,17 @@ impl BlockBehavior for CandleCakeBlock {
         hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let item_stack = inv.item();
-        if item_stack.is(&vanilla_items::ITEMS.fire_charge)
-            || item_stack.is(&vanilla_items::ITEMS.flint_and_steel)
-        {
+        let (is_fire_charge, is_flint_and_steel, is_empty) = inv.with_item(|item_stack| {
+            (
+                item_stack.is(&vanilla_items::ITEMS.fire_charge),
+                item_stack.is(&vanilla_items::ITEMS.flint_and_steel),
+                item_stack.is_empty(),
+            )
+        });
+        if is_fire_charge || is_flint_and_steel {
             return InteractionResult::Pass; // lighting of candles and candle cakes is handled by the flint and steel/fire charge implementation
         } else if (hit_result.location.y - f64::from(hit_result.block_pos.y())) > 0.5
-            && item_stack.is_empty()
+            && is_empty
             && state.get_value(&BlockStateProperties::LIT)
         {
             world.set_block(

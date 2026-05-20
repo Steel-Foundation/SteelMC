@@ -29,7 +29,9 @@ impl ItemBehavior for FlintAndSteelItem {
             flint_and_steel_pitch(),
         ) {
             let has_infinite_materials = context.player.has_infinite_materials();
-            context.inv.item().hurt_and_break(1, has_infinite_materials);
+            context
+                .inv
+                .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
             return InteractionResult::Success;
         }
 
@@ -55,7 +57,9 @@ impl ItemBehavior for FlintAndSteelItem {
             .set_block(fire_pos, FIRE.default_state(), UpdateFlags::UPDATE_ALL);
 
         let has_infinite_materials = context.player.has_infinite_materials();
-        context.inv.item().hurt_and_break(1, has_infinite_materials);
+        context
+            .inv
+            .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
 
         InteractionResult::Success
     }
@@ -76,7 +80,7 @@ impl ItemBehavior for FireChargeItem {
             sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
-            context.inv.item().shrink(1);
+            context.inv.with_item(|item| item.shrink(1));
             return InteractionResult::Success;
         }
 
@@ -101,7 +105,7 @@ impl ItemBehavior for FireChargeItem {
             .world
             .set_block(fire_pos, FIRE.default_state(), UpdateFlags::UPDATE_ALL);
 
-        context.inv.item().shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }

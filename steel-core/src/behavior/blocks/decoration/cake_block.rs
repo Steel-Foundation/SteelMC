@@ -112,7 +112,7 @@ impl BlockBehavior for CakeBlock {
             return InteractionResult::Success;
         }
 
-        if inv.item().is_empty() {
+        if inv.with_item(|item| item.is_empty()) {
             return InteractionResult::Fail;
         }
         InteractionResult::Pass
@@ -128,19 +128,24 @@ impl BlockBehavior for CakeBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let item_stack = inv.item();
-        let item = item_stack.item();
-        if REGISTRY
-            .items
-            .is_in_tag(item, &vanilla_item_tags::CANDLES_TAG)
-            && state.get_value(&BlockStateProperties::BITES) == 0
-        {
-            let Some(candle_cake) = candle_cakes::candle_to_candle_cake(item) else {
+        if state.get_value(&BlockStateProperties::BITES) == 0 {
+            let candle_cake = inv.with_item(|item_stack| {
+                let item = item_stack.item();
+                if !REGISTRY
+                    .items
+                    .is_in_tag(item, &vanilla_item_tags::CANDLES_TAG)
+                {
+                    return None;
+                }
+                let candle_cake = candle_cakes::candle_to_candle_cake(item)?;
+                if !player.has_infinite_materials() {
+                    item_stack.shrink(1);
+                }
+                Some(candle_cake)
+            });
+            let Some(candle_cake) = candle_cake else {
                 return InteractionResult::TryEmptyHandInteraction;
             };
-            if !player.has_infinite_materials() {
-                item_stack.shrink(1);
-            }
             world.play_block_sound(
                 sound_events::BLOCK_CAKE_ADD_CANDLE,
                 pos,

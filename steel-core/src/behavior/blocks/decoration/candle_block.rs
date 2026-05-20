@@ -92,8 +92,8 @@ impl BlockBehavior for CandleBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let item_stack = inv.item();
-        if item_stack.is_empty() {
+        let item_is_empty = inv.with_item(|item_stack| item_stack.is_empty());
+        if item_is_empty {
             if !state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }
@@ -102,10 +102,10 @@ impl BlockBehavior for CandleBlock {
             return InteractionResult::Success;
         }
 
-        if REGISTRY
-            .items
-            .is_in_tag(item_stack.item, &vanilla_item_tags::CREEPER_IGNITERS_TAG)
-        {
+        if REGISTRY.items.is_in_tag(
+            inv.with_item(|item_stack| item_stack.item),
+            &vanilla_item_tags::CREEPER_IGNITERS_TAG,
+        ) {
             if state.get_value(&LIT_PROPERTY) || state.get_value(&WATERLOGGED) {
                 return InteractionResult::Pass;
             }
@@ -116,7 +116,7 @@ impl BlockBehavior for CandleBlock {
 
         if self
             .get_clone_item_stack(self.block, state, false)
-            .is_some_and(|it| it.is(item_stack.item))
+            .is_some_and(|it| inv.with_item(|item_stack| it.is(item_stack.item)))
         {
             let candles_amount = state.get_value(&CANDLES_PROPERTY);
             if candles_amount < MAX_CANDLES {

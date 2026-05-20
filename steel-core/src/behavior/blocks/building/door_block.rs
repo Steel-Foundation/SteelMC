@@ -14,7 +14,6 @@ use steel_registry::{
         properties::{BlockStateProperties, Direction, DoorHingeSide, DoubleBlockHalf},
         shapes,
     },
-    item_stack::ItemStack,
     vanilla_blocks,
 };
 use steel_utils::{
@@ -261,7 +260,7 @@ impl BlockBehavior for DoorBlock {
         world: &Arc<World>,
         pos: BlockPos,
         _player: Option<&Player>,
-        _item_stack: &ItemStack,
+        _inv: &InventoryAccess,
     ) {
         world.set_block(
             pos.above(),
@@ -414,10 +413,9 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         world: &Arc<World>,
         pos: BlockPos,
         player: Option<&Player>,
-        item_stack: &ItemStack,
+        inv: &InventoryAccess,
     ) {
-        self.door()
-            .set_placed_by(state, world, pos, player, item_stack);
+        self.door().set_placed_by(state, world, pos, player, inv);
     }
 
     fn player_will_destroy(

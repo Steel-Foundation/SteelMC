@@ -3,12 +3,11 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, DoubleBlockHalf};
-use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
 use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -82,7 +81,7 @@ impl BlockBehavior for SmallDripleafBlock {
         world: &Arc<World>,
         pos: BlockPos,
         _player: Option<&Player>,
-        _item_stack: &ItemStack,
+        _inv: &InventoryAccess,
     ) {
         let upper_pos = pos.above();
         let upper_state = DoublePlantBlock::copy_waterlogged_from(
