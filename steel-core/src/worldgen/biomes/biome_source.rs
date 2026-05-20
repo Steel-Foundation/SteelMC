@@ -91,8 +91,8 @@ impl BiomeSourceKind {
                 &vanilla_biomes::THE_END,
                 &vanilla_biomes::END_HIGHLANDS,
                 &vanilla_biomes::END_MIDLANDS,
-                &vanilla_biomes::END_BARRENS,
                 &vanilla_biomes::SMALL_END_ISLANDS,
+                &vanilla_biomes::END_BARRENS,
             ],
         };
 
@@ -396,5 +396,31 @@ impl EndChunkBiomeSampler<'_> {
         } else {
             &vanilla_biomes::END_BARRENS
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_possible_biomes_follow_vanilla_order() {
+        let source = BiomeSourceKind::end(0);
+        let keys = source
+            .possible_biome_refs()
+            .into_iter()
+            .map(|biome| &biome.key)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            keys,
+            vec![
+                &vanilla_biomes::THE_END.key,
+                &vanilla_biomes::END_HIGHLANDS.key,
+                &vanilla_biomes::END_MIDLANDS.key,
+                &vanilla_biomes::SMALL_END_ISLANDS.key,
+                &vanilla_biomes::END_BARRENS.key,
+            ]
+        );
     }
 }
