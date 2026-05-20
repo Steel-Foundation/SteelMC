@@ -151,10 +151,11 @@ impl PitcherCropBlock {
     fn can_grow(world: &dyn LevelReader, state: BlockStateId, pos: BlockPos, new_age: u8) -> bool {
         let state_above = world.get_block_state(pos.above());
         state.get_value(&AGE_PROPERTY) < 4
+            && world.raw_brightness(pos, 0) >= 8
             && !world.is_outside_build_height(pos.above().y())
             && (new_age < 3
                 || state_above.is_air()
-                || state_above.get_block() == &vanilla_blocks::PITCHER_CROP) // TODO: light
+                || state_above.get_block() == &vanilla_blocks::PITCHER_CROP)
     }
 }
 
@@ -172,7 +173,11 @@ impl BlockBehavior for PitcherCropBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        double_plant_can_survive(self, state, world, pos) // Self::is_lower(state) //TODO: light
+        if Self::is_lower(state) && world.raw_brightness(pos, 0) < 8 {
+            return false;
+        }
+
+        double_plant_can_survive(self, state, world, pos)
     }
 
     fn update_shape(

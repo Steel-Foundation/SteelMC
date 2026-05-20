@@ -21,8 +21,6 @@ use crate::{
 };
 
 /// Behavior for the Bamboo Sapling Block
-/// /// TODO:
-/// - [ ] brightness
 #[block_behavior]
 pub struct BambooSaplingBlock {
     block: BlockRef,
@@ -109,8 +107,10 @@ impl BlockBehavior for BambooSaplingBlock {
     }
 
     fn random_tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if rand::random_range(0..3) == 0 && world.get_block_state(pos.above()).is_air() {
-            // TODO: brightness
+        if rand::random_range(0..3) == 0
+            && world.get_block_state(pos.above()).is_air()
+            && world.raw_brightness(pos.above(), 0) >= 9
+        {
             Self::grow(world, pos);
         }
     }

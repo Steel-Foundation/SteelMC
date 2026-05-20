@@ -22,9 +22,6 @@ use crate::{
 };
 
 /// Behavior for the Bamboo Stalk Block
-/// TODO:
-/// - [ ] brightness
-/// - [ ] dont replace fluids
 #[block_behavior]
 pub struct BambooStalkBlock;
 
@@ -205,7 +202,7 @@ impl BlockBehavior for BambooStalkBlock {
                 state_below.get_value(&BlockStateProperties::AGE_1),
             ))
         } else {
-            let state_above = context.world.get_block_state(context.clicked_pos.above());
+            let state_above = context.world.get_block_state(context.relative_pos.above());
             if state_above.get_block() == &vanilla_blocks::BAMBOO {
                 Some(
                     vanilla_blocks::BAMBOO
@@ -237,9 +234,10 @@ impl BlockBehavior for BambooStalkBlock {
             return;
         }
         let mut rng = rand::rng();
-        if rng.random_range(0..3) == 0 && world.get_block_state(pos.above()).is_air() {
-            // TODO: brightness
-
+        if rng.random_range(0..3) == 0
+            && world.get_block_state(pos.above()).is_air()
+            && world.raw_brightness(pos.above(), 0) >= 9
+        {
             let height = Self::stalk_segments_below(world, pos);
             if height < 16 {
                 Self::grow(world, pos, state, &mut rng, height);

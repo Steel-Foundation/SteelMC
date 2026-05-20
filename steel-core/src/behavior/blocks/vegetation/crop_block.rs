@@ -58,6 +58,14 @@ pub trait CropLike {
         state.get_value(self.age_property()) >= self.max_age()
     }
 
+    fn has_sufficient_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        world.raw_brightness(pos, 0) >= 8
+    }
+
+    fn has_sufficient_growth_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        world.raw_brightness(pos, 0) >= 9
+    }
+
     /// Calculates the growth speed based on surrounding farmland.
     ///
     /// Factors affecting growth speed:
@@ -133,8 +141,9 @@ pub trait CropLike {
     }
 
     fn on_random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        // TODO: Check light level >= 9 when light engine is implemented
-        // For now, assume sufficient light
+        if !self.has_sufficient_growth_light(world.as_ref(), pos) {
+            return;
+        }
 
         let age = self.get_age(state);
         if age < self.max_age() {
@@ -222,7 +231,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         world: &dyn LevelReader,
         pos: steel_utils::BlockPos,
     ) -> bool {
-        vegetation_can_survive(self, state, world, pos)
+        self.has_sufficient_light(world, pos) && vegetation_can_survive(self, state, world, pos)
     }
 
     fn update_shape(
@@ -284,5 +293,68 @@ impl<T: CropLike> Vegetation for T {
         REGISTRY
             .blocks
             .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+
+    struct CropSurvivalLevel {
+        support: BlockStateId,
+        air: BlockStateId,
+        raw_brightness: u8,
+    }
+
+    impl CropSurvivalLevel {
+        fn new(support: BlockStateId, raw_brightness: u8) -> Self {
+            Self {
+                support,
+                air: vanilla_blocks::AIR.default_state(),
+                raw_brightness,
+            }
+        }
+    }
+
+    impl LevelReader for CropSurvivalLevel {
+        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+            if pos == BlockPos::ZERO.below() {
+                self.support
+            } else {
+                self.air
+            }
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            self.raw_brightness
+        }
+
+        fn min_y(&self) -> i32 {
+            -64
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
+    }
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn crop_survival_requires_vanilla_minimum_light() {
+        init_registry();
+
+        let crop = CropBlock::new(&vanilla_blocks::WHEAT);
+        let state = vanilla_blocks::WHEAT.default_state();
+        let farmland = vanilla_blocks::FARMLAND.default_state();
+
+        assert!(!crop.can_survive(state, &CropSurvivalLevel::new(farmland, 7), BlockPos::ZERO));
+        assert!(crop.can_survive(state, &CropSurvivalLevel::new(farmland, 8), BlockPos::ZERO));
     }
 }
