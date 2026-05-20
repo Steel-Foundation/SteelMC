@@ -1,43 +1,55 @@
 use steel_macros::block_behavior;
 use steel_registry::{
-    TaggedRegistryExt,
+    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_block_tags,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
-            Vegetation, default_surviving_state,
+            Vegetation,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
     world::{LevelReader, ScheduledTickAccess},
 };
 
-/// Behavior for azalea blocks.
+/// Behavior for Nether Sprouts
 #[block_behavior]
-pub struct AzaleaBlock {
+pub struct NetherSproutsBlock {
     block: BlockRef,
 }
 
-impl AzaleaBlock {
-    /// Creates a new azalea block behavior.
+impl NetherSproutsBlock {
+    /// Creates a new Nether Sprout Block Behavior
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehavior for AzaleaBlock {
+impl BlockBehavior for NetherSproutsBlock {
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        if self.may_place_on(
+            context.world.get_block_state(context.relative_pos.below()),
+            context.world,
+            context.relative_pos.below(),
+        ) {
+            Some(self.block.default_state())
+        } else {
+            None
+        }
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        _direction: Direction,
+        _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
@@ -47,16 +59,13 @@ impl BlockBehavior for AzaleaBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
-
-    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        default_surviving_state(self.block, self, context)
-    }
 }
 
-impl Vegetation for AzaleaBlock {
+impl Vegetation for NetherSproutsBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        steel_registry::REGISTRY
-            .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_AZALEA_TAG)
+        REGISTRY.blocks.is_in_tag(
+            state.get_block(),
+            &vanilla_block_tags::SUPPORTS_NETHER_SPROUTS_TAG,
+        )
     }
 }

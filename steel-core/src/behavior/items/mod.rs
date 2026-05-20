@@ -5,6 +5,7 @@
 
 mod axe;
 mod block_item;
+mod bonemeal;
 mod bucket;
 mod default;
 mod ender_eye;
@@ -18,6 +19,7 @@ mod flint_and_steel;
 
 pub use axe::AxeItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
+pub use bonemeal::BoneMealItem;
 pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeItem;

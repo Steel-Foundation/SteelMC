@@ -12,6 +12,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
@@ -487,6 +488,11 @@ pub trait BlockBehavior: Send + Sync {
             .tick_delay(world);
         world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
         true
+    }
+
+    /// Returns the trait object for Blocks that have the Bonemealable trait implemented.
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        None
     }
 }
 

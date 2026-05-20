@@ -6,11 +6,10 @@
 mod building;
 mod container;
 mod decoration;
-mod farming;
 mod fluid;
 mod portal;
 mod redstone;
-mod vegetation;
+pub mod vegetation;
 
 pub use building::{
     DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, StairBlock, WeatherState,
@@ -22,21 +21,24 @@ pub use decoration::{
     CandleBlock, CeilingHangingSignBlock, StandingSignBlock, TorchBlock, WallHangingSignBlock,
     WallSignBlock, WallTorchBlock,
 };
-pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
 pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
-    AzaleaBlock, BambooStalkBlock, BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock,
-    BigDripleafBlock, BigDripleafStemBlock, BushBlock, CarpetBlock, CaveVinesBlock,
-    CaveVinesPlantBlock, ChorusFlowerBlock, ChorusPlantBlock, CoralFanBlock, CoralPlantBlock,
-    CoralWallFanBlock, DoublePlantBlock, DryVegetationBlock, EyeblossomBlock, EyeblossomType,
-    FireflyBushBlock, FlowerBedBlock, FlowerBlock, GlowLichenBlock, HangingMossBlock,
-    HangingRootsBlock, KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock,
-    MangrovePropaguleBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
-    NetherSproutsBlock, PointedDripstoneBlock, SaplingBlock, SculkVeinBlock, SeaPickleBlock,
-    SeagrassBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock, SporeBlossomBlock,
-    SugarCaneBlock, SweetBerryBushBlock, TallDryGrassBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock,
-    WeepingVinesPlantBlock, WitherRoseBlock,
+    AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
+    CactusFlowerBlock, CarrotBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock,
+    NetherWartBlock, PitcherCropBlock, PotatoBlock, SeagrassBlock, SugarCaneBlock,
+    SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TorchflowerCropBlock,
+};
+pub use vegetation::{
+    BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,
+    BigDripleafStemBlock, BushBlock, CarpetBlock, CaveVinesBlock, CaveVinesPlantBlock,
+    ChorusFlowerBlock, ChorusPlantBlock, CoralFanBlock, CoralPlantBlock, CoralWallFanBlock,
+    DryVegetationBlock, EyeblossomBlock, EyeblossomType, FarmlandBlock, FireflyBushBlock,
+    FlowerBedBlock, GlowLichenBlock, HangingMossBlock, HangingRootsBlock, KelpBlock,
+    KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock, MossyCarpetBlock,
+    MushroomBlock, NetherFungusBlock, NetherRootsBlock, PointedDripstoneBlock, SaplingBlock,
+    SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock, SnowLayerBlock,
+    SporeBlossomBlock, TallDryGrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock,
+    WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
 };
