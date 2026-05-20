@@ -1333,16 +1333,15 @@ pub trait Menu {
 
         if source_item.is_empty() {
             // Move from target to inventory
-            if target_slot.may_pickup(&guard, player) {
-                if let Some(taken) =
+            if target_slot.may_pickup(&guard, player)
+                && let Some(taken) =
                     target_slot.try_remove(&mut guard, target_item.count, i32::MAX, player)
-                {
-                    if let Some(inv) = guard.get_mut(player_inv_id) {
-                        inv.set_item(inventory_slot, taken);
-                    }
-                    if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                        player.add_item_or_drop_with_guard(&mut guard, remainder);
-                    }
+            {
+                if let Some(inv) = guard.get_mut(player_inv_id) {
+                    inv.set_item(inventory_slot, taken);
+                }
+                if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
+                    player.add_item_or_drop_with_guard(&mut guard, remainder);
                 }
             }
         } else if target_item.is_empty() {
