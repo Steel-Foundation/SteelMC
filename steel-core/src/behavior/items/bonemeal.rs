@@ -27,12 +27,13 @@ impl BoneMealItem {
             return false;
         };
         if let Some(bonemealable) = behavior.as_bonemealable() {
-            if !bonemealable.is_bonemealable(state, world, pos) {
+            if !bonemealable.is_valid_bonemeal_target(state, world.as_ref(), pos) {
                 return false;
             }
 
-            if bonemealable.random_success() {
-                bonemealable.apply_bonemeal(state, world, pos);
+            let mut rng = rand::rng();
+            if bonemealable.is_bonemeal_success(state, world, &mut rng, pos) {
+                bonemealable.perform_bonemeal(state, world, &mut rng, pos);
             }
             item_stack.shrink(1);
 
@@ -52,10 +53,12 @@ impl BoneMealItem {
             return false;
         }
 
-        let bonemealable = BLOCK_BEHAVIORS
+        let Some(bonemealable) = BLOCK_BEHAVIORS
             .get_behavior(&vanilla_blocks::SEAGRASS)
             .as_bonemealable()
-            .expect("Seagrass bonemealable should exist.");
+        else {
+            return false;
+        };
 
         let mut rng = rand::rng();
 
@@ -75,9 +78,7 @@ impl BoneMealItem {
                 }
             }
 
-            // TODO: corals
-            // let underwater_bonemeal_blocks = REGISTRY.blocks.get_tag(&vanilla_block_tags::UNDERWATER_BONEMEALS_TAG).expect("UNDERWATER_BONEMEALS_TAG should exist.");
-            // rng.random_range(0..underwater_bonemeal_blocks.len());
+            // TODO: implement coral and underwater bonemeal tag selection.
 
             let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(new_state) else {
                 return false;
@@ -90,10 +91,10 @@ impl BoneMealItem {
                 {
                     world.set_block(new_pos, new_state, UpdateFlags::UPDATE_ALL);
                 } else if current_state.get_block() == &vanilla_blocks::SEAGRASS
-                    && bonemealable.is_bonemealable(current_state, world, new_pos)
+                    && bonemealable.is_valid_bonemeal_target(current_state, world.as_ref(), new_pos)
                     && rng.random_range(0..10) == 0
                 {
-                    bonemealable.apply_bonemeal(current_state, world, new_pos);
+                    bonemealable.perform_bonemeal(current_state, world, &mut rng, new_pos);
                 }
             }
         }

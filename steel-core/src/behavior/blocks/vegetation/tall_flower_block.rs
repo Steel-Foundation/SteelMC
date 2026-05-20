@@ -72,11 +72,22 @@ impl BlockBehavior for TallFlowerBlock {
 }
 
 impl Bonemealable for TallFlowerBlock {
-    fn is_bonemealable(&self, _state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) -> bool {
+    fn is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+    ) -> bool {
         true
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn perform_bonemeal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
         if let Some(item) = REGISTRY.items.by_key(&self.block.key) {
             world.pop_resource(pos, ItemStack::new(item));
         }

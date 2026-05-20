@@ -48,15 +48,27 @@ impl BambooSaplingBlock {
 }
 
 impl Bonemealable for BambooSaplingBlock {
-    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
+    fn get_bonemeal_age_increase(&self, _world: &Arc<World>, _rng: &mut dyn rand::Rng) -> u8 {
         1
     }
 
-    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        world.is_in_valid_bounds(pos.above()) && world.get_block_state(pos.above()).is_air()
+    fn is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        !world.is_outside_build_height(pos.above().y())
+            && world.get_block_state(pos.above()).is_air()
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn perform_bonemeal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
         Self::grow(world, pos);
     }
 }

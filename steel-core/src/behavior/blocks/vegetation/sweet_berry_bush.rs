@@ -154,7 +154,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
             pos,
             1.0,
-            0.8 * rng.random::<f32>() * 0.4,
+            0.8 + rng.random::<f32>() * 0.4,
             Some(player.id),
         );
 
@@ -163,19 +163,40 @@ impl BlockBehavior for SweetBerryBushBlock {
 
         InteractionResult::Success
     }
+
+    fn get_clone_item_stack(
+        &self,
+        _block: BlockRef,
+        _state: BlockStateId,
+        _include_data: bool,
+    ) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::ITEMS.sweet_berries))
+    }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
 }
 
 impl Bonemealable for SweetBerryBushBlock {
-    fn is_bonemealable(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn is_valid_bonemeal_target(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
         state.get_value(&BlockStateProperties::AGE_3) < 3
             && world.get_block_state(pos.above()).is_air()
-            && world.is_in_valid_bounds(pos.above())
+            && !world.is_outside_build_height(pos.above().y())
     }
 
-    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
         let new_age = (state.get_value(&BlockStateProperties::AGE_3) + 1).min(3);
         world.set_block(
             pos,

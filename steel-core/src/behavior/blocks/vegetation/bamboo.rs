@@ -1,5 +1,6 @@
 use std::{ops::Not, sync::Arc};
 
+use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
@@ -67,7 +68,13 @@ impl BambooStalkBlock {
         height
     }
 
-    fn grow(world: &Arc<World>, pos: BlockPos, state: BlockStateId, height: i32) {
+    fn grow(
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        rng: &mut dyn rand::Rng,
+        height: i32,
+    ) {
         let state_below = world.get_block_state(pos.below());
         let block_below = state_below.get_block();
         let state_two_below = world.get_block_state(pos.below_n(2));
@@ -100,7 +107,7 @@ impl BambooStalkBlock {
                 || state_two_below.get_block() == &vanilla_blocks::BAMBOO,
         );
 
-        let new_stage = u8::from(height == 15 || (height >= 11 && rand::random::<f32>() < 0.25));
+        let new_stage = u8::from(height == 15 || (height >= 11 && rng.random::<f32>() < 0.25));
 
         world.set_block(
             pos.above(),
@@ -115,11 +122,16 @@ impl BambooStalkBlock {
 }
 
 impl Bonemealable for BambooStalkBlock {
-    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
-        1 + rand::random_range(0..2)
+    fn get_bonemeal_age_increase(&self, _world: &Arc<World>, rng: &mut dyn rand::Rng) -> u8 {
+        1 + rng.random_range(0..2)
     }
 
-    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
         let above = Self::stalk_segments_above(world, pos);
         let below = Self::stalk_segments_below(world, pos);
         let growth_pos = pos.above_n(above + 1);
@@ -128,16 +140,22 @@ impl Bonemealable for BambooStalkBlock {
                 .get_block_state(pos.above_n(above))
                 .get_value(&BlockStateProperties::STAGE)
                 != 1
-            && world.is_in_valid_bounds(growth_pos)
+            && !world.is_outside_build_height(growth_pos.y())
             && world.get_block_state(growth_pos).is_air()
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn perform_bonemeal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
         let above = Self::stalk_segments_above(world, pos);
         let below = Self::stalk_segments_below(world, pos);
         let total_height = above + below + 1;
 
-        for i in 0..i32::from(self.get_age_increase(world)) {
+        for i in 0..i32::from(self.get_bonemeal_age_increase(world, rng)) {
             let pos_above = pos.above_n(above + i);
             let state_above = world.get_block_state(pos_above);
             let growth_pos = pos_above.above();
@@ -149,7 +167,7 @@ impl Bonemealable for BambooStalkBlock {
                 return;
             }
 
-            Self::grow(world, pos_above, state_above, total_height + i);
+            Self::grow(world, pos_above, state_above, rng, total_height + i);
         }
     }
 }
@@ -218,12 +236,13 @@ impl BlockBehavior for BambooStalkBlock {
         if state.get_value(&BlockStateProperties::STAGE) != 0 {
             return;
         }
-        if rand::random_range(0..3) == 0 && world.get_block_state(pos.above()).is_air() {
+        let mut rng = rand::rng();
+        if rng.random_range(0..3) == 0 && world.get_block_state(pos.above()).is_air() {
             // TODO: brightness
 
             let height = Self::stalk_segments_below(world, pos);
             if height < 16 {
-                Self::grow(world, pos, state, height);
+                Self::grow(world, pos, state, &mut rng, height);
             }
         }
     }

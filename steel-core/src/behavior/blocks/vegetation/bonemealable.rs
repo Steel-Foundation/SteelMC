@@ -2,28 +2,48 @@
 
 use std::sync::Arc;
 
+use rand::Rng;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::{behavior::blocks::vegetation::crop_block::CropLike, world::World};
+use crate::{
+    behavior::blocks::vegetation::crop_block::CropLike,
+    world::{LevelReader, World},
+};
 
 /// Blocks that react to bonemeal.
 pub trait Bonemealable {
     /// Returns the age increase from bonemeal.
-    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
+    fn get_bonemeal_age_increase(&self, _world: &Arc<World>, _rng: &mut dyn Rng) -> u8 {
         0
     }
 
-    /// Returns whether bonemeal can be applied.
-    fn is_bonemealable(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool;
+    /// Returns whether this block is a valid bonemeal target.
+    fn is_valid_bonemeal_target(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool;
 
-    /// Applies the bonemeal effect.
-    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos);
-
-    /// Returns with a random chance whether the bonemeal should by applied or not
-    /// use `rand::random_bool(probability_of_success)`
-    fn random_success(&self) -> bool {
+    /// Returns whether bonemeal succeeds after the target check passes.
+    fn is_bonemeal_success(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _rng: &mut dyn Rng,
+        _pos: BlockPos,
+    ) -> bool {
         true
     }
+
+    /// Applies the bonemeal effect.
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
+        pos: BlockPos,
+    );
 
     /// Returns how this block uses bonemeal.
     fn bonemeal_action_type(&self) -> BonemealAction {
@@ -52,11 +72,17 @@ impl BonemealAction {
 
 /// Default Bonemeal implementation for all crops
 pub trait CropBonemealExt: CropLike + Bonemealable {
-    /// Default `apply_bonemeal` implementation for all crops
-    fn default_apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    /// Default `perform_bonemeal` implementation for all crops
+    fn default_perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
+        pos: BlockPos,
+    ) {
         let new_age = self
             .get_age(state)
-            .saturating_add(self.get_age_increase(world))
+            .saturating_add(self.get_bonemeal_age_increase(world, rng))
             .min(self.max_age());
 
         world.set_block(

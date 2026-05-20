@@ -34,98 +34,6 @@ impl SugarCaneBlock {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-
-    use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry};
-
-    use super::*;
-
-    struct EmptyLevel {
-        scheduled_block_tick: Cell<bool>,
-    }
-
-    impl EmptyLevel {
-        const fn new() -> Self {
-            Self {
-                scheduled_block_tick: Cell::new(false),
-            }
-        }
-    }
-
-    impl LevelReader for EmptyLevel {
-        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
-            vanilla_blocks::AIR.default_state()
-        }
-
-        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
-            0
-        }
-
-        fn min_y(&self) -> i32 {
-            -64
-        }
-
-        fn height(&self) -> i32 {
-            384
-        }
-    }
-
-    impl ScheduledTickAccess for EmptyLevel {
-        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
-            5
-        }
-
-        fn schedule_block_tick_default(
-            &self,
-            _pos: BlockPos,
-            block: BlockRef,
-            _delay: i32,
-        ) -> bool {
-            let is_sugar_cane = block == &vanilla_blocks::SUGAR_CANE;
-            self.scheduled_block_tick.set(is_sugar_cane);
-            is_sugar_cane
-        }
-
-        fn schedule_fluid_tick_default(
-            &self,
-            _pos: BlockPos,
-            _fluid: FluidRef,
-            _delay: i32,
-        ) -> bool {
-            true
-        }
-    }
-
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
-    #[test]
-    fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
-        init_registry();
-        let behavior = SugarCaneBlock::new(&vanilla_blocks::SUGAR_CANE);
-        let level = EmptyLevel::new();
-        let state = vanilla_blocks::SUGAR_CANE.default_state();
-
-        let updated = behavior.update_shape(
-            state,
-            &level,
-            BlockPos::ZERO,
-            Direction::Down,
-            BlockPos::ZERO.below(),
-            vanilla_blocks::AIR.default_state(),
-        );
-
-        assert_eq!(updated, state);
-        assert!(level.scheduled_block_tick.get());
-    }
-}
-
 impl BlockBehavior for SugarCaneBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let pos = context.relative_pos;
@@ -253,5 +161,97 @@ impl BlockBehavior for SugarCaneBlock {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use steel_registry::fluid::FluidRef;
+    use steel_registry::{REGISTRY, Registry};
+
+    use super::*;
+
+    struct EmptyLevel {
+        scheduled_block_tick: Cell<bool>,
+    }
+
+    impl EmptyLevel {
+        const fn new() -> Self {
+            Self {
+                scheduled_block_tick: Cell::new(false),
+            }
+        }
+    }
+
+    impl LevelReader for EmptyLevel {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            vanilla_blocks::AIR.default_state()
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            0
+        }
+
+        fn min_y(&self) -> i32 {
+            -64
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
+    }
+
+    impl ScheduledTickAccess for EmptyLevel {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
+            5
+        }
+
+        fn schedule_block_tick_default(
+            &self,
+            _pos: BlockPos,
+            block: BlockRef,
+            _delay: i32,
+        ) -> bool {
+            let is_sugar_cane = block == &vanilla_blocks::SUGAR_CANE;
+            self.scheduled_block_tick.set(is_sugar_cane);
+            is_sugar_cane
+        }
+
+        fn schedule_fluid_tick_default(
+            &self,
+            _pos: BlockPos,
+            _fluid: FluidRef,
+            _delay: i32,
+        ) -> bool {
+            true
+        }
+    }
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
+        init_registry();
+        let behavior = SugarCaneBlock::new(&vanilla_blocks::SUGAR_CANE);
+        let level = EmptyLevel::new();
+        let state = vanilla_blocks::SUGAR_CANE.default_state();
+
+        let updated = behavior.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::AIR.default_state(),
+        );
+
+        assert_eq!(updated, state);
+        assert!(level.scheduled_block_tick.get());
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
-use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
+use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::vanilla_block_tags;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
@@ -11,7 +11,6 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
-use crate::fluid::get_fluid_state_from_block;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, water_source_fluid_state};
@@ -93,12 +92,22 @@ impl BlockBehavior for SeagrassBlock {
 }
 
 impl Bonemealable for SeagrassBlock {
-    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        let above_fluid = get_fluid_state_from_block(world.get_block_state(pos.above()));
-        above_fluid.is_water() && above_fluid.is_source()
+    fn is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        world.get_block_state(pos.above()).get_block() == &vanilla_blocks::WATER
     }
 
-    fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn perform_bonemeal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
         let lower_state = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
             DoubleBlockHalf::Lower,
@@ -123,15 +132,22 @@ mod tests {
 
     struct SingleSupportLevel {
         support: BlockStateId,
+        above: BlockStateId,
         scheduled_water_tick: Cell<bool>,
     }
 
     impl SingleSupportLevel {
-        const fn new(support: BlockStateId) -> Self {
+        fn new(support: BlockStateId) -> Self {
             Self {
                 support,
+                above: vanilla_blocks::AIR.default_state(),
                 scheduled_water_tick: Cell::new(false),
             }
+        }
+
+        fn with_above(mut self, above: BlockStateId) -> Self {
+            self.above = above;
+            self
         }
     }
 
@@ -139,6 +155,8 @@ mod tests {
         fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
             if pos == BlockPos::ZERO.below() {
                 self.support
+            } else if pos == BlockPos::ZERO.above() {
+                self.above
             } else {
                 vanilla_blocks::AIR.default_state()
             }
@@ -227,5 +245,23 @@ mod tests {
 
         assert_eq!(updated, state);
         assert!(level.scheduled_water_tick.get());
+    }
+
+    #[test]
+    fn seagrass_bonemeal_requires_water_block_above() {
+        init_registry();
+        let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
+        let state = vanilla_blocks::SEAGRASS.default_state();
+        let waterlogged_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+
+        let water_level = SingleSupportLevel::new(vanilla_blocks::DIRT.default_state())
+            .with_above(vanilla_blocks::WATER.default_state());
+        assert!(behavior.is_valid_bonemeal_target(state, &water_level, BlockPos::ZERO));
+
+        let waterlogged_level = SingleSupportLevel::new(vanilla_blocks::DIRT.default_state())
+            .with_above(waterlogged_slab);
+        assert!(!behavior.is_valid_bonemeal_target(state, &waterlogged_level, BlockPos::ZERO));
     }
 }

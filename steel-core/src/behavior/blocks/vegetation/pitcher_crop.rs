@@ -115,7 +115,7 @@ impl PitcherCropBlock {
 
     fn get_lower_half(
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
     ) -> Option<(BlockStateId, BlockPos)> {
         if Self::is_lower(state) {
@@ -148,10 +148,10 @@ impl PitcherCropBlock {
         }
     }
 
-    fn can_grow(world: &Arc<World>, state: BlockStateId, pos: BlockPos, new_age: u8) -> bool {
+    fn can_grow(world: &dyn LevelReader, state: BlockStateId, pos: BlockPos, new_age: u8) -> bool {
         let state_above = world.get_block_state(pos.above());
         state.get_value(&AGE_PROPERTY) < 4
-            && world.is_in_valid_bounds(pos.above())
+            && !world.is_outside_build_height(pos.above().y())
             && (new_age < 3
                 || state_above.is_air()
                 || state_above.get_block() == &vanilla_blocks::PITCHER_CROP) // TODO: light
@@ -241,7 +241,12 @@ impl Vegetation for PitcherCropBlock {
 }
 
 impl Bonemealable for PitcherCropBlock {
-    fn is_bonemealable(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn is_valid_bonemeal_target(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
         let Some((lower_state, lower_pos)) = Self::get_lower_half(state, world, pos) else {
             return false;
         };
@@ -256,7 +261,13 @@ impl Bonemealable for PitcherCropBlock {
         Self::can_grow(world, lower_state, lower_pos, new_age)
     }
 
-    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        _rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
         if let Some((lower_state, lower_pos)) = Self::get_lower_half(state, world, pos) {
             Self::grow(world, lower_state, lower_pos, 1);
         }

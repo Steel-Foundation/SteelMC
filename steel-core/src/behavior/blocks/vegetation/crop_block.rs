@@ -2,12 +2,16 @@
 
 use std::sync::Arc;
 
+use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_items};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_entities, vanilla_game_rules,
+    vanilla_items,
+};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
@@ -17,6 +21,7 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     vegetation_can_survive, vegetation_update_shape,
 };
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::Entity;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for crop blocks (wheat, carrots, potatoes).
@@ -174,15 +179,26 @@ impl CropLike for CropBlock {
 }
 
 impl Bonemealable for CropBlock {
-    fn get_age_increase(&self, _world: &Arc<World>) -> u8 {
-        rand::random_range(2..=5)
+    fn get_bonemeal_age_increase(&self, _world: &Arc<World>, rng: &mut dyn rand::Rng) -> u8 {
+        rng.random_range(2..=5)
     }
 
-    fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.default_apply_bonemeal(state, world, pos);
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn rand::Rng,
+        pos: BlockPos,
+    ) {
+        self.default_perform_bonemeal(state, world, rng, pos);
     }
 
-    fn is_bonemealable(&self, state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) -> bool {
+    fn is_valid_bonemeal_target(
+        &self,
+        state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+    ) -> bool {
         !self.is_max_age(state)
     }
 }
@@ -229,6 +245,23 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if self.should_random_tick() {
             self.on_random_tick(state, world, pos);
+        }
+    }
+
+    fn entity_inside(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) {
+        if entity.entity_type() == &vanilla_entities::RAVAGER
+            && world
+                .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+                .as_bool()
+                == Some(true)
+        {
+            world.destroy_block(pos, true);
         }
     }
 
