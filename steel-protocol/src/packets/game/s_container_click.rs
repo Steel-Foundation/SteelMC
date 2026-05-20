@@ -28,12 +28,7 @@ impl ReadFrom for ClickType {
             4 => ClickType::Throw,
             5 => ClickType::QuickCraft,
             6 => ClickType::PickupAll,
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!("invalid container click type: {id}"),
-                ));
-            }
+            _ => ClickType::Pickup,
         })
     }
 }
@@ -166,12 +161,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_unknown_click_type() {
+    fn unknown_click_type_falls_back_to_pickup() {
         let mut data = Vec::new();
         VarInt(7).write(&mut data).unwrap();
 
-        let err = ClickType::read(&mut Cursor::new(&data)).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::InvalidData);
+        let click_type = ClickType::read(&mut Cursor::new(&data)).unwrap();
+        assert_eq!(click_type, ClickType::Pickup);
     }
 
     #[test]
