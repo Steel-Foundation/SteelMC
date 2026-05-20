@@ -7,49 +7,13 @@
 
 use std::sync::LazyLock;
 
-use steel_utils::{BoundingBox, Identifier};
+use steel_registry::structure::TerrainAdjustment;
+use steel_registry::template_pool::Projection;
+use steel_utils::BoundingBox;
 use steel_worldgen::math::map_clamped;
 
-use crate::world::structure::StructureStartMap;
-
-/// How a structure modifies the surrounding terrain.
-///
-/// Corresponds to vanilla's `TerrainAdjustment` enum.
-// TODO: This should be data-driven from the structure registry, not hardcoded.
-// In vanilla, `TerrainAdjustment` is a codec field on `Structure.StructureSettings`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TerrainAdjustment {
-    /// No terrain adaptation.
-    None,
-    /// Fill in terrain around and above the structure (e.g. ancient city).
-    Bury,
-    /// Carve thin beard below structure (e.g. village).
-    BeardThin,
-    /// Carve box-shaped beard below structure (e.g. bastion remnant).
-    BeardBox,
-    /// Encapsulate structure in terrain (e.g. trial chambers).
-    Encapsulate,
-}
-
-impl TerrainAdjustment {
-    /// Look up the terrain adjustment for a vanilla structure identifier.
-    // TODO: Replace with registry lookup once structures are data-driven.
-    #[must_use]
-    pub fn for_structure(id: &Identifier) -> Self {
-        if id.namespace != Identifier::VANILLA_NAMESPACE {
-            return Self::None;
-        }
-        match id.path.as_ref() {
-            "village" | "pillager_outpost" | "desert_pyramid" | "jungle_temple" | "swamp_hut"
-            | "igloo" | "shipwreck" | "shipwreck_beached" | "ocean_ruin_cold"
-            | "ocean_ruin_warm" => Self::BeardThin,
-            "bastion_remnant" => Self::BeardBox,
-            "ancient_city" | "trail_ruins" | "ocean_monument" => Self::Bury,
-            "trial_chambers" => Self::Encapsulate,
-            _ => Self::None,
-        }
-    }
-}
+use crate::world::structure::StructureStart;
+use crate::world::structure::jigsaw::JigsawJunction;
 
 /// A rigid structure piece that modifies terrain density.
 #[derive(Debug)]
@@ -57,17 +21,6 @@ struct Rigid {
     bounding_box: BoundingBox,
     terrain_adjustment: TerrainAdjustment,
     ground_level_delta: i32,
-}
-
-/// A jigsaw junction point that creates a small terrain beard.
-#[derive(Debug)]
-pub struct JigsawJunction {
-    /// World X coordinate of the junction source.
-    pub source_x: i32,
-    /// Ground Y level at the junction source.
-    pub source_ground_y: i32,
-    /// World Z coordinate of the junction source.
-    pub source_z: i32,
 }
 
 const KERNEL_RADIUS: i32 = 12;
@@ -142,8 +95,10 @@ fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> f64 {
 
 /// Computes terrain density contributions from nearby structure pieces and junctions.
 ///
-/// Created per-chunk from the chunk's structure starts, then queried at each
-/// cell corner during `NoiseChunk::fill_slice`.
+/// Built per-chunk from the chunk's own starts plus referenced neighbor starts (mirrors
+/// vanilla's `StructureManager.startsForStructure`). Queried per-block by `NoiseChunk::fill`
+/// after the outer density-function ops, matching vanilla's `cacheAllInCell(add(final_density,
+/// beardifier))` integration.
 pub struct Beardifier {
     rigids: Vec<Rigid>,
     junctions: Vec<JigsawJunction>,
@@ -155,19 +110,30 @@ pub struct Beardifier {
 impl Beardifier {
     /// Collect rigid pieces and junctions from structure starts that affect this chunk.
     ///
+    /// `starts` should yield every `StructureStart` whose pieces could affect this chunk —
+    /// typically the chunk's own starts plus all referenced neighbor starts (vanilla collects
+    /// these via `StructureManager.startsForStructure`).
+    ///
     /// `chunk_x` and `chunk_z` are chunk coordinates (not block coordinates).
+    ///
+    /// Mirrors vanilla's `forStructuresInChunk`:
+    /// - Non-jigsaw pieces (`projection: None`) → added as rigid with `ground_level_delta = 0`.
+    /// - Jigsaw RIGID pieces → added as rigid with stored `ground_level_delta`, junctions collected.
+    /// - Jigsaw `TERRAIN_MATCHING` pieces → not added as rigid; junctions still collected.
     #[must_use]
-    pub fn for_structures_in_chunk(
-        structure_starts: &StructureStartMap,
-        chunk_x: i32,
-        chunk_z: i32,
-    ) -> Self {
+    pub fn for_structures_in_chunk<'a, I>(starts: I, chunk_x: i32, chunk_z: i32) -> Self
+    where
+        I: IntoIterator<Item = &'a StructureStart>,
+    {
+        let chunk_start_x = chunk_x * 16;
+        let chunk_start_z = chunk_z * 16;
+
         let mut rigids = Vec::new();
-        let junctions = Vec::new();
+        let mut junctions: Vec<JigsawJunction> = Vec::new();
         let mut encompassing: Option<BoundingBox> = None;
 
-        for (structure_id, start) in structure_starts {
-            let terrain_adj = TerrainAdjustment::for_structure(structure_id);
+        for start in starts {
+            let terrain_adj = start.terrain_adjustment;
             if terrain_adj == TerrainAdjustment::None {
                 continue;
             }
@@ -176,32 +142,57 @@ impl Beardifier {
                 let bb = &piece.bounding_box;
 
                 // Vanilla: piece.isCloseToChunk(chunkPos, 12)
-                // Checks if piece bounding box is within 12 blocks of chunk area
                 if !is_close_to_chunk(bb, chunk_x, chunk_z, 12) {
                     continue;
                 }
 
-                // For jigsaw pieces with RIGID projection, we'd check projection.
-                // Since we store nbt_data opaquely, we treat all pieces as rigid
-                // (non-rigid pieces don't generate terrain adaptation in vanilla
-                // unless they're PoolElementStructurePiece with RIGID projection).
-                // For now, treat all pieces as rigid with ground_level_delta = 0.
-                // TODO: Parse ground_level_delta from jigsaw piece NBT when available.
-                let ground_level_delta = 0;
+                let is_jigsaw = piece.projection.is_some();
+                let is_rigid = matches!(piece.projection, Some(Projection::Rigid));
 
-                encompassing = Some(match encompassing {
-                    Some(enc) => BoundingBox::encapsulating(&enc, bb),
-                    None => *bb,
-                });
+                // Vanilla: only non-jigsaw pieces and jigsaw-RIGID pieces become rigids.
+                // Jigsaw TERRAIN_MATCHING pieces are skipped here (junctions still collected
+                // below, and the encompassing box only gets junction positions for them).
+                if !is_jigsaw || is_rigid {
+                    encompassing = Some(match encompassing {
+                        Some(enc) => BoundingBox::encapsulating(&enc, bb),
+                        None => *bb,
+                    });
 
-                rigids.push(Rigid {
-                    bounding_box: *bb,
-                    terrain_adjustment: terrain_adj,
-                    ground_level_delta,
-                });
+                    rigids.push(Rigid {
+                        bounding_box: *bb,
+                        terrain_adjustment: terrain_adj,
+                        // Vanilla uses 0 for non-jigsaw pieces regardless of any stored value;
+                        // jigsaw RIGID pieces use the projection-derived delta.
+                        ground_level_delta: if is_jigsaw {
+                            piece.ground_level_delta
+                        } else {
+                            0
+                        },
+                    });
+                }
 
-                // TODO: Parse and collect jigsaw junctions from piece NBT
-                // Junctions contribute getBeardContribution * 0.4
+                // Junctions: vanilla collects them only on jigsaw pieces, and bounds are
+                // strict — exclusive on both sides:
+                // `(chunkStartBlockX - 12, chunkStartBlockX + 15 + 12)`, same for Z.
+                if is_jigsaw {
+                    for junction in &piece.junctions {
+                        let jx = junction.source_x;
+                        let jz = junction.source_z;
+                        if jx > chunk_start_x - 12
+                            && jz > chunk_start_z - 12
+                            && jx < chunk_start_x + 15 + 12
+                            && jz < chunk_start_z + 15 + 12
+                        {
+                            let jy = junction.source_ground_y;
+                            let junction_bb = BoundingBox::new(jx, jy, jz, jx, jy, jz);
+                            encompassing = Some(match encompassing {
+                                Some(enc) => BoundingBox::encapsulating(&enc, &junction_bb),
+                                None => junction_bb,
+                            });
+                            junctions.push(junction.clone());
+                        }
+                    }
+                }
             }
         }
 

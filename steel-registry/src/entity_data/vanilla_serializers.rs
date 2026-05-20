@@ -7,6 +7,7 @@
 use std::io;
 
 use steel_utils::{
+    PackedBlockPos,
     codec::{VarInt, VarLong},
     serial::{PrefixedWrite, WriteTo},
 };
@@ -119,7 +120,7 @@ fn ser_rotations(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
 
 fn ser_block_pos(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
-        EntityData::BlockPos(v) => v.as_i64().write(buf),
+        EntityData::BlockPos(v) => PackedBlockPos::from(*v).write(buf),
         _ => Err(io::Error::other("Expected BlockPos")),
     }
 }
@@ -129,7 +130,7 @@ fn ser_optional_block_pos(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()
         EntityData::OptionalBlockPos(v) => match v {
             Some(pos) => {
                 true.write(buf)?;
-                pos.as_i64().write(buf)
+                PackedBlockPos::from(*pos).write(buf)
             }
             None => false.write(buf),
         },
@@ -214,7 +215,7 @@ fn ser_optional_global_pos(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<(
             Some(global_pos) => {
                 true.write(buf)?;
                 global_pos.dimension.write(buf)?;
-                global_pos.pos.as_i64().write(buf)
+                PackedBlockPos::from(global_pos.pos).write(buf)
             }
             None => false.write(buf),
         },

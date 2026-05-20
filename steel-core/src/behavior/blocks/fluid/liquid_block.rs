@@ -26,7 +26,7 @@ use crate::behavior::block::{BlockBehavior, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 /// Behavior for liquid blocks (water and lava).
 ///
@@ -151,7 +151,7 @@ impl BlockBehavior for LiquidBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -162,7 +162,7 @@ impl BlockBehavior for LiquidBlock {
         let neighbor_fluid = neighbor_state.get_fluid_state();
 
         if fluid_state.is_source() || neighbor_fluid.is_source() {
-            let delay = FLUID_BEHAVIORS.get_behavior(self.fluid).tick_delay(world);
+            let delay = world.fluid_tick_delay(self.fluid);
             world.schedule_fluid_tick_default(pos, self.fluid, delay);
         }
 

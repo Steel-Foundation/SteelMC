@@ -35,11 +35,7 @@ impl World {
 
         // Unregister from entity cache
         let pos = player.position();
-        let section = SectionPos::new(
-            (pos.x as i32) >> 4,
-            (pos.y as i32) >> 4,
-            (pos.z as i32) >> 4,
-        );
+        let section = SectionPos::from_entity_pos(pos);
         self.entity_cache.unregister(entity_id, uuid, section);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
@@ -67,11 +63,7 @@ impl World {
         }
 
         let pos = player.position();
-        let section = SectionPos::new(
-            (pos.x as i32) >> 4,
-            (pos.y as i32) >> 4,
-            (pos.z as i32) >> 4,
-        );
+        let section = SectionPos::from_entity_pos(pos);
         self.entity_cache.unregister(entity_id, uuid, section);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(player);

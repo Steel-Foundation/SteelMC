@@ -17,7 +17,7 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     vegetation_can_survive, vegetation_update_shape,
 };
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for crop blocks (wheat, carrots, potatoes).
 ///
@@ -203,7 +203,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
     fn can_survive(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: steel_utils::BlockPos,
     ) -> bool {
         vegetation_can_survive(self, state, world, pos)
@@ -212,7 +212,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: steel_utils::BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: steel_utils::BlockPos,
@@ -247,7 +247,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
 }
 
 impl<T: CropLike> Vegetation for T {
-    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         REGISTRY
             .blocks
             .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)

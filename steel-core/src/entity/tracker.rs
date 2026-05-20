@@ -77,7 +77,7 @@ impl EntityTracker {
         let entity_id = entity.id();
         let range_chunks = entity.entity_type().client_tracking_range;
         let pos = entity.position();
-        let center_chunk = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+        let center_chunk = ChunkPos::from_entity_pos(pos);
 
         // Calculate all chunks within tracking range
         let mut registered_chunks = FxHashSet::default();
@@ -383,7 +383,7 @@ fn send_spawn_packets(entity: &SharedEntity, player: &Player) {
         x_rot,
         y_rot,
         head_y_rot: y_rot,
-        data: 0,
+        data: entity.spawn_data(),
     };
 
     // Collect entity data before entering the bundle closure

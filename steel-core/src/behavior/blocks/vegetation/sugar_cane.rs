@@ -9,14 +9,13 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::fluid::FluidStateExt;
 use steel_registry::vanilla_blocks;
-use steel_registry::{REGISTRY, TaggedRegistryExt};
-use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_fluid_tags};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{BlockBehavior, BlockStateBehaviorExt};
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Maximum sugar cane stack height (vanilla: 3 blocks).
 const MAX_SUGAR_CANE_HEIGHT: i32 = 3;
@@ -106,7 +105,7 @@ impl BlockBehavior for SugarCaneBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -118,21 +117,18 @@ impl BlockBehavior for SugarCaneBlock {
         state
     }
 
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
         let below_block = below_state.get_block();
 
-        if below_block == &vanilla_blocks::SUGAR_CANE {
+        if below_block == self.block {
             return true;
         }
 
         let is_valid_ground = REGISTRY
             .blocks
-            .is_in_tag(below_block, &Identifier::vanilla_static("dirt"))
-            || REGISTRY
-                .blocks
-                .is_in_tag(below_block, &Identifier::vanilla_static("sand"));
+            .is_in_tag(below_block, &vanilla_block_tags::SUPPORTS_SUGAR_CANE_TAG);
 
         if !is_valid_ground {
             return false;
@@ -146,11 +142,14 @@ impl BlockBehavior for SugarCaneBlock {
         ] {
             let neighbor_pos = dir.relative(below_pos);
             let neighbor_state = world.get_block_state(neighbor_pos);
-            let neighbor_block = neighbor_state.get_block();
 
-            if neighbor_state.get_fluid_state().is_water()
-                || neighbor_block == &vanilla_blocks::FROSTED_ICE
-            {
+            if REGISTRY.blocks.is_in_tag(
+                neighbor_state.get_block(),
+                &vanilla_block_tags::SUPPORTS_SUGAR_CANE_ADJACENTLY_TAG,
+            ) || REGISTRY.fluids.is_in_tag(
+                neighbor_state.get_fluid_state().fluid_id,
+                &vanilla_fluid_tags::SUPPORTS_SUGAR_CANE_ADJACENTLY_TAG,
+            ) {
                 return true;
             }
         }

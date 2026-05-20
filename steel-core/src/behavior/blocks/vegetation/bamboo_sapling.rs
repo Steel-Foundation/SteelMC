@@ -17,7 +17,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{BambooStalkBlock, bonemealable::Bonemealable},
     },
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for the Bamboo Sapling Block
@@ -62,14 +62,16 @@ impl Bonemealable for BambooSaplingBlock {
 }
 
 impl BlockBehavior for BambooSaplingBlock {
-    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state())
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        let state = self.block.default_state();
+        self.can_survive(state, context.world, context.relative_pos)
+            .then_some(state)
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -84,6 +86,10 @@ impl BlockBehavior for BambooSaplingBlock {
         }
 
         state
+    }
+
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        BambooStalkBlock::can_survive(world, pos)
     }
 
     fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {

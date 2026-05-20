@@ -2,10 +2,12 @@ use std::{env, fs, path::Path, process::Command};
 
 mod attributes;
 mod banner_patterns;
+mod biome_tags;
 mod biomes;
 mod block_entity_types;
 mod block_tags;
 mod blocks;
+mod carvers;
 mod cat_variants;
 mod chat_types;
 mod chicken_variants;
@@ -16,6 +18,7 @@ mod dialogs;
 mod dimension_types;
 mod entities;
 mod entity_data;
+mod features;
 mod fluid_tags;
 mod fluids;
 
@@ -39,6 +42,10 @@ mod poi_types;
 mod recipes;
 mod sound_events;
 mod sound_types;
+mod structure_processors;
+mod structure_sets;
+mod structure_tags;
+mod template_pools;
 mod timeline_tags;
 mod timelines;
 mod trim_materials;
@@ -71,6 +78,7 @@ const ITEM_TAGS: &str = "item_tags";
 const PACKETS: &str = "packets";
 const BANNER_PATTERNS: &str = "banner_patterns";
 const BIOMES: &str = "biomes";
+const BIOME_TAGS: &str = "biome_tags";
 const CHAT_TYPES: &str = "chat_types";
 const TRIM_PATTERNS: &str = "trim_patterns";
 const TRIM_MATERIALS: &str = "trim_materials";
@@ -117,7 +125,15 @@ const GAME_RULES: &str = "game_rules";
 const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
+const STRUCTURE_SETS: &str = "structure_sets";
+const STRUCTURE_TAGS: &str = "structure_tags";
+const STRUCTURES: &str = "structures";
+const STRUCTURE_PROCESSORS: &str = "structure_processors";
+const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
+const CARVERS: &str = "configured_carvers";
+const CONFIGURED_FEATURES: &str = "configured_features";
+const PLACED_FEATURES: &str = "placed_features";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -141,6 +157,7 @@ pub fn main() {
         (packets::build(), PACKETS),
         (banner_patterns::build(), BANNER_PATTERNS),
         (biomes::build(), BIOMES),
+        (biome_tags::build(), BIOME_TAGS),
         (chat_types::build(), CHAT_TYPES),
         (trim_patterns::build(), TRIM_PATTERNS),
         (trim_materials::build(), TRIM_MATERIALS),
@@ -180,6 +197,11 @@ pub fn main() {
         (sound_types::build(), SOUND_TYPES),
         (world_clocks::build(), WORLD_CLOCKS),
         (poi_types::build(), POI_TYPES),
+        (structure_sets::build_structures(), STRUCTURES),
+        (structure_processors::build(), STRUCTURE_PROCESSORS),
+        (structure_tags::build(), STRUCTURE_TAGS),
+        (structure_sets::build(), STRUCTURE_SETS),
+        (template_pools::build(), TEMPLATE_POOLS),
         (banner_pattern_tags::build(), BANNER_PATTERN_TAGS),
         (entity_type_tags::build(), ENTITY_TYPE_TAGS),
         (instrument_tags::build(), INSTRUMENT_TAGS),
@@ -187,6 +209,9 @@ pub fn main() {
         (poi_type_tags::build(), POI_TYPE_TAGS),
         (enchantment_tags::build(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
+        (carvers::build(), CARVERS),
+        (features::build_configured(), CONFIGURED_FEATURES),
+        (features::build_placed(), PLACED_FEATURES),
     ];
 
     // Track which files we're generating this run

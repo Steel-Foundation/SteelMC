@@ -16,12 +16,18 @@
 //! generation order, and better L1 locality since the cache lives on the sampler struct
 //! alongside the column cache. The only cost is one cold start per chunk (1/1536 lookups).
 
+use rustc_hash::FxHashSet;
 use steel_registry::biome::BiomeRef;
 use steel_registry::vanilla_biomes;
-use steel_utils::BlockPos;
+use steel_utils::random::Random as _;
+use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::{BlockPos, Identifier};
 use steel_worldgen::density_functions::nether::NetherColumnCache;
 use steel_worldgen::density_functions::overworld::OverworldColumnCache;
-use steel_worldgen::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
+use steel_worldgen::multi_noise::{
+    NETHER_BIOME_PARAMETERS, OVERWORLD_BIOME_PARAMETERS, get_nether_biome_cached,
+    get_overworld_biome_cached,
+};
 
 use super::{NetherClimateSampler, OverworldClimateSampler};
 use steel_worldgen::noise::EndIslands;
@@ -62,6 +68,47 @@ impl BiomeSourceKind {
         Self::End(Box::new(EndBiomeSource::new(seed)))
     }
 
+    /// Every biome this source can produce, preserving the source's parameter-list order.
+    ///
+    /// Feature sorting depends on biome iteration order because vanilla assigns global
+    /// feature order while walking all possible biomes. The set-returning
+    /// [`possible_biomes`](Self::possible_biomes) is kept for callers that only need
+    /// membership tests.
+    #[must_use]
+    pub fn possible_biome_refs(&self) -> Vec<BiomeRef> {
+        let biomes: Vec<BiomeRef> = match self {
+            Self::Overworld(_) => OVERWORLD_BIOME_PARAMETERS
+                .values()
+                .iter()
+                .map(|(_, biome)| *biome)
+                .collect(),
+            Self::Nether(_) => NETHER_BIOME_PARAMETERS
+                .values()
+                .iter()
+                .map(|(_, biome)| *biome)
+                .collect(),
+            Self::End(_) => vec![
+                &vanilla_biomes::THE_END,
+                &vanilla_biomes::END_HIGHLANDS,
+                &vanilla_biomes::END_MIDLANDS,
+                &vanilla_biomes::SMALL_END_ISLANDS,
+                &vanilla_biomes::END_BARRENS,
+            ],
+        };
+
+        distinct_biome_refs(biomes)
+    }
+
+    /// Every biome this source can produce. Used to filter structure sets whose
+    /// resolved `allowed_biomes` are from a different dimension.
+    #[must_use]
+    pub fn possible_biomes(&self) -> FxHashSet<Identifier> {
+        self.possible_biome_refs()
+            .into_iter()
+            .map(|biome| biome.key.clone())
+            .collect()
+    }
+
     /// Create a per-chunk biome sampler.
     ///
     /// The returned sampler holds per-chunk caches and should be dropped after
@@ -75,6 +122,41 @@ impl BiomeSourceKind {
         }
     }
 
+    /// Vanilla's `BiomeSource.findBiomeHorizontal(findClosest=false, skipSteps=1)`.
+    /// Reservoir-samples at y=0. Returns `Some((block_x, block_z))` if found.
+    #[must_use]
+    pub fn find_biome_horizontal(
+        &self,
+        origin_x: i32,
+        origin_z: i32,
+        search_radius: i32,
+        allowed: &dyn Fn(BiomeRef) -> bool,
+        rng: &mut LegacyRandom,
+    ) -> Option<(i32, i32)> {
+        let mut sampler = self.chunk_sampler();
+        // QuartPos.fromBlock; origin_y = 0 so noise_y = 0.
+        let noise_center_x = origin_x >> 2;
+        let noise_center_z = origin_z >> 2;
+        let noise_radius = search_radius >> 2;
+
+        let mut result: Option<(i32, i32)> = None;
+        let mut found = 0;
+        for z in -noise_radius..=noise_radius {
+            for x in -noise_radius..=noise_radius {
+                let nx = noise_center_x + x;
+                let nz = noise_center_z + z;
+                if allowed(sampler.sample(nx, 0, nz)) {
+                    // Reservoir: replace with probability 1/(found+1).
+                    if result.is_none() || rng.next_i32_bounded(found + 1) == 0 {
+                        result = Some((nx << 2, nz << 2));
+                    }
+                    found += 1;
+                }
+            }
+        }
+        result
+    }
+
     /// Returns vanilla's climate-based initial spawn search origin for dimensions that define one.
     #[must_use]
     pub fn initial_spawn_search_origin(&self) -> BlockPos {
@@ -83,6 +165,19 @@ impl BiomeSourceKind {
             Self::Nether(_) | Self::End(_) => BlockPos::new(0, 0, 0),
         }
     }
+}
+
+fn distinct_biome_refs(biomes: Vec<BiomeRef>) -> Vec<BiomeRef> {
+    let mut seen = FxHashSet::default();
+    let mut distinct = Vec::with_capacity(biomes.len());
+
+    for biome in biomes {
+        if seen.insert(&biome.key) {
+            distinct.push(biome);
+        }
+    }
+
+    distinct
 }
 
 /// Per-chunk biome sampler with internal caches.
@@ -301,5 +396,31 @@ impl EndChunkBiomeSampler<'_> {
         } else {
             &vanilla_biomes::END_BARRENS
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_possible_biomes_follow_vanilla_order() {
+        let source = BiomeSourceKind::end(0);
+        let keys = source
+            .possible_biome_refs()
+            .into_iter()
+            .map(|biome| &biome.key)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            keys,
+            vec![
+                &vanilla_biomes::THE_END.key,
+                &vanilla_biomes::END_HIGHLANDS.key,
+                &vanilla_biomes::END_MIDLANDS.key,
+                &vanilla_biomes::SMALL_END_ISLANDS.key,
+                &vanilla_biomes::END_BARRENS.key,
+            ]
+        );
     }
 }

@@ -1,97 +1,73 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::{
-    REGISTRY, RegistryExt,
-    blocks::{
-        BlockRef,
-        block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, Half},
-    },
-    item_stack::ItemStack,
-};
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
+use steel_registry::blocks::properties::Direction;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{REGISTRY, RegistryExt};
+use steel_utils::{BlockPos, BlockStateId};
 
-use crate::{
-    behavior::{
-        BlockBehavior, BlockPlaceContext,
-        blocks::vegetation::{
-            Vegetation,
-            bonemealable::Bonemealable,
-            vegetation_block::{double_plant_can_survive, double_plant_update_shape},
-        },
-    },
-    world::World,
-};
+use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
+use crate::behavior::context::BlockPlaceContext;
+use crate::player::Player;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-/// Behavior for Two High Flowers
+use super::{BlockRef, DoublePlantBlock};
+
+/// Behavior for two-block-tall flowers.
 #[block_behavior]
 pub struct TallFlowerBlock {
     block: BlockRef,
+    base: DoublePlantBlock,
 }
 
 impl TallFlowerBlock {
-    /// Creates a new Tall Flower Block Behavior
+    /// Creates a new tall flower block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            block,
+            base: DoublePlantBlock::new(block),
+        }
     }
 }
 
-impl Vegetation for TallFlowerBlock {}
-
 impl BlockBehavior for TallFlowerBlock {
-    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.relative_pos.y() < context.world.get_max_y()
-            && context
-                .world
-                .get_block_state(context.relative_pos.above())
-                .is_replaceable()
-        {
-            Some(self.block.default_state())
-        } else {
-            None
-        }
-    }
-
-    fn on_place(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        _old_state: BlockStateId,
-        _moved_by_piston: bool,
-    ) {
-        if state.get_value(&BlockStateProperties::HALF) == Half::Top {
-            return;
-        }
-        // FIXME: dont know if this is correct
-        let waterlogged_state = state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .map_or(state, |waterlogged| {
-                state.set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
-            });
-        world.set_block(
-            pos.above(),
-            waterlogged_state.set_value(&BlockStateProperties::HALF, Half::Top),
-            UpdateFlags::UPDATE_NONE,
-        );
-    }
-
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
+        neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        double_plant_update_shape(self, state, world, pos, direction, neighbor_state)
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        double_plant_can_survive(self, state, world, pos)
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        self.base.can_survive(state, world, pos)
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: Option<&Player>,
+        item_stack: &ItemStack,
+    ) {
+        self.base
+            .set_placed_by(state, world, pos, player, item_stack);
+    }
+
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        self.base.get_state_for_placement(context)
+    }
+
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
     }
 }
 
@@ -101,13 +77,8 @@ impl Bonemealable for TallFlowerBlock {
     }
 
     fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        world.pop_resource(
-            pos,
-            ItemStack::new(
-                REGISTRY.items.by_key(&self.block.key).expect(
-                    "wasnt able to find an item corresponding to the tall flower block key",
-                ),
-            ),
-        );
+        if let Some(item) = REGISTRY.items.by_key(&self.block.key) {
+            world.pop_resource(pos, ItemStack::new(item));
+        }
     }
 }

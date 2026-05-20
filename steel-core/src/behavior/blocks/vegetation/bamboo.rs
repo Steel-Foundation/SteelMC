@@ -17,7 +17,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
         blocks::vegetation::bonemealable::Bonemealable,
     },
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for the Bamboo Stalk Block
@@ -38,14 +38,14 @@ impl BambooStalkBlock {
     }
 
     /// Checks if the Block below is in the tag `BAMBOO_PLANTABLE_ON`
-    pub fn can_survive(world: &World, pos: BlockPos) -> bool {
+    pub fn can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
         REGISTRY.blocks.is_in_tag(
             world.get_block_state(pos.below()).get_block(),
             &vanilla_block_tags::SUPPORTS_BAMBOO_TAG,
         )
     }
 
-    fn stalk_segments_below(world: &World, pos: BlockPos) -> i32 {
+    fn stalk_segments_below(world: &dyn LevelReader, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
             && world.get_block_state(pos.below_n(height + 1)).get_block() == &vanilla_blocks::BAMBOO
@@ -56,7 +56,7 @@ impl BambooStalkBlock {
         height
     }
 
-    fn stalk_segments_above(world: &World, pos: BlockPos) -> i32 {
+    fn stalk_segments_above(world: &dyn LevelReader, pos: BlockPos) -> i32 {
         let mut height = 0;
         while height < 16
             && world.get_block_state(pos.above_n(height + 1)).get_block() == &vanilla_blocks::BAMBOO
@@ -202,6 +202,10 @@ impl BlockBehavior for BambooStalkBlock {
         }
     }
 
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        Self::can_survive(world, pos)
+    }
+
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
         state.get_value(&BlockStateProperties::STAGE) == 0
     }
@@ -223,7 +227,7 @@ impl BlockBehavior for BambooStalkBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,

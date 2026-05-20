@@ -8,6 +8,8 @@
 //! The server must track what the client's base position is (`PositionCodec`) to
 //! compute correct deltas and know when the delta would overflow i16 bounds.
 
+use std::io::{self, Write};
+
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::{C_MOVE_ENTITY_POS, C_MOVE_ENTITY_POS_ROT, C_MOVE_ENTITY_ROT};
 
@@ -27,11 +29,11 @@ pub struct CMoveEntityPos {
     #[write(as = VarInt)]
     pub entity_id: i32,
     /// Delta X (current X * 4096 - previous X * 4096)
-    pub dx: i16,
+    pub dx: PackedEntityDelta,
     /// Delta Y
-    pub dy: i16,
+    pub dy: PackedEntityDelta,
     /// Delta Z
-    pub dz: i16,
+    pub dz: PackedEntityDelta,
     pub on_ground: bool,
 }
 
@@ -42,16 +44,53 @@ pub struct CMoveEntityPosRot {
     #[write(as = VarInt)]
     pub entity_id: i32,
     /// Delta X (current X * 4096 - previous X * 4096)
-    pub dx: i16,
+    pub dx: PackedEntityDelta,
     /// Delta Y
-    pub dy: i16,
+    pub dy: PackedEntityDelta,
     /// Delta Z
-    pub dz: i16,
+    pub dz: PackedEntityDelta,
     /// Yaw as angle byte
     pub y_rot: i8,
     /// Pitch as angle byte
     pub x_rot: i8,
     pub on_ground: bool,
+}
+
+/// A fixed-point entity movement delta encoded as a protocol `i16`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PackedEntityDelta(i16);
+
+impl PackedEntityDelta {
+    /// Creates a packed entity delta from its raw protocol representation.
+    #[must_use]
+    pub const fn from_raw(raw: i16) -> Self {
+        Self(raw)
+    }
+
+    /// Returns the raw protocol representation.
+    #[must_use]
+    pub const fn as_i16(self) -> i16 {
+        self.0
+    }
+
+    /// Calculates a packed movement delta between two absolute coordinates.
+    ///
+    /// Returns `None` if the delta doesn't fit in the protocol's `i16` range.
+    #[must_use]
+    pub fn between(current: f64, previous: f64) -> Option<Self> {
+        let delta = encode_position(current) - encode_position(previous);
+        if (MIN_DELTA..=MAX_DELTA).contains(&delta) {
+            Some(Self(delta as i16))
+        } else {
+            None
+        }
+    }
+}
+
+impl steel_utils::serial::WriteTo for PackedEntityDelta {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        steel_utils::serial::WriteTo::write(&self.0, writer)
+    }
 }
 
 /// Updates an entity's rotation only.
@@ -100,13 +139,8 @@ pub fn encode_position(value: f64) -> i64 {
 /// Returns `None` if the delta doesn't fit in i16 (requires full sync).
 #[inline]
 #[must_use]
-pub fn calc_delta(current: f64, previous: f64) -> Option<i16> {
-    let delta = encode_position(current) - encode_position(previous);
-    if (MIN_DELTA..=MAX_DELTA).contains(&delta) {
-        Some(delta as i16)
-    } else {
-        None
-    }
+pub fn calc_delta(current: f64, previous: f64) -> Option<PackedEntityDelta> {
+    PackedEntityDelta::between(current, previous)
 }
 
 #[cfg(test)]
@@ -127,7 +161,7 @@ mod tests {
         // Small movement should produce valid delta
         let delta = calc_delta(100.001, 100.0);
         assert!(delta.is_some());
-        assert!(delta.unwrap().abs() < 100);
+        assert!(delta.unwrap().as_i16().abs() < 100);
 
         // Movement larger than i16 max (32767/4096 ≈ 8 blocks) should fail
         let delta = calc_delta(10.0, 0.0); // 10 blocks = 40960 units > i16::MAX

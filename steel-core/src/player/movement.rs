@@ -610,7 +610,7 @@ impl Player {
         };
 
         if packet.has_pos || packet.has_rot {
-            let new_chunk = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+            let new_chunk = ChunkPos::from_entity_pos(pos);
 
             if packet.has_pos {
                 let dx = calc_delta(pos.x, prev_pos.x);

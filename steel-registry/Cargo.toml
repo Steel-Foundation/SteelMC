@@ -51,6 +51,10 @@ rustc-hash.workspace = true
 # Utilities
 heck.workspace = true
 
+# NBT parsing for structure templates
+simdnbt.workspace = true
+flate2.workspace = true
+
 [features]
 fmt = []
 minecraft-src = []

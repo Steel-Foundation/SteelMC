@@ -7,7 +7,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, EnumProperty, Half, IntProperty},
+        properties::{BlockStateProperties, DoubleBlockHalf, EnumProperty, IntProperty},
     },
     vanilla_block_tags, vanilla_blocks, vanilla_entities, vanilla_game_rules,
 };
@@ -23,10 +23,10 @@ use crate::{
         },
     },
     entity::Entity,
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
-const HALF_PROPERTY: EnumProperty<Half> = BlockStateProperties::HALF;
+const HALF_PROPERTY: EnumProperty<DoubleBlockHalf> = BlockStateProperties::DOUBLE_BLOCK_HALF;
 const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_4;
 
 /// Behavior for Pitcher Crops
@@ -44,7 +44,7 @@ impl PitcherCropBlock {
 
     fn is_lower(state: BlockStateId) -> bool {
         state.get_block() == &vanilla_blocks::PITCHER_CROP
-            && state.get_value(&BlockStateProperties::HALF) == Half::Bottom
+            && state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower
     }
 
     fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
@@ -142,7 +142,7 @@ impl PitcherCropBlock {
         if new_age >= 3 {
             world.set_block(
                 lower_pos.above(),
-                new_state.set_value(&HALF_PROPERTY, Half::Top),
+                new_state.set_value(&HALF_PROPERTY, DoubleBlockHalf::Upper),
                 UpdateFlags::UPDATE_ALL,
             );
         }
@@ -171,14 +171,14 @@ impl BlockBehavior for PitcherCropBlock {
         }
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         double_plant_can_survive(self, state, world, pos) // Self::is_lower(state) //TODO: light
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
@@ -204,14 +204,15 @@ impl BlockBehavior for PitcherCropBlock {
             && world
                 .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
                 .as_bool()
-                .expect("Game Rule `MOB_GRIEFING` should be a boolean")
+                == Some(true)
         {
             world.destroy_block(pos, true);
         }
     }
 
     fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        state.get_value(&HALF_PROPERTY) == Half::Bottom && state.get_value(&AGE_PROPERTY) < 4
+        state.get_value(&HALF_PROPERTY) == DoubleBlockHalf::Lower
+            && state.get_value(&AGE_PROPERTY) < 4
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -232,7 +233,7 @@ impl BlockBehavior for PitcherCropBlock {
 }
 
 impl Vegetation for PitcherCropBlock {
-    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         REGISTRY
             .blocks
             .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)
@@ -245,7 +246,7 @@ impl Bonemealable for PitcherCropBlock {
             return false;
         };
         if lower_state.get_block() != &vanilla_blocks::PITCHER_CROP
-            || lower_state.get_value(&HALF_PROPERTY) != Half::Bottom
+            || lower_state.get_value(&HALF_PROPERTY) != DoubleBlockHalf::Lower
         {
             return false;
         }

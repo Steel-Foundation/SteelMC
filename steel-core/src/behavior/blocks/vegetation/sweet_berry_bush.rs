@@ -26,7 +26,7 @@ use crate::{
     },
     entity::Entity,
     player::Player,
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for Sweet Berry Bushes
@@ -63,7 +63,7 @@ impl BlockBehavior for SweetBerryBushBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
@@ -72,7 +72,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         vegetation_update_shape(self, state, world, pos)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 

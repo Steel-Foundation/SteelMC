@@ -1,21 +1,22 @@
-use std::sync::Arc;
-
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{
         block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, Half},
+        properties::{BlockStateProperties, DoubleBlockHalf},
     },
     vanilla_block_tags, vanilla_blocks,
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, math::Axis};
 
-use crate::{behavior::BlockBehavior, world::World};
+use crate::{
+    behavior::BlockBehavior,
+    world::{LevelReader, ScheduledTickAccess},
+};
 
 /// Common behavior for vegetation blocks
 pub trait Vegetation {
     /// Checks if the vegetation block can be placed on the given block state below on the given position below.
-    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         REGISTRY.blocks.is_in_tag(
             state.get_block(),
             &vanilla_block_tags::SUPPORTS_VEGETATION_TAG,
@@ -27,7 +28,7 @@ pub trait Vegetation {
 pub fn vegetation_can_survive<H: Vegetation>(
     hooks: &H,
     _state: BlockStateId,
-    world: &World,
+    world: &dyn LevelReader,
     pos: BlockPos,
 ) -> bool {
     let state_below = world.get_block_state(pos.below());
@@ -41,7 +42,7 @@ pub fn vegetation_can_survive<H: Vegetation>(
 pub fn vegetation_update_shape<B: BlockBehavior>(
     block: &B,
     state: BlockStateId,
-    world: &Arc<World>,
+    world: &dyn ScheduledTickAccess,
     pos: BlockPos,
 ) -> BlockStateId {
     if block.can_survive(state, world, pos) {
@@ -55,13 +56,14 @@ pub fn vegetation_update_shape<B: BlockBehavior>(
 pub fn double_plant_can_survive<H: Vegetation>(
     hooks: &H,
     state: BlockStateId,
-    world: &World,
+    world: &dyn LevelReader,
     pos: BlockPos,
 ) -> bool {
-    if state.get_value(&BlockStateProperties::HALF) == Half::Top {
+    if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
         let state_below = world.get_block_state(pos.below());
         state_below.get_block() == state.get_block()
-            && state_below.get_value(&BlockStateProperties::HALF) == Half::Bottom
+            && state_below.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
+                == DoubleBlockHalf::Lower
     } else {
         vegetation_can_survive(hooks, state, world, pos)
     }
@@ -73,19 +75,19 @@ pub fn double_plant_can_survive<H: Vegetation>(
 pub fn double_plant_update_shape<B: BlockBehavior>(
     block: &B,
     state: BlockStateId,
-    world: &Arc<World>,
+    world: &dyn ScheduledTickAccess,
     pos: BlockPos,
     direction: Direction,
     neighbor_state: BlockStateId,
 ) -> BlockStateId {
-    let half = state.get_value(&BlockStateProperties::HALF);
+    let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
 
     if direction.axis() != Axis::Y
-        || ((half == Half::Bottom) != (direction == Direction::Up))
+        || ((half == DoubleBlockHalf::Lower) != (direction == Direction::Up))
         || (neighbor_state.get_block() == state.get_block()
-            && neighbor_state.get_value(&BlockStateProperties::HALF) != half)
+            && neighbor_state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) != half)
     {
-        if half == Half::Bottom
+        if half == DoubleBlockHalf::Lower
             && direction == Direction::Down
             && !block.can_survive(state, world, pos)
         {

@@ -38,8 +38,8 @@ pub struct SurfaceSystem {
     /// Condition noises used by `NoiseThreshold` surface rules.
     /// Indexed in the same order as `DimensionNoises::surface_noise_ids()`.
     condition_noises: Vec<NormalNoise>,
-    /// Global splitter for creating vertical gradient factories.
-    splitter: RandomSplitter,
+    /// Positional random factories used by `VerticalGradient` surface rules.
+    vertical_gradient_randoms: Vec<RandomSplitter>,
 
     // ── Extension noises (eroded badlands + frozen ocean) ──
     badlands_pillar_noise: NormalNoise,
@@ -73,6 +73,7 @@ impl SurfaceSystem {
         splitter: &RandomSplitter,
         noise_params: &FxHashMap<String, NoiseParameters>,
         condition_noise_ids: &[&str],
+        vertical_gradient_ids: &[&str],
         default_block: BlockStateId,
         sea_level: i32,
     ) -> Self {
@@ -91,6 +92,14 @@ impl SurfaceSystem {
             .iter()
             .map(|&id| create_noise(splitter, id, noise_params))
             .collect();
+        let vertical_gradient_randoms: Vec<RandomSplitter> = vertical_gradient_ids
+            .iter()
+            .map(|&id| {
+                let hash = NameHash::new(id);
+                let mut random = splitter.with_hash_of(&hash);
+                random.next_positional()
+            })
+            .collect();
 
         Self {
             surface_noise: create_noise(splitter, "minecraft:surface", noise_params),
@@ -107,7 +116,7 @@ impl SurfaceSystem {
             clay_bands,
             noise_random,
             condition_noises,
-            splitter: splitter.clone(),
+            vertical_gradient_randoms,
             badlands_pillar_noise: create_noise(
                 splitter,
                 "minecraft:badlands_pillar",
@@ -405,7 +414,7 @@ impl SurfaceSystem {
             if !state.is_air() {
                 break;
             }
-            chunk.set_relative_block(local_x, rel_y, local_z, self.default_block);
+            chunk.set_relative_block_for_generation(local_x, rel_y, local_z, self.default_block);
         }
 
         // Return updated start height (one above the extension top)
@@ -498,10 +507,10 @@ impl SurfaceSystem {
                     && random.next_f64() > 0.15)
             {
                 if snow_depth <= max_snow_depth && y > min_snow_height {
-                    chunk.set_relative_block(local_x, rel_y, local_z, snow_block);
+                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, snow_block);
                     snow_depth += 1;
                 } else {
-                    chunk.set_relative_block(local_x, rel_y, local_z, packed_ice);
+                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, packed_ice);
                 }
             }
         }
@@ -509,7 +518,7 @@ impl SurfaceSystem {
 }
 
 impl SurfaceNoiseProvider for SurfaceSystem {
-    fn get_noise(&self, noise_index: usize, x: i32, z: i32) -> f64 {
+    fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> f64 {
         self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z))
     }
 
@@ -526,9 +535,13 @@ impl SurfaceNoiseProvider for SurfaceSystem {
         self.clay_bands[index]
     }
 
+    fn cold_enough_to_snow(&self, biome_id: u16, block_x: i32, block_y: i32, block_z: i32) -> bool {
+        self.cold_enough_to_snow(biome_id, block_x, block_y, block_z)
+    }
+
     fn vertical_gradient(
         &self,
-        random_name: &NameHash,
+        gradient_index: usize,
         block_x: i32,
         block_y: i32,
         block_z: i32,
@@ -547,7 +560,7 @@ impl SurfaceNoiseProvider for SurfaceSystem {
 
         // vanilla: randomState.getOrCreateRandomFactory(name) =
         //   this.random.fromHashOf(name).forkPositional()
-        let factory = self.splitter.with_hash_of(random_name).next_positional();
+        let factory = &self.vertical_gradient_randoms[gradient_index];
         let random_value = f64::from(factory.at(block_x, block_y, block_z).next_f32());
         random_value < probability
     }

@@ -20,7 +20,7 @@ use crate::{
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
 const MAX_AGE: u8 = 3;
@@ -56,7 +56,7 @@ impl BlockBehavior for NetherWartBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: steel_utils::Direction,
         _neighbor_pos: BlockPos,
@@ -65,7 +65,7 @@ impl BlockBehavior for NetherWartBlock {
         vegetation_update_shape(self, state, world, pos)
     }
 
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
     }
 
@@ -97,7 +97,7 @@ impl BlockBehavior for NetherWartBlock {
 }
 
 impl Vegetation for NetherWartBlock {
-    fn may_place_on(&self, state: BlockStateId, _world: &World, _pos: BlockPos) -> bool {
+    fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         state.get_block() == &vanilla_blocks::SOUL_SAND
     }
 }

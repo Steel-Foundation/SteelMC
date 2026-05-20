@@ -6,8 +6,6 @@
 //!
 //! Both break when their supporting block is removed.
 
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
@@ -19,7 +17,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 /// Behavior for standing torch blocks (torch, `soul_torch`, `copper_torch`).
 ///
@@ -41,7 +39,7 @@ impl TorchBlock {
 impl BlockBehavior for TorchBlock {
     /// Checks if a torch can survive at the given position.
     /// Requires the block below to provide center support on its top face.
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
         below_state.is_face_sturdy_for(Direction::Up, SupportType::Center)
@@ -50,7 +48,7 @@ impl BlockBehavior for TorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -94,7 +92,7 @@ impl WallTorchBlock {
 impl BlockBehavior for WallTorchBlock {
     /// Checks if a wall torch can survive at the given position.
     /// Requires the block behind (opposite of facing) to provide a sturdy face.
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let facing: Direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
         let attach_direction = facing.opposite();
         let attach_pos = attach_direction.relative(pos);
@@ -105,7 +103,7 @@ impl BlockBehavior for WallTorchBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

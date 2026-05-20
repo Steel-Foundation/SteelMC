@@ -1,28 +1,26 @@
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
-            Vegetation,
+            Vegetation, default_surviving_state,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
-    world::World,
+    world::{LevelReader, ScheduledTickAccess},
 };
 
-/// Behavior for all most flower blocks
+/// Behavior for most flower blocks.
 #[block_behavior]
 pub struct FlowerBlock {
     block: BlockRef,
 }
 
 impl FlowerBlock {
-    /// Creates a new Flower Behavior
+    /// Creates a new flower behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -30,35 +28,24 @@ impl FlowerBlock {
 }
 
 impl BlockBehavior for FlowerBlock {
-    fn get_state_for_placement(
-        &self,
-        context: &BlockPlaceContext<'_>,
-    ) -> Option<steel_utils::BlockStateId> {
-        if self.may_place_on(
-            context.world.get_block_state(context.relative_pos.below()),
-            context.world,
-            context.relative_pos.below(),
-        ) {
-            Some(self.block.default_state())
-        } else {
-            None
-        }
-    }
-
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        vegetation_can_survive(self, state, world, pos)
-    }
-
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        _direction: steel_utils::Direction,
+        _direction: Direction,
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         vegetation_update_shape(self, state, world, pos)
+    }
+
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        vegetation_can_survive(self, state, world, pos)
+    }
+
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        default_surviving_state(self.block, self, context)
     }
 }
 
