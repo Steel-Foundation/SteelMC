@@ -131,16 +131,28 @@ impl CommandExecutor<((((), Vec<Arc<Player>>), ItemRef), i32)> for ClearWithMaxA
             .map(|it| {
                 let mut current_amount = max_amount;
                 let mut inventory = it.inventory.lock();
+                let mut removed = 0;
                 for i in 0..inventory.get_container_size() {
+                    if max_amount > 0 && current_amount == 0 {
+                        break;
+                    }
                     let current_item = inventory.get_item_mut(i);
                     if current_item.is_empty() || !current_item.is(item) {
                         continue;
                     }
-                    let amount_to_remove = current_amount.min(current_item.count);
-                    current_amount -= amount_to_remove;
-                    current_item.shrink(amount_to_remove);
+                    if max_amount == 0 {
+                        removed += current_item.count();
+                    } else {
+                        let amount_to_remove = current_amount.min(current_item.count());
+                        current_amount -= amount_to_remove;
+                        removed += amount_to_remove;
+                        current_item.shrink(amount_to_remove);
+                    }
                 }
-                max_amount - current_amount
+                if max_amount > 0 && removed > 0 {
+                    inventory.set_changed();
+                }
+                removed
             })
             .sum();
 

@@ -645,7 +645,7 @@ impl Slot for CraftingResultSlot {
         &self,
         guard: &mut ContainerLockGuard,
         _stack: &ItemStack,
-        _player: &Player,
+        player: &Player,
     ) -> Option<ItemStack> {
         // TODO: Add statistics/achievement tracking here.
         // Java calls checkTakeAchievements(carried) which triggers:
@@ -672,74 +672,74 @@ impl Slot for CraftingResultSlot {
             return None;
         };
 
-        // Apply changes with mutable borrow
-        let crafting = guard
-            .get_crafting_container_mut(crafting_id)
-            .expect("crafting container not locked");
+        let result_stack = {
+            // Apply changes with mutable borrow
+            let crafting = guard
+                .get_crafting_container_mut(crafting_id)
+                .expect("crafting container not locked");
 
-        let input = &positioned.input;
+            let input = &positioned.input;
 
-        // Iterate over the bounded recipe area, not the whole grid
-        for y in 0..input.height {
-            for x in 0..input.width {
-                // Calculate the actual slot index in the original crafting grid
-                let grid_slot = positioned.to_grid_slot(x, y, self.grid_size);
+            // Iterate over the bounded recipe area, not the whole grid
+            for y in 0..input.height {
+                for x in 0..input.width {
+                    // Calculate the actual slot index in the original crafting grid
+                    let grid_slot = positioned.to_grid_slot(x, y, self.grid_size);
 
-                // Get the remainder for this position in the trimmed input
-                let remainder_idx = x + y * input.width;
-                let replacement = if remainder_idx < remainders.len() {
-                    remainders[remainder_idx].clone()
-                } else {
-                    ItemStack::empty()
-                };
-
-                // Consume one item from the grid slot
-                {
-                    let item = crafting.get_item_mut(grid_slot);
-                    if !item.is_empty() {
-                        item.shrink(1);
-                    }
-                }
-
-                // Handle remainder placement
-                if !replacement.is_empty() {
-                    let current_item = crafting.get_item(grid_slot).clone();
-
-                    if current_item.is_empty() {
-                        // Slot is now empty, place remainder there
-                        crafting.set_item(grid_slot, replacement);
-                    } else if ItemStack::is_same_item_same_components(&current_item, &replacement) {
-                        // Same item type, try to stack
-                        crafting.get_item_mut(grid_slot).grow(replacement.count());
+                    // Get the remainder for this position in the trimmed input
+                    let remainder_idx = x + y * input.width;
+                    let replacement = if remainder_idx < remainders.len() {
+                        remainders[remainder_idx].clone()
                     } else {
-                        // Different item type - need to return to player inventory
-                        remainder_overflow.push(replacement);
+                        ItemStack::empty()
+                    };
+
+                    // Consume one item from the grid slot
+                    {
+                        let item = crafting.get_item_mut(grid_slot);
+                        if !item.is_empty() {
+                            item.shrink(1);
+                        }
+                    }
+
+                    // Handle remainder placement
+                    if !replacement.is_empty() {
+                        let current_item = crafting.get_item(grid_slot).clone();
+
+                        if current_item.is_empty() {
+                            // Slot is now empty, place remainder there
+                            crafting.set_item(grid_slot, replacement);
+                        } else if ItemStack::is_same_item_same_components(
+                            &current_item,
+                            &replacement,
+                        ) {
+                            // Same item type, try to stack
+                            crafting.get_item_mut(grid_slot).grow(replacement.count());
+                        } else {
+                            // Different item type - need to return to player inventory
+                            remainder_overflow.push(replacement);
+                        }
                     }
                 }
             }
-        }
 
-        crafting.set_changed();
+            crafting.set_changed();
 
-        // Update the crafting result based on remaining ingredients
-        let result_stack = recipe_manager::find_recipe(crafting, is_2x2)
-            .map_or_else(ItemStack::empty, |r| r.assemble());
+            // Update the crafting result based on remaining ingredients
+            recipe_manager::find_recipe(crafting, is_2x2)
+                .map_or_else(ItemStack::empty, |r| r.assemble())
+        };
 
         guard
             .get_result_container_mut(result_id)
             .expect("result container not locked")
             .set_item(0, result_stack);
 
-        // Return overflow remainders
-        if remainder_overflow.is_empty() {
-            None
-        } else if remainder_overflow.len() == 1 {
-            Some(remainder_overflow.remove(0))
-        } else {
-            // Multiple different remainders - return the first one
-            // The caller should ideally handle multiple remainders, but this is rare
-            Some(remainder_overflow.remove(0))
+        for remainder in remainder_overflow {
+            player.add_item_or_drop_with_guard(guard, remainder);
         }
+
+        None
     }
 
     /// Crafting result slots are "fake" - they don't persist items.

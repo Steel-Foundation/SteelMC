@@ -344,6 +344,14 @@ impl Player {
             return;
         }
 
+        if !menu.still_valid(self) {
+            log::debug!(
+                "Player {} interacted with invalid menu",
+                self.gameprofile.name
+            );
+            return;
+        }
+
         if !menu.behavior().is_valid_slot_index(packet.slot_num) {
             log::debug!(
                 "Player {} clicked invalid slot index: {}, available: {}",
@@ -439,7 +447,8 @@ impl Player {
             {
                 let mut guard = menu.behavior().lock_all_containers();
                 if let Some(slot) = menu.behavior().get_slot(slot_index) {
-                    slot.set_item(&mut guard, item_stack.clone());
+                    let previous = slot.get_item(&guard).clone();
+                    slot.set_by_player(&mut guard, item_stack.clone(), &previous);
                 }
             }
             menu.behavior_mut()
@@ -710,11 +719,15 @@ impl Container for PlayerInventory {
         }
 
         let max_size = self.get_max_stack_size_for_item(stack);
+        let mut changed = false;
 
         // First pass: try to stack with existing items in main inventory only
         if stack.is_stackable() {
             for slot in 0..Self::INVENTORY_SIZE {
                 if stack.is_empty() {
+                    if changed {
+                        self.set_changed();
+                    }
                     return true;
                 }
                 let existing = &mut self.items[slot];
@@ -725,6 +738,7 @@ impl Container for PlayerInventory {
                         let to_add = stack.count().min(space);
                         existing.grow(to_add);
                         stack.shrink(to_add);
+                        changed = true;
                     }
                 }
             }
@@ -733,15 +747,21 @@ impl Container for PlayerInventory {
         // Second pass: try empty slots in main inventory only
         for slot in 0..Self::INVENTORY_SIZE {
             if stack.is_empty() {
+                if changed {
+                    self.set_changed();
+                }
                 return true;
             }
             if self.items[slot].is_empty() {
                 let to_place = stack.count().min(max_size);
                 self.items[slot] = stack.split(to_place);
+                changed = true;
             }
         }
 
-        self.set_changed();
+        if changed {
+            self.set_changed();
+        }
         stack.is_empty()
     }
 
@@ -761,10 +781,7 @@ impl Container for PlayerInventory {
         } else if let Some(eq_slot) = slot_to_equipment(slot) {
             self.equipment.get_mut(eq_slot)
         } else {
-            // Invalid slot - this is a bug, but we need to return something.
-            // Return the first item slot as a fallback (will be logged in debug builds).
-            debug_assert!(false, "Invalid slot index: {slot}");
-            &mut self.items[0]
+            panic!("Invalid slot index: {slot}");
         }
     }
 
@@ -800,11 +817,81 @@ impl Container for PlayerInventory {
     fn clear_content(&mut self) -> i32 {
         let mut count = 0;
         for item in &mut self.items {
-            count += item.count;
+            count += item.count();
             *item = ItemStack::empty();
         }
+        for slot in EquipmentSlot::ALL {
+            count += self.equipment.get_ref(slot).count();
+        }
         self.equipment.clear();
-        self.set_changed();
+        if count > 0 {
+            self.set_changed();
+        }
         count
+    }
+
+    fn clear_content_matching(&mut self, predicate: &mut dyn FnMut(&mut ItemStack) -> bool) -> i32 {
+        let mut count = 0;
+        for item in &mut self.items {
+            if predicate(item) {
+                count += item.count();
+                *item = ItemStack::empty();
+            }
+        }
+        for slot in EquipmentSlot::ALL {
+            let item = self.equipment.get_mut(slot);
+            if predicate(item) {
+                count += item.count();
+                *item = ItemStack::empty();
+            }
+        }
+        if count > 0 {
+            self.set_changed();
+        }
+        count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use steel_registry::vanilla_items::ITEMS;
+    use steel_registry::{REGISTRY, Registry};
+
+    use super::*;
+
+    fn ensure_registry() {
+        let _ = REGISTRY.init(Registry::new_vanilla());
+    }
+
+    #[test]
+    fn add_marks_changed_when_stack_fills_existing_slot() {
+        ensure_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 63);
+        let before = inventory.get_times_changed();
+
+        let mut stack = ItemStack::new(&ITEMS.oak_log);
+        assert!(inventory.add(&mut stack));
+
+        assert!(stack.is_empty());
+        assert_eq!(inventory.items[0].count(), 64);
+        assert_ne!(inventory.get_times_changed(), before);
+    }
+
+    #[test]
+    fn clear_content_counts_equipment_items() {
+        ensure_registry();
+
+        let mut inventory = PlayerInventory::new(Weak::new());
+        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 3);
+        inventory
+            .equipment
+            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+
+        assert_eq!(inventory.clear_content(), 4);
+        assert!(inventory.is_empty());
     }
 }

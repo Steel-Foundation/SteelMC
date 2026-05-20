@@ -8,8 +8,10 @@
 
 use std::{mem, sync::Arc};
 
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::menu_type::MenuTypeRef;
+use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_menu_types;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, translations};
@@ -295,11 +297,11 @@ impl Menu for CraftingMenu {
     ///
     /// Based on Java's `CraftingMenu::stillValid` which checks:
     /// 1. The block at the position is still a crafting table
-    /// 2. The player is within 8 blocks (4.0 * 2 = 8 block interaction range + 4)
-    fn still_valid(&self) -> bool {
-        // Note: We check this via the world in handle_container_click
-        // The actual distance check happens there
-        true
+    /// 2. The player is within block interaction range plus vanilla's 4.0 buffer
+    fn still_valid(&self, player: &Player) -> bool {
+        let world = player.get_world();
+        world.get_block_state(self.block_pos).get_block() == &vanilla_blocks::CRAFTING_TABLE
+            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
     }
 
     /// Called when the crafting menu is closed.

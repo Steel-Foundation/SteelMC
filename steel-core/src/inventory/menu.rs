@@ -650,11 +650,12 @@ impl MenuBehavior {
 
         // First, update last_slots from actual slot contents
         self.update_last_slots(&guard);
+        let state_id = self.increment_state_id();
 
         // Send full container content
         let packet = CContainerSetContent {
             container_id: i32::from(self.container_id),
-            state_id: self.state_id as i32,
+            state_id: state_id as i32,
             items: self.last_slots.clone(),
             carried_item: self.carried.clone(),
         };
@@ -683,8 +684,8 @@ impl MenuBehavior {
     /// This is called every tick to sync only changed slots.
     ///
     /// Based on Java's `AbstractContainerMenu::broadcastChanges`.
-    /// Note: This does NOT increment `state_id` - that only happens when
-    /// processing client clicks (via `increment_state_id`).
+    /// Slot content packets increment `state_id`, matching vanilla's
+    /// `ContainerSynchronizer::sendSlotChange`.
     pub fn broadcast_changes(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
@@ -741,13 +742,14 @@ impl MenuBehavior {
             return;
         }
 
-        let item = &self.last_slots[slot];
+        let item = self.last_slots[slot].clone();
+        let state_id = self.increment_state_id();
 
         let packet = CContainerSetSlot {
             container_id: i32::from(self.container_id),
-            state_id: self.state_id as i32,
+            state_id: state_id as i32,
             slot: slot as i16,
-            item_stack: item.clone(),
+            item_stack: item,
         };
 
         Self::send_packet(connection, packet);
@@ -911,7 +913,7 @@ impl MenuBehavior {
 
                         let mut new_item = source.clone();
                         new_item.set_count(new_count);
-                        slot.set_item(&mut guard, new_item);
+                        slot.set_by_player(&mut guard, new_item, &slot_item);
                     }
                 }
 
@@ -1185,7 +1187,7 @@ pub trait Menu {
     ) -> ItemStack;
 
     /// Returns true if this menu is still valid for the player.
-    fn still_valid(&self) -> bool {
+    fn still_valid(&self, _player: &Player) -> bool {
         true
     }
 
@@ -1197,12 +1199,12 @@ pub trait Menu {
 
     /// Called when the menu is closed/removed.
     /// Override to handle cleanup like returning crafting grid items to the player.
-    /// The default implementation clears the carried item by dropping it.
+    /// The default implementation returns the carried item to the player's inventory.
     fn removed(&mut self, player: &Player) {
-        // Default: drop the carried item
+        // Default: return the carried item to the player's inventory, dropping overflow.
         let carried = mem::take(&mut self.behavior_mut().carried);
         if !carried.is_empty() {
-            player.drop_item(carried, false, true);
+            player.add_item_or_drop(carried);
         }
     }
 

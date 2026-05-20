@@ -336,6 +336,16 @@ impl Player {
     /// matching vanilla's `Player.isWithinBlockInteractionRange(pos, 1.0)`.
     #[must_use]
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
+        self.is_within_block_interaction_range_with_buffer(pos, 1.0)
+    }
+
+    /// Returns true if player is within block interaction range plus a vanilla buffer.
+    #[must_use]
+    pub fn is_within_block_interaction_range_with_buffer(
+        &self,
+        pos: BlockPos,
+        buffer: f64,
+    ) -> bool {
         let player_pos = *self.position.lock();
         let eye_y = player_pos.y + self.get_eye_height();
 
@@ -356,7 +366,7 @@ impl Player {
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(4.5);
-        let max_range = base_range + 1.0;
+        let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
 
