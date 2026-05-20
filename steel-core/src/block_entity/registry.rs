@@ -1,9 +1,14 @@
 //! Block entity registry for creating block entity instances.
 
+use std::io::Cursor;
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
-use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
+use simdnbt::borrow::NbtCompound as BorrowedRootNbtCompound;
+use simdnbt::borrow::{
+    BaseNbtCompound as BorrowedNbtCompound, read_compound as read_borrowed_compound,
+};
+use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
@@ -11,7 +16,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-use super::entities::{BarrelBlockEntity, SignBlockEntity};
+use super::entities::{BarrelBlockEntity, BeehiveBlockEntity, RawBlockEntity, SignBlockEntity};
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -67,6 +72,32 @@ impl BlockEntityRegistry {
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
+    /// Creates a block entity, falling back to an NBT-preserving raw entity.
+    ///
+    /// Use this for disk/worldgen paths where an unimplemented block entity type must still
+    /// survive save/load. Gameplay paths that require concrete behavior should call
+    /// [`Self::create`] and handle `None`.
+    #[must_use]
+    pub fn create_or_raw(
+        &self,
+        block_entity_type: BlockEntityTypeRef,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> SharedBlockEntity {
+        let id = block_entity_type.id();
+        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
+            factory(level, pos, state)
+        } else {
+            Arc::new(SyncMutex::new(RawBlockEntity::new(
+                block_entity_type,
+                level,
+                pos,
+                state,
+            )))
+        }
+    }
+
     /// Creates a new block entity and loads NBT data into it.
     ///
     /// Returns `None` if no factory is registered for the given type.
@@ -82,6 +113,68 @@ impl BlockEntityRegistry {
         let entity = self.create(block_entity_type, level, pos, state)?;
         entity.lock().load_additional(nbt);
         Some(entity)
+    }
+
+    /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
+    #[must_use]
+    pub fn create_and_load_or_raw(
+        &self,
+        block_entity_type: BlockEntityTypeRef,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        nbt: &BorrowedNbtCompound<'_>,
+    ) -> SharedBlockEntity {
+        let id = block_entity_type.id();
+        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
+            let entity = factory(level, pos, state);
+            entity.lock().load_additional(nbt);
+            entity
+        } else {
+            let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
+            Arc::new(SyncMutex::new(RawBlockEntity::with_data(
+                block_entity_type,
+                level,
+                pos,
+                state,
+                nbt_view.to_owned(),
+            )))
+        }
+    }
+
+    /// Creates a block entity and loads owned NBT, falling back to raw preservation.
+    #[must_use]
+    pub fn create_and_load_owned_or_raw(
+        &self,
+        block_entity_type: BlockEntityTypeRef,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        nbt: NbtCompound,
+    ) -> SharedBlockEntity {
+        let id = block_entity_type.id();
+        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
+            let entity = factory(level, pos, state);
+            let mut nbt_bytes = Vec::new();
+            nbt.write(&mut nbt_bytes);
+            if let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) {
+                entity.lock().load_additional(&borrowed);
+            } else {
+                log::warn!(
+                    "failed to reborrow owned NBT for block entity {}",
+                    block_entity_type.key()
+                );
+            }
+            entity
+        } else {
+            Arc::new(SyncMutex::new(RawBlockEntity::with_data(
+                block_entity_type,
+                level,
+                pos,
+                state,
+                nbt,
+            )))
+        }
     }
 
     /// Returns whether a factory is registered for the given type.
@@ -149,6 +242,11 @@ pub fn init_block_entities() {
     // Register barrel block entity factory
     registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
         Arc::new(SyncMutex::new(BarrelBlockEntity::new(level, pos, state)))
+    });
+
+    // Register beehive block entity factory
+    registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
+        Arc::new(SyncMutex::new(BeehiveBlockEntity::new(level, pos, state)))
     });
 
     assert!(

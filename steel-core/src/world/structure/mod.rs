@@ -4,39 +4,50 @@
 //! `structuresReferences` (pointing at nearby origin chunks). The structure key
 //! is `Identifier` until a structure registry is added.
 
+pub mod desert_pyramid;
 pub mod end_city;
 pub mod fortress;
 pub mod igloo;
 pub mod jigsaw;
+pub mod jungle_temple;
 pub mod mansion;
 pub mod mineshaft;
 pub mod nether_fossil;
 pub mod ocean_monument;
 pub mod ocean_ruin;
+mod piece;
 pub mod placement;
 pub mod ruined_portal;
 pub mod shipwreck;
 pub mod single_piece;
 pub mod stronghold;
+pub mod swamp_hut;
 
-use std::cell::RefCell;
+use std::{cell::RefCell, slice, vec};
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{Random, RandomSplitter};
-use steel_utils::{BoundingBox, ChunkPos, Direction, Identifier};
+use steel_utils::{BlockPos, BoundingBox, ChunkPos, Direction, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
 use steel_registry::biome::BiomeRef;
 use steel_registry::structure::{StructureData, TerrainAdjustment};
-use steel_registry::template_pool::{Projection, TemplateData, TemplatePoolData};
+use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 
 use crate::worldgen::ChunkBiomeSampler;
 use crate::worldgen::generators::vanilla::{
-    column_base_height, column_interpolated_density, iterate_noise_column_with_aquifer,
+    column_base_height, column_interpolated_density, find_solid_block_below_air,
+    iterate_noise_column_with_aquifer,
 };
 use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, LazyAquifer};
+
+pub use piece::{
+    ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
+    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
+};
 
 const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
     Direction::North,
@@ -48,6 +59,33 @@ const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
 /// Matches vanilla's `Direction.Plane.HORIZONTAL.getRandomDirection`.
 pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
     VANILLA_HORIZONTAL_DIRECTIONS[rng.next_i32_bounded(4) as usize]
+}
+
+/// Vanilla's `StructurePiece.makeBoundingBox`: north/south keep width/depth,
+/// east/west swap them.
+pub(crate) const fn make_oriented_piece_bounding_box(
+    chunk_min_x: i32,
+    y: i32,
+    chunk_min_z: i32,
+    orientation: Direction,
+    width: i32,
+    height: i32,
+    depth: i32,
+) -> BoundingBox {
+    let z_axis = matches!(orientation, Direction::North | Direction::South);
+    let (box_width, box_depth) = if z_axis {
+        (width, depth)
+    } else {
+        (depth, width)
+    };
+    BoundingBox::new(
+        chunk_min_x,
+        y,
+        chunk_min_z,
+        chunk_min_x + box_width - 1,
+        y + height - 1,
+        chunk_min_z + box_depth - 1,
+    )
 }
 
 /// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)
@@ -117,55 +155,18 @@ impl StructureStart {
         }
         Some(bb.inflated_by(bb_inflate, bb_inflate, bb_inflate))
     }
-}
 
-/// Vanilla's `StructurePiece` runtime state.
-#[derive(Debug, Clone)]
-pub struct StructurePiece {
-    /// Piece type id (e.g., `minecraft:jigsaw`).
-    pub piece_type: Identifier,
-    /// World-space bounding box.
-    pub bounding_box: BoundingBox,
-    /// Distance from the start piece in the piece tree.
-    pub gen_depth: i32,
-    /// Horizontal orientation; `None` for unoriented pieces.
-    pub orientation: Option<Direction>,
-    /// Type-specific NBT (simdnbt binary).
-    pub nbt_data: Vec<u8>,
-    /// Typed jigsaw placement data. `None` for non-jigsaw pieces.
-    pub jigsaw: Option<jigsaw::JigsawPieceData>,
-    /// Offset from piece minY to ground level. Used by Beardifier. Default 0 for non-jigsaw.
-    pub ground_level_delta: i32,
-    /// Junctions for Beardifier terrain adaptation.
-    pub junctions: Vec<jigsaw::JigsawJunction>,
-    /// Jigsaw projection. `None` for non-jigsaw pieces.
-    ///
-    /// Beardifier treats `Some(Rigid)` and `None` as terrain-adapting, but skips
-    /// `Some(TerrainMatching)` from the rigid set (still collecting junctions).
-    /// Mirrors vanilla's `piece instanceof PoolElementStructurePiece` + `Projection.RIGID` check.
-    pub projection: Option<Projection>,
-}
-
-impl StructurePiece {
-    /// Creates a non-jigsaw piece with vanilla's default non-pool metadata.
+    /// Vanilla `StructureStart.placeInChunk` reference position: the first
+    /// piece center X/Z and first piece minimum Y.
     #[must_use]
-    pub const fn non_jigsaw(
-        piece_type: Identifier,
-        bounding_box: BoundingBox,
-        gen_depth: i32,
-        orientation: Option<Direction>,
-    ) -> Self {
-        Self {
-            piece_type,
-            bounding_box,
-            gen_depth,
-            orientation,
-            nbt_data: Vec::new(),
-            jigsaw: None,
-            ground_level_delta: 0,
-            junctions: Vec::new(),
-            projection: None,
-        }
+    pub fn placement_reference_pos(&self) -> Option<BlockPos> {
+        let first_piece = self.pieces.first()?;
+        let center = first_piece.bounding_box.get_center();
+        Some(BlockPos::new(
+            center.x(),
+            first_piece.bounding_box.min_y,
+            center.z(),
+        ))
     }
 }
 
@@ -174,8 +175,168 @@ pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;
 
 /// Structure references → origin chunk positions.
 ///
-/// Vanilla stores these as a `LongSet`, so duplicates are ignored by construction.
-pub type StructureReferenceMap = FxHashMap<Identifier, FxHashSet<ChunkPos>>;
+/// Vanilla stores these as a fastutil `LongOpenHashSet`, so duplicates are
+/// ignored and feature-stage iteration follows that table order.
+pub type StructureReferenceMap = FxHashMap<Identifier, StructureReferenceSet>;
+
+/// Set of structure-start chunk positions with vanilla iteration order.
+///
+/// Reference generation discovers sources in a stable scan order, but vanilla
+/// stores the packed chunk longs in fastutil's `LongOpenHashSet`. Feature-stage
+/// placement consumes the set through that table iteration order, so Steel keeps
+/// the insertion order for persistence and exposes the vanilla iteration order
+/// for worldgen.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StructureReferenceSet {
+    insertion_order: Vec<ChunkPos>,
+    iteration_order: Vec<ChunkPos>,
+}
+
+impl StructureReferenceSet {
+    /// Inserts a chunk position if it was not already present.
+    pub fn insert(&mut self, pos: ChunkPos) -> bool {
+        if self.insertion_order.contains(&pos) {
+            return false;
+        }
+        self.insertion_order.push(pos);
+        self.rebuild_iteration_order();
+        true
+    }
+
+    /// Extends this set with insertion-order duplicate removal.
+    pub fn extend(&mut self, positions: impl IntoIterator<Item = ChunkPos>) {
+        for pos in positions {
+            self.insert(pos);
+        }
+    }
+
+    /// Returns an iterator over positions in vanilla `LongOpenHashSet` order.
+    pub fn iter(&self) -> slice::Iter<'_, ChunkPos> {
+        self.iteration_order.iter()
+    }
+
+    /// Returns an iterator over positions in discovery order.
+    pub fn insertion_order_iter(&self) -> slice::Iter<'_, ChunkPos> {
+        self.insertion_order.iter()
+    }
+
+    /// Returns `true` when no positions are stored.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.insertion_order.is_empty()
+    }
+
+    fn rebuild_iteration_order(&mut self) {
+        self.iteration_order = Self::vanilla_long_open_hash_set_order(&self.insertion_order);
+    }
+
+    fn vanilla_long_open_hash_set_order(insertion_order: &[ChunkPos]) -> Vec<ChunkPos> {
+        let Some(table_size) = Self::vanilla_long_open_hash_set_table_size(insertion_order.len())
+        else {
+            return Vec::new();
+        };
+        let mask = (table_size - 1) as u64;
+        let mut table = vec![None; table_size];
+        let mut zero_key = None;
+
+        for &pos in insertion_order {
+            let packed = Self::pack_chunk_pos(pos);
+            if packed == 0 {
+                zero_key = Some(pos);
+                continue;
+            }
+
+            let mut slot = (Self::fastutil_mix(packed) & mask) as usize;
+            loop {
+                if table[slot].is_none() {
+                    table[slot] = Some(pos);
+                    break;
+                }
+                slot = (slot + 1) & (table_size - 1);
+            }
+        }
+
+        let mut ordered = Vec::with_capacity(insertion_order.len());
+        if let Some(pos) = zero_key {
+            ordered.push(pos);
+        }
+        for slot in (0..table_size).rev() {
+            if let Some(pos) = table[slot] {
+                ordered.push(pos);
+            }
+        }
+        ordered
+    }
+
+    fn vanilla_long_open_hash_set_table_size(len: usize) -> Option<usize> {
+        if len == 0 {
+            return None;
+        }
+
+        let mut table_size = Self::fastutil_array_size(16);
+        let mut max_fill = Self::fastutil_max_fill(table_size);
+        let mut size = 0;
+        for _ in 0..len {
+            let old_size = size;
+            size += 1;
+            if old_size >= max_fill {
+                table_size = Self::fastutil_array_size(size + 1);
+                max_fill = Self::fastutil_max_fill(table_size);
+            }
+        }
+        Some(table_size)
+    }
+
+    fn fastutil_array_size(expected: usize) -> usize {
+        let needed = ((expected as f64) / 0.75).ceil() as usize;
+        needed.max(2).next_power_of_two()
+    }
+
+    const fn fastutil_max_fill(table_size: usize) -> usize {
+        let fill = table_size - table_size / 4;
+        if fill < table_size {
+            fill
+        } else {
+            table_size - 1
+        }
+    }
+
+    const fn pack_chunk_pos(pos: ChunkPos) -> u64 {
+        (pos.0.x as u32 as u64) | ((pos.0.y as u32 as u64) << 32)
+    }
+
+    const fn fastutil_mix(value: u64) -> u64 {
+        let mixed = value.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let mixed = mixed ^ (mixed >> 32);
+        mixed ^ (mixed >> 16)
+    }
+}
+
+impl FromIterator<ChunkPos> for StructureReferenceSet {
+    fn from_iter<T: IntoIterator<Item = ChunkPos>>(iter: T) -> Self {
+        let mut set = Self::default();
+        set.extend(iter);
+        set
+    }
+}
+
+impl<'a> IntoIterator for &'a StructureReferenceSet {
+    type IntoIter = slice::Iter<'a, ChunkPos>;
+    type Item = &'a ChunkPos;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl IntoIterator for StructureReferenceSet {
+    type IntoIter = vec::IntoIter<ChunkPos>;
+    type Item = ChunkPos;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iteration_order.into_iter()
+    }
+}
 
 /// Block classification in the base-noise column (no surface rules).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +471,28 @@ pub trait StructureGenerationContext {
     fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef;
     /// Classify a block in the generator's base terrain.
     fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock;
+    /// Highest solid base-terrain block directly below air in `[min_solid_y, start_y)`.
+    fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        if start_y <= min_solid_y {
+            return None;
+        }
+
+        let mut above = self.column_state(x, start_y, z);
+        for y in (min_solid_y..start_y).rev() {
+            let current = self.column_state(x, y, z);
+            if above == ColumnBlock::Air && current == ColumnBlock::Solid {
+                return Some(y);
+            }
+            above = current;
+        }
+        None
+    }
     /// Chunk-center surface Y, memoised by the concrete context.
     fn surface_y(&mut self) -> i32;
     /// Surface height for off-chunk terrain queries used by piece placement.
@@ -381,6 +564,27 @@ where
             AquiferResult::Fluid(_) => ColumnBlock::Fluid,
             AquiferResult::Air => ColumnBlock::Air,
         }
+    }
+
+    /// Highest solid base-terrain block directly below air in `[min_solid_y, start_y)`.
+    pub fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        self.ensure_height_cache_grid();
+        let aq = self.aquifer.ensure(self.height_cache);
+        find_solid_block_below_air::<N>(
+            self.height_cache,
+            self.noises,
+            aq,
+            x,
+            z,
+            start_y,
+            min_solid_y,
+        )
     }
 
     /// Surface Y at chunk center, memoised across per-structure contexts.
@@ -466,6 +670,16 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
 
     fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock {
         GenerationContext::column_state(self, x, y, z)
+    }
+
+    fn solid_block_below_air(
+        &mut self,
+        x: i32,
+        z: i32,
+        start_y: i32,
+        min_solid_y: i32,
+    ) -> Option<i32> {
+        GenerationContext::solid_block_below_air(self, x, z, start_y, min_solid_y)
     }
 
     fn surface_y(&mut self) -> i32 {

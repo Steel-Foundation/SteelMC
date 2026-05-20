@@ -191,6 +191,11 @@ pub trait Entity: Send + Sync {
         (0.0, 0.0)
     }
 
+    /// Extra spawn-packet data used by vanilla for entity-specific construction.
+    fn spawn_data(&self) -> i32 {
+        0
+    }
+
     /// Gets the eye height for this entity.
     ///
     /// Default implementation returns the eye height from the entity type dimensions.

@@ -257,6 +257,7 @@ pub type BiomeRef = &'static Biome;
 pub struct BiomeRegistry {
     biomes_by_id: Vec<BiomeRef>,
     biomes_by_key: FxHashMap<Identifier, usize>,
+    tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
 
@@ -266,6 +267,7 @@ impl BiomeRegistry {
         Self {
             biomes_by_id: Vec::new(),
             biomes_by_key: FxHashMap::default(),
+            tags: FxHashMap::default(),
             allows_registering: true,
         }
     }
@@ -300,6 +302,7 @@ impl Default for BiomeRegistry {
 }
 
 crate::impl_registry_ext!(BiomeRegistry, Biome, biomes_by_id, biomes_by_key);
+crate::impl_tagged_registry!(BiomeRegistry, biomes_by_key, "biome");
 
 impl crate::RegistryEntry for Biome {
     fn key(&self) -> &Identifier {

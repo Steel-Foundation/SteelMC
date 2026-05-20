@@ -17,16 +17,33 @@ use std::io::Cursor;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{io, sync::Weak};
-use steel_registry::structure::{LiquidSettingsData, TerrainAdjustment};
+use steel_registry::structure::{
+    LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
+};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
 };
 
+use crate::world::structure::desert_pyramid::DesertPyramidPieceData;
+use crate::world::structure::fortress::FortressPieceData;
 use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
+use crate::world::structure::jungle_temple::JungleTemplePieceData;
+use crate::world::structure::mineshaft::{
+    MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
+};
+use crate::world::structure::ocean_monument::{
+    OceanMonumentChildPiece, OceanMonumentChildPieceKind, OceanMonumentPieceData,
+    OceanMonumentRoomData,
+};
+use crate::world::structure::stronghold::{StrongholdPieceData, StrongholdSmallDoorType};
+use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::world::structure::{
-    StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
+    ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart,
+    StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
+    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// Converts `Option<Direction>` to the vanilla 2D data value encoding for persistence.
@@ -49,6 +66,29 @@ const fn direction_from_2d(value: i8) -> Option<Direction> {
         2 => Some(Direction::North),
         3 => Some(Direction::East),
         _ => None,
+    }
+}
+
+const fn required_direction_from_2d(value: i8) -> Direction {
+    match value {
+        1 => Direction::West,
+        2 => Direction::North,
+        3 => Direction::East,
+        _ => Direction::South,
+    }
+}
+
+const fn mineshaft_type_to_persistent(mineshaft_type: MineshaftType) -> i8 {
+    match mineshaft_type {
+        MineshaftType::Normal => 0,
+        MineshaftType::Mesa => 1,
+    }
+}
+
+const fn mineshaft_type_from_persistent(value: i8) -> MineshaftType {
+    match value {
+        1 => MineshaftType::Mesa,
+        _ => MineshaftType::Normal,
     }
 }
 
@@ -107,6 +147,176 @@ const fn liquid_settings_from_persistent(value: i8) -> LiquidSettingsData {
     }
 }
 
+const fn ruined_portal_placement_to_persistent(placement: RuinedPortalPlacementData) -> i8 {
+    match placement {
+        RuinedPortalPlacementData::OnLandSurface => 0,
+        RuinedPortalPlacementData::PartlyBuried => 1,
+        RuinedPortalPlacementData::Underground => 2,
+        RuinedPortalPlacementData::InMountain => 3,
+        RuinedPortalPlacementData::OnOceanFloor => 4,
+        RuinedPortalPlacementData::InNether => 5,
+    }
+}
+
+const fn ruined_portal_placement_from_persistent(value: i8) -> RuinedPortalPlacementData {
+    match value {
+        1 => RuinedPortalPlacementData::PartlyBuried,
+        2 => RuinedPortalPlacementData::Underground,
+        3 => RuinedPortalPlacementData::InMountain,
+        4 => RuinedPortalPlacementData::OnOceanFloor,
+        5 => RuinedPortalPlacementData::InNether,
+        _ => RuinedPortalPlacementData::OnLandSurface,
+    }
+}
+
+const fn mirror_to_persistent(mirror: StructureMirror) -> i8 {
+    match mirror {
+        StructureMirror::None => 0,
+        StructureMirror::FrontBack => 1,
+        StructureMirror::LeftRight => 2,
+    }
+}
+
+const fn mirror_from_persistent(value: i8) -> StructureMirror {
+    match value {
+        1 => StructureMirror::FrontBack,
+        2 => StructureMirror::LeftRight,
+        _ => StructureMirror::None,
+    }
+}
+
+const fn block_ignore_to_persistent(block_ignore: StructureBlockIgnore) -> i8 {
+    match block_ignore {
+        StructureBlockIgnore::None => 0,
+        StructureBlockIgnore::StructureBlock => 1,
+        StructureBlockIgnore::StructureAndAir => 2,
+    }
+}
+
+const fn block_ignore_from_persistent(value: i8) -> StructureBlockIgnore {
+    match value {
+        1 => StructureBlockIgnore::StructureBlock,
+        2 => StructureBlockIgnore::StructureAndAir,
+        _ => StructureBlockIgnore::None,
+    }
+}
+
+const fn marker_handling_to_persistent(marker_handling: TemplateMarkerHandling) -> i8 {
+    match marker_handling {
+        TemplateMarkerHandling::Ignore => 0,
+        TemplateMarkerHandling::DataMarkers => 1,
+        TemplateMarkerHandling::Shipwreck => 2,
+        TemplateMarkerHandling::Igloo => 3,
+        TemplateMarkerHandling::OceanRuin { is_large: false } => 4,
+        TemplateMarkerHandling::OceanRuin { is_large: true } => 5,
+        TemplateMarkerHandling::EndCity => 6,
+        TemplateMarkerHandling::WoodlandMansion => 7,
+    }
+}
+
+const fn marker_handling_from_persistent(value: i8) -> TemplateMarkerHandling {
+    match value {
+        1 => TemplateMarkerHandling::DataMarkers,
+        2 => TemplateMarkerHandling::Shipwreck,
+        3 => TemplateMarkerHandling::Igloo,
+        4 => TemplateMarkerHandling::OceanRuin { is_large: false },
+        5 => TemplateMarkerHandling::OceanRuin { is_large: true },
+        6 => TemplateMarkerHandling::EndCity,
+        7 => TemplateMarkerHandling::WoodlandMansion,
+        _ => TemplateMarkerHandling::Ignore,
+    }
+}
+
+const fn ocean_ruin_biome_temp_to_persistent(biome_temp: OceanRuinBiomeTempData) -> i8 {
+    match biome_temp {
+        OceanRuinBiomeTempData::Warm => 0,
+        OceanRuinBiomeTempData::Cold => 1,
+    }
+}
+
+const fn ocean_ruin_biome_temp_from_persistent(value: i8) -> OceanRuinBiomeTempData {
+    match value {
+        1 => OceanRuinBiomeTempData::Cold,
+        _ => OceanRuinBiomeTempData::Warm,
+    }
+}
+
+const fn placement_adjustment_to_persistent(
+    adjustment: TemplatePlacementAdjustment,
+) -> PersistentTemplatePlacementAdjustment {
+    match adjustment {
+        TemplatePlacementAdjustment::None => PersistentTemplatePlacementAdjustment::None,
+        TemplatePlacementAdjustment::Shipwreck {
+            is_beached,
+            height_adjusted,
+        } => PersistentTemplatePlacementAdjustment::Shipwreck {
+            is_beached,
+            height_adjusted,
+        },
+        TemplatePlacementAdjustment::Igloo { template_offset } => {
+            PersistentTemplatePlacementAdjustment::Igloo {
+                template_offset: [template_offset.0, template_offset.1, template_offset.2],
+            }
+        }
+        TemplatePlacementAdjustment::OceanRuin => PersistentTemplatePlacementAdjustment::OceanRuin,
+    }
+}
+
+const fn placement_adjustment_from_persistent(
+    adjustment: &PersistentTemplatePlacementAdjustment,
+) -> TemplatePlacementAdjustment {
+    match adjustment {
+        PersistentTemplatePlacementAdjustment::None => TemplatePlacementAdjustment::None,
+        PersistentTemplatePlacementAdjustment::Shipwreck {
+            is_beached,
+            height_adjusted,
+        } => TemplatePlacementAdjustment::Shipwreck {
+            is_beached: *is_beached,
+            height_adjusted: *height_adjusted,
+        },
+        PersistentTemplatePlacementAdjustment::Igloo { template_offset } => {
+            TemplatePlacementAdjustment::Igloo {
+                template_offset: (template_offset[0], template_offset[1], template_offset[2]),
+            }
+        }
+        PersistentTemplatePlacementAdjustment::OceanRuin => TemplatePlacementAdjustment::OceanRuin,
+    }
+}
+
+const fn placement_clip_to_persistent(placement_clip: TemplatePlacementClip) -> i8 {
+    match placement_clip {
+        TemplatePlacementClip::CenterChunk => 0,
+        TemplatePlacementClip::CenterChunkExpandedToTemplate => 1,
+        TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate => 2,
+    }
+}
+
+const fn placement_clip_from_persistent(value: i8) -> TemplatePlacementClip {
+    match value {
+        1 => TemplatePlacementClip::CenterChunkExpandedToTemplate,
+        2 => TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+        _ => TemplatePlacementClip::CenterChunk,
+    }
+}
+
+const fn post_process_to_persistent(post_process: TemplatePostProcess) -> i8 {
+    match post_process {
+        TemplatePostProcess::None => 0,
+        TemplatePostProcess::NetherFossil => 1,
+        TemplatePostProcess::IglooTop => 2,
+        TemplatePostProcess::RuinedPortal => 3,
+    }
+}
+
+const fn post_process_from_persistent(value: i8) -> TemplatePostProcess {
+    match value {
+        1 => TemplatePostProcess::NetherFossil,
+        2 => TemplatePostProcess::IglooTop,
+        3 => TemplatePostProcess::RuinedPortal,
+        _ => TemplatePostProcess::None,
+    }
+}
+
 fn compare_identifiers(a: &Identifier, b: &Identifier) -> CmpOrdering {
     a.namespace
         .cmp(&b.namespace)
@@ -117,10 +327,17 @@ use super::ram_only::RamOnlyStorage;
 use super::region_manager::RegionManager;
 use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentChunk,
-    PersistentEntity, PersistentHeightmap, PersistentJigsawJunction, PersistentJigsawPieceData,
-    PersistentPoi, PersistentPoolElement, PersistentProcessorList, PersistentSection,
-    PersistentStructurePiece, PersistentStructureReference, PersistentStructureStart,
-    PersistentTick, PreparedChunkSave,
+    PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
+    PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
+    PersistentMineshaftPieceData, PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
+    PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
+    PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
+    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentSection, PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType,
+    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
+    PersistentStructureStart, PersistentSwampHutPieceData, PersistentTemplatePieceData,
+    PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
+    PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -295,27 +512,24 @@ impl ChunkStorage {
 
         let pos = chunk.pos();
 
-        // Get block entities if this is a full chunk
-        let block_entities: Vec<SharedBlockEntity> = chunk
-            .as_full()
-            .map(LevelChunk::get_block_entities)
-            .unwrap_or_default();
+        let block_entities = chunk.get_block_entities();
 
-        // Get saveable entities if this is a full chunk
-        let entities: Vec<SharedEntity> = chunk
-            .as_full()
-            .map(|c| c.entities.get_saveable_entities())
-            .unwrap_or_default();
+        let entities = chunk.get_saveable_entities();
 
         // Serialize scheduled ticks
-        let (block_ticks, fluid_ticks) = chunk
-            .as_full()
-            .map(|c| {
+        let (block_ticks, fluid_ticks) = match chunk {
+            ChunkAccess::Full(c) => {
                 let bt = Self::block_ticks_to_persistent(&c.block_ticks.lock(), pos);
                 let ft = Self::fluid_ticks_to_persistent(&c.fluid_ticks.lock(), pos);
                 (bt, ft)
-            })
-            .unwrap_or_default();
+            }
+            ChunkAccess::Proto(c) => {
+                let bt = Self::block_ticks_to_persistent(&c.block_ticks.lock(), pos);
+                let ft = Self::fluid_ticks_to_persistent(&c.fluid_ticks.lock(), pos);
+                (bt, ft)
+            }
+            ChunkAccess::Unloaded => unreachable!(),
+        };
 
         // Serialize heightmaps
         let heightmaps = chunk
@@ -634,7 +848,9 @@ impl ChunkStorage {
 
             // Load entities
             for persistent_entity in &persistent.entities {
-                if let Some(entity) = Self::persistent_to_entity(persistent_entity, pos, &chunk) {
+                if let Some(entity) =
+                    Self::persistent_to_entity_at_level(persistent_entity, pos, chunk.level_weak())
+                {
                     chunk.add_and_register_entity(entity);
                 }
             }
@@ -663,12 +879,14 @@ impl ChunkStorage {
 
             ChunkAccess::Full(chunk)
         } else {
+            let block_ticks = Self::persistent_to_block_ticks(&persistent.block_ticks, pos);
+            let fluid_ticks = Self::persistent_to_fluid_ticks(&persistent.fluid_ticks, pos);
             let carving_mask = persistent
                 .carving_mask
                 .as_deref()
                 .map(|packed| CarvingMask::from_packed_u64s(height, min_y, packed));
 
-            ChunkAccess::Proto(ProtoChunk::from_disk(
+            let chunk = ProtoChunk::from_disk(
                 Sections::from_owned(sections.into_boxed_slice()),
                 pos,
                 status,
@@ -678,8 +896,45 @@ impl ChunkStorage {
                 structure_references,
                 carving_mask,
                 persistent.postprocessing.iter().map(Vec::clone).collect(),
-            ))
+                block_ticks,
+                fluid_ticks,
+                level.clone(),
+            );
+
+            for persistent_be in &persistent.block_entities {
+                let block_entity_pos = Self::persistent_block_entity_pos(persistent_be, pos);
+                let state = chunk.get_block_state(block_entity_pos);
+                if let Some(block_entity) = Self::persistent_to_block_entity_at(
+                    persistent_be,
+                    block_entity_pos,
+                    level.clone(),
+                    state,
+                ) {
+                    chunk.add_and_register_block_entity(block_entity);
+                }
+            }
+
+            for persistent_entity in &persistent.entities {
+                if let Some(entity) =
+                    Self::persistent_to_entity_at_level(persistent_entity, pos, level.clone())
+                {
+                    chunk.add_entity(entity);
+                }
+            }
+
+            chunk.dirty.store(false, Ordering::Release);
+
+            ChunkAccess::Proto(chunk)
         }
+    }
+
+    fn persistent_block_entity_pos(
+        persistent: &PersistentBlockEntity,
+        chunk_pos: ChunkPos,
+    ) -> BlockPos {
+        let abs_x = chunk_pos.0.x * 16 + i32::from(persistent.x);
+        let abs_z = chunk_pos.0.y * 16 + i32::from(persistent.z);
+        BlockPos::new(abs_x, i32::from(persistent.y), abs_z)
     }
 
     /// Converts a persistent block entity to runtime format.
@@ -688,42 +943,42 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
         chunk: &LevelChunk,
     ) -> Option<SharedBlockEntity> {
-        // Calculate absolute position
-        let abs_x = chunk_pos.0.x * 16 + i32::from(persistent.x);
-        let abs_z = chunk_pos.0.y * 16 + i32::from(persistent.z);
-        let pos = BlockPos::new(abs_x, i32::from(persistent.y), abs_z);
-
-        // Get the block state at this position
+        let pos = Self::persistent_block_entity_pos(persistent, chunk_pos);
         let state = chunk.get_block_state(pos);
+        Self::persistent_to_block_entity_at(persistent, pos, chunk.level_weak(), state)
+    }
 
+    fn persistent_to_block_entity_at(
+        persistent: &PersistentBlockEntity,
+        pos: BlockPos,
+        level: Weak<World>,
+        state: BlockStateId,
+    ) -> Option<SharedBlockEntity> {
         // Look up the block entity type
         let block_entity_type = REGISTRY
             .block_entity_types
             .by_key(&persistent.entity_type)?;
 
-        // Get the world reference from the chunk
-        let level = chunk.level_weak();
-
         // Parse and load NBT data
         if persistent.nbt_data.is_empty() {
             // No NBT data, just create the entity without loading
-            BLOCK_ENTITIES.create(block_entity_type, level, pos, state)
+            Some(BLOCK_ENTITIES.create_or_raw(block_entity_type, level, pos, state))
         } else {
             // Parse NBT from bytes as borrowed
             let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&persistent.nbt_data)) else {
-                return BLOCK_ENTITIES.create(block_entity_type, level, pos, state);
+                return Some(BLOCK_ENTITIES.create_or_raw(block_entity_type, level, pos, state));
             };
 
             // Create the block entity and load NBT
-            BLOCK_ENTITIES.create_and_load(block_entity_type, level, pos, state, &nbt)
+            Some(BLOCK_ENTITIES.create_and_load_or_raw(block_entity_type, level, pos, state, &nbt))
         }
     }
 
     /// Converts a persistent entity to runtime format.
-    fn persistent_to_entity(
+    fn persistent_to_entity_at_level(
         persistent: &PersistentEntity,
         chunk_pos: ChunkPos,
-        chunk: &LevelChunk,
+        level: Weak<World>,
     ) -> Option<SharedEntity> {
         use glam::DVec3;
         use uuid::Uuid;
@@ -749,9 +1004,8 @@ impl ChunkStorage {
         }
 
         // Validate position is within expected chunk (sanity check)
-        let expected_chunk_x = (pos.x as i32) >> 4;
-        let expected_chunk_z = (pos.z as i32) >> 4;
-        if chunk_pos.0.x != expected_chunk_x || chunk_pos.0.y != expected_chunk_z {
+        let expected_chunk = ChunkPos::from_entity_pos(pos);
+        if chunk_pos != expected_chunk {
             tracing::warn!(
                 ?uuid,
                 "Entity position {:?} doesn't match chunk {:?}, loading anyway",
@@ -774,18 +1028,6 @@ impl ChunkStorage {
         // Look up entity type
         let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
 
-        // Check if we have a load factory for this entity type
-        if !ENTITIES.has_load_factory(entity_type) {
-            tracing::debug!(
-                entity_type = %persistent.entity_type,
-                "No load factory for entity type, skipping"
-            );
-            return None;
-        }
-
-        // Get world reference
-        let level = chunk.level_weak();
-
         // Parse NBT from bytes (or use empty compound data)
         let nbt_bytes = if persistent.nbt_data.is_empty() {
             // Empty NBT compound: type byte (10 = compound), empty name (2 zero bytes), end tag (0)
@@ -799,7 +1041,7 @@ impl ChunkStorage {
             return None;
         };
 
-        ENTITIES.create_and_load(
+        Some(ENTITIES.create_and_load_or_raw(
             entity_type,
             pos,
             uuid,
@@ -808,7 +1050,7 @@ impl ChunkStorage {
             persistent.on_ground,
             level,
             &nbt,
-        )
+        ))
     }
 
     /// Converts block ticks to persistent format for saving.
@@ -964,6 +1206,736 @@ impl ChunkStorage {
         }
     }
 
+    fn procedural_piece_data_to_persistent(
+        data: &ProceduralPieceData,
+    ) -> PersistentProceduralPieceData {
+        match data {
+            ProceduralPieceData::Unimplemented => PersistentProceduralPieceData::Unimplemented,
+            ProceduralPieceData::BuriedTreasure => PersistentProceduralPieceData::BuriedTreasure,
+            ProceduralPieceData::DesertPyramid(data) => {
+                PersistentProceduralPieceData::DesertPyramid(PersistentDesertPyramidPieceData {
+                    height_position: data.height_position.unwrap_or(-1),
+                    has_placed_chest: data.has_placed_chest,
+                })
+            }
+            ProceduralPieceData::JungleTemple(data) => {
+                PersistentProceduralPieceData::JungleTemple(PersistentJungleTemplePieceData {
+                    height_position: data.height_position.unwrap_or(-1),
+                    placed_main_chest: data.placed_main_chest,
+                    placed_hidden_chest: data.placed_hidden_chest,
+                    placed_trap1: data.placed_trap1,
+                    placed_trap2: data.placed_trap2,
+                })
+            }
+            ProceduralPieceData::Mineshaft(data) => {
+                PersistentProceduralPieceData::Mineshaft(PersistentMineshaftPieceData {
+                    mineshaft_type: mineshaft_type_to_persistent(data.mineshaft_type),
+                    kind: Self::mineshaft_kind_to_persistent(&data.kind),
+                })
+            }
+            ProceduralPieceData::NetherFortress(data) => {
+                PersistentProceduralPieceData::NetherFortress(
+                    Self::fortress_piece_data_to_persistent(*data),
+                )
+            }
+            ProceduralPieceData::OceanMonument(data) => {
+                PersistentProceduralPieceData::OceanMonument(
+                    Self::ocean_monument_data_to_persistent(data),
+                )
+            }
+            ProceduralPieceData::Stronghold(data) => PersistentProceduralPieceData::Stronghold(
+                Self::stronghold_piece_data_to_persistent(*data),
+            ),
+            ProceduralPieceData::SwampHut(data) => {
+                PersistentProceduralPieceData::SwampHut(PersistentSwampHutPieceData {
+                    height_position: data.height_position.unwrap_or(-1),
+                    spawned_witch: data.spawned_witch,
+                    spawned_cat: data.spawned_cat,
+                })
+            }
+        }
+    }
+
+    fn persistent_to_procedural_piece_data(
+        data: &PersistentProceduralPieceData,
+    ) -> ProceduralPieceData {
+        match data {
+            PersistentProceduralPieceData::Unimplemented => ProceduralPieceData::Unimplemented,
+            PersistentProceduralPieceData::BuriedTreasure => ProceduralPieceData::BuriedTreasure,
+            PersistentProceduralPieceData::DesertPyramid(data) => {
+                ProceduralPieceData::DesertPyramid(DesertPyramidPieceData {
+                    height_position: (data.height_position >= 0).then_some(data.height_position),
+                    has_placed_chest: data.has_placed_chest,
+                    potential_suspicious_sand_world_positions: Vec::new(),
+                    random_collapsed_roof_pos: BlockPos::new(0, 0, 0),
+                })
+            }
+            PersistentProceduralPieceData::JungleTemple(data) => {
+                ProceduralPieceData::JungleTemple(JungleTemplePieceData {
+                    height_position: (data.height_position >= 0).then_some(data.height_position),
+                    placed_main_chest: data.placed_main_chest,
+                    placed_hidden_chest: data.placed_hidden_chest,
+                    placed_trap1: data.placed_trap1,
+                    placed_trap2: data.placed_trap2,
+                })
+            }
+            PersistentProceduralPieceData::Mineshaft(data) => {
+                ProceduralPieceData::Mineshaft(MineshaftPiecePayload {
+                    mineshaft_type: mineshaft_type_from_persistent(data.mineshaft_type),
+                    kind: Self::persistent_to_mineshaft_kind(&data.kind),
+                })
+            }
+            PersistentProceduralPieceData::NetherFortress(data) => {
+                ProceduralPieceData::NetherFortress(Self::persistent_to_fortress_piece_data(data))
+            }
+            PersistentProceduralPieceData::OceanMonument(data) => {
+                ProceduralPieceData::OceanMonument(Self::persistent_to_ocean_monument_data(data))
+            }
+            PersistentProceduralPieceData::Stronghold(data) => {
+                ProceduralPieceData::Stronghold(Self::persistent_to_stronghold_piece_data(data))
+            }
+            PersistentProceduralPieceData::SwampHut(data) => {
+                ProceduralPieceData::SwampHut(SwampHutPieceData {
+                    height_position: (data.height_position >= 0).then_some(data.height_position),
+                    spawned_witch: data.spawned_witch,
+                    spawned_cat: data.spawned_cat,
+                })
+            }
+        }
+    }
+
+    fn ocean_monument_data_to_persistent(
+        data: &OceanMonumentPieceData,
+    ) -> PersistentOceanMonumentPieceData {
+        PersistentOceanMonumentPieceData {
+            child_pieces: data
+                .child_pieces
+                .iter()
+                .map(Self::ocean_monument_child_to_persistent)
+                .collect(),
+        }
+    }
+
+    fn persistent_to_ocean_monument_data(
+        data: &PersistentOceanMonumentPieceData,
+    ) -> OceanMonumentPieceData {
+        OceanMonumentPieceData {
+            child_pieces: data
+                .child_pieces
+                .iter()
+                .map(Self::persistent_to_ocean_monument_child)
+                .collect(),
+        }
+    }
+
+    const fn ocean_monument_child_to_persistent(
+        child: &OceanMonumentChildPiece,
+    ) -> PersistentOceanMonumentChildPiece {
+        PersistentOceanMonumentChildPiece {
+            bounding_box: child.bounding_box,
+            kind: Self::ocean_monument_child_kind_to_persistent(&child.kind),
+        }
+    }
+
+    const fn persistent_to_ocean_monument_child(
+        child: &PersistentOceanMonumentChildPiece,
+    ) -> OceanMonumentChildPiece {
+        OceanMonumentChildPiece {
+            bounding_box: child.bounding_box,
+            kind: Self::persistent_to_ocean_monument_child_kind(&child.kind),
+        }
+    }
+
+    const fn ocean_monument_child_kind_to_persistent(
+        kind: &OceanMonumentChildPieceKind,
+    ) -> PersistentOceanMonumentChildPieceKind {
+        match kind {
+            OceanMonumentChildPieceKind::EntryRoom { room } => {
+                PersistentOceanMonumentChildPieceKind::EntryRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                }
+            }
+            OceanMonumentChildPieceKind::CoreRoom => {
+                PersistentOceanMonumentChildPieceKind::CoreRoom
+            }
+            OceanMonumentChildPieceKind::DoubleXRoom { west, east } => {
+                PersistentOceanMonumentChildPieceKind::DoubleXRoom {
+                    west: Self::ocean_monument_room_to_persistent(*west),
+                    east: Self::ocean_monument_room_to_persistent(*east),
+                }
+            }
+            OceanMonumentChildPieceKind::DoubleXYRoom {
+                west,
+                east,
+                west_up,
+                east_up,
+            } => PersistentOceanMonumentChildPieceKind::DoubleXYRoom {
+                west: Self::ocean_monument_room_to_persistent(*west),
+                east: Self::ocean_monument_room_to_persistent(*east),
+                west_up: Self::ocean_monument_room_to_persistent(*west_up),
+                east_up: Self::ocean_monument_room_to_persistent(*east_up),
+            },
+            OceanMonumentChildPieceKind::DoubleYRoom { room, above } => {
+                PersistentOceanMonumentChildPieceKind::DoubleYRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                    above: Self::ocean_monument_room_to_persistent(*above),
+                }
+            }
+            OceanMonumentChildPieceKind::DoubleYZRoom {
+                south,
+                north,
+                south_up,
+                north_up,
+            } => PersistentOceanMonumentChildPieceKind::DoubleYZRoom {
+                south: Self::ocean_monument_room_to_persistent(*south),
+                north: Self::ocean_monument_room_to_persistent(*north),
+                south_up: Self::ocean_monument_room_to_persistent(*south_up),
+                north_up: Self::ocean_monument_room_to_persistent(*north_up),
+            },
+            OceanMonumentChildPieceKind::DoubleZRoom { south, north } => {
+                PersistentOceanMonumentChildPieceKind::DoubleZRoom {
+                    south: Self::ocean_monument_room_to_persistent(*south),
+                    north: Self::ocean_monument_room_to_persistent(*north),
+                }
+            }
+            OceanMonumentChildPieceKind::SimpleRoom { room, main_design } => {
+                PersistentOceanMonumentChildPieceKind::SimpleRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                    main_design: *main_design,
+                }
+            }
+            OceanMonumentChildPieceKind::SimpleTopRoom { room } => {
+                PersistentOceanMonumentChildPieceKind::SimpleTopRoom {
+                    room: Self::ocean_monument_room_to_persistent(*room),
+                }
+            }
+            OceanMonumentChildPieceKind::WingRoom { main_design } => {
+                PersistentOceanMonumentChildPieceKind::WingRoom {
+                    main_design: *main_design,
+                }
+            }
+            OceanMonumentChildPieceKind::Penthouse => {
+                PersistentOceanMonumentChildPieceKind::Penthouse
+            }
+        }
+    }
+
+    const fn persistent_to_ocean_monument_child_kind(
+        kind: &PersistentOceanMonumentChildPieceKind,
+    ) -> OceanMonumentChildPieceKind {
+        match kind {
+            PersistentOceanMonumentChildPieceKind::EntryRoom { room } => {
+                OceanMonumentChildPieceKind::EntryRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::CoreRoom => {
+                OceanMonumentChildPieceKind::CoreRoom
+            }
+            PersistentOceanMonumentChildPieceKind::DoubleXRoom { west, east } => {
+                OceanMonumentChildPieceKind::DoubleXRoom {
+                    west: Self::persistent_to_ocean_monument_room(west),
+                    east: Self::persistent_to_ocean_monument_room(east),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::DoubleXYRoom {
+                west,
+                east,
+                west_up,
+                east_up,
+            } => OceanMonumentChildPieceKind::DoubleXYRoom {
+                west: Self::persistent_to_ocean_monument_room(west),
+                east: Self::persistent_to_ocean_monument_room(east),
+                west_up: Self::persistent_to_ocean_monument_room(west_up),
+                east_up: Self::persistent_to_ocean_monument_room(east_up),
+            },
+            PersistentOceanMonumentChildPieceKind::DoubleYRoom { room, above } => {
+                OceanMonumentChildPieceKind::DoubleYRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                    above: Self::persistent_to_ocean_monument_room(above),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::DoubleYZRoom {
+                south,
+                north,
+                south_up,
+                north_up,
+            } => OceanMonumentChildPieceKind::DoubleYZRoom {
+                south: Self::persistent_to_ocean_monument_room(south),
+                north: Self::persistent_to_ocean_monument_room(north),
+                south_up: Self::persistent_to_ocean_monument_room(south_up),
+                north_up: Self::persistent_to_ocean_monument_room(north_up),
+            },
+            PersistentOceanMonumentChildPieceKind::DoubleZRoom { south, north } => {
+                OceanMonumentChildPieceKind::DoubleZRoom {
+                    south: Self::persistent_to_ocean_monument_room(south),
+                    north: Self::persistent_to_ocean_monument_room(north),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::SimpleRoom { room, main_design } => {
+                OceanMonumentChildPieceKind::SimpleRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                    main_design: *main_design,
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::SimpleTopRoom { room } => {
+                OceanMonumentChildPieceKind::SimpleTopRoom {
+                    room: Self::persistent_to_ocean_monument_room(room),
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::WingRoom { main_design } => {
+                OceanMonumentChildPieceKind::WingRoom {
+                    main_design: *main_design,
+                }
+            }
+            PersistentOceanMonumentChildPieceKind::Penthouse => {
+                OceanMonumentChildPieceKind::Penthouse
+            }
+        }
+    }
+
+    const fn ocean_monument_room_to_persistent(
+        room: OceanMonumentRoomData,
+    ) -> PersistentOceanMonumentRoomData {
+        PersistentOceanMonumentRoomData {
+            index: room.index,
+            has_opening: room.has_opening,
+            has_up_connection: room.has_up_connection,
+        }
+    }
+
+    const fn persistent_to_ocean_monument_room(
+        room: &PersistentOceanMonumentRoomData,
+    ) -> OceanMonumentRoomData {
+        OceanMonumentRoomData {
+            index: room.index,
+            has_opening: room.has_opening,
+            has_up_connection: room.has_up_connection,
+        }
+    }
+
+    const fn fortress_piece_data_to_persistent(
+        data: FortressPieceData,
+    ) -> PersistentNetherFortressPieceData {
+        match data {
+            FortressPieceData::BridgeCrossing => PersistentNetherFortressPieceData::BridgeCrossing,
+            FortressPieceData::BridgeEndFiller { self_seed } => {
+                PersistentNetherFortressPieceData::BridgeEndFiller { self_seed }
+            }
+            FortressPieceData::BridgeStraight => PersistentNetherFortressPieceData::BridgeStraight,
+            FortressPieceData::CastleCorridorStairs => {
+                PersistentNetherFortressPieceData::CastleCorridorStairs
+            }
+            FortressPieceData::CastleCorridorTBalcony => {
+                PersistentNetherFortressPieceData::CastleCorridorTBalcony
+            }
+            FortressPieceData::CastleEntrance => PersistentNetherFortressPieceData::CastleEntrance,
+            FortressPieceData::CastleSmallCorridorCrossing => {
+                PersistentNetherFortressPieceData::CastleSmallCorridorCrossing
+            }
+            FortressPieceData::CastleSmallCorridorLeftTurn { is_needing_chest } => {
+                PersistentNetherFortressPieceData::CastleSmallCorridorLeftTurn { is_needing_chest }
+            }
+            FortressPieceData::CastleSmallCorridor => {
+                PersistentNetherFortressPieceData::CastleSmallCorridor
+            }
+            FortressPieceData::CastleSmallCorridorRightTurn { is_needing_chest } => {
+                PersistentNetherFortressPieceData::CastleSmallCorridorRightTurn { is_needing_chest }
+            }
+            FortressPieceData::CastleStalkRoom => {
+                PersistentNetherFortressPieceData::CastleStalkRoom
+            }
+            FortressPieceData::MonsterThrone { has_placed_spawner } => {
+                PersistentNetherFortressPieceData::MonsterThrone { has_placed_spawner }
+            }
+            FortressPieceData::RoomCrossing => PersistentNetherFortressPieceData::RoomCrossing,
+            FortressPieceData::StairsRoom => PersistentNetherFortressPieceData::StairsRoom,
+        }
+    }
+
+    const fn persistent_to_fortress_piece_data(
+        data: &PersistentNetherFortressPieceData,
+    ) -> FortressPieceData {
+        match data {
+            PersistentNetherFortressPieceData::BridgeCrossing => FortressPieceData::BridgeCrossing,
+            PersistentNetherFortressPieceData::BridgeEndFiller { self_seed } => {
+                FortressPieceData::BridgeEndFiller {
+                    self_seed: *self_seed,
+                }
+            }
+            PersistentNetherFortressPieceData::BridgeStraight => FortressPieceData::BridgeStraight,
+            PersistentNetherFortressPieceData::CastleCorridorStairs => {
+                FortressPieceData::CastleCorridorStairs
+            }
+            PersistentNetherFortressPieceData::CastleCorridorTBalcony => {
+                FortressPieceData::CastleCorridorTBalcony
+            }
+            PersistentNetherFortressPieceData::CastleEntrance => FortressPieceData::CastleEntrance,
+            PersistentNetherFortressPieceData::CastleSmallCorridorCrossing => {
+                FortressPieceData::CastleSmallCorridorCrossing
+            }
+            PersistentNetherFortressPieceData::CastleSmallCorridorLeftTurn { is_needing_chest } => {
+                FortressPieceData::CastleSmallCorridorLeftTurn {
+                    is_needing_chest: *is_needing_chest,
+                }
+            }
+            PersistentNetherFortressPieceData::CastleSmallCorridor => {
+                FortressPieceData::CastleSmallCorridor
+            }
+            PersistentNetherFortressPieceData::CastleSmallCorridorRightTurn {
+                is_needing_chest,
+            } => FortressPieceData::CastleSmallCorridorRightTurn {
+                is_needing_chest: *is_needing_chest,
+            },
+            PersistentNetherFortressPieceData::CastleStalkRoom => {
+                FortressPieceData::CastleStalkRoom
+            }
+            PersistentNetherFortressPieceData::MonsterThrone { has_placed_spawner } => {
+                FortressPieceData::MonsterThrone {
+                    has_placed_spawner: *has_placed_spawner,
+                }
+            }
+            PersistentNetherFortressPieceData::RoomCrossing => FortressPieceData::RoomCrossing,
+            PersistentNetherFortressPieceData::StairsRoom => FortressPieceData::StairsRoom,
+        }
+    }
+
+    const fn stronghold_door_to_persistent(
+        door: StrongholdSmallDoorType,
+    ) -> PersistentStrongholdSmallDoorType {
+        match door {
+            StrongholdSmallDoorType::Opening => PersistentStrongholdSmallDoorType::Opening,
+            StrongholdSmallDoorType::WoodDoor => PersistentStrongholdSmallDoorType::WoodDoor,
+            StrongholdSmallDoorType::Grates => PersistentStrongholdSmallDoorType::Grates,
+            StrongholdSmallDoorType::IronDoor => PersistentStrongholdSmallDoorType::IronDoor,
+        }
+    }
+
+    const fn persistent_to_stronghold_door(
+        door: &PersistentStrongholdSmallDoorType,
+    ) -> StrongholdSmallDoorType {
+        match door {
+            PersistentStrongholdSmallDoorType::Opening => StrongholdSmallDoorType::Opening,
+            PersistentStrongholdSmallDoorType::WoodDoor => StrongholdSmallDoorType::WoodDoor,
+            PersistentStrongholdSmallDoorType::Grates => StrongholdSmallDoorType::Grates,
+            PersistentStrongholdSmallDoorType::IronDoor => StrongholdSmallDoorType::IronDoor,
+        }
+    }
+
+    const fn stronghold_piece_data_to_persistent(
+        data: StrongholdPieceData,
+    ) -> PersistentStrongholdPieceData {
+        match data {
+            StrongholdPieceData::Straight {
+                entry_door,
+                left_child,
+                right_child,
+            } => PersistentStrongholdPieceData::Straight {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                left_child,
+                right_child,
+            },
+            StrongholdPieceData::PrisonHall { entry_door } => {
+                PersistentStrongholdPieceData::PrisonHall {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::LeftTurn { entry_door } => {
+                PersistentStrongholdPieceData::LeftTurn {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::RightTurn { entry_door } => {
+                PersistentStrongholdPieceData::RightTurn {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::RoomCrossing {
+                entry_door,
+                crossing_type,
+            } => PersistentStrongholdPieceData::RoomCrossing {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                crossing_type,
+            },
+            StrongholdPieceData::StraightStairsDown { entry_door } => {
+                PersistentStrongholdPieceData::StraightStairsDown {
+                    entry_door: Self::stronghold_door_to_persistent(entry_door),
+                }
+            }
+            StrongholdPieceData::StairsDown {
+                entry_door,
+                is_source,
+            } => PersistentStrongholdPieceData::StairsDown {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                is_source,
+            },
+            StrongholdPieceData::FiveCrossing {
+                entry_door,
+                left_low,
+                left_high,
+                right_low,
+                right_high,
+            } => PersistentStrongholdPieceData::FiveCrossing {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                left_low,
+                left_high,
+                right_low,
+                right_high,
+            },
+            StrongholdPieceData::ChestCorridor {
+                entry_door,
+                has_placed_chest,
+            } => PersistentStrongholdPieceData::ChestCorridor {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                has_placed_chest,
+            },
+            StrongholdPieceData::Library {
+                entry_door,
+                is_tall,
+            } => PersistentStrongholdPieceData::Library {
+                entry_door: Self::stronghold_door_to_persistent(entry_door),
+                is_tall,
+            },
+            StrongholdPieceData::PortalRoom { has_placed_spawner } => {
+                PersistentStrongholdPieceData::PortalRoom { has_placed_spawner }
+            }
+            StrongholdPieceData::FillerCorridor { steps } => {
+                PersistentStrongholdPieceData::FillerCorridor { steps }
+            }
+        }
+    }
+
+    const fn persistent_to_stronghold_piece_data(
+        data: &PersistentStrongholdPieceData,
+    ) -> StrongholdPieceData {
+        match data {
+            PersistentStrongholdPieceData::Straight {
+                entry_door,
+                left_child,
+                right_child,
+            } => StrongholdPieceData::Straight {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                left_child: *left_child,
+                right_child: *right_child,
+            },
+            PersistentStrongholdPieceData::PrisonHall { entry_door } => {
+                StrongholdPieceData::PrisonHall {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::LeftTurn { entry_door } => {
+                StrongholdPieceData::LeftTurn {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::RightTurn { entry_door } => {
+                StrongholdPieceData::RightTurn {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::RoomCrossing {
+                entry_door,
+                crossing_type,
+            } => StrongholdPieceData::RoomCrossing {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                crossing_type: *crossing_type,
+            },
+            PersistentStrongholdPieceData::StraightStairsDown { entry_door } => {
+                StrongholdPieceData::StraightStairsDown {
+                    entry_door: Self::persistent_to_stronghold_door(entry_door),
+                }
+            }
+            PersistentStrongholdPieceData::StairsDown {
+                entry_door,
+                is_source,
+            } => StrongholdPieceData::StairsDown {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                is_source: *is_source,
+            },
+            PersistentStrongholdPieceData::FiveCrossing {
+                entry_door,
+                left_low,
+                left_high,
+                right_low,
+                right_high,
+            } => StrongholdPieceData::FiveCrossing {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                left_low: *left_low,
+                left_high: *left_high,
+                right_low: *right_low,
+                right_high: *right_high,
+            },
+            PersistentStrongholdPieceData::ChestCorridor {
+                entry_door,
+                has_placed_chest,
+            } => StrongholdPieceData::ChestCorridor {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                has_placed_chest: *has_placed_chest,
+            },
+            PersistentStrongholdPieceData::Library {
+                entry_door,
+                is_tall,
+            } => StrongholdPieceData::Library {
+                entry_door: Self::persistent_to_stronghold_door(entry_door),
+                is_tall: *is_tall,
+            },
+            PersistentStrongholdPieceData::PortalRoom { has_placed_spawner } => {
+                StrongholdPieceData::PortalRoom {
+                    has_placed_spawner: *has_placed_spawner,
+                }
+            }
+            PersistentStrongholdPieceData::FillerCorridor { steps } => {
+                StrongholdPieceData::FillerCorridor { steps: *steps }
+            }
+        }
+    }
+
+    fn mineshaft_kind_to_persistent(kind: &MineshaftPieceKind) -> PersistentMineshaftPieceKind {
+        match kind {
+            MineshaftPieceKind::Room {
+                child_entrance_boxes,
+            } => PersistentMineshaftPieceKind::Room {
+                child_entrance_boxes: Self::copy_bounding_boxes(child_entrance_boxes),
+            },
+            MineshaftPieceKind::Corridor {
+                has_rails,
+                spider_corridor,
+                has_placed_spider,
+                num_sections,
+            } => PersistentMineshaftPieceKind::Corridor {
+                has_rails: *has_rails,
+                spider_corridor: *spider_corridor,
+                has_placed_spider: *has_placed_spider,
+                num_sections: *num_sections,
+            },
+            MineshaftPieceKind::Crossing {
+                direction,
+                is_two_floored,
+            } => PersistentMineshaftPieceKind::Crossing {
+                direction: direction_to_2d(Some(*direction)),
+                is_two_floored: *is_two_floored,
+            },
+            MineshaftPieceKind::Stairs => PersistentMineshaftPieceKind::Stairs,
+        }
+    }
+
+    fn persistent_to_mineshaft_kind(kind: &PersistentMineshaftPieceKind) -> MineshaftPieceKind {
+        match kind {
+            PersistentMineshaftPieceKind::Room {
+                child_entrance_boxes,
+            } => MineshaftPieceKind::Room {
+                child_entrance_boxes: Self::copy_bounding_boxes(child_entrance_boxes),
+            },
+            PersistentMineshaftPieceKind::Corridor {
+                has_rails,
+                spider_corridor,
+                has_placed_spider,
+                num_sections,
+            } => MineshaftPieceKind::Corridor {
+                has_rails: *has_rails,
+                spider_corridor: *spider_corridor,
+                has_placed_spider: *has_placed_spider,
+                num_sections: *num_sections,
+            },
+            PersistentMineshaftPieceKind::Crossing {
+                direction,
+                is_two_floored,
+            } => MineshaftPieceKind::Crossing {
+                direction: required_direction_from_2d(*direction),
+                is_two_floored: *is_two_floored,
+            },
+            PersistentMineshaftPieceKind::Stairs => MineshaftPieceKind::Stairs,
+        }
+    }
+
+    fn copy_bounding_boxes(boxes: &[steel_utils::BoundingBox]) -> Vec<steel_utils::BoundingBox> {
+        let mut copied = Vec::with_capacity(boxes.len());
+        for bounding_box in boxes {
+            copied.push(*bounding_box);
+        }
+        copied
+    }
+
+    fn structure_piece_payload_to_persistent(
+        payload: &StructurePiecePayload,
+    ) -> PersistentStructurePiecePayload {
+        match payload {
+            StructurePiecePayload::Jigsaw(data) => {
+                PersistentStructurePiecePayload::Jigsaw(Self::jigsaw_piece_data_to_persistent(data))
+            }
+            StructurePiecePayload::Template(data) => {
+                PersistentStructurePiecePayload::Template(PersistentTemplatePieceData {
+                    template_id: data.template_id.clone(),
+                    template_position: [
+                        data.template_position.0,
+                        data.template_position.1,
+                        data.template_position.2,
+                    ],
+                    rotation: rotation_to_persistent(data.rotation),
+                    mirror: mirror_to_persistent(data.mirror),
+                    rotation_pivot: [
+                        data.rotation_pivot.0,
+                        data.rotation_pivot.1,
+                        data.rotation_pivot.2,
+                    ],
+                    block_ignore: block_ignore_to_persistent(data.block_ignore),
+                    late_block_ignore: block_ignore_to_persistent(data.late_block_ignore),
+                    processors: Self::template_processors_to_persistent(&data.processors),
+                    liquid_settings: liquid_settings_to_persistent(data.liquid_settings),
+                    marker_handling: marker_handling_to_persistent(data.marker_handling),
+                    placement_adjustment: placement_adjustment_to_persistent(
+                        data.placement_adjustment,
+                    ),
+                    placement_clip: placement_clip_to_persistent(data.placement_clip),
+                    post_process: post_process_to_persistent(data.post_process),
+                })
+            }
+            StructurePiecePayload::Procedural(data) => PersistentStructurePiecePayload::Procedural(
+                Self::procedural_piece_data_to_persistent(data),
+            ),
+        }
+    }
+
+    fn persistent_to_structure_piece_payload(
+        payload: &PersistentStructurePiecePayload,
+    ) -> StructurePiecePayload {
+        match payload {
+            PersistentStructurePiecePayload::Jigsaw(data) => {
+                StructurePiecePayload::Jigsaw(Self::persistent_to_jigsaw_piece_data(data))
+            }
+            PersistentStructurePiecePayload::Template(data) => {
+                StructurePiecePayload::Template(TemplatePieceData {
+                    template_id: data.template_id.clone(),
+                    template_position: (
+                        data.template_position[0],
+                        data.template_position[1],
+                        data.template_position[2],
+                    ),
+                    rotation: rotation_from_persistent(data.rotation),
+                    mirror: mirror_from_persistent(data.mirror),
+                    rotation_pivot: (
+                        data.rotation_pivot[0],
+                        data.rotation_pivot[1],
+                        data.rotation_pivot[2],
+                    ),
+                    block_ignore: block_ignore_from_persistent(data.block_ignore),
+                    late_block_ignore: block_ignore_from_persistent(data.late_block_ignore),
+                    processors: Self::persistent_to_template_processors(&data.processors),
+                    liquid_settings: liquid_settings_from_persistent(data.liquid_settings),
+                    marker_handling: marker_handling_from_persistent(data.marker_handling),
+                    placement_adjustment: placement_adjustment_from_persistent(
+                        &data.placement_adjustment,
+                    ),
+                    placement_clip: placement_clip_from_persistent(data.placement_clip),
+                    post_process: post_process_from_persistent(data.post_process),
+                })
+            }
+            PersistentStructurePiecePayload::Procedural(data) => {
+                StructurePiecePayload::Procedural(Self::persistent_to_procedural_piece_data(data))
+            }
+        }
+    }
+
     fn pool_element_to_persistent(element: &PoolElement) -> PersistentPoolElement {
         match element {
             PoolElement::Single {
@@ -1060,6 +2032,73 @@ impl ChunkStorage {
         }
     }
 
+    fn template_processors_to_persistent(
+        processors: &TemplateProcessorList,
+    ) -> PersistentTemplateProcessorList {
+        match processors {
+            TemplateProcessorList::Empty => PersistentTemplateProcessorList::Empty,
+            TemplateProcessorList::Registry(id) => {
+                PersistentTemplateProcessorList::Registry(id.clone())
+            }
+            TemplateProcessorList::OceanRuin {
+                biome_temp,
+                integrity,
+            } => PersistentTemplateProcessorList::OceanRuin {
+                biome_temp: ocean_ruin_biome_temp_to_persistent(*biome_temp),
+                integrity: *integrity,
+            },
+            TemplateProcessorList::RuinedPortal {
+                vertical_placement,
+                properties,
+            } => PersistentTemplateProcessorList::RuinedPortal {
+                vertical_placement: ruined_portal_placement_to_persistent(*vertical_placement),
+                cold: properties.cold,
+                mossiness: properties.mossiness,
+                air_pocket: properties.air_pocket,
+                overgrown: properties.overgrown,
+                vines: properties.vines,
+                replace_with_blackstone: properties.replace_with_blackstone,
+            },
+        }
+    }
+
+    fn persistent_to_template_processors(
+        processors: &PersistentTemplateProcessorList,
+    ) -> TemplateProcessorList {
+        match processors {
+            PersistentTemplateProcessorList::Empty => TemplateProcessorList::Empty,
+            PersistentTemplateProcessorList::Registry(id) => {
+                TemplateProcessorList::Registry(id.clone())
+            }
+            PersistentTemplateProcessorList::OceanRuin {
+                biome_temp,
+                integrity,
+            } => TemplateProcessorList::OceanRuin {
+                biome_temp: ocean_ruin_biome_temp_from_persistent(*biome_temp),
+                integrity: *integrity,
+            },
+            PersistentTemplateProcessorList::RuinedPortal {
+                vertical_placement,
+                cold,
+                mossiness,
+                air_pocket,
+                overgrown,
+                vines,
+                replace_with_blackstone,
+            } => TemplateProcessorList::RuinedPortal {
+                vertical_placement: ruined_portal_placement_from_persistent(*vertical_placement),
+                properties: RuinedPortalProperties {
+                    cold: *cold,
+                    mossiness: *mossiness,
+                    air_pocket: *air_pocket,
+                    overgrown: *overgrown,
+                    vines: *vines,
+                    replace_with_blackstone: *replace_with_blackstone,
+                },
+            },
+        }
+    }
+
     /// Converts structure starts to persistent format for saving.
     fn structure_starts_to_persistent(starts: &StructureStartMap) -> Vec<PersistentStructureStart> {
         let mut persistent: Vec<_> = starts
@@ -1078,11 +2117,7 @@ impl ChunkStorage {
                         bounding_box: piece.bounding_box,
                         gen_depth: piece.gen_depth,
                         orientation: direction_to_2d(piece.orientation),
-                        nbt_data: piece.nbt_data.clone(),
-                        jigsaw: piece
-                            .jigsaw
-                            .as_ref()
-                            .map(Self::jigsaw_piece_data_to_persistent),
+                        payload: Self::structure_piece_payload_to_persistent(&piece.payload),
                         ground_level_delta: piece.ground_level_delta,
                         projection: projection_to_persistent(piece.projection),
                         junctions: piece
@@ -1117,12 +2152,11 @@ impl ChunkStorage {
             .map(|(structure, positions)| PersistentStructureReference {
                 structure: structure.clone(),
                 references: {
-                    let mut packed: Vec<_> = positions
-                        .iter()
+                    let packed: Vec<_> = positions
+                        .insertion_order_iter()
                         .copied()
                         .map(PackedChunkPos::from)
                         .collect();
-                    packed.sort_unstable();
                     packed
                 },
             })
@@ -1147,11 +2181,7 @@ impl ChunkStorage {
                         bounding_box: pp.bounding_box,
                         gen_depth: pp.gen_depth,
                         orientation: direction_from_2d(pp.orientation),
-                        nbt_data: pp.nbt_data.clone(),
-                        jigsaw: pp
-                            .jigsaw
-                            .as_ref()
-                            .map(Self::persistent_to_jigsaw_piece_data),
+                        payload: Self::persistent_to_structure_piece_payload(&pp.payload),
                         ground_level_delta: pp.ground_level_delta,
                         junctions: pp
                             .junctions
@@ -1327,12 +2357,34 @@ impl ChunkStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustc_hash::{FxHashMap, FxHashSet};
+    use std::sync::{Arc, Once};
+
+    use crate::behavior::init_behaviors;
+    use crate::block_entity::init_block_entities;
+    use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
+    use crate::world::structure::StructureReferenceSet;
+    use glam::DVec3;
+    use rustc_hash::FxHashMap;
+    use steel_registry::vanilla_block_entity_types;
+    use steel_registry::vanilla_blocks;
+    use steel_registry::vanilla_entities;
+    use steel_utils::types::UpdateFlags;
+
+    static RUNTIME_REGISTRIES: Once = Once::new();
 
     fn init_registry() {
         let mut registry = Registry::new_vanilla();
         registry.freeze();
         let _ = REGISTRY.init(registry);
+    }
+
+    fn init_runtime_registries() {
+        init_registry();
+        RUNTIME_REGISTRIES.call_once(|| {
+            init_behaviors();
+            init_block_entities();
+            init_entities();
+        });
     }
 
     fn test_structure_piece() -> StructurePiece {
@@ -1341,8 +2393,7 @@ mod tests {
             bounding_box: steel_utils::BoundingBox::new(0, 64, 0, 1, 65, 1),
             gen_depth: 0,
             orientation: None,
-            nbt_data: Vec::new(),
-            jigsaw: None,
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented),
             ground_level_delta: 0,
             junctions: Vec::new(),
             projection: None,
@@ -1358,7 +2409,7 @@ mod tests {
         init_registry();
 
         let pos = ChunkPos::new(3, -4);
-        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         proto.set_status(ChunkStatus::Carvers);
         drop(proto.get_or_create_carving_mask());
         let chunk = ChunkAccess::Proto(proto);
@@ -1388,7 +2439,7 @@ mod tests {
         init_registry();
 
         let pos = ChunkPos::new(3, -4);
-        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
         proto.set_status(ChunkStatus::Carvers);
         {
             let mut mask = proto.get_or_create_carving_mask();
@@ -1433,7 +2484,7 @@ mod tests {
 
         let pos = ChunkPos::new(-2, 1);
         let marked = BlockPos::new(-17, -63, 31);
-        let proto = ProtoChunk::new(single_empty_section(), pos, -64, 16);
+        let proto = ProtoChunk::new(single_empty_section(), pos, -64, 16, Weak::new());
         proto.set_status(ChunkStatus::Noise);
         proto.mark_pos_for_postprocessing(marked);
         let packed = ProtoChunk::pack_postprocessing_offset(marked);
@@ -1458,6 +2509,148 @@ mod tests {
         };
 
         assert_eq!(loaded_proto.postprocessing.read()[0], vec![packed]);
+    }
+
+    #[test]
+    fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let block_pos = BlockPos::new(3, 4, 5);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let barrel = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::BARREL);
+        proto.set_block_state(block_pos, barrel, UpdateFlags::UPDATE_NONE);
+
+        assert!(proto.get_block_entity(block_pos).is_some());
+
+        let chunk = ChunkAccess::Proto(proto);
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.block_entities.len(), 1);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Features,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("features status should load as proto chunk");
+        };
+        assert!(loaded_proto.get_block_entity(block_pos).is_some());
+
+        let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+        assert!(full.get_block_entity(block_pos).is_some());
+    }
+
+    #[test]
+    fn proto_entities_roundtrip_and_promote_to_full_chunk() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let entity_pos = DVec3::new(5.5, 6.0, 7.5);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let crystal = Arc::new(EndCrystalEntity::new(
+            next_entity_id(),
+            entity_pos,
+            Weak::new(),
+        ));
+        crystal.set_beam_target(Some(BlockPos::new(0, 64, 0)));
+        crystal.set_invulnerable(true);
+        proto.add_entity(crystal);
+
+        let chunk = ChunkAccess::Proto(proto);
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.entities.len(), 1);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Features,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("features status should load as proto chunk");
+        };
+        assert_eq!(loaded_proto.get_entities().len(), 1);
+
+        let full = LevelChunk::from_proto(loaded_proto, 0, 16, Weak::new());
+        let entities = full.entities.get_all();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(
+            entities[0].entity_type().id(),
+            vanilla_entities::END_CRYSTAL.id()
+        );
+    }
+
+    #[test]
+    fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(0, 0);
+        let block_pos = BlockPos::new(4, 4, 6);
+        let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+        let spawner = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SPAWNER);
+        proto.set_block_state(block_pos, spawner, UpdateFlags::UPDATE_NONE);
+
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
+        nbt.insert("LootTableSeed", 42_i64);
+        let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
+            &vanilla_block_entity_types::MOB_SPAWNER,
+            proto.level_weak(),
+            block_pos,
+            spawner,
+            nbt,
+        );
+        proto.add_and_register_block_entity(entity);
+
+        let chunk = ChunkAccess::Proto(proto);
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk) else {
+            panic!("dirty proto chunk should prepare for saving");
+        };
+        assert_eq!(prepared.persistent.block_entities.len(), 1);
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &prepared.persistent,
+            pos,
+            ChunkStatus::Features,
+            0,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Proto(loaded_proto) = loaded else {
+            panic!("features status should load as proto chunk");
+        };
+        let Some(loaded_entity) = loaded_proto.get_block_entity(block_pos) else {
+            panic!("raw block entity should survive chunk load");
+        };
+
+        let mut saved = NbtCompound::new();
+        let guard = loaded_entity.lock();
+        assert_eq!(
+            guard.get_type().id(),
+            vanilla_block_entity_types::MOB_SPAWNER.id()
+        );
+        guard.save_additional(&mut saved);
+        drop(guard);
+
+        assert_eq!(
+            saved.string("LootTable").map(ToString::to_string),
+            Some("minecraft:chests/simple_dungeon".to_owned())
+        );
+        assert_eq!(saved.long("LootTableSeed"), Some(42));
     }
 
     #[test]
@@ -1513,7 +2706,7 @@ mod tests {
         );
         references.insert(
             Identifier::new_static("minecraft", "empty"),
-            FxHashSet::default(),
+            StructureReferenceSet::default(),
         );
 
         let persistent_references = ChunkStorage::structure_references_to_persistent(&references);
@@ -1529,8 +2722,8 @@ mod tests {
         assert_eq!(
             persistent_references[1].references,
             vec![
-                PackedChunkPos::from(ChunkPos::new(1, 0)),
-                PackedChunkPos::from(ChunkPos::new(2, 0))
+                PackedChunkPos::from(ChunkPos::new(2, 0)),
+                PackedChunkPos::from(ChunkPos::new(1, 0))
             ]
         );
     }
@@ -1553,8 +2746,7 @@ mod tests {
             bounding_box: steel_utils::BoundingBox::new(10, 64, 20, 15, 70, 25),
             gen_depth: 3,
             orientation: Some(Direction::North),
-            nbt_data: vec![1, 2, 3],
-            jigsaw: Some(JigsawPieceData {
+            payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
                 pool_element: PoolElement::List {
                     elements: vec![
                         PoolElement::LegacySingle {
@@ -1608,7 +2800,6 @@ mod tests {
         assert_eq!(loaded_piece.piece_type, piece_type);
         assert_eq!(loaded_piece.gen_depth, 3);
         assert_eq!(loaded_piece.orientation, Some(Direction::North));
-        assert_eq!(loaded_piece.nbt_data, [1, 2, 3]);
         assert_eq!(loaded_piece.ground_level_delta, 1);
         assert_eq!(loaded_piece.projection, Some(Projection::Rigid));
         assert_eq!(loaded_piece.junctions.len(), 1);
@@ -1617,10 +2808,9 @@ mod tests {
             Projection::TerrainMatching
         );
 
-        let jigsaw = loaded_piece
-            .jigsaw
-            .as_ref()
-            .expect("typed jigsaw state should roundtrip");
+        let StructurePiecePayload::Jigsaw(jigsaw) = &loaded_piece.payload else {
+            panic!("typed jigsaw state should roundtrip");
+        };
         assert_eq!(jigsaw.position, (10, 64, 20));
         assert_eq!(jigsaw.rotation, Rotation::Clockwise90);
         assert_eq!(
@@ -1659,5 +2849,530 @@ mod tests {
         };
         assert_eq!(feature, &Identifier::new_static("minecraft", "pile_hay"));
         assert_eq!(*projection, Projection::TerrainMatching);
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single roundtrip fixture covers every structure piece payload variant together"
+    )]
+    fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
+        init_registry();
+
+        let structure_id = Identifier::new_static("steel", "test_payload_variants");
+        let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");
+        let igloo_template_id = Identifier::new_static("minecraft", "igloo/top");
+        let ocean_ruin_template_id = Identifier::new_static("minecraft", "underwater_ruin/warm_1");
+        let processor_id = Identifier::new_static("minecraft", "zombie_plains");
+
+        let template_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "shipwreck"),
+            bounding_box: steel_utils::BoundingBox::new(0, 70, 0, 12, 80, 12),
+            gen_depth: 2,
+            orientation: Some(Direction::East),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id: template_id.clone(),
+                template_position: (1, 70, 2),
+                rotation: Rotation::Clockwise180,
+                mirror: StructureMirror::FrontBack,
+                rotation_pivot: (4, 0, 15),
+                block_ignore: StructureBlockIgnore::StructureAndAir,
+                late_block_ignore: StructureBlockIgnore::None,
+                processors: TemplateProcessorList::Registry(processor_id.clone()),
+                liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+                marker_handling: TemplateMarkerHandling::DataMarkers,
+                placement_adjustment: TemplatePlacementAdjustment::Shipwreck {
+                    is_beached: true,
+                    height_adjusted: false,
+                },
+                placement_clip: TemplatePlacementClip::CenterChunkExpandedToTemplate,
+                post_process: TemplatePostProcess::NetherFossil,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let igloo_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "iglu"),
+            bounding_box: steel_utils::BoundingBox::new(4, 80, 4, 10, 84, 11),
+            gen_depth: 0,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id: igloo_template_id.clone(),
+                template_position: (4, 90, 4),
+                rotation: Rotation::Clockwise90,
+                mirror: StructureMirror::None,
+                rotation_pivot: (3, 5, 5),
+                block_ignore: StructureBlockIgnore::StructureBlock,
+                late_block_ignore: StructureBlockIgnore::None,
+                processors: TemplateProcessorList::Empty,
+                liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+                marker_handling: TemplateMarkerHandling::Igloo,
+                placement_adjustment: TemplatePlacementAdjustment::Igloo {
+                    template_offset: (0, 0, 0),
+                },
+                placement_clip: TemplatePlacementClip::CenterChunk,
+                post_process: TemplatePostProcess::IglooTop,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let ocean_ruin_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "orp"),
+            bounding_box: steel_utils::BoundingBox::new(12, 90, 12, 20, 96, 20),
+            gen_depth: 0,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id: ocean_ruin_template_id.clone(),
+                template_position: (12, 90, 12),
+                rotation: Rotation::CounterClockwise90,
+                mirror: StructureMirror::None,
+                rotation_pivot: (0, 0, 0),
+                block_ignore: StructureBlockIgnore::None,
+                late_block_ignore: StructureBlockIgnore::StructureAndAir,
+                processors: TemplateProcessorList::OceanRuin {
+                    biome_temp: OceanRuinBiomeTempData::Warm,
+                    integrity: 0.8,
+                },
+                liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+                marker_handling: TemplateMarkerHandling::OceanRuin { is_large: false },
+                placement_adjustment: TemplatePlacementAdjustment::OceanRuin,
+                placement_clip: TemplatePlacementClip::CenterChunk,
+                post_process: TemplatePostProcess::None,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let procedural_piece = StructurePiece::non_jigsaw(
+            Identifier::new_static("minecraft", "mscorridor"),
+            steel_utils::BoundingBox::new(20, 40, 20, 30, 50, 30),
+            5,
+            Some(Direction::South),
+        );
+        let buried_treasure_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "btp"),
+            bounding_box: steel_utils::BoundingBox::new(41, 90, 43, 41, 90, 43),
+            gen_depth: 0,
+            orientation: None,
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let desert_pyramid_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "tedp"),
+            bounding_box: steel_utils::BoundingBox::new(48, 63, 48, 68, 77, 68),
+            gen_depth: 0,
+            orientation: Some(Direction::East),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(
+                DesertPyramidPieceData {
+                    height_position: Some(63),
+                    has_placed_chest: [true, false, true, false],
+                    potential_suspicious_sand_world_positions: vec![BlockPos::new(51, 64, 54)],
+                    random_collapsed_roof_pos: BlockPos::new(50, 64, 50),
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let jungle_temple_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "tejp"),
+            bounding_box: steel_utils::BoundingBox::new(64, 63, 64, 75, 72, 78),
+            gen_depth: 0,
+            orientation: Some(Direction::South),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(
+                JungleTemplePieceData {
+                    height_position: Some(64),
+                    placed_main_chest: true,
+                    placed_hidden_chest: false,
+                    placed_trap1: true,
+                    placed_trap2: false,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let mineshaft_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "mscorridor"),
+            bounding_box: steel_utils::BoundingBox::new(32, 45, 32, 34, 47, 46),
+            gen_depth: 4,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(
+                MineshaftPiecePayload {
+                    mineshaft_type: MineshaftType::Mesa,
+                    kind: MineshaftPieceKind::Corridor {
+                        has_rails: true,
+                        spider_corridor: false,
+                        has_placed_spider: true,
+                        num_sections: 3,
+                    },
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let fortress_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "nemt"),
+            bounding_box: steel_utils::BoundingBox::new(48, 52, 48, 54, 59, 56),
+            gen_depth: 6,
+            orientation: Some(Direction::East),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(
+                FortressPieceData::MonsterThrone {
+                    has_placed_spawner: true,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let ocean_monument_room = OceanMonumentRoomData {
+            index: 12,
+            has_opening: [false, true, true, false, true, false],
+            has_up_connection: true,
+        };
+        let ocean_monument_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "omb"),
+            bounding_box: steel_utils::BoundingBox::new(64, 39, 64, 121, 61, 121),
+            gen_depth: 0,
+            orientation: Some(Direction::South),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(
+                OceanMonumentPieceData {
+                    child_pieces: vec![
+                        OceanMonumentChildPiece {
+                            bounding_box: steel_utils::BoundingBox::new(73, 39, 86, 80, 42, 93),
+                            kind: OceanMonumentChildPieceKind::SimpleRoom {
+                                room: ocean_monument_room,
+                                main_design: 2,
+                            },
+                        },
+                        OceanMonumentChildPiece {
+                            bounding_box: steel_utils::BoundingBox::new(65, 40, 65, 87, 47, 85),
+                            kind: OceanMonumentChildPieceKind::WingRoom { main_design: 1 },
+                        },
+                        OceanMonumentChildPiece {
+                            bounding_box: steel_utils::BoundingBox::new(86, 52, 86, 99, 56, 99),
+                            kind: OceanMonumentChildPieceKind::Penthouse,
+                        },
+                    ],
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let stronghold_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "shrc"),
+            bounding_box: steel_utils::BoundingBox::new(55, 35, 55, 65, 41, 65),
+            gen_depth: 7,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(
+                StrongholdPieceData::RoomCrossing {
+                    entry_door: StrongholdSmallDoorType::IronDoor,
+                    crossing_type: 2,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+        let swamp_hut_piece = StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "tesh"),
+            bounding_box: steel_utils::BoundingBox::new(80, 63, 80, 86, 69, 88),
+            gen_depth: 0,
+            orientation: Some(Direction::West),
+            payload: StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(
+                SwampHutPieceData {
+                    height_position: Some(62),
+                    spawned_witch: true,
+                    spawned_cat: false,
+                },
+            )),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        };
+
+        let start = StructureStart::new(
+            structure_id.clone(),
+            ChunkPos::new(8, 9),
+            vec![
+                template_piece,
+                igloo_piece,
+                ocean_ruin_piece,
+                procedural_piece,
+                buried_treasure_piece,
+                desert_pyramid_piece,
+                jungle_temple_piece,
+                mineshaft_piece,
+                fortress_piece,
+                ocean_monument_piece,
+                stronghold_piece,
+                swamp_hut_piece,
+            ],
+            TerrainAdjustment::None,
+        );
+        let mut starts = FxHashMap::default();
+        starts.insert(structure_id.clone(), start);
+
+        let persistent = ChunkStorage::structure_starts_to_persistent(&starts);
+        let encoded = wincode::serialize(&persistent).expect("structure starts should serialize");
+        let decoded: Vec<PersistentStructureStart> =
+            wincode::deserialize(&encoded).expect("structure starts should deserialize");
+        let loaded = ChunkStorage::persistent_to_structure_starts(&decoded);
+        let loaded_start = loaded
+            .get(&structure_id)
+            .expect("structure start should roundtrip");
+        assert_eq!(loaded_start.pieces.len(), 12);
+
+        let StructurePiecePayload::Template(template) = &loaded_start.pieces[0].payload else {
+            panic!("template payload should roundtrip");
+        };
+        assert_eq!(template.template_id, template_id);
+        assert_eq!(template.template_position, (1, 70, 2));
+        assert_eq!(template.rotation, Rotation::Clockwise180);
+        assert_eq!(template.mirror, StructureMirror::FrontBack);
+        assert_eq!(template.rotation_pivot, (4, 0, 15));
+        assert_eq!(template.block_ignore, StructureBlockIgnore::StructureAndAir);
+        assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
+        assert_eq!(
+            template.liquid_settings,
+            LiquidSettingsData::IgnoreWaterlogging
+        );
+        assert_eq!(
+            template.marker_handling,
+            TemplateMarkerHandling::DataMarkers
+        );
+        assert_eq!(
+            template.placement_adjustment,
+            TemplatePlacementAdjustment::Shipwreck {
+                is_beached: true,
+                height_adjusted: false,
+            }
+        );
+        assert_eq!(
+            template.placement_clip,
+            TemplatePlacementClip::CenterChunkExpandedToTemplate
+        );
+        assert_eq!(template.post_process, TemplatePostProcess::NetherFossil);
+        assert_eq!(
+            template.processors,
+            TemplateProcessorList::Registry(processor_id.clone())
+        );
+
+        let StructurePiecePayload::Template(template) = &loaded_start.pieces[1].payload else {
+            panic!("igloo template payload should roundtrip");
+        };
+        assert_eq!(template.template_id, igloo_template_id);
+        assert_eq!(template.template_position, (4, 90, 4));
+        assert_eq!(template.rotation, Rotation::Clockwise90);
+        assert_eq!(template.mirror, StructureMirror::None);
+        assert_eq!(template.rotation_pivot, (3, 5, 5));
+        assert_eq!(template.block_ignore, StructureBlockIgnore::StructureBlock);
+        assert_eq!(template.late_block_ignore, StructureBlockIgnore::None);
+        assert_eq!(template.processors, TemplateProcessorList::Empty);
+        assert_eq!(template.marker_handling, TemplateMarkerHandling::Igloo);
+        assert_eq!(
+            template.placement_adjustment,
+            TemplatePlacementAdjustment::Igloo {
+                template_offset: (0, 0, 0),
+            }
+        );
+        assert_eq!(template.placement_clip, TemplatePlacementClip::CenterChunk);
+        assert_eq!(template.post_process, TemplatePostProcess::IglooTop);
+
+        let StructurePiecePayload::Template(template) = &loaded_start.pieces[2].payload else {
+            panic!("ocean ruin template payload should roundtrip");
+        };
+        assert_eq!(template.template_id, ocean_ruin_template_id);
+        assert_eq!(template.template_position, (12, 90, 12));
+        assert_eq!(template.rotation, Rotation::CounterClockwise90);
+        assert_eq!(template.mirror, StructureMirror::None);
+        assert_eq!(template.rotation_pivot, (0, 0, 0));
+        assert_eq!(template.block_ignore, StructureBlockIgnore::None);
+        assert_eq!(
+            template.late_block_ignore,
+            StructureBlockIgnore::StructureAndAir
+        );
+        assert_eq!(
+            template.processors,
+            TemplateProcessorList::OceanRuin {
+                biome_temp: OceanRuinBiomeTempData::Warm,
+                integrity: 0.8,
+            }
+        );
+        assert_eq!(
+            template.marker_handling,
+            TemplateMarkerHandling::OceanRuin { is_large: false }
+        );
+        assert_eq!(
+            template.placement_adjustment,
+            TemplatePlacementAdjustment::OceanRuin
+        );
+        assert_eq!(template.placement_clip, TemplatePlacementClip::CenterChunk);
+        assert_eq!(template.post_process, TemplatePostProcess::None);
+
+        assert!(matches!(
+            loaded_start.pieces[3].payload,
+            StructurePiecePayload::Procedural(ProceduralPieceData::Unimplemented)
+        ));
+        assert!(matches!(
+            loaded_start.pieces[4].payload,
+            StructurePiecePayload::Procedural(ProceduralPieceData::BuriedTreasure)
+        ));
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::DesertPyramid(payload)) =
+            &loaded_start.pieces[5].payload
+        else {
+            panic!("desert pyramid payload should roundtrip");
+        };
+        assert_eq!(payload.height_position, Some(63));
+        assert_eq!(payload.has_placed_chest, [true, false, true, false]);
+        assert!(payload.potential_suspicious_sand_world_positions.is_empty());
+        assert_eq!(payload.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(payload)) =
+            &loaded_start.pieces[6].payload
+        else {
+            panic!("jungle temple payload should roundtrip");
+        };
+        assert_eq!(payload.height_position, Some(64));
+        assert!(payload.placed_main_chest);
+        assert!(!payload.placed_hidden_chest);
+        assert!(payload.placed_trap1);
+        assert!(!payload.placed_trap2);
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(payload)) =
+            &loaded_start.pieces[7].payload
+        else {
+            panic!("mineshaft payload should roundtrip");
+        };
+        assert_eq!(payload.mineshaft_type, MineshaftType::Mesa);
+        let MineshaftPieceKind::Corridor {
+            has_rails,
+            spider_corridor,
+            has_placed_spider,
+            num_sections,
+        } = &payload.kind
+        else {
+            panic!("expected mineshaft corridor payload");
+        };
+        assert!(*has_rails);
+        assert!(!*spider_corridor);
+        assert!(*has_placed_spider);
+        assert_eq!(*num_sections, 3);
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::NetherFortress(
+            fortress_payload,
+        )) = &loaded_start.pieces[8].payload
+        else {
+            panic!("nether fortress payload should roundtrip");
+        };
+        assert_eq!(
+            *fortress_payload,
+            FortressPieceData::MonsterThrone {
+                has_placed_spawner: true,
+            }
+        );
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::OceanMonument(payload)) =
+            &loaded_start.pieces[9].payload
+        else {
+            panic!("ocean monument payload should roundtrip");
+        };
+        assert_eq!(payload.child_pieces.len(), 3);
+        let OceanMonumentChildPieceKind::SimpleRoom { room, main_design } =
+            &payload.child_pieces[0].kind
+        else {
+            panic!("ocean monument simple room child should roundtrip");
+        };
+        assert_eq!(*room, ocean_monument_room);
+        assert_eq!(*main_design, 2);
+        assert!(matches!(
+            payload.child_pieces[1].kind,
+            OceanMonumentChildPieceKind::WingRoom { main_design: 1 }
+        ));
+        assert!(matches!(
+            payload.child_pieces[2].kind,
+            OceanMonumentChildPieceKind::Penthouse
+        ));
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::Stronghold(stronghold_payload)) =
+            &loaded_start.pieces[10].payload
+        else {
+            panic!("stronghold payload should roundtrip");
+        };
+        assert_eq!(
+            *stronghold_payload,
+            StrongholdPieceData::RoomCrossing {
+                entry_door: StrongholdSmallDoorType::IronDoor,
+                crossing_type: 2,
+            }
+        );
+
+        let StructurePiecePayload::Procedural(ProceduralPieceData::SwampHut(payload)) =
+            &loaded_start.pieces[11].payload
+        else {
+            panic!("swamp hut payload should roundtrip");
+        };
+        assert_eq!(payload.height_position, Some(62));
+        assert!(payload.spawned_witch);
+        assert!(!payload.spawned_cat);
+    }
+
+    #[test]
+    fn template_processor_list_roundtrips_ruined_portal_processors() {
+        let ocean_ruin_processors = TemplateProcessorList::OceanRuin {
+            biome_temp: OceanRuinBiomeTempData::Cold,
+            integrity: 0.7,
+        };
+        let persistent = ChunkStorage::template_processors_to_persistent(&ocean_ruin_processors);
+        let loaded = ChunkStorage::persistent_to_template_processors(&persistent);
+        assert_eq!(loaded, ocean_ruin_processors);
+
+        let processors = TemplateProcessorList::RuinedPortal {
+            vertical_placement: RuinedPortalPlacementData::OnOceanFloor,
+            properties: RuinedPortalProperties {
+                cold: true,
+                mossiness: 0.8,
+                air_pocket: false,
+                overgrown: true,
+                vines: true,
+                replace_with_blackstone: false,
+            },
+        };
+
+        let persistent = ChunkStorage::template_processors_to_persistent(&processors);
+        let loaded = ChunkStorage::persistent_to_template_processors(&persistent);
+
+        assert_eq!(loaded, processors);
+        assert_eq!(
+            placement_clip_from_persistent(placement_clip_to_persistent(
+                TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+            )),
+            TemplatePlacementClip::CenterChunkContainsTemplateCenterExpandedToTemplate,
+        );
+        assert_eq!(
+            post_process_from_persistent(post_process_to_persistent(
+                TemplatePostProcess::RuinedPortal
+            )),
+            TemplatePostProcess::RuinedPortal,
+        );
+        assert_eq!(
+            marker_handling_from_persistent(marker_handling_to_persistent(
+                TemplateMarkerHandling::EndCity
+            )),
+            TemplateMarkerHandling::EndCity,
+        );
+        assert_eq!(
+            marker_handling_from_persistent(marker_handling_to_persistent(
+                TemplateMarkerHandling::WoodlandMansion
+            )),
+            TemplateMarkerHandling::WoodlandMansion,
+        );
     }
 }

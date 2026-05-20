@@ -76,11 +76,7 @@ impl PlayerEntityCallback {
     /// Creates a new callback for a player.
     #[must_use]
     pub fn new(entity_id: i32, position: DVec3, world: Weak<World>) -> Self {
-        let section_pos = SectionPos::new(
-            (position.x as i32) >> 4,
-            (position.y as i32) >> 4,
-            (position.z as i32) >> 4,
-        );
+        let section_pos = SectionPos::from_entity_pos(position);
 
         Self {
             entity_id,
@@ -96,11 +92,7 @@ impl EntityLevelCallback for PlayerEntityCallback {
             return;
         };
 
-        let new_section = SectionPos::new(
-            (new_pos.x as i32) >> 4,
-            (new_pos.y as i32) >> 4,
-            (new_pos.z as i32) >> 4,
-        );
+        let new_section = SectionPos::from_entity_pos(new_pos);
 
         let old_packed = self.last_section.swap(
             PackedSectionPos::from(new_section).as_raw(),
@@ -140,12 +132,8 @@ impl EntityChunkCallback {
     #[must_use]
     pub fn new(entity: &SharedEntity, world: Weak<World>) -> Self {
         let pos = entity.position();
-        let chunk_pos = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
-        let section_pos = SectionPos::new(
-            (pos.x as i32) >> 4,
-            (pos.y as i32) >> 4,
-            (pos.z as i32) >> 4,
-        );
+        let chunk_pos = ChunkPos::from_entity_pos(pos);
+        let section_pos = SectionPos::from_entity_pos(pos);
 
         Self {
             entity_id: entity.id(),
@@ -169,16 +157,8 @@ impl EntityLevelCallback for EntityChunkCallback {
         };
 
         // Calculate section positions
-        let old_section = SectionPos::new(
-            (old_pos.x as i32) >> 4,
-            (old_pos.y as i32) >> 4,
-            (old_pos.z as i32) >> 4,
-        );
-        let new_section = SectionPos::new(
-            (new_pos.x as i32) >> 4,
-            (new_pos.y as i32) >> 4,
-            (new_pos.z as i32) >> 4,
-        );
+        let old_section = SectionPos::from_entity_pos(old_pos);
+        let new_section = SectionPos::from_entity_pos(new_pos);
 
         // Update section cache if section changed
         if old_section != new_section {
@@ -194,8 +174,8 @@ impl EntityLevelCallback for EntityChunkCallback {
         }
 
         // Calculate chunk positions
-        let old_chunk = ChunkPos::new((old_pos.x as i32) >> 4, (old_pos.z as i32) >> 4);
-        let new_chunk = ChunkPos::new((new_pos.x as i32) >> 4, (new_pos.z as i32) >> 4);
+        let old_chunk = ChunkPos::from_entity_pos(old_pos);
+        let new_chunk = ChunkPos::from_entity_pos(new_pos);
 
         // Move Arc between chunks if chunk changed
         if old_chunk != new_chunk {

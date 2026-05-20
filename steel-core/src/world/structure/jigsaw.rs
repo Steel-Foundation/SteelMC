@@ -16,7 +16,7 @@ use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, Structure, StructureGenerationContext, StructurePiece, StructurePiecePayload,
 };
 
 /// A placed piece produced by jigsaw assembly.
@@ -494,18 +494,19 @@ fn expand_pool_weights(pool: &TemplatePoolData) -> Vec<&PoolElement> {
     expanded
 }
 
-/// Vanilla's `StructureTemplatePool.getShuffledTemplates`.
-fn get_shuffled_templates_cached<'a>(
+/// Appends vanilla's `StructureTemplatePool.getShuffledTemplates` to `out`.
+fn append_shuffled_templates_cached<'a>(
     pool: &'a TemplatePoolData,
     cache: &mut PoolTemplateCache<'a>,
     rng: &mut LegacyRandom,
-) -> Vec<&'a PoolElement> {
+    out: &mut Vec<&'a PoolElement>,
+) {
     let expanded = cache
         .entry(pool.key.clone())
         .or_insert_with(|| expand_pool_weights(pool));
-    let mut shuffled = expanded.clone();
-    vanilla_shuffle(&mut shuffled, rng);
-    shuffled
+    let start = out.len();
+    out.extend(expanded.iter().copied());
+    vanilla_shuffle(&mut out[start..], rng);
 }
 
 /// Vanilla's `StructureTemplatePool.getRandomTemplate`.
@@ -878,8 +879,7 @@ impl Structure for JigsawStructure {
                 // `genDepth = 0` for every jigsaw piece.
                 gen_depth: 0,
                 orientation: None,
-                nbt_data: Vec::new(),
-                jigsaw: Some(JigsawPieceData {
+                payload: StructurePiecePayload::Jigsaw(JigsawPieceData {
                     pool_element: piece.element,
                     position: piece.position,
                     rotation: piece.rotation,
@@ -956,9 +956,11 @@ fn try_placing_children<'a>(
     // placements. Lazily initialized on first internal placement (matching
     // vanilla's `MutableObject<VoxelShape>` that starts null).
     let mut internal_ctx_idx: Option<usize> = None;
+    let mut candidates: Vec<&PoolElement> = Vec::new();
 
     // For each source jigsaw, try to place one child
     'source_jigsaw: for source_jigsaw in &source_jigsaws {
+        candidates.clear();
         let front = source_jigsaw.orientation.front_direction();
         let (fdx, fdy, fdz) = front.offset();
         let source_jigsaw_pos = source_jigsaw.pos;
@@ -988,23 +990,13 @@ fn try_placing_children<'a>(
             target_jigsaw_world.2,
         );
 
-        // Build candidate list
-        let mut candidates: Vec<&PoolElement> = Vec::new();
         if depth != config.max_depth
             && let Some(pool) = target_pool
         {
-            candidates.extend(get_shuffled_templates_cached(
-                pool,
-                pool_template_cache,
-                rng,
-            ));
+            append_shuffled_templates_cached(pool, pool_template_cache, rng, &mut candidates);
         }
         if let Some(fallback) = fallback_pool {
-            candidates.extend(get_shuffled_templates_cached(
-                fallback,
-                pool_template_cache,
-                rng,
-            ));
+            append_shuffled_templates_cached(fallback, pool_template_cache, rng, &mut candidates);
         }
 
         let placement_priority = source_jigsaw.placement_priority;

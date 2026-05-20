@@ -1,7 +1,6 @@
 //! Vanilla's `Rotation` — horizontal rotations around the Y axis.
 
 use crate::random::Random;
-use crate::random::legacy_random::LegacyRandom;
 use crate::{BoundingBox, Direction};
 
 /// Horizontal rotation around the Y axis.
@@ -27,13 +26,13 @@ const ALL_ROTATIONS: [Rotation; 4] = [
 impl Rotation {
     /// Matches vanilla's `Rotation.getRandom(random)`.
     #[must_use]
-    pub fn get_random(rng: &mut LegacyRandom) -> Self {
+    pub fn get_random(rng: &mut impl Random) -> Self {
         ALL_ROTATIONS[rng.next_i32_bounded(4) as usize]
     }
 
     /// Matches vanilla's `Util.shuffledCopy(values(), random)` (reverse Fisher-Yates).
     #[must_use]
-    pub fn get_shuffled(rng: &mut LegacyRandom) -> [Rotation; 4] {
+    pub fn get_shuffled(rng: &mut impl Random) -> [Rotation; 4] {
         let mut rotations = ALL_ROTATIONS;
         for i in (1..4).rev() {
             let j = rng.next_i32_bounded((i + 1) as i32) as usize;

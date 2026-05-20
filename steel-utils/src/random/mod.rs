@@ -13,6 +13,8 @@ pub mod gaussian;
 pub mod legacy_random;
 /// Precomputed name hashes for positional random seeding.
 pub mod name_hash;
+/// This module contains vanilla's feature-decoration `WorldgenRandom` wrapper.
+pub mod worldgen_random;
 /// This module contains the xoroshiro random number generator.
 pub mod xoroshiro;
 

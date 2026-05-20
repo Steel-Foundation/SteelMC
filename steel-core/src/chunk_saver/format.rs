@@ -44,7 +44,13 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v7: Added POI persistence (`PersistentPoi`).
 /// v8: Added typed jigsaw piece-state persistence.
 /// v9: Added proto chunk carving mask persistence and typed packed chunk references.
-pub const FORMAT_VERSION: u16 = 9;
+/// v10: Added template piece clip and postprocess persistence.
+/// v11: Added template piece placement adjustment persistence.
+/// v12: Added igloo template marker, placement adjustment, and postprocess persistence.
+/// v13: Split template processor persistence and added ruined-portal processors.
+/// v14: Added buried treasure procedural piece persistence.
+/// v15: Added procedural structure-piece payload persistence.
+pub const FORMAT_VERSION: u16 = 15;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -451,7 +457,8 @@ pub struct PersistentStructureStart {
 
 /// A structure piece stored with a chunk.
 ///
-/// Common fields are stored directly; type-specific data is in `nbt_data`.
+/// Common fields are stored directly; type-specific placement data is in
+/// `payload`.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentStructurePiece {
     /// Piece type identifier (e.g., "minecraft:jigsaw").
@@ -462,16 +469,25 @@ pub struct PersistentStructurePiece {
     pub gen_depth: i32,
     /// 2D direction orientation (-1 = none, 0-3 = south/west/north/east).
     pub orientation: i8,
-    /// Type-specific NBT data (simdnbt binary format).
-    pub nbt_data: Vec<u8>,
-    /// Typed jigsaw placement data. Present only for `minecraft:jigsaw` pieces.
-    pub jigsaw: Option<PersistentJigsawPieceData>,
+    /// Type-specific structure piece placement data.
+    pub payload: PersistentStructurePiecePayload,
     /// Offset from piece minY to terrain ground level.
     pub ground_level_delta: i32,
     /// Projection mode: -1 = none, 0 = rigid, 1 = terrain matching.
     pub projection: i8,
     /// Jigsaw junctions used by terrain adaptation.
     pub junctions: Vec<PersistentJigsawJunction>,
+}
+
+/// Persisted type-specific structure piece placement data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentStructurePiecePayload {
+    /// Jigsaw pool piece payload.
+    Jigsaw(PersistentJigsawPieceData),
+    /// Template-backed non-jigsaw payload.
+    Template(PersistentTemplatePieceData),
+    /// Procedural family payload.
+    Procedural(PersistentProceduralPieceData),
 }
 
 /// Steel-native persistent state for a jigsaw pool piece.
@@ -485,6 +501,435 @@ pub struct PersistentJigsawPieceData {
     pub rotation: i8,
     /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
     pub liquid_settings: i8,
+}
+
+/// Persisted template-backed non-jigsaw piece data.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentTemplatePieceData {
+    /// Structure template identifier.
+    pub template_id: Identifier,
+    /// World-space template origin.
+    pub template_position: [i32; 3],
+    /// Rotation: 0=none, `1=clockwise_90`, `2=clockwise_180`, `3=counterclockwise_90`.
+    pub rotation: i8,
+    /// Mirror: `0=none`, `1=front_back`, `2=left_right`.
+    pub mirror: i8,
+    /// Rotation pivot in template-local block coordinates.
+    pub rotation_pivot: [i32; 3],
+    /// Early block-ignore processor: `0=none`, `1=structure_block`, `2=structure_and_air`.
+    pub block_ignore: i8,
+    /// Late block-ignore processor: `0=none`, `1=structure_block`, `2=structure_and_air`.
+    pub late_block_ignore: i8,
+    /// Processors applied during block placement.
+    pub processors: PersistentTemplateProcessorList,
+    /// Liquid settings: `0=apply_waterlogging`, `1=ignore_waterlogging`.
+    pub liquid_settings: i8,
+    /// Marker handling:
+    /// `0=ignore`, `1=data_markers`, `2=shipwreck`, `3=igloo`,
+    /// `4=ocean_ruin_small`, `5=ocean_ruin_large`, `6=end_city`, `7=woodland_mansion`.
+    pub marker_handling: i8,
+    /// Family-specific position adjustment before template block placement.
+    pub placement_adjustment: PersistentTemplatePlacementAdjustment,
+    /// Placement clip: `0=center_chunk`, `1=center_chunk_expanded_to_template`,
+    /// `2=center_chunk_contains_template_center_expanded_to_template`.
+    pub placement_clip: i8,
+    /// Postprocess: `0=none`, `1=nether_fossil`, `2=igloo_top`, `3=ruined_portal`.
+    pub post_process: i8,
+}
+
+/// Persisted processors for template-backed non-jigsaw pieces.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentTemplateProcessorList {
+    /// Direct empty processor list.
+    Empty,
+    /// Registry-backed processor list.
+    Registry(Identifier),
+    /// Vanilla's hardcoded ocean-ruin processor sequence.
+    OceanRuin {
+        /// Ocean ruin biome temperature: 0=warm, 1=cold.
+        biome_temp: i8,
+        /// Block-rot integrity.
+        integrity: f32,
+    },
+    /// Vanilla's hardcoded ruined-portal processor sequence.
+    RuinedPortal {
+        /// Ruined-portal vertical placement.
+        vertical_placement: i8,
+        /// Whether cold lava/aging behavior is active.
+        cold: bool,
+        /// Block age processor mossiness.
+        mossiness: f32,
+        /// Whether structure air is preserved.
+        air_pocket: bool,
+        /// Whether netherrack can grow leaves.
+        overgrown: bool,
+        /// Whether vines can be added.
+        vines: bool,
+        /// Whether blackstone replacement is active.
+        replace_with_blackstone: bool,
+    },
+}
+
+/// Persisted template position adjustment.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentTemplatePlacementAdjustment {
+    /// Place at the persisted template position.
+    None,
+    /// Shipwreck height adjustment state.
+    Shipwreck {
+        /// Whether this is the beached shipwreck variant.
+        is_beached: bool,
+        /// Vanilla `height_adjusted` flag.
+        height_adjusted: bool,
+    },
+    /// Igloo per-placement height adjustment.
+    Igloo {
+        /// Vanilla template offset for this igloo piece.
+        template_offset: [i32; 3],
+    },
+    /// Ocean ruin terrain height adjustment.
+    OceanRuin,
+}
+
+/// Persisted procedural piece data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentProceduralPieceData {
+    /// Procedural family whose placement state has not been captured yet.
+    Unimplemented,
+    /// Buried treasure chest placement.
+    BuriedTreasure,
+    /// Desert pyramid piece payload.
+    DesertPyramid(PersistentDesertPyramidPieceData),
+    /// Jungle temple piece payload.
+    JungleTemple(PersistentJungleTemplePieceData),
+    /// Mineshaft room/corridor/crossing/stairs payload.
+    Mineshaft(PersistentMineshaftPieceData),
+    /// Nether fortress bridge/castle payload.
+    NetherFortress(PersistentNetherFortressPieceData),
+    /// Ocean monument building payload.
+    OceanMonument(PersistentOceanMonumentPieceData),
+    /// Stronghold recursive piece payload.
+    Stronghold(PersistentStrongholdPieceData),
+    /// Swamp hut piece payload.
+    SwampHut(PersistentSwampHutPieceData),
+}
+
+/// Persisted stronghold door variant.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentStrongholdSmallDoorType {
+    /// Three-block cave-air opening.
+    Opening,
+    /// Oak door framed by stone bricks.
+    WoodDoor,
+    /// Iron-bar grate opening.
+    Grates,
+    /// Iron door with stone buttons.
+    IronDoor,
+}
+
+/// Persisted piece-specific stronghold data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentStrongholdPieceData {
+    /// Straight corridor with optional side exits.
+    Straight {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `leftChild`.
+        left_child: bool,
+        /// Vanilla `rightChild`.
+        right_child: bool,
+    },
+    /// Prison hall.
+    PrisonHall {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Left turn.
+    LeftTurn {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Right turn.
+    RightTurn {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Room crossing with one of five vanilla decorations.
+    RoomCrossing {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `type`.
+        crossing_type: i32,
+    },
+    /// Straight stair corridor.
+    StraightStairsDown {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+    },
+    /// Descending stairs, including the source/start piece.
+    StairsDown {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `isSource`.
+        is_source: bool,
+    },
+    /// Five-way crossing with low/high side exits.
+    FiveCrossing {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `leftLow`.
+        left_low: bool,
+        /// Vanilla `leftHigh`.
+        left_high: bool,
+        /// Vanilla `rightLow`.
+        right_low: bool,
+        /// Vanilla `rightHigh`.
+        right_high: bool,
+    },
+    /// Corridor containing a loot chest.
+    ChestCorridor {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `hasPlacedChest`.
+        has_placed_chest: bool,
+    },
+    /// Library room.
+    Library {
+        /// Vanilla `entryDoor`.
+        entry_door: PersistentStrongholdSmallDoorType,
+        /// Vanilla `isTall`.
+        is_tall: bool,
+    },
+    /// End portal room.
+    PortalRoom {
+        /// Vanilla `hasPlacedSpawner`.
+        has_placed_spawner: bool,
+    },
+    /// Collision filler corridor.
+    FillerCorridor {
+        /// Vanilla `steps`.
+        steps: i32,
+    },
+}
+
+/// Persisted piece-specific nether fortress data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentNetherFortressPieceData {
+    /// Bridge crossing piece.
+    BridgeCrossing,
+    /// Dead-end bridge filler piece.
+    BridgeEndFiller {
+        /// Vanilla `BridgeEndFiller.selfSeed`.
+        self_seed: i32,
+    },
+    /// Straight bridge segment.
+    BridgeStraight,
+    /// Castle corridor stair segment.
+    CastleCorridorStairs,
+    /// Castle corridor T balcony segment.
+    CastleCorridorTBalcony,
+    /// Castle entrance room.
+    CastleEntrance,
+    /// Small castle corridor crossing.
+    CastleSmallCorridorCrossing,
+    /// Small castle corridor left turn.
+    CastleSmallCorridorLeftTurn {
+        /// Vanilla `isNeedingChest`.
+        is_needing_chest: bool,
+    },
+    /// Small straight castle corridor.
+    CastleSmallCorridor,
+    /// Small castle corridor right turn.
+    CastleSmallCorridorRightTurn {
+        /// Vanilla `isNeedingChest`.
+        is_needing_chest: bool,
+    },
+    /// Nether-wart stair room.
+    CastleStalkRoom,
+    /// Blaze-spawner throne room.
+    MonsterThrone {
+        /// Vanilla `hasPlacedSpawner`.
+        has_placed_spawner: bool,
+    },
+    /// Bridge room crossing.
+    RoomCrossing,
+    /// Bridge stair room.
+    StairsRoom,
+}
+
+/// Persisted desert pyramid piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentDesertPyramidPieceData {
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`; -1 means not height-adjusted yet.
+    pub height_position: i32,
+    /// Chest placement flags ordered by `Direction.get2DDataValue`.
+    pub has_placed_chest: [bool; 4],
+}
+
+/// Persisted jungle temple piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentJungleTemplePieceData {
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`; -1 means not height-adjusted yet.
+    pub height_position: i32,
+    /// Whether the main chest has already been placed.
+    pub placed_main_chest: bool,
+    /// Whether the hidden chest has already been placed.
+    pub placed_hidden_chest: bool,
+    /// Whether the first arrow-dispenser trap has already been placed.
+    pub placed_trap1: bool,
+    /// Whether the second arrow-dispenser trap has already been placed.
+    pub placed_trap2: bool,
+}
+
+/// Persisted mineshaft piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentMineshaftPieceData {
+    /// Mineshaft type: 0=normal, 1=mesa.
+    pub mineshaft_type: i8,
+    /// Piece-specific mineshaft data.
+    pub kind: PersistentMineshaftPieceKind,
+}
+
+/// Persisted piece-specific mineshaft data.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentMineshaftPieceKind {
+    /// Start room.
+    Room {
+        /// Child entrance boxes.
+        child_entrance_boxes: Vec<BoundingBox>,
+    },
+    /// Horizontal corridor.
+    Corridor {
+        /// Whether rails can generate through this corridor.
+        has_rails: bool,
+        /// Whether this is a cobweb-heavy cave-spider corridor.
+        spider_corridor: bool,
+        /// Whether the cave-spider spawner has already been placed.
+        has_placed_spider: bool,
+        /// Number of five-block corridor sections.
+        num_sections: i32,
+    },
+    /// Corridor crossing.
+    Crossing {
+        /// Direction: 0=south, 1=west, 2=north, 3=east.
+        direction: i8,
+        /// Whether the crossing has the upper floor.
+        is_two_floored: bool,
+    },
+    /// Stair segment.
+    Stairs,
+}
+
+/// Persisted swamp hut piece payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentSwampHutPieceData {
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`; -1 means not height-adjusted yet.
+    pub height_position: i32,
+    /// Whether the structure witch has already been spawned.
+    pub spawned_witch: bool,
+    /// Whether the structure black cat has already been spawned.
+    pub spawned_cat: bool,
+}
+
+/// Persisted ocean monument building payload.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentOceanMonumentPieceData {
+    /// Internal child pieces generated by vanilla `MonumentBuilding`.
+    pub child_pieces: Vec<PersistentOceanMonumentChildPiece>,
+}
+
+/// Persisted internal ocean monument child piece.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentOceanMonumentChildPiece {
+    /// World-space child bounding box after building-relative offset.
+    pub bounding_box: BoundingBox,
+    /// Child piece variant and variant-specific placement state.
+    pub kind: PersistentOceanMonumentChildPieceKind,
+}
+
+/// Persisted ocean monument child piece variant.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentOceanMonumentChildPieceKind {
+    /// `OceanMonumentEntryRoom`.
+    EntryRoom {
+        /// Source room snapshot.
+        room: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentCoreRoom`.
+    CoreRoom,
+    /// `OceanMonumentDoubleXRoom`.
+    DoubleXRoom {
+        /// Western room snapshot.
+        west: PersistentOceanMonumentRoomData,
+        /// Eastern room snapshot.
+        east: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentDoubleXYRoom`.
+    DoubleXYRoom {
+        /// Lower western room.
+        west: PersistentOceanMonumentRoomData,
+        /// Lower eastern room.
+        east: PersistentOceanMonumentRoomData,
+        /// Upper western room.
+        west_up: PersistentOceanMonumentRoomData,
+        /// Upper eastern room.
+        east_up: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentDoubleYRoom`.
+    DoubleYRoom {
+        /// Lower room.
+        room: PersistentOceanMonumentRoomData,
+        /// Upper room.
+        above: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentDoubleYZRoom`.
+    DoubleYZRoom {
+        /// Southern lower room.
+        south: PersistentOceanMonumentRoomData,
+        /// Northern lower room.
+        north: PersistentOceanMonumentRoomData,
+        /// Southern upper room.
+        south_up: PersistentOceanMonumentRoomData,
+        /// Northern upper room.
+        north_up: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentDoubleZRoom`.
+    DoubleZRoom {
+        /// Southern room.
+        south: PersistentOceanMonumentRoomData,
+        /// Northern room.
+        north: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentSimpleRoom`.
+    SimpleRoom {
+        /// Room snapshot.
+        room: PersistentOceanMonumentRoomData,
+        /// Vanilla `mainDesign`.
+        main_design: i32,
+    },
+    /// `OceanMonumentSimpleTopRoom`.
+    SimpleTopRoom {
+        /// Room snapshot.
+        room: PersistentOceanMonumentRoomData,
+    },
+    /// `OceanMonumentWingRoom`.
+    WingRoom {
+        /// Vanilla `mainDesign`.
+        main_design: i32,
+    },
+    /// `OceanMonumentPenthouse`.
+    Penthouse,
+}
+
+/// Persisted ocean monument room snapshot.
+#[derive(SchemaWrite, SchemaRead)]
+pub struct PersistentOceanMonumentRoomData {
+    /// Vanilla room index.
+    pub index: i32,
+    /// Vanilla `hasOpening`, ordered by `Direction.get3DDataValue`.
+    pub has_opening: [bool; 6],
+    /// Whether `connections[UP] != null`.
+    pub has_up_connection: bool,
 }
 
 /// Persisted pool element selected during jigsaw assembly.

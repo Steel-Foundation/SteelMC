@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::TaggedRegistryExt;
@@ -139,7 +139,7 @@ impl BlockBehavior for FenceBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

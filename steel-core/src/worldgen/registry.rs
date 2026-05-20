@@ -130,7 +130,12 @@ struct FlatGeneratorConfig {
     dimension_type: Identifier,
     #[serde(default = "default_flat_layers")]
     layers: Vec<FlatLayerConfig>,
-    structure_overrides: Option<Vec<Identifier>>,
+    #[serde(default)]
+    features: bool,
+    #[serde(default)]
+    lakes: bool,
+    #[serde(default = "default_flat_structure_overrides")]
+    structure_overrides: Vec<Identifier>,
 }
 
 #[derive(Deserialize)]
@@ -161,6 +166,13 @@ fn default_flat_layers() -> Vec<FlatLayerConfig> {
     ]
 }
 
+fn default_flat_structure_overrides() -> Vec<Identifier> {
+    vec![
+        Identifier::vanilla_static("strongholds"),
+        Identifier::vanilla_static("villages"),
+    ]
+}
+
 fn validate_empty_config(config: &toml::Value) -> Result<(), String> {
     let Some(table) = config.as_table() else {
         return Err("generator config must be a table".to_owned());
@@ -184,6 +196,13 @@ fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
     if parsed.layers.is_empty() {
         return Err("minecraft:flat requires at least one layer".to_owned());
     }
+    // TODO: Implement vanilla FlatLevelGeneratorSettings::adjustGenerationSettings for these flags.
+    if parsed.features {
+        return Err("minecraft:flat features=true is not implemented yet".to_owned());
+    }
+    if parsed.lakes {
+        return Err("minecraft:flat lakes=true is not implemented yet".to_owned());
+    }
     dimension_type_by_key(&parsed.dimension_type)?;
     for layer in &parsed.layers {
         if layer.height == 0 {
@@ -196,17 +215,15 @@ fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
             ));
         }
     }
-    if let Some(structure_overrides) = &parsed.structure_overrides {
-        let available_structure_sets: FxHashSet<_> = load_vanilla_structure_sets()
-            .into_iter()
-            .map(|(key, _)| key)
-            .collect();
-        for structure_set in structure_overrides {
-            if !available_structure_sets.contains(structure_set) {
-                return Err(format!(
-                    "unknown structure set {structure_set} in minecraft:flat structure_overrides"
-                ));
-            }
+    let available_structure_sets: FxHashSet<_> = load_vanilla_structure_sets()
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect();
+    for structure_set in &parsed.structure_overrides {
+        if !available_structure_sets.contains(structure_set) {
+            return Err(format!(
+                "unknown structure set {structure_set} in minecraft:flat structure_overrides"
+            ));
         }
     }
     Ok(())
@@ -281,28 +298,19 @@ fn create_flat(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Strin
         layers.extend(repeat_n(state, layer.height));
     }
 
-    let structure_generator = match structure_overrides {
-        None => {
-            let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
-            Some(StructureGenerator::vanilla_flat_with_structure_sets(
-                seed,
-                &biome_provider,
-                load_vanilla_structure_sets(),
-            ))
-        }
-        Some(overrides) if overrides.is_empty() => None,
-        Some(overrides) => {
-            let structure_sets = load_vanilla_structure_sets()
-                .into_iter()
-                .filter(|(key, _)| overrides.contains(key))
-                .collect();
-            let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
-            Some(StructureGenerator::vanilla_flat_with_structure_sets(
-                seed,
-                &biome_provider,
-                structure_sets,
-            ))
-        }
+    let structure_generator = if structure_overrides.is_empty() {
+        None
+    } else {
+        let structure_sets = load_vanilla_structure_sets()
+            .into_iter()
+            .filter(|(key, _)| structure_overrides.contains(key))
+            .collect();
+        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        Some(StructureGenerator::vanilla_flat_with_structure_sets(
+            seed,
+            &biome_provider,
+            structure_sets,
+        ))
     };
 
     Ok(GeneratorOutput {
@@ -370,17 +378,18 @@ fn normalized_flat_config(config: &FlatGeneratorConfig) -> toml::Value {
         })
         .collect();
     table.insert("layers".to_owned(), toml::Value::Array(layers));
-    if let Some(structure_overrides) = &config.structure_overrides {
-        table.insert(
-            "structure_overrides".to_owned(),
-            toml::Value::Array(
-                structure_overrides
-                    .iter()
-                    .map(|key| toml::Value::String(key.to_string()))
-                    .collect(),
-            ),
-        );
-    }
+    table.insert("features".to_owned(), toml::Value::Boolean(config.features));
+    table.insert("lakes".to_owned(), toml::Value::Boolean(config.lakes));
+    table.insert(
+        "structure_overrides".to_owned(),
+        toml::Value::Array(
+            config
+                .structure_overrides
+                .iter()
+                .map(|key| toml::Value::String(key.to_string()))
+                .collect(),
+        ),
+    );
     toml::Value::Table(table)
 }
 
@@ -398,5 +407,62 @@ fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
         0
     } else {
         63
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::Registry;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn default_flat_config_matches_vanilla_superflat() {
+        init_registry();
+
+        let output = create_flat(&toml::Value::Table(Map::new()), 0)
+            .expect("default flat config should create a generator");
+        let config = output
+            .config
+            .as_table()
+            .expect("normalized flat config should be a table");
+
+        assert_eq!(
+            config.get("dimension_type"),
+            Some(&toml::Value::String("minecraft:overworld".to_owned()))
+        );
+        assert_eq!(config.get("features"), Some(&toml::Value::Boolean(false)));
+        assert_eq!(config.get("lakes"), Some(&toml::Value::Boolean(false)));
+        assert_eq!(
+            config.get("structure_overrides"),
+            Some(&toml::Value::Array(vec![
+                toml::Value::String("minecraft:strongholds".to_owned()),
+                toml::Value::String("minecraft:villages".to_owned()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn rejects_unimplemented_flat_decoration_options() {
+        let features_config = toml::Value::Table(Map::from_iter([(
+            "features".to_owned(),
+            toml::Value::Boolean(true),
+        )]));
+        let features_error = validate_flat_config(&features_config)
+            .expect_err("features=true should not use non-vanilla decoration");
+        assert!(features_error.contains("features=true"));
+
+        let lakes_config = toml::Value::Table(Map::from_iter([(
+            "lakes".to_owned(),
+            toml::Value::Boolean(true),
+        )]));
+        let lakes_error = validate_flat_config(&lakes_config)
+            .expect_err("lakes=true should not use non-vanilla decoration");
+        assert!(lakes_error.contains("lakes=true"));
     }
 }

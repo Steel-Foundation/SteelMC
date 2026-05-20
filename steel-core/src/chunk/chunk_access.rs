@@ -1,15 +1,20 @@
 //! This module contains the `ChunkAccess` enum, which is used to access chunks in different states.
+use std::sync::Weak;
 use std::sync::atomic::Ordering;
+use steel_registry::{blocks::BlockRef, fluid::FluidRef};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
 use wincode::{SchemaRead, SchemaWrite};
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
+use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
     heightmap::HeightmapType, level_chunk::LevelChunk, proto_chunk::ProtoChunk, section::Sections,
 };
+use crate::entity::SharedEntity;
+use crate::world::World;
 use crate::world::structure::{StructureReferenceMap, StructureStartMap};
-use crate::world::tick_scheduler::{BlockTick, FluidTick};
+use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
 
 /// The status of a chunk.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, SchemaWrite, SchemaRead)]
@@ -191,6 +196,54 @@ impl ChunkAccess {
         }
     }
 
+    /// Sets a relative block during generation and preserves heightmap side effects.
+    ///
+    /// This is for optimized generation paths that intentionally skip block
+    /// behavior updates but still need vanilla's heightmap maintenance.
+    pub(crate) fn set_relative_block_for_generation(
+        &self,
+        relative_x: usize,
+        relative_y: usize,
+        relative_z: usize,
+        value: BlockStateId,
+    ) {
+        self.set_relative_block(relative_x, relative_y, relative_z, value);
+        let y = self.min_y() + relative_y as i32;
+        self.update_heightmaps_after_direct_write(relative_x, y, relative_z, value);
+    }
+
+    /// Applies heightmap maintenance after a direct section write.
+    pub(crate) fn update_heightmaps_after_direct_write(
+        &self,
+        local_x: usize,
+        y: i32,
+        local_z: usize,
+        state: BlockStateId,
+    ) {
+        match self {
+            Self::Full(chunk) => {
+                let min_y = chunk.min_y();
+                let sections = &chunk.sections;
+                chunk
+                    .heightmaps
+                    .write()
+                    .update(local_x, y, local_z, state, |lx, scan_y, lz| {
+                        let scan_section_index = ((scan_y - min_y) / 16) as usize;
+                        let scan_local_y = ((scan_y - min_y) % 16) as usize;
+                        sections.sections[scan_section_index].read().states.get(
+                            lx,
+                            scan_local_y,
+                            lz,
+                        )
+                    });
+            }
+            Self::Proto(proto) => {
+                proto.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
     /// Returns whether the chunk has been modified since last save.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -253,10 +306,12 @@ impl ChunkAccess {
         }
     }
 
-    /// Ensure worldgen heightmaps (`WorldSurfaceWg`, `OceanFloorWg`) are primed.
+    /// Ensure specific proto heightmaps are primed.
     ///
-    /// Must be called after `fill_from_noise` (which uses `set_relative_block`
-    /// and therefore does not update heightmaps) and before `build_surface`.
+    /// Use this when vanilla explicitly asks a chunk to materialize a heightmap
+    /// (for example through `getHeight`). Direct terrain writes should maintain
+    /// their heightmap side effects as they write, matching vanilla's generator
+    /// paths.
     ///
     /// # Lock ordering
     /// Acquires heightmap write lock, then section read locks. Callers must not
@@ -264,20 +319,99 @@ impl ChunkAccess {
     ///
     /// # Panics
     /// Panics if the chunk is not a proto chunk.
-    pub fn prime_worldgen_heightmaps(&self) {
+    pub fn prime_heightmaps(&self, heightmap_types: &[HeightmapType]) {
         match self {
             Self::Proto(proto) => {
                 let mut heightmaps = proto.heightmaps.write();
                 heightmaps.prime_from_sections(
-                    HeightmapType::worldgen_types(),
+                    heightmap_types,
                     proto.min_y(),
                     proto.height(),
                     &proto.sections.sections,
                 );
             }
-            Self::Full(_) => panic!("prime_worldgen_heightmaps not available on full chunks"),
+            Self::Full(_) => panic!("prime_heightmaps not available on full chunks"),
             Self::Unloaded => unreachable!(),
         }
+    }
+
+    /// Ensure final heightmaps are primed for feature and post-feature generation.
+    ///
+    /// Vanilla primes `WORLD_SURFACE`, `MOTION_BLOCKING`, `MOTION_BLOCKING_NO_LEAVES`,
+    /// and `OCEAN_FLOOR` before biome decoration, after carvers have finished.
+    ///
+    /// # Lock ordering
+    /// Acquires heightmap write lock, then section read locks. Callers must not
+    /// hold a section write lock when calling this, or a deadlock will occur.
+    ///
+    /// # Panics
+    /// Panics if the chunk is not a proto chunk.
+    pub fn prime_final_heightmaps(&self) {
+        match self {
+            Self::Proto(proto) => {
+                let mut heightmaps = proto.heightmaps.write();
+                heightmaps.prime_from_sections(
+                    HeightmapType::final_types(),
+                    proto.min_y(),
+                    proto.height(),
+                    &proto.sections.sections,
+                );
+            }
+            Self::Full(_) => panic!("prime_final_heightmaps not available on full chunks"),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Gets the first available Y coordinate for a heightmap column.
+    ///
+    /// Missing proto heightmaps are primed lazily, matching vanilla
+    /// `ChunkAccess.getHeight`. Full chunks map worldgen heightmap queries to
+    /// their final equivalents, matching vanilla `ImposterProtoChunk`.
+    #[must_use]
+    pub fn height_at(&self, heightmap_type: HeightmapType, local_x: usize, local_z: usize) -> i32 {
+        match self {
+            Self::Full(chunk) => chunk.get_height(
+                Self::full_chunk_heightmap_type(heightmap_type),
+                local_x,
+                local_z,
+            ),
+            Self::Proto(proto) => Self::proto_height_at(proto, heightmap_type, local_x, local_z),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    const fn full_chunk_heightmap_type(heightmap_type: HeightmapType) -> HeightmapType {
+        match heightmap_type {
+            HeightmapType::WorldSurfaceWg => HeightmapType::WorldSurface,
+            HeightmapType::OceanFloorWg => HeightmapType::OceanFloor,
+            other => other,
+        }
+    }
+
+    fn proto_height_at(
+        proto: &ProtoChunk,
+        heightmap_type: HeightmapType,
+        local_x: usize,
+        local_z: usize,
+    ) -> i32 {
+        {
+            let heightmaps = proto.heightmaps.read();
+            if let Some(heightmap) = heightmaps.get(heightmap_type) {
+                return heightmap.get_first_available(local_x, local_z);
+            }
+        }
+
+        let mut heightmaps = proto.heightmaps.write();
+        heightmaps.prime_from_sections(
+            &[heightmap_type],
+            proto.min_y(),
+            proto.height(),
+            &proto.sections.sections,
+        );
+        let Some(heightmap) = heightmaps.get(heightmap_type) else {
+            panic!("heightmap {heightmap_type:?} missing after priming");
+        };
+        heightmap.get_first_available(local_x, local_z)
     }
 
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
@@ -324,6 +458,130 @@ impl ChunkAccess {
         match self {
             Self::Full(chunk) => chunk.get_block_state(pos),
             Self::Proto(proto_chunk) => proto_chunk.get_block_state(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Gets a block entity at the given position.
+    #[must_use]
+    pub fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        match self {
+            Self::Full(chunk) => chunk.get_block_entity(pos),
+            Self::Proto(proto_chunk) => proto_chunk.get_block_entity(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns the weak world reference stored by this chunk.
+    #[must_use]
+    pub fn level_weak(&self) -> Weak<World> {
+        match self {
+            Self::Full(chunk) => chunk.level_weak(),
+            Self::Proto(proto_chunk) => proto_chunk.level_weak(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Adds a block entity and registers it for ticking if needed.
+    pub fn add_and_register_block_entity(&self, block_entity: SharedBlockEntity) {
+        match self {
+            Self::Full(chunk) => chunk.add_and_register_block_entity(block_entity),
+            Self::Proto(proto_chunk) => proto_chunk.add_and_register_block_entity(block_entity),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Removes a block entity at the given position.
+    pub fn remove_block_entity(&self, pos: BlockPos) {
+        match self {
+            Self::Full(chunk) => chunk.remove_block_entity(pos),
+            Self::Proto(proto_chunk) => proto_chunk.remove_block_entity(pos),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns all block entities in this chunk.
+    #[must_use]
+    pub fn get_block_entities(&self) -> Vec<SharedBlockEntity> {
+        match self {
+            Self::Full(chunk) => chunk.get_block_entities(),
+            Self::Proto(proto_chunk) => proto_chunk.get_block_entities(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Adds an entity to either a full or proto chunk.
+    pub fn add_entity(&self, entity: SharedEntity) -> bool {
+        match self {
+            Self::Full(chunk) => chunk.add_and_register_entity(entity),
+            Self::Proto(proto_chunk) => {
+                proto_chunk.add_entity(entity);
+                true
+            }
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Returns all saveable entities in this chunk.
+    #[must_use]
+    pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
+        match self {
+            Self::Full(chunk) => chunk.entities.get_saveable_entities(),
+            Self::Proto(proto_chunk) => proto_chunk.get_saveable_entities(),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Schedules a block tick on either a full or proto chunk.
+    pub fn schedule_block_tick(
+        &self,
+        pos: BlockPos,
+        block: BlockRef,
+        delay: i32,
+        priority: TickPriority,
+        sub_tick_order: i64,
+    ) {
+        match self {
+            Self::Full(chunk) => {
+                let tick = BlockTick {
+                    tick_type: block,
+                    pos,
+                    delay,
+                    priority,
+                    sub_tick_order,
+                };
+                if chunk.block_ticks.lock().schedule(tick) {
+                    chunk.dirty.store(true, Ordering::Release);
+                }
+            }
+            Self::Proto(proto_chunk) => proto_chunk.schedule_block_tick(pos, block, priority),
+            Self::Unloaded => unreachable!(),
+        }
+    }
+
+    /// Schedules a fluid tick on either a full or proto chunk.
+    pub fn schedule_fluid_tick(
+        &self,
+        pos: BlockPos,
+        fluid: FluidRef,
+        delay: i32,
+        priority: TickPriority,
+        sub_tick_order: i64,
+    ) {
+        match self {
+            Self::Full(chunk) => {
+                let tick = FluidTick {
+                    tick_type: fluid,
+                    pos,
+                    delay,
+                    priority,
+                    sub_tick_order,
+                };
+                if chunk.fluid_ticks.lock().schedule(tick) {
+                    chunk.dirty.store(true, Ordering::Release);
+                }
+            }
+            Self::Proto(proto_chunk) => proto_chunk.schedule_fluid_tick(pos, fluid, priority),
             Self::Unloaded => unreachable!(),
         }
     }
@@ -393,5 +651,88 @@ impl ChunkAccess {
                 ready_fluid_ticks,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+    use crate::chunk::section::{ChunkSection, Sections};
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn proto_height_at_primes_missing_heightmap() {
+        init_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+        chunk.set_relative_block(3, 5, 7, stone);
+
+        assert_eq!(chunk.height_at(HeightmapType::OceanFloorWg, 3, 7), 6);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert!(
+            proto
+                .heightmaps
+                .read()
+                .get(HeightmapType::OceanFloorWg)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn generation_relative_write_updates_proto_heightmaps() {
+        init_registry();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let chunk = ChunkAccess::Proto(proto);
+
+        chunk.set_relative_block_for_generation(3, 5, 7, stone);
+
+        let ChunkAccess::Proto(proto) = &chunk else {
+            panic!("test chunk should remain proto");
+        };
+        let heightmaps = proto.heightmaps.read();
+        let ocean_floor = heightmaps
+            .get(HeightmapType::OceanFloorWg)
+            .expect("generation write should prime OceanFloorWg");
+        assert_eq!(ocean_floor.get_first_available(3, 7), 6);
+    }
+
+    #[test]
+    fn full_chunk_heightmap_type_maps_worldgen_types_to_final_types() {
+        assert_eq!(
+            ChunkAccess::full_chunk_heightmap_type(HeightmapType::WorldSurfaceWg),
+            HeightmapType::WorldSurface
+        );
+        assert_eq!(
+            ChunkAccess::full_chunk_heightmap_type(HeightmapType::OceanFloorWg),
+            HeightmapType::OceanFloor
+        );
+        assert_eq!(
+            ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
+            HeightmapType::MotionBlocking
+        );
     }
 }

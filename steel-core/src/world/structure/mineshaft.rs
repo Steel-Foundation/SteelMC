@@ -1,6 +1,5 @@
 //! Mineshaft. Vanilla's `MineshaftPieces` DFS: each child's `addChildren` runs
-//! immediately after creation, before processing the next sibling. Produces
-//! bounding boxes and the Y offset for biome checking (no block placement).
+//! immediately after creation, before processing the next sibling.
 
 use steel_registry::structure::{MineshaftTypeData, StructureConfigData, StructureData};
 use steel_utils::random::Random;
@@ -8,7 +7,8 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
+    StructurePiecePayload,
 };
 
 const MAX_DEPTH: i32 = 8;
@@ -72,7 +72,7 @@ impl PieceType {
 
 struct PieceInfo {
     bb: BoundingBox,
-    kind: PieceType,
+    kind: MineshaftPieceKind,
     /// Distance from the start room in the DFS tree. Vanilla's `genDepth`.
     gen_depth: i32,
     /// Direction the piece was generated from. `None` for the start room.
@@ -85,6 +85,7 @@ struct Pieces {
     bbs: Vec<BoundingBox>,
     infos: Vec<PieceInfo>,
     start_bb: BoundingBox,
+    room_child_entrance_boxes: Vec<BoundingBox>,
 }
 
 impl Pieces {
@@ -95,8 +96,8 @@ impl Pieces {
 
 /// One mineshaft piece in the generated tree.
 pub struct MineshaftPieceData {
-    /// Vanilla piece kind (room/corridor/crossing/stairs).
-    pub kind: PieceType,
+    /// Family-specific placement state.
+    pub payload: MineshaftPiecePayload,
     /// World-space bounding box, already offset to the final Y position.
     pub bounding_box: BoundingBox,
     /// Distance from the start room in the DFS tree (vanilla's `genDepth`).
@@ -104,6 +105,67 @@ pub struct MineshaftPieceData {
     /// Vanilla `setOrientation` value: `Some` for corridors and stairs, `None`
     /// for the start room and crossings.
     pub orientation: Option<Direction>,
+}
+
+/// Placement payload shared by mineshaft start generation, persistence, and
+/// feature-stage procedural placement.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MineshaftPiecePayload {
+    /// Normal oak or mesa dark-oak mineshaft.
+    pub mineshaft_type: MineshaftType,
+    /// Piece-specific vanilla placement state.
+    pub kind: MineshaftPieceKind,
+}
+
+impl MineshaftPiecePayload {
+    /// Structure piece registry id for the payload kind.
+    #[must_use]
+    pub const fn piece_id(&self) -> &'static str {
+        self.kind.piece_type().piece_id()
+    }
+}
+
+/// Piece-specific mineshaft placement state.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MineshaftPieceKind {
+    /// Start room with the child entrance openings stored by vanilla.
+    Room {
+        /// Child entrance boxes, offset with the room during Y adjustment.
+        child_entrance_boxes: Vec<BoundingBox>,
+    },
+    /// Horizontal corridor segment.
+    Corridor {
+        /// Whether rails can generate through this corridor.
+        has_rails: bool,
+        /// Whether this is a cobweb-heavy cave-spider corridor.
+        spider_corridor: bool,
+        /// Vanilla mutable flag preventing duplicate cave-spider spawners.
+        has_placed_spider: bool,
+        /// Number of five-block corridor sections.
+        num_sections: i32,
+    },
+    /// Corridor crossing.
+    Crossing {
+        /// Direction stored in vanilla's `"D"` field.
+        direction: Direction,
+        /// Whether the crossing has the upper floor.
+        is_two_floored: bool,
+    },
+    /// Stair segment.
+    Stairs,
+}
+
+impl MineshaftPieceKind {
+    /// Vanilla structure piece type represented by this payload.
+    #[must_use]
+    pub const fn piece_type(&self) -> PieceType {
+        match self {
+            Self::Room { .. } => PieceType::Room,
+            Self::Corridor { .. } => PieceType::Corridor,
+            Self::Crossing { .. } => PieceType::Crossing,
+            Self::Stairs => PieceType::Stairs,
+        }
+    }
 }
 
 /// Result of mineshaft generation.
@@ -134,11 +196,14 @@ pub fn find_generation_point(
         bbs: vec![room_bb],
         infos: vec![PieceInfo {
             bb: room_bb,
-            kind: PieceType::Room,
+            kind: MineshaftPieceKind::Room {
+                child_entrance_boxes: Vec::new(),
+            },
             gen_depth: 0,
             dir: None,
         }],
         start_bb: room_bb,
+        room_child_entrance_boxes: Vec::new(),
     };
     room_add_children(&mut pieces, rng, room_bb);
 
@@ -175,7 +240,14 @@ pub fn find_generation_point(
             .infos
             .iter()
             .map(|info| MineshaftPieceData {
-                kind: info.kind,
+                payload: MineshaftPiecePayload {
+                    mineshaft_type: mtype,
+                    kind: offset_piece_kind(
+                        &info.kind,
+                        &pieces.room_child_entrance_boxes,
+                        y_offset,
+                    ),
+                },
                 bounding_box: BoundingBox::new(
                     info.bb.min_x,
                     info.bb.min_y + y_offset,
@@ -188,6 +260,22 @@ pub fn find_generation_point(
                 orientation: info.dir.map(Dir::to_vanilla),
             })
             .collect(),
+    }
+}
+
+fn offset_piece_kind(
+    kind: &MineshaftPieceKind,
+    room_child_entrance_boxes: &[BoundingBox],
+    y_offset: i32,
+) -> MineshaftPieceKind {
+    match kind {
+        MineshaftPieceKind::Room { .. } => MineshaftPieceKind::Room {
+            child_entrance_boxes: room_child_entrance_boxes
+                .iter()
+                .map(|bb| move_bb(*bb, 0, y_offset, 0))
+                .collect(),
+        },
+        other => other.clone(),
     }
 }
 
@@ -228,7 +316,43 @@ fn room_add_children(pieces: &mut Pieces, rng: &mut LegacyRandom, bb: BoundingBo
                 Dir::West => (bb.min_x - 1, bb.min_z + pos),
                 Dir::East => (bb.max_x + 1, bb.min_z + pos),
             };
-            generate_and_add(pieces, rng, fx, fy, fz, dir, 0);
+            if let Some(child_bb) = generate_and_add(pieces, rng, fx, fy, fz, dir, 0) {
+                let entrance = match dir {
+                    Dir::North => BoundingBox::new(
+                        child_bb.min_x,
+                        child_bb.min_y,
+                        bb.min_z,
+                        child_bb.max_x,
+                        child_bb.max_y,
+                        bb.min_z + 1,
+                    ),
+                    Dir::South => BoundingBox::new(
+                        child_bb.min_x,
+                        child_bb.min_y,
+                        bb.max_z - 1,
+                        child_bb.max_x,
+                        child_bb.max_y,
+                        bb.max_z,
+                    ),
+                    Dir::West => BoundingBox::new(
+                        bb.min_x,
+                        child_bb.min_y,
+                        child_bb.min_z,
+                        bb.min_x + 1,
+                        child_bb.max_y,
+                        child_bb.max_z,
+                    ),
+                    Dir::East => BoundingBox::new(
+                        bb.max_x - 1,
+                        child_bb.min_y,
+                        child_bb.min_z,
+                        bb.max_x,
+                        child_bb.max_y,
+                        child_bb.max_z,
+                    ),
+                };
+                pieces.room_child_entrance_boxes.push(entrance);
+            }
             pos += 4;
         }
     }
@@ -244,31 +368,37 @@ fn generate_and_add(
     foot_z: i32,
     dir: Dir,
     depth: i32,
-) {
+) -> Option<BoundingBox> {
     if depth > MAX_DEPTH
         || (foot_x - pieces.start_bb.min_x).abs() > MAX_DISTANCE
         || (foot_z - pieces.start_bb.min_z).abs() > MAX_DISTANCE
     {
-        return;
+        return None;
     }
     let roll = rng.next_i32_bounded(100);
     if roll >= 80 {
-        try_add_crossing(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
+        try_add_crossing(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1)
     } else if roll >= 70 {
-        try_add_stairs(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
+        try_add_stairs(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1)
     } else {
-        try_add_corridor(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1);
+        try_add_corridor(pieces, rng, foot_x, foot_y, foot_z, dir, depth + 1)
     }
 }
 
-fn push_piece(pieces: &mut Pieces, bb: BoundingBox, kind: PieceType, gen_depth: i32, dir: Dir) {
+fn push_piece(
+    pieces: &mut Pieces,
+    bb: BoundingBox,
+    kind: MineshaftPieceKind,
+    gen_depth: i32,
+    dir: Dir,
+) {
     pieces.bbs.push(bb);
     // Vanilla only calls `setOrientation` on corridors and stairs; rooms have
     // no direction at all and crossings store it internally without setting
     // orientation, so both serialize as `O = -1`.
-    let saved_dir = match kind {
-        PieceType::Corridor | PieceType::Stairs => Some(dir),
-        PieceType::Room | PieceType::Crossing => None,
+    let saved_dir = match &kind {
+        MineshaftPieceKind::Corridor { .. } | MineshaftPieceKind::Stairs => Some(dir),
+        MineshaftPieceKind::Room { .. } | MineshaftPieceKind::Crossing { .. } => None,
     };
     pieces.infos.push(PieceInfo {
         bb,
@@ -276,6 +406,35 @@ fn push_piece(pieces: &mut Pieces, bb: BoundingBox, kind: PieceType, gen_depth: 
         gen_depth,
         dir: saved_dir,
     });
+}
+
+const fn corridor_num_sections(bb: BoundingBox, dir: Dir) -> i32 {
+    match dir {
+        Dir::North | Dir::South => (bb.max_z - bb.min_z + 1) / 5,
+        Dir::West | Dir::East => (bb.max_x - bb.min_x + 1) / 5,
+    }
+}
+
+fn corridor_payload(bb: BoundingBox, dir: Dir, rng: &mut LegacyRandom) -> MineshaftPieceKind {
+    let has_rails = rng.next_i32_bounded(3) == 0;
+    let spider_corridor = !has_rails && rng.next_i32_bounded(23) == 0;
+    MineshaftPieceKind::Corridor {
+        has_rails,
+        spider_corridor,
+        has_placed_spider: false,
+        num_sections: corridor_num_sections(bb, dir),
+    }
+}
+
+const fn crossing_payload(dir: Dir, is_two_floored: bool) -> MineshaftPieceKind {
+    MineshaftPieceKind::Crossing {
+        direction: dir.to_vanilla(),
+        is_two_floored,
+    }
+}
+
+const fn stairs_payload() -> MineshaftPieceKind {
+    MineshaftPieceKind::Stairs
 }
 
 fn try_add_corridor(
@@ -286,7 +445,7 @@ fn try_add_corridor(
     foot_z: i32,
     dir: Dir,
     gen_depth: i32,
-) -> bool {
+) -> Option<BoundingBox> {
     let mut corridor_length = rng.next_i32_bounded(3) + 2;
     while corridor_length > 0 {
         let block_length = corridor_length * 5;
@@ -302,17 +461,14 @@ fn try_add_corridor(
             foot_z,
         );
         if !pieces.has_collision(&bb) {
-            push_piece(pieces, bb, PieceType::Corridor, gen_depth, dir);
-            // MineShaftCorridor constructor RNG.
-            if rng.next_i32_bounded(3) != 0 {
-                rng.next_i32_bounded(23); // spiderCorridor
-            }
+            let kind = corridor_payload(bb, dir, rng);
+            push_piece(pieces, bb, kind, gen_depth, dir);
             corridor_add_children(pieces, rng, bb, dir, gen_depth);
-            return true;
+            return Some(bb);
         }
         corridor_length -= 1;
     }
-    false
+    None
 }
 
 fn try_add_crossing(
@@ -323,7 +479,7 @@ fn try_add_crossing(
     foot_z: i32,
     dir: Dir,
     gen_depth: i32,
-) -> bool {
+) -> Option<BoundingBox> {
     let is_two_floored = rng.next_i32_bounded(4) == 0;
     let y1 = if is_two_floored { 6 } else { 2 };
     let bb = move_bb(
@@ -338,11 +494,17 @@ fn try_add_crossing(
         foot_z,
     );
     if pieces.has_collision(&bb) {
-        return false;
+        return None;
     }
-    push_piece(pieces, bb, PieceType::Crossing, gen_depth, dir);
+    push_piece(
+        pieces,
+        bb,
+        crossing_payload(dir, is_two_floored),
+        gen_depth,
+        dir,
+    );
     crossing_add_children(pieces, rng, bb, dir, gen_depth, is_two_floored);
-    true
+    Some(bb)
 }
 
 fn try_add_stairs(
@@ -353,7 +515,7 @@ fn try_add_stairs(
     foot_z: i32,
     dir: Dir,
     gen_depth: i32,
-) -> bool {
+) -> Option<BoundingBox> {
     let bb = move_bb(
         match dir {
             Dir::North => BoundingBox::new(0, -5, -8, 2, 2, 0),
@@ -366,11 +528,11 @@ fn try_add_stairs(
         foot_z,
     );
     if pieces.has_collision(&bb) {
-        return false;
+        return None;
     }
-    push_piece(pieces, bb, PieceType::Stairs, gen_depth, dir);
+    push_piece(pieces, bb, stairs_payload(), gen_depth, dir);
     stairs_add_children(pieces, rng, bb, dir, gen_depth);
-    true
+    Some(bb)
 }
 
 /// Matches vanilla `MineShaftCorridor.addChildren` exactly.
@@ -402,7 +564,7 @@ fn corridor_add_children(
         (Dir::East, 2) => (bb.max_x - 3, bb.min_z - 1, Dir::North),
         (Dir::East, _) => (bb.max_x - 3, bb.max_z + 1, Dir::South),
     };
-    generate_and_add(pieces, rng, fx, fy, fz, d, depth);
+    let _ = generate_and_add(pieces, rng, fx, fy, fz, d, depth);
 
     // Perpendicular branches along the corridor.
     if depth >= MAX_DEPTH {
@@ -413,24 +575,28 @@ fn corridor_add_children(
             let mut z = bb.min_z + 3;
             while z + 3 <= bb.max_z {
                 match rng.next_i32_bounded(5) {
-                    0 => generate_and_add(
-                        pieces,
-                        rng,
-                        bb.min_x - 1,
-                        bb.min_y,
-                        z,
-                        Dir::West,
-                        depth + 1,
-                    ),
-                    1 => generate_and_add(
-                        pieces,
-                        rng,
-                        bb.max_x + 1,
-                        bb.min_y,
-                        z,
-                        Dir::East,
-                        depth + 1,
-                    ),
+                    0 => {
+                        let _ = generate_and_add(
+                            pieces,
+                            rng,
+                            bb.min_x - 1,
+                            bb.min_y,
+                            z,
+                            Dir::West,
+                            depth + 1,
+                        );
+                    }
+                    1 => {
+                        let _ = generate_and_add(
+                            pieces,
+                            rng,
+                            bb.max_x + 1,
+                            bb.min_y,
+                            z,
+                            Dir::East,
+                            depth + 1,
+                        );
+                    }
                     _ => {}
                 }
                 z += 5;
@@ -440,24 +606,28 @@ fn corridor_add_children(
             let mut x = bb.min_x + 3;
             while x + 3 <= bb.max_x {
                 match rng.next_i32_bounded(5) {
-                    0 => generate_and_add(
-                        pieces,
-                        rng,
-                        x,
-                        bb.min_y,
-                        bb.min_z - 1,
-                        Dir::North,
-                        depth + 1,
-                    ),
-                    1 => generate_and_add(
-                        pieces,
-                        rng,
-                        x,
-                        bb.min_y,
-                        bb.max_z + 1,
-                        Dir::South,
-                        depth + 1,
-                    ),
+                    0 => {
+                        let _ = generate_and_add(
+                            pieces,
+                            rng,
+                            x,
+                            bb.min_y,
+                            bb.min_z - 1,
+                            Dir::North,
+                            depth + 1,
+                        );
+                    }
+                    1 => {
+                        let _ = generate_and_add(
+                            pieces,
+                            rng,
+                            x,
+                            bb.min_y,
+                            bb.max_z + 1,
+                            Dir::South,
+                            depth + 1,
+                        );
+                    }
                     _ => {}
                 }
                 x += 5;
@@ -499,7 +669,7 @@ fn crossing_add_children(
         ],
     };
     for (x, z, d) in outs {
-        generate_and_add(pieces, rng, x, bb.min_y, z, d, depth);
+        let _ = generate_and_add(pieces, rng, x, bb.min_y, z, d, depth);
     }
 
     if is_two_floored {
@@ -511,7 +681,7 @@ fn crossing_add_children(
             (bb.min_x + 1, bb.max_z + 1, Dir::South),
         ] {
             if rng.next_bool() {
-                generate_and_add(pieces, rng, x, bb.min_y + 4, z, d, depth);
+                let _ = generate_and_add(pieces, rng, x, bb.min_y + 4, z, d, depth);
             }
         }
     }
@@ -531,7 +701,7 @@ fn stairs_add_children(
         Dir::West => (bb.min_x - 1, bb.min_z),
         Dir::East => (bb.max_x + 1, bb.min_z),
     };
-    generate_and_add(pieces, rng, x, bb.min_y, z, dir, depth);
+    let _ = generate_and_add(pieces, rng, x, bb.min_y, z, dir, depth);
 }
 
 // --- Helpers ---
@@ -600,12 +770,19 @@ impl Structure for MineshaftStructure {
                 .pieces
                 .into_iter()
                 .map(|p| {
-                    StructurePiece::non_jigsaw(
-                        Identifier::new_static("minecraft", p.kind.piece_id()),
-                        p.bounding_box,
-                        p.gen_depth,
-                        p.orientation,
-                    )
+                    let payload = p.payload;
+                    StructurePiece {
+                        piece_type: Identifier::new_static("minecraft", payload.piece_id()),
+                        bounding_box: p.bounding_box,
+                        gen_depth: p.gen_depth,
+                        orientation: p.orientation,
+                        payload: StructurePiecePayload::Procedural(ProceduralPieceData::Mineshaft(
+                            payload,
+                        )),
+                        ground_level_delta: 0,
+                        junctions: Vec::new(),
+                        projection: None,
+                    }
                 })
                 .collect(),
         })
@@ -631,11 +808,14 @@ mod tests {
             bbs: vec![room_bb],
             infos: vec![PieceInfo {
                 bb: room_bb,
-                kind: PieceType::Room,
+                kind: MineshaftPieceKind::Room {
+                    child_entrance_boxes: Vec::new(),
+                },
                 gen_depth: 0,
                 dir: None,
             }],
             start_bb: room_bb,
+            room_child_entrance_boxes: Vec::new(),
         };
         room_add_children(&mut pieces, &mut rng, room_bb);
         assert_eq!(pieces.bbs.len(), 92);
@@ -654,5 +834,57 @@ mod tests {
         let y_offset = y1_pos - overall.max_y;
         assert_eq!(y_offset, -70);
         assert_eq!(50 + y_offset, -20);
+    }
+
+    #[test]
+    fn mineshaft_generation_captures_piece_payload_state() {
+        let mut rng = LegacyRandom::from_seed(0);
+        rng.set_large_feature_seed(13579, 0, 0);
+        let mut surface_height = |_, _| 63;
+
+        let result = find_generation_point(
+            &mut rng,
+            0,
+            0,
+            MineshaftType::Normal,
+            63,
+            -64,
+            &mut surface_height,
+        );
+
+        let MineshaftPieceKind::Room {
+            child_entrance_boxes,
+        } = &result.pieces[0].payload.kind
+        else {
+            panic!("first mineshaft piece should be the start room");
+        };
+        assert!(!child_entrance_boxes.is_empty());
+
+        let corridor = result
+            .pieces
+            .iter()
+            .find_map(|piece| match &piece.payload.kind {
+                MineshaftPieceKind::Corridor {
+                    has_rails,
+                    spider_corridor,
+                    has_placed_spider,
+                    num_sections,
+                } => Some((
+                    *has_rails,
+                    *spider_corridor,
+                    *has_placed_spider,
+                    *num_sections,
+                )),
+                _ => None,
+            })
+            .expect("seed should generate at least one corridor");
+        assert!(!corridor.2);
+        assert!(corridor.3 > 0);
+        assert!(
+            result
+                .pieces
+                .iter()
+                .all(|piece| piece.payload.mineshaft_type == MineshaftType::Normal)
+        );
     }
 }

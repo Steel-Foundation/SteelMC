@@ -4,14 +4,13 @@ use std::{
 };
 
 use rustc_hash::FxHashSet;
-use sha2::{Digest, Sha256};
 use smallvec::SmallVec;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::carver::ConfiguredCarverKind;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_biomes};
 use steel_utils::random::{
-    Random, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
+    Random, RandomSource, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
@@ -22,19 +21,22 @@ use steel_worldgen::surface::{
 };
 
 use crate::chunk::chunk_access::ChunkAccess;
-use crate::chunk::heightmap::HeightmapType;
+use crate::chunk::heightmap::{Heightmap, HeightmapType};
 use crate::world::structure::GenerationContext;
 use crate::worldgen::BiomeSourceKind;
+use crate::worldgen::biomes::obfuscate_biome_seed;
 use crate::worldgen::carver::{
     CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
 };
-use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::feature::FeatureDecorationRunner;
+use crate::worldgen::generator::{ChunkGenerator, worldgen_region_random_from_splitter};
 use crate::worldgen::noise::aquifer::{
     Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level,
 };
 use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::noise::noise_chunk::NoiseChunk;
 use crate::worldgen::noise::ore_veinifier::OreVeinifier;
+use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::surface::SurfaceSystem;
 
@@ -79,6 +81,8 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     seed: i64,
     /// Shared structure placement/selection engine.
     structure_generator: StructureGenerator,
+    /// Cached placed-feature order for biome decoration.
+    feature_runner: FeatureDecorationRunner,
     _phantom: PhantomData<N>,
 }
 
@@ -134,19 +138,14 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             N::Settings::SEA_LEVEL,
         );
 
-        // BiomeManager.obfuscateSeed(seed) — Guava's Hashing.sha256().hashLong(seed).asLong()
-        // Guava uses little-endian for both input (putLong) and output (asLong).
-        let biome_zoom_seed = {
-            let mut hasher = Sha256::new();
-            hasher.update((seed as i64).to_le_bytes());
-            let result = hasher.finalize();
-            i64::from_le_bytes(result[0..8].try_into().expect("SHA-256 produces 32 bytes"))
-        };
+        let biome_zoom_seed = obfuscate_biome_seed(seed as i64);
 
+        let possible_biome_refs = biome_source.possible_biome_refs();
         let possible_biomes = biome_source.possible_biomes();
         let surface_extension_biomes = SurfaceExtensionBiomes::from_possible(&possible_biomes);
         let structure_generator = StructureGenerator::vanilla(seed as i64, &biome_source);
         let uniform_carver_biome = Self::uniform_carver_biome(&possible_biomes);
+        let feature_runner = FeatureDecorationRunner::new(&possible_biome_refs, &REGISTRY);
 
         Self {
             biome_source,
@@ -160,6 +159,7 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             biome_zoom_seed,
             seed: seed as i64,
             structure_generator,
+            feature_runner,
             _phantom: PhantomData,
         }
     }
@@ -228,6 +228,160 @@ pub(crate) fn column_interpolated_density<N: DimensionNoises>(
     cell_h: i32,
 ) -> f64 {
     interpolated_density::<N>(cache, noises, x, y, z, cell_w, cell_h)
+}
+
+/// Finds the highest solid block below air in a single base-noise column.
+///
+/// Used by structure placement probes such as nether fossils. This preserves the
+/// same base terrain classification as repeated `column_state` calls, but shares
+/// the eight cell-corner density evaluations across adjacent Y positions.
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps the vanilla density interpolation flow in one readable pass"
+)]
+pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
+    cache: &mut N::ColumnCache,
+    noises: &N,
+    aquifer: &mut Aquifer<N>,
+    block_x: i32,
+    block_z: i32,
+    start_y: i32,
+    min_solid_y: i32,
+) -> Option<i32> {
+    const MAX_INTERP: usize = 16;
+
+    if start_y <= min_solid_y {
+        return None;
+    }
+
+    let cell_w = N::Settings::CELL_WIDTH;
+    let cell_h = N::Settings::CELL_HEIGHT;
+    let min_y = N::Settings::MIN_Y;
+    let height = N::Settings::HEIGHT;
+    let cell_min_y = min_y.div_euclid(cell_h);
+    let cell_count_y = height.div_euclid(cell_h);
+
+    let cell_x = block_x.div_euclid(cell_w);
+    let cell_z = block_z.div_euclid(cell_w);
+    let factor_x = f64::from(block_x.rem_euclid(cell_w)) / f64::from(cell_w);
+    let factor_z = f64::from(block_z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let x0 = cell_x * cell_w;
+    let x1 = x0 + cell_w;
+    let z0 = cell_z * cell_w;
+    let z1 = z0 + cell_w;
+
+    let interp_count = N::interpolated_count();
+
+    let mut c000 = [0.0f64; MAX_INTERP];
+    let mut c100 = [0.0f64; MAX_INTERP];
+    let mut c010 = [0.0f64; MAX_INTERP];
+    let mut c110 = [0.0f64; MAX_INTERP];
+    let mut c001 = [0.0f64; MAX_INTERP];
+    let mut c101 = [0.0f64; MAX_INTERP];
+    let mut c011 = [0.0f64; MAX_INTERP];
+    let mut c111 = [0.0f64; MAX_INTERP];
+    let mut interpolated = [0.0f64; MAX_INTERP];
+
+    macro_rules! fill {
+        ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
+            cache.ensure($ex, $ez, noises);
+            noises.fill_cell_corner_densities(
+                &mut *cache,
+                $ex,
+                $ey,
+                $ez,
+                $blended,
+                &mut $out[..interp_count],
+            );
+        }};
+    }
+
+    let max_cell_y_idx = {
+        let raw = start_y.div_euclid(cell_h) - cell_min_y;
+        raw.clamp(0, cell_count_y - 1)
+    };
+    let min_cell_y_idx = {
+        let raw = min_solid_y.div_euclid(cell_h) - cell_min_y;
+        raw.clamp(0, cell_count_y - 1)
+    };
+
+    let mut above_is_air = false;
+    let mut have_above = false;
+    let mut blended_scratch = [0.0_f64; 2];
+
+    for cell_y_idx in (min_cell_y_idx..=max_cell_y_idx).rev() {
+        let y0 = (cell_min_y + cell_y_idx) * cell_h;
+        let y1 = y0 + cell_h;
+        let ys = [y0, y1];
+
+        noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
+        let b000 = blended_scratch[0];
+        let b010 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
+        let b100 = blended_scratch[0];
+        let b110 = blended_scratch[1];
+        noises.compute_noise_column(x0, &ys, z1, &mut blended_scratch);
+        let b001 = blended_scratch[0];
+        let b011 = blended_scratch[1];
+        noises.compute_noise_column(x1, &ys, z1, &mut blended_scratch);
+        let b101 = blended_scratch[0];
+        let b111 = blended_scratch[1];
+
+        fill!(c000, x0, y0, z0, b000);
+        fill!(c100, x1, y0, z0, b100);
+        fill!(c010, x0, y1, z0, b010);
+        fill!(c110, x1, y1, z0, b110);
+        fill!(c001, x0, y0, z1, b001);
+        fill!(c101, x1, y0, z1, b101);
+        fill!(c011, x0, y1, z1, b011);
+        fill!(c111, x1, y1, z1, b111);
+
+        let top_y_in_cell = if cell_y_idx == max_cell_y_idx {
+            (start_y - y0).clamp(0, cell_h - 1)
+        } else {
+            cell_h - 1
+        };
+        let bottom_y_in_cell = if cell_y_idx == min_cell_y_idx {
+            (min_solid_y - y0).clamp(0, cell_h - 1)
+        } else {
+            0
+        };
+
+        for y_in_cell in (bottom_y_in_cell..=top_y_in_cell).rev() {
+            let pos_y = y0 + y_in_cell;
+            let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
+
+            for ch in 0..interp_count {
+                let d00 = lerp(factor_y, c000[ch], c010[ch]);
+                let d10 = lerp(factor_y, c100[ch], c110[ch]);
+                let d01 = lerp(factor_y, c001[ch], c011[ch]);
+                let d11 = lerp(factor_y, c101[ch], c111[ch]);
+                let d0 = lerp(factor_x, d00, d10);
+                let d1 = lerp(factor_x, d01, d11);
+                interpolated[ch] = lerp(factor_z, d0, d1);
+            }
+
+            let density = noises.combine_interpolated(
+                &mut *cache,
+                &interpolated[..interp_count],
+                0,
+                pos_y,
+                0,
+            );
+            let state = aquifer.compute_substance(noises, block_x, pos_y, block_z, density);
+            let is_air = matches!(state, AquiferResult::Air);
+            let is_solid = matches!(state, AquiferResult::Solid);
+
+            if have_above && above_is_air && is_solid {
+                return Some(pos_y);
+            }
+
+            above_is_air = is_air;
+            have_above = true;
+        }
+    }
+
+    None
 }
 
 /// Same as `iterate_noise_column_with_aquifer` but only scans Y values up to
@@ -470,6 +624,14 @@ fn interpolated_density<N: DimensionNoises>(
 }
 
 impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
+    fn min_y(&self) -> i32 {
+        N::Settings::MIN_Y
+    }
+
+    fn gen_depth(&self) -> i32 {
+        N::Settings::HEIGHT
+    }
+
     fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
         self.biome_source.initial_spawn_search_origin()
     }
@@ -603,6 +765,10 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let mut prev_x: usize = usize::MAX;
         let mut prev_z: usize = usize::MAX;
         let sections = chunk.sections();
+        let mut ocean_floor_wg =
+            Heightmap::new(HeightmapType::OceanFloorWg, min_y, N::Settings::HEIGHT);
+        let mut world_surface_wg =
+            Heightmap::new(HeightmapType::WorldSurfaceWg, min_y, N::Settings::HEIGHT);
 
         noise_chunk.fill(
             noises,
@@ -639,9 +805,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             })
                             .unwrap_or(default_block_id);
                         pending_writes.push((local_x, relative_y, local_z, block));
+                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, block);
+                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, block);
                     }
                     AquiferResult::Fluid(id) => {
                         pending_writes.push((local_x, relative_y, local_z, id));
+                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, id);
+                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, id);
                         if aquifer.should_schedule_fluid_update() && id.has_fluid() {
                             chunk.mark_pos_for_postprocessing(BlockPos::new(
                                 world_x, world_y, world_z,
@@ -657,6 +827,13 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         if !pending_writes.is_empty() {
             sections.write_block_batch(&pending_writes);
         }
+
+        let ChunkAccess::Proto(proto) = chunk else {
+            return;
+        };
+        let mut heightmaps = proto.heightmaps.write();
+        heightmaps.replace(ocean_floor_wg);
+        heightmaps.replace(world_surface_wg);
     }
 
     #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
@@ -681,9 +858,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let chunk_quart_x = pos.0.x * 4;
         let chunk_quart_z = pos.0.y * 4;
 
-        // Ensure worldgen heightmaps are primed (fill_from_noise uses set_relative_block
-        // which doesn't update heightmaps).
-        chunk.prime_worldgen_heightmaps();
+        chunk.prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
 
         // Pre-compute preliminary surface corners only for rules/extensions that read them.
         let preliminary_surface_corners = surface_needs_min_surface_level.then(|| {
@@ -710,12 +885,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             );
             (p00, p10, p01, p11)
         });
-
-        // Read WorldSurfaceWg heightmap once
-        let heightmaps = chunk.proto_heightmaps();
-        let worldgen_surface = heightmaps
-            .get(HeightmapType::WorldSurfaceWg)
-            .expect("WorldSurfaceWg heightmap not initialized");
 
         let eroded_badlands_id = (*vanilla_biomes::ERODED_BADLANDS).id() as u16;
         let frozen_ocean_id = (*vanilla_biomes::FROZEN_OCEAN).id() as u16;
@@ -744,7 +913,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let block_z = chunk_min_z + local_z as i32;
 
                 // Start scanning from one above the highest non-air block
-                let mut start_height = worldgen_surface.get_first_available(local_x, local_z);
+                let mut start_height =
+                    chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, local_z);
 
                 // Column-local Voronoi cache for fuzzed biome lookups.
                 let mut biome_col = biome_data.as_deref().map(|biome_data| {
@@ -822,15 +992,19 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let steep = surface_rule_uses_steep && {
                     let z_north = local_z.saturating_sub(1);
                     let z_south = (local_z + 1).min(15);
-                    let h_north = worldgen_surface.get_highest_taken(local_x, z_north);
-                    let h_south = worldgen_surface.get_highest_taken(local_x, z_south);
+                    let h_north =
+                        chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, z_north) - 1;
+                    let h_south =
+                        chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, z_south) - 1;
                     if h_south >= h_north + 4 {
                         true
                     } else {
                         let x_west = local_x.saturating_sub(1);
                         let x_east = (local_x + 1).min(15);
-                        let h_west = worldgen_surface.get_highest_taken(x_west, local_z);
-                        let h_east = worldgen_surface.get_highest_taken(x_east, local_z);
+                        let h_west =
+                            chunk.height_at(HeightmapType::WorldSurfaceWg, x_west, local_z) - 1;
+                        let h_east =
+                            chunk.height_at(HeightmapType::WorldSurfaceWg, x_east, local_z) - 1;
                         h_west >= h_east + 4
                     }
                 };
@@ -925,6 +1099,14 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     chunk
                         .sections()
                         .write_column_blocks(local_x, local_z, &pending_writes);
+                    for &(relative_y, state) in &pending_writes {
+                        chunk.update_heightmaps_after_direct_write(
+                            local_x,
+                            min_y + relative_y as i32,
+                            local_z,
+                            state,
+                        );
+                    }
                     chunk.mark_dirty();
                 }
 
@@ -963,9 +1145,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             return;
         }
 
-        // Carver top-material lookups run `SurfaceRules.steep()`, which reads
-        // the worldgen surface heightmap in vanilla's `Context.updateXZ`.
-        chunk.prime_worldgen_heightmaps();
+        chunk.prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
 
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
@@ -1087,7 +1267,14 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         run.run_all(&source_biomes, seed_i64, &mut random);
     }
 
-    fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+    fn create_worldgen_region_random(&self, _world_seed: i64, center: ChunkPos) -> RandomSource {
+        worldgen_region_random_from_splitter(&self.splitter, center)
+    }
+
+    fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
+        self.feature_runner
+            .decorate(region, &REGISTRY, self.seed, self.biome_zoom_seed);
+    }
 }
 
 impl<N, F> CarveRun<'_, '_, N, F>
@@ -1165,7 +1352,7 @@ fn get_fiddle(rval: i64) -> f64 {
 ///
 /// Used by carver top-material lookups where a simple unfuzzed lookup would
 /// differ from vanilla at the quart-cell boundaries.
-pub(super) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
+pub(crate) fn fuzzed_biome_at_block<F: FnMut(i32, i32, i32) -> u16>(
     biome_zoom_seed: i64,
     block_x: i32,
     block_y: i32,

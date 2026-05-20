@@ -2391,9 +2391,9 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "saa"
-version = "5.5.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c7f49c9d5caa3bf4b3106900484b447b9253fe99670ceb81cb6cb5027855e1"
+checksum = "68f5acb362a0e75c2a963532fa7fabf13dff81626dc494df16488d30befcbea0"
 
 [[package]]
 name = "same-file"
@@ -2406,9 +2406,9 @@ dependencies = [
 
 [[package]]
 name = "scc"
-version = "3.6.12"
+version = "3.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f448f7d881535036452f0cac656a41463807f095eda504890764ca7d11e2a2ea"
+checksum = "5bcd12b6caff5213cc3c03123cde8c3db5e413008a63b0c0ba35e6275825ea92"
 dependencies = [
  "saa",
  "sdd",
@@ -2431,9 +2431,12 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sdd"
-version = "4.7.5"
+version = "4.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6ca0e33fc1ae39e36b2d1fdfc8ee470b26397b642ff87572a59a36ff4f2340b"
+checksum = "e5f0e40a01b94e35d1dacbcfbe5bfd3d31e37d9590b2e6d86a82b0e87bd4f551"
+dependencies = [
+ "saa",
+]
 
 [[package]]
 name = "security-framework"
@@ -2732,7 +2735,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "steel"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "base64",
  "chrono",
@@ -2759,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "steel-core"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2808,7 +2811,7 @@ dependencies = [
 
 [[package]]
 name = "steel-crypto"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "base64",
  "log",
@@ -2824,7 +2827,7 @@ dependencies = [
 
 [[package]]
 name = "steel-login"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "base64",
  "crossbeam",
@@ -2848,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "steel-macros"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2857,7 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "steel-protocol"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "aes",
  "cfb8",
@@ -2880,7 +2883,7 @@ dependencies = [
 
 [[package]]
 name = "steel-registry"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "flate2",
  "glam",
@@ -2901,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "steel-utils"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "bitflags",
  "crc32c",
@@ -2930,7 +2933,7 @@ dependencies = [
 
 [[package]]
 name = "steel-worldgen"
-version = "0.5.0+mc26.1"
+version = "0.6.0+mc26.1"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -12,6 +12,7 @@ use steel_registry::fluid::{FluidRef, FluidState, is_lava_fluid, is_water_fluid}
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::world::World;
 use steel_registry::vanilla_fluids;
 
@@ -27,26 +28,7 @@ pub fn get_fluid_state(world: &Arc<World>, pos: BlockPos) -> FluidState {
 /// Gets the fluid state from a raw `BlockStateId`.
 #[must_use]
 pub fn get_fluid_state_from_block(state: BlockStateId) -> FluidState {
-    let block = state.get_block();
-
-    if block == &vanilla_blocks::WATER {
-        let level: u8 = state
-            .try_get_value(&BlockStateProperties::LEVEL)
-            .unwrap_or(0);
-        FluidState::from_block_level(water_id(), level)
-    } else if block == &vanilla_blocks::LAVA {
-        let level: u8 = state
-            .try_get_value(&BlockStateProperties::LEVEL)
-            .unwrap_or(0);
-        FluidState::from_block_level(lava_id(), level)
-    } else {
-        // Check waterlogged property
-        if let Some(true) = state.try_get_value(&BlockStateProperties::WATERLOGGED) {
-            FluidState::source(water_id())
-        } else {
-            FluidState::EMPTY
-        }
-    }
+    state.get_fluid_state()
 }
 
 /// Converts a `FluidState` into a `BlockStateId`, preserving the identity of an existing block.

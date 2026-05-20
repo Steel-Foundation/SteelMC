@@ -17,7 +17,7 @@ use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
 use crate::fluid::is_water_fluid;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
@@ -66,7 +66,7 @@ pub trait BlockBehavior: Send + Sync {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -87,7 +87,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation ignores all params"
     )]
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         true
     }
 
@@ -115,6 +115,45 @@ pub trait BlockBehavior: Send + Sync {
         moved_by_piston: bool,
     ) {
         // Default: no-op
+    }
+
+    /// Called by block items after this block has been placed by an entity.
+    ///
+    /// Vanilla parity: `Block.setPlacedBy(Level, BlockPos, BlockState, LivingEntity, ItemStack)`.
+    /// This is intentionally separate from [`on_place`], which fires for any
+    /// world block mutation.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: Option<&Player>,
+        item_stack: &ItemStack,
+    ) {
+        // Default: no-op
+    }
+
+    /// Called before a player removes this block.
+    ///
+    /// Vanilla parity: `Block.playerWillDestroy(Level, BlockPos, BlockState, Player)`.
+    /// The returned state is the state used for tool damage and loot after the
+    /// block is removed.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+    ) -> BlockStateId {
+        state
     }
 
     /// Called after this block is removed from the world, to affect neighbors.

@@ -12,6 +12,7 @@
 
 use std::fmt::Write as _;
 use std::mem::take;
+use std::sync::Weak;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
@@ -20,7 +21,7 @@ use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::world::structure::{
-    StructurePiece, StructureReferenceMap, StructureStart, StructureStartMap,
+    StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
 };
 use steel_registry::structure::LiquidSettingsData;
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
@@ -185,6 +186,7 @@ fn make_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: i
         ChunkPos::new(pos.0, pos.1),
         min_y,
         height,
+        Weak::new(),
     );
     ChunkAccess::Proto(proto)
 }
@@ -661,7 +663,7 @@ fn compare_jigsaw_state(
         return;
     }
 
-    let Some(jigsaw) = &actual.jigsaw else {
+    let StructurePiecePayload::Jigsaw(jigsaw) = &actual.payload else {
         diffs.push(format!(
             "piece[{index}].piece_data: expected typed jigsaw state, got none",
         ));

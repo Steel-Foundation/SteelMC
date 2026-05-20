@@ -7,7 +7,8 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
+    StructurePiecePayload,
 };
 
 const MAX_DEPTH: i32 = 50;
@@ -92,22 +93,159 @@ enum PT {
     Filler,
 }
 
-impl PT {
-    const fn vanilla_id(self, depth: i32) -> &'static str {
+/// Vanilla `StrongholdPiece.SmallDoorType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrongholdSmallDoorType {
+    /// Three-block cave-air opening.
+    Opening,
+    /// Oak door framed by stone bricks.
+    WoodDoor,
+    /// Iron-bar grate opening.
+    Grates,
+    /// Iron door with stone buttons.
+    IronDoor,
+}
+
+impl StrongholdSmallDoorType {
+    fn random(rng: &mut LegacyRandom) -> Self {
+        match rng.next_i32_bounded(5) {
+            2 => Self::WoodDoor,
+            3 => Self::Grates,
+            4 => Self::IronDoor,
+            _ => Self::Opening,
+        }
+    }
+}
+
+/// Vanilla stronghold piece runtime state needed by `postProcess`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrongholdPieceData {
+    /// Straight corridor with optional side exits.
+    Straight {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+        /// Vanilla `leftChild`.
+        left_child: bool,
+        /// Vanilla `rightChild`.
+        right_child: bool,
+    },
+    /// Prison hall.
+    PrisonHall {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+    },
+    /// Left turn.
+    LeftTurn {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+    },
+    /// Right turn.
+    RightTurn {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+    },
+    /// Room crossing with one of five vanilla decorations.
+    RoomCrossing {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+        /// Vanilla `type`.
+        crossing_type: i32,
+    },
+    /// Straight stair corridor.
+    StraightStairsDown {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+    },
+    /// Descending stairs, including the source/start piece.
+    StairsDown {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+        /// Vanilla `isSource`.
+        is_source: bool,
+    },
+    /// Five-way crossing with low/high side exits.
+    FiveCrossing {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+        /// Vanilla `leftLow`.
+        left_low: bool,
+        /// Vanilla `leftHigh`.
+        left_high: bool,
+        /// Vanilla `rightLow`.
+        right_low: bool,
+        /// Vanilla `rightHigh`.
+        right_high: bool,
+    },
+    /// Corridor containing a loot chest.
+    ChestCorridor {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+        /// Vanilla `hasPlacedChest`.
+        has_placed_chest: bool,
+    },
+    /// Library room.
+    Library {
+        /// Vanilla `entryDoor`.
+        entry_door: StrongholdSmallDoorType,
+        /// Vanilla `isTall`.
+        is_tall: bool,
+    },
+    /// End portal room.
+    PortalRoom {
+        /// Vanilla `hasPlacedSpawner`.
+        has_placed_spawner: bool,
+    },
+    /// Collision filler corridor.
+    FillerCorridor {
+        /// Vanilla `steps`.
+        steps: i32,
+    },
+}
+
+impl StrongholdPieceData {
+    const fn piece_type(self) -> PT {
         match self {
-            PT::StairsDown if depth == 0 => "shstart",
-            PT::StairsDown => "shsd",
-            PT::FiveCrossing => "sh5c",
-            PT::Straight => "shs",
-            PT::LeftTurn => "shlt",
-            PT::RightTurn => "shrt",
-            PT::RoomCrossing => "shrc",
-            PT::StraightStairs => "shssd",
-            PT::ChestCorridor => "shcc",
-            PT::Prison => "shph",
-            PT::Library => "shli",
-            PT::Portal => "shpr",
-            PT::Filler => "shfc",
+            Self::Straight { .. } => PT::Straight,
+            Self::PrisonHall { .. } => PT::Prison,
+            Self::LeftTurn { .. } => PT::LeftTurn,
+            Self::RightTurn { .. } => PT::RightTurn,
+            Self::RoomCrossing { .. } => PT::RoomCrossing,
+            Self::StraightStairsDown { .. } => PT::StraightStairs,
+            Self::StairsDown { .. } => PT::StairsDown,
+            Self::FiveCrossing { .. } => PT::FiveCrossing,
+            Self::ChestCorridor { .. } => PT::ChestCorridor,
+            Self::Library { .. } => PT::Library,
+            Self::PortalRoom { .. } => PT::Portal,
+            Self::FillerCorridor { .. } => PT::Filler,
+        }
+    }
+
+    /// Returns the vanilla structure piece id for this payload.
+    #[must_use]
+    pub const fn piece_id(self) -> &'static str {
+        match self {
+            Self::StairsDown {
+                is_source: true, ..
+            } => "shstart",
+            Self::StairsDown { .. } => "shsd",
+            Self::Straight { .. } => "shs",
+            Self::PrisonHall { .. } => "shph",
+            Self::LeftTurn { .. } => "shlt",
+            Self::RightTurn { .. } => "shrt",
+            Self::RoomCrossing { .. } => "shrc",
+            Self::StraightStairsDown { .. } => "shssd",
+            Self::FiveCrossing { .. } => "sh5c",
+            Self::ChestCorridor { .. } => "shcc",
+            Self::Library { .. } => "shli",
+            Self::PortalRoom { .. } => "shpr",
+            Self::FillerCorridor { .. } => "shfc",
+        }
+    }
+
+    const fn start() -> Self {
+        Self::StairsDown {
+            entry_door: StrongholdSmallDoorType::Opening,
+            is_source: true,
         }
     }
 }
@@ -154,34 +292,21 @@ struct Piece {
     bb: BoundingBox,
     dir: Direction,
     depth: i32,
-    pt: PT,
-    /// `Straight`: left/right child flags.
-    left_child: bool,
-    right_child: bool,
-    /// `FiveCrossing`: four door flags.
-    left_low: bool,
-    left_high: bool,
-    right_low: bool,
-    right_high: bool,
-    /// `Library` height variant.
-    is_tall: bool,
+    data: StrongholdPieceData,
 }
 
 impl Piece {
-    const fn new(bb: BoundingBox, dir: Direction, depth: i32, pt: PT) -> Self {
+    const fn new(bb: BoundingBox, dir: Direction, depth: i32, data: StrongholdPieceData) -> Self {
         Self {
             bb,
             dir,
             depth,
-            pt,
-            left_child: false,
-            right_child: false,
-            left_low: false,
-            left_high: false,
-            right_low: false,
-            right_high: false,
-            is_tall: false,
+            data,
         }
+    }
+
+    const fn pt(&self) -> PT {
+        self.data.piece_type()
     }
 }
 
@@ -265,36 +390,72 @@ fn create_piece(
     depth: i32,
     rng: &mut LegacyRandom,
 ) -> Piece {
-    let mut p = Piece::new(bb, dir, depth, pt);
-    match pt {
+    let data = match pt {
         PT::Straight => {
-            rng.next_i32_bounded(5);
-            // Vanilla uses nextInt(2) == 0, not nextBoolean().
-            p.left_child = rng.next_i32_bounded(2) == 0;
-            p.right_child = rng.next_i32_bounded(2) == 0;
+            let entry_door = StrongholdSmallDoorType::random(rng);
+            StrongholdPieceData::Straight {
+                entry_door,
+                // Vanilla uses nextInt(2) == 0, not nextBoolean().
+                left_child: rng.next_i32_bounded(2) == 0,
+                right_child: rng.next_i32_bounded(2) == 0,
+            }
         }
         PT::FiveCrossing => {
-            rng.next_i32_bounded(5);
-            p.left_low = rng.next_bool();
-            p.left_high = rng.next_bool();
-            p.right_low = rng.next_bool();
-            p.right_high = rng.next_i32_bounded(3) > 0;
+            let entry_door = StrongholdSmallDoorType::random(rng);
+            StrongholdPieceData::FiveCrossing {
+                entry_door,
+                left_low: rng.next_bool(),
+                left_high: rng.next_bool(),
+                right_low: rng.next_bool(),
+                right_high: rng.next_i32_bounded(3) > 0,
+            }
         }
         PT::RoomCrossing => {
-            rng.next_i32_bounded(5);
-            rng.next_i32_bounded(5); // type, unused for BB
+            let entry_door = StrongholdSmallDoorType::random(rng);
+            StrongholdPieceData::RoomCrossing {
+                entry_door,
+                crossing_type: rng.next_i32_bounded(5),
+            }
         }
         PT::Library => {
-            rng.next_i32_bounded(5);
-            p.is_tall = bb.max_y - bb.min_y + 1 > 6;
+            let entry_door = StrongholdSmallDoorType::random(rng);
+            StrongholdPieceData::Library {
+                entry_door,
+                is_tall: bb.get_y_span() > 6,
+            }
         }
-        PT::Portal | PT::Filler => {}
-        // StairsDown, ChestCorridor, StraightStairs, LeftTurn, RightTurn, Prison
-        _ => {
-            rng.next_i32_bounded(5);
-        }
-    }
-    p
+        PT::Portal => StrongholdPieceData::PortalRoom {
+            has_placed_spawner: false,
+        },
+        PT::Filler => StrongholdPieceData::FillerCorridor {
+            steps: if matches!(dir, Direction::North | Direction::South) {
+                bb.get_z_span()
+            } else {
+                bb.get_x_span()
+            },
+        },
+        PT::StairsDown => StrongholdPieceData::StairsDown {
+            entry_door: StrongholdSmallDoorType::random(rng),
+            is_source: false,
+        },
+        PT::ChestCorridor => StrongholdPieceData::ChestCorridor {
+            entry_door: StrongholdSmallDoorType::random(rng),
+            has_placed_chest: false,
+        },
+        PT::StraightStairs => StrongholdPieceData::StraightStairsDown {
+            entry_door: StrongholdSmallDoorType::random(rng),
+        },
+        PT::LeftTurn => StrongholdPieceData::LeftTurn {
+            entry_door: StrongholdSmallDoorType::random(rng),
+        },
+        PT::RightTurn => StrongholdPieceData::RightTurn {
+            entry_door: StrongholdSmallDoorType::random(rng),
+        },
+        PT::Prison => StrongholdPieceData::PrisonHall {
+            entry_door: StrongholdSmallDoorType::random(rng),
+        },
+    };
+    Piece::new(bb, dir, depth, data)
 }
 
 /// Vanilla's `generatePieceFromSmallDoor`. Vanilla uses `totalWeight` (sum of all
@@ -369,7 +530,7 @@ fn gen_and_add(
         return;
     }
     if let Some(piece) = generate_piece(s, rng, fx, fy, fz, dir, depth) {
-        if piece.pt == PT::Portal {
+        if piece.pt() == PT::Portal {
             s.has_portal = true;
         }
         let idx = s.pieces.len();
@@ -380,8 +541,13 @@ fn gen_and_add(
 
 fn add_children(s: &mut State, rng: &mut LegacyRandom, idx: usize) {
     let Piece {
-        bb, dir, depth, pt, ..
+        bb,
+        dir,
+        depth,
+        data,
+        ..
     } = s.pieces[idx];
+    let pt = data.piece_type();
     let nw_facing = matches!(dir, Direction::North | Direction::East);
 
     match pt {
@@ -395,7 +561,14 @@ fn add_children(s: &mut State, rng: &mut LegacyRandom, idx: usize) {
             fwd(s, rng, bb, dir, depth, 1, 1);
         }
         PT::Straight => {
-            let (lc, rc) = (s.pieces[idx].left_child, s.pieces[idx].right_child);
+            let StrongholdPieceData::Straight {
+                left_child: lc,
+                right_child: rc,
+                ..
+            } = data
+            else {
+                return;
+            };
             fwd(s, rng, bb, dir, depth, 1, 1);
             if lc {
                 left(s, rng, bb, dir, depth, 1, 2);
@@ -424,13 +597,16 @@ fn add_children(s: &mut State, rng: &mut LegacyRandom, idx: usize) {
             right(s, rng, bb, dir, depth, 1, 4);
         }
         PT::FiveCrossing => {
-            let Piece {
+            let StrongholdPieceData::FiveCrossing {
                 left_low: ll,
                 left_high: lh,
                 right_low: rl,
                 right_high: rh,
                 ..
-            } = s.pieces[idx];
+            } = data
+            else {
+                return;
+            };
             let (za, zb) = if matches!(dir, Direction::West | Direction::North) {
                 (5, 3)
             } else {
@@ -511,16 +687,24 @@ fn right(
     gen_and_add(s, rng, fx, bb.min_y + y_off, fz, d, depth + 1);
 }
 
-/// All stronghold pieces for a chunk as
-/// `(bounding_box, vanilla_piece_id, orientation, gen_depth)`. Vanilla calls
+/// One generated stronghold piece.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrongholdGeneratedPiece {
+    /// World-space bounding box.
+    pub bounding_box: BoundingBox,
+    /// Horizontal orientation.
+    pub orientation: Direction,
+    /// Vanilla generation depth.
+    pub gen_depth: i32,
+    /// Stronghold piece placement payload.
+    pub data: StrongholdPieceData,
+}
+
+/// All stronghold pieces for a chunk. Vanilla calls
 /// `setOrientation(direction)` on every stronghold piece, and threads
 /// `genDepth` through the DFS via each subclass's `createPiece` helper.
 #[must_use]
-pub fn generate_pieces(
-    seed: i64,
-    chunk_x: i32,
-    chunk_z: i32,
-) -> Vec<(BoundingBox, &'static str, Direction, i32)> {
+pub fn generate_pieces(seed: i64, chunk_x: i32, chunk_z: i32) -> Vec<StrongholdGeneratedPiece> {
     let west = chunk_x * 16 + 2;
     let north = chunk_z * 16 + 2;
 
@@ -536,7 +720,12 @@ pub fn generate_pieces(
         let start_bb = BoundingBox::new(west, 64, north, west + 4, 74, north + 4);
 
         let mut s = State {
-            pieces: vec![Piece::new(start_bb, start_dir, 0, PT::StairsDown)],
+            pieces: vec![Piece::new(
+                start_bb,
+                start_dir,
+                0,
+                StrongholdPieceData::start(),
+            )],
             pending: Vec::new(),
             wts: weights(),
             start_bb,
@@ -579,20 +768,18 @@ pub fn generate_pieces(
         return s
             .pieces
             .into_iter()
-            .map(|p| {
-                (
-                    BoundingBox::new(
-                        p.bb.min_x,
-                        p.bb.min_y + dy,
-                        p.bb.min_z,
-                        p.bb.max_x,
-                        p.bb.max_y + dy,
-                        p.bb.max_z,
-                    ),
-                    p.pt.vanilla_id(p.depth),
-                    p.dir,
-                    p.depth,
-                )
+            .map(|p| StrongholdGeneratedPiece {
+                bounding_box: BoundingBox::new(
+                    p.bb.min_x,
+                    p.bb.min_y + dy,
+                    p.bb.min_z,
+                    p.bb.max_x,
+                    p.bb.max_y + dy,
+                    p.bb.max_z,
+                ),
+                orientation: p.dir,
+                gen_depth: p.depth,
+                data: p.data,
             })
             .collect();
     }
@@ -618,15 +805,110 @@ impl Structure for StrongholdStructure {
             position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
             pieces: generate_pieces(ctx.seed(), ctx.chunk_x(), ctx.chunk_z())
                 .into_iter()
-                .map(|(bb, piece_id, dir, depth)| {
-                    StructurePiece::non_jigsaw(
-                        Identifier::new_static("minecraft", piece_id),
-                        bb,
-                        depth,
-                        Some(dir),
-                    )
+                .map(|piece| {
+                    let piece_type = piece.data.piece_id();
+                    StructurePiece {
+                        piece_type: Identifier::new_static("minecraft", piece_type),
+                        bounding_box: piece.bounding_box,
+                        gen_depth: piece.gen_depth,
+                        orientation: Some(piece.orientation),
+                        payload: StructurePiecePayload::Procedural(
+                            ProceduralPieceData::Stronghold(piece.data),
+                        ),
+                        ground_level_delta: 0,
+                        junctions: Vec::new(),
+                        projection: None,
+                    }
                 })
                 .collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn constructor_rng_state_is_captured_in_piece_payloads() {
+        let bb = BoundingBox::new(0, 20, 0, 13, 30, 14);
+        let mut actual = LegacyRandom::from_seed(12_345);
+        let mut expected = LegacyRandom::from_seed(12_345);
+
+        let straight = create_piece(PT::Straight, bb, Direction::South, 3, &mut actual);
+        let straight_door = StrongholdSmallDoorType::random(&mut expected);
+        assert_eq!(
+            straight.data,
+            StrongholdPieceData::Straight {
+                entry_door: straight_door,
+                left_child: expected.next_i32_bounded(2) == 0,
+                right_child: expected.next_i32_bounded(2) == 0,
+            }
+        );
+        assert_eq!(actual.next_i32(), expected.next_i32());
+
+        let five_crossing = create_piece(PT::FiveCrossing, bb, Direction::South, 4, &mut actual);
+        let five_crossing_door = StrongholdSmallDoorType::random(&mut expected);
+        assert_eq!(
+            five_crossing.data,
+            StrongholdPieceData::FiveCrossing {
+                entry_door: five_crossing_door,
+                left_low: expected.next_bool(),
+                left_high: expected.next_bool(),
+                right_low: expected.next_bool(),
+                right_high: expected.next_i32_bounded(3) > 0,
+            }
+        );
+        assert_eq!(actual.next_i32(), expected.next_i32());
+
+        let room_crossing = create_piece(PT::RoomCrossing, bb, Direction::South, 5, &mut actual);
+        let room_crossing_door = StrongholdSmallDoorType::random(&mut expected);
+        assert_eq!(
+            room_crossing.data,
+            StrongholdPieceData::RoomCrossing {
+                entry_door: room_crossing_door,
+                crossing_type: expected.next_i32_bounded(5),
+            }
+        );
+        assert_eq!(actual.next_i32(), expected.next_i32());
+    }
+
+    #[test]
+    fn library_and_filler_payloads_capture_non_random_state() {
+        let tall_library = create_piece(
+            PT::Library,
+            BoundingBox::new(0, 20, 0, 13, 30, 14),
+            Direction::South,
+            7,
+            &mut LegacyRandom::from_seed(1),
+        );
+        assert!(matches!(
+            tall_library.data,
+            StrongholdPieceData::Library { is_tall: true, .. }
+        ));
+
+        let short_library = create_piece(
+            PT::Library,
+            BoundingBox::new(0, 20, 0, 13, 25, 14),
+            Direction::South,
+            7,
+            &mut LegacyRandom::from_seed(1),
+        );
+        assert!(matches!(
+            short_library.data,
+            StrongholdPieceData::Library { is_tall: false, .. }
+        ));
+
+        let filler = create_piece(
+            PT::Filler,
+            BoundingBox::new(0, 20, 0, 4, 24, 2),
+            Direction::North,
+            4,
+            &mut LegacyRandom::from_seed(1),
+        );
+        assert_eq!(
+            filler.data,
+            StrongholdPieceData::FillerCorridor { steps: 3 }
+        );
     }
 }
