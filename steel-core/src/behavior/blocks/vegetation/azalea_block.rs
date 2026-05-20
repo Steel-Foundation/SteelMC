@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::{
     TaggedRegistryExt,
@@ -10,15 +8,13 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt as _,
+        BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
-            Vegetation,
-            bonemealable::Bonemealable,
-            default_surviving_state,
+            Vegetation, default_surviving_state,
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
-    world::{LevelReader, ScheduledTickAccess, World},
+    world::{LevelReader, ScheduledTickAccess},
 };
 
 /// Behavior for azalea blocks.
@@ -55,10 +51,6 @@ impl BlockBehavior for AzaleaBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         default_surviving_state(self.block, self, context)
     }
-
-    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
-        Some(self)
-    }
 }
 
 impl Vegetation for AzaleaBlock {
@@ -66,22 +58,5 @@ impl Vegetation for AzaleaBlock {
         steel_registry::REGISTRY
             .blocks
             .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_AZALEA_TAG)
-    }
-}
-
-impl Bonemealable for AzaleaBlock {
-    fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        world
-            .get_block_state(pos.above())
-            .get_fluid_state()
-            .is_empty()
-    }
-
-    fn random_success(&self) -> bool {
-        rand::random_bool(0.45f64)
-    }
-
-    fn apply_bonemeal(&self, _state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) {
-        // TODO: grow azalea tree
     }
 }

@@ -122,11 +122,14 @@ impl Bonemealable for BambooStalkBlock {
     fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
         let above = Self::stalk_segments_above(world, pos);
         let below = Self::stalk_segments_below(world, pos);
+        let growth_pos = pos.above_n(above + 1);
         (above + below + 1 < 16)
             && world
                 .get_block_state(pos.above_n(above))
                 .get_value(&BlockStateProperties::STAGE)
                 != 1
+            && world.is_in_valid_bounds(growth_pos)
+            && world.get_block_state(growth_pos).is_air()
     }
 
     fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -137,10 +140,11 @@ impl Bonemealable for BambooStalkBlock {
         for i in 0..i32::from(self.get_age_increase(world)) {
             let pos_above = pos.above_n(above + i);
             let state_above = world.get_block_state(pos_above);
-            let state_two_above = world.get_block_state(pos_above.above());
+            let growth_pos = pos_above.above();
             if total_height + i >= 16
                 || state_above.get_value(&BlockStateProperties::STAGE) == 1
-                || !state_two_above.is_air()
+                || !world.is_in_valid_bounds(growth_pos)
+                || !world.get_block_state(growth_pos).is_air()
             {
                 return;
             }

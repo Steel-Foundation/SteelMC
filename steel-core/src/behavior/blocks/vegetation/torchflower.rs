@@ -4,10 +4,11 @@ use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
         BlockRef,
+        block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, IntProperty},
     },
     item_stack::ItemStack,
-    vanilla_items,
+    vanilla_blocks, vanilla_items,
 };
 use steel_utils::BlockStateId;
 
@@ -39,11 +40,21 @@ impl CropLike for TorchflowerCropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        &BlockStateProperties::AGE_2
+        &BlockStateProperties::AGE_1
     }
 
     fn max_age(&self) -> u8 {
         2
+    }
+
+    fn get_state_for_age(&self, age: u8) -> BlockStateId {
+        if age == 2 {
+            vanilla_blocks::TORCHFLOWER.default_state()
+        } else {
+            self.block
+                .default_state()
+                .set_value(self.age_property(), age)
+        }
     }
 
     fn clone_item_stack(&self) -> ItemStack {
@@ -71,5 +82,31 @@ impl Bonemealable for TorchflowerCropBlock {
 
     fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: steel_utils::BlockPos) {
         self.default_apply_bonemeal(state, world, pos);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn torchflower_age_two_becomes_flower_block() {
+        init_registry();
+        let behavior = TorchflowerCropBlock::new(&vanilla_blocks::TORCHFLOWER_CROP);
+
+        let age_one = behavior.get_state_for_age(1);
+        assert_eq!(age_one.get_block(), &vanilla_blocks::TORCHFLOWER_CROP);
+        assert_eq!(age_one.get_value(&BlockStateProperties::AGE_1), 1);
+
+        let mature = behavior.get_state_for_age(2);
+        assert_eq!(mature.get_block(), &vanilla_blocks::TORCHFLOWER);
     }
 }

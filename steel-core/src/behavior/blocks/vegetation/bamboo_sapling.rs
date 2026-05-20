@@ -53,7 +53,7 @@ impl Bonemealable for BambooSaplingBlock {
     }
 
     fn is_bonemealable(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
-        world.get_block_state(pos.above()).is_air()
+        world.is_in_valid_bounds(pos.above()) && world.get_block_state(pos.above()).is_air()
     }
 
     fn apply_bonemeal(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

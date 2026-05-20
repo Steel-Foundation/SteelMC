@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{behavior::blocks::vegetation::crop_block::CropLike, world::World};
@@ -62,7 +61,7 @@ pub trait CropBonemealExt: CropLike + Bonemealable {
 
         world.set_block(
             pos,
-            state.set_value(self.age_property(), new_age),
+            self.get_state_for_age(new_age),
             UpdateFlags::UPDATE_ALL,
         );
     }

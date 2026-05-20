@@ -931,9 +931,7 @@
     },
     {
       "name": "wheat",
-      "class": "CropBlock",
-      "max_age": 7,
-      "clone_item_stack": "wheat_seeds"
+      "class": "CropBlock"
     },
     {
       "name": "farmland",
@@ -2402,15 +2400,11 @@
     },
     {
       "name": "carrots",
-      "class": "CarrotBlock",
-      "max_age": 7,
-      "clone_item_stack": "carrot"
+      "class": "CarrotBlock"
     },
     {
       "name": "potatoes",
-      "class": "PotatoBlock",
-      "max_age": 7,
-      "clone_item_stack": "potato"
+      "class": "PotatoBlock"
     },
     {
       "name": "oak_button",
@@ -3713,9 +3707,7 @@
     },
     {
       "name": "torchflower_crop",
-      "class": "TorchflowerCropBlock",
-      "max_age": 2,
-      "clone_item_stack": "torchflower_seeds"
+      "class": "TorchflowerCropBlock"
     },
     {
       "name": "pitcher_crop",
@@ -3727,9 +3719,7 @@
     },
     {
       "name": "beetroots",
-      "class": "BeetrootBlock",
-      "max_age": 3,
-      "clone_item_stack": "beetroot_seeds"
+      "class": "BeetrootBlock"
     },
     {
       "name": "dirt_path",

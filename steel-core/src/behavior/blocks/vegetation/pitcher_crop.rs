@@ -257,6 +257,8 @@ impl Bonemealable for PitcherCropBlock {
     }
 
     fn apply_bonemeal(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        Self::grow(world, state, pos, 1);
+        if let Some((lower_state, lower_pos)) = Self::get_lower_half(state, world, pos) {
+            Self::grow(world, lower_state, lower_pos, 1);
+        }
     }
 }

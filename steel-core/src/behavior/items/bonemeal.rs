@@ -27,11 +27,13 @@ impl BoneMealItem {
             return false;
         };
         if let Some(bonemealable) = behavior.as_bonemealable() {
-            if !bonemealable.random_success() || !bonemealable.is_bonemealable(state, world, pos) {
+            if !bonemealable.is_bonemealable(state, world, pos) {
                 return false;
             }
 
-            bonemealable.apply_bonemeal(state, world, pos);
+            if bonemealable.random_success() {
+                bonemealable.apply_bonemeal(state, world, pos);
+            }
             item_stack.shrink(1);
 
             return true;
