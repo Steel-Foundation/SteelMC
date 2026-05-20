@@ -143,6 +143,10 @@ pub trait Slot {
             return None;
         }
 
+        if self.get_item(guard).is_empty() {
+            self.set_by_player(guard, ItemStack::empty(), &result);
+        }
+
         Some(result)
     }
 
@@ -150,10 +154,11 @@ pub trait Slot {
     /// Returns any remainder items that couldn't be placed back (e.g., crafting remainders).
     fn on_take(
         &self,
-        _guard: &mut ContainerLockGuard,
+        guard: &mut ContainerLockGuard,
         _stack: &ItemStack,
         _player: &Player,
     ) -> Option<ItemStack> {
+        self.set_changed(guard);
         None
     }
 
@@ -453,6 +458,27 @@ impl Slot for CraftingGridSlot {
         self.update_result(guard);
     }
 
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+        let item = self.get_item_mut(guard);
+        if item.is_empty() || amount <= 0 {
+            return ItemStack::empty();
+        }
+
+        let removed = item.split(amount);
+
+        if removed.is_empty() {
+            return ItemStack::empty();
+        }
+
+        if self.get_item(guard).is_empty() {
+            self.set_item(guard, ItemStack::empty());
+        } else {
+            self.update_result(guard);
+        }
+
+        removed
+    }
+
     fn set_changed(&self, guard: &mut ContainerLockGuard) {
         guard
             .get_mut(ContainerId::from_arc(&self.container))
@@ -527,6 +553,24 @@ impl CraftingResultSlot {
     pub fn crafting_container_ref(&self) -> ContainerRef {
         ContainerRef::CraftingContainer(Arc::clone(&self.crafting_container))
     }
+
+    fn has_valid_recipe_result(&self, guard: &ContainerLockGuard) -> bool {
+        let result = self.get_item(guard);
+        if result.is_empty() {
+            return false;
+        }
+
+        let crafting_id = ContainerId::from_arc(&self.crafting_container);
+        let Some(crafting) = guard.get_crafting_container(crafting_id) else {
+            return false;
+        };
+
+        let Some(recipe) = recipe_manager::find_recipe(crafting, self.grid_size == 2) else {
+            return false;
+        };
+
+        ItemStack::matches(result, &recipe.assemble())
+    }
 }
 
 impl Slot for CraftingResultSlot {
@@ -554,6 +598,10 @@ impl Slot for CraftingResultSlot {
     /// Cannot place items directly in the result slot.
     fn may_place(&self, _stack: &ItemStack) -> bool {
         false
+    }
+
+    fn may_pickup(&self, guard: &ContainerLockGuard, _player: &Player) -> bool {
+        self.has_valid_recipe_result(guard)
     }
 
     /// Result slots don't allow partial removal.
@@ -617,53 +665,55 @@ impl Slot for CraftingResultSlot {
             recipe_manager::get_remaining_items(crafting, is_2x2)
         };
 
+        let Some((remainders, positioned)) = remainders_and_positioned else {
+            if let Some(result) = guard.get_result_container_mut(result_id) {
+                result.set_item(0, ItemStack::empty());
+            }
+            return None;
+        };
+
         // Apply changes with mutable borrow
         let crafting = guard
             .get_crafting_container_mut(crafting_id)
             .expect("crafting container not locked");
 
-        if let Some((remainders, positioned)) = remainders_and_positioned {
-            let input = &positioned.input;
+        let input = &positioned.input;
 
-            // Iterate over the bounded recipe area, not the whole grid
-            for y in 0..input.height {
-                for x in 0..input.width {
-                    // Calculate the actual slot index in the original crafting grid
-                    let grid_slot = positioned.to_grid_slot(x, y, self.grid_size);
+        // Iterate over the bounded recipe area, not the whole grid
+        for y in 0..input.height {
+            for x in 0..input.width {
+                // Calculate the actual slot index in the original crafting grid
+                let grid_slot = positioned.to_grid_slot(x, y, self.grid_size);
 
-                    // Get the remainder for this position in the trimmed input
-                    let remainder_idx = x + y * input.width;
-                    let replacement = if remainder_idx < remainders.len() {
-                        remainders[remainder_idx].clone()
-                    } else {
-                        ItemStack::empty()
-                    };
+                // Get the remainder for this position in the trimmed input
+                let remainder_idx = x + y * input.width;
+                let replacement = if remainder_idx < remainders.len() {
+                    remainders[remainder_idx].clone()
+                } else {
+                    ItemStack::empty()
+                };
 
-                    // Consume one item from the grid slot
-                    {
-                        let item = crafting.get_item_mut(grid_slot);
-                        if !item.is_empty() {
-                            item.shrink(1);
-                        }
+                // Consume one item from the grid slot
+                {
+                    let item = crafting.get_item_mut(grid_slot);
+                    if !item.is_empty() {
+                        item.shrink(1);
                     }
+                }
 
-                    // Handle remainder placement
-                    if !replacement.is_empty() {
-                        let current_item = crafting.get_item(grid_slot).clone();
+                // Handle remainder placement
+                if !replacement.is_empty() {
+                    let current_item = crafting.get_item(grid_slot).clone();
 
-                        if current_item.is_empty() {
-                            // Slot is now empty, place remainder there
-                            crafting.set_item(grid_slot, replacement);
-                        } else if ItemStack::is_same_item_same_components(
-                            &current_item,
-                            &replacement,
-                        ) {
-                            // Same item type, try to stack
-                            crafting.get_item_mut(grid_slot).grow(replacement.count());
-                        } else {
-                            // Different item type - need to return to player inventory
-                            remainder_overflow.push(replacement);
-                        }
+                    if current_item.is_empty() {
+                        // Slot is now empty, place remainder there
+                        crafting.set_item(grid_slot, replacement);
+                    } else if ItemStack::is_same_item_same_components(&current_item, &replacement) {
+                        // Same item type, try to stack
+                        crafting.get_item_mut(grid_slot).grow(replacement.count());
+                    } else {
+                        // Different item type - need to return to player inventory
+                        remainder_overflow.push(replacement);
                     }
                 }
             }
@@ -791,4 +841,81 @@ pub fn add_inventory_slots(slots: &mut Vec<SlotType>, inventory: &SyncPlayerInv)
 pub fn add_standard_inventory_slots(slots: &mut Vec<SlotType>, inventory: &SyncPlayerInv) {
     add_inventory_slots(slots, inventory);
     add_hotbar_slots(slots, inventory);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::vanilla_items::ITEMS;
+    use steel_registry::{REGISTRY, Registry};
+
+    fn ensure_registry() {
+        let _ = REGISTRY.init(Registry::new_vanilla());
+    }
+
+    fn lock_crafting_pair(
+        crafting: &SyncCraftingContainer,
+        result: &SyncResultContainer,
+    ) -> ContainerLockGuard {
+        let crafting_ref = ContainerRef::CraftingContainer(Arc::clone(crafting));
+        let result_ref = ContainerRef::ResultContainer(Arc::clone(result));
+        ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref])
+    }
+
+    #[test]
+    fn crafting_grid_remove_refreshes_result_slot() {
+        ensure_registry();
+
+        let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
+        let result = Arc::new(SyncMutex::new(ResultContainer::new()));
+        let slot = CraftingGridSlot::new(Arc::clone(&crafting), Arc::clone(&result), 0);
+        let result_id = ContainerId::from_arc(&result);
+
+        let mut guard = lock_crafting_pair(&crafting, &result);
+        slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+
+        let result_item = guard
+            .get(result_id)
+            .expect("result container not locked")
+            .get_item(0);
+        assert!(result_item.is(&ITEMS.oak_planks));
+        assert_eq!(result_item.count(), 4);
+
+        let removed = slot.remove(&mut guard, 1);
+        assert!(removed.is(&ITEMS.oak_log));
+        assert_eq!(removed.count(), 1);
+
+        let result_item = guard
+            .get(result_id)
+            .expect("result container not locked")
+            .get_item(0);
+        assert!(result_item.is_empty());
+    }
+
+    #[test]
+    fn crafting_result_requires_current_matching_recipe() {
+        ensure_registry();
+
+        let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
+        let result = Arc::new(SyncMutex::new(ResultContainer::new()));
+        let input_slot = CraftingGridSlot::new(Arc::clone(&crafting), Arc::clone(&result), 0);
+        let result_slot = CraftingResultSlot::new(Arc::clone(&result), Arc::clone(&crafting));
+        let result_id = ContainerId::from_arc(&result);
+
+        let mut guard = lock_crafting_pair(&crafting, &result);
+        guard
+            .get_result_container_mut(result_id)
+            .expect("result container not locked")
+            .set_item(0, ItemStack::with_count(&ITEMS.oak_planks, 4));
+        assert!(!result_slot.has_valid_recipe_result(&guard));
+
+        input_slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        assert!(result_slot.has_valid_recipe_result(&guard));
+
+        guard
+            .get_result_container_mut(result_id)
+            .expect("result container not locked")
+            .set_item(0, ItemStack::new(&ITEMS.stick));
+        assert!(!result_slot.has_valid_recipe_result(&guard));
+    }
 }

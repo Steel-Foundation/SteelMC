@@ -177,6 +177,11 @@ impl Menu for CraftingMenu {
         if stack.is_empty() {
             return ItemStack::empty();
         }
+        if slot_index == slots::RESULT_SLOT
+            && !self.behavior.slots[slot_index].may_pickup(guard, player)
+        {
+            return ItemStack::empty();
+        }
 
         let clicked = stack.clone();
         let mut stack_mut = stack;
