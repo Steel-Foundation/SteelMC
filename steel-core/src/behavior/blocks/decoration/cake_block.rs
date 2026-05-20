@@ -129,11 +129,15 @@ impl BlockBehavior for CakeBlock {
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let item_stack = inv.item();
+        let item = item_stack.item();
         if REGISTRY
             .items
-            .is_in_tag(item_stack.item(), &vanilla_item_tags::CANDLES_TAG)
+            .is_in_tag(item, &vanilla_item_tags::CANDLES_TAG)
             && state.get_value(&BlockStateProperties::BITES) == 0
         {
+            let Some(candle_cake) = candle_cakes::candle_to_candle_cake(item) else {
+                return InteractionResult::TryEmptyHandInteraction;
+            };
             if !player.has_infinite_materials() {
                 item_stack.shrink(1);
             }
@@ -144,15 +148,7 @@ impl BlockBehavior for CakeBlock {
                 1.0,
                 Some(player.id),
             );
-            world.set_block(
-                pos,
-                candle_cakes::candle_to_candle_cake(item_stack.item())
-                    .expect(
-                        "Candle Item is in CANDLES_TAG but isnt in the candle_to_candle_cake map",
-                    )
-                    .default_state(),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(pos, candle_cake.default_state(), UpdateFlags::UPDATE_ALL);
             return InteractionResult::Success;
         }
         InteractionResult::TryEmptyHandInteraction
