@@ -8,7 +8,6 @@ use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
     sound_events, vanilla_block_tags,
-    vanilla_blocks::FIRE,
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
@@ -51,10 +50,11 @@ impl ItemBehavior for FlintAndSteelItem {
             Some(context.player.id),
         );
 
-        // TODO: use BaseFireBlock.getState() equivalent to select soul fire vs regular fire
-        context
-            .world
-            .set_block(fire_pos, FIRE.default_state(), UpdateFlags::UPDATE_ALL);
+        context.world.set_block(
+            fire_pos,
+            FireBlock::get_state(context.world.as_ref(), fire_pos),
+            UpdateFlags::UPDATE_ALL,
+        );
 
         let has_infinite_materials = context.player.has_infinite_materials();
         context
@@ -100,10 +100,11 @@ impl ItemBehavior for FireChargeItem {
             Some(context.player.id),
         );
 
-        // TODO: use BaseFireBlock.getState() equivalent to select soul fire vs regular fire
-        context
-            .world
-            .set_block(fire_pos, FIRE.default_state(), UpdateFlags::UPDATE_ALL);
+        context.world.set_block(
+            fire_pos,
+            FireBlock::get_state(context.world.as_ref(), fire_pos),
+            UpdateFlags::UPDATE_ALL,
+        );
 
         context.inv.with_item(|item| item.shrink(1));
 
