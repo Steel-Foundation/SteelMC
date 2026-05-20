@@ -1,4 +1,6 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
+/// Tick-polled server jobs.
+pub mod jobs;
 /// The registry cache for the server.
 pub mod registry_cache;
 /// The tick rate manager for the server.
@@ -13,13 +15,14 @@ use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{SharedEntity, init_entities};
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
-use crate::level_data::WorldGenerationSettings;
+use crate::level_data::{LevelDataManager, WorldGenerationSettings};
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentPlayerData;
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
 use crate::portal::{TeleportTransition, WorldChangeRequest};
+use crate::server::jobs::ServerJobQueue;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
@@ -142,6 +145,8 @@ pub struct Server {
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
+    /// Jobs resumed from a known point in the server game tick.
+    pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
     /// Queued world changes to process after the tick.
@@ -209,13 +214,6 @@ impl Server {
         );
 
         for world_entry in &resolved_worlds.worlds {
-            let generator_output = generator_registry
-                .create(
-                    &world_entry.generator,
-                    &world_entry.generator_config,
-                    world_entry.seed,
-                )
-                .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let default_world_path = resolved_worlds
                 .save_path
                 .join(&world_entry.domain)
@@ -228,12 +226,30 @@ impl Server {
                     Path::new(&default_world_path),
                 )
                 .map_err(|e| format!("failed to create storage for {}: {e}", world_entry.key))?;
+            let world_seed = LevelDataManager::load_seed_or_default(
+                storage_output.level_data_path.as_deref(),
+                world_entry.seed,
+            )
+            .await
+            .map_err(|e| {
+                format!(
+                    "failed to load level data seed for {}: {e}",
+                    world_entry.key
+                )
+            })?;
+            let generator_output = generator_registry
+                .create(
+                    &world_entry.generator,
+                    &world_entry.generator_config,
+                    world_seed,
+                )
+                .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config(
                 chunk_runtime.clone(),
                 world_entry.key.clone(),
                 generator_output.dimension_type,
-                world_entry.seed,
+                world_seed,
                 WorldConfig {
                     storage: storage_output.storage,
                     level_data_path: storage_output
@@ -268,6 +284,7 @@ impl Server {
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
+            jobs: ServerJobQueue::new(),
             player_data_storage,
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
@@ -628,6 +645,7 @@ impl Server {
             };
 
             self.tick_worlds_game(tick_count, runs_normally).await;
+            self.tick_jobs(tick_count, runs_normally);
 
             {
                 let server = self.clone();
@@ -652,6 +670,8 @@ impl Server {
                 tick_manager.end_tick_work();
             }
         }
+
+        self.jobs.cancel_all();
     }
 
     /// Chunk sending tick loop — encodes and sends chunks to players independently.
@@ -1003,6 +1023,20 @@ impl Server {
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
                 "Game tick slow"
+            );
+        }
+    }
+
+    fn tick_jobs(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
+        let stats = self
+            .jobs
+            .tick(Arc::downgrade(self), tick_count, runs_normally);
+        if stats.polled > 0 && stats.pending > 0 && tick_count.is_multiple_of(100) {
+            tracing::debug!(
+                polled = stats.polled,
+                finished = stats.finished,
+                pending = stats.pending,
+                "Server jobs pending"
             );
         }
     }

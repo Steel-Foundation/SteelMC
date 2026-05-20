@@ -46,7 +46,7 @@ const BASE_CHANCE: f32 = 0.056_888_89;
 /// call [`WeatheringCopper::is_randomly_ticking`]
 ///
 /// In `YourBlock::random_tick` call [`WeatheringCopper::change_over_time`]
-// TODO: Add weathering support for slabs, stairs, doors, trapdoors, grates, bars, bulbs, lanterns, chains, chests, and golem statues
+// TODO: Add weathering support for doors, trapdoors, grates, bars, bulbs, lanterns, chains, chests, and golem statues
 pub struct WeatheringCopper {
     weather_state: WeatherState,
 }

@@ -398,9 +398,7 @@ impl Player {
         }
 
         let current_pos = *self.position.lock();
-        let chunk_x = (current_pos.x as i32) >> 4;
-        let chunk_z = (current_pos.z as i32) >> 4;
-        let chunk_pos = ChunkPos::new(chunk_x, chunk_z);
+        let chunk_pos = ChunkPos::from_entity_pos(current_pos);
 
         *self.last_chunk_pos.lock() = chunk_pos;
 

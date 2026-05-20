@@ -13,6 +13,14 @@ use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 /// - Use in air
 /// - etc.
 pub trait ItemBehavior: Send + Sync {
+    /// Returns the Rust type name of the concrete behavior implementation.
+    #[cfg(feature = "flint")]
+    #[must_use]
+    #[expect(clippy::absolute_paths, reason = "easier for features")]
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     /// Called when this item is used on a block.
     fn use_on(&self, _context: &mut UseOnContext) -> InteractionResult {
         InteractionResult::Pass
@@ -63,6 +71,13 @@ impl ItemBehaviorRegistry {
     #[must_use]
     pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn ItemBehavior> {
         self.behaviors.get(id).map(AsRef::as_ref)
+    }
+
+    /// Get all behaviors.
+    #[cfg(feature = "flint")]
+    #[must_use]
+    pub fn get_behaviors(&self) -> &[Box<dyn ItemBehavior>] {
+        &self.behaviors
     }
 }
 

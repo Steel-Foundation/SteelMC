@@ -26,6 +26,7 @@ pub(crate) fn generate(
         holder.get_pos(),
         context.min_y(),
         context.height(),
+        context.weak_world(),
     );
 
     // Use no_notify variant so apply_step can notify through the completion channel.

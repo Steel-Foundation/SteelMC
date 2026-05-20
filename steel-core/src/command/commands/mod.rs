@@ -9,6 +9,7 @@ pub mod gamemode;
 pub mod gamerule;
 pub mod give;
 pub mod kill;
+pub mod locate;
 pub mod seed;
 pub mod steel;
 pub mod stop;

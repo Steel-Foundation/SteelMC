@@ -17,7 +17,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, candle_cakes,
     },
     player::Player,
-    world::World,
+    world::{LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for Cakes
@@ -79,14 +79,14 @@ impl BlockBehavior for CakeBlock {
         }
     }
 
-    fn can_survive(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         world.get_block_state(pos.below()).is_solid()
     }
 
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

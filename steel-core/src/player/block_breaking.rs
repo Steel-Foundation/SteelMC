@@ -17,7 +17,7 @@ use steel_utils::{
 };
 
 use super::food_data::food_constants;
-use crate::behavior::BlockStateBehaviorExt;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::world::World;
@@ -283,34 +283,40 @@ impl BlockBreakingManager {
         // TODO: Check for GameMasterBlock (command blocks, etc.)
         // TODO: Check blockActionRestricted
 
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
+        let changed_by_player_will_destroy = world.get_block_state(pos) != state;
+
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        let changed = world.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
+        let changed = changed_by_player_will_destroy
+            || world.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
 
         if changed {
             // Play block destruction particles and sound (skip for fire blocks like vanilla)
             // Exclude the breaking player as they see the effect client-side
-            let block = REGISTRY.blocks.by_state_id(state);
+            let block = REGISTRY.blocks.by_state_id(adjusted_state);
             let is_fire = block.is_some_and(|b| {
                 b.key == vanilla_blocks::FIRE.key || b.key == vanilla_blocks::SOUL_FIRE.key
             });
-            if !is_fire {
-                world.destroy_block_effect(pos, u32::from(state.0), Some(player.id));
+            if !changed_by_player_will_destroy && !is_fire {
+                world.destroy_block_effect(pos, u32::from(adjusted_state.0), Some(player.id));
             }
 
             // Check if player has correct tool for drops
             let has_correct_tool = {
                 let inv = player.inventory.lock();
                 let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-                main_hand.is_correct_tool_for_drops(state) || !requires_correct_tool(state)
+                main_hand.is_correct_tool_for_drops(adjusted_state)
+                    || !requires_correct_tool(adjusted_state)
             };
 
             // Damage the tool if the block has non-zero destroy time
             // This is done before playerDestroy, matching vanilla's Item.mineBlock
             let block_destroy_time = REGISTRY
                 .blocks
-                .by_state_id(state)
+                .by_state_id(adjusted_state)
                 .map_or(0.0, |b| b.config.destroy_time);
 
             if block_destroy_time != 0.0 {
@@ -340,7 +346,7 @@ impl BlockBreakingManager {
                 && has_correct_tool
             {
                 // TODO: Call playerDestroy to spawn drops
-                drop_block_loot(player, world, pos, state);
+                drop_block_loot(player, world, pos, adjusted_state);
             }
         }
 

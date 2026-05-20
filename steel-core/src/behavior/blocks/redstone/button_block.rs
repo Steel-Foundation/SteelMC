@@ -21,7 +21,7 @@ use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for all button block variants.
 ///
@@ -93,7 +93,7 @@ impl ButtonBlock {
 
 impl BlockBehavior for ButtonBlock {
     /// Checks if a button with the given state can survive at the given position.
-    fn can_survive(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let support_dir = Self::get_connected_direction(state).opposite();
         let support_pos = support_dir.relative(pos);
         let support_state = world.get_block_state(support_pos);
@@ -135,7 +135,7 @@ impl BlockBehavior for ButtonBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

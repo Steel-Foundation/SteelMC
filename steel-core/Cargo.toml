@@ -10,6 +10,7 @@ build = "build/build.rs"
 #default = ["stand-alone"]
 stand-alone = []
 slow_chunk_gen = []
+flint = []
 
 [dependencies]
 # Internal crates

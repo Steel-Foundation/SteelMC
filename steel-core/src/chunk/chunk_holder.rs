@@ -7,7 +7,7 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use steel_utils::locks::SyncRwLock;
-use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
+use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::SyncMutex};
 use tokio::sync::{oneshot, watch};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
@@ -91,9 +91,9 @@ pub struct ChunkHolder {
     height: i32,
     /// Whether any sections have pending block changes.
     has_changed_sections: AtomicBool,
-    /// Per-section sets of changed block positions (section-relative packed shorts).
+    /// Per-section sets of changed block positions.
     /// Index is `(block_y - min_y) / 16`.
-    changed_blocks_per_section: Box<[SyncMutex<FxHashSet<i16>>]>,
+    changed_blocks_per_section: Box<[SyncMutex<FxHashSet<PackedSectionBlockPos>>]>,
 }
 
 impl ChunkHolder {
@@ -120,9 +120,9 @@ impl ChunkHolder {
             generation_status(Some(ticket_level)).map_or(STATUS_NONE, |s| s.get_index() as u8);
 
         let section_count = (height / 16) as usize;
-        let changed_blocks_per_section: Box<[SyncMutex<FxHashSet<i16>>]> = (0..section_count)
+        let changed_blocks_per_section = (0..section_count)
             .map(|_| SyncMutex::new(FxHashSet::default()))
-            .collect();
+            .collect::<Box<[_]>>();
 
         Self {
             data: ChunkGuard::new(ChunkAccess::Unloaded),
@@ -172,7 +172,7 @@ impl ChunkHolder {
 
     /// Takes all pending block changes, grouped by section index.
     /// Returns a vec of (`section_index`, set of packed positions).
-    pub fn take_changed_blocks(&self) -> Vec<(usize, FxHashSet<i16>)> {
+    pub fn take_changed_blocks(&self) -> Vec<(usize, FxHashSet<PackedSectionBlockPos>)> {
         if !self.has_changed_sections.swap(false, Ordering::AcqRel) {
             return Vec::new();
         }
@@ -251,10 +251,12 @@ impl ChunkHolder {
     /// Gets access to the chunk if it has reached the given status.
     #[inline]
     pub fn try_chunk(&self, status: ChunkStatus) -> Option<RwLockReadGuard<'_, ChunkAccess>> {
-        match &*self.chunk_result.borrow() {
-            ChunkResult::Ok(s) if status <= *s => Some(self.data.read()),
-            _ => None,
-        }
+        let ready = {
+            let chunk_result = self.chunk_result.borrow();
+            matches!(&*chunk_result, ChunkResult::Ok(s) if status <= *s)
+        };
+
+        if ready { Some(self.data.read()) } else { None }
     }
 
     /// Waits until the chunk has reached the given status.
@@ -265,9 +267,12 @@ impl ChunkHolder {
         let mut subscriber = self.sender.subscribe();
         async move {
             loop {
-                if let ChunkResult::Ok(s) = &*subscriber.borrow_and_update()
-                    && status <= *s
-                {
+                let ready = {
+                    let chunk_result = subscriber.borrow_and_update();
+                    matches!(&*chunk_result, ChunkResult::Ok(s) if status <= *s)
+                };
+
+                if ready {
                     return Some(self.data.read());
                 }
 
@@ -285,7 +290,8 @@ impl ChunkHolder {
 
     /// Gets the persisted status of the chunk.
     pub fn persisted_status(&self) -> Option<ChunkStatus> {
-        match &*self.chunk_result.borrow() {
+        let chunk_result = self.chunk_result.borrow();
+        match &*chunk_result {
             ChunkResult::Ok(s) => Some(*s),
             ChunkResult::Unloaded => None,
         }
@@ -323,7 +329,6 @@ impl ChunkHolder {
             }));
         }
 
-        let sender = self.sender.clone();
         let cache = cache.clone();
         let context = chunk_map.world_gen_context.clone();
         let task = step.task;
@@ -354,7 +359,7 @@ impl ChunkHolder {
                             task(context, step, &cache, self_clone);
                         })
                         .await;
-                        holder_for_notify.notify_status(target_status);
+                        holder_for_notify.finish_generation_status(target_status);
                     }
                 } else {
                     // Chunk doesn't exist - generate fresh
@@ -363,7 +368,7 @@ impl ChunkHolder {
                         task(context, step, &cache, self_clone);
                     })
                     .await;
-                    holder_for_notify.notify_status(target_status);
+                    holder_for_notify.finish_generation_status(target_status);
                 }
                 #[cfg(feature = "slow_chunk_gen")]
                 if SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
@@ -385,16 +390,7 @@ impl ChunkHolder {
                 })
                 .await;
 
-                sender.send_modify(|chunk| {
-                    if let ChunkAccess::Proto(chunk) = &*self_clone2.data.read() {
-                        chunk.set_status(target_status);
-                    }
-                    if let ChunkResult::Ok(s) = chunk
-                        && *s < target_status
-                    {
-                        *s = target_status;
-                    }
-                });
+                self_clone2.finish_generation_status(target_status);
                 #[cfg(feature = "slow_chunk_gen")]
                 if SLOW_CHUNK_GEN.load(Ordering::Relaxed) {
                     sleep(Duration::from_millis(200)).await;
@@ -455,16 +451,66 @@ impl ChunkHolder {
             use std::mem::replace;
             let owned = replace(chunk, ChunkAccess::Unloaded);
 
-            *chunk = match owned {
+            match owned {
                 ChunkAccess::Proto(proto) => {
                     let min_y = proto.min_y();
                     let height = proto.height();
-                    ChunkAccess::Full(LevelChunk::from_proto(proto, min_y, height, level))
+                    *chunk = ChunkAccess::Full(LevelChunk::from_proto(proto, min_y, height, level));
                 }
-                ChunkAccess::Full(full) => ChunkAccess::Full(full),
+                ChunkAccess::Full(full) => {
+                    *chunk = ChunkAccess::Full(full);
+                }
                 ChunkAccess::Unloaded => panic!("Chunk is unloaded, cannot upgrade to full"),
-            };
+            }
         });
+    }
+
+    fn post_process_generation(&self) {
+        let postprocessing = {
+            let chunk = self.data.read();
+            let ChunkAccess::Full(full) = &*chunk else {
+                return;
+            };
+            full.get_level().and_then(|world| {
+                full.take_postprocessing()
+                    .map(|postprocessing| (world, full.pos, full.min_y(), postprocessing))
+            })
+        };
+
+        if let Some((world, pos, min_y, postprocessing)) = postprocessing {
+            LevelChunk::post_process_generation(&world, pos, min_y, postprocessing);
+        }
+    }
+
+    /// Finishes a generated status on the async scheduler after the Rayon task returns.
+    fn finish_generation_status(&self, status: ChunkStatus) {
+        {
+            let stored_chunk = self.data.read();
+            if let ChunkAccess::Proto(proto_chunk) = &*stored_chunk
+                && proto_chunk.status() < status
+            {
+                proto_chunk.set_status(status);
+                stored_chunk.mark_dirty();
+            }
+        }
+
+        self.sender.send_modify(|chunk| match chunk {
+            ChunkResult::Ok(current_status) if *current_status < status => {
+                *current_status = status;
+            }
+            ChunkResult::Unloaded => {
+                *chunk = ChunkResult::Ok(status);
+            }
+            ChunkResult::Ok(_) => {}
+        });
+
+        self.post_publish_status_hooks(status);
+    }
+
+    fn post_publish_status_hooks(&self, status: ChunkStatus) {
+        if status == ChunkStatus::Full {
+            self.post_process_generation();
+        }
     }
 
     /// Inserts a chunk into the holder with a specific status.
@@ -479,12 +525,6 @@ impl ChunkHolder {
     /// The caller is responsible for notifying via the completion channel.
     pub(crate) fn insert_chunk_no_notify(&self, chunk: ChunkAccess) {
         self.data.with_write(|c| *c = chunk);
-    }
-
-    /// Notifies watchers that the chunk has reached a status.
-    /// Called by the drainer task after `insert_chunk_no_notify`.
-    pub fn notify_status(&self, status: ChunkStatus) {
-        self.sender.send_replace(ChunkResult::Ok(status));
     }
 
     /// Wakes all `await_chunk` watchers without changing the chunk result.

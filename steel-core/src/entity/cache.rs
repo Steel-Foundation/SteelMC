@@ -49,11 +49,7 @@ impl EntityCache {
         let uuid = entity.uuid();
         let weak = Arc::downgrade(entity);
         let pos = entity.position();
-        let section = SectionPos::new(
-            (pos.x as i32) >> 4,
-            (pos.y as i32) >> 4,
-            (pos.z as i32) >> 4,
-        );
+        let section = SectionPos::from_entity_pos(pos);
 
         // Add to ID lookup
         let _ = self.by_id.insert_sync(id, weak.clone());
