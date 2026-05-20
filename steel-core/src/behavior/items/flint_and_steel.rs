@@ -143,15 +143,23 @@ fn can_light(state: BlockStateId) -> bool {
     }
 
     let block = state.get_block();
-    REGISTRY
+    if REGISTRY
         .blocks
         .is_in_tag(block, &vanilla_block_tags::CAMPFIRES_TAG)
-        || REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::CANDLES_TAG)
-        || REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::CANDLE_CAKES_TAG)
+    {
+        return state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(false);
+    }
+
+    if REGISTRY
+        .blocks
+        .is_in_tag(block, &vanilla_block_tags::CANDLES_TAG)
+    {
+        return state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(false);
+    }
+
+    REGISTRY
+        .blocks
+        .is_in_tag(block, &vanilla_block_tags::CANDLE_CAKES_TAG)
 }
 
 fn flint_and_steel_pitch() -> f32 {
@@ -160,4 +168,63 @@ fn flint_and_steel_pitch() -> f32 {
 
 fn fire_charge_pitch() -> f32 {
     (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.0
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use steel_registry::{
+        REGISTRY, Registry,
+        blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        vanilla_blocks,
+    };
+
+    use super::can_light;
+
+    static INIT_REGISTRY: Once = Once::new();
+
+    fn init_registry() {
+        INIT_REGISTRY.call_once(|| {
+            let mut registry = Registry::new_vanilla();
+            registry.freeze();
+            let _ = REGISTRY.init(registry);
+        });
+    }
+
+    #[test]
+    fn can_light_rejects_waterlogged_campfires_and_candles() {
+        init_registry();
+
+        let waterlogged_campfire = vanilla_blocks::CAMPFIRE
+            .default_state()
+            .set_value(&BlockStateProperties::LIT, false)
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let dry_campfire =
+            waterlogged_campfire.set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        let waterlogged_candle = vanilla_blocks::CANDLE
+            .default_state()
+            .set_value(&BlockStateProperties::LIT, false)
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let dry_candle = waterlogged_candle.set_value(&BlockStateProperties::WATERLOGGED, false);
+
+        assert!(!can_light(waterlogged_campfire));
+        assert!(can_light(dry_campfire));
+        assert!(!can_light(waterlogged_candle));
+        assert!(can_light(dry_candle));
+    }
+
+    #[test]
+    fn can_light_accepts_unlit_candle_cakes() {
+        init_registry();
+
+        let unlit_candle_cake = vanilla_blocks::CANDLE_CAKE
+            .default_state()
+            .set_value(&BlockStateProperties::LIT, false);
+        let lit_candle_cake = unlit_candle_cake.set_value(&BlockStateProperties::LIT, true);
+
+        assert!(can_light(unlit_candle_cake));
+        assert!(!can_light(lit_candle_cake));
+    }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
+    REGISTRY,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
@@ -11,7 +11,7 @@ use steel_registry::{
     },
     entity_data::Direction,
     items::item::BlockHitResult,
-    vanilla_blocks, vanilla_item_tags,
+    vanilla_blocks,
 };
 use steel_utils::{
     BlockPos,
@@ -98,18 +98,6 @@ impl BlockBehavior for CandleBlock {
                 return InteractionResult::Pass;
             }
             let new_state = state.set_value(&LIT_PROPERTY, false);
-            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
-            return InteractionResult::Success;
-        }
-
-        if REGISTRY.items.is_in_tag(
-            inv.with_item(|item_stack| item_stack.item),
-            &vanilla_item_tags::CREEPER_IGNITERS_TAG,
-        ) {
-            if state.get_value(&LIT_PROPERTY) || state.get_value(&WATERLOGGED) {
-                return InteractionResult::Pass;
-            }
-            let new_state = state.set_value(&LIT_PROPERTY, true);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             return InteractionResult::Success;
         }

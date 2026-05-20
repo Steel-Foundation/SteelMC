@@ -106,15 +106,12 @@ impl BlockBehavior for CakeBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
-        inv: &mut InventoryAccess,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         if Self::eat(world, pos, state, player).consumes_action() {
             return InteractionResult::Success;
         }
 
-        if inv.with_item(|item| item.is_empty()) {
-            return InteractionResult::Fail;
-        }
         InteractionResult::Pass
     }
 
