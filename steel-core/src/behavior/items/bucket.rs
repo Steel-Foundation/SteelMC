@@ -59,26 +59,38 @@ impl ItemBehavior for BucketItem {
 /// inventory if the player doesn't already have one.
 fn consume_bucket(context: &mut UseItemContext, result_item: ItemRef) {
     let player = context.player;
-    if player.has_infinite_materials() {
-        // Creative: give the result item only if the player doesn't already have one.
+    context.inv.with_guard(|guard| {
         let inv_id = ContainerId::from_arc(&player.inventory);
-        let already_has = context.inv.guard().get(inv_id).is_some_and(|inv| {
-            (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
-        });
-        if !already_has {
-            let result_stack = ItemStack::new(result_item);
-            player.add_item_or_drop_with_guard(context.inv.guard(), result_stack);
-        }
-        return;
-    }
 
-    let result_stack = ItemStack::new(result_item);
-    if context.inv.item().count() > 1 {
-        context.inv.item().shrink(1);
-        player.add_item_or_drop_with_guard(context.inv.guard(), result_stack);
-    } else {
-        context.inv.item().set_item(&result_item.key);
-    }
+        if player.has_infinite_materials() {
+            // Creative: give the result item only if the player doesn't already have one.
+            let already_has = guard.get(inv_id).is_some_and(|inv| {
+                (0..inv.get_container_size()).any(|i| inv.get_item(i).item == result_item)
+            });
+            if !already_has {
+                player.add_item_or_drop_with_guard(guard, ItemStack::new(result_item));
+            }
+            return;
+        }
+
+        let should_add_result = {
+            let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
+                return;
+            };
+            let hand_item = inv.get_item_in_hand_mut(context.hand);
+            if hand_item.count() > 1 {
+                hand_item.shrink(1);
+                true
+            } else {
+                hand_item.set_item(&result_item.key);
+                false
+            }
+        };
+
+        if should_add_result {
+            player.add_item_or_drop_with_guard(guard, ItemStack::new(result_item));
+        }
+    });
 }
 
 fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {

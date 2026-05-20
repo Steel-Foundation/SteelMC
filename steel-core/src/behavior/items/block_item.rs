@@ -59,13 +59,12 @@ impl BlockItem {
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-            let item_stack = context.inv.item();
             placed_behavior.set_placed_by(
                 placed_state,
                 context.world,
                 place_pos,
                 Some(context.player),
-                item_stack,
+                &context.inv,
             );
         }
 
@@ -79,7 +78,7 @@ impl BlockItem {
             Some(context.player.id),
         );
 
-        context.inv.item().shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }

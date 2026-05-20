@@ -52,7 +52,7 @@ impl ItemBehavior for EnderEyeItem {
             .world
             .level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
 
-        context.inv.item().shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }

@@ -14,7 +14,6 @@ use steel_registry::{
         properties::{BlockStateProperties, Direction, DoorHingeSide, DoubleBlockHalf},
         shapes,
     },
-    item_stack::ItemStack,
     vanilla_blocks,
 };
 use steel_utils::{
@@ -27,6 +26,7 @@ use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
+        InventoryAccess,
     },
     fluid::fluid_state_to_block,
     player::Player,
@@ -260,7 +260,7 @@ impl BlockBehavior for DoorBlock {
         world: &Arc<World>,
         pos: BlockPos,
         _player: Option<&Player>,
-        _item_stack: &ItemStack,
+        _inv: &InventoryAccess,
     ) {
         world.set_block(
             pos.above(),
@@ -292,6 +292,7 @@ impl BlockBehavior for DoorBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         if !self.can_open_by_hand {
             return InteractionResult::Pass;
@@ -412,10 +413,9 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         world: &Arc<World>,
         pos: BlockPos,
         player: Option<&Player>,
-        item_stack: &ItemStack,
+        inv: &InventoryAccess,
     ) {
-        self.door()
-            .set_placed_by(state, world, pos, player, item_stack);
+        self.door().set_placed_by(state, world, pos, player, inv);
     }
 
     fn player_will_destroy(
@@ -435,9 +435,10 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         pos: BlockPos,
         player: &Player,
         hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         self.door()
-            .use_without_item(state, world, pos, player, hit_result)
+            .use_without_item(state, world, pos, player, hit_result, inv)
     }
 
     fn handle_neighbor_changed(

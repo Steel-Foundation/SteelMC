@@ -12,6 +12,7 @@ use std::fs;
 use syn::Ident;
 
 mod blocks;
+mod candle_cakes;
 mod common;
 mod items;
 mod strippables;
@@ -40,6 +41,8 @@ pub fn main() {
         blocks::build(&classes.blocks),
     )
     .expect("Failed to write blocks.rs");
+    fs::write(format!("{out_dir}/candle_cakes.rs"), candle_cakes::build())
+        .expect("Failed to write candle_cakes.rs");
     fs::write(format!("{out_dir}/items.rs"), items::build(&classes.items))
         .expect("Failed to write items.rs");
     fs::write(format!("{out_dir}/waxables.rs"), waxables::build())

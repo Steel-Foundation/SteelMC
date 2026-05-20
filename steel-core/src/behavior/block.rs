@@ -12,6 +12,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
@@ -121,6 +122,8 @@ pub trait BlockBehavior: Send + Sync {
     /// Called by block items after this block has been placed by an entity.
     ///
     /// Vanilla parity: `Block.setPlacedBy(Level, BlockPos, BlockState, LivingEntity, ItemStack)`.
+    /// Steel passes lazy inventory access instead of a borrowed stack so the
+    /// caller does not hold the inventory lock while dispatching block behavior.
     /// This is intentionally separate from [`on_place`], which fires for any
     /// world block mutation.
     #[expect(
@@ -133,7 +136,7 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         player: Option<&Player>,
-        item_stack: &ItemStack,
+        inv: &InventoryAccess,
     ) {
         // Default: no-op
     }
@@ -192,13 +195,13 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hand: InteractionHand,
         hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         InteractionResult::TryEmptyHandInteraction
     }
@@ -219,6 +222,7 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         player: &Player,
         hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         InteractionResult::Pass
     }

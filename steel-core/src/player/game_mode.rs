@@ -20,14 +20,14 @@ use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::TextComponent;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockHitResult, ITEM_BEHAVIORS, InteractionResult, UseOnContext,
+    BLOCK_BEHAVIORS, BlockHitResult, ITEM_BEHAVIORS, InteractionResult, InventoryAccess,
+    UseOnContext,
 };
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
 use crate::command::commands::gamemode::get_gamemode_translation;
 use crate::entity::Entity;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::Menu;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
@@ -84,11 +84,17 @@ pub fn use_item_on(
         };
         let behavior = block_behaviors.get_behavior(block);
 
-        // Brief lock for an immutable snapshot used during block interaction check
-        let item_snapshot = player.inventory.lock().get_item_in_hand(hand).clone();
+        let mut inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
 
-        let block_result =
-            behavior.use_item_on(&item_snapshot, state, world, pos, player, hand, hit_result);
+        let block_result = behavior.use_item_on(
+            state,
+            world,
+            pos,
+            player,
+            hand,
+            hit_result,
+            &mut inventory_access,
+        );
 
         if block_result.consumes_action() {
             return block_result;
@@ -97,7 +103,14 @@ pub fn use_item_on(
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
-            let empty_result = behavior.use_without_item(state, world, pos, player, hit_result);
+            let empty_result = behavior.use_without_item(
+                state,
+                world,
+                pos,
+                player,
+                hit_result,
+                &mut inventory_access,
+            );
 
             if empty_result.consumes_action() {
                 return empty_result;
@@ -105,34 +118,31 @@ pub fn use_item_on(
         }
     }
 
-    // Item use (block placement, etc.) — acquire inventory lock via ContainerLockGuard
-    let inv_ref = ContainerRef::PlayerInventory(player.inventory.clone());
-    let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
-
-    let inv_id = inv_ref.container_id();
-
-    let is_empty = {
-        let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
-            return InteractionResult::Pass;
-        };
-        inv.get_item_in_hand(hand).is_empty()
-    };
+    let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
+    let (is_empty, original_count, item_ref) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
 
     if !is_empty {
         // TODO: Check item cooldowns
         // if player.getCooldowns().isOnCooldown(item_stack.item) { return Pass }
 
-        let mut context =
-            UseOnContext::new(player, hand, hit_result.clone(), world, &mut guard, inv_id);
-
-        let original_count = context.inv.item().count;
-        let item_ref = context.inv.item().item;
+        let mut context = UseOnContext::new(
+            player,
+            hand,
+            hit_result.clone(),
+            world,
+            player.inventory.clone(),
+        );
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
 
         // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() && context.inv.item().count < original_count {
-            context.inv.item().count = original_count;
+        if player.has_infinite_materials() {
+            context.inv.with_item(|item| {
+                if item.count < original_count {
+                    item.count = original_count;
+                }
+            });
         }
 
         return result;
@@ -153,33 +163,27 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
     // TODO: Check item cooldowns
     // if player.getCooldowns().isOnCooldown(item_stack) { return InteractionResult::Pass }
 
-    let inv_ref = ContainerRef::PlayerInventory(player.inventory.clone());
-    let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
-    let inv_id = inv_ref.container_id();
-
-    let is_empty = {
-        let Some(inv) = guard.get_player_inventory_mut(inv_id) else {
-            return InteractionResult::Pass;
-        };
-        inv.get_item_in_hand(hand).is_empty()
-    };
+    let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
+    let (is_empty, original_count, item_ref) =
+        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item));
 
     if !is_empty {
         let mut context =
-            crate::behavior::UseItemContext::new(player, hand, world, &mut guard, inv_id);
-
-        let original_count = context.inv.item().count;
+            crate::behavior::UseItemContext::new(player, hand, world, player.inventory.clone());
 
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
-        let item_ref = context.inv.item().item;
         let item_behavior = item_behaviors.get_behavior(item_ref);
 
         let result = item_behavior.use_item(&mut context);
 
         // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() && context.inv.item().count < original_count {
-            context.inv.item().count = original_count;
+        if player.has_infinite_materials() {
+            context.inv.with_item(|item| {
+                if item.count < original_count {
+                    item.count = original_count;
+                }
+            });
         }
 
         return result;

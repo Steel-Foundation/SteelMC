@@ -453,24 +453,24 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
         return;
     };
 
-    // Get the player's tool
-    let tool = player.inventory.lock().get_selected_item().clone();
-
-    // Create loot context
     let mut rng = rand::rng();
     let luck = player
         .attributes
         .lock()
         .get_value(vanilla_attributes::LUCK)
         .unwrap_or(0.0) as f32;
-    let mut ctx = LootContext::new(&mut rng)
-        .with_luck(luck)
-        .with_block_state(state)
-        .with_tool(&tool)
-        .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
 
-    // Generate drops
-    let drops = loot_table.get_random_items(&mut ctx);
+    let drops = {
+        let inventory = player.inventory.lock();
+        let tool = inventory.get_selected_item();
+        let mut ctx = LootContext::new(&mut rng)
+            .with_luck(luck)
+            .with_block_state(state)
+            .with_tool(tool)
+            .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
+
+        loot_table.get_random_items(&mut ctx)
+    };
 
     // Spawn each dropped item using the player's world reference (Arc<World>)
     for item in drops {

@@ -128,13 +128,13 @@ impl PlayerInventory {
         f(&self.items[self.selected as usize])
     }
 
-    /// Returns a clone of the currently selected item (main hand).
+    /// Returns the currently selected item (main hand).
     #[must_use]
     pub const fn get_selected_item(&self) -> &ItemStack {
         &self.items[self.selected as usize]
     }
 
-    /// Returns a clone of the currently selected item (main hand).
+    /// Returns the currently selected item (main hand).
     #[must_use]
     pub const fn get_selected_item_mut(&mut self) -> &mut ItemStack {
         &mut self.items[self.selected as usize]

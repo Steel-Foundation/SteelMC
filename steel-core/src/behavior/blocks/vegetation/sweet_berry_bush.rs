@@ -17,7 +17,7 @@ use steel_utils::{
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockPlaceContext, InteractionResult,
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
@@ -113,16 +113,18 @@ impl BlockBehavior for SweetBerryBushBlock {
 
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
         state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
         _player: &Player,
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
+        let is_bone_meal =
+            inv.with_item(|item_stack| item_stack.is(&vanilla_items::ITEMS.bone_meal));
         let age = state.get_value(&BlockStateProperties::AGE_3);
-        if age != 3 && item_stack.is(&vanilla_items::ITEMS.bone_meal) {
+        if age != 3 && is_bone_meal {
             InteractionResult::Pass
         } else {
             InteractionResult::TryEmptyHandInteraction
@@ -136,6 +138,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age <= 1 {

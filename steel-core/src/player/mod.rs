@@ -260,7 +260,7 @@ pub struct Player {
     living_base: SyncMutex<LivingEntityBase>,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
-    food_data: SyncMutex<FoodData>,
+    pub food_data: SyncMutex<FoodData>,
 
     /// Delta-tracking state for `CSetHealth` deduplication.
     health_sync: SyncMutex<HealthSyncState>,
@@ -935,6 +935,13 @@ impl Player {
                 // TODO: implement stats
             }
         }
+    }
+
+    /// Returns whether the Player can eat
+    pub fn can_eat(&self, can_always_eat: bool) -> bool {
+        let invulnerable = { self.abilities.lock().invulnerable };
+        let needs_foods = { self.food_data.lock().needs_food() };
+        invulnerable || can_always_eat || needs_foods
     }
 
     /// Cleans up player resources.

@@ -18,8 +18,8 @@ pub use building::{
 };
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
-    CandleBlock, CeilingHangingSignBlock, StandingSignBlock, TorchBlock, WallHangingSignBlock,
-    WallSignBlock, WallTorchBlock,
+    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
+    TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
 };
 pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};

@@ -23,7 +23,7 @@ pub use bonemeal::BoneMealItem;
 pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeItem;
-pub use flint_and_steel::FlintAndSteelItem;
+pub use flint_and_steel::{FireChargeItem, FlintAndSteelItem};
 pub use hoe::HoeItem;
 pub use honeycomb::HoneycombItem;
 pub use shovel::ShovelItem;

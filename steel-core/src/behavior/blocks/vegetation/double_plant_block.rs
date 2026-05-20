@@ -3,7 +3,6 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
-use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, math::Axis, types::UpdateFlags};
 
@@ -11,7 +10,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::default_surviving_state;
 use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
-use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -93,7 +92,7 @@ impl BlockBehavior for DoublePlantBlock {
         world: &Arc<World>,
         pos: BlockPos,
         _player: Option<&Player>,
-        _item_stack: &ItemStack,
+        _inv: &InventoryAccess,
     ) {
         let upper_pos = pos.above();
         let upper_state = Self::copy_waterlogged_from(

@@ -8,7 +8,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
-use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -56,10 +56,9 @@ impl BlockBehavior for TallFlowerBlock {
         world: &Arc<World>,
         pos: BlockPos,
         player: Option<&Player>,
-        item_stack: &ItemStack,
+        inv: &InventoryAccess,
     ) {
-        self.base
-            .set_placed_by(state, world, pos, player, item_stack);
+        self.base.set_placed_by(state, world, pos, player, inv);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

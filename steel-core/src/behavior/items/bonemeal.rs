@@ -4,7 +4,6 @@ use rand::RngExt;
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_shape_full_block},
-    item_stack::ItemStack,
     vanilla_blocks,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
@@ -21,7 +20,7 @@ use crate::{
 pub struct BoneMealItem;
 
 impl BoneMealItem {
-    fn grow(item_stack: &mut ItemStack, world: &Arc<World>, pos: BlockPos) -> bool {
+    fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {
             return false;
@@ -35,19 +34,13 @@ impl BoneMealItem {
             if bonemealable.is_bonemeal_success(state, world, &mut rng, pos) {
                 bonemealable.perform_bonemeal(state, world, &mut rng, pos);
             }
-            item_stack.shrink(1);
 
             return true;
         }
         false
     }
 
-    fn grow_water_plant(
-        item_stack: &mut ItemStack,
-        world: &Arc<World>,
-        pos: BlockPos,
-        _clicked_face: Direction,
-    ) -> bool {
+    fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
         let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
             return false;
@@ -99,19 +92,14 @@ impl BoneMealItem {
             }
         }
 
-        item_stack.shrink(1);
-
         true
     }
 }
 
 impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if Self::grow(
-            context.inv.item(),
-            context.world,
-            context.hit_result.block_pos,
-        ) {
+        if Self::grow(context.world, context.hit_result.block_pos) {
+            context.inv.with_item(|item| item.shrink(1));
             // TODO: particles
             return InteractionResult::Success;
         }
@@ -119,7 +107,6 @@ impl ItemBehavior for BoneMealItem {
         let is_clicked_face_sturdy = state.is_face_sturdy(context.hit_result.direction);
         if is_clicked_face_sturdy
             && Self::grow_water_plant(
-                context.inv.item(),
                 context.world,
                 context
                     .hit_result
@@ -128,6 +115,7 @@ impl ItemBehavior for BoneMealItem {
                 context.hit_result.direction,
             )
         {
+            context.inv.with_item(|item| item.shrink(1));
             return InteractionResult::Success;
         }
         InteractionResult::Pass
