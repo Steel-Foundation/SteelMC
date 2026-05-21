@@ -46,7 +46,7 @@ impl ItemStack {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            item: &ITEMS.air,
+            item: ITEMS.air,
             count: 0,
             patch: DataComponentPatch::new(),
         }
@@ -81,13 +81,13 @@ impl ItemStack {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.item == &ITEMS.air || self.count <= 0
+        self.item == ITEMS.air || self.count <= 0
     }
 
     #[must_use]
     pub fn item(&self) -> ItemRef {
         if self.is_empty() {
-            &ITEMS.air
+            ITEMS.air
         } else {
             self.item
         }
@@ -797,7 +797,7 @@ impl ReadFrom for ItemStack {
         }
 
         let item_id = VarInt::read(data)?.0 as usize;
-        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let item = REGISTRY.items.by_id(item_id).unwrap_or(ITEMS.air);
 
         // Read DataComponentPatch
         let patch = DataComponentPatch::read(data)?;
@@ -818,7 +818,7 @@ impl ItemStack {
         }
 
         let item_id = VarInt::read(data)?.0 as usize;
-        let item = REGISTRY.items.by_id(item_id).unwrap_or(&ITEMS.air);
+        let item = REGISTRY.items.by_id(item_id).unwrap_or(ITEMS.air);
         let patch = DataComponentPatch::read_delimited(data)?;
 
         Ok(Self { item, count, patch })

@@ -556,7 +556,7 @@ impl StructurePiecePlacer {
             direction,
             region.weak_world(),
         ));
-        entity.set_item(ItemStack::new(&vanilla_items::ITEMS.elytra));
+        entity.set_item(ItemStack::new(vanilla_items::ITEMS.elytra));
         let _ = region.add_fresh_entity(entity);
     }
 
