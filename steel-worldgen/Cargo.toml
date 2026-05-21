@@ -10,6 +10,7 @@ build = "build/build.rs"
 # Internal crates
 steel-registry.workspace = true
 steel-utils.workspace = true
+steel-math.workspace = true
 
 # Data structures
 rustc-hash.workspace = true
@@ -30,4 +31,5 @@ rustc-hash.workspace = true
 workspace = true
 
 [features]
+default = ["fmt"]
 fmt = []

@@ -38,6 +38,13 @@ pub fn main() {
         fs::write(&path, content).expect("failed to write generated worldgen file");
     }
 
+    if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let _ = Command::new("rustfmt").arg(path).output();
+        }
+    }
+
     let df = density_functions::build();
     let df_dir = out_dir.join("vanilla_density_functions");
     fs::create_dir_all(&df_dir).expect("failed to create generated density function directory");

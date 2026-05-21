@@ -12,8 +12,8 @@
 use std::marker::PhantomData;
 use std::mem;
 
+use steel_math::lerp;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
-use steel_worldgen::math::lerp;
 
 use crate::worldgen::noise::beardifier::Beardifier;
 

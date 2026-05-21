@@ -6,8 +6,8 @@ use crate::worldgen::state_resolver::WorldgenStateResolver;
 use smallvec::SmallVec;
 use std::f32::consts::PI;
 use std::time::Instant;
+use steel_math::mth;
 use steel_utils::PackedSectionBlockPos;
-use steel_utils::math::mth;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_ore_feature(

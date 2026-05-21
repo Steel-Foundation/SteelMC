@@ -2,15 +2,16 @@ cargo-features = ["codegen-backend"]
 [workspace]
 resolver = "2"
 members = [
-    "steel",
-    "steel-login",
-    "steel-macros",
-    "steel-protocol",
-    "steel-registry",
-    "steel-worldgen",
-    "steel-utils",
-    "steel-core",
-    "steel-crypto",
+  "steel",
+  "steel-login",
+  "steel-macros",
+  "steel-protocol",
+  "steel-registry",
+  "steel-worldgen",
+  "steel-utils",
+  "steel-core",
+  "steel-crypto",
+  "steel-math",
 ]
 
 [workspace.package]
@@ -29,18 +30,19 @@ steel-protocol = { path = "steel-protocol" }
 steel-registry = { path = "steel-registry" }
 steel-utils = { path = "steel-utils" }
 steel-worldgen = { path = "steel-worldgen" }
+steel-math = { path = "steel-math" }
 
 # Async runtime
 tokio = { version = "1.51", features = [
-    "macros",
-    "net",
-    "rt-multi-thread",
-    "sync",
-    "io-std",
-    "fs",
-    "io-util",
-    "time",
-    "signal",
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "sync",
+  "io-std",
+  "fs",
+  "io-util",
+  "time",
+  "signal",
 ] }
 tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
@@ -83,11 +85,11 @@ uuid = { version = "1.23", features = ["serde", "v4"] }
 log = "0.4.29"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
-    "env-filter",
-    "fmt",
-    "ansi",
-    "std",
-    "tracing-log",
+  "env-filter",
+  "fmt",
+  "ansi",
+  "std",
+  "tracing-log",
 ] }
 tracing-log = "0.2"
 opentelemetry = "0.31"
@@ -97,8 +99,8 @@ tracing-opentelemetry = "0.32"
 
 # Networking
 reqwest = { version = "0.13", features = [
-    "json",
-    "rustls",
+  "json",
+  "rustls",
 ], default-features = false }
 
 # Cryptography
@@ -113,9 +115,9 @@ base64 = "0.22.1"
 hex = "0.4.3"
 rsa-der = "0.3.0"
 text_components = { git = "https://github.com/Steel-Foundation/TextComponents.git", features = [
-    "custom",
-    "nbt",
-    "serde",
+  "custom",
+  "nbt",
+  "serde",
 ] }
 
 # Compression

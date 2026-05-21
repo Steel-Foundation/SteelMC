@@ -6,9 +6,11 @@ use std::simd::cmp::SimdPartialOrd;
 use std::simd::f64x4;
 use std::simd::{Select, StdFloat};
 
-use crate::math::{floor, lerp2, lerp3, smoothstep, smoothstep_derivative};
-use crate::noise::GRADIENT;
 use crate::random::Random;
+use steel_math::{
+    GRADIENT, floor, grad_dot, grad_dot_4x, lerp2, lerp3, lerp3_4x, smoothstep, smoothstep_4x,
+    smoothstep_derivative,
+};
 
 /// Improved Perlin noise generator.
 ///
@@ -436,69 +438,6 @@ impl ImprovedNoise {
 // ---------------------------------------------------------------------------
 // SIMD helpers (4-wide f64)
 // ---------------------------------------------------------------------------
-
-/// Smoothstep for 4 lanes: 6x^5 - 15x^4 + 10x^3
-#[inline]
-fn smoothstep_4x(x: f64x4) -> f64x4 {
-    x * x * x * (x * (x * f64x4::splat(6.0) - f64x4::splat(15.0)) + f64x4::splat(10.0))
-}
-
-/// Trilinear interpolation for 4 lanes.
-#[inline]
-fn lerp_4x(alpha: f64x4, a: f64x4, b: f64x4) -> f64x4 {
-    a + alpha * (b - a)
-}
-
-#[inline]
-fn lerp2_4x(a1: f64x4, a2: f64x4, x00: f64x4, x10: f64x4, x01: f64x4, x11: f64x4) -> f64x4 {
-    lerp_4x(a2, lerp_4x(a1, x00, x10), lerp_4x(a1, x01, x11))
-}
-
-#[inline]
-#[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
-fn lerp3_4x(
-    a1: f64x4,
-    a2: f64x4,
-    a3: f64x4,
-    x000: f64x4,
-    x100: f64x4,
-    x010: f64x4,
-    x110: f64x4,
-    x001: f64x4,
-    x101: f64x4,
-    x011: f64x4,
-    x111: f64x4,
-) -> f64x4 {
-    lerp_4x(
-        a3,
-        lerp2_4x(a1, a2, x000, x100, x010, x110),
-        lerp2_4x(a1, a2, x001, x101, x011, x111),
-    )
-}
-
-/// Gather gradient components for 4 hashes into separate x/y/z SIMD vectors,
-/// then compute the dot product with the given position vectors.
-#[inline]
-fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
-    let mut gx = [0.0f64; 4];
-    let mut gy = [0.0f64; 4];
-    let mut gz = [0.0f64; 4];
-    for i in 0..4 {
-        let g = &GRADIENT[hashes[i] & 15];
-        gx[i] = g[0];
-        gy[i] = g[1];
-        gz[i] = g[2];
-    }
-    f64x4::from_array(gx) * x + f64x4::from_array(gy) * y + f64x4::from_array(gz) * z
-}
-
-/// Calculate the dot product of a gradient vector and the position vector.
-#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
-#[inline(always)]
-fn grad_dot(hash: usize, x: f64, y: f64, z: f64) -> f64 {
-    let g = &GRADIENT[hash & 15];
-    g[0] * x + g[1] * y + g[2] * z
-}
 
 #[cfg(test)]
 mod tests {

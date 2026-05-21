@@ -6,9 +6,9 @@
 
 use std::f32::consts::{PI, TAU};
 
+use steel_math::mth;
 use steel_registry::carver::CanyonCarverConfiguration;
 use steel_utils::ChunkPos;
-use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 

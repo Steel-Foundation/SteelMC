@@ -14,7 +14,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, Direction, math::Axis};
+use steel_utils::{BlockPos, Direction, axis::Axis};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase};

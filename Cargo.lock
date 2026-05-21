@@ -2793,6 +2793,7 @@ dependencies = [
  "smallvec",
  "steel-crypto",
  "steel-macros",
+ "steel-math",
  "steel-protocol",
  "steel-registry",
  "steel-utils",
@@ -2857,6 +2858,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "steel-math"
+version = "0.6.3+mc26.1"
 
 [[package]]
 name = "steel-protocol"
@@ -2940,6 +2945,7 @@ dependencies = [
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",
+ "steel-math",
  "steel-registry",
  "steel-utils",
 ]

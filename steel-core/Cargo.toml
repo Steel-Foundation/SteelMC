@@ -20,6 +20,7 @@ steel-protocol.workspace = true
 steel-registry.workspace = true
 steel-utils.workspace = true
 steel-worldgen.workspace = true
+steel-math.workspace = true
 
 # Async runtime
 tokio.workspace = true

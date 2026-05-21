@@ -7,10 +7,10 @@
 
 use std::sync::LazyLock;
 
+use steel_math::map_clamped;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::template_pool::Projection;
 use steel_utils::BoundingBox;
-use steel_worldgen::math::map_clamped;
 
 use crate::world::structure::StructureStart;
 use crate::world::structure::jigsaw::JigsawJunction;

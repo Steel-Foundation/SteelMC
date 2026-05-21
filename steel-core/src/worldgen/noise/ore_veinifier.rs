@@ -4,12 +4,12 @@
 //! (`vein_toggle`, `vein_ridged`, `vein_gap`) per solid block to decide whether
 //! to replace stone with copper/iron ore, raw ore blocks, or filler (granite/tuff).
 
+use steel_math::map_clamped;
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 use steel_worldgen::density::{ColumnCache, DimensionNoises};
-use steel_worldgen::math::map_clamped;
 
 /// Veininess magnitude must exceed this (after edge roundoff) to place any vein block.
 const VEININESS_THRESHOLD: f64 = 0.4;

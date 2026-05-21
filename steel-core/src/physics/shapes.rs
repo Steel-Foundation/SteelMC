@@ -6,7 +6,7 @@
 use glam::IVec3;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABB, AABBd, VoxelShape, is_shape_full_block};
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
 ///

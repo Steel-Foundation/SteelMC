@@ -11,7 +11,7 @@ use steel_registry::{
     vanilla_game_events,
 };
 use steel_utils::{
-    math::Axis,
+    axis::Axis,
     types::{InteractionHand, UpdateFlags},
 };
 

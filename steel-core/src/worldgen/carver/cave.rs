@@ -8,9 +8,9 @@
 
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
+use steel_math::mth;
 use steel_registry::carver::CaveCarverConfiguration;
 use steel_utils::ChunkPos;
-use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 

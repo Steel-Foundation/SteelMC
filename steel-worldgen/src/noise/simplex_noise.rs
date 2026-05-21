@@ -3,9 +3,8 @@
 //! Used by the End islands density function for terrain generation in The End dimension.
 //! Supports 2D and 3D sampling with the same gradient vectors as Perlin noise.
 
-use crate::math::floor;
-use crate::noise::GRADIENT;
 use crate::random::Random;
+use steel_math::{corner_noise_3d, floor};
 
 #[expect(
     clippy::unreadable_literal,
@@ -68,24 +67,6 @@ impl SimplexNoise {
         self.p[(x & 0xFF) as usize]
     }
 
-    /// Dot product of gradient vector and offset vector.
-    #[inline]
-    fn dot(g: &[f64; 3], x: f64, y: f64, z: f64) -> f64 {
-        g[0] * x + g[1] * y + g[2] * z
-    }
-
-    /// Compute corner noise contribution for a simplex vertex.
-    #[inline]
-    fn corner_noise_3d(index: usize, x: f64, y: f64, z: f64, base: f64) -> f64 {
-        let t0 = base - x * x - y * y - z * z;
-        if t0 < 0.0 {
-            0.0
-        } else {
-            let t0 = t0 * t0;
-            t0 * t0 * Self::dot(&GRADIENT[index], x, y, z)
-        }
-    }
-
     /// Sample 2D simplex noise at the given coordinates.
     ///
     /// Returns a value typically in the range `[-1, 1]` (scaled by 70).
@@ -112,9 +93,9 @@ impl SimplexNoise {
         let gi1 = (self.p(ii + i1 + self.p(jj + j1)) % 12) as usize;
         let gi2 = (self.p(ii + 1 + self.p(jj + 1)) % 12) as usize;
 
-        let n0 = Self::corner_noise_3d(gi0, x0, y0, 0.0, 0.5);
-        let n1 = Self::corner_noise_3d(gi1, x1, y1, 0.0, 0.5);
-        let n2 = Self::corner_noise_3d(gi2, x2, y2, 0.0, 0.5);
+        let n0 = corner_noise_3d(gi0, x0, y0, 0.0, 0.5);
+        let n1 = corner_noise_3d(gi1, x1, y1, 0.0, 0.5);
+        let n2 = corner_noise_3d(gi2, x2, y2, 0.0, 0.5);
 
         70.0 * (n0 + n1 + n2)
     }
@@ -177,10 +158,10 @@ impl SimplexNoise {
         let gi2 = (self.p(ii + i2 + self.p(jj + j2 + self.p(kk + k2))) % 12) as usize;
         let gi3 = (self.p(ii + 1 + self.p(jj + 1 + self.p(kk + 1))) % 12) as usize;
 
-        let n0 = Self::corner_noise_3d(gi0, x0, y0, z0, 0.6);
-        let n1 = Self::corner_noise_3d(gi1, x1, y1, z1, 0.6);
-        let n2 = Self::corner_noise_3d(gi2, x2, y2, z2, 0.6);
-        let n3 = Self::corner_noise_3d(gi3, x3, y3, z3, 0.6);
+        let n0 = corner_noise_3d(gi0, x0, y0, z0, 0.6);
+        let n1 = corner_noise_3d(gi1, x1, y1, z1, 0.6);
+        let n2 = corner_noise_3d(gi2, x2, y2, z2, 0.6);
+        let n3 = corner_noise_3d(gi3, x3, y3, z3, 0.6);
 
         32.0 * (n0 + n1 + n2 + n3)
     }

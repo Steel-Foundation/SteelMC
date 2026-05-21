@@ -8,7 +8,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags;
 use steel_registry::vanilla_blocks;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_items};
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;

@@ -6,7 +6,7 @@ use steel_registry::{
     },
     vanilla_block_tags, vanilla_blocks,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, math::Axis};
+use steel_utils::{BlockPos, BlockStateId, Direction, axis::Axis};
 
 use crate::{
     behavior::BlockBehavior,

@@ -10,14 +10,14 @@ use std::{cell::Cell, sync::LazyLock};
 
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use steel_math::lerp2;
+use steel_math::mth;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::ChunkPos;
-use steel_utils::math::mth;
 use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 use steel_worldgen::density::DimensionNoises;
-use steel_worldgen::math::lerp2;
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
 use crate::chunk::{

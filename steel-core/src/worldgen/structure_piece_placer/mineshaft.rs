@@ -7,7 +7,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{
     Registry, RegistryExt, TaggedRegistryExt, vanilla_biome_tags, vanilla_blocks,
 };
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, types::UpdateFlags};

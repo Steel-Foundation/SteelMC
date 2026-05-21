@@ -7,12 +7,12 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
+use steel_math::{clamp, map, map_clamped};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
-use steel_worldgen::math::{clamp, map, map_clamped};
 
 /// Deferred [`Aquifer`]. Used by `create_structures` so chunks where no structure
 /// queries the aquifer skip its (expensive) `max_preliminary_surface_level` scan.

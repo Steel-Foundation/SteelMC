@@ -1,7 +1,7 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use std::f32::consts::{PI, TAU};
-use steel_utils::math::mth;
+use steel_math::mth;
 use steel_utils::value_providers::FloatProvider;
 
 struct LargeDripstone {

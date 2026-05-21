@@ -19,26 +19,6 @@ pub use blended_noise::BlendedNoise;
 pub use end_islands::EndIslands;
 pub use improved_noise::ImprovedNoise;
 pub use normal_noise::NormalNoise;
-pub use perlin_noise::{PerlinNoise, wrap as perlin_wrap};
+pub use perlin_noise::PerlinNoise;
 pub use perlin_simplex_noise::PerlinSimplexNoise;
 pub use simplex_noise::SimplexNoise;
-
-/// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
-pub(crate) const GRADIENT: [[f64; 3]; 16] = [
-    [1.0, 1.0, 0.0],
-    [-1.0, 1.0, 0.0],
-    [1.0, -1.0, 0.0],
-    [-1.0, -1.0, 0.0],
-    [1.0, 0.0, 1.0],
-    [-1.0, 0.0, 1.0],
-    [1.0, 0.0, -1.0],
-    [-1.0, 0.0, -1.0],
-    [0.0, 1.0, 1.0],
-    [0.0, -1.0, 1.0],
-    [0.0, 1.0, -1.0],
-    [0.0, -1.0, -1.0],
-    [1.0, 1.0, 0.0],
-    [0.0, -1.0, 1.0],
-    [-1.0, 1.0, 0.0],
-    [0.0, -1.0, -1.0],
-];
