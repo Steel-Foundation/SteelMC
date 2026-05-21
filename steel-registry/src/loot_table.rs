@@ -1998,7 +1998,7 @@ mod tests {
         for seed in 0u64..100 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let mut ctx = LootContext::new(&mut rng).with_explosion(4.0);
-            let mut item = ItemStack::with_count(&crate::vanilla_items::ITEMS.stone, initial_count);
+            let mut item = ItemStack::with_count(crate::vanilla_items::ITEMS.stone, initial_count);
             cond_func.function.apply(&mut item, &mut ctx);
             total_survived += item.count;
         }
