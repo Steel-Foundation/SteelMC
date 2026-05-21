@@ -212,10 +212,14 @@ impl LevelChunk {
         let structure_starts = proto_chunk.structure_starts.into_inner();
         let structure_references = proto_chunk.structure_references.into_inner();
         let postprocessing = proto_chunk.postprocessing.into_inner();
+        let block_ticks = proto_chunk.block_ticks.into_inner();
+        let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
+        let block_entities = proto_chunk.block_entities;
+        let entities = proto_chunk.entities;
 
         Self::populate_poi(&level, &proto_chunk.sections, proto_chunk.pos, min_y);
 
-        Self {
+        let chunk = Self {
             sections: proto_chunk.sections,
             pos: proto_chunk.pos,
             dirty: AtomicBool::new(proto_chunk.dirty.load(Ordering::Acquire)),
@@ -223,14 +227,16 @@ impl LevelChunk {
             min_y,
             height,
             level,
-            block_entities: BlockEntityStorage::new(),
-            entities: EntityStorage::new(),
-            block_ticks: SyncMutex::new(BlockTickList::new()),
-            fluid_ticks: SyncMutex::new(FluidTickList::new()),
+            block_entities,
+            entities,
+            block_ticks: SyncMutex::new(block_ticks),
+            fluid_ticks: SyncMutex::new(fluid_ticks),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             postprocessing: SyncMutex::new(postprocessing),
-        }
+        };
+        let _ = chunk.register_existing_entities();
+        chunk
     }
 
     /// Creates a new `LevelChunk` that was loaded from disk (not dirty).
@@ -472,33 +478,48 @@ impl LevelChunk {
     ///
     /// Returns `false` if the world reference is no longer valid.
     pub fn add_and_register_entity(&self, entity: SharedEntity) -> bool {
-        use crate::entity::EntityChunkCallback;
-
         let Some(world) = self.level.upgrade() else {
             return false;
         };
 
         // Add to chunk storage
         self.entities.add(entity.clone());
-
-        // Set up callback for chunk/section tracking
-        let callback = Arc::new(EntityChunkCallback::new(&entity, Arc::downgrade(&world)));
-        entity.set_level_callback(callback);
-
-        // Register in entity cache (for fast lookups)
-        world.entity_cache().register(&entity);
-
-        // Add to entity tracker and send spawn packets to nearby players
-        world.entity_tracker().add(
-            &entity,
-            |chunk| world.player_area_map.get_tracking_players(chunk),
-            |id| world.players.get_by_entity_id(id),
-        );
+        Self::register_entity_with_world(&entity, &world);
 
         // Mark chunk dirty for persistence
         self.mark_unsaved();
 
         true
+    }
+
+    fn register_existing_entities(&self) -> bool {
+        let Some(world) = self.level.upgrade() else {
+            return false;
+        };
+
+        for entity in self.entities.get_all() {
+            Self::register_entity_with_world(&entity, &world);
+        }
+
+        true
+    }
+
+    fn register_entity_with_world(entity: &SharedEntity, world: &Arc<World>) {
+        use crate::entity::EntityChunkCallback;
+
+        // Set up callback for chunk/section tracking
+        let callback = Arc::new(EntityChunkCallback::new(entity, Arc::downgrade(world)));
+        entity.set_level_callback(callback);
+
+        // Register in entity cache (for fast lookups)
+        world.entity_cache().register(entity);
+
+        // Add to entity tracker and send spawn packets to nearby players
+        world.entity_tracker().add(
+            entity,
+            |chunk| world.player_area_map.get_tracking_players(chunk),
+            |id| world.players.get_by_entity_id(id),
+        );
     }
 
     /// Updates the ticking status of a block entity.
@@ -584,11 +605,6 @@ impl LevelChunk {
         }
 
         let section = &self.sections.sections[section_index];
-
-        let was_empty = section.read().is_empty();
-        if was_empty && state.is_air() {
-            return None;
-        }
 
         let local_x = (pos.0.x & 15) as usize;
         let local_y = (y & 15) as usize;

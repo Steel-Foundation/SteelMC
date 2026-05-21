@@ -1,13 +1,15 @@
 //! Woodland mansion. Vanilla's `WoodlandMansionPieces`: grid-based layout with
-//! template pieces for walls, corridors, rooms, roofs. Produces bounding boxes only.
+//! template pieces for walls, corridors, rooms, and roofs.
 
-use steel_registry::structure::StructureData;
+use steel_registry::structure::{LiquidSettingsData, StructureData};
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
+    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// (sizeX, sizeY, sizeZ) for a `woodland_mansion` template.
@@ -85,6 +87,96 @@ const fn apply_mirror(x: i32, z: i32, mirror: Mirror) -> (i32, i32) {
         Mirror::FrontBack => (-x, z),
         Mirror::LeftRight => (x, -z),
     }
+}
+
+const fn structure_mirror(mirror: Mirror) -> StructureMirror {
+    match mirror {
+        Mirror::None => StructureMirror::None,
+        Mirror::FrontBack => StructureMirror::FrontBack,
+        Mirror::LeftRight => StructureMirror::LeftRight,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct MansionTemplatePiece {
+    template_name: String,
+    position: (i32, i32, i32),
+    rotation: Rotation,
+    mirror: Mirror,
+}
+
+impl MansionTemplatePiece {
+    fn new(
+        template_name: impl Into<String>,
+        position: (i32, i32, i32),
+        rotation: Rotation,
+        mirror: Mirror,
+    ) -> Self {
+        Self {
+            template_name: template_name.into(),
+            position,
+            rotation,
+            mirror,
+        }
+    }
+
+    fn bounding_box(&self) -> BoundingBox {
+        piece_bb(
+            self.position,
+            template_size(&self.template_name),
+            self.rotation,
+            self.mirror,
+        )
+    }
+
+    fn template_id(&self) -> Identifier {
+        Identifier::vanilla(format!("woodland_mansion/{}", self.template_name))
+    }
+
+    fn into_structure_piece(self) -> StructurePiece {
+        let bounding_box = self.bounding_box();
+        let mirror = structure_mirror(self.mirror);
+        let template_id = self.template_id();
+        StructurePiece {
+            piece_type: Identifier::new_static("minecraft", "wmp"),
+            bounding_box,
+            gen_depth: 0,
+            orientation: Some(Direction::North),
+            payload: StructurePiecePayload::Template(TemplatePieceData {
+                template_id,
+                template_position: self.position,
+                rotation: self.rotation,
+                mirror,
+                rotation_pivot: (0, 0, 0),
+                block_ignore: StructureBlockIgnore::StructureBlock,
+                late_block_ignore: StructureBlockIgnore::None,
+                processors: TemplateProcessorList::Empty,
+                liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+                marker_handling: TemplateMarkerHandling::WoodlandMansion,
+                placement_adjustment: TemplatePlacementAdjustment::None,
+                placement_clip: TemplatePlacementClip::CenterChunk,
+                post_process: TemplatePostProcess::None,
+            }),
+            ground_level_delta: 0,
+            junctions: Vec::new(),
+            projection: None,
+        }
+    }
+}
+
+fn add_piece(
+    pieces: &mut Vec<MansionTemplatePiece>,
+    template_name: impl Into<String>,
+    position: (i32, i32, i32),
+    rotation: Rotation,
+    mirror: Mirror,
+) {
+    pieces.push(MansionTemplatePiece::new(
+        template_name,
+        position,
+        rotation,
+        mirror,
+    ));
 }
 
 /// `pos.relative(rotation.rotate(direction), amount)`.
@@ -633,23 +725,23 @@ struct PlacementData {
     wall_type: &'static str,
 }
 
-/// All mansion piece bounding boxes.
+/// All mansion template pieces.
 #[expect(
     clippy::too_many_lines,
     reason = "mirrors vanilla's MansionPiecePlacer traversal order"
 )]
-pub fn generate_mansion_pieces(
+fn generate_mansion_pieces(
     origin: (i32, i32, i32),
     rotation: Rotation,
     rng: &mut LegacyRandom,
-) -> Vec<BoundingBox> {
+) -> Vec<MansionTemplatePiece> {
     let mansion = MansionGrid::new(rng);
     let start_x = mansion.entrance_x + 1;
     let start_y = mansion.entrance_y + 1;
     let end_x = mansion.entrance_x + 1;
     let end_y = mansion.entrance_y;
 
-    let mut pieces: Vec<BoundingBox> = Vec::new();
+    let mut pieces: Vec<MansionTemplatePiece> = Vec::new();
 
     let mut data = PlacementData {
         position: origin,
@@ -785,12 +877,7 @@ pub fn generate_mansion_pieces(
                         8 + (y - start_y) * 8,
                     );
                     pos = relative(pos, rotation, Direction::East, (x - start_x) * 8);
-                    pieces.push(piece_bb(
-                        pos,
-                        template_size("corridor_floor"),
-                        rotation,
-                        Mirror::None,
-                    ));
+                    add_piece(&mut pieces, "corridor_floor", pos, rotation, Mirror::None);
 
                     if grid.get(x, y - 1) == 1 || (rooms.get(x, y - 1) & ROOM_CORRIDOR_FLAG) != 0 {
                         let p = above(
@@ -802,12 +889,7 @@ pub fn generate_mansion_pieces(
                             ),
                             1,
                         );
-                        pieces.push(piece_bb(
-                            p,
-                            template_size("carpet_north"),
-                            rotation,
-                            Mirror::None,
-                        ));
+                        add_piece(&mut pieces, "carpet_north", p, rotation, Mirror::None);
                     }
                     if grid.get(x + 1, y) == 1 || (rooms.get(x + 1, y) & ROOM_CORRIDOR_FLAG) != 0 {
                         let p = above(
@@ -819,12 +901,7 @@ pub fn generate_mansion_pieces(
                             ),
                             1,
                         );
-                        pieces.push(piece_bb(
-                            p,
-                            template_size("carpet_east"),
-                            rotation,
-                            Mirror::None,
-                        ));
+                        add_piece(&mut pieces, "carpet_east", p, rotation, Mirror::None);
                     }
                     if grid.get(x, y + 1) == 1 || (rooms.get(x, y + 1) & ROOM_CORRIDOR_FLAG) != 0 {
                         let p = relative(
@@ -833,12 +910,7 @@ pub fn generate_mansion_pieces(
                             Direction::West,
                             1,
                         );
-                        pieces.push(piece_bb(
-                            p,
-                            template_size(south_piece),
-                            rotation,
-                            Mirror::None,
-                        ));
+                        add_piece(&mut pieces, south_piece, p, rotation, Mirror::None);
                     }
                     if grid.get(x - 1, y) == 1 || (rooms.get(x - 1, y) & ROOM_CORRIDOR_FLAG) != 0 {
                         let p = relative(
@@ -847,12 +919,7 @@ pub fn generate_mansion_pieces(
                             Direction::North,
                             1,
                         );
-                        pieces.push(piece_bb(
-                            p,
-                            template_size(west_piece),
-                            rotation,
-                            Mirror::None,
-                        ));
+                        add_piece(&mut pieces, west_piece, p, rotation, Mirror::None);
                     }
                 }
             }
@@ -919,12 +986,7 @@ pub fn generate_mansion_pieces(
                     } else {
                         wall_piece
                     };
-                    pieces.push(piece_bb(
-                        room_pos,
-                        template_size(template),
-                        rotation,
-                        Mirror::None,
-                    ));
+                    add_piece(&mut pieces, template, room_pos, rotation, Mirror::None);
                 }
 
                 // East wall (corridor side)
@@ -935,7 +997,7 @@ pub fn generate_mansion_pieces(
                     } else {
                         wall_piece
                     };
-                    pieces.push(piece_bb(p, template_size(template), rotation, Mirror::None));
+                    add_piece(&mut pieces, template, p, rotation, Mirror::None);
                 }
 
                 // South wall
@@ -951,12 +1013,13 @@ pub fn generate_mansion_pieces(
                     } else {
                         wall_piece
                     };
-                    pieces.push(piece_bb(
+                    add_piece(
+                        &mut pieces,
+                        template,
                         p,
-                        template_size(template),
                         compose_rotation(rotation, Rotation::Clockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
 
                 // North wall (corridor side)
@@ -972,12 +1035,13 @@ pub fn generate_mansion_pieces(
                     } else {
                         wall_piece
                     };
-                    pieces.push(piece_bb(
+                    add_piece(
+                        &mut pieces,
+                        template,
                         p,
-                        template_size(template),
                         compose_rotation(rotation, Rotation::Clockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
 
                 // Room contents
@@ -1029,42 +1093,33 @@ pub fn generate_mansion_pieces(
     pieces
 }
 
-fn place_entrance(pieces: &mut Vec<BoundingBox>, data: &mut PlacementData) {
+fn place_entrance(pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementData) {
     let pos = relative(data.position, data.rotation, Direction::West, 9);
-    pieces.push(piece_bb(
-        pos,
-        template_size("entrance"),
-        data.rotation,
-        Mirror::None,
-    ));
+    add_piece(pieces, "entrance", pos, data.rotation, Mirror::None);
     data.position = relative(data.position, data.rotation, Direction::South, 16);
 }
 
-fn traverse_wall_piece(pieces: &mut Vec<BoundingBox>, data: &mut PlacementData) {
+fn traverse_wall_piece(pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementData) {
     let pos = relative(data.position, data.rotation, Direction::East, 7);
-    pieces.push(piece_bb(
-        pos,
-        template_size(data.wall_type),
-        data.rotation,
-        Mirror::None,
-    ));
+    add_piece(pieces, data.wall_type, pos, data.rotation, Mirror::None);
     data.position = relative(data.position, data.rotation, Direction::South, 8);
 }
 
-fn traverse_turn(pieces: &mut Vec<BoundingBox>, data: &mut PlacementData) {
+fn traverse_turn(pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementData) {
     data.position = relative(data.position, data.rotation, Direction::South, -1);
-    pieces.push(piece_bb(
+    add_piece(
+        pieces,
+        "wall_corner",
         data.position,
-        template_size("wall_corner"),
         data.rotation,
         Mirror::None,
-    ));
+    );
     data.position = relative(data.position, data.rotation, Direction::South, -7);
     data.position = relative(data.position, data.rotation, Direction::West, -6);
     data.rotation = compose_rotation(data.rotation, Rotation::Clockwise90);
 }
 
-const fn traverse_inner_turn(_pieces: &mut Vec<BoundingBox>, data: &mut PlacementData) {
+const fn traverse_inner_turn(_pieces: &mut Vec<MansionTemplatePiece>, data: &mut PlacementData) {
     data.position = relative(data.position, data.rotation, Direction::South, 6);
     data.position = relative(data.position, data.rotation, Direction::East, 8);
     data.rotation = compose_rotation(data.rotation, Rotation::CounterClockwise90);
@@ -1075,7 +1130,7 @@ const fn traverse_inner_turn(_pieces: &mut Vec<BoundingBox>, data: &mut Placemen
     reason = "mirrors vanilla's traverseOuterWalls signature"
 )]
 fn traverse_outer_walls(
-    pieces: &mut Vec<BoundingBox>,
+    pieces: &mut Vec<MansionTemplatePiece>,
     data: &mut PlacementData,
     grid: &SimpleGrid,
     initial_dir: Direction,
@@ -1127,7 +1182,7 @@ fn traverse_outer_walls(
     reason = "mirrors vanilla's MansionPiecePlacer.createRoof inline traversal"
 )]
 fn create_roof(
-    pieces: &mut Vec<BoundingBox>,
+    pieces: &mut Vec<MansionTemplatePiece>,
     roof_origin: (i32, i32, i32),
     rotation: Rotation,
     grid: &SimpleGrid,
@@ -1147,21 +1202,11 @@ fn create_roof(
             let is_above = above_grid.is_some_and(|g| is_house(g, x, y));
 
             if is_house(grid, x, y) && !is_above {
-                pieces.push(piece_bb(
-                    above(pos, 3),
-                    template_size("roof"),
-                    rotation,
-                    Mirror::None,
-                ));
+                add_piece(pieces, "roof", above(pos, 3), rotation, Mirror::None);
 
                 if !is_house(grid, x + 1, y) {
                     let p = relative(pos, rotation, Direction::East, 6);
-                    pieces.push(piece_bb(
-                        p,
-                        template_size("roof_front"),
-                        rotation,
-                        Mirror::None,
-                    ));
+                    add_piece(pieces, "roof_front", p, rotation, Mirror::None);
                 }
                 if !is_house(grid, x - 1, y) {
                     let p = relative(
@@ -1170,21 +1215,23 @@ fn create_roof(
                         Direction::South,
                         7,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_front",
                         p,
-                        template_size("roof_front"),
                         compose_rotation(rotation, Rotation::Clockwise180),
                         Mirror::None,
-                    ));
+                    );
                 }
                 if !is_house(grid, x, y - 1) {
                     let p = relative(pos, rotation, Direction::West, 1);
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_front",
                         p,
-                        template_size("roof_front"),
                         compose_rotation(rotation, Rotation::CounterClockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
                 if !is_house(grid, x, y + 1) {
                     let p = relative(
@@ -1193,12 +1240,13 @@ fn create_roof(
                         Direction::South,
                         6,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_front",
                         p,
-                        template_size("roof_front"),
                         compose_rotation(rotation, Rotation::Clockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
             }
         }
@@ -1222,12 +1270,7 @@ fn create_roof(
 
                 if !is_house(grid, x + 1, y) {
                     let p = relative(pos, rotation, Direction::East, 7);
-                    pieces.push(piece_bb(
-                        p,
-                        template_size("small_wall"),
-                        rotation,
-                        Mirror::None,
-                    ));
+                    add_piece(pieces, "small_wall", p, rotation, Mirror::None);
                 }
                 if !is_house(grid, x - 1, y) {
                     let p = relative(
@@ -1236,12 +1279,13 @@ fn create_roof(
                         Direction::South,
                         6,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "small_wall",
                         p,
-                        template_size("small_wall"),
                         compose_rotation(rotation, Rotation::Clockwise180),
                         Mirror::None,
-                    ));
+                    );
                 }
                 if !is_house(grid, x, y - 1) {
                     let p = relative(
@@ -1250,12 +1294,13 @@ fn create_roof(
                         Direction::North,
                         1,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "small_wall",
                         p,
-                        template_size("small_wall"),
                         compose_rotation(rotation, Rotation::CounterClockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
                 if !is_house(grid, x, y + 1) {
                     let p = relative(
@@ -1264,12 +1309,13 @@ fn create_roof(
                         Direction::South,
                         7,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "small_wall",
                         p,
-                        template_size("small_wall"),
                         compose_rotation(rotation, Rotation::Clockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
 
                 // Corners
@@ -1281,12 +1327,7 @@ fn create_roof(
                             Direction::North,
                             2,
                         );
-                        pieces.push(piece_bb(
-                            p,
-                            template_size("small_wall_corner"),
-                            rotation,
-                            Mirror::None,
-                        ));
+                        add_piece(pieces, "small_wall_corner", p, rotation, Mirror::None);
                     }
                     if !is_house(grid, x, y + 1) {
                         let p = relative(
@@ -1295,12 +1336,13 @@ fn create_roof(
                             Direction::South,
                             7,
                         );
-                        pieces.push(piece_bb(
+                        add_piece(
+                            pieces,
+                            "small_wall_corner",
                             p,
-                            template_size("small_wall_corner"),
                             compose_rotation(rotation, Rotation::Clockwise90),
                             Mirror::None,
-                        ));
+                        );
                     }
                 }
                 if !is_house(grid, x - 1, y) {
@@ -1311,12 +1353,13 @@ fn create_roof(
                             Direction::North,
                             1,
                         );
-                        pieces.push(piece_bb(
+                        add_piece(
+                            pieces,
+                            "small_wall_corner",
                             p,
-                            template_size("small_wall_corner"),
                             compose_rotation(rotation, Rotation::CounterClockwise90),
                             Mirror::None,
-                        ));
+                        );
                     }
                     if !is_house(grid, x, y + 1) {
                         let p = relative(
@@ -1325,12 +1368,13 @@ fn create_roof(
                             Direction::South,
                             8,
                         );
-                        pieces.push(piece_bb(
+                        add_piece(
+                            pieces,
+                            "small_wall_corner",
                             p,
-                            template_size("small_wall_corner"),
                             compose_rotation(rotation, Rotation::Clockwise180),
                             Mirror::None,
-                        ));
+                        );
                     }
                 }
             }
@@ -1357,28 +1401,19 @@ fn create_roof(
                 let p = relative(pos, rotation, Direction::East, 6);
                 if !is_house(grid, x, y + 1) {
                     let p2 = relative(p, rotation, Direction::South, 6);
-                    pieces.push(piece_bb(
-                        p2,
-                        template_size("roof_corner"),
-                        rotation,
-                        Mirror::None,
-                    ));
+                    add_piece(pieces, "roof_corner", p2, rotation, Mirror::None);
                 } else if is_house(grid, x + 1, y + 1) {
                     let p2 = relative(p, rotation, Direction::South, 5);
-                    pieces.push(piece_bb(
-                        p2,
-                        template_size("roof_inner_corner"),
-                        rotation,
-                        Mirror::None,
-                    ));
+                    add_piece(pieces, "roof_inner_corner", p2, rotation, Mirror::None);
                 }
                 if !is_house(grid, x, y - 1) {
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_corner",
                         p,
-                        template_size("roof_corner"),
                         compose_rotation(rotation, Rotation::CounterClockwise90),
                         Mirror::None,
-                    ));
+                    );
                 } else if is_house(grid, x + 1, y - 1) {
                     let p2 = relative(
                         relative(pos, rotation, Direction::East, 9),
@@ -1386,12 +1421,13 @@ fn create_roof(
                         Direction::North,
                         2,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_inner_corner",
                         p2,
-                        template_size("roof_inner_corner"),
                         compose_rotation(rotation, Rotation::Clockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
             }
 
@@ -1401,12 +1437,13 @@ fn create_roof(
                 let p = relative(p, rotation, Direction::South, 0);
                 if !is_house(grid, x, y + 1) {
                     let p2 = relative(p, rotation, Direction::South, 6);
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_corner",
                         p2,
-                        template_size("roof_corner"),
                         compose_rotation(rotation, Rotation::Clockwise90),
                         Mirror::None,
-                    ));
+                    );
                 } else if is_house(grid, x - 1, y + 1) {
                     let p2 = relative(
                         relative(p, rotation, Direction::South, 8),
@@ -1414,28 +1451,31 @@ fn create_roof(
                         Direction::West,
                         3,
                     );
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_inner_corner",
                         p2,
-                        template_size("roof_inner_corner"),
                         compose_rotation(rotation, Rotation::CounterClockwise90),
                         Mirror::None,
-                    ));
+                    );
                 }
                 if !is_house(grid, x, y - 1) {
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_corner",
                         p,
-                        template_size("roof_corner"),
                         compose_rotation(rotation, Rotation::Clockwise180),
                         Mirror::None,
-                    ));
+                    );
                 } else if is_house(grid, x - 1, y - 1) {
                     let p2 = relative(p, rotation, Direction::South, 1);
-                    pieces.push(piece_bb(
+                    add_piece(
+                        pieces,
+                        "roof_inner_corner",
                         p2,
-                        template_size("roof_inner_corner"),
                         compose_rotation(rotation, Rotation::Clockwise180),
                         Mirror::None,
-                    ));
+                    );
                 }
             }
         }
@@ -1443,7 +1483,7 @@ fn create_roof(
 }
 
 fn add_room_1x1(
-    pieces: &mut Vec<BoundingBox>,
+    pieces: &mut Vec<MansionTemplatePiece>,
     room_pos: (i32, i32, i32),
     rotation: Rotation,
     door_dir: Option<Direction>,
@@ -1473,7 +1513,7 @@ fn add_room_1x1(
     piece_rot = compose_rotation(piece_rot, rotation);
     let orient = rotation.transform_pos(orient.0, orient.1, orient.2, 0, 0);
     let pos = (room_pos.0 + orient.0, room_pos.1, room_pos.2 + orient.2);
-    pieces.push(piece_bb(pos, template_size(&name), piece_rot, Mirror::None));
+    add_piece(pieces, name, pos, piece_rot, Mirror::None);
 }
 
 #[expect(
@@ -1485,7 +1525,7 @@ fn add_room_1x1(
     reason = "exhaustive (door_dir × room_dir) dispatch mirroring vanilla's MansionRoom1x2"
 )]
 fn add_room_1x2(
-    pieces: &mut Vec<BoundingBox>,
+    pieces: &mut Vec<MansionTemplatePiece>,
     room_pos: (i32, i32, i32),
     rotation: Rotation,
     room_dir: Direction,
@@ -1632,11 +1672,11 @@ fn add_room_1x2(
     };
 
     let name = get_room_name(rng, floor, kind, is_stairs);
-    pieces.push(piece_bb(pos, template_size(&name), rot, mirror));
+    add_piece(pieces, name, pos, rot, mirror);
 }
 
 fn add_room_2x2(
-    pieces: &mut Vec<BoundingBox>,
+    pieces: &mut Vec<MansionTemplatePiece>,
     room_pos: (i32, i32, i32),
     rotation: Rotation,
     room_dir: Direction,
@@ -1688,11 +1728,11 @@ fn add_room_2x2(
         south,
     );
     let name = get_room_name(rng, floor, "2x2", false);
-    pieces.push(piece_bb(pos, template_size(&name), rot, mirror));
+    add_piece(pieces, name, pos, rot, mirror);
 }
 
 fn add_room_2x2_secret(
-    pieces: &mut Vec<BoundingBox>,
+    pieces: &mut Vec<MansionTemplatePiece>,
     room_pos: (i32, i32, i32),
     rotation: Rotation,
     floor: usize,
@@ -1700,7 +1740,7 @@ fn add_room_2x2_secret(
 ) {
     let pos = relative(room_pos, rotation, Direction::East, 1);
     let name = get_room_name(rng, floor, "2x2secret", false);
-    pieces.push(piece_bb(pos, template_size(&name), rotation, Mirror::None));
+    add_piece(pieces, name, pos, rotation, Mirror::None);
 }
 
 /// `Structure` impl — registered under `"minecraft:woodland_mansion"`.
@@ -1741,22 +1781,60 @@ impl Structure for WoodlandMansionStructure {
             return None;
         }
 
-        let bbs = generate_mansion_pieces((bx, lowest, bz), rotation, rng);
-        let pieces = bbs
+        let pieces = generate_mansion_pieces((bx, lowest, bz), rotation, rng)
             .into_iter()
-            .map(|bb| {
-                StructurePiece::non_jigsaw(
-                    Identifier::new_static("minecraft", "wmp"),
-                    bb,
-                    0,
-                    Some(Direction::North),
-                )
-            })
+            .map(MansionTemplatePiece::into_structure_piece)
             .collect();
 
         Some(GenerationStub {
             position: (bx, lowest, bz),
             pieces,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mansion_piece_uses_template_payload_with_marker_handling() {
+        let piece = MansionTemplatePiece::new(
+            "entrance",
+            (10, 64, 20),
+            Rotation::Clockwise90,
+            Mirror::LeftRight,
+        );
+        let expected_bounding_box = piece.bounding_box();
+
+        let piece = piece.into_structure_piece();
+
+        assert_eq!(piece.piece_type, Identifier::new_static("minecraft", "wmp"));
+        assert_eq!(piece.bounding_box, expected_bounding_box);
+        assert_eq!(piece.gen_depth, 0);
+        assert_eq!(piece.orientation, Some(Direction::North));
+
+        let StructurePiecePayload::Template(data) = piece.payload else {
+            panic!("woodland mansion piece should be template-backed");
+        };
+        assert_eq!(
+            data.template_id,
+            Identifier::vanilla_static("woodland_mansion/entrance")
+        );
+        assert_eq!(data.template_position, (10, 64, 20));
+        assert_eq!(data.rotation, Rotation::Clockwise90);
+        assert_eq!(data.mirror, StructureMirror::LeftRight);
+        assert_eq!(data.rotation_pivot, (0, 0, 0));
+        assert_eq!(data.block_ignore, StructureBlockIgnore::StructureBlock);
+        assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
+        assert_eq!(data.processors, TemplateProcessorList::Empty);
+        assert_eq!(data.liquid_settings, LiquidSettingsData::ApplyWaterlogging);
+        assert_eq!(
+            data.marker_handling,
+            TemplateMarkerHandling::WoodlandMansion
+        );
+        assert_eq!(data.placement_adjustment, TemplatePlacementAdjustment::None);
+        assert_eq!(data.placement_clip, TemplatePlacementClip::CenterChunk);
+        assert_eq!(data.post_process, TemplatePostProcess::None);
     }
 }

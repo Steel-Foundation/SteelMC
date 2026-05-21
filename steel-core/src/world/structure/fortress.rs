@@ -10,7 +10,8 @@ use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::world::structure::{
-    GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
+    StructurePiecePayload,
 };
 
 const MAX_DEPTH: i32 = 30;
@@ -31,7 +32,7 @@ const HORIZONTAL_ORDER: [Direction; 4] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PieceKind {
+pub(crate) enum FortressPieceKind {
     BridgeCrossing,
     BridgeEndFiller,
     BridgeStraight,
@@ -48,65 +49,155 @@ enum PieceKind {
     StairsRoom,
 }
 
-impl PieceKind {
+impl FortressPieceKind {
     /// Vanilla's `StructurePieceType` registry path (lowercased, no namespace).
-    pub const fn piece_id(self) -> &'static str {
+    pub(crate) const fn piece_id(self) -> &'static str {
         match self {
-            PieceKind::BridgeCrossing => "nebcr",
-            PieceKind::BridgeEndFiller => "nebef",
-            PieceKind::BridgeStraight => "nebs",
-            PieceKind::CastleCorridorStairs => "neccs",
-            PieceKind::CastleCorridorTBalcony => "nectb",
-            PieceKind::CastleEntrance => "nece",
-            PieceKind::CastleSmallCorridorCrossing => "nescsc",
-            PieceKind::CastleSmallCorridorLeftTurn => "nesclt",
-            PieceKind::CastleSmallCorridor => "nesc",
-            PieceKind::CastleSmallCorridorRightTurn => "nescrt",
-            PieceKind::CastleStalkRoom => "necsr",
-            PieceKind::MonsterThrone => "nemt",
-            PieceKind::RoomCrossing => "nerc",
-            PieceKind::StairsRoom => "nesr",
+            FortressPieceKind::BridgeCrossing => "nebcr",
+            FortressPieceKind::BridgeEndFiller => "nebef",
+            FortressPieceKind::BridgeStraight => "nebs",
+            FortressPieceKind::CastleCorridorStairs => "neccs",
+            FortressPieceKind::CastleCorridorTBalcony => "nectb",
+            FortressPieceKind::CastleEntrance => "nece",
+            FortressPieceKind::CastleSmallCorridorCrossing => "nescsc",
+            FortressPieceKind::CastleSmallCorridorLeftTurn => "nesclt",
+            FortressPieceKind::CastleSmallCorridor => "nesc",
+            FortressPieceKind::CastleSmallCorridorRightTurn => "nescrt",
+            FortressPieceKind::CastleStalkRoom => "necsr",
+            FortressPieceKind::MonsterThrone => "nemt",
+            FortressPieceKind::RoomCrossing => "nerc",
+            FortressPieceKind::StairsRoom => "nesr",
         }
     }
 
     /// `(offX, offY, offZ, width, height, depth)` for vanilla's `orientBox`.
     const fn geom(self) -> (i32, i32, i32, i32, i32, i32) {
         match self {
-            PieceKind::BridgeCrossing => (-8, -3, 0, 19, 10, 19),
-            PieceKind::BridgeEndFiller => (-1, -3, 0, 5, 10, 8),
-            PieceKind::BridgeStraight => (-1, -3, 0, 5, 10, 19),
-            PieceKind::CastleCorridorStairs => (-1, -7, 0, 5, 14, 10),
-            PieceKind::CastleCorridorTBalcony => (-3, 0, 0, 9, 7, 9),
-            PieceKind::CastleEntrance | PieceKind::CastleStalkRoom => (-5, -3, 0, 13, 14, 13),
-            PieceKind::CastleSmallCorridorCrossing
-            | PieceKind::CastleSmallCorridorLeftTurn
-            | PieceKind::CastleSmallCorridor
-            | PieceKind::CastleSmallCorridorRightTurn => (-1, 0, 0, 5, 7, 5),
-            PieceKind::MonsterThrone => (-2, 0, 0, 7, 8, 9),
-            PieceKind::RoomCrossing => (-2, 0, 0, 7, 9, 7),
-            PieceKind::StairsRoom => (-2, 0, 0, 7, 11, 7),
+            FortressPieceKind::BridgeCrossing => (-8, -3, 0, 19, 10, 19),
+            FortressPieceKind::BridgeEndFiller => (-1, -3, 0, 5, 10, 8),
+            FortressPieceKind::BridgeStraight => (-1, -3, 0, 5, 10, 19),
+            FortressPieceKind::CastleCorridorStairs => (-1, -7, 0, 5, 14, 10),
+            FortressPieceKind::CastleCorridorTBalcony => (-3, 0, 0, 9, 7, 9),
+            FortressPieceKind::CastleEntrance | FortressPieceKind::CastleStalkRoom => {
+                (-5, -3, 0, 13, 14, 13)
+            }
+            FortressPieceKind::CastleSmallCorridorCrossing
+            | FortressPieceKind::CastleSmallCorridorLeftTurn
+            | FortressPieceKind::CastleSmallCorridor
+            | FortressPieceKind::CastleSmallCorridorRightTurn => (-1, 0, 0, 5, 7, 5),
+            FortressPieceKind::MonsterThrone => (-2, 0, 0, 7, 8, 9),
+            FortressPieceKind::RoomCrossing => (-2, 0, 0, 7, 9, 7),
+            FortressPieceKind::StairsRoom => (-2, 0, 0, 7, 11, 7),
+        }
+    }
+}
+
+/// Vanilla nether-fortress piece payload persisted for feature-stage placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FortressPieceData {
+    /// Bridge crossing piece.
+    BridgeCrossing,
+    /// Dead-end bridge filler piece.
+    BridgeEndFiller {
+        /// Vanilla `BridgeEndFiller.selfSeed`.
+        self_seed: i32,
+    },
+    /// Straight bridge segment.
+    BridgeStraight,
+    /// Castle corridor stair segment.
+    CastleCorridorStairs,
+    /// Castle corridor T balcony segment.
+    CastleCorridorTBalcony,
+    /// Castle entrance room.
+    CastleEntrance,
+    /// Small castle corridor crossing.
+    CastleSmallCorridorCrossing,
+    /// Small castle corridor left turn.
+    CastleSmallCorridorLeftTurn {
+        /// Vanilla `isNeedingChest`.
+        is_needing_chest: bool,
+    },
+    /// Small straight castle corridor.
+    CastleSmallCorridor,
+    /// Small castle corridor right turn.
+    CastleSmallCorridorRightTurn {
+        /// Vanilla `isNeedingChest`.
+        is_needing_chest: bool,
+    },
+    /// Nether-wart stair room.
+    CastleStalkRoom,
+    /// Blaze-spawner throne room.
+    MonsterThrone {
+        /// Vanilla `hasPlacedSpawner`.
+        has_placed_spawner: bool,
+    },
+    /// Bridge room crossing.
+    RoomCrossing,
+    /// Bridge stair room.
+    StairsRoom,
+}
+
+impl FortressPieceData {
+    #[must_use]
+    pub(crate) const fn kind(self) -> FortressPieceKind {
+        match self {
+            Self::BridgeCrossing => FortressPieceKind::BridgeCrossing,
+            Self::BridgeEndFiller { .. } => FortressPieceKind::BridgeEndFiller,
+            Self::BridgeStraight => FortressPieceKind::BridgeStraight,
+            Self::CastleCorridorStairs => FortressPieceKind::CastleCorridorStairs,
+            Self::CastleCorridorTBalcony => FortressPieceKind::CastleCorridorTBalcony,
+            Self::CastleEntrance => FortressPieceKind::CastleEntrance,
+            Self::CastleSmallCorridorCrossing => FortressPieceKind::CastleSmallCorridorCrossing,
+            Self::CastleSmallCorridorLeftTurn { .. } => {
+                FortressPieceKind::CastleSmallCorridorLeftTurn
+            }
+            Self::CastleSmallCorridor => FortressPieceKind::CastleSmallCorridor,
+            Self::CastleSmallCorridorRightTurn { .. } => {
+                FortressPieceKind::CastleSmallCorridorRightTurn
+            }
+            Self::CastleStalkRoom => FortressPieceKind::CastleStalkRoom,
+            Self::MonsterThrone { .. } => FortressPieceKind::MonsterThrone,
+            Self::RoomCrossing => FortressPieceKind::RoomCrossing,
+            Self::StairsRoom => FortressPieceKind::StairsRoom,
         }
     }
 
-    /// RNG draws consumed by the constructor after a successful collision check.
-    /// `BridgeEndFiller` draws `nextInt()` for `selfSeed`; the small-corridor turns
-    /// draw `nextInt(3)` for `isNeedingChest`.
-    #[expect(
-        clippy::match_same_arms,
-        reason = "arms split by distinct vanilla RNG semantics"
-    )]
-    const fn extra_rng_in_ctor(self) -> u32 {
-        match self {
-            PieceKind::BridgeEndFiller => 1,
-            PieceKind::CastleSmallCorridorLeftTurn | PieceKind::CastleSmallCorridorRightTurn => 1,
-            _ => 0,
+    #[must_use]
+    pub(crate) const fn piece_id(self) -> &'static str {
+        self.kind().piece_id()
+    }
+
+    fn new(kind: FortressPieceKind, rng: &mut LegacyRandom) -> Self {
+        match kind {
+            FortressPieceKind::BridgeCrossing => Self::BridgeCrossing,
+            FortressPieceKind::BridgeEndFiller => Self::BridgeEndFiller {
+                self_seed: rng.next_i32(),
+            },
+            FortressPieceKind::BridgeStraight => Self::BridgeStraight,
+            FortressPieceKind::CastleCorridorStairs => Self::CastleCorridorStairs,
+            FortressPieceKind::CastleCorridorTBalcony => Self::CastleCorridorTBalcony,
+            FortressPieceKind::CastleEntrance => Self::CastleEntrance,
+            FortressPieceKind::CastleSmallCorridorCrossing => Self::CastleSmallCorridorCrossing,
+            FortressPieceKind::CastleSmallCorridorLeftTurn => Self::CastleSmallCorridorLeftTurn {
+                is_needing_chest: rng.next_i32_bounded(3) == 0,
+            },
+            FortressPieceKind::CastleSmallCorridor => Self::CastleSmallCorridor,
+            FortressPieceKind::CastleSmallCorridorRightTurn => Self::CastleSmallCorridorRightTurn {
+                is_needing_chest: rng.next_i32_bounded(3) == 0,
+            },
+            FortressPieceKind::CastleStalkRoom => Self::CastleStalkRoom,
+            FortressPieceKind::MonsterThrone => Self::MonsterThrone {
+                has_placed_spawner: false,
+            },
+            FortressPieceKind::RoomCrossing => Self::RoomCrossing,
+            FortressPieceKind::StairsRoom => Self::StairsRoom,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct PieceWeight {
-    kind: PieceKind,
+    kind: FortressPieceKind,
     weight: i32,
     max_place_count: i32,
     allow_in_row: bool,
@@ -114,7 +205,7 @@ struct PieceWeight {
 }
 
 impl PieceWeight {
-    const fn new(kind: PieceKind, weight: i32, max: i32, allow_in_row: bool) -> Self {
+    const fn new(kind: FortressPieceKind, weight: i32, max: i32, allow_in_row: bool) -> Self {
         Self {
             kind,
             weight,
@@ -131,32 +222,37 @@ impl PieceWeight {
 
 fn bridge_weights() -> Vec<PieceWeight> {
     vec![
-        PieceWeight::new(PieceKind::BridgeStraight, 30, 0, true),
-        PieceWeight::new(PieceKind::BridgeCrossing, 10, 4, false),
-        PieceWeight::new(PieceKind::RoomCrossing, 10, 4, false),
-        PieceWeight::new(PieceKind::StairsRoom, 10, 3, false),
-        PieceWeight::new(PieceKind::MonsterThrone, 5, 2, false),
-        PieceWeight::new(PieceKind::CastleEntrance, 5, 1, false),
+        PieceWeight::new(FortressPieceKind::BridgeStraight, 30, 0, true),
+        PieceWeight::new(FortressPieceKind::BridgeCrossing, 10, 4, false),
+        PieceWeight::new(FortressPieceKind::RoomCrossing, 10, 4, false),
+        PieceWeight::new(FortressPieceKind::StairsRoom, 10, 3, false),
+        PieceWeight::new(FortressPieceKind::MonsterThrone, 5, 2, false),
+        PieceWeight::new(FortressPieceKind::CastleEntrance, 5, 1, false),
     ]
 }
 
 fn castle_weights() -> Vec<PieceWeight> {
     vec![
-        PieceWeight::new(PieceKind::CastleSmallCorridor, 25, 0, true),
-        PieceWeight::new(PieceKind::CastleSmallCorridorCrossing, 15, 5, false),
-        PieceWeight::new(PieceKind::CastleSmallCorridorRightTurn, 5, 10, false),
-        PieceWeight::new(PieceKind::CastleSmallCorridorLeftTurn, 5, 10, false),
-        PieceWeight::new(PieceKind::CastleCorridorStairs, 10, 3, true),
-        PieceWeight::new(PieceKind::CastleCorridorTBalcony, 7, 2, false),
-        PieceWeight::new(PieceKind::CastleStalkRoom, 5, 2, false),
+        PieceWeight::new(FortressPieceKind::CastleSmallCorridor, 25, 0, true),
+        PieceWeight::new(FortressPieceKind::CastleSmallCorridorCrossing, 15, 5, false),
+        PieceWeight::new(
+            FortressPieceKind::CastleSmallCorridorRightTurn,
+            5,
+            10,
+            false,
+        ),
+        PieceWeight::new(FortressPieceKind::CastleSmallCorridorLeftTurn, 5, 10, false),
+        PieceWeight::new(FortressPieceKind::CastleCorridorStairs, 10, 3, true),
+        PieceWeight::new(FortressPieceKind::CastleCorridorTBalcony, 7, 2, false),
+        PieceWeight::new(FortressPieceKind::CastleStalkRoom, 5, 2, false),
     ]
 }
 
 /// Output piece record.
 #[derive(Debug, Clone, Copy)]
 pub struct FortressPiece {
-    /// Short identifier path (under `minecraft:`) for this piece type.
-    pub kind_id: &'static str,
+    /// Piece-specific state needed for placement and persistence.
+    pub data: FortressPieceData,
     /// World-space bounding box.
     pub bounding_box: BoundingBox,
     /// Piece facing direction.
@@ -248,7 +344,7 @@ struct Builder {
     start_bb_min_z: i32,
     bridge_weights: Vec<PieceWeight>,
     castle_weights: Vec<PieceWeight>,
-    previous_kind: Option<PieceKind>,
+    previous_kind: Option<FortressPieceKind>,
 }
 
 impl Builder {
@@ -260,7 +356,7 @@ impl Builder {
 
 /// Mirrors vanilla's `findAndCreateBridgePieceFactory` + `PIECE.createPiece`.
 fn create_piece(
-    kind: PieceKind,
+    kind: FortressPieceKind,
     pieces: &[FortressPiece],
     rng: &mut LegacyRandom,
     foot: (i32, i32, i32),
@@ -272,15 +368,8 @@ fn create_piece(
     if !is_ok_box(&bb) || find_collision(pieces, &bb).is_some() {
         return None;
     }
-    for _ in 0..kind.extra_rng_in_ctor() {
-        if matches!(kind, PieceKind::BridgeEndFiller) {
-            let _ = rng.next_i32(); // selfSeed (unbounded)
-        } else {
-            let _ = rng.next_i32_bounded(3); // isNeedingChest
-        }
-    }
     Some(FortressPiece {
-        kind_id: kind.piece_id(),
+        data: FortressPieceData::new(kind, rng),
         bounding_box: bb,
         orientation: Some(dir),
         gen_depth,
@@ -354,7 +443,7 @@ fn generate_piece_weighted(
     }
 
     create_piece(
-        PieceKind::BridgeEndFiller,
+        FortressPieceKind::BridgeEndFiller,
         &builder.pieces,
         rng,
         foot,
@@ -377,7 +466,7 @@ fn generate_and_add_piece(
         || (foot.2 - builder.start_bb_min_z).abs() > DIST_LIMIT
     {
         let _ = create_piece(
-            PieceKind::BridgeEndFiller,
+            FortressPieceKind::BridgeEndFiller,
             &builder.pieces,
             rng,
             foot,
@@ -482,28 +571,19 @@ fn add_children(piece: FortressPiece, builder: &mut Builder, rng: &mut LegacyRan
         orientation,
         gen_depth: piece.gen_depth,
     };
-    let fwd = PieceKind::BridgeStraight.piece_id();
-    let bcr = PieceKind::BridgeCrossing.piece_id();
-    let ccs = PieceKind::CastleCorridorStairs.piece_id();
-    let ctb = PieceKind::CastleCorridorTBalcony.piece_id();
-    let ce = PieceKind::CastleEntrance.piece_id();
-    let csc = PieceKind::CastleSmallCorridorCrossing.piece_id();
-    let clt = PieceKind::CastleSmallCorridorLeftTurn.piece_id();
-    let cs = PieceKind::CastleSmallCorridor.piece_id();
-    let crt = PieceKind::CastleSmallCorridorRightTurn.piece_id();
-    let csr = PieceKind::CastleStalkRoom.piece_id();
-    let rc = PieceKind::RoomCrossing.piece_id();
-    let sr = PieceKind::StairsRoom.piece_id();
-
-    match piece.kind_id {
-        id if id == bcr => {
+    match piece.data.kind() {
+        FortressPieceKind::BridgeCrossing => {
             generate_child_forward(parent, builder, rng, 8, 3, false);
             generate_child_left(parent, builder, rng, 3, 8, false);
             generate_child_right(parent, builder, rng, 3, 8, false);
         }
-        id if id == fwd => generate_child_forward(parent, builder, rng, 1, 3, false),
-        id if id == ccs => generate_child_forward(parent, builder, rng, 1, 0, true),
-        id if id == ctb => {
+        FortressPieceKind::BridgeStraight => {
+            generate_child_forward(parent, builder, rng, 1, 3, false);
+        }
+        FortressPieceKind::CastleCorridorStairs | FortressPieceKind::CastleSmallCorridor => {
+            generate_child_forward(parent, builder, rng, 1, 0, true);
+        }
+        FortressPieceKind::CastleCorridorTBalcony => {
             let z_off = match orientation {
                 Direction::West | Direction::North => 5,
                 _ => 1,
@@ -513,27 +593,34 @@ fn add_children(piece: FortressPiece, builder: &mut Builder, rng: &mut LegacyRan
             let r = rng.next_i32_bounded(8) > 0;
             generate_child_right(parent, builder, rng, 0, z_off, r);
         }
-        id if id == ce => generate_child_forward(parent, builder, rng, 5, 3, true),
-        id if id == csc => {
+        FortressPieceKind::CastleEntrance => {
+            generate_child_forward(parent, builder, rng, 5, 3, true);
+        }
+        FortressPieceKind::CastleSmallCorridorCrossing => {
             generate_child_forward(parent, builder, rng, 1, 0, true);
             generate_child_left(parent, builder, rng, 0, 1, true);
             generate_child_right(parent, builder, rng, 0, 1, true);
         }
-        id if id == clt => generate_child_left(parent, builder, rng, 0, 1, true),
-        id if id == cs => generate_child_forward(parent, builder, rng, 1, 0, true),
-        id if id == crt => generate_child_right(parent, builder, rng, 0, 1, true),
-        id if id == csr => {
+        FortressPieceKind::CastleSmallCorridorLeftTurn => {
+            generate_child_left(parent, builder, rng, 0, 1, true);
+        }
+        FortressPieceKind::CastleSmallCorridorRightTurn => {
+            generate_child_right(parent, builder, rng, 0, 1, true);
+        }
+        FortressPieceKind::CastleStalkRoom => {
             generate_child_forward(parent, builder, rng, 5, 3, true);
             generate_child_forward(parent, builder, rng, 5, 11, true);
         }
-        id if id == rc => {
+        FortressPieceKind::RoomCrossing => {
             generate_child_forward(parent, builder, rng, 2, 0, false);
             generate_child_left(parent, builder, rng, 0, 2, false);
             generate_child_right(parent, builder, rng, 0, 2, false);
         }
-        id if id == sr => generate_child_right(parent, builder, rng, 6, 2, false),
+        FortressPieceKind::StairsRoom => {
+            generate_child_right(parent, builder, rng, 6, 2, false);
+        }
         // MonsterThrone, BridgeEndFiller: leaves.
-        _ => {}
+        FortressPieceKind::MonsterThrone | FortressPieceKind::BridgeEndFiller => {}
     }
 }
 
@@ -595,7 +682,7 @@ pub fn generate_fortress_pieces(
     let north = (chunk_z << 4) + START_Z_OFFSET;
     let start_bb = make_bounding_box(west, MAGIC_START_Y, north, start_dir, 19, 10, 19);
     let start_piece = FortressPiece {
-        kind_id: PieceKind::BridgeCrossing.piece_id(),
+        data: FortressPieceData::BridgeCrossing,
         bounding_box: start_bb,
         orientation: Some(start_dir),
         gen_depth: 0,
@@ -649,15 +736,67 @@ impl Structure for NetherFortressStructure {
             position: (biome_x, 64, biome_z),
             pieces: pieces_out
                 .into_iter()
-                .map(|p| {
-                    StructurePiece::non_jigsaw(
-                        Identifier::new_static("minecraft", p.kind_id),
-                        p.bounding_box,
-                        p.gen_depth,
-                        p.orientation,
-                    )
+                .map(|p| StructurePiece {
+                    piece_type: Identifier::new_static("minecraft", p.data.piece_id()),
+                    bounding_box: p.bounding_box,
+                    gen_depth: p.gen_depth,
+                    orientation: p.orientation,
+                    payload: StructurePiecePayload::Procedural(
+                        ProceduralPieceData::NetherFortress(p.data),
+                    ),
+                    ground_level_delta: 0,
+                    junctions: Vec::new(),
+                    projection: None,
                 })
                 .collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fortress_constructor_rng_state_is_captured_in_piece_payloads() {
+        let mut expected = LegacyRandom::from_seed(1234);
+        let expected_self_seed = expected.next_i32();
+        let mut rng = LegacyRandom::from_seed(1234);
+        let filler = create_piece(
+            FortressPieceKind::BridgeEndFiller,
+            &[],
+            &mut rng,
+            (0, 64, 0),
+            Direction::South,
+            1,
+        )
+        .expect("bridge end filler should fit");
+        assert_eq!(
+            filler.data,
+            FortressPieceData::BridgeEndFiller {
+                self_seed: expected_self_seed,
+            }
+        );
+        assert_eq!(rng.next_i32(), expected.next_i32());
+
+        let mut expected = LegacyRandom::from_seed(5678);
+        let expected_needs_chest = expected.next_i32_bounded(3) == 0;
+        let mut rng = LegacyRandom::from_seed(5678);
+        let turn = create_piece(
+            FortressPieceKind::CastleSmallCorridorLeftTurn,
+            &[],
+            &mut rng,
+            (0, 64, 0),
+            Direction::South,
+            1,
+        )
+        .expect("small corridor turn should fit");
+        assert_eq!(
+            turn.data,
+            FortressPieceData::CastleSmallCorridorLeftTurn {
+                is_needing_chest: expected_needs_chest,
+            }
+        );
+        assert_eq!(rng.next_i32(), expected.next_i32());
     }
 }

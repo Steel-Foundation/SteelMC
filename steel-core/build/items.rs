@@ -113,6 +113,7 @@ pub fn build(items: &[ItemClass]) -> String {
 
     let registry_import_tokens: Vec<_> = registry_modules_used
         .iter()
+        .filter(|module| module.as_str() != "vanilla_items")
         .map(|module| {
             let module_ident = Ident::new(module, Span::call_site());
             quote! { , #module_ident }

@@ -13,10 +13,12 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
+use crate::world::structure::desert_pyramid::DesertPyramidStructure;
 use crate::world::structure::end_city::EndCityStructure;
 use crate::world::structure::fortress::NetherFortressStructure;
 use crate::world::structure::igloo::IglooStructure;
 use crate::world::structure::jigsaw::JigsawStructure;
+use crate::world::structure::jungle_temple::JungleTempleStructure;
 use crate::world::structure::mansion::WoodlandMansionStructure;
 use crate::world::structure::mineshaft::MineshaftStructure;
 use crate::world::structure::nether_fossil::NetherFossilStructure;
@@ -28,8 +30,9 @@ use crate::world::structure::placement::{
 };
 use crate::world::structure::ruined_portal::RuinedPortalStructure;
 use crate::world::structure::shipwreck::ShipwreckStructure;
-use crate::world::structure::single_piece::{BuriedTreasureStructure, SinglePieceStructure};
+use crate::world::structure::single_piece::BuriedTreasureStructure;
 use crate::world::structure::stronghold::StrongholdStructure;
+use crate::world::structure::swamp_hut::SwampHutStructure;
 use crate::world::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructureStart,
 };
@@ -800,30 +803,9 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
     reg("woodland_mansion", Box::new(WoodlandMansionStructure));
     reg("ocean_monument", Box::new(OceanMonumentStructure));
     reg("mineshaft", Box::new(MineshaftStructure));
-    reg(
-        "desert_pyramid",
-        Box::new(SinglePieceStructure {
-            size: (21, 15, 21),
-            piece_id: "tedp",
-            require_above_sea: true,
-        }),
-    );
-    reg(
-        "jungle_temple",
-        Box::new(SinglePieceStructure {
-            size: (12, 10, 15),
-            piece_id: "tejp",
-            require_above_sea: true,
-        }),
-    );
-    reg(
-        "swamp_hut",
-        Box::new(SinglePieceStructure {
-            size: (7, 7, 9),
-            piece_id: "tesh",
-            require_above_sea: false,
-        }),
-    );
+    reg("desert_pyramid", Box::new(DesertPyramidStructure));
+    reg("jungle_temple", Box::new(JungleTempleStructure));
+    reg("swamp_hut", Box::new(SwampHutStructure));
     reg("buried_treasure", Box::new(BuriedTreasureStructure));
     reg("shipwreck", Box::new(ShipwreckStructure));
     reg("igloo", Box::new(IglooStructure));
@@ -836,7 +818,7 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_biomes};
+    use steel_registry::{test_support::init_test_registry, vanilla_biomes};
 
     use crate::world::structure::placement::{
         ExclusionZone, FrequencyReductionMethod, PlacementKind, SpreadType,
@@ -914,7 +896,7 @@ mod tests {
 
     #[test]
     fn vanilla_assets_cover_vanilla_structure_sets() {
-        let _ = REGISTRY.init(Registry::new_vanilla());
+        init_test_registry();
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let _ = StructureGenerator::vanilla_with_structure_sets(
             0,

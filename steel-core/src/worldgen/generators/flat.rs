@@ -3,12 +3,14 @@ use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::{REGISTRY, RegistryExt, vanilla_biomes};
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::random::RandomSource;
+use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::world::structure::{ColumnBlock, StructureGenerationContext};
-use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
 use crate::worldgen::noise::beardifier::Beardifier;
+use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 
 /// A chunk generator that generates a flat world.
@@ -202,6 +204,14 @@ impl StructureGenerationContext for FlatGenerationContext<'_> {
 }
 
 impl ChunkGenerator for FlatChunkGenerator {
+    fn min_y(&self) -> i32 {
+        0
+    }
+
+    fn gen_depth(&self) -> i32 {
+        384
+    }
+
     fn spawn_height(&self, min_y: i32, height: i32) -> i32 {
         min_y + height.min(self.layers.len() as i32)
     }
@@ -271,7 +281,7 @@ impl ChunkGenerator for FlatChunkGenerator {
         for x in 0..16 {
             for z in 0..16 {
                 for (relative_y, block) in self.layers.iter().enumerate().take(max_relative_y) {
-                    chunk.set_relative_block(x, relative_y, z, *block);
+                    chunk.set_relative_block_for_generation(x, relative_y, z, *block);
                 }
             }
         }
@@ -282,5 +292,9 @@ impl ChunkGenerator for FlatChunkGenerator {
 
     fn apply_carvers(&self, _chunk: &ChunkAccess) {}
 
-    fn apply_biome_decorations(&self, _chunk: &ChunkAccess) {}
+    fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource {
+        xoroshiro_worldgen_region_random(world_seed, center)
+    }
+
+    fn apply_biome_decorations(&self, _region: &mut WorldGenRegion<'_>) {}
 }

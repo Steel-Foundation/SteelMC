@@ -531,7 +531,8 @@ where
         }
         drop(heightmaps);
 
-        self.chunk.prime_worldgen_heightmaps();
+        self.chunk
+            .prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
         let heightmaps = self.chunk.proto_heightmaps();
         if let Some(worldgen_surface) = heightmaps.get(HeightmapType::WorldSurfaceWg) {
             return steep_material_condition(worldgen_surface, world_x, world_z);

@@ -16,12 +16,13 @@ use steel_registry::vanilla_blocks;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Converts a rotation in degrees to a 16-segment rotation value (0-15).
 ///
@@ -120,7 +121,7 @@ fn get_sign_rotation_degrees(state: BlockStateId) -> f32 {
 ///
 /// Vanilla uses `isSolid()` which checks if the collision shape is a full cube.
 /// This means signs cannot be placed on other signs, fences, walls, etc.
-fn can_support_standing_sign(world: &Arc<World>, pos: BlockPos) -> bool {
+fn can_support_standing_sign(world: &dyn LevelReader, pos: BlockPos) -> bool {
     let below_pos = BlockPos::new(pos.x(), pos.y() - 1, pos.z());
     let below_state = world.get_block_state(below_pos);
     below_state.is_solid()
@@ -130,7 +131,7 @@ fn can_support_standing_sign(world: &Arc<World>, pos: BlockPos) -> bool {
 ///
 /// Vanilla uses `isSolid()` which allows wall signs to be placed on other signs
 /// (since signs have `forceSolidOn`).
-fn can_wall_sign_survive(world: &Arc<World>, pos: BlockPos, facing: Direction) -> bool {
+fn can_wall_sign_survive(world: &dyn LevelReader, pos: BlockPos, facing: Direction) -> bool {
     // Wall sign needs a solid block behind it
     let behind_pos = facing.opposite().relative(pos);
     let behind_state = world.get_block_state(behind_pos);
@@ -138,7 +139,7 @@ fn can_wall_sign_survive(world: &Arc<World>, pos: BlockPos, facing: Direction) -
 }
 
 /// Checks if a ceiling hanging sign can survive at the given position.
-fn can_ceiling_hanging_sign_survive(world: &Arc<World>, pos: BlockPos) -> bool {
+fn can_ceiling_hanging_sign_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     let above_pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
     let above_state = world.get_block_state(above_pos);
     above_state.is_face_sturdy_for(Direction::Down, SupportType::Center)
@@ -150,7 +151,7 @@ fn can_ceiling_hanging_sign_survive(world: &Arc<World>, pos: BlockPos) -> bool {
 /// 1. If the neighbor is a wall hanging sign on the same axis, allow attachment
 /// 2. Otherwise, check if the face is sturdy with FULL support type
 fn can_attach_to(
-    world: &Arc<World>,
+    world: &dyn LevelReader,
     sign_facing: Direction,
     attach_pos: BlockPos,
     attach_face: Direction,
@@ -178,7 +179,11 @@ fn can_attach_to(
 ///
 /// Wall hanging signs need support on at least one side perpendicular to facing.
 /// This matches vanilla's `WallHangingSignBlock.canPlace`.
-fn can_wall_hanging_sign_survive(world: &Arc<World>, pos: BlockPos, facing: Direction) -> bool {
+fn can_wall_hanging_sign_survive(
+    world: &dyn LevelReader,
+    pos: BlockPos,
+    facing: Direction,
+) -> bool {
     let clockwise = facing.rotate_y_clockwise();
     let counter_clockwise = facing.rotate_y_counter_clockwise();
 
@@ -291,7 +296,7 @@ impl BlockBehavior for StandingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -348,6 +353,7 @@ impl BlockBehavior for StandingSignBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
     }
@@ -371,7 +377,7 @@ impl BlockBehavior for WallSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -436,6 +442,7 @@ impl BlockBehavior for WallSignBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
     }
@@ -459,7 +466,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -558,6 +565,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
     }
@@ -592,7 +600,7 @@ impl BlockBehavior for WallHangingSignBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -664,6 +672,7 @@ impl BlockBehavior for WallHangingSignBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         try_open_sign_editor(state, world, pos, player)
     }

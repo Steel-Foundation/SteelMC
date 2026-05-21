@@ -38,6 +38,11 @@ pub mod block_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/candle_cakes.rs"]
+pub mod candle_cakes;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/items.rs"]
 pub mod item_behaviors;
 
@@ -131,42 +136,34 @@ pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
 
 /// Initializes the global behavior registries.
 ///
-/// This should be called once after the main registry is frozen.
-///
-/// # Panics
-///
-/// Panics if called more than once.
+/// This should be called after the main registry is frozen. Repeated calls are a no-op.
 pub fn init_behaviors() {
-    let mut block_behaviors = BlockBehaviorRegistry::new();
-    register_block_behaviors(&mut block_behaviors);
+    BLOCK_BEHAVIORS.0.get_or_init(|| {
+        let mut block_behaviors = BlockBehaviorRegistry::new();
+        register_block_behaviors(&mut block_behaviors);
+        block_behaviors
+    });
 
-    assert!(
-        BLOCK_BEHAVIORS.0.set(block_behaviors).is_ok(),
-        "Block behavior registry already initialized"
-    );
+    FLUID_BEHAVIORS.0.get_or_init(|| {
+        let mut fluid_behaviors = FluidBehaviorRegistry::new();
 
-    let mut fluid_behaviors = FluidBehaviorRegistry::new();
+        // Water: WaterFluid implements FluidBehavior directly
+        let water_behavior: Box<dyn FluidBehavior> = Box::new(WaterFluid);
+        // Both WATER and FLOWING_WATER share the same behavior
+        fluid_behaviors.set_behavior(&vanilla_fluids::WATER, water_behavior);
+        fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_WATER, Box::new(WaterFluid));
 
-    // Water: WaterFluid implements FluidBehavior directly
-    let water_behavior: Box<dyn FluidBehavior> = Box::new(WaterFluid);
-    // Both WATER and FLOWING_WATER share the same behavior
-    fluid_behaviors.set_behavior(&vanilla_fluids::WATER, water_behavior);
-    fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_WATER, Box::new(WaterFluid));
+        // Lava: LavaFluid implements FluidBehavior directly
+        let lava_behavior: Box<dyn FluidBehavior> = Box::new(LavaFluid);
+        fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, lava_behavior);
+        fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_LAVA, Box::new(LavaFluid));
 
-    // Lava: LavaFluid implements FluidBehavior directly
-    let lava_behavior: Box<dyn FluidBehavior> = Box::new(LavaFluid);
-    fluid_behaviors.set_behavior(&vanilla_fluids::LAVA, lava_behavior);
-    fluid_behaviors.set_behavior(&vanilla_fluids::FLOWING_LAVA, Box::new(LavaFluid));
+        fluid_behaviors
+    });
 
-    assert!(
-        FLUID_BEHAVIORS.0.set(fluid_behaviors).is_ok(),
-        "Fluid behavior registry already initialized"
-    );
-
-    let mut item_behaviors = ItemBehaviorRegistry::new();
-    register_item_behaviors(&mut item_behaviors);
-    assert!(
-        ITEM_BEHAVIORS.0.set(item_behaviors).is_ok(),
-        "Item behavior registry already initialized"
-    );
+    ITEM_BEHAVIORS.0.get_or_init(|| {
+        let mut item_behaviors = ItemBehaviorRegistry::new();
+        register_item_behaviors(&mut item_behaviors);
+        item_behaviors
+    });
 }

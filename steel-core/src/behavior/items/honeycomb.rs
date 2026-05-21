@@ -1,5 +1,7 @@
 use steel_macros::item_behavior;
-use steel_registry::{REGISTRY, blocks::block_state_ext::BlockStateExt, level_events};
+use steel_registry::{
+    REGISTRY, blocks::block_state_ext::BlockStateExt, level_events, vanilla_game_events,
+};
 use steel_utils::types::UpdateFlags;
 
 use crate::{
@@ -7,7 +9,10 @@ use crate::{
         InteractionResult, ItemBehavior, UseOnContext, waxables::get_waxed_from_normal_variant,
     },
     block_entity::{BlockEntity, entities::SignBlockEntity},
+    world::game_event_context::GameEventContext,
 };
+
+use super::copper_chest_events::emit_connected_chest_block_change;
 
 /// Behavior for the honeycomb item. Waxes copper blocks and signs.
 #[item_behavior]
@@ -20,21 +25,31 @@ impl ItemBehavior for HoneycombItem {
         // Try block waxing first
         let old_block_state = context.world.get_block_state(pos);
         if let Some(waxed_block) = get_waxed_from_normal_variant(old_block_state.get_block()) {
-            context.inv.item().shrink(1);
+            context.inv.with_item(|item| item.shrink(1));
             // TODO: trigger CriteriaTriggers.ITEM_USED_ON_BLOCK advancement
-            context.world.set_block(
+            let waxed_state = REGISTRY
+                .blocks
+                .copy_matching_properties(old_block_state, waxed_block);
+            context
+                .world
+                .set_block(pos, waxed_state, UpdateFlags::UPDATE_ALL);
+            context.world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                REGISTRY
-                    .blocks
-                    .copy_matching_properties(old_block_state, waxed_block),
-                UpdateFlags::UPDATE_ALL,
+                &GameEventContext::new(Some(context.player), Some(waxed_state)),
             );
-            // TODO: dispatch GameEvent::BLOCK_CHANGE
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_WAX_ON,
                 pos,
                 0,
                 Some(context.player.id),
+            );
+            emit_connected_chest_block_change(
+                context.world,
+                pos,
+                old_block_state,
+                context.player,
+                Some(level_events::PARTICLES_AND_SOUND_WAX_ON),
             );
             return InteractionResult::Success;
         }
@@ -55,7 +70,7 @@ impl ItemBehavior for HoneycombItem {
 
         sign.is_waxed = true;
         sign.set_changed();
-        context.inv.item().shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
         context.world.level_event(
             level_events::PARTICLES_AND_SOUND_WAX_ON,
             pos,

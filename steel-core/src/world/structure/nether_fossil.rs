@@ -3,7 +3,7 @@
 //! reaches sea level.
 
 use steel_registry::structure::{
-    HeightProviderData, StructureConfigData, StructureData, VerticalAnchorData,
+    HeightProviderData, LiquidSettingsData, StructureConfigData, StructureData, VerticalAnchorData,
 };
 use steel_utils::Direction;
 use steel_utils::Identifier;
@@ -12,7 +12,9 @@ use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::world::structure::{
-    ColumnBlock, GenerationStub, Structure, StructureGenerationContext, StructurePiece,
+    GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
+    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
+    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 /// Fossil templates count (`minecraft:nether_fossils/fossil_N`).
@@ -76,32 +78,16 @@ pub fn find_generation_point<F>(
     height: &HeightProviderData,
     min_gen_y: i32,
     gen_depth: i32,
-    mut get_column_state: F,
+    mut solid_block_below_air: F,
 ) -> Option<FossilResult>
 where
-    F: FnMut(i32, i32, i32) -> ColumnBlock,
+    F: FnMut(i32, i32, i32, i32) -> Option<i32>,
 {
     let block_x = (chunk_x << 4) + rng.next_i32_bounded(16);
     let block_z = (chunk_z << 4) + rng.next_i32_bounded(16);
 
-    let mut y = sample_height(height, rng, min_gen_y, gen_depth);
-
-    // Base-noise column has no soul_sand, so the vanilla sturdy-face check = Solid.
-    let mut found = false;
-    while y > SEA_LEVEL {
-        let current = get_column_state(block_x, y, block_z);
-        y -= 1;
-        if current == ColumnBlock::Air
-            && get_column_state(block_x, y, block_z) == ColumnBlock::Solid
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if !found || y <= SEA_LEVEL {
-        return None;
-    }
+    let start_y = sample_height(height, rng, min_gen_y, gen_depth);
+    let y = solid_block_below_air(block_x, block_z, start_y, SEA_LEVEL + 1)?;
 
     let rotation = Rotation::get_random(rng);
     let fossil_idx = rng.next_i32_bounded(FOSSIL_COUNT) + 1;
@@ -111,6 +97,40 @@ where
         rotation,
         biome_check_pos: (block_x, y, block_z),
     })
+}
+
+const fn make_nether_fossil_piece(
+    template_id: Identifier,
+    position: (i32, i32, i32),
+    rotation: Rotation,
+    size: [i32; 3],
+) -> StructurePiece {
+    StructurePiece {
+        piece_type: Identifier::new_static("minecraft", "nefos"),
+        bounding_box: rotation.get_bounding_box(
+            position.0, position.1, position.2, size[0], size[1], size[2],
+        ),
+        gen_depth: 0,
+        orientation: Some(Direction::North),
+        payload: StructurePiecePayload::Template(TemplatePieceData {
+            template_id,
+            template_position: position,
+            rotation,
+            mirror: StructureMirror::None,
+            rotation_pivot: (0, 0, 0),
+            block_ignore: StructureBlockIgnore::StructureAndAir,
+            late_block_ignore: StructureBlockIgnore::None,
+            processors: TemplateProcessorList::Empty,
+            liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+            marker_handling: TemplateMarkerHandling::Ignore,
+            placement_adjustment: TemplatePlacementAdjustment::None,
+            placement_clip: TemplatePlacementClip::CenterChunkExpandedToTemplate,
+            post_process: TemplatePostProcess::NetherFossil,
+        }),
+        ground_level_delta: 0,
+        junctions: Vec::new(),
+        projection: None,
+    }
 }
 
 /// Entry point used by `VanillaGenerator`.
@@ -137,7 +157,7 @@ impl Structure for NetherFossilStructure {
             height,
             min_gen_y,
             gen_depth,
-            |x, y, z| ctx.column_state(x, y, z),
+            |x, z, start_y, min_solid_y| ctx.solid_block_below_air(x, z, start_y, min_solid_y),
         )?;
 
         let (bx, by, bz) = result.biome_check_pos;
@@ -146,24 +166,69 @@ impl Structure for NetherFossilStructure {
             return None;
         }
 
-        let tmpl = ctx
-            .templates()
-            .get(&Identifier::new("minecraft", result.template_name.clone()))?;
+        let template_id = Identifier::vanilla(result.template_name);
+        let tmpl_size = ctx.templates().get(&template_id)?.size;
         Some(GenerationStub {
             position: result.position,
-            pieces: vec![StructurePiece::non_jigsaw(
-                Identifier::new_static("minecraft", "nefos"),
-                result.rotation.get_bounding_box(
-                    result.position.0,
-                    result.position.1,
-                    result.position.2,
-                    tmpl.size[0],
-                    tmpl.size[1],
-                    tmpl.size[2],
-                ),
-                0,
-                Some(Direction::North),
+            pieces: vec![make_nether_fossil_piece(
+                template_id,
+                result.position,
+                result.rotation,
+                tmpl_size,
             )],
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nether_fossil_piece_uses_full_template_payload() {
+        let position = (10, 45, -20);
+        let size = [7, 5, 9];
+        let piece = make_nether_fossil_piece(
+            Identifier::vanilla_static("nether_fossils/fossil_1"),
+            position,
+            Rotation::Clockwise90,
+            size,
+        );
+
+        assert_eq!(
+            piece.piece_type,
+            Identifier::new_static("minecraft", "nefos")
+        );
+        assert_eq!(piece.gen_depth, 0);
+        assert_eq!(piece.orientation, Some(Direction::North));
+        assert_eq!(
+            piece.bounding_box,
+            Rotation::Clockwise90.get_bounding_box(
+                position.0, position.1, position.2, size[0], size[1], size[2],
+            ),
+        );
+
+        let StructurePiecePayload::Template(data) = piece.payload else {
+            panic!("nether fossil piece should be template-backed");
+        };
+        assert_eq!(
+            data.template_id,
+            Identifier::vanilla_static("nether_fossils/fossil_1")
+        );
+        assert_eq!(data.template_position, position);
+        assert_eq!(data.rotation, Rotation::Clockwise90);
+        assert_eq!(data.mirror, StructureMirror::None);
+        assert_eq!(data.rotation_pivot, (0, 0, 0));
+        assert_eq!(data.block_ignore, StructureBlockIgnore::StructureAndAir);
+        assert_eq!(data.late_block_ignore, StructureBlockIgnore::None);
+        assert_eq!(data.processors, TemplateProcessorList::Empty);
+        assert_eq!(data.liquid_settings, LiquidSettingsData::ApplyWaterlogging);
+        assert_eq!(data.marker_handling, TemplateMarkerHandling::Ignore);
+        assert_eq!(data.placement_adjustment, TemplatePlacementAdjustment::None);
+        assert_eq!(
+            data.placement_clip,
+            TemplatePlacementClip::CenterChunkExpandedToTemplate
+        );
+        assert_eq!(data.post_process, TemplatePostProcess::NetherFossil);
     }
 }

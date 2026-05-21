@@ -67,18 +67,12 @@ pub fn can_hold_any_fluid_state(state: BlockStateId) -> bool {
     }
 
     // Vanilla: state.blocksMotion() ? false : !(exclusion list)
-    if blocks_motion(block, state) {
+    if state.blocks_motion() {
         return false;
     }
 
     // Non-solid blocks that still reject fluid.
     !is_fluid_excluded_block(block)
-}
-
-/// Vanilla's `BlockState.blocksMotion()`:
-/// `block != Cobweb && block != BambooSapling && isSolid()`
-fn blocks_motion(block: BlockRef, state: BlockStateId) -> bool {
-    block != &vanilla_blocks::COBWEB && block != &vanilla_blocks::BAMBOO_SAPLING && state.is_solid()
 }
 
 /// Returns true if a block is in the vanilla fluid exclusion list.

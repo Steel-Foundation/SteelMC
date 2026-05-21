@@ -83,6 +83,7 @@ glob = "0.3"
 [dev-dependencies]
 md5.workspace = true
 criterion.workspace = true
+steel-registry = { workspace = true, features = ["test-utils"] }
 
 [[bench]]
 name = "worldgen"
