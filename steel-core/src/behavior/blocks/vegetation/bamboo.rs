@@ -124,30 +124,6 @@ impl BambooStalkBlock {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
-
-    use super::*;
-
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
-    #[test]
-    fn bamboo_growth_does_not_read_leaves_from_non_bamboo_support() {
-        init_registry();
-        let dirt = vanilla_blocks::DIRT.default_state();
-
-        assert_eq!(
-            BambooStalkBlock::leaves_for_new_segment(dirt),
-            BambooLeaves::Small
-        );
-    }
-}
-
 impl Bonemealable for BambooStalkBlock {
     fn get_bonemeal_age_increase(&self, _world: &Arc<World>, rng: &mut dyn rand::Rng) -> u8 {
         1 + rng.random_range(0..2)
@@ -301,5 +277,29 @@ impl BlockBehavior for BambooStalkBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn bamboo_growth_does_not_read_leaves_from_non_bamboo_support() {
+        init_registry();
+        let dirt = vanilla_blocks::DIRT.default_state();
+
+        assert_eq!(
+            BambooStalkBlock::leaves_for_new_segment(dirt),
+            BambooLeaves::Small
+        );
     }
 }

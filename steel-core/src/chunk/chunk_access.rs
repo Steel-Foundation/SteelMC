@@ -662,6 +662,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::chunk::heightmap::ChunkHeightmaps;
     use crate::chunk::section::{ChunkSection, Sections};
+    use crate::world::structure::{StructureReferenceMap, StructureStartMap};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
 
     fn init_registry() {
@@ -752,8 +753,8 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             ChunkHeightmaps::new(0, 16),
-            Default::default(),
-            Default::default(),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
         ));
 
         chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
