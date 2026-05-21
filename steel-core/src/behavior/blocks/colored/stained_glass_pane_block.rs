@@ -2,7 +2,6 @@
 //!
 //! bars connect to adjacent bars, bar solid blocks.
 
-use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -13,7 +12,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::building::{get_connection_state, update_shape};
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::ScheduledTickAccess;
 
 /// All glass colored pane blocks
 #[block_behavior]
@@ -43,7 +42,7 @@ impl BlockBehavior for StainedGlassPaneBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

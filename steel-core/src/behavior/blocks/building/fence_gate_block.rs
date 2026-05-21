@@ -8,7 +8,6 @@
 //! paths are left as `// TODO:` rather than faked — every other behavior is 1:1.
 
 use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -23,8 +22,9 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::behavior::InventoryAccess;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 /// Behavior for all fence gate variants.
 #[block_behavior]
@@ -109,7 +109,7 @@ impl BlockBehavior for FenceGateBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -132,6 +132,7 @@ impl BlockBehavior for FenceGateBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess
     ) -> InteractionResult {
         let mut new_state = state;
         if new_state.get_value(&OPEN) {

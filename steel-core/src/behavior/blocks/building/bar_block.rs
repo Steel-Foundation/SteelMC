@@ -16,7 +16,7 @@ use crate::behavior::blocks::WeatherState;
 use crate::behavior::blocks::building::WeatheringCopper;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 /// Behavior for bar blocks.
 ///
@@ -53,7 +53,7 @@ impl BlockBehavior for IronBarsBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -100,7 +100,7 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn ScheduledTickAccess,
         _pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

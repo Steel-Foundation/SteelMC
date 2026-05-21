@@ -14,14 +14,17 @@ mod utils;
 pub mod vegetation;
 
 pub use building::{
-    DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, StairBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
-    WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
+    DoorBlock, FenceBlock, FenceGateBlock, IronBarsBlock, RotatedPillarBlock, SlabBlock,
+    StairBlock, WallBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
+    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperSlabBlock,
+    WeatheringCopperStairBlock,
 };
+pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
-    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
-    TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
+    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
+    StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
+    WeatheringCopperChainBlock,
 };
 pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};

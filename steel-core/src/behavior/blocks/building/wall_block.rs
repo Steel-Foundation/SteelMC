@@ -7,27 +7,25 @@
 //! Steel yet. Every place vanilla calls `isCovered` is hardcoded to `false`
 //! and tagged `// is_covered` so it can be wired up once shapes land.
 
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
-use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, WallSide,
 };
+use steel_registry::blocks::BlockRef;
 use steel_registry::vanilla_block_tags::{
-    BARS_TAG, C_GLASS_PANES_TAG, FENCE_GATES_TAG, WALL_POST_OVERRIDE_TAG, WALLS_TAG,
+    BARS_TAG, C_GLASS_PANES_TAG, FENCE_GATES_TAG, WALLS_TAG, WALL_POST_OVERRIDE_TAG,
 };
 use steel_registry::vanilla_fluids;
-use steel_registry::{REGISTRY, TaggedRegistryExt};
+use steel_registry::vanilla_fluids::WATER;
+use steel_registry::{TaggedRegistryExt, REGISTRY};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::building::FenceGateBlock;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
-use crate::behavior::fluid::FLUID_BEHAVIORS;
-use crate::world::World;
+use crate::world::ScheduledTickAccess;
 
 /// Behavior for wall blocks.
 ///
@@ -116,7 +114,7 @@ impl BlockBehavior for WallBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,
@@ -124,8 +122,7 @@ impl BlockBehavior for WallBlock {
     ) -> BlockStateId {
         if state.get_value(&WATERLOGGED) {
             let water = &vanilla_fluids::WATER;
-            let delay = FLUID_BEHAVIORS.get_behavior(water).tick_delay(world);
-            world.schedule_fluid_tick_default(pos, water, delay);
+            world.schedule_fluid_tick_default(pos, water, world.fluid_tick_delay(&WATER));
         }
 
         match direction {
@@ -181,7 +178,7 @@ fn top_update(state: BlockStateId, top_neighbor: BlockStateId) -> BlockStateId {
 
 /// Vanilla `WallBlock.sideUpdate`.
 fn side_update(
-    world: &Arc<World>,
+    world: &dyn ScheduledTickAccess,
     pos: BlockPos,
     state: BlockStateId,
     neighbor: BlockStateId,
