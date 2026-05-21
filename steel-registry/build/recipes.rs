@@ -248,7 +248,7 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
         ParsedIngredient::Empty => quote! { Ingredient::Empty },
         ParsedIngredient::Item(item_id) => {
             let item_ident = Ident::new(item_id, Span::call_site());
-            quote! { Ingredient::Item(&ITEMS.#item_ident) }
+            quote! { Ingredient::Item(ITEMS.#item_ident) }
         }
         ParsedIngredient::Tag(tag_id) => {
             quote! { Ingredient::Tag(Identifier::vanilla_static(#tag_id)) }
@@ -258,7 +258,7 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
                 .iter()
                 .map(|item_id| {
                     let item_ident = Ident::new(item_id, Span::call_site());
-                    quote! { &ITEMS.#item_ident }
+                    quote! { ITEMS.#item_ident }
                 })
                 .collect();
             // Use Box::leak to create a static slice for Choice items
@@ -367,7 +367,7 @@ pub(crate) fn build() -> TokenStream {
                         height: #height,
                         pattern,
                         result: RecipeResult {
-                            item: &ITEMS.#result_item_ident,
+                            item: ITEMS.#result_item_ident,
                             count: #result_count,
                         },
                         show_notification: #show_notification,
@@ -407,7 +407,7 @@ pub(crate) fn build() -> TokenStream {
                         category: #category,
                         ingredients,
                         result: RecipeResult {
-                            item: &ITEMS.#result_item_ident,
+                            item: ITEMS.#result_item_ident,
                             count: #result_count,
                         },
                     }

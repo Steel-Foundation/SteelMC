@@ -238,12 +238,14 @@ impl Server {
                     world_entry.key
                 )
             })?;
-            let generator_output = generator_registry
-                .create(
-                    &world_entry.generator,
-                    &world_entry.generator_config,
-                    world_seed,
-                )
+            let generator_output = generation_pool
+                .install(|| {
+                    generator_registry.create(
+                        &world_entry.generator,
+                        &world_entry.generator_config,
+                        world_seed,
+                    )
+                })
                 .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config(

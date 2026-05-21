@@ -247,43 +247,36 @@ pub(crate) fn build() -> TokenStream {
         serde_json::from_str(&fs::read_to_string("build_assets/items.json").unwrap()).unwrap();
 
     let mut item_definitions = TokenStream::new();
-    let mut item_construction = TokenStream::new();
+    let mut item_creator_functions = TokenStream::new();
+    let mut item_static_definitions = TokenStream::new();
+    let mut item_field_inits = TokenStream::new();
 
     let mut register_stream = TokenStream::new();
     for item in &item_assets.items {
         let item_ident = Ident::new(&item.name, Span::call_site());
         let item_name_str = item.name.clone();
+        let creator_ident = Ident::new(&format!("create_{}", item.name), Span::call_site());
+        let static_ident = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
 
         item_definitions.extend(quote! {
-           pub #item_ident: Item,
+           pub #item_ident: ItemRef,
         });
 
-        if let Some(block_name) = &item.block_item {
+        let item_initializer = if let Some(block_name) = &item.block_item {
             let block_ident = Ident::new(&block_name.to_shouty_snake_case(), Span::call_site());
             let builder_calls = generate_builder_calls(item);
+            let base_expression = if block_name != &item.name {
+                quote! { Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str) }
+            } else {
+                quote! { Item::from_block(&vanilla_blocks::#block_ident) }
+            };
 
             if builder_calls.is_empty() {
-                if block_name != &item.name {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str),
-                    });
-                } else {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident),
-                    });
-                }
+                base_expression
             } else {
-                // Block item with custom components
-                if block_name != &item.name {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block_custom_name(&vanilla_blocks::#block_ident, #item_name_str)
-                            #(#builder_calls)*,
-                    });
-                } else {
-                    item_construction.extend(quote! {
-                        #item_ident: Item::from_block(&vanilla_blocks::#block_ident)
-                            #(#builder_calls)*,
-                    });
+                quote! {
+                    #base_expression
+                        #(#builder_calls)*
                 }
             }
         } else {
@@ -295,19 +288,34 @@ pub(crate) fn build() -> TokenStream {
                 quote! { None }
             };
 
-            item_construction.extend(quote! {
-                #item_ident: Item {
+            quote! {
+                Item {
                     key: Identifier::vanilla_static(#item_name_str),
                     components: DataComponentMap::common_item_components()
                         #(#builder_calls)*,
                     craft_remainder: #craft_remainder_value,
                     id: OnceLock::new(),
-                },
-            });
-        }
+                }
+            }
+        };
+
+        item_creator_functions.extend(quote! {
+            #[inline(never)]
+            fn #creator_ident() -> Item {
+                #item_initializer
+            }
+        });
+
+        item_static_definitions.extend(quote! {
+            pub static #static_ident: LazyLock<Item> = LazyLock::new(#creator_ident);
+        });
+
+        item_field_inits.extend(quote! {
+            #item_ident: &#static_ident,
+        });
 
         register_stream.extend(quote! {
-            registry.register(&ITEMS.#item_ident);
+            registry.register(ITEMS.#item_ident);
         });
     }
 
@@ -315,10 +323,13 @@ pub(crate) fn build() -> TokenStream {
         use crate::{
             data_components::{vanilla_components, DataComponentMap},
             vanilla_blocks,
-            items::{Item, ItemRegistry},
+            items::{Item, ItemRef, ItemRegistry},
         };
         use steel_utils::Identifier;
         use std::sync::{LazyLock, OnceLock};
+
+        #item_creator_functions
+        #item_static_definitions
 
         pub static ITEMS: LazyLock<Items> = LazyLock::new(Items::init);
 
@@ -329,7 +340,7 @@ pub(crate) fn build() -> TokenStream {
         impl Items {
             fn init() -> Self {
                 Self {
-                    #item_construction
+                    #item_field_inits
                 }
             }
         }
