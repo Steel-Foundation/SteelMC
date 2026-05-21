@@ -3,13 +3,14 @@
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_blocks,
+    vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for items that place blocks.
 #[item_behavior]
@@ -76,6 +77,11 @@ impl BlockItem {
             sound_type.volume,
             sound_type.pitch,
             Some(context.player.id),
+        );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
         context.inv.with_item(|item| item.shrink(1));

@@ -14,7 +14,7 @@ use steel_registry::{
         properties::{BlockStateProperties, Direction, DoorHingeSide, DoubleBlockHalf},
         shapes,
     },
-    vanilla_blocks,
+    vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{
     BlockPos, BlockStateId,
@@ -30,7 +30,7 @@ use crate::{
     },
     fluid::fluid_state_to_block,
     player::Player,
-    world::{LevelReader, ScheduledTickAccess, World},
+    world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
 };
 
 /// Behavior for vanilla door blocks.
@@ -302,7 +302,12 @@ impl BlockBehavior for DoorBlock {
         let new_state = state.set_value(&BlockStateProperties::OPEN, open);
         world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS);
         self.play_sound(world, pos, open, Some(player.id));
-        // TODO: GameEvent.BLOCK_OPEN/BLOCK_CLOSE once game events exist.
+        let event = if open {
+            &vanilla_game_events::BLOCK_OPEN
+        } else {
+            &vanilla_game_events::BLOCK_CLOSE
+        };
+        world.game_event(event, pos, &GameEventContext::new(Some(player), None));
         InteractionResult::Success
     }
 
@@ -332,7 +337,12 @@ impl BlockBehavior for DoorBlock {
 
         if signal != state.get_value(&BlockStateProperties::OPEN) {
             self.play_sound(world, pos, signal, None);
-            // TODO: GameEvent.BLOCK_OPEN/BLOCK_CLOSE once game events exist.
+            let event = if signal {
+                &vanilla_game_events::BLOCK_OPEN
+            } else {
+                &vanilla_game_events::BLOCK_CLOSE
+            };
+            world.game_event(event, pos, &GameEventContext::default());
         }
 
         let new_state = state
@@ -467,7 +477,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use super::*;
@@ -516,15 +526,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn lower_half_copies_transformed_upper_half_state() {
-        init_registry();
+        init_test_registry();
         let behavior = DoorBlock::new(&vanilla_blocks::SPRUCE_DOOR, true, 0, 0);
         let lower = vanilla_blocks::SPRUCE_DOOR
             .default_state()

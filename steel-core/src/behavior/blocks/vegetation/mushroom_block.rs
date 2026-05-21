@@ -62,7 +62,7 @@ impl BlockBehavior for MushroomBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
 
@@ -104,15 +104,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn mushroom_survival_uses_solid_render_support() {
-        init_registry();
+        init_test_registry();
 
         let mushroom = MushroomBlock::new(&vanilla_blocks::BROWN_MUSHROOM);
         let state = REGISTRY

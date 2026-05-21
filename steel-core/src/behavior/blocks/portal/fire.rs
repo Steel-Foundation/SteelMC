@@ -188,17 +188,13 @@ impl BlockBehavior for SoulFireBlock {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
-
     use steel_registry::{
-        REGISTRY, Registry, blocks::block_state_ext::BlockStateExt, vanilla_blocks,
+        blocks::block_state_ext::BlockStateExt, test_support::init_test_registry, vanilla_blocks,
     };
 
     use super::FireBlock;
     use crate::world::LevelReader;
     use steel_utils::{BlockPos, BlockStateId};
-
-    static INIT_REGISTRY: Once = Once::new();
 
     struct SingleSupportLevel {
         support_state: BlockStateId,
@@ -234,17 +230,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-
     #[test]
     fn get_state_selects_soul_fire_on_soul_fire_base_block() {
-        init_registry();
+        init_test_registry();
 
         let level = SingleSupportLevel::new(vanilla_blocks::SOUL_SAND.default_state());
 
@@ -260,7 +248,7 @@ mod tests {
 
     #[test]
     fn get_state_selects_regular_fire_otherwise() {
-        init_registry();
+        init_test_registry();
 
         let level = SingleSupportLevel::new(vanilla_blocks::STONE.default_state());
 

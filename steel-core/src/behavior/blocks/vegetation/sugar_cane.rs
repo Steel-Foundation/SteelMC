@@ -169,7 +169,7 @@ mod tests {
     use std::cell::Cell;
 
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry};
+    use steel_registry::test_support::init_test_registry;
 
     use super::*;
 
@@ -229,15 +229,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
-        init_registry();
+        init_test_registry();
         let behavior = SugarCaneBlock::new(&vanilla_blocks::SUGAR_CANE);
         let level = EmptyLevel::new();
         let state = vanilla_blocks::SUGAR_CANE.default_state();

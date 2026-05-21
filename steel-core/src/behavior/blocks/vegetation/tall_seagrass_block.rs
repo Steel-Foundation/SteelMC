@@ -137,7 +137,7 @@ impl BlockBehavior for TallSeagrassBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
 
@@ -200,15 +200,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn tall_seagrass_lower_breaks_when_upper_half_is_missing() {
-        init_registry();
+        init_test_registry();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
@@ -230,7 +224,7 @@ mod tests {
 
     #[test]
     fn tall_seagrass_upper_breaks_when_lower_half_is_missing() {
-        init_registry();
+        init_test_registry();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let upper = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,

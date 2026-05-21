@@ -8,11 +8,10 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, Direction};
-use steel_registry::vanilla_blocks;
+use steel_registry::{REGISTRY, vanilla_blocks, vanilla_game_events};
 use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -21,7 +20,7 @@ use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
 
 /// Behavior for all button block variants.
 ///
@@ -87,7 +86,11 @@ impl ButtonBlock {
         self.update_button_neighbors(powered_state, world, pos);
         world.schedule_block_tick_default(pos, self.block, self.ticks_to_stay_pressed);
         world.play_block_sound(self.sound_click_on, pos, 1.0, 1.0, Some(player.id));
-        // TODO: GameEvent.BLOCK_ACTIVATE when game event system exists
+        world.game_event(
+            &vanilla_game_events::BLOCK_ACTIVATE,
+            pos,
+            &GameEventContext::new(Some(player), None),
+        );
     }
 }
 
@@ -180,7 +183,11 @@ impl BlockBehavior for ButtonBlock {
         world.set_block(pos, unpowered_state, UpdateFlags::UPDATE_ALL);
         self.update_button_neighbors(state, world, pos);
         world.play_block_sound(self.sound_click_off, pos, 1.0, 1.0, None);
-        // TODO: GameEvent.BLOCK_DEACTIVATE when game event system exists
+        world.game_event(
+            &vanilla_game_events::BLOCK_DEACTIVATE,
+            pos,
+            &GameEventContext::default(),
+        );
     }
 
     fn affect_neighbors_after_removal(

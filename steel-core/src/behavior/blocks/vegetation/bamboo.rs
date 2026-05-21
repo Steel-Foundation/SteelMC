@@ -282,19 +282,13 @@ impl BlockBehavior for BambooStalkBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn bamboo_growth_does_not_read_leaves_from_non_bamboo_support() {
-        init_registry();
+        init_test_registry();
         let dirt = vanilla_blocks::DIRT.default_state();
 
         assert_eq!(

@@ -856,18 +856,14 @@ impl Container for PlayerInventory {
 mod tests {
     use std::sync::Weak;
 
+    use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_items::ITEMS;
-    use steel_registry::{REGISTRY, Registry};
 
     use super::*;
 
-    fn ensure_registry() {
-        let _ = REGISTRY.init(Registry::new_vanilla());
-    }
-
     #[test]
     fn add_marks_changed_when_stack_fills_existing_slot() {
-        ensure_registry();
+        init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
         inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 63);
@@ -883,7 +879,7 @@ mod tests {
 
     #[test]
     fn clear_content_counts_equipment_items() {
-        ensure_registry();
+        init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
         inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 3);

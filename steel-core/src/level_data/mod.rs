@@ -465,14 +465,8 @@ mod tests {
         process,
         time::{SystemTime, UNIX_EPOCH},
     };
-    use steel_registry::Registry;
+    use steel_registry::test_support::init_test_registry;
     use toml::map::Map;
-
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
 
     fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
         let mut config = Map::new();
@@ -531,7 +525,7 @@ mod tests {
 
     #[test]
     fn adopts_missing_generation_settings() {
-        init_registry();
+        init_test_registry();
         let mut data = LevelData::new_with_seed(1);
 
         let adopted = data
@@ -544,7 +538,7 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_generation_settings() {
-        init_registry();
+        init_test_registry();
         let mut data = LevelData::new_with_seed(1);
         data.generation = Some(settings("minecraft:the_nether", 128));
 

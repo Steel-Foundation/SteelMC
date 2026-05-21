@@ -656,7 +656,7 @@ impl ChunkAccess {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -665,15 +665,9 @@ mod tests {
     use crate::world::structure::{StructureReferenceMap, StructureStartMap};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
-        init_registry();
+        init_test_registry();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -701,7 +695,7 @@ mod tests {
 
     #[test]
     fn generation_relative_write_updates_proto_heightmaps() {
-        init_registry();
+        init_test_registry();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -742,7 +736,7 @@ mod tests {
 
     #[test]
     fn full_chunk_postprocessing_mark_is_vanilla_noop() {
-        init_registry();
+        init_test_registry();
         init_behaviors();
         let chunk = ChunkAccess::Full(LevelChunk::from_disk(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),

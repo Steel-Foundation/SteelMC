@@ -9,7 +9,9 @@ use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::loot_table::LootContext;
 use steel_registry::vanilla_attributes;
-use steel_registry::{REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks};
+use steel_registry::{
+    REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks, vanilla_game_events,
+};
 use steel_utils::Identifier;
 use steel_utils::{
     BlockPos, BlockStateId,
@@ -20,7 +22,7 @@ use super::food_data::food_constants;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{World, game_event_context::GameEventContext};
 
 /// Manages the block breaking state for a player.
 ///
@@ -285,6 +287,11 @@ impl BlockBreakingManager {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
+        world.game_event(
+            &vanilla_game_events::BLOCK_DESTROY,
+            pos,
+            &GameEventContext::new(Some(player), Some(adjusted_state)),
+        );
         let changed_by_player_will_destroy = world.get_block_state(pos) != state;
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged

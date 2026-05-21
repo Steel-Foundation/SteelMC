@@ -2365,6 +2365,7 @@ mod tests {
     use crate::world::structure::StructureReferenceSet;
     use glam::DVec3;
     use rustc_hash::FxHashMap;
+    use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
     use steel_registry::vanilla_entities;
@@ -2372,14 +2373,8 @@ mod tests {
 
     static RUNTIME_REGISTRIES: Once = Once::new();
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     fn init_runtime_registries() {
-        init_registry();
+        init_test_registry();
         RUNTIME_REGISTRIES.call_once(|| {
             init_behaviors();
             init_block_entities();
@@ -2406,7 +2401,7 @@ mod tests {
 
     #[test]
     fn proto_carving_mask_presence_roundtrips_when_empty() {
-        init_registry();
+        init_test_registry();
 
         let pos = ChunkPos::new(3, -4);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -2436,7 +2431,7 @@ mod tests {
 
     #[test]
     fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
-        init_registry();
+        init_test_registry();
 
         let pos = ChunkPos::new(3, -4);
         let proto = ProtoChunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -2480,7 +2475,7 @@ mod tests {
 
     #[test]
     fn proto_postprocessing_roundtrips_through_persistent_chunk() {
-        init_registry();
+        init_test_registry();
 
         let pos = ChunkPos::new(-2, 1);
         let marked = BlockPos::new(-17, -63, 31);
@@ -2734,7 +2729,7 @@ mod tests {
         reason = "single fixture verifies every persisted jigsaw field roundtrips together"
     )]
     fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
-        init_registry();
+        init_test_registry();
 
         let structure_id = Identifier::new_static("steel", "test_jigsaw_structure");
         let piece_type = Identifier::new_static("minecraft", "jigsaw");
@@ -2857,7 +2852,7 @@ mod tests {
         reason = "single roundtrip fixture covers every structure piece payload variant together"
     )]
     fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
-        init_registry();
+        init_test_registry();
 
         let structure_id = Identifier::new_static("steel", "test_payload_variants");
         let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");

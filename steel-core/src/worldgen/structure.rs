@@ -818,7 +818,7 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_biomes};
+    use steel_registry::{test_support::init_test_registry, vanilla_biomes};
 
     use crate::world::structure::placement::{
         ExclusionZone, FrequencyReductionMethod, PlacementKind, SpreadType,
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn vanilla_assets_cover_vanilla_structure_sets() {
-        let _ = REGISTRY.init(Registry::new_vanilla());
+        init_test_registry();
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let _ = StructureGenerator::vanilla_with_structure_sets(
             0,

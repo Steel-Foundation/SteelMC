@@ -504,7 +504,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::TickPriority;
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
     #[test]
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn proto_scheduled_block_ticks_use_vanilla_zero_delay() {
-        let _ = REGISTRY.init(Registry::new_vanilla());
+        init_test_registry();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -550,9 +550,7 @@ mod tests {
 
     #[test]
     fn proto_chunk_preserves_distinct_air_states_in_empty_sections() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
+        init_test_registry();
         init_behaviors();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),

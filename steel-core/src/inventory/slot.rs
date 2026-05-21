@@ -846,12 +846,8 @@ pub fn add_standard_inventory_slots(slots: &mut Vec<SlotType>, inventory: &SyncP
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_items::ITEMS;
-    use steel_registry::{REGISTRY, Registry};
-
-    fn ensure_registry() {
-        let _ = REGISTRY.init(Registry::new_vanilla());
-    }
 
     fn lock_crafting_pair(
         crafting: &SyncCraftingContainer,
@@ -864,7 +860,7 @@ mod tests {
 
     #[test]
     fn crafting_grid_remove_refreshes_result_slot() {
-        ensure_registry();
+        init_test_registry();
 
         let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
         let result = Arc::new(SyncMutex::new(ResultContainer::new()));
@@ -894,7 +890,7 @@ mod tests {
 
     #[test]
     fn crafting_result_requires_current_matching_recipe() {
-        ensure_registry();
+        init_test_registry();
 
         let crafting = Arc::new(SyncMutex::new(CraftingContainer::new(2, 2)));
         let result = Arc::new(SyncMutex::new(ResultContainer::new()));

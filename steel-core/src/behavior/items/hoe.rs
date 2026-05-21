@@ -2,11 +2,14 @@ use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
     item_stack::ItemStack,
-    sound_events, vanilla_blocks, vanilla_items,
+    sound_events, vanilla_blocks, vanilla_game_events, vanilla_items,
 };
 use steel_utils::{Direction, types::UpdateFlags};
 
-use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
+use crate::{
+    behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    world::game_event_context::GameEventContext,
+};
 
 /// Behavior for Hoes
 #[item_behavior]
@@ -45,12 +48,17 @@ impl ItemBehavior for HoeItem {
             return InteractionResult::Pass;
         }
 
+        let new_state = tilled_variant.default_state();
         context.world.set_block(
             context.hit_result.block_pos,
-            tilled_variant.default_state(),
+            new_state,
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
-        // TODO: Emit GameEvent::BLOCK_CHANGE
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            context.hit_result.block_pos,
+            &GameEventContext::new(Some(context.player), Some(new_state)),
+        );
 
         if state.get_block() == &vanilla_blocks::ROOTED_DIRT {
             context.world.pop_resource_from_face(

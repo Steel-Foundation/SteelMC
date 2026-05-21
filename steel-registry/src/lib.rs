@@ -1,5 +1,6 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
 
+use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -73,6 +74,7 @@ pub mod entity_types;
 pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
+pub mod game_events;
 pub mod game_rules;
 pub mod instrument;
 pub mod item_stack;
@@ -349,6 +351,11 @@ pub mod vanilla_game_rules;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_game_events.rs"]
+pub mod vanilla_game_events;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_level_events.rs"]
 pub mod level_events;
 
@@ -435,6 +442,24 @@ impl Deref for RegistryLock {
 }
 
 pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_support {
+    use std::sync::Once;
+
+    use crate::{REGISTRY, Registry};
+
+    static INIT_REGISTRY: Once = Once::new();
+
+    /// Initializes the global registry with frozen vanilla data for tests.
+    pub fn init_test_registry() {
+        INIT_REGISTRY.call_once(|| {
+            let mut registry = Registry::new_vanilla();
+            registry.freeze();
+            let _ = REGISTRY.init(registry);
+        });
+    }
+}
 
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
 pub trait RegistryEntry: 'static {
@@ -556,6 +581,7 @@ pub struct Registry {
     pub loot_tables: LootTableRegistry,
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
+    pub game_events: GameEventRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
@@ -638,6 +664,7 @@ impl Registry {
         vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
+        vanilla_game_events::register_game_events(&mut registry.game_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);
         vanilla_fluid_tags::register_fluid_tags(&mut registry.fluids);
@@ -702,6 +729,7 @@ impl Registry {
         self.loot_tables.freeze();
         self.block_entity_types.freeze();
         self.game_rules.freeze();
+        self.game_events.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
         self.enchantments.freeze();
@@ -884,6 +912,7 @@ impl Registry {
             loot_tables: LootTableRegistry::new(),
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
+            game_events: GameEventRegistry::new(),
             fluids: FluidRegistry::new(),
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
@@ -979,6 +1008,27 @@ mod tests {
                 .placed_features
                 .by_key(&Identifier::vanilla_static("ore_diamond"))
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn vanilla_game_events_initialize_in_vanilla_order() {
+        let registry = Registry::new_vanilla();
+        let block_activate = Identifier::vanilla_static("block_activate");
+        let resonate_1 = Identifier::vanilla_static("resonate_1");
+        let resonate_10 = Identifier::vanilla_static("resonate_10");
+
+        assert_eq!(
+            registry.game_events.by_id(0).map(|event| &event.key),
+            Some(&block_activate)
+        );
+        assert_eq!(
+            registry.game_events.by_id(45).map(|event| &event.key),
+            Some(&resonate_1)
+        );
+        assert_eq!(
+            registry.game_events.by_id(54).map(|event| &event.key),
+            Some(&resonate_10)
         );
     }
 }

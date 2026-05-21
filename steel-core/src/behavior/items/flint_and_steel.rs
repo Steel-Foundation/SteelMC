@@ -7,10 +7,12 @@ use steel_macros::item_behavior;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-    sound_events, vanilla_block_tags,
+    sound_events, vanilla_block_tags, vanilla_game_events,
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
+
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for flint and steel items.
 #[item_behavior]
@@ -54,6 +56,11 @@ impl ItemBehavior for FlintAndSteelItem {
             fire_pos,
             FireBlock::get_state(context.world.as_ref(), fire_pos),
             UpdateFlags::UPDATE_ALL,
+        );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            click_pos,
+            &GameEventContext::new(Some(context.player), None),
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
@@ -105,6 +112,11 @@ impl ItemBehavior for FireChargeItem {
             FireBlock::get_state(context.world.as_ref(), fire_pos),
             UpdateFlags::UPDATE_ALL,
         );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            fire_pos,
+            &GameEventContext::new(Some(context.player), None),
+        );
 
         context.inv.with_item(|item| item.shrink(1));
 
@@ -130,6 +142,11 @@ fn try_light_block(
         pos,
         state.set_value(&BlockStateProperties::LIT, true),
         UpdateFlags::UPDATE_ALL_IMMEDIATE,
+    );
+    context.world.game_event(
+        &vanilla_game_events::BLOCK_CHANGE,
+        pos,
+        &GameEventContext::new(Some(context.player), None),
     );
 
     true
@@ -173,29 +190,17 @@ fn fire_charge_pitch() -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
-
     use steel_registry::{
-        REGISTRY, Registry,
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        test_support::init_test_registry,
         vanilla_blocks,
     };
 
     use super::can_light;
 
-    static INIT_REGISTRY: Once = Once::new();
-
-    fn init_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-
     #[test]
     fn can_light_rejects_waterlogged_campfires_and_candles() {
-        init_registry();
+        init_test_registry();
 
         let waterlogged_campfire = vanilla_blocks::CAMPFIRE
             .default_state()
@@ -218,7 +223,7 @@ mod tests {
 
     #[test]
     fn can_light_accepts_unlit_candle_cakes() {
-        init_registry();
+        init_test_registry();
 
         let unlit_candle_cake = vanilla_blocks::CANDLE_CAKE
             .default_state()

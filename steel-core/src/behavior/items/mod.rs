@@ -7,6 +7,7 @@ mod axe;
 mod block_item;
 mod bonemeal;
 mod bucket;
+mod copper_chest_events;
 mod default;
 mod ender_eye;
 mod hoe;

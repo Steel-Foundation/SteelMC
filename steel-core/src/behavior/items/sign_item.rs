@@ -13,7 +13,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{TaggedRegistryExt, vanilla_block_tags};
+use steel_registry::{TaggedRegistryExt, vanilla_block_tags, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -21,6 +21,7 @@ use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::world::World;
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for sign items that place sign blocks and open the editor.
 ///
@@ -80,6 +81,7 @@ impl ItemBehavior for SignItem {
         {
             return InteractionResult::Fail;
         }
+        let placed_state = context.world.get_block_state(place_pos);
 
         let block = self.inner.get_block_for_state(new_state);
         let sound_type = &block.config.sound_type;
@@ -89,6 +91,11 @@ impl ItemBehavior for SignItem {
             sound_type.volume,
             sound_type.pitch,
             Some(context.player.id),
+        );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
         context.inv.with_item(|item| item.shrink(1));
@@ -246,6 +253,7 @@ impl ItemBehavior for HangingSignItem {
         {
             return InteractionResult::Fail;
         }
+        let placed_state = context.world.get_block_state(place_pos);
 
         if let Some(block) = placed_block {
             let sound_type = &block.config.sound_type;
@@ -257,6 +265,11 @@ impl ItemBehavior for HangingSignItem {
                 Some(context.player.id),
             );
         }
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
+        );
 
         context.inv.with_item(|item| item.shrink(1));
 

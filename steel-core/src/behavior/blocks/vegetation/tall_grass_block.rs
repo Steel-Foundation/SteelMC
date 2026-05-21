@@ -128,7 +128,7 @@ impl Bonemealable for TallGrassBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry};
+    use steel_registry::test_support::init_test_registry;
 
     use super::*;
 
@@ -156,15 +156,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn tall_grass_bonemeal_rejects_top_build_height() {
-        init_registry();
+        init_test_registry();
         let behavior = TallGrassBlock::new(&vanilla_blocks::SHORT_GRASS);
         let state = vanilla_blocks::SHORT_GRASS.default_state();
 

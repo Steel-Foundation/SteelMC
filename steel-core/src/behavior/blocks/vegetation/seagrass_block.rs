@@ -126,7 +126,7 @@ mod tests {
     use std::cell::Cell;
 
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
 
     use super::*;
 
@@ -201,15 +201,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn seagrass_update_shape_breaks_without_support() {
-        init_registry();
+        init_test_registry();
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let level = SingleSupportLevel::new(vanilla_blocks::AIR.default_state());
         let state = vanilla_blocks::SEAGRASS.default_state();
@@ -229,7 +223,7 @@ mod tests {
 
     #[test]
     fn seagrass_update_shape_schedules_water_when_it_survives() {
-        init_registry();
+        init_test_registry();
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let level = SingleSupportLevel::new(vanilla_blocks::DIRT.default_state());
         let state = vanilla_blocks::SEAGRASS.default_state();
@@ -249,7 +243,7 @@ mod tests {
 
     #[test]
     fn seagrass_bonemeal_requires_water_block_above() {
-        init_registry();
+        init_test_registry();
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let state = vanilla_blocks::SEAGRASS.default_state();
         let waterlogged_slab = vanilla_blocks::OAK_SLAB
