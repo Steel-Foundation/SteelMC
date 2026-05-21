@@ -73,30 +73,26 @@ impl BambooStalkBlock {
         height: i32,
     ) {
         let state_below = world.get_block_state(pos.below());
-        let block_below = state_below.get_block();
         let state_two_below = world.get_block_state(pos.below_n(2));
         let leaves = if height == 0 {
             BambooLeaves::None
         } else {
-            let leaves_below = state_below.get_value(&BAMBOO_LEAVES_PROPERTY);
-
-            if block_below != &vanilla_blocks::BAMBOO || leaves_below == BambooLeaves::None {
-                BambooLeaves::Small
-            } else {
-                if state_two_below.get_block() == &vanilla_blocks::BAMBOO {
-                    world.set_block(
-                        pos.below(),
-                        state_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
-                        UpdateFlags::UPDATE_ALL,
-                    );
-                    world.set_block(
-                        pos.below_n(2),
-                        state_two_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::None),
-                        UpdateFlags::UPDATE_ALL,
-                    );
-                }
-                BambooLeaves::Large
+            let leaves = Self::leaves_for_new_segment(state_below);
+            if leaves == BambooLeaves::Large
+                && state_two_below.get_block() == &vanilla_blocks::BAMBOO
+            {
+                world.set_block(
+                    pos.below(),
+                    state_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
+                    UpdateFlags::UPDATE_ALL,
+                );
+                world.set_block(
+                    pos.below_n(2),
+                    state_two_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::None),
+                    UpdateFlags::UPDATE_ALL,
+                );
             }
+            leaves
         };
 
         let new_age = u8::from(
@@ -114,6 +110,40 @@ impl BambooStalkBlock {
                 .set_value(&BlockStateProperties::STAGE, new_stage)
                 .set_value(&BlockStateProperties::BAMBOO_LEAVES, leaves),
             UpdateFlags::UPDATE_ALL,
+        );
+    }
+
+    fn leaves_for_new_segment(state_below: BlockStateId) -> BambooLeaves {
+        if state_below.get_block() != &vanilla_blocks::BAMBOO
+            || state_below.get_value(&BAMBOO_LEAVES_PROPERTY) == BambooLeaves::None
+        {
+            BambooLeaves::Small
+        } else {
+            BambooLeaves::Large
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+
+    use super::*;
+
+    fn init_registry() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        let _ = REGISTRY.init(registry);
+    }
+
+    #[test]
+    fn bamboo_growth_does_not_read_leaves_from_non_bamboo_support() {
+        init_registry();
+        let dirt = vanilla_blocks::DIRT.default_state();
+
+        assert_eq!(
+            BambooStalkBlock::leaves_for_new_segment(dirt),
+            BambooLeaves::Small
         );
     }
 }
@@ -238,7 +268,7 @@ impl BlockBehavior for BambooStalkBlock {
             && world.get_block_state(pos.above()).is_air()
             && world.raw_brightness(pos.above(), 0) >= 9
         {
-            let height = Self::stalk_segments_below(world, pos);
+            let height = Self::stalk_segments_below(world, pos) + 1;
             if height < 16 {
                 Self::grow(world, pos, state, &mut rng, height);
             }

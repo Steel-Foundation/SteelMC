@@ -416,12 +416,12 @@ impl ChunkAccess {
 
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
     ///
-    /// # Panics
-    /// Panics if the chunk is already full.
+    /// Full chunks mirror vanilla `ImposterProtoChunk.markPosForPostprocessing` and ignore
+    /// late worldgen postprocessing marks.
     pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
         match self {
             Self::Proto(proto) => proto.mark_pos_for_postprocessing(pos),
-            Self::Full(_) => panic!("mark_pos_for_postprocessing not available on full chunks"),
+            Self::Full(_) => {}
             Self::Unloaded => unreachable!(),
         }
     }
@@ -659,7 +659,10 @@ mod tests {
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 
     use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::heightmap::ChunkHeightmaps;
     use crate::chunk::section::{ChunkSection, Sections};
+    use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
 
     fn init_registry() {
         let mut registry = Registry::new_vanilla();
@@ -734,5 +737,25 @@ mod tests {
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
             HeightmapType::MotionBlocking
         );
+    }
+
+    #[test]
+    fn full_chunk_postprocessing_mark_is_vanilla_noop() {
+        init_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            Default::default(),
+            Default::default(),
+        ));
+
+        chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
     }
 }
