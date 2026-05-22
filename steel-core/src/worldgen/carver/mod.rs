@@ -11,7 +11,7 @@ use std::{cell::Cell, sync::LazyLock};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use steel_math::lerp2;
-use steel_math::mth;
+use steel_math::trig;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, TaggedRegistryExt};
@@ -329,7 +329,7 @@ pub struct CarveParams<'a> {
 #[inline]
 #[must_use]
 pub(super) fn horizontal_tunnel_radius(progress_arg: f32, thickness: f32) -> f64 {
-    let radius_offset = mth::sin(f64::from(progress_arg)) * thickness;
+    let radius_offset = trig::sin(f64::from(progress_arg)) * thickness;
     1.5 + f64::from(radius_offset)
 }
 
