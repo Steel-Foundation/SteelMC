@@ -1238,6 +1238,42 @@ impl Entity for Player {
         self.entity_state.lock().on_ground
     }
 
+    fn is_living(&self) -> bool {
+        true
+    }
+
+    fn is_suppressing_bounce(&self) -> bool {
+        self.entity_state.lock().crouching
+    }
+
+    fn fall_distance(&self) -> f32 {
+        self.entity_state.lock().fall_distance
+    }
+
+    fn set_fall_distance(&self, fall_distance: f32) {
+        self.entity_state.lock().fall_distance = fall_distance;
+    }
+
+    fn cause_fall_damage(
+        &self,
+        fall_distance: f32,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        // Vanilla: LivingEntity.causeFallDamage. The shared formula lives in
+        // LivingEntity::calculate_fall_damage; here we apply the result.
+        // TODO: propagateFallToPassengers once entity riding exists.
+        // TODO: isIgnoringFallDamageFromCurrentImpulse (riptide/explosion grace).
+        // TODO: play getFallDamageSound + block fall sound once the sound system
+        // for living entities is wired up.
+        let damage = self.calculate_fall_damage(fall_distance, damage_modifier);
+        if damage > 0 {
+            self.hurt(source, damage as f32)
+        } else {
+            false
+        }
+    }
+
     /// Returns the eye height for the current pose.
     ///
     /// Vanilla eye heights from `Avatar.POSES`:

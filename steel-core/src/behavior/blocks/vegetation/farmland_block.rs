@@ -6,11 +6,14 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::vanilla_blocks;
+use steel_registry::game_rules::GameRuleValue;
+use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::entity::Entity;
+use crate::entity::damage::DamageSource;
 use crate::world::World;
 
 /// Maximum moisture level for farmland.
@@ -127,5 +130,36 @@ impl BlockBehavior for FarmlandBlock {
             let new_state = state.set_value(&BlockStateProperties::MOISTURE, MAX_MOISTURE);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
+    }
+
+    fn fall_on(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        fall_distance: f32,
+    ) {
+        let entity_type = entity.entity_type();
+        let is_living = entity.is_living();
+        let is_player = entity_type == &vanilla_entities::PLAYER;
+        let mob_griefing =
+            world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING) == GameRuleValue::Bool(true);
+        let dimensions = entity_type.dimensions;
+
+        // TODO: i am unsure if should use rand::random() or a world RNG (Level.getRandom()) vanilla uses world.next_random_f32()
+        if rand::random::<f32>() < fall_distance - 0.5
+            && is_living
+            && (is_player || mob_griefing)
+            && dimensions.width * dimensions.width * dimensions.height > 0.512
+        {
+            Self::turn_to_dirt(world, pos);
+        }
+
+        entity.cause_fall_damage(
+            fall_distance,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        );
     }
 }

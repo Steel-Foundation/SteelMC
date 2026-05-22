@@ -1,11 +1,9 @@
-//! Hay block behavior impl
+//! Honey block behavior impl
 
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_damage_types;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -15,27 +13,24 @@ use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
 
-/// Behavior for hay block
+/// Behavior for the honey block
+/// TODO: Implement HoneyBlock sliding (sounds, particles, damage) and entityInside movement. These require missing systems for entity-positioned sounds, event broadcasting, and fall-damage handling
 #[block_behavior]
-pub struct HayBlock {
+pub struct HoneyBlock {
     block: BlockRef,
 }
 
-impl HayBlock {
-    /// Creates a new hay block behavior
+impl HoneyBlock {
+    /// Creates a new honey block behavior
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehavior for HayBlock {
-    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(
-            self.block
-                .default_state()
-                .set_value(&BlockStateProperties::AXIS, context.clicked_face.get_axis()),
-        )
+impl BlockBehavior for HoneyBlock {
+    fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        Some(self.block.default_state())
     }
 
     fn fall_on(

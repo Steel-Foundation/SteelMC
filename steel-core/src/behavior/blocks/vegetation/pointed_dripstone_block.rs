@@ -1,20 +1,20 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::vanilla_blocks;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, DripstoneThickness};
+use steel_registry::{vanilla_blocks, vanilla_damage_types};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::entity::Entity;
+use crate::entity::damage::DamageSource;
+use crate::world::{LevelReader, World};
 
 use super::BlockRef;
 
-/// Vanilla `PointedDripstoneBlock` survival.
-///
-/// Survival mirrors vanilla's `isValidPointedDripstonePlacement`: the block
-/// opposite the tip direction must be face-sturdy on the face pointing toward
-/// us, or be another pointed dripstone with the same `vertical_direction`.
+/// Vanilla `PointedDripstoneBlock`
 // TODO: Implement thickness recalculation, scheduled-tick stalagmite breakage,
 // trident projectile breakage, fluid transfer, and growth.
 #[block_behavior]
@@ -23,7 +23,7 @@ pub struct PointedDripstoneBlock {
 }
 
 impl PointedDripstoneBlock {
-    /// Creates a new pointed dripstone block behavior.
+    /// Creates a new pointed dripstone block behavior
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -40,9 +40,36 @@ impl BlockBehavior for PointedDripstoneBlock {
             return true;
         }
 
-        // Behind is pointed dripstone with the same tip direction.
         behind_state.get_block() == &vanilla_blocks::POINTED_DRIPSTONE
             && behind_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+    }
+
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        entity: &dyn Entity,
+        fall_distance: f32,
+    ) {
+        let is_upward_tip = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION)
+            == Direction::Up
+            && state.get_value(&BlockStateProperties::DRIPSTONE_THICKNESS)
+                == DripstoneThickness::Tip;
+
+        if is_upward_tip {
+            entity.cause_fall_damage(
+                fall_distance + 2.5,
+                2.0,
+                &DamageSource::environment(&vanilla_damage_types::STALAGMITE),
+            );
+        } else {
+            entity.cause_fall_damage(
+                fall_distance,
+                1.0,
+                &DamageSource::environment(&vanilla_damage_types::FALL),
+            );
+        }
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

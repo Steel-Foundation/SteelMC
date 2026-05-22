@@ -3,14 +3,17 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
+use steel_utils::BlockPos;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
@@ -224,8 +227,31 @@ pub trait Entity: Send + Sync {
         false
     }
 
+    /// Returns whether this entity is a living entity
+    fn is_living(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this entity suppresses bounce
+    fn is_suppressing_bounce(&self) -> bool {
+        false
+    }
+
     /// Sets whether the entity is on the ground.
     fn set_on_ground(&self, _on_ground: bool) {}
+
+    /// Returns the accumulated fall distance
+    fn fall_distance(&self) -> f32 {
+        0.0
+    }
+
+    /// Sets the accumulated fall distance
+    fn set_fall_distance(&self, _fall_distance: f32) {}
+
+    /// Resets the accumulated fall distance to zero
+    fn reset_fall_distance(&self) {
+        self.set_fall_distance(0.0);
+    }
 
     /// Sets the entity's position.
     fn set_position(&self, pos: DVec3) {
@@ -279,7 +305,10 @@ pub trait Entity: Send + Sync {
     ///
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-    fn do_move(&self, mover_type: MoverType) -> Option<MoveResult> {
+    fn do_move(&self, mover_type: MoverType) -> Option<MoveResult>
+    where
+        Self: Sized,
+    {
         let world = self.level()?;
         let velocity = self.velocity();
 
@@ -303,7 +332,6 @@ pub trait Entity: Send + Sync {
         // Horizontal collision zeros X/Z individually based on which axis collided.
         // Vertical collision calls Block.updateEntityMovementAfterFallOn which by default zeros Y.
         // (vanilla: Entity.move lines 776-785)
-        // TODO: Support block-specific behavior (slime bounce, etc.)
         if result.horizontal_collision {
             let vel = self.velocity();
             self.set_velocity(DVec3::new(
@@ -313,9 +341,15 @@ pub trait Entity: Send + Sync {
             ));
         }
         if result.vertical_collision {
-            // Default Block.updateEntityMovementAfterFallOn behavior: zero Y velocity
-            let vel = self.velocity();
-            self.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
+            let pos = self.position();
+            let on_pos = BlockPos::new(
+                pos.x.floor() as i32,
+                (pos.y - 0.2).floor() as i32,
+                pos.z.floor() as i32,
+            );
+            let state = world.get_block_state(on_pos);
+            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            behavior.update_entity_movement_after_fall_on(&world, self);
         }
 
         Some(result)
@@ -394,6 +428,20 @@ pub trait Entity: Send + Sync {
         false
     }
 
+    /// Applies fall damage to this entity
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameters used by living-entity overrides"
+    )]
+    fn cause_fall_damage(
+        &self,
+        fall_distance: f32,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        false
+    }
+
     /// Teleports an entity from one loaded world to another.
     ///
     /// The default implementation logs a warning — non-player entity teleportation
@@ -404,6 +452,18 @@ pub trait Entity: Send + Sync {
             self.id(),
         );
     }
+}
+
+/// Pure fall-damage maths
+#[must_use]
+pub fn fall_damage_amount(
+    fall_distance: f32,
+    damage_modifier: f32,
+    safe_fall_distance: f64,
+    fall_damage_multiplier: f64,
+) -> i32 {
+    let base_damage = f64::from(fall_distance) + 1.0e-6 - safe_fall_distance;
+    (base_damage * f64::from(damage_modifier) * fall_damage_multiplier).floor() as i32
 }
 
 /// A trait for living entities that can take damage, heal, and die.
@@ -429,6 +489,26 @@ pub trait LivingEntity: Entity {
             .lock()
             .get_value(vanilla_attributes::MAX_HEALTH)
             .unwrap_or(20.0) as f32
+    }
+
+    /// Computes the fall damage in half hearts for a given fall distance and block modifier
+    // TODO: return 0 for entities in the FALL_DAMAGE_IMMUNE tag once entity type tags are queryable.
+    fn calculate_fall_damage(&self, fall_distance: f32, damage_modifier: f32) -> i32 {
+        let attrs = self.attributes().lock();
+        let safe_fall_distance = attrs
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(3.0);
+        let fall_damage_multiplier = attrs
+            .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
+            .unwrap_or(1.0);
+        drop(attrs);
+
+        fall_damage_amount(
+            fall_distance,
+            damage_modifier,
+            safe_fall_distance,
+            fall_damage_multiplier,
+        )
     }
 
     /// Heals the entity by the specified amount.
@@ -544,5 +624,45 @@ pub trait LivingEntity: Entity {
             // TODO: SCALE → refreshDimensions()
             // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fall_damage_amount;
+
+    // Default vanilla attributes: safe fall distance 3, multiplier 1.
+    const SAFE: f64 = 3.0;
+    const MULT: f64 = 1.0;
+
+    #[test]
+    fn no_damage_within_safe_distance() {
+        // Falls of 3 blocks or less yield <= 0; vanilla's caller treats anything
+        // not strictly positive as "no damage", so the raw value may be negative.
+        assert!(fall_damage_amount(0.0, 1.0, SAFE, MULT) <= 0);
+        assert!(fall_damage_amount(3.0, 1.0, SAFE, MULT) <= 0);
+    }
+
+    #[test]
+    fn damage_scales_with_distance() {
+        // floor(fd + 1e-6 - 3): 4 → 1, 10 → 7, 23 → 20 (lethal).
+        assert_eq!(fall_damage_amount(4.0, 1.0, SAFE, MULT), 1);
+        assert_eq!(fall_damage_amount(10.0, 1.0, SAFE, MULT), 7);
+        assert_eq!(fall_damage_amount(23.0, 1.0, SAFE, MULT), 20);
+    }
+
+    #[test]
+    fn block_modifier_reduces_damage() {
+        // Hay bale modifier 0.2: a 10-block fall does floor(7 * 0.2) = 1.
+        assert_eq!(fall_damage_amount(10.0, 0.2, SAFE, MULT), 1);
+        // Slime modifier 0.0: never any damage.
+        assert_eq!(fall_damage_amount(100.0, 0.0, SAFE, MULT), 0);
+    }
+
+    #[test]
+    fn stalagmite_modifier_amplifies_damage() {
+        // Pointed dripstone tip: fall_distance + 2.5 with modifier 2.0.
+        // A 10-block fall lands as 12.5: floor((12.5 - 3) * 2.0) = 19.
+        assert_eq!(fall_damage_amount(12.5, 2.0, SAFE, MULT), 19);
     }
 }

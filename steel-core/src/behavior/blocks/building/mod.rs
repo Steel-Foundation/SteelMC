@@ -1,13 +1,25 @@
+mod bed_block;
 mod door_block;
 mod fence_block;
+mod hay_block;
+mod honey_block;
+mod powder_snow_block;
 mod rotated_pillar_block;
 mod slab_block;
+mod slime_block;
 mod stair_block;
+mod turtle_egg_block;
 mod weathering_block;
 
+pub use bed_block::BedBlock;
 pub use door_block::{DoorBlock, WeatheringCopperDoorBlock};
 pub use fence_block::FenceBlock;
+pub use hay_block::HayBlock;
+pub use honey_block::HoneyBlock;
+pub use powder_snow_block::PowderSnowBlock;
 pub use rotated_pillar_block::RotatedPillarBlock;
 pub use slab_block::{SlabBlock, WeatheringCopperSlabBlock};
+pub use slime_block::SlimeBlock;
 pub use stair_block::{StairBlock, WeatheringCopperStairBlock};
+pub use turtle_egg_block::TurtleEggBlock;
 pub use weathering_block::{WeatherState, WeatheringCopper, WeatheringCopperFullBlock};

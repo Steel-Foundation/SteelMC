@@ -38,6 +38,8 @@ pub struct EntityState {
     pub crouching: bool,
     /// Whether the player is sprinting.
     pub sprinting: bool,
+    /// Accumulated fall distance in blocks
+    pub fall_distance: f32,
 }
 
 impl EntityState {
@@ -49,6 +51,7 @@ impl EntityState {
             on_ground: false,
             crouching: false,
             sprinting: false,
+            fall_distance: 0.0,
         }
     }
 }

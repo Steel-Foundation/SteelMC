@@ -5,6 +5,7 @@
 
 use std::sync::{Arc, atomic::Ordering};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPosRot, CMoveEntityRot, CPlayerPosition, CRotateHead,
@@ -19,7 +20,7 @@ use steel_registry::{vanilla_attributes, vanilla_entities};
 use steel_utils::types::GameType;
 use steel_utils::{BlockPos, ChunkPos, translations};
 
-use crate::entity::LivingEntity;
+use crate::entity::{Entity, LivingEntity};
 use crate::physics::{
     CollisionWorld, EntityPhysicsState, MoverType, WorldCollisionProvider, join_is_not_empty,
     move_entity,
@@ -447,6 +448,34 @@ impl Player {
         true
     }
 
+    /// Accumulates fall distance and applies fall damage on landing
+    // TODO: no !isInWater() guard yet cause there is no reliable detection yet
+    fn check_fall_damage(&self, dy: f64, on_ground: bool) {
+        if dy < 0.0 {
+            self.set_fall_distance(self.fall_distance() - dy as f32);
+        }
+
+        if !on_ground {
+            return;
+        }
+
+        let fall_distance = self.fall_distance();
+        if fall_distance > 0.0 {
+            let pos = *self.position.lock();
+            let on_pos = BlockPos::new(
+                pos.x.floor() as i32,
+                (pos.y - 0.2).floor() as i32,
+                pos.z.floor() as i32,
+            );
+            let world = self.get_world();
+            let state = world.get_block_state(on_pos);
+            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            behavior.fall_on(state, &world, on_pos, self as &dyn Entity, fall_distance);
+        }
+
+        self.reset_fall_distance();
+    }
+
     /// Handles a move player packet.
     ///
     /// Matches vanilla `ServerGamePacketListenerImpl.handleMovePlayer()`.
@@ -595,6 +624,12 @@ impl Player {
             let old_pos = *self.position.lock();
             *self.position.lock() = packet.position;
             self.level_callback.lock().on_move(old_pos, packet.position);
+
+            let dy = packet.position.y - start_pos.y;
+            self.check_fall_damage(dy, packet.on_ground);
+            if dy > 0.0 {
+                self.reset_fall_distance();
+            }
         }
         if packet.has_rot {
             self.rotation.store((packet.y_rot, packet.x_rot));
@@ -782,6 +817,8 @@ impl Player {
 
         *self.position.lock() = pos;
         self.rotation.store((yaw, pitch));
+
+        self.reset_fall_distance();
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
     }

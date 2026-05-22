@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -17,9 +18,11 @@ use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
+use crate::entity::damage::DamageSource;
 use crate::fluid::is_water_fluid;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
+use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_fluids;
 
 pub struct PickupResult {
@@ -347,6 +350,36 @@ pub trait BlockBehavior: Send + Sync {
         entity: &dyn Entity,
     ) {
         // Default: no-op
+    }
+
+    /// Called when a entity lands on a block
+    #[expect(
+        unused_variables,
+        reason = "default forwards only fall_distance; overrides use the rest"
+    )]
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        fall_distance: f32,
+    ) {
+        entity.cause_fall_damage(
+            fall_distance,
+            1.0,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        );
+    }
+
+    /// Called after movement when vertical collision altered Y movement
+    #[expect(
+        unused_variables,
+        reason = "default forwards to vanilla-equivalent Y reset"
+    )]
+    fn update_entity_movement_after_fall_on(&self, world: &Arc<World>, entity: &dyn Entity) {
+        let velocity = entity.velocity();
+        entity.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
     }
 
     // === Block Entity Methods ===
