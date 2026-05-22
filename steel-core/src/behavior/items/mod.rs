@@ -19,7 +19,7 @@ mod standing_and_wall_block_item;
 mod flint_and_steel;
 
 pub use axe::AxeItem;
-pub use block_item::{BlockItem, DoubleHighBlockItem};
+pub use block_item::{BedItem, BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
 pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;

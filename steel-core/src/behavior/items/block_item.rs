@@ -104,6 +104,31 @@ impl ItemBehavior for BlockItem {
     }
 }
 
+/// Vanilla `BedItem` currently reuses `BlockItem` placement logic
+#[item_behavior]
+pub struct BedItem {
+    #[json_arg(vanilla_blocks, json = "block")]
+    _block: BlockRef,
+    base: BlockItem,
+}
+
+impl BedItem {
+    /// New BedItem
+    #[must_use]
+    pub const fn new(block: BlockRef) -> Self {
+        Self {
+            _block: block,
+            base: BlockItem::new(block),
+        }
+    }
+}
+
+impl ItemBehavior for BedItem {
+    fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+        self.base.use_on(context)
+    }
+}
+
 /// Behavior for double-high block items (doors, tall flowers, etc.).
 ///
 /// Vanilla's `DoubleHighBlockItem` extends `BlockItem` and overrides `placeBlock`
