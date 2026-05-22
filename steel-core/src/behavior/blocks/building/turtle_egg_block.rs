@@ -8,7 +8,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::{
-    sound_events, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules,
+    sound_events, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_events,
+    vanilla_game_rules,
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -17,6 +18,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for turtle eggs
 /// TODO: everything else in turtle eggs
@@ -33,7 +35,7 @@ impl TurtleEggBlock {
     }
 
     /// TODO: vanilla also exempts turtles and bats here, those entity types are
-    /// not implemented yet.
+    /// not implemented yet
     fn can_destroy_egg(world: &Arc<World>, entity: &dyn Entity) -> bool {
         if !entity.is_living() {
             return false;
@@ -80,11 +82,15 @@ impl TurtleEggBlock {
             world.destroy_block(pos, false);
         } else {
             let new_state = state.set_value(&BlockStateProperties::EGGS, eggs - 1);
+
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
-            // Vanilla levelEvent(2001) renders block-break particles for the
-            // pre-decrement state.
+            world.game_event(
+                &vanilla_game_events::BLOCK_DESTROY,
+                pos,
+                // TODO: GameEventContext::new(None, Some(u32::from(new_state.0)) Idk if i need this or if ::default is fine
+                &GameEventContext::default(),
+            );
             world.destroy_block_effect(pos, u32::from(state.0), None);
-            // TODO: fire GameEvent.BLOCK_DESTROY once the game-event system exists
         }
     }
 }
