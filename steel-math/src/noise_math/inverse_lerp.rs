@@ -6,8 +6,3 @@
 pub fn inverse_lerp(value: f64, a: f64, b: f64) -> f64 {
     (value - a) / (b - a)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}
