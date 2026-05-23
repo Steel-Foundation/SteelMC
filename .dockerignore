@@ -1,0 +1,11 @@
+.github
+/target
+CONTRIBUTING.md
+CLAUDE.md
+audit.toml
+_typos.toml
+.gitignore
+README.md
+prek.toml
+update-minecraft-src.sh
+clippy.toml
