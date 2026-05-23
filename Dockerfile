@@ -15,4 +15,5 @@ RUN apt-get update \
 
 COPY --from=builder /steel/target/release/steel /steel/steel-bin
 
+WORKDIR /steel
 ENTRYPOINT ["/steel/steel-bin"]
