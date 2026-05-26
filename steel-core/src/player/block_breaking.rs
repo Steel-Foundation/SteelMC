@@ -288,13 +288,19 @@ impl BlockBreakingManager {
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         world.game_event(
             &vanilla_game_events::BLOCK_DESTROY,
             pos,
             &GameEventContext::new(Some(player), Some(adjusted_state)),
         );
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
         let changed_by_player_will_destroy = world.get_block_state(pos) != state;
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged

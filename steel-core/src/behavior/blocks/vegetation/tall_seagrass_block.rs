@@ -1,5 +1,8 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -10,6 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags;
 use steel_registry::vanilla_blocks;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_items};
+<<<<<<< HEAD
 =======
 =======
 use std::sync::Arc;
@@ -28,6 +32,8 @@ use steel_registry::{REGISTRY, TaggedRegistryExt};
 =======
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_items};
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 use steel_utils::math::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -36,11 +42,15 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::fluid::get_fluid_state_from_block;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, water_source_fluid_state};
 
 /// Behavior for tall seagrass blocks.
+<<<<<<< HEAD
 =======
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -56,6 +66,8 @@ use super::{BlockRef, water_source_fluid_state};
 
 /// Behavior for tall seagrass blocks.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 #[block_behavior]
 pub struct TallSeagrassBlock {
     block: BlockRef,
@@ -102,6 +114,7 @@ impl BlockBehavior for TallSeagrassBlock {
             let below = world.get_block_state(pos.below());
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
             return below.get_block() == self.block
 =======
             return below.get_block() == &vanilla_blocks::TALL_SEAGRASS
@@ -109,12 +122,16 @@ impl BlockBehavior for TallSeagrassBlock {
 =======
             return below.get_block() == self.block
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+            return below.get_block() == self.block
+>>>>>>> refs/remotes/origin/master
                 && below.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
                     == DoubleBlockHalf::Lower;
         }
 
         let below = world.get_block_state(pos.below());
         let current = world.get_block_state(pos);
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
         let fluid = if current.get_block() == self.block {
@@ -124,6 +141,9 @@ impl BlockBehavior for TallSeagrassBlock {
 =======
         let fluid = if current.get_block() == self.block {
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+        let fluid = if current.get_block() == self.block {
+>>>>>>> refs/remotes/origin/master
             water_source_fluid_state()
         } else {
             get_fluid_state_from_block(current)
@@ -140,6 +160,9 @@ impl BlockBehavior for TallSeagrassBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         if context.relative_pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
@@ -153,12 +176,16 @@ impl BlockBehavior for TallSeagrassBlock {
             return None;
         }
 
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
         let state = self.block.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
             DoubleBlockHalf::Lower,
         );
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 =======
@@ -184,14 +211,19 @@ impl BlockBehavior for TallSeagrassBlock {
             DoubleBlockHalf::Lower,
         );
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
         self.can_survive(state, context.world, context.relative_pos)
             .then_some(state)
     }
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
@@ -219,6 +251,7 @@ impl BlockBehavior for TallSeagrassBlock {
         false
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
         water_source_fluid_state()
@@ -226,16 +259,22 @@ impl BlockBehavior for TallSeagrassBlock {
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }
 
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidRef;
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 =======
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+>>>>>>> refs/remotes/origin/master
 
     use super::*;
 
@@ -299,6 +338,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn tall_seagrass_lower_breaks_when_upper_half_is_missing() {
         init_test_registry();
@@ -313,6 +353,11 @@ mod tests {
     fn tall_seagrass_lower_breaks_when_upper_half_is_missing() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    #[test]
+    fn tall_seagrass_lower_breaks_when_upper_half_is_missing() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
@@ -335,10 +380,14 @@ mod tests {
     #[test]
     fn tall_seagrass_upper_breaks_when_lower_half_is_missing() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         init_test_registry();
 =======
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let upper = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,

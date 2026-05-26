@@ -1,8 +1,11 @@
 use steel_macros::block_behavior;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 use steel_registry::{
     TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -10,6 +13,9 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction};
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 
 use crate::{
     behavior::{
@@ -23,6 +29,7 @@ use crate::{
 };
 
 /// Behavior for azalea blocks.
+<<<<<<< HEAD
 =======
 use steel_registry::vanilla_block_tags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -49,6 +56,8 @@ use super::{BlockRef, default_surviving_state, survives_on_tag};
 =======
 /// Behavior for azalea blocks.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 #[block_behavior]
 pub struct AzaleaBlock {
     block: BlockRef,
@@ -65,8 +74,11 @@ impl AzaleaBlock {
 impl BlockBehavior for AzaleaBlock {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -82,12 +94,15 @@ impl BlockBehavior for AzaleaBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_AZALEA_TAG)
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -96,8 +111,11 @@ impl BlockBehavior for AzaleaBlock {
 }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 
 impl Vegetation for AzaleaBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
@@ -107,7 +125,10 @@ impl Vegetation for AzaleaBlock {
     }
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master

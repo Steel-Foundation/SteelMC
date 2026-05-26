@@ -1,5 +1,8 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 //! Block behavior implementations for crops and feature-placed vegetation.
 
 mod azalea_block;
@@ -17,6 +20,7 @@ mod cactus_block;
 mod cactus_flower_block;
 mod carpet_block;
 mod carrot;
+<<<<<<< HEAD
 =======
 //! Survival-focused block behaviors for feature-placed vegetation.
 //!
@@ -46,6 +50,8 @@ mod carpet_block;
 =======
 mod carrot;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 mod cave_vines_block;
 mod cave_vines_plant_block;
 mod chorus_flower_block;
@@ -55,13 +61,17 @@ mod coral_plant_block;
 mod coral_wall_fan_block;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 mod crop_block;
 mod double_plant_block;
 mod dry_vegetation_block;
 mod eyeblossom_block;
 mod farmland_block;
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 mod double_plant_block;
@@ -70,6 +80,8 @@ mod eyeblossom_block;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 mod firefly_bush_block;
 mod flower_bed_block;
 mod flower_block;
@@ -87,11 +99,15 @@ mod nether_fungus_block;
 mod nether_roots_block;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 mod nether_sprouts;
 mod nether_wart;
 mod pitcher_crop;
 mod pointed_dripstone_block;
 mod potato;
+<<<<<<< HEAD
 =======
 mod nether_sprouts_block;
 mod pointed_dripstone_block;
@@ -103,6 +119,8 @@ mod pitcher_crop;
 mod pointed_dripstone_block;
 mod potato;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 mod sapling_block;
 mod sculk_vein_block;
 mod sea_pickle_block;
@@ -111,6 +129,7 @@ mod short_dry_grass_block;
 mod small_dripleaf_block;
 mod snow_layer_block;
 mod spore_blossom_block;
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 mod sugar_cane;
@@ -123,18 +142,26 @@ mod sweet_berry_bush_block;
 mod sugar_cane;
 mod sweet_berry_bush;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+mod sugar_cane;
+mod sweet_berry_bush;
+>>>>>>> refs/remotes/origin/master
 mod tall_dry_grass_block;
 mod tall_flower_block;
 mod tall_grass_block;
 mod tall_seagrass_block;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 mod torchflower;
 mod twisting_vines_block;
 mod twisting_vines_plant_block;
 mod vegetation_block;
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 mod twisting_vines_block;
@@ -142,6 +169,8 @@ mod twisting_vines_plant_block;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 mod vine_block;
 mod weeping_vines_block;
 mod weeping_vines_plant_block;
@@ -150,6 +179,9 @@ mod wither_rose_block;
 pub use azalea_block::AzaleaBlock;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 pub use bamboo::BambooStalkBlock;
 pub use bamboo_sapling::BambooSaplingBlock;
 pub use base_coral_fan_block::BaseCoralFanBlock;
@@ -163,6 +195,7 @@ pub use cactus_block::CactusBlock;
 pub use cactus_flower_block::CactusFlowerBlock;
 pub use carpet_block::CarpetBlock;
 pub use carrot::CarrotBlock;
+<<<<<<< HEAD
 =======
 pub use bamboo_stalk_block::BambooStalkBlock;
 =======
@@ -184,6 +217,8 @@ pub use carpet_block::CarpetBlock;
 =======
 pub use carrot::CarrotBlock;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 pub use cave_vines_block::CaveVinesBlock;
 pub use cave_vines_plant_block::CaveVinesPlantBlock;
 pub use chorus_flower_block::ChorusFlowerBlock;
@@ -193,13 +228,17 @@ pub use coral_plant_block::CoralPlantBlock;
 pub use coral_wall_fan_block::CoralWallFanBlock;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 pub use crop_block::CropBlock;
 pub use double_plant_block::DoublePlantBlock;
 pub use dry_vegetation_block::DryVegetationBlock;
 pub use eyeblossom_block::{EyeblossomBlock, EyeblossomType};
 pub use farmland_block::FarmlandBlock;
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 pub use double_plant_block::DoublePlantBlock;
@@ -208,6 +247,8 @@ pub use eyeblossom_block::{EyeblossomBlock, EyeblossomType};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 pub use firefly_bush_block::FireflyBushBlock;
 pub use flower_bed_block::FlowerBedBlock;
 pub use flower_block::FlowerBlock;
@@ -225,11 +266,15 @@ pub use nether_fungus_block::NetherFungusBlock;
 pub use nether_roots_block::NetherRootsBlock;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 pub use nether_sprouts::NetherSproutsBlock;
 pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
 pub use pointed_dripstone_block::PointedDripstoneBlock;
 pub use potato::PotatoBlock;
+<<<<<<< HEAD
 =======
 pub use nether_sprouts_block::NetherSproutsBlock;
 pub use pointed_dripstone_block::PointedDripstoneBlock;
@@ -241,6 +286,8 @@ pub use pitcher_crop::PitcherCropBlock;
 pub use pointed_dripstone_block::PointedDripstoneBlock;
 pub use potato::PotatoBlock;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 pub use sapling_block::SaplingBlock;
 pub use sculk_vein_block::SculkVeinBlock;
 pub use sea_pickle_block::SeaPickleBlock;
@@ -249,6 +296,7 @@ pub use short_dry_grass_block::ShortDryGrassBlock;
 pub use small_dripleaf_block::SmallDripleafBlock;
 pub use snow_layer_block::SnowLayerBlock;
 pub use spore_blossom_block::SporeBlossomBlock;
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 pub use sugar_cane::SugarCaneBlock;
@@ -261,18 +309,26 @@ pub use sweet_berry_bush_block::SweetBerryBushBlock;
 pub use sugar_cane::SugarCaneBlock;
 pub use sweet_berry_bush::SweetBerryBushBlock;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+pub use sugar_cane::SugarCaneBlock;
+pub use sweet_berry_bush::SweetBerryBushBlock;
+>>>>>>> refs/remotes/origin/master
 pub use tall_dry_grass_block::TallDryGrassBlock;
 pub use tall_flower_block::TallFlowerBlock;
 pub use tall_grass_block::TallGrassBlock;
 pub use tall_seagrass_block::TallSeagrassBlock;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 pub use torchflower::TorchflowerCropBlock;
 pub use twisting_vines_block::TwistingVinesBlock;
 pub use twisting_vines_plant_block::TwistingVinesPlantBlock;
 pub use vegetation_block::Vegetation;
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 pub use twisting_vines_block::TwistingVinesBlock;
@@ -280,6 +336,8 @@ pub use twisting_vines_plant_block::TwistingVinesPlantBlock;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 pub use vine_block::VineBlock;
 pub use weeping_vines_block::WeepingVinesBlock;
 pub use weeping_vines_plant_block::WeepingVinesPlantBlock;

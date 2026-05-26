@@ -15,10 +15,14 @@ members = [
 
 [workspace.package]
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.6.3+mc26.1"
 =======
 version = "0.6.0+mc26.1"
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+version = "0.6.3+mc26.1"
+>>>>>>> refs/remotes/origin/master
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"

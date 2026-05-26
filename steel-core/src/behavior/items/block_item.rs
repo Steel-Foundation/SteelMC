@@ -1,23 +1,12 @@
 //! Block item behavior implementation.
 
 use steel_macros::item_behavior;
-use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt},
-<<<<<<< HEAD
-    vanilla_blocks, vanilla_game_events,
-=======
-    vanilla_blocks,
->>>>>>> 3643c5b7e (Add worldgen features stage (#183))
-};
-use steel_utils::{BlockStateId, types::UpdateFlags};
+use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_utils::types::UpdateFlags;
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
-use crate::fluid::{FluidStateExt as _, get_fluid_state};
-<<<<<<< HEAD
-use crate::world::game_event_context::GameEventContext;
-=======
->>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 
 /// Behavior for items that place blocks.
 #[item_behavior]
@@ -62,26 +51,6 @@ impl BlockItem {
 
         if !place_block(&place_context, new_state) {
             return InteractionResult::Fail;
-        }
-
-        let placed_state = context.world.get_block_state(place_pos);
-        if placed_state.get_block() == self.block {
-            let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-<<<<<<< HEAD
-=======
-            let item_stack = context.inv.item();
->>>>>>> 3643c5b7e (Add worldgen features stage (#183))
-            placed_behavior.set_placed_by(
-                placed_state,
-                context.world,
-                place_pos,
-                Some(context.player),
-<<<<<<< HEAD
-                &context.inv,
-=======
-                item_stack,
->>>>>>> 3643c5b7e (Add worldgen features stage (#183))
-            );
         }
 
         // Play place sound (exclude the placing player, they hear it client-side)

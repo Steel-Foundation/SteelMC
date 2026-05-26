@@ -12,10 +12,15 @@ use std::{
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 <<<<<<< HEAD
+<<<<<<< HEAD
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
+>>>>>>> refs/remotes/origin/master
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -83,10 +88,15 @@ use crate::{
 };
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub mod game_event_context;
 pub mod game_event_listener;
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+pub mod game_event_context;
+pub mod game_event_listener;
+>>>>>>> refs/remotes/origin/master
 mod level_reader;
 mod player_area_map;
 mod player_map;
@@ -2508,6 +2518,7 @@ impl ScheduledTickAccess for Arc<World> {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true
     }
+<<<<<<< HEAD
 }
 
 impl LevelReader for World {
@@ -2567,4 +2578,6 @@ impl ScheduledTickAccess for Arc<World> {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true
     }
+=======
+>>>>>>> refs/remotes/origin/master
 }

@@ -4,6 +4,9 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, math::Axis, types::UpdateFlags};
 
@@ -12,6 +15,7 @@ use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::default_surviving_state;
 use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
 use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
+<<<<<<< HEAD
 =======
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
@@ -23,10 +27,13 @@ use crate::behavior::blocks::vegetation::default_surviving_state;
 use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
 use crate::behavior::context::BlockPlaceContext;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 use super::BlockRef;
@@ -43,12 +50,18 @@ use super::BlockRef;
 
 /// Behavior for vanilla two-block-tall plants.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+use super::BlockRef;
+
+/// Behavior for vanilla two-block-tall plants.
+>>>>>>> refs/remotes/origin/master
 #[block_behavior]
 pub struct DoublePlantBlock {
     block: BlockRef,
 }
 
 impl DoublePlantBlock {
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
     /// Creates a new double plant block behavior.
@@ -58,6 +71,9 @@ impl DoublePlantBlock {
 =======
     /// Creates a new double plant block behavior.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    /// Creates a new double plant block behavior.
+>>>>>>> refs/remotes/origin/master
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -84,6 +100,7 @@ impl DoublePlantBlock {
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 impl Vegetation for DoublePlantBlock {}
 
 =======
@@ -92,6 +109,10 @@ impl Vegetation for DoublePlantBlock {}
 impl Vegetation for DoublePlantBlock {}
 
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+impl Vegetation for DoublePlantBlock {}
+
+>>>>>>> refs/remotes/origin/master
 impl BlockBehavior for DoublePlantBlock {
     fn update_shape(
         &self,
@@ -126,6 +147,7 @@ impl BlockBehavior for DoublePlantBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         double_plant_can_survive(self, state, world, pos)
 =======
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
@@ -140,6 +162,9 @@ impl BlockBehavior for DoublePlantBlock {
 =======
         double_plant_can_survive(self, state, world, pos)
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+        double_plant_can_survive(self, state, world, pos)
+>>>>>>> refs/remotes/origin/master
     }
 
     fn set_placed_by(
@@ -149,10 +174,14 @@ impl BlockBehavior for DoublePlantBlock {
         pos: BlockPos,
         _player: Option<&Player>,
 <<<<<<< HEAD
+<<<<<<< HEAD
         _inv: &InventoryAccess,
 =======
         _item_stack: &ItemStack,
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        _inv: &InventoryAccess,
+>>>>>>> refs/remotes/origin/master
     ) {
         let upper_pos = pos.above();
         let upper_state = Self::copy_waterlogged_from(

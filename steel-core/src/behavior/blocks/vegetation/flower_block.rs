@@ -1,6 +1,9 @@
 use steel_macros::block_behavior;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -16,6 +19,7 @@ use crate::{
 };
 
 /// Behavior for most flower blocks.
+<<<<<<< HEAD
 =======
 use steel_registry::vanilla_block_tags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -44,12 +48,15 @@ use super::{BlockRef, default_surviving_state, survives_on_tag};
 =======
 /// Behavior for most flower blocks.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 #[block_behavior]
 pub struct FlowerBlock {
     block: BlockRef,
 }
 
 impl FlowerBlock {
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
     /// Creates a new flower behavior.
@@ -59,6 +66,9 @@ impl FlowerBlock {
 =======
     /// Creates a new flower behavior.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    /// Creates a new flower behavior.
+>>>>>>> refs/remotes/origin/master
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -68,8 +78,11 @@ impl FlowerBlock {
 impl BlockBehavior for FlowerBlock {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -85,12 +98,15 @@ impl BlockBehavior for FlowerBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_VEGETATION_TAG)
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -99,6 +115,7 @@ impl BlockBehavior for FlowerBlock {
 }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 impl Vegetation for FlowerBlock {}
 =======
@@ -107,3 +124,7 @@ impl Vegetation for FlowerBlock {}
 
 impl Vegetation for FlowerBlock {}
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+
+impl Vegetation for FlowerBlock {}
+>>>>>>> refs/remotes/origin/master

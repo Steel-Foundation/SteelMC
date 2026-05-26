@@ -15,11 +15,15 @@ use steel_registry::{
         shapes,
     },
 <<<<<<< HEAD
+<<<<<<< HEAD
     vanilla_blocks, vanilla_game_events,
 =======
     item_stack::ItemStack,
     vanilla_blocks,
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    vanilla_blocks, vanilla_game_events,
+>>>>>>> refs/remotes/origin/master
 };
 use steel_utils::{
     BlockPos, BlockStateId,
@@ -32,17 +36,23 @@ use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         InventoryAccess,
     },
     fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
+<<<<<<< HEAD
 =======
     },
     fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
 };
 
 /// Behavior for vanilla door blocks.
@@ -273,10 +283,14 @@ impl BlockBehavior for DoorBlock {
         pos: BlockPos,
         _player: Option<&Player>,
 <<<<<<< HEAD
+<<<<<<< HEAD
         _inv: &InventoryAccess,
 =======
         _item_stack: &ItemStack,
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        _inv: &InventoryAccess,
+>>>>>>> refs/remotes/origin/master
     ) {
         world.set_block(
             pos.above(),
@@ -309,9 +323,13 @@ impl BlockBehavior for DoorBlock {
         player: &Player,
         _hit_result: &BlockHitResult,
 <<<<<<< HEAD
+<<<<<<< HEAD
         _inv: &mut InventoryAccess,
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        _inv: &mut InventoryAccess,
+>>>>>>> refs/remotes/origin/master
     ) -> InteractionResult {
         if !self.can_open_by_hand {
             return InteractionResult::Pass;
@@ -322,15 +340,21 @@ impl BlockBehavior for DoorBlock {
         world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS);
         self.play_sound(world, pos, open, Some(player.id));
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         let event = if open {
             &vanilla_game_events::BLOCK_OPEN
         } else {
             &vanilla_game_events::BLOCK_CLOSE
         };
         world.game_event(event, pos, &GameEventContext::new(Some(player), None));
+<<<<<<< HEAD
 =======
         // TODO: GameEvent.BLOCK_OPEN/BLOCK_CLOSE once game events exist.
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
         InteractionResult::Success
     }
 
@@ -361,15 +385,21 @@ impl BlockBehavior for DoorBlock {
         if signal != state.get_value(&BlockStateProperties::OPEN) {
             self.play_sound(world, pos, signal, None);
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
             let event = if signal {
                 &vanilla_game_events::BLOCK_OPEN
             } else {
                 &vanilla_game_events::BLOCK_CLOSE
             };
             world.game_event(event, pos, &GameEventContext::default());
+<<<<<<< HEAD
 =======
             // TODO: GameEvent.BLOCK_OPEN/BLOCK_CLOSE once game events exist.
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
         }
 
         let new_state = state
@@ -451,6 +481,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         pos: BlockPos,
         player: Option<&Player>,
 <<<<<<< HEAD
+<<<<<<< HEAD
         inv: &InventoryAccess,
     ) {
         self.door().set_placed_by(state, world, pos, player, inv);
@@ -460,6 +491,11 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         self.door()
             .set_placed_by(state, world, pos, player, item_stack);
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        inv: &InventoryAccess,
+    ) {
+        self.door().set_placed_by(state, world, pos, player, inv);
+>>>>>>> refs/remotes/origin/master
     }
 
     fn player_will_destroy(
@@ -480,15 +516,21 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         player: &Player,
         hit_result: &BlockHitResult,
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         self.door()
             .use_without_item(state, world, pos, player, hit_result, inv)
+<<<<<<< HEAD
 =======
     ) -> InteractionResult {
         self.door()
             .use_without_item(state, world, pos, player, hit_result)
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
     }
 
     fn handle_neighbor_changed(
@@ -518,10 +560,14 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 mod tests {
     use steel_registry::fluid::FluidRef;
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 =======
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+>>>>>>> refs/remotes/origin/master
     use steel_utils::BlockPos;
 
     use super::*;
@@ -571,6 +617,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn lower_half_copies_transformed_upper_half_state() {
         init_test_registry();
@@ -585,6 +632,11 @@ mod tests {
     fn lower_half_copies_transformed_upper_half_state() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    #[test]
+    fn lower_half_copies_transformed_upper_half_state() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = DoorBlock::new(&vanilla_blocks::SPRUCE_DOOR, true, 0, 0);
         let lower = vanilla_blocks::SPRUCE_DOOR
             .default_state()

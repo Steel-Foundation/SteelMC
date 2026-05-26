@@ -736,12 +736,17 @@ mod tests {
 
     use steel_registry::{
 <<<<<<< HEAD
+<<<<<<< HEAD
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
         test_support::init_test_registry,
 =======
         REGISTRY, Registry,
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        test_support::init_test_registry,
+>>>>>>> refs/remotes/origin/master
         vanilla_blocks,
     };
 
@@ -752,6 +757,7 @@ mod tests {
     static INIT_BEHAVIORS: Once = Once::new();
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     fn init_test_state() {
         init_test_registry();
 =======
@@ -760,6 +766,10 @@ mod tests {
         registry.freeze();
         let _ = REGISTRY.init(registry);
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    fn init_test_state() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         INIT_BEHAVIORS.call_once(init_behaviors);
     }
 
@@ -784,10 +794,14 @@ mod tests {
     #[test]
     fn heightmap_predicates_use_blocks_motion_and_fluid_state() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         init_test_state();
 =======
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        init_test_state();
+>>>>>>> refs/remotes/origin/master
 
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         assert!(!HeightmapType::OceanFloorWg.is_opaque(water));
@@ -809,10 +823,14 @@ mod tests {
     #[test]
     fn initial_fill_update_tracks_only_matching_blocks() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         init_test_state();
 =======
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        init_test_state();
+>>>>>>> refs/remotes/origin/master
 
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);

@@ -1,5 +1,8 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -29,6 +32,7 @@ use crate::{
 };
 
 /// Behavior for short grass and fern blocks.
+<<<<<<< HEAD
 =======
 =======
 use std::sync::Arc;
@@ -69,12 +73,15 @@ use super::{BlockRef, default_surviving_state, survives_on_tag};
 =======
 /// Behavior for short grass and fern blocks.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 #[block_behavior]
 pub struct TallGrassBlock {
     block: BlockRef,
 }
 
 impl TallGrassBlock {
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
     /// Creates a new tall grass behavior.
@@ -84,14 +91,20 @@ impl TallGrassBlock {
 =======
     /// Creates a new tall grass behavior.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    /// Creates a new tall grass behavior.
+>>>>>>> refs/remotes/origin/master
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 
     fn large_variant(state: BlockStateId) -> BlockRef {
         if state.get_block() == &vanilla_blocks::FERN {
@@ -101,10 +114,13 @@ impl TallGrassBlock {
         }
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }
 
 impl BlockBehavior for TallGrassBlock {
@@ -119,11 +135,15 @@ impl BlockBehavior for TallGrassBlock {
     ) -> BlockStateId {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         vegetation_update_shape(self, state, world, pos)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
+<<<<<<< HEAD
 =======
         if self.can_survive(state, world, pos) {
             state
@@ -142,6 +162,8 @@ impl BlockBehavior for TallGrassBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -149,8 +171,11 @@ impl BlockBehavior for TallGrassBlock {
     }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
@@ -212,10 +237,14 @@ impl Bonemealable for TallGrassBlock {
 #[cfg(test)]
 mod tests {
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::test_support::init_test_registry;
 =======
     use steel_registry::{REGISTRY, Registry};
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    use steel_registry::test_support::init_test_registry;
+>>>>>>> refs/remotes/origin/master
 
     use super::*;
 
@@ -244,6 +273,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn tall_grass_bonemeal_rejects_top_build_height() {
         init_test_registry();
@@ -258,14 +288,22 @@ mod tests {
     fn tall_grass_bonemeal_rejects_top_build_height() {
         init_registry();
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    #[test]
+    fn tall_grass_bonemeal_rejects_top_build_height() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = TallGrassBlock::new(&vanilla_blocks::SHORT_GRASS);
         let state = vanilla_blocks::SHORT_GRASS.default_state();
 
         assert!(!behavior.is_valid_bonemeal_target(state, &OneBlockTallLevel, BlockPos::ZERO));
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }

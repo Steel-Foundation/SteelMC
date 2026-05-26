@@ -197,10 +197,14 @@ mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::fluid::FluidRef;
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
 =======
     use steel_registry::{REGISTRY, Registry, vanilla_blocks, vanilla_fluids};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+>>>>>>> refs/remotes/origin/master
     use steel_utils::BlockPos;
 
     use super::*;
@@ -250,6 +254,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn stair_update_shape_recomputes_shape_from_neighbors() {
         init_test_registry();
@@ -264,6 +269,11 @@ mod tests {
     fn stair_update_shape_recomputes_shape_from_neighbors() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    #[test]
+    fn stair_update_shape_recomputes_shape_from_neighbors() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = StairBlock::new(&vanilla_blocks::DARK_OAK_STAIRS);
         let state = vanilla_blocks::DARK_OAK_STAIRS
             .default_state()

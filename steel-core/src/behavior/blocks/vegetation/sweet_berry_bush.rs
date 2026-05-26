@@ -18,10 +18,14 @@ use steel_utils::{
 use crate::{
     behavior::{
 <<<<<<< HEAD
+<<<<<<< HEAD
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
 =======
         BlockBehavior, BlockPlaceContext, InteractionResult,
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
+>>>>>>> refs/remotes/origin/master
         blocks::vegetation::{
             Vegetation,
             bonemealable::Bonemealable,
@@ -118,9 +122,12 @@ impl BlockBehavior for SweetBerryBushBlock {
     fn use_item_on(
         &self,
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         item_stack: &ItemStack,
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
         state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
@@ -128,17 +135,23 @@ impl BlockBehavior for SweetBerryBushBlock {
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let is_bone_meal =
             inv.with_item(|item_stack| item_stack.is(&vanilla_items::ITEMS.bone_meal));
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age != 3 && is_bone_meal {
+<<<<<<< HEAD
 =======
     ) -> InteractionResult {
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age != 3 && item_stack.is(&vanilla_items::ITEMS.bone_meal) {
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
             InteractionResult::Pass
         } else {
             InteractionResult::TryEmptyHandInteraction
@@ -153,9 +166,13 @@ impl BlockBehavior for SweetBerryBushBlock {
         player: &Player,
         _hit_result: &BlockHitResult,
 <<<<<<< HEAD
+<<<<<<< HEAD
         _inv: &mut InventoryAccess,
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+        _inv: &mut InventoryAccess,
+>>>>>>> refs/remotes/origin/master
     ) -> InteractionResult {
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age <= 1 {

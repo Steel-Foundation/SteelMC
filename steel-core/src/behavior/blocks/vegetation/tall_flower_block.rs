@@ -5,12 +5,16 @@ use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
+<<<<<<< HEAD
 =======
 =======
 use steel_registry::{REGISTRY, RegistryExt};
@@ -21,6 +25,8 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -28,10 +34,14 @@ use super::{BlockRef, DoublePlantBlock};
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 /// Behavior for two-block-tall flowers.
 #[block_behavior]
 pub struct TallFlowerBlock {
     block: BlockRef,
+<<<<<<< HEAD
 =======
 /// Vanilla `TallFlowerBlock` survival.
 // TODO: Implement bonemeal and the rest of vanilla behavior.
@@ -44,6 +54,8 @@ pub struct TallFlowerBlock {
 pub struct TallFlowerBlock {
     block: BlockRef,
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     base: DoublePlantBlock,
 }
 
@@ -54,12 +66,16 @@ impl TallFlowerBlock {
         Self {
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
             block,
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
             block,
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+            block,
+>>>>>>> refs/remotes/origin/master
             base: DoublePlantBlock::new(block),
         }
     }
@@ -90,6 +106,7 @@ impl BlockBehavior for TallFlowerBlock {
         pos: BlockPos,
         player: Option<&Player>,
 <<<<<<< HEAD
+<<<<<<< HEAD
         inv: &InventoryAccess,
     ) {
         self.base.set_placed_by(state, world, pos, player, inv);
@@ -99,6 +116,11 @@ impl BlockBehavior for TallFlowerBlock {
         self.base
             .set_placed_by(state, world, pos, player, item_stack);
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        inv: &InventoryAccess,
+    ) {
+        self.base.set_placed_by(state, world, pos, player, inv);
+>>>>>>> refs/remotes/origin/master
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -106,8 +128,11 @@ impl BlockBehavior for TallFlowerBlock {
     }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
@@ -136,8 +161,11 @@ impl Bonemealable for TallFlowerBlock {
         }
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }

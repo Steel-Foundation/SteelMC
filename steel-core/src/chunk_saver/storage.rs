@@ -2359,7 +2359,10 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Once};
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> refs/remotes/origin/master
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
@@ -2367,6 +2370,7 @@ mod tests {
     use crate::world::structure::StructureReferenceSet;
     use glam::DVec3;
     use rustc_hash::FxHashMap;
+<<<<<<< HEAD
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
     use steel_registry::vanilla_entities;
@@ -2381,6 +2385,8 @@ mod tests {
     use crate::world::structure::StructureReferenceSet;
     use glam::DVec3;
     use rustc_hash::FxHashMap;
+=======
+>>>>>>> refs/remotes/origin/master
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_block_entity_types;
     use steel_registry::vanilla_blocks;
@@ -2396,6 +2402,7 @@ mod tests {
             init_block_entities();
             init_entities();
         });
+<<<<<<< HEAD
     }
 
     fn init_runtime_registries() {
@@ -2405,6 +2412,8 @@ mod tests {
             init_block_entities();
             init_entities();
         });
+=======
+>>>>>>> refs/remotes/origin/master
     }
 
     fn test_structure_piece() -> StructurePiece {
@@ -2878,10 +2887,14 @@ mod tests {
     )]
     fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         init_test_registry();
 =======
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
 
         let structure_id = Identifier::new_static("steel", "test_payload_variants");
         let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");

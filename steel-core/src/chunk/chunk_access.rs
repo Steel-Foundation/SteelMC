@@ -344,7 +344,10 @@ impl ChunkAccess {
     /// Acquires heightmap write lock, then section read locks. Callers must not
     /// hold a section write lock when calling this, or a deadlock will occur.
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> refs/remotes/origin/master
     ///
     /// # Panics
     /// Panics if the chunk is not a proto chunk.
@@ -417,6 +420,7 @@ impl ChunkAccess {
     }
 
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
+<<<<<<< HEAD
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
     ///
     /// # Panics
@@ -490,6 +494,8 @@ impl ChunkAccess {
     }
 
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
+=======
+>>>>>>> refs/remotes/origin/master
     ///
     /// Full chunks mirror vanilla `ImposterProtoChunk.markPosForPostprocessing` and ignore
     /// late worldgen postprocessing marks.
@@ -732,6 +738,9 @@ impl ChunkAccess {
 #[cfg(test)]
 mod tests {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
     use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
@@ -744,6 +753,7 @@ mod tests {
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
         init_test_registry();
+<<<<<<< HEAD
 =======
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 
@@ -760,6 +770,8 @@ mod tests {
     fn proto_height_at_primes_missing_heightmap() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -788,10 +800,14 @@ mod tests {
     #[test]
     fn generation_relative_write_updates_proto_heightmaps() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         init_test_registry();
 =======
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -830,6 +846,9 @@ mod tests {
         );
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 
     #[test]
     fn full_chunk_postprocessing_mark_is_vanilla_noop() {
@@ -850,6 +869,9 @@ mod tests {
 
         chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
 }

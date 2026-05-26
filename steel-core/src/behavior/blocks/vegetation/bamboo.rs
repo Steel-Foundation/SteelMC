@@ -74,14 +74,20 @@ impl BambooStalkBlock {
     ) {
         let state_below = world.get_block_state(pos.below());
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         let block_below = state_below.get_block();
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
         let state_two_below = world.get_block_state(pos.below_n(2));
         let leaves = if height == 0 {
             BambooLeaves::None
         } else {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
             let leaves = Self::leaves_for_new_segment(state_below);
             if leaves == BambooLeaves::Large
                 && state_two_below.get_block() == &vanilla_blocks::BAMBOO
@@ -98,6 +104,7 @@ impl BambooStalkBlock {
                 );
             }
             leaves
+<<<<<<< HEAD
 =======
             let leaves_below = state_below.get_value(&BAMBOO_LEAVES_PROPERTY);
 
@@ -119,6 +126,8 @@ impl BambooStalkBlock {
                 BambooLeaves::Large
             }
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
         };
 
         let new_age = u8::from(
@@ -139,6 +148,9 @@ impl BambooStalkBlock {
         );
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 
     fn leaves_for_new_segment(state_below: BlockStateId) -> BambooLeaves {
         if state_below.get_block() != &vanilla_blocks::BAMBOO
@@ -149,8 +161,11 @@ impl BambooStalkBlock {
             BambooLeaves::Large
         }
     }
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }
 
 impl Bonemealable for BambooStalkBlock {
@@ -274,10 +289,14 @@ impl BlockBehavior for BambooStalkBlock {
             && world.raw_brightness(pos.above(), 0) >= 9
         {
 <<<<<<< HEAD
+<<<<<<< HEAD
             let height = Self::stalk_segments_below(world, pos) + 1;
 =======
             let height = Self::stalk_segments_below(world, pos);
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+            let height = Self::stalk_segments_below(world, pos) + 1;
+>>>>>>> refs/remotes/origin/master
             if height < 16 {
                 Self::grow(world, pos, state, &mut rng, height);
             }
@@ -313,6 +332,9 @@ impl BlockBehavior for BambooStalkBlock {
     }
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 
 #[cfg(test)]
 mod tests {
@@ -331,5 +353,8 @@ mod tests {
         );
     }
 }
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master

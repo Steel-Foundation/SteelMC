@@ -1,5 +1,8 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -18,6 +21,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 use super::{BlockRef, water_source_fluid_state};
 
 /// Behavior for seagrass blocks.
+<<<<<<< HEAD
 =======
 =======
 use std::sync::Arc;
@@ -45,6 +49,8 @@ use super::{BlockRef, water_source_fluid_state};
 =======
 /// Behavior for seagrass blocks.
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 #[block_behavior]
 pub struct SeagrassBlock {
     block: BlockRef,
@@ -102,8 +108,11 @@ impl BlockBehavior for SeagrassBlock {
     }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 
     fn place_liquid(
         &self,
@@ -153,10 +162,13 @@ impl Bonemealable for SeagrassBlock {
         world.set_block(pos.above(), upper_state, UpdateFlags::UPDATE_CLIENTS);
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }
 
 #[cfg(test)]
@@ -165,15 +177,20 @@ mod tests {
 
     use steel_registry::fluid::FluidRef;
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
 =======
     use steel_registry::{REGISTRY, Registry, vanilla_blocks, vanilla_fluids};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+>>>>>>> refs/remotes/origin/master
 
     use super::*;
 
     struct SingleSupportLevel {
         support: BlockStateId,
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
         above: BlockStateId,
@@ -182,6 +199,9 @@ mod tests {
 =======
         above: BlockStateId,
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+        above: BlockStateId,
+>>>>>>> refs/remotes/origin/master
         scheduled_water_tick: Cell<bool>,
     }
 
@@ -191,8 +211,11 @@ mod tests {
                 support,
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
                 above: vanilla_blocks::AIR.default_state(),
                 scheduled_water_tick: Cell::new(false),
             }
@@ -203,6 +226,7 @@ mod tests {
             self
         }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                 scheduled_water_tick: Cell::new(false),
             }
@@ -210,6 +234,8 @@ mod tests {
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     }
 
     impl LevelReader for SingleSupportLevel {
@@ -218,6 +244,7 @@ mod tests {
                 self.support
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
             } else if pos == BlockPos::ZERO.above() {
                 self.above
 =======
@@ -226,6 +253,10 @@ mod tests {
             } else if pos == BlockPos::ZERO.above() {
                 self.above
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+            } else if pos == BlockPos::ZERO.above() {
+                self.above
+>>>>>>> refs/remotes/origin/master
             } else {
                 vanilla_blocks::AIR.default_state()
             }
@@ -271,6 +302,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn seagrass_update_shape_breaks_without_support() {
         init_test_registry();
@@ -285,6 +317,11 @@ mod tests {
     fn seagrass_update_shape_breaks_without_support() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    #[test]
+    fn seagrass_update_shape_breaks_without_support() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let level = SingleSupportLevel::new(vanilla_blocks::AIR.default_state());
         let state = vanilla_blocks::SEAGRASS.default_state();
@@ -305,10 +342,14 @@ mod tests {
     #[test]
     fn seagrass_update_shape_schedules_water_when_it_survives() {
 <<<<<<< HEAD
+<<<<<<< HEAD
         init_test_registry();
 =======
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let level = SingleSupportLevel::new(vanilla_blocks::DIRT.default_state());
         let state = vanilla_blocks::SEAGRASS.default_state();
@@ -327,16 +368,22 @@ mod tests {
     }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 
     #[test]
     fn seagrass_bonemeal_requires_water_block_above() {
         init_test_registry();
+<<<<<<< HEAD
 =======
 
     #[test]
     fn seagrass_bonemeal_requires_water_block_above() {
         init_registry();
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
         let behavior = SeagrassBlock::new(&vanilla_blocks::SEAGRASS);
         let state = vanilla_blocks::SEAGRASS.default_state();
         let waterlogged_slab = vanilla_blocks::OAK_SLAB
@@ -352,8 +399,11 @@ mod tests {
         assert!(!behavior.is_valid_bonemeal_target(state, &waterlogged_level, BlockPos::ZERO));
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 }

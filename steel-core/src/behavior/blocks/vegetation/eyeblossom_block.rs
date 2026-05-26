@@ -65,10 +65,14 @@ impl BlockBehavior for EyeblossomBlock {
 #[cfg(test)]
 mod tests {
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 =======
     use steel_registry::{REGISTRY, Registry, vanilla_blocks};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+>>>>>>> refs/remotes/origin/master
     use steel_utils::BlockPos;
 
     use super::*;
@@ -106,6 +110,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn eyeblossom_requires_vegetation_support() {
         init_test_registry();
@@ -120,6 +125,11 @@ mod tests {
     fn eyeblossom_requires_vegetation_support() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    #[test]
+    fn eyeblossom_requires_vegetation_support() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior =
             EyeblossomBlock::new(&vanilla_blocks::CLOSED_EYEBLOSSOM, EyeblossomType::Closed);
         let pos = BlockPos::new(0, 64, 0);

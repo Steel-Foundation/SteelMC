@@ -170,10 +170,14 @@ mod tests {
 
     use steel_registry::fluid::FluidRef;
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::test_support::init_test_registry;
 =======
     use steel_registry::{REGISTRY, Registry};
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    use steel_registry::test_support::init_test_registry;
+>>>>>>> refs/remotes/origin/master
 
     use super::*;
 
@@ -234,6 +238,7 @@ mod tests {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     #[test]
     fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
         init_test_registry();
@@ -248,6 +253,11 @@ mod tests {
     fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
         init_registry();
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    #[test]
+    fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
+        init_test_registry();
+>>>>>>> refs/remotes/origin/master
         let behavior = SugarCaneBlock::new(&vanilla_blocks::SUGAR_CANE);
         let level = EmptyLevel::new();
         let state = vanilla_blocks::SUGAR_CANE.default_state();

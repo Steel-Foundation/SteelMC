@@ -1011,6 +1011,9 @@ mod tests {
         );
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
 
     #[test]
     fn vanilla_game_events_initialize_in_vanilla_order() {
@@ -1032,6 +1035,9 @@ mod tests {
             Some(&resonate_10)
         );
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
 }

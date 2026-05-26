@@ -466,10 +466,14 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 <<<<<<< HEAD
+<<<<<<< HEAD
     use steel_registry::test_support::init_test_registry;
 =======
     use steel_registry::Registry;
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    use steel_registry::test_support::init_test_registry;
+>>>>>>> refs/remotes/origin/master
     use toml::map::Map;
 
     fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {

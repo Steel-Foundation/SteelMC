@@ -5,9 +5,12 @@ use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_shape_full_block},
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     item_stack::ItemStack,
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     vanilla_blocks,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
@@ -25,10 +28,14 @@ pub struct BoneMealItem;
 
 impl BoneMealItem {
 <<<<<<< HEAD
+<<<<<<< HEAD
     fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
 =======
     fn grow(item_stack: &mut ItemStack, world: &Arc<World>, pos: BlockPos) -> bool {
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
+>>>>>>> refs/remotes/origin/master
         let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {
             return false;
@@ -43,15 +50,19 @@ impl BoneMealItem {
                 bonemealable.perform_bonemeal(state, world, &mut rng, pos);
             }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
             item_stack.shrink(1);
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 
             return true;
         }
         false
     }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
 =======
@@ -62,6 +73,9 @@ impl BoneMealItem {
         _clicked_face: Direction,
     ) -> bool {
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+    fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
+>>>>>>> refs/remotes/origin/master
         let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::WATER || state.get_fluid_state().amount != 8 {
             return false;
@@ -114,16 +128,20 @@ impl BoneMealItem {
         }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         item_stack.shrink(1);
 
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
         true
     }
 }
 
 impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
+<<<<<<< HEAD
 <<<<<<< HEAD
         if Self::grow(context.world, context.hit_result.block_pos) {
             context.inv.with_item(|item| item.shrink(1));
@@ -134,6 +152,10 @@ impl ItemBehavior for BoneMealItem {
             context.hit_result.block_pos,
         ) {
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+        if Self::grow(context.world, context.hit_result.block_pos) {
+            context.inv.with_item(|item| item.shrink(1));
+>>>>>>> refs/remotes/origin/master
             // TODO: particles
             return InteractionResult::Success;
         }
@@ -142,9 +164,12 @@ impl ItemBehavior for BoneMealItem {
         if is_clicked_face_sturdy
             && Self::grow_water_plant(
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                 context.inv.item(),
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
                 context.world,
                 context
                     .hit_result
@@ -154,9 +179,13 @@ impl ItemBehavior for BoneMealItem {
             )
         {
 <<<<<<< HEAD
+<<<<<<< HEAD
             context.inv.with_item(|item| item.shrink(1));
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+            context.inv.with_item(|item| item.shrink(1));
+>>>>>>> refs/remotes/origin/master
             return InteractionResult::Success;
         }
         InteractionResult::Pass

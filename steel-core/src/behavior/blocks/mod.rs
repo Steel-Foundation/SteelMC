@@ -11,6 +11,7 @@ mod portal;
 mod redstone;
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub mod vegetation;
 =======
 mod vegetation;
@@ -18,6 +19,9 @@ mod vegetation;
 =======
 pub mod vegetation;
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+pub mod vegetation;
+>>>>>>> refs/remotes/origin/master
 
 pub use building::{
     DoorBlock, FenceBlock, RotatedPillarBlock, SlabBlock, StairBlock, WeatherState,
@@ -35,8 +39,11 @@ pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
     CactusFlowerBlock, CarrotBlock, CropBlock, DoublePlantBlock, FlowerBlock, NetherSproutsBlock,
     NetherWartBlock, PitcherCropBlock, PotatoBlock, SeagrassBlock, SugarCaneBlock,
@@ -54,6 +61,7 @@ pub use vegetation::{
     SporeBlossomBlock, TallDryGrassBlock, TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock,
     WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
     AzaleaBlock, BambooStalkBlock, BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock,
     BigDripleafBlock, BigDripleafStemBlock, BushBlock, CarpetBlock, CaveVinesBlock,
@@ -70,4 +78,6 @@ pub use vegetation::{
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+>>>>>>> refs/remotes/origin/master
 };

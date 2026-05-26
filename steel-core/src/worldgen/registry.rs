@@ -414,11 +414,15 @@ fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
 mod tests {
     use super::*;
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/master
     use steel_registry::test_support::init_test_registry;
 
     #[test]
     fn default_flat_config_matches_vanilla_superflat() {
         init_test_registry();
+<<<<<<< HEAD
 =======
     use steel_registry::Registry;
 
@@ -432,6 +436,8 @@ mod tests {
     fn default_flat_config_matches_vanilla_superflat() {
         init_registry();
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+>>>>>>> refs/remotes/origin/master
 
         let output = create_flat(&toml::Value::Table(Map::new()), 0)
             .expect("default flat config should create a generator");

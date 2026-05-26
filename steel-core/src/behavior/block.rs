@@ -13,9 +13,13 @@ use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 use crate::behavior::InventoryAccess;
 =======
 >>>>>>> a3a9bf85f (Crops and Bonemeal (#116))
+=======
+use crate::behavior::InventoryAccess;
+>>>>>>> refs/remotes/origin/master
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
@@ -126,10 +130,15 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// Vanilla parity: `Block.setPlacedBy(Level, BlockPos, BlockState, LivingEntity, ItemStack)`.
 <<<<<<< HEAD
+<<<<<<< HEAD
     /// Steel passes lazy inventory access instead of a borrowed stack so the
     /// caller does not hold the inventory lock while dispatching block behavior.
 =======
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+    /// Steel passes lazy inventory access instead of a borrowed stack so the
+    /// caller does not hold the inventory lock while dispatching block behavior.
+>>>>>>> refs/remotes/origin/master
     /// This is intentionally separate from [`on_place`], which fires for any
     /// world block mutation.
     #[expect(
@@ -143,10 +152,14 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         player: Option<&Player>,
 <<<<<<< HEAD
+<<<<<<< HEAD
         inv: &InventoryAccess,
 =======
         item_stack: &ItemStack,
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+        inv: &InventoryAccess,
+>>>>>>> refs/remotes/origin/master
     ) {
         // Default: no-op
     }

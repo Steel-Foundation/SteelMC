@@ -21,10 +21,14 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
 <<<<<<< HEAD
+<<<<<<< HEAD
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
 =======
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 >>>>>>> 3643c5b7e (Add worldgen features stage (#183))
+=======
+use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
+>>>>>>> refs/remotes/origin/master
 
 /// Behavior for all button block variants.
 ///
