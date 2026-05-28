@@ -136,8 +136,8 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         }
 
         // Give filled bucket
-        consume_bucket(context, result.filled_bucket);
 
+        consume_bucket(context, result.filled_bucket);
         return InteractionResult::Success;
     }
 
@@ -265,7 +265,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
             };
 
             if is_same_fluid && fluid_state.is_source() {
-                consume_bucket(context, &vanilla_items::ITEMS.bucket);
+                // consume_bucket(context, &vanilla_items::ITEMS.bucket);
                 return Some(InteractionResult::Success);
             }
 
@@ -302,7 +302,10 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
                     .world
                     .play_block_sound(sound_id, pos, 1.0, 1.0, None);
 
-                consume_bucket(context, &vanilla_items::ITEMS.bucket);
+                // TODO: really dirty fix this prevents for placing water in creative gives you an empty bucket
+                if !context.player.has_infinite_materials() {
+                    consume_bucket(context, &vanilla_items::ITEMS.bucket);
+                }
                 return Some(InteractionResult::Success);
             }
         }
