@@ -106,6 +106,10 @@ impl BlockBehavior for ConcretePowderBlock {
             world.set_block(pos, self.concrete.default_state(), UpdateFlags::UPDATE_ALL);
         }
     }
+
+    fn is_concrete_powder(&self) -> bool {
+        true
+    }
 }
 
 /// Returns true if the fluid state at `state` is water.

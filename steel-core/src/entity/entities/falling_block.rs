@@ -90,8 +90,6 @@ pub struct FallingBlockEntity {
     last_sent_position: SyncMutex<DVec3>,
     last_sent_on_ground: AtomicBool,
     needs_sync: AtomicBool,
-    /// Internal tick counter (always increments, unlike `time` which can stop).
-    tick_count: AtomicI32,
 }
 
 impl FallingBlockEntity {
@@ -125,7 +123,6 @@ impl FallingBlockEntity {
             last_sent_position: SyncMutex::new(position),
             last_sent_on_ground: AtomicBool::new(false),
             needs_sync: AtomicBool::new(false),
-            tick_count: AtomicI32::new(0),
         }
     }
 
@@ -164,7 +161,6 @@ impl FallingBlockEntity {
             last_sent_position: SyncMutex::new(position),
             last_sent_on_ground: AtomicBool::new(on_ground),
             needs_sync: AtomicBool::new(false),
-            tick_count: AtomicI32::new(0),
         }
     }
 
@@ -315,12 +311,17 @@ impl FallingBlockEntity {
         let should_sync = diff_sq > 1.0e-7
             || (diff_sq > 0.0 && current.x == 0.0 && current.y == 0.0 && current.z == 0.0);
 
-        if should_sync {
-            *self.last_sent_velocity.lock() = current;
-            Some(CSetEntityMotion::new(self.id(), current.x, current.y, current.z))
-        } else {
-            None
+        if !should_sync {
+            return None;
         }
+
+        *self.last_sent_velocity.lock() = current;
+        Some(CSetEntityMotion::new(
+            self.id(),
+            current.x,
+            current.y,
+            current.z,
+        ))
     }
 
     /// Checks position sync and returns the appropriate packet if needed.
@@ -346,8 +347,11 @@ impl FallingBlockEntity {
         let dy = calc_delta(current_pos.y, last_sent.y);
         let dz = calc_delta(current_pos.z, last_sent.z);
 
-        let use_full_sync =
-            on_ground_changed || force_periodic_sync || dx.is_none() || dy.is_none() || dz.is_none();
+        let use_full_sync = on_ground_changed
+            || force_periodic_sync
+            || dx.is_none()
+            || dy.is_none()
+            || dz.is_none();
 
         self.last_sent_on_ground
             .store(current_on_ground, Ordering::Relaxed);
@@ -355,7 +359,7 @@ impl FallingBlockEntity {
 
         if use_full_sync {
             let vel = *self.velocity.lock();
-            Some(PositionSyncPacket::Full(CEntityPositionSync {
+            return Some(PositionSyncPacket::Full(CEntityPositionSync {
                 entity_id: self.id(),
                 x: current_pos.x,
                 y: current_pos.y,
@@ -366,16 +370,21 @@ impl FallingBlockEntity {
                 yaw: 0.0,
                 pitch: 0.0,
                 on_ground: current_on_ground,
-            }))
-        } else {
-            Some(PositionSyncPacket::Delta(CMoveEntityPos {
-                entity_id: self.id(),
-                dx: dx.unwrap(),
-                dy: dy.unwrap(),
-                dz: dz.unwrap(),
-                on_ground: current_on_ground,
-            }))
+            }));
         }
+
+        // `use_full_sync` already forced the Full branch above when any delta was None,
+        // so all three must be Some here.
+        let (Some(dx), Some(dy), Some(dz)) = (dx, dy, dz) else {
+            unreachable!("use_full_sync handles None deltas");
+        };
+        Some(PositionSyncPacket::Delta(CMoveEntityPos {
+            entity_id: self.id(),
+            dx,
+            dy,
+            dz,
+            on_ground: current_on_ground,
+        }))
     }
 }
 
@@ -484,7 +493,6 @@ impl Entity for FallingBlockEntity {
             return;
         }
 
-        let tick_count = self.tick_count.fetch_add(1, Ordering::Relaxed) + 1;
         self.time.fetch_add(1, Ordering::Relaxed);
 
         // Store pre-move state for concrete powder detection and needs_sync tracking
@@ -517,7 +525,7 @@ impl Entity for FallingBlockEntity {
 
         // Concrete powder: if moving fast enough, raycast to detect water traversal.
         // Vanilla: checks if concrete powder passed through a water source in one tick.
-        let is_concrete_powder = block_ref.key.path.ends_with("_concrete_powder");
+        let is_concrete_powder = BLOCK_BEHAVIORS.get_behavior(block_ref).is_concrete_powder();
 
         let mut is_stuck_in_water = false;
         if is_concrete_powder {
@@ -654,14 +662,9 @@ impl Entity for FallingBlockEntity {
         // Track velocity changes for sync
         let new_vel = *self.velocity.lock();
         let diff = new_vel - prev_vel;
-        if diff.length_squared() > 0.01 {
+        if diff.length_squared() > 0.01 || on_ground != prev_on_ground {
             self.needs_sync.store(true, Ordering::Relaxed);
         }
-        if on_ground != prev_on_ground {
-            self.needs_sync.store(true, Ordering::Relaxed);
-        }
-
-        let _ = tick_count;
     }
 
     fn send_changes(&self, tick_count: i32) {

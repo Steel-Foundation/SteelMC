@@ -504,6 +504,14 @@ pub trait BlockBehavior: Send + Sync {
             source_position: None,
         }
     }
+
+    /// Returns true if this block is a concrete powder variant.
+    ///
+    /// Used by `FallingBlockEntity` to enable the in-flight water solidification check.
+    /// Vanilla: `block instanceof ConcretePowderBlock`.
+    fn is_concrete_powder(&self) -> bool {
+        false
+    }
 }
 
 /// Configuration for a `FallingBlockEntity` set at spawn time.
