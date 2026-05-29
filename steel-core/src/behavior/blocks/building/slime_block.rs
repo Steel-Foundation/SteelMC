@@ -15,7 +15,7 @@ use crate::entity::damage::DamageSource;
 use crate::world::World;
 
 /// Behavior for slime block
-/// TODO: stepOn
+/// TODO: Implement stepOn once BlockBehavior has a movement step hook.
 #[block_behavior]
 pub struct SlimeBlock {
     block: BlockRef,

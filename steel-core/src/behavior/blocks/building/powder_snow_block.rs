@@ -12,7 +12,8 @@ use crate::entity::Entity;
 use crate::world::World;
 
 /// Behavior for powder snow
-/// TODO: fix fall sound
+/// TODO: Play living fall sounds once entity-positioned sounds and fall sound
+/// variants exist.
 #[block_behavior]
 pub struct PowderSnowBlock {
     block: BlockRef,
