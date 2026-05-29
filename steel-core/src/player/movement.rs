@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, atomic::Ordering};
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPosRot, CMoveEntityRot, CPlayerPosition, CRotateHead,
@@ -16,11 +16,12 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
-use steel_registry::{vanilla_attributes, vanilla_entities};
+use steel_registry::{vanilla_attributes, vanilla_entities, vanilla_game_events};
 use steel_utils::types::GameType;
 use steel_utils::{BlockPos, ChunkPos, translations};
 
 use crate::entity::{Entity, LivingEntity};
+use crate::fluid::FluidStateExt;
 use crate::physics::{
     CollisionWorld, EntityPhysicsState, MoverType, WorldCollisionProvider, join_is_not_empty,
     move_entity,
@@ -28,6 +29,7 @@ use crate::physics::{
 use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::World;
+use crate::world::game_event_context::GameEventContext;
 
 /// Player bounding box width (from entity type registry).
 pub const PLAYER_WIDTH: f64 = vanilla_entities::PLAYER.dimensions.width as f64;
@@ -448,9 +450,52 @@ impl Player {
         true
     }
 
-    /// Accumulates fall distance and applies fall damage on landing
-    // TODO: no !isInWater() guard yet cause there is no reliable detection yet
+    fn on_pos_legacy(pos: DVec3) -> BlockPos {
+        BlockPos::new(
+            pos.x.floor() as i32,
+            (pos.y - 0.2).floor() as i32,
+            pos.z.floor() as i32,
+        )
+    }
+
+    fn is_touching_water(&self) -> bool {
+        let world = self.get_world();
+        let aabb = self.bounding_box().deflate(COLLISION_EPSILON);
+
+        let min_x = aabb.min_x.floor() as i32;
+        let max_x = aabb.max_x.floor() as i32;
+        let min_y = aabb.min_y.floor() as i32;
+        let max_y = aabb.max_y.floor() as i32;
+        let min_z = aabb.min_z.floor() as i32;
+        let max_z = aabb.max_z.floor() as i32;
+
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    let pos = BlockPos::new(x, y, z);
+                    let fluid_state = world.get_block_state(pos).get_fluid_state();
+                    if fluid_state.is_empty() || !fluid_state.is_water() {
+                        continue;
+                    }
+
+                    let fluid_top = f64::from(y) + f64::from(fluid_state.own_height());
+                    if aabb.min_y < fluid_top && aabb.max_y > f64::from(y) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Accumulates fall distance and applies fall behavior on landing.
     fn check_fall_damage(&self, dy: f64, on_ground: bool) {
+        if self.is_touching_water() {
+            self.reset_fall_distance();
+            return;
+        }
+
         if dy < 0.0 {
             self.set_fall_distance(self.fall_distance() - dy as f32);
         }
@@ -459,18 +504,25 @@ impl Player {
             return;
         }
 
+        let pos = *self.position.lock();
+        let on_pos = Self::on_pos_legacy(pos);
+        let world = self.get_world();
+        let state = world.get_block_state(on_pos);
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+
+        let entity = self as &dyn Entity;
         let fall_distance = self.fall_distance();
         if fall_distance > 0.0 {
-            let pos = *self.position.lock();
-            let on_pos = BlockPos::new(
-                pos.x.floor() as i32,
-                (pos.y - 0.2).floor() as i32,
-                pos.z.floor() as i32,
+            behavior.fall_on(state, &world, on_pos, entity, fall_distance);
+            world.game_event(
+                &vanilla_game_events::HIT_GROUND,
+                on_pos,
+                &GameEventContext::new(Some(entity), Some(state)),
             );
-            let world = self.get_world();
-            let state = world.get_block_state(on_pos);
-            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            behavior.fall_on(state, &world, on_pos, self as &dyn Entity, fall_distance);
+        }
+
+        if self.get_delta_movement().y < 0.0 {
+            behavior.update_entity_movement_after_fall_on(&world, entity);
         }
 
         self.reset_fall_distance();
@@ -566,7 +618,7 @@ impl Player {
                     (vel_sq, grace)
                 };
 
-                let mut validation = validate_movement(
+                let validation = validate_movement(
                     &world,
                     &MovementInput {
                         target_pos,
@@ -590,9 +642,6 @@ impl Player {
 
                 self.movement.lock().last_good_position = target_pos;
 
-                if !was_on_ground && packet.on_ground {
-                    validation.move_delta.y = 0.0;
-                }
                 self.set_delta_movement(validation.move_delta);
 
                 let moved_upwards = validation.move_delta.y > 0.0;

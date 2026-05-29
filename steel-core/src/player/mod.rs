@@ -61,7 +61,7 @@ use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
-    ADVANCE_TIME, IMMEDIATE_RESPAWN, KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
+    ADVANCE_TIME, FALL_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{vanilla_attributes, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
@@ -590,9 +590,12 @@ impl Player {
     /// `PvP` checks before delegating to super). When other living entities are
     /// added, the core logic here should move to a `LivingEntity` trait method.
     pub fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
-        // TODO: Vanilla ServerPlayer.hurtServer checks isInvulnerableTo() first, which
-        // includes gamerule checks (drowningDamage, fallDamage, fireDamage, freezeDamage).
-        // Add when gamerule damage-type system is implemented.
+        // TODO: Add drowning/fire/freeze gamerule checks once those damage paths exist
+        if source.is_fall()
+            && self.get_world().get_game_rule(&FALL_DAMAGE) == GameRuleValue::Bool(false)
+        {
+            return false;
+        }
 
         {
             let abilities = self.abilities.lock();
@@ -1260,6 +1263,10 @@ impl Entity for Player {
         damage_modifier: f32,
         source: &DamageSource,
     ) -> bool {
+        if self.abilities.lock().may_fly {
+            return false;
+        }
+
         // Vanilla: LivingEntity.causeFallDamage. The shared formula lives in
         // LivingEntity::calculate_fall_damage; here we apply the result.
         // TODO: propagateFallToPassengers once entity riding exists.

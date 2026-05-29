@@ -12,7 +12,7 @@ use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_attributes;
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_attributes, vanilla_entity_type_tags};
 use steel_utils::BlockPos;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
@@ -492,8 +492,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Computes the fall damage in half hearts for a given fall distance and block modifier
-    // TODO: return 0 for entities in the FALL_DAMAGE_IMMUNE tag once entity type tags are queryable.
     fn calculate_fall_damage(&self, fall_distance: f32, damage_modifier: f32) -> i32 {
+        if REGISTRY.entity_types.is_in_tag(
+            self.entity_type(),
+            &vanilla_entity_type_tags::FALL_DAMAGE_IMMUNE_TAG,
+        ) {
+            return 0;
+        }
+
         let attrs = self.attributes().lock();
         let safe_fall_distance = attrs
             .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
