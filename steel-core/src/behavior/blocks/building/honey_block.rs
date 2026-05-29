@@ -15,7 +15,7 @@ use crate::entity::damage::DamageSource;
 use crate::world::World;
 
 /// Behavior for the honey block
-/// TODO: Implement HoneyBlock sliding sounds, particles, and advancement events
+/// TODO: Implement `HoneyBlock` sliding sounds, particles, and advancement events
 /// once entity-positioned sounds and entity event broadcasting are available
 #[block_behavior]
 pub struct HoneyBlock {

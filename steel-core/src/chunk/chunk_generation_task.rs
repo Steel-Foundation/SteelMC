@@ -178,7 +178,7 @@ impl ChunkGenerationTask {
     }
 
     /// Returns the holder for the chunk this task is targeting.
-    pub(crate) fn center_holder(&self) -> &Arc<ChunkHolder> {
+    pub(crate) const fn center_holder(&self) -> &Arc<ChunkHolder> {
         &self.center_holder
     }
 

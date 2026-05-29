@@ -113,7 +113,7 @@ pub struct BedItem {
 }
 
 impl BedItem {
-    /// New BedItem
+    /// New `BedItem`
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {

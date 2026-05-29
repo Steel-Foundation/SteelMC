@@ -183,7 +183,7 @@ impl CropLike for CropBlock {
     }
 
     fn clone_item_stack(&self) -> ItemStack {
-        ItemStack::new(&vanilla_items::ITEMS.wheat_seeds)
+        ItemStack::new(vanilla_items::ITEMS.wheat_seeds)
     }
 }
 
