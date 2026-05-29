@@ -866,10 +866,10 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 63);
+        inventory.items[0] = ItemStack::with_count(ITEMS.oak_log, 63);
         let before = inventory.get_times_changed();
 
-        let mut stack = ItemStack::new(&ITEMS.oak_log);
+        let mut stack = ItemStack::new(ITEMS.oak_log);
         assert!(inventory.add(&mut stack));
 
         assert!(stack.is_empty());
@@ -882,10 +882,10 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 3);
+        inventory.items[0] = ItemStack::with_count(ITEMS.oak_log, 3);
         inventory
             .equipment
-            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+            .set(EquipmentSlot::Head, ItemStack::new(ITEMS.diamond_helmet));
 
         assert_eq!(inventory.clear_content(), 4);
         assert!(inventory.is_empty());

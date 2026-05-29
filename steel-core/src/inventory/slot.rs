@@ -868,17 +868,17 @@ mod tests {
         let result_id = ContainerId::from_arc(&result);
 
         let mut guard = lock_crafting_pair(&crafting, &result);
-        slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        slot.set_item(&mut guard, ItemStack::new(ITEMS.oak_log));
 
         let result_item = guard
             .get(result_id)
             .expect("result container not locked")
             .get_item(0);
-        assert!(result_item.is(&ITEMS.oak_planks));
+        assert!(result_item.is(ITEMS.oak_planks));
         assert_eq!(result_item.count(), 4);
 
         let removed = slot.remove(&mut guard, 1);
-        assert!(removed.is(&ITEMS.oak_log));
+        assert!(removed.is(ITEMS.oak_log));
         assert_eq!(removed.count(), 1);
 
         let result_item = guard
@@ -902,16 +902,16 @@ mod tests {
         guard
             .get_result_container_mut(result_id)
             .expect("result container not locked")
-            .set_item(0, ItemStack::with_count(&ITEMS.oak_planks, 4));
+            .set_item(0, ItemStack::with_count(ITEMS.oak_planks, 4));
         assert!(!result_slot.has_valid_recipe_result(&guard));
 
-        input_slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        input_slot.set_item(&mut guard, ItemStack::new(ITEMS.oak_log));
         assert!(result_slot.has_valid_recipe_result(&guard));
 
         guard
             .get_result_container_mut(result_id)
             .expect("result container not locked")
-            .set_item(0, ItemStack::new(&ITEMS.stick));
+            .set_item(0, ItemStack::new(ITEMS.stick));
         assert!(!result_slot.has_valid_recipe_result(&guard));
     }
 }

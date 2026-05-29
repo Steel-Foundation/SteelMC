@@ -266,7 +266,7 @@ mod tests {
     fn item_frame_persists_structure_marker_state() {
         let frame =
             ItemFrameEntity::new(1, BlockPos::new(12, 80, 14), Direction::West, Weak::new());
-        frame.set_item(ItemStack::new(&vanilla_items::ITEMS.elytra));
+        frame.set_item(ItemStack::new(vanilla_items::ITEMS.elytra));
 
         let mut nbt = NbtCompound::new();
         frame.save_additional(&mut nbt);
