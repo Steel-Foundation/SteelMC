@@ -52,7 +52,7 @@ impl TurtleEggBlock {
         state: BlockStateId,
         pos: BlockPos,
         entity: &dyn Entity,
-        randomness: u32,
+        randomness: i32,
     ) {
         if state.get_block() != &vanilla_blocks::TURTLE_EGG {
             return;
@@ -61,9 +61,10 @@ impl TurtleEggBlock {
             return;
         }
 
-        // TODO: vanilla uses the world RNG (Level.getRandom mirror once a
-        // world-scoped RNG is available (same gap as FarmlandBlock)
-        if rand::random_range(0..randomness) == 0 {
+        if world
+            .next_random_i32_bounded(randomness)
+            .is_some_and(|value| value == 0)
+        {
             Self::decrease_eggs(world, pos, state);
         }
     }
@@ -73,7 +74,7 @@ impl TurtleEggBlock {
             sound_events::ENTITY_TURTLE_EGG_BREAK,
             pos,
             0.7,
-            0.9 + rand::random::<f32>() * 0.2,
+            0.9 + world.next_random_f32() * 0.2,
             None,
         );
 
@@ -87,8 +88,7 @@ impl TurtleEggBlock {
             world.game_event(
                 &vanilla_game_events::BLOCK_DESTROY,
                 pos,
-                // TODO: GameEventContext::new(None, Some(u32::from(new_state.0)) Idk if i need this or if ::default is fine
-                &GameEventContext::default(),
+                &GameEventContext::new(None, Some(state)),
             );
             world.destroy_block_effect(pos, u32::from(state.0), None);
         }

@@ -7,7 +7,9 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules};
+use steel_registry::{
+    vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_events, vanilla_game_rules,
+};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
@@ -15,6 +17,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
+use crate::world::game_event_context::GameEventContext;
 
 /// Maximum moisture level for farmland.
 const MAX_MOISTURE: u8 = 7;
@@ -88,9 +91,14 @@ impl FarmlandBlock {
     }
 
     /// Turns the farmland into dirt.
-    fn turn_to_dirt(world: &Arc<World>, pos: BlockPos) {
+    fn turn_to_dirt(world: &Arc<World>, pos: BlockPos, source_entity: Option<&dyn Entity>) {
         let dirt_state = vanilla_blocks::DIRT.default_state();
         world.set_block(pos, dirt_state, UpdateFlags::UPDATE_ALL);
+        world.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(source_entity, Some(dirt_state)),
+        );
     }
 }
 
@@ -123,7 +131,7 @@ impl BlockBehavior for FarmlandBlock {
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
             } else if !Self::should_maintain_farmland(world, pos) {
                 // No moisture and no crop - turn to dirt
-                Self::turn_to_dirt(world, pos);
+                Self::turn_to_dirt(world, pos, None);
             }
         } else if moisture < MAX_MOISTURE {
             // Near water - hydrate to max
@@ -147,13 +155,12 @@ impl BlockBehavior for FarmlandBlock {
             world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING) == GameRuleValue::Bool(true);
         let dimensions = entity_type.dimensions;
 
-        // TODO: i am unsure if should use rand::random() or a world RNG (Level.getRandom()) vanilla uses world.next_random_f32()
-        if rand::random::<f32>() < fall_distance - 0.5
+        if world.next_random_f32() < fall_distance - 0.5
             && is_living
             && (is_player || mob_griefing)
             && dimensions.width * dimensions.width * dimensions.height > 0.512
         {
-            Self::turn_to_dirt(world, pos);
+            Self::turn_to_dirt(world, pos, Some(entity));
         }
 
         entity.cause_fall_damage(

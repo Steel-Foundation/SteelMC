@@ -44,6 +44,7 @@ use steel_registry::{
 };
 use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
+use steel_utils::random::{Random, legacy_random::LegacyRandom};
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -202,6 +203,8 @@ pub struct World {
     entity_tracker: EntityTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
+    /// World-scoped random source matching vanilla `Level.random`.
+    random: SyncMutex<LegacyRandom>,
     /// Monotonic counter for `sub_tick_order` on scheduled ticks.
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
@@ -303,11 +306,28 @@ impl World {
                 entity_cache: EntityCache::new(),
                 entity_tracker: EntityTracker::new(),
                 weather: SyncMutex::new(weather),
+                random: SyncMutex::new(LegacyRandom::from_seed(rand::random::<u64>())),
                 sub_tick_count: AtomicI64::new(0),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
             }
         }))
+    }
+
+    /// Returns the next float from this world's vanilla-equivalent random source.
+    #[must_use]
+    pub fn next_random_f32(&self) -> f32 {
+        self.random.lock().next_f32()
+    }
+
+    /// Returns a bounded integer from this world's vanilla-equivalent random source.
+    #[must_use]
+    pub fn next_random_i32_bounded(&self, bound: i32) -> Option<i32> {
+        if bound <= 0 {
+            return None;
+        }
+
+        Some(self.random.lock().next_i32_bounded(bound))
     }
 
     /// Cleans up the world by saving all chunks.
