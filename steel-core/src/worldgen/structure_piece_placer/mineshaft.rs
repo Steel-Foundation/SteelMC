@@ -6,7 +6,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_biome_tags::BiomeTag;
 use steel_registry::{Registry, RegistryExt, vanilla_blocks};
-use  steel_utils::axis::Axis;
+use steel_utils::axis::Axis;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, types::UpdateFlags};
