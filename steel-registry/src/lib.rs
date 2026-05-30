@@ -22,7 +22,7 @@ use crate::{
     dimension_type::DimensionTypeRegistry,
     enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
-    entity_types::EntityTypeRegistry,
+    entity_type::EntityTypeRegistry,
     feature::{
         ConfiguredFeatureKind, ConfiguredFeatureRef, ConfiguredFeatureRegistry, PlacedFeatureData,
         PlacedFeatureRef, PlacedFeatureRegistry,
@@ -70,7 +70,7 @@ pub mod dialog;
 pub mod dimension_type;
 pub mod enchantment;
 pub mod entity_data;
-pub mod entity_types;
+pub mod entity_type;
 pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
@@ -609,17 +609,17 @@ impl Registry {
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
-        vanilla_block_tags::register_block_tags(&mut registry.blocks);
+        vanilla_block_tags::BlockTag::register_block_tags(&mut registry.blocks);
 
         vanilla_components::register_vanilla_data_components(&mut registry.data_components);
 
         register_vanilla_entity_data_serializers(&mut registry.entity_data_serializers);
 
         vanilla_items::register_items(&mut registry.items);
-        vanilla_item_tags::register_item_tags(&mut registry.items);
+        vanilla_item_tags::ItemTag::register_item_tags(&mut registry.items);
 
         vanilla_biomes::register_biomes(&mut registry.biomes);
-        vanilla_biome_tags::register_biome_tags(&mut registry.biomes);
+        vanilla_biome_tags::BiomeTag::register_biome_tags(&mut registry.biomes);
         vanilla_chat_types::register_chat_types(&mut registry.chat_types);
         vanilla_trim_patterns::register_trim_patterns(&mut registry.trim_patterns);
         vanilla_trim_materials::register_trim_materials(&mut registry.trim_materials);
@@ -639,45 +639,53 @@ impl Registry {
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
         vanilla_chicken_variants::register_chicken_variants(&mut registry.chicken_variants);
         vanilla_painting_variants::register_painting_variants(&mut registry.painting_variants);
-        vanilla_painting_variant_tags::register_painting_variant_tags(
+        vanilla_painting_variant_tags::PaintingVariantTag::register_painting_variant_tags(
             &mut registry.painting_variants,
         );
         vanilla_dimension_types::register_dimension_types(&mut registry.dimension_types);
         vanilla_damage_types::register_damage_types(&mut registry.damage_types);
-        vanilla_damage_type_tags::register_damage_type_tags(&mut registry.damage_types);
+        vanilla_damage_type_tags::DamageTypeTag::register_damage_type_tags(
+            &mut registry.damage_types,
+        );
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
-        vanilla_banner_pattern_tags::register_banner_pattern_tags(&mut registry.banner_patterns);
+        vanilla_banner_pattern_tags::BannerPatternTag::register_banner_pattern_tags(
+            &mut registry.banner_patterns,
+        );
         vanilla_jukebox_songs::register_jukebox_songs(&mut registry.jukebox_songs);
         vanilla_instruments::register_instruments(&mut registry.instruments);
-        vanilla_instrument_tags::register_instrument_tags(&mut registry.instruments);
+        vanilla_instrument_tags::InstrumentTag::register_instrument_tags(&mut registry.instruments);
         vanilla_dialogs::register_dialogs(&mut registry.dialogs);
-        vanilla_dialog_tags::register_dialog_tags(&mut registry.dialogs);
+        vanilla_dialog_tags::DialogTag::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
         vanilla_zombie_nautilus_variants::register_zombie_nautilus_variants(
             &mut registry.zombie_nautilus_variants,
         );
         vanilla_timelines::register_timelines(&mut registry.timelines);
-        vanilla_timeline_tags::register_timeline_tags(&mut registry.timelines);
+        vanilla_timeline_tags::TimelineTag::register_timeline_tags(&mut registry.timelines);
         vanilla_recipes::register_recipes(&mut registry.recipes);
         vanilla_entities::register_entity_types(&mut registry.entity_types);
-        vanilla_entity_type_tags::register_entity_type_tags(&mut registry.entity_types);
+        vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
+            &mut registry.entity_types,
+        );
         vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);
-        vanilla_fluid_tags::register_fluid_tags(&mut registry.fluids);
+        vanilla_fluid_tags::FluidTag::register_fluid_tags(&mut registry.fluids);
 
         vanilla_poi_types::register_poi_types(&mut registry.poi_types);
-        vanilla_poi_type_tags::register_poi_type_tags(&mut registry.poi_types);
+        vanilla_poi_type_tags::PoiTag::register_poi_tags(&mut registry.poi_types);
 
         vanilla_enchantments::register_enchantments(&mut registry.enchantments);
-        vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
+        vanilla_enchantment_tags::EnchantmentTag::register_enchantment_tags(
+            &mut registry.enchantments,
+        );
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
         vanilla_structures::register_structures(&mut registry.structures);
-        vanilla_structure_tags::register_structure_tags(&mut registry.structures);
+        vanilla_structure_tags::StructureTag::register_structure_tags(&mut registry.structures);
         vanilla_structure_processors::register_structure_processor_lists(
             &mut registry.structure_processors,
         );

@@ -399,7 +399,6 @@ fn place_chorus_plant(
     };
     FeatureDecorationRunner::place_chorus_plant_feature(
         context.region,
-        context.registry,
         context.random,
         context.origin,
     )
@@ -755,7 +754,6 @@ fn place_monster_room(
     };
     FeatureDecorationRunner::place_monster_room_feature(
         context.region,
-        context.registry,
         context.random,
         context.origin,
     )
@@ -846,7 +844,6 @@ fn place_pointed_dripstone(
     };
     FeatureDecorationRunner::place_pointed_dripstone_feature(
         context.region,
-        context.registry,
         context.random,
         config,
         context.origin,
@@ -862,7 +859,6 @@ fn place_dripstone_cluster(
     };
     FeatureDecorationRunner::place_dripstone_cluster_feature(
         context.region,
-        context.registry,
         context.random,
         config,
         context.origin,
@@ -878,7 +874,6 @@ fn place_large_dripstone(
     };
     FeatureDecorationRunner::place_large_dripstone_feature(
         context.region,
-        context.registry,
         context.random,
         config,
         context.origin,

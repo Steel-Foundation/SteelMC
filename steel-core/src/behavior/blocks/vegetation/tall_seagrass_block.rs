@@ -5,9 +5,9 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
 use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_block_tags;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_items};
+use steel_registry::vanilla_items;
 use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -76,10 +76,9 @@ impl BlockBehavior for TallSeagrassBlock {
             get_fluid_state_from_block(current)
         };
         below.is_face_sturdy(Direction::Up)
-            && !REGISTRY.blocks.is_in_tag(
-                below.get_block(),
-                &vanilla_block_tags::CANNOT_SUPPORT_SEAGRASS_TAG,
-            )
+            && !below
+                .get_block()
+                .has_tag(&BlockTag::CANNOT_SUPPORT_SEAGRASS)
             && fluid.is_water()
             && fluid.is_source()
     }

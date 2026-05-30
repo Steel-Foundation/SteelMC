@@ -21,6 +21,7 @@ use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
+use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::level_data::WorldGenerationSettings;
@@ -242,7 +243,8 @@ fn build_feature_holders(
     for (pos, chunk) in chunks {
         let holder = Arc::new(ChunkHolder::new(
             ChunkPos::new(pos.0, pos.1),
-            0,
+            ChunkTicketLevel::for_full_chunk_radius(MAX_VIEW_DISTANCE),
+            None,
             min_y,
             height,
         ));

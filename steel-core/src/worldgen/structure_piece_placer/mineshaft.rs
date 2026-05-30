@@ -4,10 +4,9 @@ use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{
-    Registry, RegistryExt, TaggedRegistryExt, vanilla_biome_tags, vanilla_blocks,
-};
-use steel_utils::axis::Axis;
+use steel_registry::vanilla_biome_tags::BiomeTag;
+use steel_registry::{Registry, RegistryExt, vanilla_blocks};
+use  steel_utils::axis::Axis;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, types::UpdateFlags};
@@ -444,9 +443,7 @@ impl MineshaftPlacer<'_, '_> {
         let Some(biome) = self.registry.biomes.by_id(usize::from(biome_id)) else {
             panic!("noise biome id {biome_id} is not registered");
         };
-        self.registry
-            .biomes
-            .is_in_tag(biome, &vanilla_biome_tags::MINESHAFT_BLOCKING_TAG)
+        biome.has_tag(&BiomeTag::MINESHAFT_BLOCKING)
     }
 
     #[expect(

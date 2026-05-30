@@ -1,6 +1,6 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
@@ -37,10 +37,9 @@ impl BlockBehavior for ChorusFlowerBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_state = world.get_block_state(pos.below());
         if below_state.get_block() == self.plant
-            || REGISTRY.blocks.is_in_tag(
-                below_state.get_block(),
-                &vanilla_block_tags::SUPPORTS_CHORUS_FLOWER_TAG,
-            )
+            || below_state
+                .get_block()
+                .has_tag(&BlockTag::SUPPORTS_CHORUS_FLOWER)
         {
             return true;
         }

@@ -780,7 +780,7 @@ impl FeatureDecorationRunner {
             }
 
             let pos = BlockPos::new(trunk_x, y + y_offset, trunk_z);
-            if Self::tree_is_air_or_leaves(region, registry, pos) {
+            if Self::tree_is_air_or_leaves(region, pos) {
                 let _ = Self::place_tree_log(region, registry, random, pos, config, placement);
                 let _ = Self::place_tree_log(
                     region,
@@ -1003,8 +1003,7 @@ impl FeatureDecorationRunner {
                 let _ = Self::place_fancy_tree_log(
                     region, registry, random, pos, axis, config, placement,
                 );
-            } else if !Self::tree_trunk_placer_is_free(region, registry, pos, &config.trunk_placer)
-            {
+            } else if !Self::tree_trunk_placer_is_free(region, pos, &config.trunk_placer) {
                 return false;
             }
         }
@@ -1074,7 +1073,7 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) -> bool {
-        if !Self::tree_valid_pos(region, registry, pos) {
+        if !Self::tree_valid_pos(region, pos) {
             return false;
         }
 
@@ -1155,7 +1154,7 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) -> bool {
-        if !Self::tree_valid_pos(region, registry, pos) {
+        if !Self::tree_valid_pos(region, pos) {
             return false;
         }
 
@@ -1178,7 +1177,7 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) -> bool {
-        if !Self::tree_trunk_placer_is_free(region, registry, pos, &config.trunk_placer) {
+        if !Self::tree_trunk_placer_is_free(region, pos, &config.trunk_placer) {
             return false;
         }
 
@@ -1194,7 +1193,7 @@ impl FeatureDecorationRunner {
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) -> bool {
-        if !Self::tree_valid_pos_or_tag(region, registry, pos, can_grow_through) {
+        if !Self::tree_valid_pos_or_tag(region, pos, can_grow_through) {
             return false;
         }
 

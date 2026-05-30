@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_item_tags,
+    sound_events, vanilla_blocks,
+    vanilla_item_tags::ItemTag,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -128,10 +128,7 @@ impl BlockBehavior for CakeBlock {
         if state.get_value(&BlockStateProperties::BITES) == 0 {
             let candle_cake = inv.with_item(|item_stack| {
                 let item = item_stack.item();
-                if !REGISTRY
-                    .items
-                    .is_in_tag(item, &vanilla_item_tags::CANDLES_TAG)
-                {
+                if !item.has_tag(&ItemTag::CANDLES) {
                     return None;
                 }
                 let candle_cake = candle_cakes::candle_to_candle_cake(item)?;

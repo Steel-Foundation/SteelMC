@@ -2,6 +2,7 @@ use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use std::f32::consts::{PI, TAU};
 use steel_math::trig;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::value_providers::FloatProvider;
 
 struct LargeDripstone {
@@ -20,7 +21,6 @@ struct WindOffsetter {
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_large_dripstone_feature(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         random: &mut WorldgenRandom,
         config: &LargeDripstoneConfiguration,
         origin: BlockPos,
@@ -34,10 +34,7 @@ impl FeatureDecorationRunner {
             origin,
             config.floor_to_ceiling_search_range,
             Self::is_empty_or_water,
-            |state| {
-                Self::is_dripstone_base(registry, state)
-                    || state.get_block() == &vanilla_blocks::LAVA
-            },
+            |state| Self::is_dripstone_base(state) || state.get_block() == &vanilla_blocks::LAVA,
         ) else {
             return false;
         };
@@ -84,11 +81,11 @@ impl FeatureDecorationRunner {
         let stalagmite_base_embedded =
             stalagmite.move_back_until_base_is_inside_stone(region, &wind);
         if stalactite_base_embedded {
-            stalactite.place_blocks(region, registry, random, &wind);
+            stalactite.place_blocks(region, random, &wind);
         }
 
         if stalagmite_base_embedded {
-            stalagmite.place_blocks(region, registry, random, &wind);
+            stalagmite.place_blocks(region, random, &wind);
         }
 
         true
@@ -211,7 +208,6 @@ impl LargeDripstone {
     fn place_blocks(
         &self,
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         random: &mut WorldgenRandom,
         wind: &WindOffsetter,
     ) {
@@ -256,10 +252,7 @@ impl LargeDripstone {
                             UpdateFlags::UPDATE_CLIENTS,
                         );
                     } else if has_been_out_of_stone
-                        && registry.blocks.is_in_tag(
-                            state.get_block(),
-                            &vanilla_block_tags::BASE_STONE_OVERWORLD_TAG,
-                        )
+                        && state.get_block().has_tag(&BlockTag::BASE_STONE_OVERWORLD)
                     {
                         break;
                     }

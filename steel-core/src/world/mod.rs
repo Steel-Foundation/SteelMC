@@ -275,33 +275,38 @@ impl World {
             }
         }
 
-        Ok(Arc::new_cyclic(|weak_self: &Weak<World>| Self {
-            chunk_map: Arc::new(ChunkMap::new_with_storage(
+        Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
+            let chunk_map = Arc::new(ChunkMap::new_with_storage(
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
                 storage,
                 config.generator,
                 generation_pool,
-            )),
-            players: PlayerMap::new(),
-            player_area_map: PlayerAreaMap::new(),
-            key,
-            dimension_type,
-            level_data: SyncRwLock::new(level_data),
-            view_distance,
-            simulation_distance,
-            compression,
-            is_flat,
-            sea_level,
-            default_gamemode,
-            tick_runs_normally: AtomicBool::new(true),
-            entity_cache: EntityCache::new(),
-            entity_tracker: EntityTracker::new(),
-            weather: SyncMutex::new(weather),
-            sub_tick_count: AtomicI64::new(0),
-            poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
-            game_event_listeners: GameEventListenerStorage::new(),
+            ));
+            chunk_map.start_generation_refill_loop();
+
+            Self {
+                chunk_map,
+                players: PlayerMap::new(),
+                player_area_map: PlayerAreaMap::new(),
+                key,
+                dimension_type,
+                level_data: SyncRwLock::new(level_data),
+                view_distance,
+                simulation_distance,
+                compression,
+                is_flat,
+                sea_level,
+                default_gamemode,
+                tick_runs_normally: AtomicBool::new(true),
+                entity_cache: EntityCache::new(),
+                entity_tracker: EntityTracker::new(),
+                weather: SyncMutex::new(weather),
+                sub_tick_count: AtomicI64::new(0),
+                poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
+                game_event_listeners: GameEventListenerStorage::new(),
+            }
         }))
     }
 

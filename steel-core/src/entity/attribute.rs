@@ -5,7 +5,7 @@ use core::iter;
 pub use steel_protocol::packets::game::AttributeModifierOperation;
 use steel_protocol::packets::game::{AttributeModifierData, AttributeSnapshot};
 use steel_registry::attribute::AttributeRef;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::Identifier;
 

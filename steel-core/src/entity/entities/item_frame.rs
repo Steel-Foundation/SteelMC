@@ -9,7 +9,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_data::DataValue;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
