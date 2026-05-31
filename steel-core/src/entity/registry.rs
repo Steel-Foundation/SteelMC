@@ -272,7 +272,11 @@ pub fn init_entities() {
     registry.register_load(
         &vanilla_entities::FALLING_BLOCK,
         |id, pos, uuid, velocity, rotation, on_ground, world| {
-            Arc::new(FallingBlockEntity::from_saved(
+            Arc::new(FallingBlockEntity::from_saved( 
+                id, pos, uuid, velocity, rotation, on_ground, world,
+            ))
+        },
+    );
     // Register end crystal entity factory
     registry.register(&vanilla_entities::END_CRYSTAL, |id, pos, world| {
         Arc::new(EndCrystalEntity::new(id, pos, world))

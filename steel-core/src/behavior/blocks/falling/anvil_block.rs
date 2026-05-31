@@ -15,7 +15,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::falling_block::is_free;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 use super::{schedule_fall_tick, spawn_falling_entity};
 
@@ -64,7 +64,7 @@ impl BlockBehavior for AnvilBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,

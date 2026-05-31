@@ -17,9 +17,9 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_block_tags;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::FallingBlockEntityData;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
@@ -269,7 +269,7 @@ impl FallingBlockEntity {
         if damage > 0.0
             && REGISTRY
                 .blocks
-                .is_in_tag(block_ref, &vanilla_block_tags::ANVIL_TAG)
+                .is_in_tag(block_ref, &BlockTag::ANVIL)
         {
             let degrade_chance = 0.05 + fall_dist_int as f32 * 0.05;
             if rand::random::<f32>() < degrade_chance {
@@ -421,7 +421,7 @@ pub fn is_free(state: BlockStateId) -> bool {
     state.is_air()
         || REGISTRY
             .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::FIRE_TAG)
+            .is_in_tag(state.get_block(), &BlockTag::FIRE)
         || state.get_block().config.liquid
         || state.is_replaceable()
 }
@@ -746,7 +746,7 @@ impl Entity for FallingBlockEntity {
 
         let default_hurt = REGISTRY
             .blocks
-            .is_in_tag(self.block_state.load().get_block(), &vanilla_block_tags::ANVIL_TAG);
+            .is_in_tag(self.block_state.load().get_block(), &BlockTag::ANVIL);
         let hurt = nbt.byte("HurtEntities").map_or(default_hurt, |b| b != 0);
         self.hurt_entities.store(hurt, Ordering::Relaxed);
 

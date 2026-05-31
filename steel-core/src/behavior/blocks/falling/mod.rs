@@ -20,10 +20,10 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::entities::falling_block::FallingBlockEntity;
 use crate::entity::next_entity_id;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 /// Schedules the fall tick (2 ticks, vanilla default).
-fn schedule_fall_tick(world: &Arc<World>, pos: BlockPos, block: BlockRef) {
+fn schedule_fall_tick(world: &dyn ScheduledTickAccess, pos: BlockPos, block: BlockRef) {
     world.schedule_block_tick_default(pos, block, 2);
 }
 

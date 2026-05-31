@@ -582,6 +582,7 @@ impl Default for FallingEntityConfig {
             fall_damage_per_distance: 0.0,
             fall_damage_max: 40,
         }
+    }
 }
 
 /// Default block behavior that returns the block's default state for placement.

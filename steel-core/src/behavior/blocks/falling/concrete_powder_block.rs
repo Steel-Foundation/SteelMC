@@ -13,7 +13,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::entities::falling_block::is_free;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 use super::{schedule_fall_tick, spawn_falling_entity};
 
@@ -43,7 +43,7 @@ impl ConcretePowderBlock {
     /// Converts to concrete if the block at `pos` or any neighbor contains water.
     ///
     /// Vanilla: `ConcretePowderBlock.shouldSolidify()`.
-    fn should_solidify(&self, world: &Arc<World>, pos: BlockPos, replaced: BlockStateId) -> bool {
+    fn should_solidify(&self, world: &dyn ScheduledTickAccess, pos: BlockPos, replaced: BlockStateId) -> bool {
         can_solidify(replaced) || touches_liquid(world, pos)
     }
 }
@@ -73,7 +73,7 @@ impl BlockBehavior for ConcretePowderBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -130,7 +130,7 @@ fn can_solidify(state: BlockStateId) -> bool {
 /// mutable BlockPos that is read *before* offset on each iteration — for the DOWN direction
 /// this means it reads the concrete powder block itself, which can only solidify if the
 /// powder is waterlogged, so DOWN is effectively always skipped for dry powder.
-fn touches_liquid(world: &Arc<World>, pos: BlockPos) -> bool {
+fn touches_liquid(world: &dyn ScheduledTickAccess, pos: BlockPos) -> bool {
     use steel_registry::blocks::properties::Direction as Dir;
     let all_dirs = [
         Dir::Down,

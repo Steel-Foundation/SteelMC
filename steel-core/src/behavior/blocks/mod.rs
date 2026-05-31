@@ -24,7 +24,6 @@ pub use decoration::{
     TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
 };
 pub use falling::{AnvilBlock, ColoredFallingBlock, ConcretePowderBlock, SandBlock};
-pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
 pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
