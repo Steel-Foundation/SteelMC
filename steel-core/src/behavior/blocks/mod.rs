@@ -18,12 +18,12 @@ pub use building::{
     WeatheringCopper, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
     WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
 };
-pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
+pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
     CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
     TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
 };
-pub use falling::{AnvilBlock, ColoredFallingBlock, ConcretePowderBlock, SandBlock};
+pub use falling::{ColoredFallingBlock, ConcretePowderBlock, SandBlock};
 pub use fluid::LiquidBlock;
 pub use portal::{EndPortalFrameBlock, FireBlock, NetherPortalBlock, SoulFireBlock};
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};

@@ -494,7 +494,7 @@ pub trait BlockBehavior: Send + Sync {
         world.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
         true
     }
-  
+
     /// Returns the trait object for Blocks that have the Bonemealable trait implemented.
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         None

@@ -12,8 +12,8 @@ use steel_utils::{BlockPos, Direction};
 use uuid::Uuid;
 
 use super::entities::{
-    BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, ItemEntity, ItemFrameEntity,
-    RawEntity,FallingBlockEntity,
+    BlockDisplayEntity, ChestMinecartEntity, EndCrystalEntity, FallingBlockEntity, ItemEntity,
+    ItemFrameEntity, RawEntity,
 };
 
 use super::{SharedEntity, next_entity_id};
@@ -272,7 +272,7 @@ pub fn init_entities() {
     registry.register_load(
         &vanilla_entities::FALLING_BLOCK,
         |id, pos, uuid, velocity, rotation, on_ground, world| {
-            Arc::new(FallingBlockEntity::from_saved( 
+            Arc::new(FallingBlockEntity::from_saved(
                 id, pos, uuid, velocity, rotation, on_ground, world,
             ))
         },

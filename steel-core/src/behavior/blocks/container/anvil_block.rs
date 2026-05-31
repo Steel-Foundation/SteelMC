@@ -7,17 +7,17 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::level_events;
+use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_damage_types;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::{BlockBehavior, FallingEntityConfig};
+use crate::behavior::blocks::falling::{schedule_fall_tick, spawn_falling_entity};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::falling_block::is_free;
 use crate::world::{ScheduledTickAccess, World};
-
-use super::{schedule_fall_tick, spawn_falling_entity};
 
 /// Behavior for anvil, chipped anvil, and damaged anvil.
 ///
@@ -37,17 +37,34 @@ impl AnvilBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    /// Returns the next damage level block state: ANVIL → CHIPPED → DAMAGED → None (destroyed).
+    ///
+    /// Vanilla: `AnvilBlock.damage(BlockState)`.
+    #[must_use]
+    pub fn damage(state: BlockStateId) -> Option<BlockStateId> {
+        let block = state.get_block();
+        let facing = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let with_facing = |new_state: BlockStateId| match facing {
+            Some(f) => new_state.set_value(&BlockStateProperties::HORIZONTAL_FACING, f),
+            None => new_state,
+        };
+        if block == &vanilla_blocks::ANVIL {
+            Some(with_facing(vanilla_blocks::CHIPPED_ANVIL.default_state()))
+        } else if block == &vanilla_blocks::CHIPPED_ANVIL {
+            Some(with_facing(vanilla_blocks::DAMAGED_ANVIL.default_state()))
+        } else {
+            None
+        }
+    }
 }
 
 impl BlockBehavior for AnvilBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // Vanilla: AnvilBlock.getStateForPlacement → FACING = horizontalDirection.getClockWise()
-        let facing = context.horizontal_direction.rotate_y_clockwise();
-        Some(
-            self.block
-                .default_state()
-                .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing),
-        )
+        Some(self.block.default_state().set_value(
+            &BlockStateProperties::HORIZONTAL_FACING,
+            context.horizontal_direction.rotate_y_clockwise(),
+        ))
     }
 
     fn on_place(

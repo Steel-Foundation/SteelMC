@@ -6,6 +6,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::vanilla_fluids;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -43,7 +44,12 @@ impl ConcretePowderBlock {
     /// Converts to concrete if the block at `pos` or any neighbor contains water.
     ///
     /// Vanilla: `ConcretePowderBlock.shouldSolidify()`.
-    fn should_solidify(&self, world: &dyn ScheduledTickAccess, pos: BlockPos, replaced: BlockStateId) -> bool {
+    fn should_solidify(
+        &self,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        replaced: BlockStateId,
+    ) -> bool {
         can_solidify(replaced) || touches_liquid(world, pos)
     }
 }
@@ -116,7 +122,6 @@ impl BlockBehavior for ConcretePowderBlock {
 ///
 /// Vanilla: `ConcretePowderBlock.canSolidify()`.
 fn can_solidify(state: BlockStateId) -> bool {
-    use steel_registry::vanilla_fluids;
     let fluid = crate::fluid::state::get_fluid_state_from_block(state);
     fluid.fluid_id == &vanilla_fluids::WATER
 }
@@ -131,20 +136,10 @@ fn can_solidify(state: BlockStateId) -> bool {
 /// this means it reads the concrete powder block itself, which can only solidify if the
 /// powder is waterlogged, so DOWN is effectively always skipped for dry powder.
 fn touches_liquid(world: &dyn ScheduledTickAccess, pos: BlockPos) -> bool {
-    use steel_registry::blocks::properties::Direction as Dir;
-    let all_dirs = [
-        Dir::Down,
-        Dir::Up,
-        Dir::North,
-        Dir::South,
-        Dir::West,
-        Dir::East,
-    ];
-
-    for dir in all_dirs {
+    for dir in Direction::ALL {
         // Vanilla skips DOWN unless the concrete powder block itself can solidify
         // (i.e., it's waterlogged). Check the block at `pos`, not the neighbor.
-        if dir == Dir::Down && !can_solidify(world.get_block_state(pos)) {
+        if dir == Direction::Down && !can_solidify(world.get_block_state(pos)) {
             continue;
         }
 

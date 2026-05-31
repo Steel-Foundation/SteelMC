@@ -30,9 +30,10 @@ use steel_utils::{BlockPos, BlockStateId};
 use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::blocks::AnvilBlock;
 use crate::entity::{Entity, EntityBase, RemovalReason};
-use crate::fluid::state::{fluid_state_to_block, get_fluid_state_from_block};
 use crate::fluid::FluidStateExt;
+use crate::fluid::state::{fluid_state_to_block, get_fluid_state_from_block};
 use crate::physics::MoverType;
 use crate::world::RaytraceAction;
 use crate::world::World;
@@ -189,7 +190,11 @@ impl FallingBlockEntity {
             .entity_data
             .lock()
             .start_pos
-            .set(steel_registry::entity_data::BlockPos::new(pos.x(), pos.y(), pos.z()));
+            .set(steel_registry::entity_data::BlockPos::new(
+                pos.x(),
+                pos.y(),
+                pos.z(),
+            ));
         entity
     }
 
@@ -216,10 +221,7 @@ impl FallingBlockEntity {
     // === Private helpers ===
 
     fn entity_drops_enabled(&self, world: &Arc<World>) -> bool {
-        world
-            .get_game_rule(&ENTITY_DROPS)
-            .as_bool()
-            .unwrap_or(true)
+        world.get_game_rule(&ENTITY_DROPS).as_bool().unwrap_or(true)
     }
 
     /// Applies impact damage to entities in the bounding box.
@@ -266,14 +268,10 @@ impl FallingBlockEntity {
         }
 
         // Anvil degradation: chance to degrade state on impact
-        if damage > 0.0
-            && REGISTRY
-                .blocks
-                .is_in_tag(block_ref, &BlockTag::ANVIL)
-        {
+        if damage > 0.0 && REGISTRY.blocks.is_in_tag(block_ref, &BlockTag::ANVIL) {
             let degrade_chance = 0.05 + fall_dist_int as f32 * 0.05;
             if rand::random::<f32>() < degrade_chance {
-                match degrade_anvil(block_state) {
+                match AnvilBlock::damage(block_state) {
                     Some(new_state) => self.block_state.store(new_state),
                     None => self.cancel_drop.store(true, Ordering::Relaxed),
                 }
@@ -391,27 +389,6 @@ impl FallingBlockEntity {
 enum PositionSyncPacket {
     Delta(CMoveEntityPos),
     Full(CEntityPositionSync),
-}
-
-/// Degrades an anvil state one step: ANVIL → CHIPPED → DAMAGED → None (destroyed).
-///
-/// Returns `None` when the anvil would be destroyed.
-/// Vanilla: `AnvilBlock.damage(BlockState)`.
-fn degrade_anvil(state: BlockStateId) -> Option<BlockStateId> {
-    use steel_registry::vanilla_blocks;
-    let block = state.get_block();
-    let facing = state.try_get_value(&BlockStateProperties::HORIZONTAL_FACING);
-    let with_facing = |new_state: BlockStateId| match facing {
-        Some(f) => new_state.set_value(&BlockStateProperties::HORIZONTAL_FACING, f),
-        None => new_state,
-    };
-    if block == &vanilla_blocks::ANVIL {
-        Some(with_facing(vanilla_blocks::CHIPPED_ANVIL.default_state()))
-    } else if block == &vanilla_blocks::CHIPPED_ANVIL {
-        Some(with_facing(vanilla_blocks::DAMAGED_ANVIL.default_state()))
-    } else {
-        None
-    }
 }
 
 /// Returns true if a block state can be replaced by a falling block landing on it.
@@ -560,7 +537,8 @@ impl Entity for FallingBlockEntity {
         if on_ground || is_stuck_in_water {
             self.fall_distance.store(0.0);
         } else if vel_for_fall.y < 0.0 {
-            self.fall_distance.store(current_fall_distance + (-vel_for_fall.y));
+            self.fall_distance
+                .store(current_fall_distance + (-vel_for_fall.y));
         }
 
         if !on_ground && !is_stuck_in_water {
@@ -595,7 +573,8 @@ impl Entity for FallingBlockEntity {
                     //       in practice equivalent for most blocks since the item is always empty
                     let may_replace = current_state.is_replaceable();
                     let below_state = world.get_block_state(pos.below());
-                    let would_continue = is_free(below_state) && !(is_concrete_powder && is_stuck_in_water);
+                    let would_continue =
+                        is_free(below_state) && !(is_concrete_powder && is_stuck_in_water);
                     let would_survive = BLOCK_BEHAVIORS
                         .get_behavior(block_state.get_block())
                         .can_survive(block_state, &world, pos)
@@ -603,35 +582,37 @@ impl Entity for FallingBlockEntity {
 
                     if may_replace && would_survive {
                         // Restore WATERLOGGED if landing in water
-                        let place_state =
-                            if block_state.try_get_value(&BlockStateProperties::WATERLOGGED).is_some()
-                                && crate::fluid::state::get_fluid_state(&world, pos)
-                                    .fluid_id
-                                    == crate::fluid::water_id()
-                            {
-                                block_state.set_value(&BlockStateProperties::WATERLOGGED, true)
-                            } else {
-                                block_state
-                            };
+                        let place_state = if block_state
+                            .try_get_value(&BlockStateProperties::WATERLOGGED)
+                            .is_some()
+                            && crate::fluid::state::get_fluid_state(&world, pos).fluid_id
+                                == crate::fluid::water_id()
+                        {
+                            block_state.set_value(&BlockStateProperties::WATERLOGGED, true)
+                        } else {
+                            block_state
+                        };
 
                         if world.set_block(pos, place_state, UpdateFlags::UPDATE_ALL) {
                             // Send immediate block update to entity-tracking players so the
                             // client sees the block placed in the same frame as the entity
                             // removal. Vanilla: sendToTrackingPlayers(ClientboundBlockUpdatePacket)
-                            let chunk_pos = steel_utils::ChunkPos::new(
-                                pos.x() >> 4,
-                                pos.z() >> 4,
-                            );
+                            let chunk_pos = steel_utils::ChunkPos::new(pos.x() >> 4, pos.z() >> 4);
                             world.broadcast_to_nearby(
                                 chunk_pos,
-                                CBlockUpdate { pos, block_state: world.get_block_state(pos) },
+                                CBlockUpdate {
+                                    pos,
+                                    block_state: world.get_block_state(pos),
+                                },
                                 None,
                             );
                             self.set_removed(RemovalReason::Killed);
                             let behavior = BLOCK_BEHAVIORS.get_behavior(block_ref);
                             behavior.on_land(&world, pos, place_state, current_state, self);
                             // TODO: load block_data into block entity when has_block_entity() works
-                        } else if self.drop_item.load(Ordering::Relaxed) && self.entity_drops_enabled(&world) {
+                        } else if self.drop_item.load(Ordering::Relaxed)
+                            && self.entity_drops_enabled(&world)
+                        {
                             self.set_removed(RemovalReason::Killed);
                             self.call_on_broken_after_fall(&world, pos);
                             self.try_drop_block_item(&world);
@@ -640,7 +621,9 @@ impl Entity for FallingBlockEntity {
                         }
                     } else {
                         self.set_removed(RemovalReason::Killed);
-                        if self.drop_item.load(Ordering::Relaxed) && self.entity_drops_enabled(&world) {
+                        if self.drop_item.load(Ordering::Relaxed)
+                            && self.entity_drops_enabled(&world)
+                        {
                             self.call_on_broken_after_fall(&world, pos);
                             self.try_drop_block_item(&world);
                         }
