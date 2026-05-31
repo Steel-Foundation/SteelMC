@@ -7,7 +7,7 @@ use std::simd::f64x4;
 
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-use steel_math::wrap;
+use steel_math::{wrap, wrap_4x};
 
 /// Octave-based Perlin noise generator.
 ///
@@ -332,32 +332,6 @@ impl PerlinNoise {
             .get(self.noise_levels.len() - 1 - i)
             .and_then(|opt| opt.as_ref())
     }
-}
-
-/// Wrap a coordinate to prevent precision loss at large values.
-///
-/// This wraps the coordinate to the range `[-ROUND_OFF/2, ROUND_OFF/2]` to
-/// maintain numerical precision for coordinates far from the origin.
-///
-/// Public because `BlendedNoise` calls this directly on per-octave coordinates.
-#[inline]
-#[must_use]
-pub fn wrap(x: f64) -> f64 {
-    if (-HALF_ROUND_OFF..HALF_ROUND_OFF).contains(&x) {
-        return x;
-    }
-
-    x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
-}
-
-/// SIMD form of [`wrap`]. Per-lane math identical to the scalar version, so
-/// `wrap_4x(splat(v))[i] == wrap(v)` for any finite `v`.
-#[inline]
-#[must_use]
-pub fn wrap_4x(x: f64x4) -> f64x4 {
-    use std::simd::StdFloat;
-    let round_off = f64x4::splat(ROUND_OFF);
-    x - (x / round_off + f64x4::splat(0.5)).floor() * round_off
 }
 
 #[cfg(test)]
