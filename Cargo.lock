@@ -2942,7 +2942,6 @@ version = "0.8.0+mc26.1"
 dependencies = [
  "proc-macro2",
  "quote",
- "rayon",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",

@@ -32,7 +32,7 @@ const MAX_SLICE_LEN: usize = 256;
 /// system. Each `Interpolated` marker in the density function tree gets its own
 /// channel, filled at cell corners and interpolated independently.
 ///
-/// Storage is per-corner SoA — `slice[corner_idx * MAX_INTERP + ch]` — so 4
+/// Storage is per-corner `SoA` — `slice[corner_idx * MAX_INTERP + ch]` — so 4
 /// adjacent channels' values at a given corner sit in contiguous memory,
 /// enabling a single `f64x4` load and SIMD-batched trilinear interpolation
 /// across 4 channels per block.
@@ -114,6 +114,13 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let n_slices = cell_count_xz + 1;
         let mut slices = Vec::with_capacity(n_slices);
         for _ in 0..n_slices {
+            // The boxed fixed-size array keeps the `[f64; N]` type that the SIMD
+            // `fill` path and its `get_unchecked` SAFETY proofs rely on. This is a
+            // per-chunk constructor, not a hot path, so the stack temporary is fine.
+            #[expect(
+                clippy::large_stack_arrays,
+                reason = "fixed-size boxed array keeps the [f64; N] type the SIMD fill path relies on; cold per-chunk constructor"
+            )]
             slices.push(Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]));
         }
 
@@ -234,6 +241,14 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     /// 1. Trilinearly interpolate each channel independently from cell corners
     /// 2. Apply outer operations (squeeze, min, etc.) via `combine_interpolated`
     /// 3. Call `place_block` with the final density
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single SIMD trilinear-interpolation kernel; splitting the loop nest would scatter the per-corner SAFETY invariants"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "factor_{x,y,z}_v vector splats deliberately mirror their scalar factor_{x,y,z} sources"
+    )]
     pub fn fill<F>(
         &mut self,
         noises: &N,
@@ -253,34 +268,30 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let first_cell_z = self.first_cell_z;
         let block_ys: &[i32] = &self.block_ys;
 
-        // Pre-fill ALL slices in parallel. Each `(cell_x boundary)` slice is
-        // an independent noise-tree evaluation, so they can run concurrently
-        // with their own `ColumnCache` clones. The grid in `cache` is set up
-        // by the caller via `init_grid`; cloning copies it, and each thread
-        // mutates only its own active fields.
-        use rayon::prelude::*;
+        // Pre-fill ALL slices sequentially. Each `(cell_x boundary)` slice is an
+        // independent noise-tree evaluation; the grid in `cache` is set up by the
+        // caller via `init_grid` and is read-only here, while each slice only
+        // overwrites the cache's per-column active fields — so one cache is reused
+        // across slices without cloning. The chunk pipeline already parallelises
+        // across chunks, so parallelising the 5 slices here would nest rayon work
+        // and add coordination + cache-clone overhead with no spare cores to use.
         let n_slices = cell_count_xz + 1;
-        let cache_template = cache.clone();
-        self.slices[..n_slices]
-            .par_iter_mut()
-            .enumerate()
-            .for_each(|(cx_off, slice)| {
-                let mut local_cache = cache_template.clone();
-                let mut local_blended = vec![0.0f64; corners_y];
-                let cell_x = first_cell_x + cx_off as i32;
-                Self::fill_slice_into(
-                    slice,
-                    cell_x,
-                    block_ys,
-                    &mut local_blended,
-                    interp_count,
-                    corners_y,
-                    cell_count_xz,
-                    first_cell_z,
-                    noises,
-                    &mut local_cache,
-                );
-            });
+        let mut local_blended = vec![0.0f64; corners_y];
+        for cx_off in 0..n_slices {
+            let cell_x = first_cell_x + cx_off as i32;
+            Self::fill_slice_into(
+                &mut self.slices[cx_off],
+                cell_x,
+                block_ys,
+                &mut local_blended,
+                interp_count,
+                corners_y,
+                cell_count_xz,
+                first_cell_z,
+                noises,
+                cache,
+            );
+        }
 
         let mut interpolated = [0.0f64; MAX_INTERP];
 

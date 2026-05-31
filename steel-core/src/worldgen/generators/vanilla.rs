@@ -239,6 +239,12 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let chunk_z = pos.0.y;
 
         let mut sampler = self.biome_source.chunk_sampler();
+        // Pre-compute the flat (xz-only) climate-noise grid for this chunk so the
+        // per-cell sampling below does O(1) column lookups instead of recomputing
+        // the flat noise for all 1536 cells (the noise stage's `fill_from_noise`
+        // already does this). Values are bit-identical — same functions, same quart
+        // coordinates — so biome selection is unchanged.
+        sampler.init_grid(chunk_x * 16, chunk_z * 16);
 
         // Match vanilla's iteration order: Section(Y) → X → Y → Z.
         // This is critical because the R-tree biome cache (persistent warm-start)

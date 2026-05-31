@@ -185,10 +185,9 @@ impl Sections {
             let section_idx = blocks[i].0 / DIM;
             let mut guard = self.sections[section_idx].write();
             guard.states.enter_building_mode();
-            let cube = guard
-                .states
-                .as_building_slice_mut()
-                .expect("just entered building mode");
+            let Some(cube) = guard.states.as_building_slice_mut() else {
+                unreachable!("just entered building mode")
+            };
             let xz_base = z * DIM + x;
             while i < blocks.len() && blocks[i].0 / DIM == section_idx {
                 let (rel_y, value) = blocks[i];
@@ -214,11 +213,10 @@ impl Sections {
             let section_idx = blocks[i].1 / DIM;
             let mut guard = self.sections[section_idx].write();
             guard.states.enter_building_mode();
-            // Safe: enter_building_mode just transitioned to Building.
-            let cube = guard
-                .states
-                .as_building_slice_mut()
-                .expect("just entered building mode");
+            let Some(cube) = guard.states.as_building_slice_mut() else {
+                // enter_building_mode just transitioned to Building.
+                unreachable!("just entered building mode")
+            };
             while i < blocks.len() && blocks[i].1 / DIM == section_idx {
                 let (x, rel_y, z, value) = blocks[i];
                 let local_y = rel_y % DIM;

@@ -24,7 +24,7 @@ const CLAY_BAND_LENGTH: usize = 192;
 ///
 /// All three noise samples used by `get_temperature` (frozen large/edge/small,
 /// height-based temperature) are 2D — they only depend on `(block_x, block_z)`.
-/// The build_surface column scan calls `cold_enough_to_snow` once per Y, so
+/// The `build_surface` column scan calls `cold_enough_to_snow` once per Y, so
 /// reusing these noise values across the whole column saves one sample per
 /// rare-modifier hit and one per height-adjusted block.
 ///

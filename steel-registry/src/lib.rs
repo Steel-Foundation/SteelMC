@@ -1,4 +1,4 @@
-#![feature(const_trait_impl, const_cmp, derive_const, portable_simd)]
+#![feature(const_trait_impl, const_cmp, derive_const)]
 
 use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;

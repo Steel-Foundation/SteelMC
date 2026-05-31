@@ -1841,6 +1841,10 @@ impl TranspileContext {
     ///
     /// Per-lane semantics are bit-identical to the scalar [`Self::gen_expr`]
     /// path, so vanilla determinism is preserved.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one match arm per DensityFunction variant; splitting the dispatch would obscure the per-variant SIMD codegen"
+    )]
     fn gen_expr_simd(
         &mut self,
         df: &DensityFunction,
@@ -1930,13 +1934,11 @@ impl TranspileContext {
             }
 
             DensityFunction::Reference(r) => {
-                if self.interpolated_param_mode && self.interpolated_refs.contains(&r.id) {
-                    if let Some(ref_df) = input.registry.get(&r.id) {
-                        self.gen_expr_simd(ref_df, input, is_flat)
-                    } else {
-                        quote! { f64x4::splat(0.0) }
-                    }
-                } else if self.fill_mode && self.blended_noise_refs.contains(&r.id) {
+                // Both interpolated params and fill-mode blended-noise refs inline
+                // the referenced function's SIMD expression directly.
+                if (self.interpolated_param_mode && self.interpolated_refs.contains(&r.id))
+                    || (self.fill_mode && self.blended_noise_refs.contains(&r.id))
+                {
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr_simd(ref_df, input, is_flat)
                     } else {
@@ -2312,13 +2314,13 @@ impl TranspileContext {
                     && self.is_y_independent(&sn.shift_z)
             }
 
+            // All inherently Y-dependent. `WeirdScaledSampler` in particular
+            // always samples noise at `(x, y, z) / scale`, so it uses Y
+            // regardless of its input.
             DensityFunction::YClampedGradient(_)
             | DensityFunction::Shift(_)
-            | DensityFunction::BlendedNoise(_) => false,
-
-            // `WeirdScaledSampler` always samples noise at `(x, y, z) / scale`,
-            // so it uses Y regardless of its input.
-            DensityFunction::WeirdScaledSampler(_) => false,
+            | DensityFunction::BlendedNoise(_)
+            | DensityFunction::WeirdScaledSampler(_) => false,
 
             DensityFunction::Mapped(m) => self.is_y_independent(&m.input),
             DensityFunction::Clamp(c) => self.is_y_independent(&c.input),
@@ -2429,6 +2431,10 @@ fn compute_bounds(df: &DensityFunction, input: &TranspilerInput) -> (f64, f64) {
     compute_bounds_inner(df, input, &mut Vec::new())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one match arm per DensityFunction variant; splitting the dispatch would obscure the per-variant bounds analysis"
+)]
 fn compute_bounds_inner(
     df: &DensityFunction,
     input: &TranspilerInput,
@@ -2551,8 +2557,8 @@ fn compute_bounds_inner(
                         let c = v.clamp(-1.0, 1.0);
                         c / 2.0 - c * c * c / 24.0
                     };
-                    let lo_c = lo.max(-1.0).min(1.0);
-                    let hi_c = hi.max(-1.0).min(1.0);
+                    let lo_c = lo.clamp(-1.0, 1.0);
+                    let hi_c = hi.clamp(-1.0, 1.0);
                     (map(lo_c), map(hi_c))
                 }
             }
@@ -2566,7 +2572,7 @@ fn compute_bounds_inner(
             (in_lo.min(out_lo), in_hi.max(out_hi))
         }
 
-        DensityFunction::Spline(s) => spline_bounds(&s.spline, input, visiting),
+        DensityFunction::Spline(s) => spline_bounds(&s.spline),
 
         DensityFunction::BlendedNoise(_) => {
             // BlendedNoise is bounded by `min_limit_noise.max_broken_value` in
@@ -2597,11 +2603,7 @@ fn compute_bounds_inner(
     }
 }
 
-fn spline_bounds(
-    spline: &CubicSpline,
-    input: &TranspilerInput,
-    visiting: &mut Vec<String>,
-) -> (f64, f64) {
+fn spline_bounds(spline: &CubicSpline) -> (f64, f64) {
     // Splines interpolate (and may extrapolate at edges) between point values.
     // A safe over-approximation: (min point value, max point value), recursing
     // for nested splines. This ignores the Catmull-Rom overshoot, which is
@@ -2612,7 +2614,7 @@ fn spline_bounds(
     for p in &spline.points {
         let (p_lo, p_hi) = match &p.value {
             SplineValue::Constant(v) => (f64::from(*v), f64::from(*v)),
-            SplineValue::Spline(nested) => spline_bounds(nested, input, visiting),
+            SplineValue::Spline(nested) => spline_bounds(nested),
         };
         if p_lo < lo {
             lo = p_lo;

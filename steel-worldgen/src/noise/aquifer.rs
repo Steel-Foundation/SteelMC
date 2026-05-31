@@ -135,7 +135,7 @@ pub enum AquiferResult {
     Fluid(BlockStateId),
 }
 
-/// Column-scan state for the 12 aquifer-neighborhood cells, stored SoA so the
+/// Column-scan state for the 12 aquifer-neighborhood cells, stored `SoA` so the
 /// per-Y distance computation can be SIMD-batched as 3× `i32x4`.
 ///
 /// `compute_substance` is called many times with the same `(world_x, world_z)`
@@ -292,7 +292,7 @@ fn is_deep_dark_region<N: DimensionNoises>(
 ///
 /// Below `min(-54, sea_level)` → lava at Y=-54. Otherwise → the dimension's
 /// default fluid at sea level (water for overworld, lava for nether).
-fn global_fluid(
+const fn global_fluid(
     y: i32,
     lava_floor: i32,
     sea_level: i32,
@@ -618,8 +618,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         let mut dist_sq = [i32::MAX; 4];
         let mut closest_idx = [0usize; 4];
 
-        for i in 0..12 {
-            let new_dist = dists[i];
+        for (i, &new_dist) in dists.iter().enumerate() {
             let index = self.col_cache.cell_idx[i] as usize;
 
             // Insert into sorted top-4

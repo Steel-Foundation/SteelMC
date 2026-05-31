@@ -1,6 +1,6 @@
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::future::join_all;
 use std::cmp::Reverse;
 use std::env;
@@ -832,6 +832,8 @@ fn build_concurrent_feature_fixture(
 fn build_concurrent_full_pipeline_fixture(
     generator_key: Identifier,
     seed: i64,
+    centers: Vec<ChunkPos>,
+    thread_count: usize,
 ) -> ConcurrentFullPipelineFixture {
     let generator_config = toml::Value::Table(Map::new());
     let output = WorldGeneratorRegistry::new_with_builtins()
@@ -855,7 +857,7 @@ fn build_concurrent_full_pipeline_fixture(
     );
     let generation_pool = Arc::new(
         rayon::ThreadPoolBuilder::new()
-            .num_threads(FULL_PIPELINE_THREAD_COUNT)
+            .num_threads(thread_count)
             .thread_name(|index| format!("bench-full-pipeline-{index}"))
             .build()
             .expect("full-pipeline benchmark generation pool should build"),
@@ -889,7 +891,6 @@ fn build_concurrent_full_pipeline_fixture(
         .expect("full-pipeline benchmark world should build");
     let chunk_map = world.chunk_map.clone();
 
-    let centers = concurrent_feature_centers();
     let cache_radius = concurrent_full_pipeline_cache_radius(&centers);
     let chunk_map_for_factory = chunk_map.clone();
     let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
@@ -965,12 +966,67 @@ fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
                 build_concurrent_full_pipeline_fixture(
                     Identifier::vanilla_static("overworld"),
                     PROFILE_FEATURE_SEED,
+                    concurrent_feature_centers(),
+                    FULL_PIPELINE_THREAD_COUNT,
                 )
             },
             run_concurrent_full_pipeline_batch,
             criterion::BatchSize::SmallInput,
         );
     });
+}
+
+/// A single overworld chunk taken Empty → Full on one thread.
+///
+/// Finishing one chunk requires generating the surrounding neighbourhood of
+/// dependency chunks (each pipeline step pulls a radius of lower-status
+/// neighbours), so this measures the honest end-to-end cost of producing one
+/// finished chunk rather than a single isolated step.
+fn bench_overworld_full_chunk(c: &mut Criterion) {
+    ensure_registry();
+
+    c.bench_function("overworld_full_chunk", |b| {
+        b.iter_batched(
+            || {
+                build_concurrent_full_pipeline_fixture(
+                    Identifier::vanilla_static("overworld"),
+                    PROFILE_FEATURE_SEED,
+                    vec![ChunkPos::new(0, 0)],
+                    1,
+                )
+            },
+            run_concurrent_full_pipeline_batch,
+            criterion::BatchSize::SmallInput,
+        );
+    });
+}
+
+/// A 4×4 batch of overworld chunks taken Empty → Full concurrently, reported as
+/// per-chunk throughput (`x16`).
+///
+/// Same workload shape as `overworld_full_pipeline_concurrent_overlap`, but
+/// expressed as a throughput group so criterion reports elements/sec per chunk.
+fn bench_overworld_full_chunk_concurrent(c: &mut Criterion) {
+    ensure_registry();
+    let chunk_count = concurrent_feature_centers().len() as u64;
+
+    let mut group = c.benchmark_group("overworld_full_chunk_concurrent");
+    group.throughput(Throughput::Elements(chunk_count));
+    group.bench_function(format!("x{chunk_count}"), |b| {
+        b.iter_batched(
+            || {
+                build_concurrent_full_pipeline_fixture(
+                    Identifier::vanilla_static("overworld"),
+                    PROFILE_FEATURE_SEED,
+                    concurrent_feature_centers(),
+                    FULL_PIPELINE_THREAD_COUNT,
+                )
+            },
+            run_concurrent_full_pipeline_batch,
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.finish();
 }
 
 fn run_concurrent_feature_batch_profiled(fixture: ConcurrentFeatureFixture, step: &ChunkStep) {
@@ -1490,4 +1546,17 @@ criterion_group! {
         .measurement_time(Duration::from_secs(10));
     targets = bench_overworld_full_pipeline_concurrent_overlap
 }
-criterion_main!(benches, feature_distribution_benches, full_pipeline_benches);
+criterion_group! {
+    name = full_chunk_benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(10));
+    targets = bench_overworld_full_chunk, bench_overworld_full_chunk_concurrent
+}
+criterion_main!(
+    benches,
+    feature_distribution_benches,
+    full_pipeline_benches,
+    full_chunk_benches,
+);

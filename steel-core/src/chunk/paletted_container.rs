@@ -3,6 +3,7 @@ use std::{
     fmt::Debug,
     hash::Hash,
     io::{Result, Write},
+    mem, slice,
 };
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -88,7 +89,7 @@ impl<V: Hash + Eq + Copy, const DIM: usize> HeterogeneousPalette<V, DIM> {
 /// palette tracking, so writes are O(1) stores. Must be finalized via
 /// [`Self::finalize_building`] (or implicitly by [`Self::recalculate_counts_with`]
 /// on the parent section) before any serialization or paletted access. Mirrors
-/// FastNoise's `FastChunkSection` write-only fill mode.
+/// `FastNoise`'s `FastChunkSection` write-only fill mode.
 #[derive(Debug, Clone)]
 pub enum PalettedContainer<V: Hash + Eq + Copy + Default, const DIM: usize> {
     /// A homogeneous container, where all values are the same.
@@ -129,7 +130,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         // `DIM*DIM*DIM` `V`s, so casting its base pointer to `*const V` and
         // building a slice of that length is sound. `cube` is a live `Box`, so
         // the pointer is valid for the lifetime of the slice.
-        let flat: &[V] = unsafe { std::slice::from_raw_parts(cube.as_ptr().cast::<V>(), total) };
+        let flat: &[V] = unsafe { slice::from_raw_parts(cube.as_ptr().cast::<V>(), total) };
 
         let mut i = 0;
         while i < total {
@@ -191,7 +192,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 *self = Self::Building(cube);
             }
             Self::Heterogeneous(_) => {
-                let taken = std::mem::replace(self, Self::Homogeneous(V::default()));
+                let taken = mem::replace(self, Self::Homogeneous(V::default()));
                 let Self::Heterogeneous(data) = taken else {
                     unreachable!()
                 };
@@ -213,7 +214,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
             // `DIM*DIM*DIM` `V`s; the cast preserves the live `&mut Box`'s
             // borrow because the returned slice cannot outlive `self`.
             Some(unsafe {
-                std::slice::from_raw_parts_mut(cube.as_mut_ptr().cast::<V>(), DIM * DIM * DIM)
+                slice::from_raw_parts_mut(cube.as_mut_ptr().cast::<V>(), DIM * DIM * DIM)
             })
         } else {
             None
@@ -227,7 +228,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         if !matches!(self, Self::Building(_)) {
             return;
         }
-        let taken = std::mem::replace(self, Self::Homogeneous(V::default()));
+        let taken = mem::replace(self, Self::Homogeneous(V::default()));
         let Self::Building(cube) = taken else {
             unreachable!()
         };
