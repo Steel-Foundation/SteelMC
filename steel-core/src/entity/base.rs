@@ -49,6 +49,10 @@ pub struct EntityBase {
     position: SyncMutex<DVec3>,
     /// Whether this entity has been removed.
     removed: AtomicBool,
+    /// Whether this entity should suppress sounds and particles.
+    ///
+    /// Vanilla: `Entity.silent` / `Entity.isSilent()`.
+    silent: AtomicBool,
     /// Callback for entity lifecycle events.
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
     /// The server tick count when this entity was last ticked.
@@ -74,6 +78,7 @@ impl EntityBase {
             world,
             position: SyncMutex::new(position),
             removed: AtomicBool::new(false),
+            silent: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             last_world_tick: AtomicI32::new(-1),
         }
@@ -120,6 +125,15 @@ impl EntityBase {
         if !self.removed.swap(true, Ordering::AcqRel) {
             self.level_callback.lock().on_remove(reason);
         }
+    }
+
+    /// Returns true if this entity suppresses sounds and particles.
+    ///
+    /// Vanilla: `Entity.isSilent()`.
+    #[inline]
+    #[must_use]
+    pub fn is_silent(&self) -> bool {
+        self.silent.load(Ordering::Relaxed)
     }
 
     /// Sets the level callback for lifecycle events.

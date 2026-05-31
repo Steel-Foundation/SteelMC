@@ -160,6 +160,11 @@ pub trait Entity: Send + Sync {
         self.base().is_some_and(EntityBase::is_removed)
     }
 
+    /// Returns true if this entity suppresses sounds and particles.
+    fn is_silent(&self) -> bool {
+        self.base().is_some_and(EntityBase::is_silent)
+    }
+
     /// Marks the entity as removed with the given reason.
     fn set_removed(&self, reason: RemovalReason) {
         if let Some(base) = self.base() {

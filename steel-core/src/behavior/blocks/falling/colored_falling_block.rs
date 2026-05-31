@@ -14,8 +14,6 @@ use crate::world::{ScheduledTickAccess, World};
 
 use super::{schedule_fall_tick, spawn_falling_entity};
 
-// ─── ColoredFallingBlock ──────────────────────────────────────────────────────
-
 /// Behavior for falling blocks with a dust particle color (gravel).
 #[block_behavior(class = "ColoredFallingBlock")]
 pub struct ColoredFallingBlock {
@@ -43,7 +41,7 @@ impl BlockBehavior for ColoredFallingBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
     }
 
     fn update_shape(
@@ -55,7 +53,7 @@ impl BlockBehavior for ColoredFallingBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
         state
     }
 
@@ -97,7 +95,7 @@ impl BlockBehavior for SandBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
     }
 
     fn update_shape(
@@ -109,7 +107,7 @@ impl BlockBehavior for SandBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
         state
     }
 

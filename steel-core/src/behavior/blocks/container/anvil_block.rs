@@ -71,7 +71,7 @@ impl BlockBehavior for AnvilBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
     }
 
     fn update_shape(
@@ -83,7 +83,7 @@ impl BlockBehavior for AnvilBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
         state
     }
 
@@ -108,15 +108,17 @@ impl BlockBehavior for AnvilBlock {
         pos: BlockPos,
         _placed_state: BlockStateId,
         _replaced_state: BlockStateId,
-        _entity: &dyn Entity,
+        entity: &dyn Entity,
     ) {
-        // TODO: skip if entity.is_silent() — requires is_silent() on Entity trait
-        world.level_event(level_events::SOUND_ANVIL_LAND, pos, 0, None);
+        if !entity.is_silent() {
+            world.level_event(level_events::SOUND_ANVIL_LAND, pos, 0, None);
+        }
     }
 
-    fn on_broken_after_fall(&self, world: &Arc<World>, pos: BlockPos, _entity: &dyn Entity) {
-        // TODO: skip if entity.is_silent() — requires is_silent() on Entity trait
-        world.level_event(level_events::SOUND_ANVIL_BROKEN, pos, 0, None);
+    fn on_broken_after_fall(&self, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+        if !entity.is_silent() {
+            world.level_event(level_events::SOUND_ANVIL_BROKEN, pos, 0, None);
+        }
     }
 
     fn fall_damage_source(&self, direct_entity_id: i32) -> DamageSource {

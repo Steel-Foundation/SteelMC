@@ -95,6 +95,8 @@ pub struct FallingBlockEntity {
     last_sent_position: SyncMutex<DVec3>,
     last_sent_on_ground: AtomicBool,
     needs_sync: AtomicBool,
+    // TODO: forceTickAfterTeleportToDuplicate — vanilla forces an extra tick when a falling block
+    //       passes through an end portal and duplicates across dimensions. Requires portal teleport support.
 }
 
 impl FallingBlockEntity {

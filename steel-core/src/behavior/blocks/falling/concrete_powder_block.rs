@@ -67,7 +67,7 @@ impl BlockBehavior for ConcretePowderBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        schedule_fall_tick(world, pos, self.block);
+        schedule_fall_tick(world, pos, self.block, 2);
     }
 
     fn update_shape(
@@ -82,7 +82,7 @@ impl BlockBehavior for ConcretePowderBlock {
         if touches_liquid(world, pos) {
             self.concrete.default_state()
         } else {
-            schedule_fall_tick(world, pos, self.block);
+            schedule_fall_tick(world, pos, self.block, 2);
             state
         }
     }

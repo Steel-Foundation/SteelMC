@@ -5,7 +5,6 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
-use steel_registry::blocks::Block;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_blocks;
 use steel_registry::{REGISTRY, RegistryEntry};
