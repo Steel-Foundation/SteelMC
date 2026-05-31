@@ -1,8 +1,4 @@
 //! `ColoredFallingBlock` and `SandBlock` behaviors.
-//!
-//! Vanilla: `SandBlock extends ColoredFallingBlock`. Server-side both are identical —
-//! the dust particle color is client-only. The two Rust types are kept separate to
-//! preserve the 1:1 class mapping required by the codegen (`#[block_behavior(class)]`).
 
 use std::sync::Arc;
 
@@ -21,9 +17,6 @@ use super::{schedule_fall_tick, spawn_falling_entity};
 // ─── ColoredFallingBlock ──────────────────────────────────────────────────────
 
 /// Behavior for falling blocks with a dust particle color (gravel).
-///
-/// Vanilla: `ColoredFallingBlock`. The dust color is client-side only and not
-/// reproduced server-side; behavior is identical to `FallingBlock`.
 #[block_behavior(class = "ColoredFallingBlock")]
 pub struct ColoredFallingBlock {
     block: BlockRef,

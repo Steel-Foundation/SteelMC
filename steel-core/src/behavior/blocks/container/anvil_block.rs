@@ -24,8 +24,6 @@ use crate::world::{ScheduledTickAccess, World};
 /// Anvils fall, damage entities on impact (2 HP per block fallen, max 40), and
 /// use `FALLING_ANVIL` damage type. They also play a land/break sound via level
 /// events (`SOUND_ANVIL_LAND` on land, `SOUND_ANVIL_BROKEN` on break).
-///
-/// Vanilla: `AnvilBlock extends FallingBlock`.
 #[block_behavior(class = "AnvilBlock")]
 pub struct AnvilBlock {
     block: BlockRef,
@@ -39,8 +37,6 @@ impl AnvilBlock {
     }
 
     /// Returns the next damage level block state: ANVIL → CHIPPED → DAMAGED → None (destroyed).
-    ///
-    /// Vanilla: `AnvilBlock.damage(BlockState)`.
     #[must_use]
     pub fn damage(state: BlockStateId) -> Option<BlockStateId> {
         let block = state.get_block();

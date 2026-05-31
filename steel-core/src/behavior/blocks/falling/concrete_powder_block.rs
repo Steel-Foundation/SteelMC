@@ -27,8 +27,6 @@ use super::{schedule_fall_tick, spawn_falling_entity};
 /// - When a neighboring water source appears it converts immediately (`update_shape`).
 /// - `get_state_for_placement` checks if the placement position already touches water
 ///   and places concrete directly if so.
-///
-/// Vanilla: `ConcretePowderBlock extends FallingBlock implements Fallable`.
 #[block_behavior(class = "ConcretePowderBlock")]
 pub struct ConcretePowderBlock {
     block: BlockRef,
@@ -46,8 +44,6 @@ impl ConcretePowderBlock {
 
 /// Returns true if the block should solidify: either the replaced block is water,
 /// or a neighboring block is water.
-///
-/// Vanilla: `ConcretePowderBlock.shouldSolidify()`.
 fn should_solidify(world: &dyn ScheduledTickAccess, pos: BlockPos, replaced: BlockStateId) -> bool {
     can_solidify(replaced) || touches_liquid(world, pos)
 }
@@ -117,8 +113,6 @@ impl BlockBehavior for ConcretePowderBlock {
 }
 
 /// Returns true if the fluid state at `state` is water.
-///
-/// Vanilla: `ConcretePowderBlock.canSolidify()`.
 fn can_solidify(state: BlockStateId) -> bool {
     let fluid = get_fluid_state_from_block(state);
     fluid.fluid_id == &vanilla_fluids::WATER
@@ -126,13 +120,6 @@ fn can_solidify(state: BlockStateId) -> bool {
 
 /// Returns true if any face-adjacent block at `pos` contains water, with no sturdy face
 /// blocking the contact.
-///
-/// Vanilla: `ConcretePowderBlock.touchesLiquid()`.
-///
-/// Differs from vanilla in loop structure but produces identical results: vanilla uses a
-/// mutable `BlockPos` that is read *before* offset on each iteration — for the DOWN direction
-/// this means it reads the concrete powder block itself, which can only solidify if the
-/// powder is waterlogged, so DOWN is effectively always skipped for dry powder.
 fn touches_liquid(world: &dyn ScheduledTickAccess, pos: BlockPos) -> bool {
     for dir in Direction::ALL {
         // Vanilla skips DOWN unless the concrete powder block itself can solidify

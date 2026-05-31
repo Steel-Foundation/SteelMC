@@ -45,7 +45,7 @@ use steel_protocol::packets::game::{
     CBlockUpdate, CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, calc_delta,
 };
 
-/// Gravity applied per tick (blocks/tick²). Vanilla: `FallingBlockEntity.getDefaultGravity()`
+/// Gravity applied per tick (blocks/tick²).
 const DEFAULT_GRAVITY: f64 = 0.04;
 
 /// Ticks before an out-of-bounds falling block is discarded.
@@ -73,19 +73,19 @@ pub struct FallingBlockEntity {
     block_state: AtomicCell<BlockStateId>,
 
     // Timers / flags
-    /// Ticks this entity has been alive. Vanilla: `FallingBlockEntity.time`.
+    /// Ticks this entity has been alive.
     time: AtomicI32,
-    /// Whether to drop the block as an item when it can't land. Vanilla: `dropItem`.
+    /// Whether to drop the block as an item when it can't land.
     drop_item: AtomicBool,
     /// Set to true when the anvil breaks on landing to cancel the item drop.
     cancel_drop: AtomicBool,
-    /// Whether this entity damages living entities on impact. Vanilla: `hurtEntities`.
+    /// Whether this entity damages living entities on impact.
     hurt_entities: AtomicBool,
-    /// Maximum impact damage cap. Vanilla: `fallDamageMax`.
+    /// Maximum impact damage cap.
     fall_damage_max: AtomicI32,
-    /// Damage per block fallen. Vanilla: `fallDamagePerDistance`.
+    /// Damage per block fallen.
     fall_damage_per_distance: AtomicCell<f32>,
-    /// Total distance fallen in blocks, accumulated across ticks. Vanilla: `Entity.fallDistance`.
+    /// Total distance fallen in blocks, accumulated across ticks.
     fall_distance: AtomicCell<f64>,
     /// Optional NBT for a block entity carried by this falling block (e.g. a chest).
     block_data: SyncMutex<Option<NbtCompound>>,
@@ -170,8 +170,6 @@ impl FallingBlockEntity {
     ///
     /// Strips WATERLOGGED from the state, replaces the block with its fluid state
     /// (water source or air), and returns the entity ready to be added to the world.
-    ///
-    /// Vanilla: `FallingBlockEntity.fall(Level, BlockPos, BlockState)`.
     pub fn fall(id: i32, world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> Self {
         // Strip WATERLOGGED — the entity itself is never waterlogged
         let falling_state = state
@@ -206,9 +204,6 @@ impl FallingBlockEntity {
     }
 
     /// Enables entity damage on impact.
-    ///
-    /// Called by blocks like anvils via `BlockBehavior::falling_entity_config()`.
-    /// Vanilla: `FallingBlockEntity.setHurtsEntities(float, int)`.
     pub fn set_hurts_entities(&self, damage_per_distance: f32, damage_max: i32) {
         self.hurt_entities.store(true, Ordering::Relaxed);
         self.fall_damage_per_distance.store(damage_per_distance);
@@ -220,16 +215,11 @@ impl FallingBlockEntity {
         self.cancel_drop.store(true, Ordering::Relaxed);
     }
 
-    // === Private helpers ===
-
     fn entity_drops_enabled(world: &Arc<World>) -> bool {
         world.get_game_rule(&ENTITY_DROPS).as_bool().unwrap_or(true)
     }
 
     /// Applies impact damage to entities in the bounding box.
-    ///
-    /// Also handles anvil degradation on impact.
-    /// Vanilla: `FallingBlockEntity.causeFallDamage()`.
     fn cause_fall_damage(&self, fall_distance: f64, world: &Arc<World>) {
         if !self.hurt_entities.load(Ordering::Relaxed) {
             return;
@@ -394,8 +384,6 @@ enum PositionSyncPacket {
 }
 
 /// Returns true if a block state can be replaced by a falling block landing on it.
-///
-/// Vanilla: `FallingBlock.isFree(BlockState)`.
 #[must_use]
 pub fn is_free(state: BlockStateId) -> bool {
     state.is_air()
@@ -514,7 +502,6 @@ impl Entity for FallingBlockEntity {
         let mut is_stuck_in_water = false;
         if is_concrete_powder {
             let fluid = get_fluid_state(&world, pos);
-            // Vanilla: getFluidState(pos).is(FluidTags.WATER) — any water, not just source
             is_stuck_in_water = fluid.is_water();
 
             // High-speed water detection via raycast (vanilla: ClipContext.Fluid.SOURCE_ONLY).
@@ -566,7 +553,7 @@ impl Entity for FallingBlockEntity {
             // Vanilla reads this.blockState (a live field) at placement time for the same reason.
             let block_state = self.block_state.load();
 
-            // Bounce damping (vanilla: multiply by (0.7, -0.5, 0.7))
+            // Bounce damping
             {
                 let mut vel = self.velocity.lock();
                 vel.x *= 0.7;
@@ -608,7 +595,7 @@ impl Entity for FallingBlockEntity {
                         if world.set_block(pos, place_state, UpdateFlags::UPDATE_ALL) {
                             // Send immediate block update to entity-tracking players so the
                             // client sees the block placed in the same frame as the entity
-                            // removal. Vanilla: sendToTrackingPlayers(ClientboundBlockUpdatePacket)
+                            // removal.
                             let chunk_pos = steel_utils::ChunkPos::new(pos.x() >> 4, pos.z() >> 4);
                             world.broadcast_to_nearby(
                                 chunk_pos,
@@ -645,7 +632,6 @@ impl Entity for FallingBlockEntity {
         }
 
         // Horizontal drag applied every tick regardless of ground state
-        // Vanilla: getDeltaMovement().scale(0.98) at end of tick
         {
             let mut vel = self.velocity.lock();
             *vel *= 0.98;
