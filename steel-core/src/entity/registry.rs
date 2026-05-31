@@ -261,7 +261,12 @@ pub fn init_entities() {
     // this factory is only used when spawning via entity ID (e.g. from a client packet).
     // SAND is a placeholder — block state is overwritten by load_additional() when loading.
     registry.register(&vanilla_entities::FALLING_BLOCK, |id, pos, world| {
-        Arc::new(FallingBlockEntity::new(id, pos, world, vanilla_blocks::SAND.default_state()))
+        Arc::new(FallingBlockEntity::new(
+            id,
+            pos,
+            world,
+            vanilla_blocks::SAND.default_state(),
+        ))
     });
     registry.register_load(
         &vanilla_entities::FALLING_BLOCK,

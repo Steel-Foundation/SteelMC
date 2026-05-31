@@ -21,7 +21,12 @@ use crate::entity::next_entity_id;
 use crate::world::{ScheduledTickAccess, World};
 
 /// Schedules the fall tick (2 ticks, vanilla default).
-pub(crate) fn schedule_fall_tick(world: &dyn ScheduledTickAccess, pos: BlockPos, block: BlockRef, delay: i32) {
+pub(crate) fn schedule_fall_tick(
+    world: &dyn ScheduledTickAccess,
+    pos: BlockPos,
+    block: BlockRef,
+    delay: i32,
+) {
     world.schedule_block_tick_default(pos, block, delay);
 }
 
