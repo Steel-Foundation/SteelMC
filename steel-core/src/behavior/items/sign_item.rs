@@ -13,7 +13,8 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{TaggedRegistryExt, vanilla_block_tags, vanilla_game_events};
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_game_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -144,9 +145,7 @@ fn can_attach_to(
     let attach_block = REGISTRY.blocks.by_state_id(attach_state);
 
     if let Some(block) = attach_block
-        && REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::WALL_HANGING_SIGNS_TAG)
+        && block.has_tag(&BlockTag::WALL_HANGING_SIGNS)
     {
         // Wall hanging signs can chain if they're on the same axis
         if let Some(neighbor_facing) =
@@ -193,10 +192,8 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
     let block = REGISTRY.blocks.by_state_id(state);
 
     // If it's a wall hanging sign, we need the additional canPlace check
-    if let Some(b) = block
-        && REGISTRY
-            .blocks
-            .is_in_tag(b, &vanilla_block_tags::WALL_HANGING_SIGNS_TAG)
+    if let Some(block) = block
+        && block.has_tag(&BlockTag::WALL_HANGING_SIGNS)
         && !can_wall_hanging_sign_place(world, state, pos)
     {
         return false;

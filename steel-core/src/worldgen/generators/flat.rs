@@ -7,11 +7,11 @@ use steel_utils::random::RandomSource;
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
-use crate::world::structure::{ColumnBlock, StructureGenerationContext};
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
-use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
-use crate::worldgen::structure::StructureGenerator;
+use crate::worldgen::structure::{StructureGenerator, create_structures};
+use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::{ColumnBlock, StructureGenerationContext};
 
 /// A chunk generator that generates a flat world.
 ///
@@ -247,7 +247,7 @@ impl ChunkGenerator for FlatChunkGenerator {
             templates: structure_generator.templates(),
             surface_y_cache: None,
         };
-        structure_generator.create_structures(chunk, &mut ctx);
+        create_structures(structure_generator, chunk, &mut ctx);
     }
 
     fn create_biomes(&self, chunk: &ChunkAccess) {

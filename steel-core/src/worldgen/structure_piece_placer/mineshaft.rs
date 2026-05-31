@@ -4,10 +4,9 @@ use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{
-    Registry, RegistryExt, TaggedRegistryExt, vanilla_biome_tags, vanilla_blocks,
-};
-use steel_utils::math::Axis;
+use steel_registry::vanilla_biome_tags::BiomeTag;
+use steel_registry::{Registry, RegistryExt, vanilla_blocks};
+use steel_utils::axis::Axis;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, types::UpdateFlags};
@@ -15,11 +14,11 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, ty
 use super::StructurePiecePlacer;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{entities::ChestMinecartEntity, next_entity_id};
-use crate::world::structure::mineshaft::{
-    MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
-};
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::mineshaft::{
+    MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
+};
 
 const ABANDONED_MINESHAFT_LOOT: Identifier =
     Identifier::new_static("minecraft", "chests/abandoned_mineshaft");
@@ -444,9 +443,7 @@ impl MineshaftPlacer<'_, '_> {
         let Some(biome) = self.registry.biomes.by_id(usize::from(biome_id)) else {
             panic!("noise biome id {biome_id} is not registered");
         };
-        self.registry
-            .biomes
-            .is_in_tag(biome, &vanilla_biome_tags::MINESHAFT_BLOCKING_TAG)
+        biome.has_tag(&BiomeTag::MINESHAFT_BLOCKING)
     }
 
     #[expect(

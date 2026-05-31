@@ -18,20 +18,22 @@ use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
+use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::entity::init_entities;
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{
-    BiomeSourceKind, ChunkBiomeSampler, ChunkGenerator, ChunkGeneratorType, EndGenerator,
-    NetherGenerator, OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
+    ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
+    WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
+use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
 
@@ -50,6 +52,8 @@ static FULL_PIPELINE_PROFILE_LOG_LIMIT: LazyLock<u64> = LazyLock::new(|| {
         .and_then(|value| value.parse().ok())
         .unwrap_or(16)
 });
+const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel =
+    ChunkTicketLevel::for_full_chunk_radius(MAX_VIEW_DISTANCE);
 
 fn ensure_registry() {
     INIT.call_once(|| {
@@ -404,7 +408,8 @@ fn make_holder_for_features(
 ) -> Arc<ChunkHolder> {
     let holder = Arc::new(ChunkHolder::new(
         ChunkPos::new(chunk_x, chunk_z),
-        0,
+        BENCH_HOLDER_LOAD_LEVEL,
+        None,
         dim.min_y,
         dim.height,
     ));
@@ -435,7 +440,8 @@ fn make_holder_for_feature_centers(
 ) -> Arc<ChunkHolder> {
     let holder = Arc::new(ChunkHolder::new(
         ChunkPos::new(chunk_x, chunk_z),
-        0,
+        BENCH_HOLDER_LOAD_LEVEL,
+        None,
         dim.min_y,
         dim.height,
     ));
@@ -859,7 +865,13 @@ fn build_concurrent_full_pipeline_fixture(
     let chunk_map_for_factory = chunk_map.clone();
     let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
         let pos = ChunkPos::new(x, z);
-        let holder = Arc::new(ChunkHolder::new(pos, 0, dim.min_y, dim.height));
+        let holder = Arc::new(ChunkHolder::new(
+            pos,
+            BENCH_HOLDER_LOAD_LEVEL,
+            None,
+            dim.min_y,
+            dim.height,
+        ));
         let _ = chunk_map_for_factory
             .chunks
             .insert_sync(pos, holder.clone());
@@ -1221,7 +1233,8 @@ fn make_holder_with_starts(
 ) -> Arc<ChunkHolder> {
     let holder = Arc::new(ChunkHolder::new(
         ChunkPos::new(chunk_x, chunk_z),
-        0,
+        BENCH_HOLDER_LOAD_LEVEL,
+        None,
         dim.min_y,
         dim.height,
     ));

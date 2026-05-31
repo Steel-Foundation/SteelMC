@@ -18,7 +18,7 @@ use steel_registry::{
 };
 use steel_utils::{
     BlockPos, BlockStateId,
-    math::Axis,
+    axis::Axis,
     types::{InteractionHand, UpdateFlags},
 };
 

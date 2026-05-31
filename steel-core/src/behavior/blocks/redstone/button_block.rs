@@ -12,7 +12,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, Direction};
 use steel_registry::{REGISTRY, vanilla_blocks, vanilla_game_events};
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 

@@ -10,11 +10,12 @@ use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use toml::map::Map;
 
-use crate::world::structure::placement::load_vanilla_structure_sets;
 use crate::worldgen::structure::{FixedStructureBiomeProvider, StructureGenerator};
 use crate::worldgen::{
-    BiomeSourceKind, ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
+    ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
 };
+use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::structure::placement::load_vanilla_structure_sets;
 
 /// Fully constructed generator metadata for a world.
 pub struct GeneratorOutput {

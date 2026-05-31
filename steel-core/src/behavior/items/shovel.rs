@@ -1,12 +1,12 @@
 use steel_macros::item_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{
         Block,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    vanilla_block_tags, vanilla_blocks, vanilla_game_events,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::Direction;
 use steel_utils::types::UpdateFlags;
@@ -69,10 +69,7 @@ impl ItemBehavior for ShovelItem {
         }
 
         // Campfire extinguishing
-        if REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::CAMPFIRES_TAG)
-        {
+        if block.has_tag(&BlockTag::CAMPFIRES) {
             if !block_state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }

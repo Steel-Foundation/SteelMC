@@ -3,14 +3,14 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, StairsShape};
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{Registry, vanilla_blocks, vanilla_entities};
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
 use crate::entity::{entities::RawEntity, next_entity_id};
-use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::swamp_hut::SwampHutPieceData;
 
 use super::StructurePiecePlacer;
 use super::scattered_feature::ScatteredFeaturePlacer;

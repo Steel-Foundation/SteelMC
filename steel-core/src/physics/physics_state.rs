@@ -2,7 +2,7 @@
 
 use glam::DVec3;
 use steel_registry::blocks::shapes::AABBd;
-use steel_registry::entity_types::{EntityDimensions, EntityTypeRef};
+use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 
 /// Physics state for an entity, tracking position, velocity, and movement properties.
 ///

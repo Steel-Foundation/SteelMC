@@ -73,7 +73,7 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::entity_types::{EntityDimensions, EntityFlags, EntityType, EntityTypeRegistry, MobCategory};
+        use crate::entity_type::{EntityDimensions, EntityFlags, EntityType, EntityTypeRegistry, MobCategory};
         use steel_utils::Identifier;
     });
 

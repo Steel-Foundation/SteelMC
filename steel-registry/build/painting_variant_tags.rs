@@ -5,6 +5,5 @@ pub(crate) fn build() -> TokenStream {
         "painting_variant",
         "painting_variant",
         "PaintingVariantRegistry",
-        "register_painting_variant_tags",
     )
 }

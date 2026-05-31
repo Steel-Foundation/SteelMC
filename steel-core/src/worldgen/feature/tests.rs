@@ -8,10 +8,10 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::random::{Random as _, worldgen_random::WorldgenRandom};
 use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier};
 
-use crate::world::structure::{
+use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::structure::{
     StructurePiece, StructureReferenceMap, StructureReferenceSet, StructureStart,
 };
-use crate::worldgen::BiomeSourceKind;
 
 #[test]
 fn feature_direction_order_matches_java_direction_values() {

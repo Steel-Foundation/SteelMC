@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    TaggedRegistryExt,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, IntProperty},
     },
     item_stack::ItemStack,
-    vanilla_block_tags, vanilla_items,
+    vanilla_block_tags::BlockTag,
+    vanilla_items,
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -99,9 +99,6 @@ impl BlockBehavior for NetherWartBlock {
 
 impl Vegetation for NetherWartBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        steel_registry::REGISTRY.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::SUPPORTS_NETHER_WART_TAG,
-        )
+        state.get_block().has_tag(&BlockTag::SUPPORTS_NETHER_WART)
     }
 }

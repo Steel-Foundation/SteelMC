@@ -327,24 +327,6 @@ impl Player {
         let health = self.get_health();
         health > 0.0 && health < self.get_max_health()
     }
-
-    /// If the player's health is at or below zero (e.g. they disconnected while dead),
-    /// resets health to max so they don't enter a zombie state on rejoin.
-    /// Returns `true` if health was reset.
-    pub fn reset_health_if_dead(&self) -> bool {
-        let mut entity_data = self.entity_data.lock();
-        let health = *entity_data.health.get();
-        if health <= 0.0 {
-            entity_data.health.set(self.get_max_health());
-            drop(entity_data);
-
-            let mut living_base = self.living_base.lock();
-            living_base.reset_death_state();
-            true
-        } else {
-            false
-        }
-    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 pub(super) use std::sync::LazyLock;
 
 pub(super) use rustc_hash::FxHashSet;
+pub(super) use steel_math::{floor, lerp};
 pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
 pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{
@@ -32,16 +33,15 @@ pub(super) use steel_registry::feature::{
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::{
     REGISTRY, Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _,
-    vanilla_block_tags, vanilla_blocks, vanilla_fluids,
+    vanilla_blocks, vanilla_fluids,
 };
-pub(super) use steel_utils::math::Axis;
+pub(super) use steel_utils::axis::Axis;
 pub(super) use steel_utils::random::{
     Random as _, RandomSource, legacy_random::LegacyRandom, worldgen_random::WorldgenRandom,
 };
 pub(super) use steel_utils::types::UpdateFlags;
 pub(super) use steel_utils::value_providers::IntProvider;
 pub(super) use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, SectionPos};
-pub(super) use steel_worldgen::math::{floor, lerp};
 pub(super) use steel_worldgen::noise::{NormalNoise, PerlinSimplexNoise};
 
 pub(super) use crate::behavior::BLOCK_BEHAVIORS;

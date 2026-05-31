@@ -21,18 +21,19 @@ use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
+use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::level_data::WorldGenerationSettings;
-use steel_core::world::structure::StructureStart;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
-use steel_core::worldgen::noise::beardifier::Beardifier;
 use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
+use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
 use toml::map::Map;
 
@@ -242,7 +243,8 @@ fn build_feature_holders(
     for (pos, chunk) in chunks {
         let holder = Arc::new(ChunkHolder::new(
             ChunkPos::new(pos.0, pos.1),
-            0,
+            ChunkTicketLevel::for_full_chunk_radius(MAX_VIEW_DISTANCE),
+            None,
             min_y,
             height,
         ));
@@ -620,10 +622,9 @@ fn chunk_stage_hashes_inner() {
     use steel_core::behavior::init_behaviors;
     use steel_core::block_entity::init_block_entities;
     use steel_core::entity::init_entities;
-    use steel_core::worldgen::{
-        BiomeSourceKind, EndGenerator, NetherGenerator, OverworldGenerator,
-    };
+    use steel_core::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_registry::{REGISTRY, Registry};
+    use steel_worldgen::biomes::BiomeSourceKind;
 
     let mut registry = Registry::new_vanilla();
     registry.freeze();

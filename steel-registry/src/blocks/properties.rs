@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-pub use steel_utils::{Direction, codec::VarInt, math::Axis, serial::ReadFrom};
+pub use steel_utils::{Direction, axis::Axis, codec::VarInt, serial::ReadFrom};
 
 pub trait Property<T>: Sync + Send {
     fn get_value(&self, value: &str) -> Option<T>;

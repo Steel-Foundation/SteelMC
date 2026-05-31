@@ -10,12 +10,12 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateF
 
 use super::StructurePiecePlacer;
 use crate::chunk::heightmap::HeightmapType;
-use crate::world::structure::desert_pyramid::DesertPyramidPieceData;
-use crate::world::structure::{
-    ProceduralPieceData, StructurePiece, StructurePiecePayload, StructureStart,
-};
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::StructureTemplate;
+use steel_worldgen::structure::desert_pyramid::DesertPyramidPieceData;
+use steel_worldgen::structure::{
+    ProceduralPieceData, StructurePiece, StructurePiecePayload, StructureStart,
+};
 
 const DESERT_PYRAMID_LOOT: &str = "minecraft:chests/desert_pyramid";
 const DESERT_PYRAMID_ARCHAEOLOGY: &str = "minecraft:archaeology/desert_pyramid";

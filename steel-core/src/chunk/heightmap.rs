@@ -10,9 +10,9 @@ use std::sync::LazyLock;
 
 use smallvec::SmallVec;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
+    REGISTRY,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_block_tags,
+    vanilla_block_tags::BlockTag,
 };
 use steel_utils::BlockStateId;
 
@@ -74,9 +74,7 @@ impl HeightmapType {
 
     /// Checks if a block is in the leaves tag.
     fn is_leaves(block: BlockRef) -> bool {
-        REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::LEAVES_TAG)
+        block.has_tag(&BlockTag::LEAVES)
     }
 
     const fn mask(self) -> u8 {

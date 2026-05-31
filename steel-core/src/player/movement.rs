@@ -575,13 +575,15 @@ impl Player {
                     }
                 }
 
-                if self.is_sprinting() {
+                if packet.on_ground && self.is_sprinting() {
                     let dx = validation.move_delta.x;
                     let dz = validation.move_delta.z;
-                    let horizontal_dist_sq = dx * dx + dz * dz;
-                    if horizontal_dist_sq > 0.0 {
-                        let distance = horizontal_dist_sq.sqrt() as f32;
-                        self.cause_food_exhaustion(distance * food_constants::EXHAUSTION_SPRINT);
+
+                    let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
+                    if cm > 0 {
+                        self.cause_food_exhaustion(
+                            food_constants::EXHAUSTION_SPRINT * cm as f32 * 0.01,
+                        );
                     }
                 }
             }

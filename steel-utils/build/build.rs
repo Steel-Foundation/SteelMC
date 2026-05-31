@@ -24,20 +24,30 @@ pub fn main() {
     }
 
     let content = build_translations("build_assets/en_us.json");
-    fs::write(format!("{OUT_DIR}/{IDS}.rs"), content.to_string())
-        .expect("Failed to write translations ids file");
+    write_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content.to_string());
 
     let content = translations::build();
-    fs::write(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string())
-        .expect("Failed to write translations registry file");
+    write_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string());
 
     let content = entity_events::build();
-    fs::write(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string())
-        .expect("Failed to write entity events file");
+    write_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string());
 
     if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
         for entry in entries.flatten() {
             let _ = Command::new("rustfmt").arg(entry.path()).output();
         }
+    }
+}
+
+fn write_if_changed(path: impl AsRef<Path>, content: String) {
+    let path = path.as_ref();
+    if let Ok(existing) = fs::read_to_string(path)
+        && existing == content
+    {
+        return;
+    }
+
+    if let Err(error) = fs::write(path, content) {
+        panic!("Failed to write {}: {error}", path.display());
     }
 }

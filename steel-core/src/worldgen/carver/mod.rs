@@ -10,14 +10,14 @@ use std::{cell::Cell, sync::LazyLock};
 
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use steel_math::lerp2;
+use steel_math::trig;
+use steel_registry::REGISTRY;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::ChunkPos;
-use steel_utils::math::mth;
 use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 use steel_worldgen::density::DimensionNoises;
-use steel_worldgen::math::lerp2;
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
 use crate::chunk::{
@@ -25,8 +25,8 @@ use crate::chunk::{
     heightmap::{Heightmap, HeightmapType},
 };
 use crate::worldgen::carving_mask::CarvingMask;
-use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult};
 use crate::worldgen::surface::SurfaceSystem;
+use steel_worldgen::noise::{Aquifer, AquiferResult};
 
 pub mod canyon;
 pub mod cave;
@@ -176,7 +176,7 @@ pub fn can_replace_block(state: BlockStateId, tag: &Identifier) -> bool {
     let Some(block) = REGISTRY.blocks.by_state_id(state) else {
         return false;
     };
-    REGISTRY.blocks.is_in_tag(block, tag)
+    block.has_tag(tag)
 }
 
 /// Per-state membership cache for a carver's replaceable block tag.
@@ -196,7 +196,7 @@ impl CarverReplaceableStates {
             .blocks
             .state_to_block_lookup
             .iter()
-            .map(|&block| REGISTRY.blocks.is_in_tag(block, tag))
+            .map(|&block| block.has_tag(tag))
             .collect();
         Self { states }
     }
@@ -329,7 +329,7 @@ pub struct CarveParams<'a> {
 #[inline]
 #[must_use]
 pub(super) fn horizontal_tunnel_radius(progress_arg: f32, thickness: f32) -> f64 {
-    let radius_offset = mth::sin(f64::from(progress_arg)) * thickness;
+    let radius_offset = trig::sin(f64::from(progress_arg)) * thickness;
     1.5 + f64::from(radius_offset)
 }
 

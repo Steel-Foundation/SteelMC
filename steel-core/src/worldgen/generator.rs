@@ -12,9 +12,9 @@ use crate::worldgen::context::{
     ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
 };
 use crate::worldgen::generators::{EmptyChunkGenerator, FlatChunkGenerator};
-use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
+use steel_worldgen::noise::Beardifier;
 
 /// A trait for generating chunks.
 #[enum_dispatch]
