@@ -1195,6 +1195,16 @@ impl Entity for Player {
         *self.position.lock()
     }
 
+    fn set_position(&self, pos: DVec3) {
+        let old_pos = {
+            let mut position = self.position.lock();
+            let old_pos = *position;
+            *position = pos;
+            old_pos
+        };
+        self.level_callback.lock().on_move(old_pos, pos);
+    }
+
     fn bounding_box(&self) -> AABBd {
         let pos = self.position();
         // Player hitbox: 0.6 wide, 1.8 tall (standing)

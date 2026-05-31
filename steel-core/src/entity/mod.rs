@@ -495,7 +495,7 @@ pub trait LivingEntity: Entity {
     fn calculate_fall_damage(&self, fall_distance: f32, damage_modifier: f32) -> i32 {
         if REGISTRY.entity_types.is_in_tag(
             self.entity_type(),
-            &vanilla_entity_type_tags::FALL_DAMAGE_IMMUNE_TAG,
+            &vanilla_entity_type_tags::EntityTypeTag::FALL_DAMAGE_IMMUNE,
         ) {
             return 0;
         }

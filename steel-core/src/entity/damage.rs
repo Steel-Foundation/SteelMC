@@ -34,16 +34,17 @@ impl DamageSource {
     pub fn bypasses_invulnerability(&self) -> bool {
         REGISTRY.damage_types.is_in_tag(
             self.damage_type,
-            &vanilla_damage_type_tags::BYPASSES_INVULNERABILITY_TAG,
+            &vanilla_damage_type_tags::DamageTypeTag::BYPASSES_INVULNERABILITY,
         )
     }
 
     /// Whether this damage belongs to vanilla's `is_fall` damage type tag.
     #[must_use]
     pub fn is_fall(&self) -> bool {
-        REGISTRY
-            .damage_types
-            .is_in_tag(self.damage_type, &vanilla_damage_type_tags::IS_FALL_TAG)
+        REGISTRY.damage_types.is_in_tag(
+            self.damage_type,
+            &vanilla_damage_type_tags::DamageTypeTag::IS_FALL,
+        )
     }
 
     /// Whether this damage bypasses the invulnerability cooldown timer.

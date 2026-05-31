@@ -679,13 +679,14 @@ impl Player {
             if dy > 0.0 {
                 self.reset_fall_distance();
             }
+            self.movement.lock().last_good_position = *self.position.lock();
         }
         if packet.has_rot {
             self.rotation.store((packet.y_rot, packet.x_rot));
         }
 
         let pos = if packet.has_pos {
-            packet.position
+            *self.position.lock()
         } else {
             prev_pos
         };

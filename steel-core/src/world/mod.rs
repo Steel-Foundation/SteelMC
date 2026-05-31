@@ -11,6 +11,7 @@ use std::{
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::physics::shapes::collide;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
@@ -29,7 +30,7 @@ use steel_protocol::{
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::{AABBd, VoxelShape, is_face_full};
+use steel_registry::blocks::shapes::{AABB, AABBd, VoxelShape, is_face_full};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -43,6 +44,7 @@ use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
 use steel_registry::{vanilla_blocks, vanilla_game_events};
+use steel_utils::axis::Axis;
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 
@@ -118,6 +120,123 @@ const fn chunk_max_block_x(pos: ChunkPos) -> i32 {
 
 const fn chunk_max_block_z(pos: ChunkPos) -> i32 {
     (pos.0.y << 4) + 15
+}
+
+fn block_aabb_to_world(aabb: &AABB, pos: BlockPos) -> AABBd {
+    AABBd::new(
+        f64::from(pos.x()) + f64::from(aabb.min_x),
+        f64::from(pos.y()) + f64::from(aabb.min_y),
+        f64::from(pos.z()) + f64::from(aabb.min_z),
+        f64::from(pos.x()) + f64::from(aabb.max_x),
+        f64::from(pos.y()) + f64::from(aabb.max_y),
+        f64::from(pos.z()) + f64::from(aabb.max_z),
+    )
+}
+
+fn move_aabbd(aabb: AABBd, x: f64, y: f64, z: f64) -> AABBd {
+    AABBd::new(
+        aabb.min_x + x,
+        aabb.min_y + y,
+        aabb.min_z + z,
+        aabb.max_x + x,
+        aabb.max_y + y,
+        aabb.max_z + z,
+    )
+}
+
+fn is_empty_aabbd(aabb: &AABBd) -> bool {
+    aabb.min_x >= aabb.max_x || aabb.min_y >= aabb.max_y || aabb.min_z >= aabb.max_z
+}
+
+fn bounds_for_aabbs(aabbs: &[AABBd]) -> Option<AABBd> {
+    let first = *aabbs.first()?;
+    let mut bounds = first;
+    for aabb in &aabbs[1..] {
+        bounds.min_x = bounds.min_x.min(aabb.min_x);
+        bounds.min_y = bounds.min_y.min(aabb.min_y);
+        bounds.min_z = bounds.min_z.min(aabb.min_z);
+        bounds.max_x = bounds.max_x.max(aabb.max_x);
+        bounds.max_y = bounds.max_y.max(aabb.max_y);
+        bounds.max_z = bounds.max_z.max(aabb.max_z);
+    }
+    Some(bounds)
+}
+
+fn push_non_empty_aabbd(aabbs: &mut Vec<AABBd>, aabb: AABBd) {
+    if !is_empty_aabbd(&aabb) {
+        aabbs.push(aabb);
+    }
+}
+
+fn subtract_aabbd(aabb: AABBd, cutter: AABBd, output: &mut Vec<AABBd>) {
+    if !aabb.intersects(&cutter) {
+        output.push(aabb);
+        return;
+    }
+
+    let min_x = aabb.min_x.max(cutter.min_x);
+    let min_y = aabb.min_y.max(cutter.min_y);
+    let min_z = aabb.min_z.max(cutter.min_z);
+    let max_x = aabb.max_x.min(cutter.max_x);
+    let max_y = aabb.max_y.min(cutter.max_y);
+    let max_z = aabb.max_z.min(cutter.max_z);
+
+    push_non_empty_aabbd(
+        output,
+        AABBd::new(
+            aabb.min_x, aabb.min_y, aabb.min_z, min_x, aabb.max_y, aabb.max_z,
+        ),
+    );
+    push_non_empty_aabbd(
+        output,
+        AABBd::new(
+            max_x, aabb.min_y, aabb.min_z, aabb.max_x, aabb.max_y, aabb.max_z,
+        ),
+    );
+    push_non_empty_aabbd(
+        output,
+        AABBd::new(min_x, aabb.min_y, aabb.min_z, max_x, min_y, aabb.max_z),
+    );
+    push_non_empty_aabbd(
+        output,
+        AABBd::new(min_x, max_y, aabb.min_z, max_x, aabb.max_y, aabb.max_z),
+    );
+    push_non_empty_aabbd(
+        output,
+        AABBd::new(min_x, min_y, aabb.min_z, max_x, max_y, min_z),
+    );
+    push_non_empty_aabbd(
+        output,
+        AABBd::new(min_x, min_y, max_z, max_x, max_y, aabb.max_z),
+    );
+}
+
+fn shape_only_second(old_shape: VoxelShape, new_shape: VoxelShape, pos: BlockPos) -> Vec<AABBd> {
+    let old_boxes = old_shape
+        .iter()
+        .filter(|aabb| !aabb.is_empty())
+        .map(|aabb| block_aabb_to_world(aabb, pos))
+        .collect::<Vec<_>>();
+    let mut result = Vec::new();
+
+    for new_box in new_shape {
+        if new_box.is_empty() {
+            continue;
+        }
+
+        let mut fragments = vec![block_aabb_to_world(new_box, pos)];
+        for old_box in &old_boxes {
+            let mut next_fragments = Vec::new();
+            for fragment in fragments {
+                subtract_aabbd(fragment, *old_box, &mut next_fragments);
+            }
+            fragments = next_fragments;
+        }
+
+        result.extend(fragments);
+    }
+
+    result
 }
 
 /// Timing information for a world game tick.
@@ -603,6 +722,37 @@ impl World {
         });
 
         !obstructed
+    }
+
+    /// Pushes entities upward before replacing a block with a taller collision shape.
+    ///
+    /// Vanilla equivalent: `Block.pushEntitiesUp`. This is used for state changes like
+    /// farmland turning into dirt, where the new state occupies space above the old state.
+    pub fn push_entities_up_before_block_change(
+        &self,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+        pos: BlockPos,
+    ) {
+        let added_collision = shape_only_second(
+            old_state.get_collision_shape(),
+            new_state.get_collision_shape(),
+            pos,
+        );
+        let Some(bounds) = bounds_for_aabbs(&added_collision) else {
+            return;
+        };
+
+        for entity in self.get_entities_in_aabb(&bounds) {
+            let entity_box = move_aabbd(entity.bounding_box(), 0.0, 1.0, 0.0);
+            let offset = collide(Axis::Y, &entity_box, &added_collision, -1.0);
+            let push_y = 1.0 + offset;
+
+            if push_y > 0.0 {
+                let position = entity.position();
+                entity.set_position(DVec3::new(position.x, position.y + push_y, position.z));
+            }
+        }
     }
 
     /// Returns whether the tick rate is running normally.
@@ -2525,5 +2675,31 @@ impl ScheduledTickAccess for Arc<World> {
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FARMLAND_COLLISION: [AABB; 1] = [AABB::new(0.0, 0.0, 0.0, 1.0, 0.9375, 1.0)];
+    const DIRT_COLLISION: [AABB; 1] = [AABB::FULL_BLOCK];
+
+    #[test]
+    fn push_entities_up_shape_difference_matches_farmland_to_dirt() {
+        let pos = BlockPos::new(10, 64, -3);
+        let added_collision = shape_only_second(&FARMLAND_COLLISION, &DIRT_COLLISION, pos);
+
+        assert_eq!(
+            added_collision,
+            vec![AABBd::new(10.0, 64.9375, -3.0, 11.0, 65.0, -2.0)]
+        );
+
+        let entity_box = AABBd::entity_box(10.5, 64.9375, -2.5, 0.3, 1.8);
+        let moved_box = move_aabbd(entity_box, 0.0, 1.0, 0.0);
+        let offset = collide(Axis::Y, &moved_box, &added_collision, -1.0);
+        let push_y = 1.0 + offset;
+
+        assert!((push_y - 0.0625).abs() < 1.0e-7);
     }
 }

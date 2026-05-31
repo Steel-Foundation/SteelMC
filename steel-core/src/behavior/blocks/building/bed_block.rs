@@ -171,7 +171,7 @@ impl BlockBehavior for BedBlock {
                 Self::send_overlay_translation(player, key);
             }
             // TODO: Trigger bad respawn point explosion once world explosion exists
-            return InteractionResult::Success;
+            return InteractionResult::Fail;
         }
 
         if bed_state.get_value(&BlockStateProperties::OCCUPIED) {
@@ -181,7 +181,7 @@ impl BlockBehavior for BedBlock {
         }
 
         // TODO: Call Player::start_sleep_in_bed once full sleep foundations
-        InteractionResult::Success
+        InteractionResult::Fail
     }
 
     fn has_block_entity(&self) -> bool {
