@@ -3,14 +3,13 @@
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
-use crate::world::World;
-use std::sync::Arc;
+use crate::world::ScheduledTickAccess;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::vanilla_blocks::AIR;
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 /// Behavior for the nether portal block.
@@ -30,7 +29,7 @@ impl BlockBehavior for NetherPortalBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
         _neighbor_pos: BlockPos,

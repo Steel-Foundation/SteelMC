@@ -72,6 +72,11 @@ impl Xoroshiro {
         self.seed_hi = m.rotate_left(28);
         n
     }
+
+    /// Resets this random source to vanilla's `XoroshiroRandomSource.setSeed(long)` state.
+    pub const fn set_seed(&mut self, seed: i64) {
+        *self = Self::from_seed(seed as u64);
+    }
 }
 
 impl MarsagliaPolarGaussian for Xoroshiro {
@@ -104,7 +109,7 @@ impl Random for Xoroshiro {
         let mut m = l.wrapping_mul(bound as u64);
         let mut n = m & 0xFFFF_FFFF;
         if n < bound as u64 {
-            let i = (((!bound).wrapping_add(1)) as u64) % (bound as u64);
+            let i = u64::from(((!bound as u32).wrapping_add(1)) % bound as u32);
             while n < i {
                 l = (self.next_i32() as u64) & 0xFFFF_FFFF;
                 m = l.wrapping_mul(bound as u64);

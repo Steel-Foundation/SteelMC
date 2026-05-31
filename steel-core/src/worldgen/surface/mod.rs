@@ -414,7 +414,7 @@ impl SurfaceSystem {
             if !state.is_air() {
                 break;
             }
-            chunk.set_relative_block(local_x, rel_y, local_z, self.default_block);
+            chunk.set_relative_block_for_generation(local_x, rel_y, local_z, self.default_block);
         }
 
         // Return updated start height (one above the extension top)
@@ -507,10 +507,10 @@ impl SurfaceSystem {
                     && random.next_f64() > 0.15)
             {
                 if snow_depth <= max_snow_depth && y > min_snow_height {
-                    chunk.set_relative_block(local_x, rel_y, local_z, snow_block);
+                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, snow_block);
                     snow_depth += 1;
                 } else {
-                    chunk.set_relative_block(local_x, rel_y, local_z, packed_ice);
+                    chunk.set_relative_block_for_generation(local_x, rel_y, local_z, packed_ice);
                 }
             }
         }

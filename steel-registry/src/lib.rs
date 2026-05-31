@@ -1,5 +1,6 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
 
+use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -21,7 +22,11 @@ use crate::{
     dimension_type::DimensionTypeRegistry,
     enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
-    entity_types::EntityTypeRegistry,
+    entity_type::EntityTypeRegistry,
+    feature::{
+        ConfiguredFeatureKind, ConfiguredFeatureRef, ConfiguredFeatureRegistry, PlacedFeatureData,
+        PlacedFeatureRef, PlacedFeatureRegistry,
+    },
     fluid::FluidRegistry,
     frog_variant::FrogVariantRegistry,
     game_rules::GameRuleRegistry,
@@ -36,6 +41,7 @@ use crate::{
     poi::PoiTypeRegistry,
     recipe::RecipeRegistry,
     structure::StructureRegistry,
+    structure_processor::StructureProcessorListRegistry,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
@@ -64,9 +70,11 @@ pub mod dialog;
 pub mod dimension_type;
 pub mod enchantment;
 pub mod entity_data;
-pub mod entity_types;
+pub mod entity_type;
+pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
+pub mod game_events;
 pub mod game_rules;
 pub mod instrument;
 pub mod item_stack;
@@ -81,6 +89,7 @@ pub mod pig_variant;
 pub mod poi;
 pub mod recipe;
 pub mod structure;
+pub mod structure_processor;
 pub mod structure_set;
 pub mod template_pool;
 pub mod timeline;
@@ -125,6 +134,11 @@ pub mod vanilla_item_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_biomes.rs"]
 pub mod vanilla_biomes;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_biome_tags.rs"]
+pub mod vanilla_biome_tags;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -337,6 +351,11 @@ pub mod vanilla_game_rules;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_game_events.rs"]
+pub mod vanilla_game_events;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_level_events.rs"]
 pub mod level_events;
 
@@ -365,6 +384,11 @@ pub mod vanilla_structure_tags;
 #[path = "generated/vanilla_structure_sets.rs"]
 pub mod vanilla_structure_sets;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_structure_processors.rs"]
+pub mod vanilla_structure_processors;
+
 #[rustfmt::skip]
 #[path = "generated/vanilla_template_pools.rs"]
 pub mod vanilla_template_pools;
@@ -384,6 +408,16 @@ pub mod shared_structs;
 #[rustfmt::skip]
 #[path = "generated/vanilla_configured_carvers.rs"]
 pub mod vanilla_configured_carvers;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_configured_features.rs"]
+pub mod vanilla_configured_features;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_placed_features.rs"]
+pub mod vanilla_placed_features;
 
 pub struct RegistryLock(OnceLock<Registry>);
 
@@ -408,6 +442,24 @@ impl Deref for RegistryLock {
 }
 
 pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_support {
+    use std::sync::Once;
+
+    use crate::{REGISTRY, Registry};
+
+    static INIT_REGISTRY: Once = Once::new();
+
+    /// Initializes the global registry with frozen vanilla data for tests.
+    pub fn init_test_registry() {
+        INIT_REGISTRY.call_once(|| {
+            let mut registry = Registry::new_vanilla();
+            registry.freeze();
+            let _ = REGISTRY.init(registry);
+        });
+    }
+}
 
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
 pub trait RegistryEntry: 'static {
@@ -485,7 +537,13 @@ pub const POI_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("point_of_i
 pub const WORLD_CLOCK_REGISTRY: Identifier = Identifier::vanilla_static("world_clock");
 pub const CONFIGURED_CARVER_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/configured_carver");
+pub const CONFIGURED_FEATURE_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/configured_feature");
+pub const PLACED_FEATURE_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/placed_feature");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
+pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/processor_list");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -523,12 +581,16 @@ pub struct Registry {
     pub loot_tables: LootTableRegistry,
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
+    pub game_events: GameEventRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
     pub configured_carvers: ConfiguredCarverRegistry,
+    pub configured_features: ConfiguredFeatureRegistry,
+    pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
+    pub structure_processors: StructureProcessorListRegistry,
 }
 
 impl Debug for Registry {
@@ -547,16 +609,17 @@ impl Registry {
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
-        vanilla_block_tags::register_block_tags(&mut registry.blocks);
+        vanilla_block_tags::BlockTag::register_block_tags(&mut registry.blocks);
 
         vanilla_components::register_vanilla_data_components(&mut registry.data_components);
 
         register_vanilla_entity_data_serializers(&mut registry.entity_data_serializers);
 
         vanilla_items::register_items(&mut registry.items);
-        vanilla_item_tags::register_item_tags(&mut registry.items);
+        vanilla_item_tags::ItemTag::register_item_tags(&mut registry.items);
 
         vanilla_biomes::register_biomes(&mut registry.biomes);
+        vanilla_biome_tags::BiomeTag::register_biome_tags(&mut registry.biomes);
         vanilla_chat_types::register_chat_types(&mut registry.chat_types);
         vanilla_trim_patterns::register_trim_patterns(&mut registry.trim_patterns);
         vanilla_trim_materials::register_trim_materials(&mut registry.trim_materials);
@@ -576,46 +639,62 @@ impl Registry {
         vanilla_cow_variants::register_cow_variants(&mut registry.cow_variants);
         vanilla_chicken_variants::register_chicken_variants(&mut registry.chicken_variants);
         vanilla_painting_variants::register_painting_variants(&mut registry.painting_variants);
-        vanilla_painting_variant_tags::register_painting_variant_tags(
+        vanilla_painting_variant_tags::PaintingVariantTag::register_painting_variant_tags(
             &mut registry.painting_variants,
         );
         vanilla_dimension_types::register_dimension_types(&mut registry.dimension_types);
         vanilla_damage_types::register_damage_types(&mut registry.damage_types);
-        vanilla_damage_type_tags::register_damage_type_tags(&mut registry.damage_types);
+        vanilla_damage_type_tags::DamageTypeTag::register_damage_type_tags(
+            &mut registry.damage_types,
+        );
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
-        vanilla_banner_pattern_tags::register_banner_pattern_tags(&mut registry.banner_patterns);
+        vanilla_banner_pattern_tags::BannerPatternTag::register_banner_pattern_tags(
+            &mut registry.banner_patterns,
+        );
         vanilla_jukebox_songs::register_jukebox_songs(&mut registry.jukebox_songs);
         vanilla_instruments::register_instruments(&mut registry.instruments);
-        vanilla_instrument_tags::register_instrument_tags(&mut registry.instruments);
+        vanilla_instrument_tags::InstrumentTag::register_instrument_tags(&mut registry.instruments);
         vanilla_dialogs::register_dialogs(&mut registry.dialogs);
-        vanilla_dialog_tags::register_dialog_tags(&mut registry.dialogs);
+        vanilla_dialog_tags::DialogTag::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
         vanilla_zombie_nautilus_variants::register_zombie_nautilus_variants(
             &mut registry.zombie_nautilus_variants,
         );
         vanilla_timelines::register_timelines(&mut registry.timelines);
-        vanilla_timeline_tags::register_timeline_tags(&mut registry.timelines);
+        vanilla_timeline_tags::TimelineTag::register_timeline_tags(&mut registry.timelines);
         vanilla_recipes::register_recipes(&mut registry.recipes);
         vanilla_entities::register_entity_types(&mut registry.entity_types);
-        vanilla_entity_type_tags::register_entity_type_tags(&mut registry.entity_types);
+        vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
+            &mut registry.entity_types,
+        );
         vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
+        vanilla_game_events::register_game_events(&mut registry.game_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);
-        vanilla_fluid_tags::register_fluid_tags(&mut registry.fluids);
+        vanilla_fluid_tags::FluidTag::register_fluid_tags(&mut registry.fluids);
 
         vanilla_poi_types::register_poi_types(&mut registry.poi_types);
-        vanilla_poi_type_tags::register_poi_type_tags(&mut registry.poi_types);
+        vanilla_poi_type_tags::PoiTag::register_poi_tags(&mut registry.poi_types);
 
         vanilla_enchantments::register_enchantments(&mut registry.enchantments);
-        vanilla_enchantment_tags::register_enchantment_tags(&mut registry.enchantments);
+        vanilla_enchantment_tags::EnchantmentTag::register_enchantment_tags(
+            &mut registry.enchantments,
+        );
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
         vanilla_structures::register_structures(&mut registry.structures);
-        vanilla_structure_tags::register_structure_tags(&mut registry.structures);
+        vanilla_structure_tags::StructureTag::register_structure_tags(&mut registry.structures);
+        vanilla_structure_processors::register_structure_processor_lists(
+            &mut registry.structure_processors,
+        );
 
         vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
+        vanilla_configured_features::register_configured_features(
+            &mut registry.configured_features,
+        );
+        vanilla_placed_features::register_placed_features(&mut registry.placed_features);
 
         registry
     }
@@ -658,12 +737,16 @@ impl Registry {
         self.loot_tables.freeze();
         self.block_entity_types.freeze();
         self.game_rules.freeze();
+        self.game_events.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
         self.enchantments.freeze();
         self.world_clocks.freeze();
         self.configured_carvers.freeze();
+        self.configured_features.freeze();
+        self.placed_features.freeze();
         self.structures.freeze();
+        self.structure_processors.freeze();
     }
 
     fn validate_references(&self) {
@@ -676,6 +759,126 @@ impl Registry {
                     carver_key
                 );
             }
+
+            for feature_stage in &biome.features {
+                for placed_feature_key in feature_stage {
+                    assert!(
+                        self.placed_features.by_key(placed_feature_key).is_some(),
+                        "biome {} references unknown placed feature {}",
+                        biome.key,
+                        placed_feature_key
+                    );
+                }
+            }
+        }
+
+        for (_, placed_feature) in self.placed_features.iter() {
+            self.validate_placed_feature_data(&placed_feature.data);
+        }
+
+        for (_, configured_feature) in self.configured_features.iter() {
+            self.validate_configured_feature_kind(&configured_feature.kind);
+        }
+
+        if !self.placed_features.is_empty() {
+            for pool in vanilla_template_pools::vanilla_template_pools() {
+                for (element, _) in &pool.elements {
+                    self.validate_template_pool_feature_refs(element);
+                }
+            }
+        }
+    }
+
+    fn validate_placed_feature_ref(&self, feature: &PlacedFeatureRef) {
+        match feature {
+            PlacedFeatureRef::Reference(feature) => {
+                let key = &feature.key;
+                assert!(
+                    self.placed_features.by_key(key).is_some(),
+                    "unknown placed feature reference {key}"
+                );
+            }
+            PlacedFeatureRef::Inline(data) => self.validate_placed_feature_data(data),
+        }
+    }
+
+    fn validate_placed_feature_data(&self, feature: &PlacedFeatureData) {
+        self.validate_configured_feature_ref(&feature.feature);
+    }
+
+    fn validate_configured_feature_ref(&self, feature: &ConfiguredFeatureRef) {
+        match feature {
+            ConfiguredFeatureRef::Reference(feature) => {
+                let key = &feature.key;
+                assert!(
+                    self.configured_features.by_key(key).is_some(),
+                    "unknown configured feature reference {key}"
+                );
+            }
+            ConfiguredFeatureRef::Inline(kind) => self.validate_configured_feature_kind(kind),
+        }
+    }
+
+    fn validate_configured_feature_kind(&self, kind: &ConfiguredFeatureKind) {
+        match kind {
+            ConfiguredFeatureKind::RandomBooleanSelector(config) => {
+                self.validate_placed_feature_ref(&config.feature_true);
+                self.validate_placed_feature_ref(&config.feature_false);
+            }
+            ConfiguredFeatureKind::RandomSelector(config) => {
+                for feature in &config.features {
+                    self.validate_placed_feature_ref(&feature.feature);
+                }
+                self.validate_placed_feature_ref(&config.default);
+            }
+            ConfiguredFeatureKind::RootSystem(config) => {
+                self.validate_placed_feature_ref(&config.feature);
+            }
+            ConfiguredFeatureKind::Fossil(config) => {
+                assert!(
+                    self.structure_processors
+                        .by_key(&config.fossil_processors)
+                        .is_some(),
+                    "fossil configured feature references unknown processor list {}",
+                    config.fossil_processors
+                );
+                assert!(
+                    self.structure_processors
+                        .by_key(&config.overlay_processors)
+                        .is_some(),
+                    "fossil configured feature references unknown processor list {}",
+                    config.overlay_processors
+                );
+            }
+            ConfiguredFeatureKind::SimpleRandomSelector(config) => {
+                for feature in &config.features {
+                    self.validate_placed_feature_ref(feature);
+                }
+            }
+            ConfiguredFeatureKind::VegetationPatch(config)
+            | ConfiguredFeatureKind::WaterloggedVegetationPatch(config) => {
+                self.validate_placed_feature_ref(&config.vegetation_feature);
+            }
+            _ => {}
+        }
+    }
+
+    fn validate_template_pool_feature_refs(&self, element: &template_pool::PoolElement) {
+        match element {
+            template_pool::PoolElement::Feature { feature, .. } => {
+                assert!(
+                    self.placed_features.by_key(feature).is_some(),
+                    "template pool references unknown placed feature {feature}"
+                );
+            }
+            template_pool::PoolElement::List { elements, .. } => {
+                for element in elements {
+                    self.validate_template_pool_feature_refs(element);
+                }
+            }
+            template_pool::PoolElement::Single { .. }
+            | template_pool::PoolElement::LegacySingle { .. }
+            | template_pool::PoolElement::Empty => {}
         }
     }
 
@@ -717,12 +920,16 @@ impl Registry {
             loot_tables: LootTableRegistry::new(),
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
+            game_events: GameEventRegistry::new(),
             fluids: FluidRegistry::new(),
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
             configured_carvers: ConfiguredCarverRegistry::new(),
+            configured_features: ConfiguredFeatureRegistry::new(),
+            placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
+            structure_processors: StructureProcessorListRegistry::new(),
         }
     }
 }
@@ -736,9 +943,9 @@ mod tests {
 
     use crate::biome::{Biome, BiomeEffects, GrassColorModifier, TemperatureModifier};
 
-    use super::Registry;
+    use super::{Registry, RegistryExt};
 
-    fn biome_with_carvers(carvers: Vec<Identifier>) -> &'static Biome {
+    fn biome_with_refs(carvers: Vec<Identifier>, features: Vec<Vec<Identifier>>) -> &'static Biome {
         Box::leak(Box::new(Biome {
             key: Identifier::new_static("test", "missing_carver_biome"),
             has_precipitation: false,
@@ -764,7 +971,7 @@ mod tests {
             spawners: FxHashMap::default(),
             spawn_costs: FxHashMap::default(),
             carvers,
-            features: Vec::new(),
+            features,
             id: OnceLock::new(),
         }))
     }
@@ -773,12 +980,63 @@ mod tests {
     #[should_panic(expected = "references unknown configured carver")]
     fn freeze_rejects_missing_biome_carver_reference() {
         let mut registry = Registry::new_empty();
-        registry
-            .biomes
-            .register(biome_with_carvers(vec![Identifier::vanilla_static(
-                "missing_carver",
-            )]));
+        registry.biomes.register(biome_with_refs(
+            vec![Identifier::vanilla_static("missing_carver")],
+            Vec::new(),
+        ));
 
         registry.freeze();
+    }
+
+    #[test]
+    #[should_panic(expected = "references unknown placed feature")]
+    fn freeze_rejects_missing_biome_placed_feature_reference() {
+        let mut registry = Registry::new_empty();
+        registry.biomes.register(biome_with_refs(
+            Vec::new(),
+            vec![vec![Identifier::vanilla_static("missing_feature")]],
+        ));
+
+        registry.freeze();
+    }
+
+    #[test]
+    fn vanilla_feature_registries_initialize_and_validate() {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+
+        assert!(
+            registry
+                .configured_features
+                .by_key(&Identifier::vanilla_static("ore_diamond_small"))
+                .is_some()
+        );
+        assert!(
+            registry
+                .placed_features
+                .by_key(&Identifier::vanilla_static("ore_diamond"))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn vanilla_game_events_initialize_in_vanilla_order() {
+        let registry = Registry::new_vanilla();
+        let block_activate = Identifier::vanilla_static("block_activate");
+        let resonate_1 = Identifier::vanilla_static("resonate_1");
+        let resonate_10 = Identifier::vanilla_static("resonate_10");
+
+        assert_eq!(
+            registry.game_events.by_id(0).map(|event| &event.key),
+            Some(&block_activate)
+        );
+        assert_eq!(
+            registry.game_events.by_id(45).map(|event| &event.key),
+            Some(&resonate_1)
+        );
+        assert_eq!(
+            registry.game_events.by_id(54).map(|event| &event.key),
+            Some(&resonate_10)
+        );
     }
 }

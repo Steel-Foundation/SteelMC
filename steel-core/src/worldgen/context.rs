@@ -8,10 +8,6 @@ use steel_worldgen::density_functions::{
 };
 
 use crate::world::World;
-#[expect(
-    unused_imports,
-    reason = "enum_dispatch resolves the trait name through this import"
-)]
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::generators::{EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator};
 
@@ -84,6 +80,18 @@ impl WorldGenContext {
     #[must_use]
     pub fn height(&self) -> i32 {
         self.world().get_height()
+    }
+
+    /// Returns the minimum Y coordinate used by `WorldGenerationContext`.
+    #[must_use]
+    pub fn generation_min_y(&self) -> i32 {
+        self.world().get_min_y().max(self.generator.min_y())
+    }
+
+    /// Returns the height used by `WorldGenerationContext`.
+    #[must_use]
+    pub fn generation_height(&self) -> i32 {
+        self.world().get_height().min(self.generator.gen_depth())
     }
 
     #[must_use]

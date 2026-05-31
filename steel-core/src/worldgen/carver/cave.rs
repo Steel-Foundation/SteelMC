@@ -8,9 +8,9 @@
 
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
+use steel_math::trig;
 use steel_registry::carver::CaveCarverConfiguration;
 use steel_utils::ChunkPos;
-use steel_utils::math::mth;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_worldgen::density::DimensionNoises;
 
@@ -229,7 +229,7 @@ where
         // the result equals 1.0f exactly, so the table detour doesn't
         // matter here.
         let horizontal_radius =
-            1.5 + f64::from(mth::sin(f64::from(FRAC_PI_2))) * f64::from(thickness);
+            1.5 + f64::from(trig::sin(f64::from(FRAC_PI_2))) * f64::from(thickness);
         let vertical_radius = horizontal_radius * y_scale;
         self.carve_ellipsoid(
             params,
@@ -267,10 +267,10 @@ where
             let progress_arg = PI * current_step as f32 / tunnel.dist as f32;
             let horizontal_radius = horizontal_tunnel_radius(progress_arg, tunnel.thickness);
             let vertical_radius = horizontal_radius * tunnel.y_scale;
-            let cos_x = mth::cos(f64::from(state.vertical_rotation));
-            state.x += f64::from(mth::cos(f64::from(state.horizontal_rotation)) * cos_x);
-            state.y += f64::from(mth::sin(f64::from(state.vertical_rotation)));
-            state.z += f64::from(mth::sin(f64::from(state.horizontal_rotation)) * cos_x);
+            let cos_x = trig::cos(f64::from(state.vertical_rotation));
+            state.x += f64::from(trig::cos(f64::from(state.horizontal_rotation)) * cos_x);
+            state.y += f64::from(trig::sin(f64::from(state.vertical_rotation)));
+            state.z += f64::from(trig::sin(f64::from(state.horizontal_rotation)) * cos_x);
             state.vertical_rotation *= if steep { 0.92 } else { 0.7 };
             state.vertical_rotation += x_rota * 0.1;
             state.horizontal_rotation += y_rota * 0.1;

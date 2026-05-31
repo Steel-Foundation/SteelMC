@@ -209,6 +209,7 @@ async fn run_server(
     task_tracker.wait().await;
 
     for world in server.worlds.values() {
+        world.chunk_map.stop_generation_refill_loop();
         world.chunk_map.task_tracker.close();
         world.chunk_map.task_tracker.wait().await;
     }

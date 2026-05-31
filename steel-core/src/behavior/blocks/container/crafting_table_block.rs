@@ -8,6 +8,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::inventory::CraftingMenuProvider;
@@ -43,6 +44,7 @@ impl BlockBehavior for CraftingTableBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         player.open_menu(&CraftingMenuProvider::new(player.inventory.clone(), pos));
         // TODO: Award stat INTERACT_WITH_CRAFTING_TABLE

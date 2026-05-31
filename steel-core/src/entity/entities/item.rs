@@ -11,7 +11,7 @@ use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemEntityData;
@@ -368,7 +368,7 @@ impl ItemEntity {
         // Send the take animation packet to nearby players
         if let Some(world) = self.level() {
             let pos = self.position();
-            let chunk_pos = steel_utils::ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+            let chunk_pos = steel_utils::ChunkPos::from_entity_pos(pos);
 
             let take_packet = CTakeItemEntity::new(self.id(), player.id, picked_up_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
@@ -864,8 +864,7 @@ impl Entity for ItemEntity {
         let current_pos = self.position();
 
         // Determine chunk for broadcasting
-        let chunk_pos =
-            steel_utils::ChunkPos::new((current_pos.x as i32) >> 4, (current_pos.z as i32) >> 4);
+        let chunk_pos = steel_utils::ChunkPos::from_entity_pos(current_pos);
 
         // Vanilla sends velocity BEFORE position (ServerEntity.sendChanges lines 168-182).
         // Items have trackDelta=true, so we ALWAYS check velocity when in the update window.

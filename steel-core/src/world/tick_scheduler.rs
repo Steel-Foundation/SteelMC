@@ -96,6 +96,7 @@ impl TickKey for FluidRef {
 // ---------------------------------------------------------------------------
 
 /// A single scheduled tick targeting a block or fluid at a specific position.
+#[derive(Debug)]
 pub struct ScheduledTick<T: TickKey> {
     /// The block or fluid type this tick targets.
     pub tick_type: T,
@@ -132,6 +133,7 @@ pub type FluidTickList = TickList<FluidRef>;
 ///
 /// Maintains a deduplication set so that only one tick per `(BlockPos, type)`
 /// pair can be active at a time.
+#[derive(Debug)]
 pub struct TickList<T: TickKey> {
     ticks: Vec<ScheduledTick<T>>,
     /// Dedup set keyed by `(BlockPos, TickKey::key())`.

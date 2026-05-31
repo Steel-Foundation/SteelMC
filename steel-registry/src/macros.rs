@@ -148,11 +148,7 @@ macro_rules! impl_tagged_registry {
                 self.tags.insert(tag.clone(), entries);
             }
 
-            fn is_in_tag(
-                &self,
-                entry: &'static Self::Entry,
-                tag: &steel_utils::Identifier,
-            ) -> bool {
+            fn is_in_tag(&self, entry: &Self::Entry, tag: &steel_utils::Identifier) -> bool {
                 self.tags
                     .get(tag)
                     .is_some_and(|entries| entries.contains(&entry.key))

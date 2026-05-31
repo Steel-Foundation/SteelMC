@@ -10,16 +10,17 @@ pub const DEATH_DURATION: i32 = 20;
 
 /// Common fields shared by all living entities.
 ///
-/// **Deviation from vanilla:** In vanilla, `LivingEntity.dead` is only used by
-/// non-player entities as a guard in `LivingEntity.die()`. `ServerPlayer.die()`
-/// does NOT call `super.die()` and never sets `dead = true`. We use `dead` for
-/// all living entities (including players) as a unified guard against duplicate
-/// death processing, since it's cleaner than relying solely on `isRemoved()`.
+/// **Deviation from vanilla:** Vanilla calls this guard `LivingEntity.dead`,
+/// but it means death side effects have been processed, not health is zero.
+/// `ServerPlayer.die()` does NOT call `super.die()` and never sets that field.
+/// Steel uses this guard for players too because it reuses the same `Player`
+/// instance; health remains the source of truth for dead-or-dying checks such
+/// as client respawn requests.
 pub struct LivingEntityBase {
-    /// Whether the entity has been killed.
+    /// Whether death side effects have already been processed.
     ///
     /// See struct-level doc for vanilla deviation details.
-    pub dead: bool,
+    pub death_processed: bool,
     /// Remaining invulnerability ticks.
     pub invulnerable_time: i32,
     /// Last damage amount for invulnerability-frame comparison.
@@ -33,7 +34,7 @@ impl LivingEntityBase {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            dead: false,
+            death_processed: false,
             invulnerable_time: 0,
             last_hurt: 0.0,
             death_time: 0,
@@ -50,7 +51,7 @@ impl LivingEntityBase {
     /// Resets all death-related state back to alive defaults.
     #[inline]
     pub const fn reset_death_state(&mut self) {
-        self.dead = false;
+        self.death_processed = false;
         self.death_time = 0;
         self.invulnerable_time = 0;
         self.last_hurt = 0.0;
