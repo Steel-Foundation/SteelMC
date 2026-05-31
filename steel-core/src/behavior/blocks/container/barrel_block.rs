@@ -12,6 +12,7 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
@@ -57,6 +58,7 @@ impl BlockBehavior for BarrelBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         // Get the block entity
         let Some(block_entity) = world.get_block_entity(pos) else {

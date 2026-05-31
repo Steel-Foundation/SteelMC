@@ -16,14 +16,8 @@ impl FeatureDecorationRunner {
         let direction = Self::random_horizontal_direction(random);
         let log_length = config.log_length.sample(random) - 2;
         let mut log_start_pos = origin.relative_n(direction, 2 + random.next_i32_bounded(2));
-        Self::set_ground_height_for_fallen_log_start_pos(region, registry, &mut log_start_pos);
-        if Self::can_place_entire_fallen_log(
-            region,
-            registry,
-            log_length,
-            &mut log_start_pos,
-            direction,
-        ) {
+        Self::set_ground_height_for_fallen_log_start_pos(region, &mut log_start_pos);
+        if Self::can_place_entire_fallen_log(region, log_length, &mut log_start_pos, direction) {
             Self::place_fallen_log(
                 region,
                 registry,
@@ -41,13 +35,12 @@ impl FeatureDecorationRunner {
 
     fn set_ground_height_for_fallen_log_start_pos(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         log_start_pos: &mut BlockPos,
     ) {
         *log_start_pos = log_start_pos.above();
 
         for _ in 0..6 {
-            if Self::may_place_fallen_log_on(region, registry, *log_start_pos) {
+            if Self::may_place_fallen_log_on(region, *log_start_pos) {
                 return;
             }
 
@@ -124,7 +117,6 @@ impl FeatureDecorationRunner {
 
     fn can_place_entire_fallen_log(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         log_length: i32,
         log_start_pos: &mut BlockPos,
         direction: Direction,
@@ -132,7 +124,7 @@ impl FeatureDecorationRunner {
         let mut gap_in_ground = 0;
 
         for _ in 0..log_length {
-            if !Self::tree_valid_pos(region, registry, *log_start_pos) {
+            if !Self::tree_valid_pos(region, *log_start_pos) {
                 return false;
             }
 
@@ -152,13 +144,8 @@ impl FeatureDecorationRunner {
         true
     }
 
-    fn may_place_fallen_log_on(
-        region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        pos: BlockPos,
-    ) -> bool {
-        Self::tree_valid_pos(region, registry, pos)
-            && Self::is_over_solid_ground_for_fallen_log(region, pos)
+    fn may_place_fallen_log_on(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+        Self::tree_valid_pos(region, pos) && Self::is_over_solid_ground_for_fallen_log(region, pos)
     }
 
     fn is_over_solid_ground_for_fallen_log(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {

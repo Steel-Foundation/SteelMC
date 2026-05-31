@@ -1,8 +1,8 @@
-use crate::world::structure::{StructureBlockIgnore, StructureMirror};
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
 use steel_utils::{BoundingBox, Rotation};
+use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;

@@ -13,8 +13,8 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
+use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 /// The status of a chunk.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, SchemaWrite, SchemaRead)]
@@ -416,12 +416,12 @@ impl ChunkAccess {
 
     /// Marks a proto chunk block position for vanilla postprocessing after promotion.
     ///
-    /// # Panics
-    /// Panics if the chunk is already full.
+    /// Full chunks mirror vanilla `ImposterProtoChunk.markPosForPostprocessing` and ignore
+    /// late worldgen postprocessing marks.
     pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
         match self {
             Self::Proto(proto) => proto.mark_pos_for_postprocessing(pos),
-            Self::Full(_) => panic!("mark_pos_for_postprocessing not available on full chunks"),
+            Self::Full(_) => {}
             Self::Unloaded => unreachable!(),
         }
     }
@@ -656,20 +656,18 @@ impl ChunkAccess {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::heightmap::ChunkHeightmaps;
     use crate::chunk::section::{ChunkSection, Sections};
-
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
+    use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
+    use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
     #[test]
     fn proto_height_at_primes_missing_heightmap() {
-        init_registry();
+        init_test_registry();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -697,7 +695,7 @@ mod tests {
 
     #[test]
     fn generation_relative_write_updates_proto_heightmaps() {
-        init_registry();
+        init_test_registry();
         let proto = ProtoChunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -734,5 +732,25 @@ mod tests {
             ChunkAccess::full_chunk_heightmap_type(HeightmapType::MotionBlocking),
             HeightmapType::MotionBlocking
         );
+    }
+
+    #[test]
+    fn full_chunk_postprocessing_mark_is_vanilla_noop() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = ChunkAccess::Full(LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+        ));
+
+        chunk.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
     }
 }

@@ -7,6 +7,7 @@ use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use core::mem;
 use steel_registry::vanilla_block_entity_types;
+use steel_registry::vanilla_block_tags::BlockTag;
 
 const SCULK_DEFAULT_SPREAD_TYPES: [SculkSpreadType; 3] = [
     SculkSpreadType::SamePosition,
@@ -51,7 +52,7 @@ impl SculkSpreader {
     const fn worldgen() -> Self {
         Self {
             is_world_generation: true,
-            replaceable_blocks: vanilla_block_tags::SCULK_REPLACEABLE_WORLD_GEN_TAG,
+            replaceable_blocks: BlockTag::SCULK_REPLACEABLE_WORLD_GEN,
             growth_spawn_cost: 50,
             no_growth_radius: 1,
             charge_decay_rate: 5,
@@ -257,7 +258,6 @@ impl FeatureDecorationRunner {
         if spread_veins
             && Self::sculk_attempt_spread_vein(
                 region,
-                registry,
                 cursor.pos,
                 current_state,
                 cursor.facings.as_deref(),
@@ -285,7 +285,7 @@ impl FeatureDecorationRunner {
             return;
         }
 
-        let transfer_pos = Self::sculk_get_valid_movement_pos(region, registry, cursor.pos, random);
+        let transfer_pos = Self::sculk_get_valid_movement_pos(region, cursor.pos, random);
         if let Some(transfer_pos) = transfer_pos {
             Self::sculk_on_discharged(region, current_state, cursor.pos);
             cursor.pos = transfer_pos;
@@ -311,7 +311,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_attempt_spread_vein(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
+
         pos: BlockPos,
         state: BlockStateId,
         facings: Option<&[Direction]>,
@@ -320,23 +320,17 @@ impl FeatureDecorationRunner {
     ) -> bool {
         match behavior {
             SculkBehaviorKind::Default => match facings {
-                None => {
-                    Self::sculk_vein_spread_all(region, registry, state, pos, post_process, true)
-                        > 0
-                }
+                None => Self::sculk_vein_spread_all(region, state, pos, post_process, true) > 0,
                 Some(faces) if !faces.is_empty() => {
                     if !state.is_air() && !get_fluid_state_from_block(state).is_water() {
                         return false;
                     }
                     Self::sculk_vein_regrow(region, pos, state, faces)
                 }
-                Some(_) => {
-                    Self::sculk_vein_spread_all(region, registry, state, pos, post_process, false)
-                        > 0
-                }
+                Some(_) => Self::sculk_vein_spread_all(region, state, pos, post_process, false) > 0,
             },
             SculkBehaviorKind::Sculk | SculkBehaviorKind::SculkVein => {
-                Self::sculk_vein_spread_all(region, registry, state, pos, post_process, false) > 0
+                Self::sculk_vein_spread_all(region, state, pos, post_process, false) > 0
             }
         }
     }
@@ -457,7 +451,6 @@ impl FeatureDecorationRunner {
             let _ = region.set_block_state(support_pos, sculk, UpdateFlags::UPDATE_ALL);
             let _ = Self::sculk_vein_spread_all(
                 region,
-                registry,
                 sculk,
                 support_pos,
                 spreader.is_world_generation,
@@ -485,7 +478,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_spread_all(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
+
         state: BlockStateId,
         pos: BlockPos,
         post_process: bool,
@@ -500,7 +493,6 @@ impl FeatureDecorationRunner {
             for spread_direction in Self::VANILLA_DIRECTION_VALUES {
                 if Self::sculk_vein_spread_from_face_toward_direction(
                     region,
-                    registry,
                     state,
                     pos,
                     starting_face,
@@ -517,13 +509,9 @@ impl FeatureDecorationRunner {
         count
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Mirrors vanilla MultifaceSpreader for sculk vein worldgen"
-    )]
     fn sculk_vein_spread_from_face_toward_direction(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
+
         state: BlockStateId,
         pos: BlockPos,
         starting_face: Direction,
@@ -533,14 +521,13 @@ impl FeatureDecorationRunner {
     ) -> Option<SculkSpreadPos> {
         let spread_pos = Self::sculk_vein_get_spread_from_face_toward_direction(
             region,
-            registry,
             state,
             pos,
             starting_face,
             spread_direction,
             same_space_only,
         )?;
-        if Self::sculk_vein_spread_to_face(region, registry, &spread_pos, post_process) {
+        if Self::sculk_vein_spread_to_face(region, &spread_pos, post_process) {
             Some(spread_pos)
         } else {
             None
@@ -549,7 +536,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_get_spread_from_face_toward_direction(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
+
         state: BlockStateId,
         pos: BlockPos,
         starting_face: Direction,
@@ -575,7 +562,7 @@ impl FeatureDecorationRunner {
         for spread_type in spread_types {
             let spread_pos =
                 Self::sculk_vein_spread_pos(pos, spread_direction, starting_face, *spread_type);
-            if Self::sculk_vein_can_spread_into(region, registry, pos, &spread_pos) {
+            if Self::sculk_vein_can_spread_into(region, pos, &spread_pos) {
                 return Some(spread_pos);
             }
         }
@@ -585,14 +572,13 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_spread_to_face(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
+
         spread_pos: &SculkSpreadPos,
         post_process: bool,
     ) -> bool {
         let old_state = region.block_state(spread_pos.pos);
         let Some(spread_state) = Self::sculk_vein_state_for_placement(
             region,
-            registry,
             old_state,
             spread_pos.pos,
             spread_pos.face,
@@ -608,14 +594,12 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_can_spread_into(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         source_pos: BlockPos,
         spread_pos: &SculkSpreadPos,
     ) -> bool {
         let existing_state = region.block_state(spread_pos.pos);
         Self::sculk_patch_vein_state_can_be_replaced(
             region,
-            registry,
             source_pos,
             spread_pos.pos,
             spread_pos.face,
@@ -630,7 +614,6 @@ impl FeatureDecorationRunner {
 
     fn sculk_patch_vein_state_can_be_replaced(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         source_pos: BlockPos,
         placement_pos: BlockPos,
         placement_direction: Direction,
@@ -659,10 +642,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        if registry
-            .blocks
-            .is_in_tag(existing_state.get_block(), &vanilla_block_tags::FIRE_TAG)
-        {
+        if existing_state.get_block().has_tag(&BlockTag::FIRE) {
             return false;
         }
 
@@ -681,7 +661,6 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_state_for_placement(
         region: &WorldGenRegion<'_>,
-        _registry: &Registry,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
@@ -782,7 +761,6 @@ impl FeatureDecorationRunner {
 
     fn sculk_get_valid_movement_pos(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         random: &mut WorldgenRandom,
     ) -> Option<BlockPos> {
@@ -797,7 +775,7 @@ impl FeatureDecorationRunner {
             }
 
             sculk_position = neighbor;
-            if Self::sculk_vein_has_substrate_access(region, registry, transferee, neighbor) {
+            if Self::sculk_vein_has_substrate_access(region, transferee, neighbor) {
                 break;
             }
         }
@@ -882,7 +860,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_has_substrate_access(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
+
         state: BlockStateId,
         pos: BlockPos,
     ) -> bool {
@@ -892,10 +870,10 @@ impl FeatureDecorationRunner {
 
         Self::VANILLA_DIRECTION_VALUES.iter().any(|&direction| {
             Self::sculk_vein_has_face(state, direction)
-                && registry.blocks.is_in_tag(
-                    region.block_state(pos.relative(direction)).get_block(),
-                    &vanilla_block_tags::SCULK_REPLACEABLE_TAG,
-                )
+                && region
+                    .block_state(pos.relative(direction))
+                    .get_block()
+                    .has_tag(&BlockTag::SCULK_REPLACEABLE)
         })
     }
 

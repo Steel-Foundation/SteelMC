@@ -11,7 +11,7 @@ use steel_registry::blocks::shapes::AABBd;
 use crate::physics::{
     collision::CollisionWorld, physics_state::EntityPhysicsState, shapes::collide,
 };
-use steel_utils::math::Axis;
+use steel_utils::axis::Axis;
 
 /// Type of movement being performed.
 ///

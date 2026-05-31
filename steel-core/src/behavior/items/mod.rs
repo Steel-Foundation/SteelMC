@@ -5,7 +5,9 @@
 
 mod axe;
 mod block_item;
+mod bonemeal;
 mod bucket;
+mod copper_chest_events;
 mod default;
 mod ender_eye;
 mod hoe;
@@ -18,10 +20,11 @@ mod flint_and_steel;
 
 pub use axe::AxeItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
+pub use bonemeal::BoneMealItem;
 pub use bucket::BucketItem;
 pub use default::DefaultItemBehavior;
 pub use ender_eye::EnderEyeItem;
-pub use flint_and_steel::FlintAndSteelItem;
+pub use flint_and_steel::{FireChargeItem, FlintAndSteelItem};
 pub use hoe::HoeItem;
 pub use honeycomb::HoneycombItem;
 pub use shovel::ShovelItem;

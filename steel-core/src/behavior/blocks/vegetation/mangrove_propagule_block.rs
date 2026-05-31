@@ -1,7 +1,7 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -33,17 +33,15 @@ impl BlockBehavior for MangrovePropaguleBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         if state.get_value(&BlockStateProperties::HANGING) {
             let above = world.get_block_state(pos.above());
-            return REGISTRY.blocks.is_in_tag(
-                above.get_block(),
-                &vanilla_block_tags::SUPPORTS_HANGING_MANGROVE_PROPAGULE_TAG,
-            );
+            return above
+                .get_block()
+                .has_tag(&BlockTag::SUPPORTS_HANGING_MANGROVE_PROPAGULE);
         }
 
         let below = world.get_block_state(pos.below());
-        REGISTRY.blocks.is_in_tag(
-            below.get_block(),
-            &vanilla_block_tags::SUPPORTS_MANGROVE_PROPAGULE_TAG,
-        )
+        below
+            .get_block()
+            .has_tag(&BlockTag::SUPPORTS_MANGROVE_PROPAGULE)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

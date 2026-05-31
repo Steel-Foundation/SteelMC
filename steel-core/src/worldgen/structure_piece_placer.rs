@@ -32,10 +32,10 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
-use crate::world::structure::{
+use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::{
     ProceduralPieceData, StructureMirror, StructurePiece, StructurePiecePayload,
 };
-use crate::worldgen::region::WorldGenRegion;
 
 pub(crate) struct StructurePiecePlacer;
 

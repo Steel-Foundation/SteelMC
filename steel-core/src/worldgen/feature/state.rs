@@ -1,6 +1,6 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
-use crate::worldgen::state_resolver::WorldgenStateResolver;
+use steel_worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
     pub(super) fn block_matches_ref_list(block: BlockRef, blocks: &BlockRefList) -> bool {

@@ -60,7 +60,7 @@ impl FeatureDecorationRunner {
             }
             BlockPredicate::MatchingBlockTag { tag, offset } => {
                 let state = region.block_state(Self::offset(origin, offset));
-                registry.blocks.is_in_tag(state.get_block(), tag)
+                state.get_block().has_tag(tag)
             }
             BlockPredicate::MatchingBlocks { blocks, offset } => {
                 let state = region.block_state(Self::offset(origin, offset));

@@ -196,7 +196,7 @@ impl BlockBehavior for WeatheringCopperStairBlock {
 mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
     use steel_utils::BlockPos;
 
     use super::*;
@@ -245,15 +245,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn stair_update_shape_recomputes_shape_from_neighbors() {
-        init_registry();
+        init_test_registry();
         let behavior = StairBlock::new(&vanilla_blocks::DARK_OAK_STAIRS);
         let state = vanilla_blocks::DARK_OAK_STAIRS
             .default_state()

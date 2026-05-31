@@ -26,6 +26,7 @@ mod cat_sound_variants;
 mod chicken_sound_variants;
 mod cow_sound_variants;
 mod frog_variants;
+mod game_events;
 mod game_rules;
 mod instruments;
 mod item_tags;
@@ -122,6 +123,7 @@ const ENCHANTMENTS: &str = "enchantments";
 const LOOT_TABLES: &str = "loot_tables";
 const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
 const GAME_RULES: &str = "game_rules";
+const GAME_EVENTS: &str = "game_events";
 const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
@@ -192,6 +194,7 @@ pub fn main() {
         (loot_tables::build(), LOOT_TABLES),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),
         (game_rules::build(), GAME_RULES),
+        (game_events::build(), GAME_EVENTS),
         (level_events::build(), LEVEL_EVENTS),
         (sound_events::build(), SOUND_EVENTS),
         (sound_types::build(), SOUND_TYPES),

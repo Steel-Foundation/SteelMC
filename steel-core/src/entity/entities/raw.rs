@@ -8,7 +8,7 @@ use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 

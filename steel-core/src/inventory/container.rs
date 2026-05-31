@@ -9,6 +9,8 @@ use std::ptr;
 use enum_dispatch::enum_dispatch;
 use steel_registry::item_stack::ItemStack;
 
+use crate::player::Player;
+
 /// Default distance buffer for container interaction range checks.
 pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 
@@ -81,7 +83,7 @@ pub trait Container {
     /// Block-based containers should override this to check block existence and distance.
     ///
     /// Based on Java's `Container.stillValid(Player)`.
-    fn still_valid(&self) -> bool {
+    fn still_valid(&self, _player: &Player) -> bool {
         true
     }
 
@@ -100,8 +102,11 @@ pub trait Container {
         let mut count = 0;
         for i in 0..self.get_container_size() {
             let item = self.get_item_mut(i);
-            count += item.count;
+            count += item.count();
             *item = ItemStack::empty();
+        }
+        if count > 0 {
+            self.set_changed();
         }
         count
     }
@@ -112,9 +117,12 @@ pub trait Container {
         for i in 0..self.get_container_size() {
             let item = self.get_item_mut(i);
             if predicate(item) {
-                count += item.count;
+                count += item.count();
                 *item = ItemStack::empty();
             }
+        }
+        if count > 0 {
+            self.set_changed();
         }
         count
     }
@@ -145,12 +153,19 @@ pub trait Container {
 
         let size = self.get_container_size();
         let max_size = self.get_max_stack_size_for_item(stack);
+        let mut changed = false;
 
         // First pass: try to stack with existing items
         if stack.is_stackable() {
             for slot in 0..size {
                 if stack.is_empty() {
+                    if changed {
+                        self.set_changed();
+                    }
                     return true;
+                }
+                if !self.can_place_item(slot, stack) {
+                    continue;
                 }
                 let existing = self.get_item_mut(slot);
                 if !existing.is_empty() && ItemStack::is_same_item_same_components(existing, stack)
@@ -160,6 +175,7 @@ pub trait Container {
                         let to_add = stack.count().min(space);
                         existing.grow(to_add);
                         stack.shrink(to_add);
+                        changed = true;
                     }
                 }
             }
@@ -168,14 +184,21 @@ pub trait Container {
         // Second pass: try empty slots
         for slot in 0..size {
             if stack.is_empty() {
+                if changed {
+                    self.set_changed();
+                }
                 return true;
             }
             if self.get_item(slot).is_empty() && self.can_place_item(slot, stack) {
                 let to_place = stack.count().min(max_size);
                 self.set_item(slot, stack.split(to_place));
+                changed = true;
             }
         }
 
+        if changed {
+            self.set_changed();
+        }
         stack.is_empty()
     }
 }

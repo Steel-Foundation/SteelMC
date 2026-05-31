@@ -1,17 +1,20 @@
 use steel_macros::item_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{
         Block,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    vanilla_block_tags, vanilla_blocks,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::Direction;
 use steel_utils::types::UpdateFlags;
 
-use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
+use crate::{
+    behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    world::game_event_context::GameEventContext,
+};
 
 const FLATTENABLES: [&Block; 6] = [
     &vanilla_blocks::GRASS_BLOCK,
@@ -48,33 +51,42 @@ impl ItemBehavior for ShovelItem {
             }
             // TODO: Play SoundEvents.SHOVEL_FLATTEN
             let infinite_materials = context.player.has_infinite_materials();
-            context.inv.item().hurt_and_break(1, infinite_materials);
+            context
+                .inv
+                .with_item(|item| item.hurt_and_break(1, infinite_materials));
+            let updated_state = vanilla_blocks::DIRT_PATH.default_state();
             context.world.set_block(
                 context.hit_result.block_pos,
-                vanilla_blocks::DIRT_PATH.default_state(),
+                updated_state,
                 UpdateFlags::UPDATE_ALL_IMMEDIATE,
             );
-            // TODO: Emit GameEvent::BLOCK_CHANGE
+            context.world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                context.hit_result.block_pos,
+                &GameEventContext::new(Some(context.player), Some(updated_state)),
+            );
             return InteractionResult::Success;
         }
 
         // Campfire extinguishing
-        if REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::CAMPFIRES_TAG)
-        {
+        if block.has_tag(&BlockTag::CAMPFIRES) {
             if !block_state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }
             // TODO: level_event(1009, pos, 0) — extinguish particle/sound
             // TODO: CampfireBlock::dowse() — eject cooking items
+            let updated_state = block_state.set_value(&LIT_PROPERTY, false);
             context.world.set_block(
                 context.hit_result.block_pos,
-                block_state.set_value(&LIT_PROPERTY, false),
+                updated_state,
                 UpdateFlags::UPDATE_ALL_IMMEDIATE,
             );
             // TODO: hurt_and_break(1, ...) — shovels take durability damage
-            // TODO: Emit GameEvent::BLOCK_CHANGE
+            context.world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                context.hit_result.block_pos,
+                &GameEventContext::new(Some(context.player), Some(updated_state)),
+            );
             return InteractionResult::Success;
         }
 
