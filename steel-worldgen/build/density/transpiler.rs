@@ -79,7 +79,7 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     quote! {
         use steel_worldgen::density::spline_eval;
         use steel_worldgen::density::RarityValueMapper;
-        use steel_worldgen::math::{clamp, map_clamped};
+        use steel_math::{clamp, map_clamped};
         use steel_worldgen::noise::NormalNoise;
         use steel_worldgen::random::{PositionalRandom, RandomSplitter};
 

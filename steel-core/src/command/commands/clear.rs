@@ -56,6 +56,7 @@ impl CommandExecutor<()> for ClearNoArgumentExecutor {
             count,
             1,
             Some(player.gameprofile.name.clone()),
+            false,
         );
 
         Ok(())
@@ -82,6 +83,7 @@ impl CommandExecutor<((), Vec<Arc<Player>>)> for ClearMultipleArgumentExecutor {
             count,
             targets.len(),
             targets.first().map(|it| it.gameprofile.name.clone()),
+            false,
         );
 
         Ok(())
@@ -110,6 +112,7 @@ impl CommandExecutor<(((), Vec<Arc<Player>>), ItemRef)> for ClearWithItemExecuto
             count,
             targets.len(),
             targets.first().map(|it| it.gameprofile.name.clone()),
+            false,
         );
 
         Ok(())
@@ -131,16 +134,28 @@ impl CommandExecutor<((((), Vec<Arc<Player>>), ItemRef), i32)> for ClearWithMaxA
             .map(|it| {
                 let mut current_amount = max_amount;
                 let mut inventory = it.inventory.lock();
+                let mut removed = 0;
                 for i in 0..inventory.get_container_size() {
+                    if max_amount > 0 && current_amount == 0 {
+                        break;
+                    }
                     let current_item = inventory.get_item_mut(i);
                     if current_item.is_empty() || !current_item.is(item) {
                         continue;
                     }
-                    let amount_to_remove = current_amount.min(current_item.count);
-                    current_amount -= amount_to_remove;
-                    current_item.shrink(amount_to_remove);
+                    if max_amount == 0 {
+                        removed += current_item.count();
+                    } else {
+                        let amount_to_remove = current_amount.min(current_item.count());
+                        current_amount -= amount_to_remove;
+                        removed += amount_to_remove;
+                        current_item.shrink(amount_to_remove);
+                    }
                 }
-                max_amount - current_amount
+                if max_amount > 0 && removed > 0 {
+                    inventory.set_changed();
+                }
+                removed
             })
             .sum();
 
@@ -149,6 +164,7 @@ impl CommandExecutor<((((), Vec<Arc<Player>>), ItemRef), i32)> for ClearWithMaxA
             count,
             targets.len(),
             targets.first().map(|it| it.gameprofile.name.clone()),
+            max_amount == 0,
         );
 
         Ok(())
@@ -160,9 +176,10 @@ fn clear_messages(
     count: i32,
     player_amount: usize,
     target_name: Option<String>,
+    count_only: bool,
 ) {
     if count == 0
-        && player_amount > 1
+        && player_amount == 1
         && let Some(name) = target_name
     {
         sender.send_message(
@@ -174,6 +191,27 @@ fn clear_messages(
         sender.send_message(
             &translations::CLEAR_FAILED_MULTIPLE
                 .message([TextComponent::from(format!("{player_amount}"))])
+                .into(),
+        );
+    } else if count_only
+        && player_amount == 1
+        && let Some(name) = target_name
+    {
+        sender.send_message(
+            &translations::COMMANDS_CLEAR_TEST_SINGLE
+                .message([
+                    TextComponent::from(format!("{count}")),
+                    TextComponent::from(name),
+                ])
+                .into(),
+        );
+    } else if count_only {
+        sender.send_message(
+            &translations::COMMANDS_CLEAR_TEST_MULTIPLE
+                .message([
+                    TextComponent::from(format!("{count}")),
+                    TextComponent::from(format!("{player_amount}")),
+                ])
                 .into(),
         );
     } else if player_amount == 1

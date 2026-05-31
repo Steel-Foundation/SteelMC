@@ -10,7 +10,9 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_access::ChunkStatus;
+use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -29,17 +31,18 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABBd, VoxelShape, is_face_full};
 use steel_registry::fluid::FluidRef;
+use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
+use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 /// Controls how a block position is treated during a raytrace traversal.
@@ -76,15 +79,18 @@ use crate::{
     poi::PointOfInterestStorage,
 };
 
+pub mod game_event_context;
+pub mod game_event_listener;
+mod level_reader;
 mod player_area_map;
 mod player_map;
-pub mod structure;
 pub mod tick_scheduler;
 mod weather;
 mod world_entities;
 
 pub use crate::config::WorldStorageConfig;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
+pub use level_reader::{LevelReader, ScheduledTickAccess};
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
 pub use tick_scheduler::ScheduledTick;
@@ -201,6 +207,8 @@ pub struct World {
     sub_tick_count: AtomicI64,
     /// Point of interest storage for efficient spatial queries of special blocks.
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
+    /// Section-indexed listeners for vanilla game events.
+    game_event_listeners: GameEventListenerStorage,
 }
 
 impl World {
@@ -266,32 +274,38 @@ impl World {
             }
         }
 
-        Ok(Arc::new_cyclic(|weak_self: &Weak<World>| Self {
-            chunk_map: Arc::new(ChunkMap::new_with_storage(
+        Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
+            let chunk_map = Arc::new(ChunkMap::new_with_storage(
                 chunk_runtime,
                 weak_self.clone(),
                 dimension_type,
                 storage,
                 config.generator,
                 generation_pool,
-            )),
-            players: PlayerMap::new(),
-            player_area_map: PlayerAreaMap::new(),
-            key,
-            dimension_type,
-            level_data: SyncRwLock::new(level_data),
-            view_distance,
-            simulation_distance,
-            compression,
-            is_flat,
-            sea_level,
-            default_gamemode,
-            tick_runs_normally: AtomicBool::new(true),
-            entity_cache: EntityCache::new(),
-            entity_tracker: EntityTracker::new(),
-            weather: SyncMutex::new(weather),
-            sub_tick_count: AtomicI64::new(0),
-            poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
+            ));
+            chunk_map.start_generation_refill_loop();
+
+            Self {
+                chunk_map,
+                players: PlayerMap::new(),
+                player_area_map: PlayerAreaMap::new(),
+                key,
+                dimension_type,
+                level_data: SyncRwLock::new(level_data),
+                view_distance,
+                simulation_distance,
+                compression,
+                is_flat,
+                sea_level,
+                default_gamemode,
+                tick_runs_normally: AtomicBool::new(true),
+                entity_cache: EntityCache::new(),
+                entity_tracker: EntityTracker::new(),
+                weather: SyncMutex::new(weather),
+                sub_tick_count: AtomicI64::new(0),
+                poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
+                game_event_listeners: GameEventListenerStorage::new(),
+            }
         }))
     }
 
@@ -943,11 +957,8 @@ impl World {
     ///
     /// Called when entities move, are added/removed, or when block entities change.
     pub fn mark_chunk_dirty(&self, chunk_pos: ChunkPos) {
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            if let Some(lc) = chunk.as_full() {
-                lc.dirty.store(true, Ordering::Release);
-            }
-        });
+        self.chunk_map
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Empty, ChunkAccess::mark_dirty);
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
@@ -1989,9 +2000,16 @@ impl World {
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
-        // TODO: Fire GameEvent.BLOCK_DESTROY
-        true
+        let destroyed =
+            self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
+        if destroyed {
+            self.game_event(
+                &vanilla_game_events::BLOCK_DESTROY,
+                pos,
+                &GameEventContext::new(None, Some(state)),
+            );
+        }
+        destroyed
     }
 
     /// Drops the loot for a block using its loot table.
@@ -2192,7 +2210,7 @@ impl World {
     /// - Marking the chunk dirty
     pub fn add_entity(self: &Arc<Self>, entity: SharedEntity) {
         let pos = entity.position();
-        let chunk_pos = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+        let chunk_pos = ChunkPos::from_entity_pos(pos);
 
         self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             if let Some(c) = chunk.as_full() {
@@ -2411,11 +2429,7 @@ impl World {
         // Unregister from cache
         if let Some(entity) = entity {
             let pos = entity.position();
-            let section = SectionPos::new(
-                (pos.x as i32) >> 4,
-                (pos.y as i32) >> 4,
-                (pos.z as i32) >> 4,
-            );
+            let section = SectionPos::from_entity_pos(pos);
             self.entity_cache
                 .unregister(entity_id, entity.uuid(), section);
 
@@ -2425,5 +2439,98 @@ impl World {
                 self.broadcast_to_nearby(chunk_pos, packet, None);
             }
         }
+    }
+
+    /// Registers a game event listener in a chunk section.
+    pub fn register_game_event_listener(
+        &self,
+        section_pos: SectionPos,
+        listener: SharedGameEventListener,
+    ) {
+        self.game_event_listeners.register(section_pos, listener);
+    }
+
+    /// Unregisters a game event listener from a chunk section.
+    pub fn unregister_game_event_listener(
+        &self,
+        section_pos: SectionPos,
+        listener: &SharedGameEventListener,
+    ) -> bool {
+        self.game_event_listeners.unregister(section_pos, listener)
+    }
+
+    /// Dispatches a game event to all listeners in range.
+    pub fn game_event(
+        self: &Arc<Self>,
+        event: GameEventRef,
+        pos: BlockPos,
+        context: &GameEventContext,
+    ) {
+        let source_pos = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        );
+        self.game_event_listeners
+            .dispatch(self, event, source_pos, context);
+    }
+}
+
+impl LevelReader for World {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        Self::get_block_state(self, pos)
+    }
+
+    fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
+        let sky_light = if self.dimension_type.has_skylight {
+            15_u8.saturating_sub(sky_darkening)
+        } else {
+            0
+        };
+
+        // TODO: Include block light once Steel has a live light engine.
+        sky_light
+    }
+
+    fn min_y(&self) -> i32 {
+        self.get_min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.get_height()
+    }
+}
+
+impl LevelReader for Arc<World> {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.as_ref().get_block_state(pos)
+    }
+
+    fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+        self.as_ref().raw_brightness(pos, sky_darkening)
+    }
+
+    fn min_y(&self) -> i32 {
+        self.as_ref().get_min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.as_ref().get_height()
+    }
+}
+
+impl ScheduledTickAccess for Arc<World> {
+    fn fluid_tick_delay(&self, fluid: FluidRef) -> i32 {
+        FLUID_BEHAVIORS.get_behavior(fluid).tick_delay(self)
+    }
+
+    fn schedule_block_tick_default(&self, pos: BlockPos, block: BlockRef, delay: i32) -> bool {
+        self.as_ref().schedule_block_tick_default(pos, block, delay);
+        true
+    }
+
+    fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
+        self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
+        true
     }
 }

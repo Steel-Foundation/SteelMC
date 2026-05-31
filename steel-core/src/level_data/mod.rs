@@ -63,6 +63,11 @@ pub struct WorldGenerationSettings {
     pub height: i32,
 }
 
+#[derive(Deserialize)]
+struct SavedLevelSeed {
+    seed: i64,
+}
+
 impl WorldGenerationSettings {
     /// Builds persisted generator metadata from the resolved startup config.
     #[must_use]
@@ -281,6 +286,30 @@ impl LevelDataManager {
         Ok(Self { path, data, dirty })
     }
 
+    /// Loads the saved world seed from `level.toml`, or returns the provided default.
+    pub async fn load_seed_or_default(
+        world_dir: Option<impl AsRef<Path>>,
+        default_seed: i64,
+    ) -> io::Result<i64> {
+        let Some(dir) = world_dir else {
+            return Ok(default_seed);
+        };
+
+        let path = dir.as_ref().join("level.toml");
+        if !path.exists() {
+            return Ok(default_seed);
+        }
+
+        let content = fs::read_to_string(path).await?;
+        let saved: SavedLevelSeed = toml::from_str(&content).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid level.toml: {e}"),
+            )
+        })?;
+        Ok(saved.seed)
+    }
+
     /// Gets a reference to the level data.
     #[must_use]
     pub const fn data(&self) -> &LevelData {
@@ -430,14 +459,14 @@ impl LevelDataManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::Registry;
+    use std::{
+        env, fs as std_fs,
+        path::PathBuf,
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use steel_registry::test_support::init_test_registry;
     use toml::map::Map;
-
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
 
     fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
         let mut config = Map::new();
@@ -456,9 +485,47 @@ mod tests {
         }
     }
 
+    fn temp_level_data_dir(test_name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let path = env::temp_dir().join(format!(
+            "steel-level-data-{test_name}-{}-{unique}",
+            process::id()
+        ));
+        std_fs::create_dir_all(&path).expect("temp level data dir should be created");
+        path
+    }
+
+    #[tokio::test]
+    async fn load_seed_prefers_saved_level_toml() {
+        let dir = temp_level_data_dir("saved-seed");
+        std_fs::write(dir.join("level.toml"), "seed = 42\n").expect("level.toml should be written");
+
+        let seed = LevelDataManager::load_seed_or_default(Some(dir.as_path()), 7)
+            .await
+            .expect("saved level seed should load");
+        let _ = std_fs::remove_dir_all(&dir);
+
+        assert_eq!(seed, 42);
+    }
+
+    #[tokio::test]
+    async fn load_seed_returns_default_when_level_toml_is_missing() {
+        let dir = temp_level_data_dir("missing-seed");
+
+        let seed = LevelDataManager::load_seed_or_default(Some(dir.as_path()), 7)
+            .await
+            .expect("missing level.toml should use default seed");
+        let _ = std_fs::remove_dir_all(&dir);
+
+        assert_eq!(seed, 7);
+    }
+
     #[test]
     fn adopts_missing_generation_settings() {
-        init_registry();
+        init_test_registry();
         let mut data = LevelData::new_with_seed(1);
 
         let adopted = data
@@ -471,7 +538,7 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_generation_settings() {
-        init_registry();
+        init_test_registry();
         let mut data = LevelData::new_with_seed(1);
         data.generation = Some(settings("minecraft:the_nether", 128));
 

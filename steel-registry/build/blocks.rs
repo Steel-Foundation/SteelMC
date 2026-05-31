@@ -85,7 +85,11 @@ pub struct Block {
     pub default_properties: Vec<String>,
     pub behavior_properties: BlockConfig,
     pub collision_shapes: ShapeData,
+    pub support_shapes: ShapeData,
     pub outline_shapes: ShapeData,
+    pub occlusion_shapes: ShapeData,
+    pub interaction_shapes: ShapeData,
+    pub visual_shapes: ShapeData,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -420,7 +424,11 @@ pub(crate) fn build() -> TokenStream {
     struct BlockShapeInfo {
         name: String,
         collision_fn_id: u16,
+        support_fn_id: u16,
         outline_fn_id: u16,
+        occlusion_fn_id: u16,
+        interaction_fn_id: u16,
+        visual_fn_id: u16,
     }
     let mut block_shape_infos: Vec<BlockShapeInfo> = Vec::new();
 
@@ -428,26 +436,58 @@ pub(crate) fn build() -> TokenStream {
     for block in &block_assets.blocks {
         let (collision_default, collision_arms) =
             generate_shape_match(&block.collision_shapes, &mut voxel_pool);
+        let (support_default, support_arms) =
+            generate_shape_match(&block.support_shapes, &mut voxel_pool);
         let (outline_default, outline_arms) =
             generate_shape_match(&block.outline_shapes, &mut voxel_pool);
+        let (occlusion_default, occlusion_arms) =
+            generate_shape_match(&block.occlusion_shapes, &mut voxel_pool);
+        let (interaction_default, interaction_arms) =
+            generate_shape_match(&block.interaction_shapes, &mut voxel_pool);
+        let (visual_default, visual_arms) =
+            generate_shape_match(&block.visual_shapes, &mut voxel_pool);
 
         // Create signatures and get/insert into pool
         let collision_sig = ShapeFunctionSignature {
             default_id: collision_default,
             arms: collision_arms,
         };
+        let support_sig = ShapeFunctionSignature {
+            default_id: support_default,
+            arms: support_arms,
+        };
         let outline_sig = ShapeFunctionSignature {
             default_id: outline_default,
             arms: outline_arms,
         };
+        let occlusion_sig = ShapeFunctionSignature {
+            default_id: occlusion_default,
+            arms: occlusion_arms,
+        };
+        let interaction_sig = ShapeFunctionSignature {
+            default_id: interaction_default,
+            arms: interaction_arms,
+        };
+        let visual_sig = ShapeFunctionSignature {
+            default_id: visual_default,
+            arms: visual_arms,
+        };
 
         let collision_fn_id = shape_fn_pool.get_or_insert(collision_sig);
+        let support_fn_id = shape_fn_pool.get_or_insert(support_sig);
         let outline_fn_id = shape_fn_pool.get_or_insert(outline_sig);
+        let occlusion_fn_id = shape_fn_pool.get_or_insert(occlusion_sig);
+        let interaction_fn_id = shape_fn_pool.get_or_insert(interaction_sig);
+        let visual_fn_id = shape_fn_pool.get_or_insert(visual_sig);
 
         block_shape_infos.push(BlockShapeInfo {
             name: block.name.clone(),
             collision_fn_id,
+            support_fn_id,
             outline_fn_id,
+            occlusion_fn_id,
+            interaction_fn_id,
+            visual_fn_id,
         });
     }
 
@@ -572,8 +612,24 @@ pub(crate) fn build() -> TokenStream {
             &format!("shape_fn_{}", info.collision_fn_id),
             Span::call_site(),
         );
+        let support_fn = Ident::new(
+            &format!("shape_fn_{}", info.support_fn_id),
+            Span::call_site(),
+        );
         let outline_fn = Ident::new(
             &format!("shape_fn_{}", info.outline_fn_id),
+            Span::call_site(),
+        );
+        let occlusion_fn = Ident::new(
+            &format!("shape_fn_{}", info.occlusion_fn_id),
+            Span::call_site(),
+        );
+        let interaction_fn = Ident::new(
+            &format!("shape_fn_{}", info.interaction_fn_id),
+            Span::call_site(),
+        );
+        let visual_fn = Ident::new(
+            &format!("shape_fn_{}", info.visual_fn_id),
             Span::call_site(),
         );
 
@@ -584,7 +640,14 @@ pub(crate) fn build() -> TokenStream {
                 &[
                     #(#properties),*
                 ],
-            ).with_shapes(#collision_fn, #outline_fn)#default_state;
+            ).with_shapes(
+                #collision_fn,
+                #support_fn,
+                #outline_fn,
+                #occlusion_fn,
+                #interaction_fn,
+                #visual_fn,
+            )#default_state;
         });
     }
 

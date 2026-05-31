@@ -1,14 +1,13 @@
 //! This module contains the `Sections` and `ChunkSection` structs.
-use std::{fmt::Debug, io::Cursor};
+use std::{fmt::Debug, io::Cursor, sync::LazyLock};
 
-use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_biomes;
+use steel_registry::{REGISTRY, RegistryEntry};
 use steel_utils::{BlockStateId, locks::SyncRwLock, serial::WriteTo};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
-use crate::fluid::state::get_fluid_state_from_block;
 
 /// A wrapper around a chunk section.
 #[derive(Debug)]
@@ -59,6 +58,28 @@ pub struct Sections {
     /// The sections in the collection.
     pub sections: Box<[SectionHolder]>,
 }
+
+/// Cached section counter traits for one block state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BlockStateSectionCounts {
+    is_air: bool,
+    has_fluid: bool,
+    randomly_ticking: bool,
+}
+
+static BLOCK_STATE_SECTION_COUNTS: LazyLock<Box<[BlockStateSectionCounts]>> = LazyLock::new(|| {
+    let mut counts = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
+    for state_index in 0..REGISTRY.blocks.state_to_block_lookup.len() {
+        let Ok(raw_state_id) = u16::try_from(state_index) else {
+            panic!("block state registry exceeded BlockStateId range");
+        };
+        counts.push(ChunkSection::block_state_section_counts_with(
+            BlockStateId(raw_state_id),
+            &BLOCK_BEHAVIORS,
+        ));
+    }
+    counts.into_boxed_slice()
+});
 
 impl Sections {
     /// Creates a new `Sections` from a box of owned `ChunkSection`s.
@@ -134,6 +155,21 @@ impl Sections {
             }
         }
         biomes.into_boxed_slice()
+    }
+
+    /// Visits every biome palette value in section order while holding each
+    /// section's read lock once.
+    pub fn for_each_biome_id(&self, mut visitor: impl FnMut(u16)) {
+        for holder in &self.sections {
+            let guard = holder.read();
+            for qy in 0..4 {
+                for qz in 0..4 {
+                    for qx in 0..4 {
+                        visitor(guard.biomes.get(qx, qy, qz));
+                    }
+                }
+            }
+        }
     }
 
     /// Writes multiple blocks in one column, holding each section's write guard
@@ -305,7 +341,10 @@ impl ChunkSection {
                             ticking += 1;
                         }
                     }
-                    if !get_fluid_state_from_block(state).is_empty() {
+                    let fluid_state = block_behaviors
+                        .get_behavior(state.get_block())
+                        .get_fluid_state(state);
+                    if !fluid_state.is_empty() {
                         fluid += 1;
                     }
                 }
@@ -347,44 +386,76 @@ impl ChunkSection {
         let old_state = self.states.set(x, y, z, new_state);
 
         if old_state != new_state {
-            // Update non-empty count
-            let old_is_air = old_state.is_air();
-            let new_is_air = new_state.is_air();
-
-            if !old_is_air && new_is_air {
-                self.non_empty_block_count -= 1;
-            } else if old_is_air && !new_is_air {
-                self.non_empty_block_count += 1;
-            }
-
-            // Update fluid count
-            let old_has_fluid = !get_fluid_state_from_block(old_state).is_empty();
-            let new_has_fluid = !get_fluid_state_from_block(new_state).is_empty();
-
-            if old_has_fluid && !new_has_fluid {
-                self.fluid_count -= 1;
-            } else if !old_has_fluid && new_has_fluid {
-                self.fluid_count += 1;
-            }
-
-            // Update ticking count
-            let old_block = old_state.get_block();
-            let new_block = new_state.get_block();
-            let old_ticking = block_behaviors
-                .get_behavior(old_block)
-                .is_randomly_ticking(old_state);
-            let new_ticking = block_behaviors
-                .get_behavior(new_block)
-                .is_randomly_ticking(new_state);
-
-            if old_ticking && !new_ticking {
-                self.ticking_block_count -= 1;
-            } else if !old_ticking && new_ticking {
-                self.ticking_block_count += 1;
-            }
+            let old_counts = Self::block_state_section_counts_with(old_state, block_behaviors);
+            let new_counts = Self::block_state_section_counts_with(new_state, block_behaviors);
+            self.apply_count_change(old_counts, new_counts);
         }
 
         old_state
+    }
+
+    /// Sets a block state and updates counters when the caller already knows
+    /// the replacement state's counter traits.
+    pub(crate) fn set_block_state_with_known_new_counts(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        new_state: BlockStateId,
+        new_counts: BlockStateSectionCounts,
+    ) -> BlockStateId {
+        let old_state = self.states.set(x, y, z, new_state);
+        if old_state != new_state {
+            let old_counts = Self::block_state_section_counts(old_state);
+            self.apply_count_change(old_counts, new_counts);
+        }
+
+        old_state
+    }
+
+    /// Returns the cached-counter traits for a block state using the global
+    /// behavior registry.
+    pub(crate) fn block_state_section_counts(state: BlockStateId) -> BlockStateSectionCounts {
+        let Some(&counts) = BLOCK_STATE_SECTION_COUNTS.get(state.0 as usize) else {
+            panic!("invalid block state id {}", state.0);
+        };
+        counts
+    }
+
+    fn block_state_section_counts_with(
+        state: BlockStateId,
+        block_behaviors: &BlockBehaviorRegistry,
+    ) -> BlockStateSectionCounts {
+        let behavior = block_behaviors.get_behavior(state.get_block());
+        BlockStateSectionCounts {
+            is_air: state.is_air(),
+            has_fluid: !behavior.get_fluid_state(state).is_empty(),
+            randomly_ticking: behavior.is_randomly_ticking(state),
+        }
+    }
+
+    const fn apply_count_change(
+        &mut self,
+        old_counts: BlockStateSectionCounts,
+        new_counts: BlockStateSectionCounts,
+    ) {
+        if !old_counts.is_air && new_counts.is_air {
+            self.non_empty_block_count -= 1;
+        } else if old_counts.is_air && !new_counts.is_air {
+            self.non_empty_block_count += 1;
+        }
+
+        if old_counts.has_fluid && !new_counts.has_fluid {
+            self.fluid_count -= 1;
+        } else if !old_counts.has_fluid && new_counts.has_fluid {
+            self.fluid_count += 1;
+        }
+
+        if old_counts.randomly_ticking && !new_counts.randomly_ticking {
+            self.ticking_block_count -= 1;
+        } else if !old_counts.randomly_ticking && new_counts.randomly_ticking {
+            self.ticking_block_count += 1;
+        }
     }
 
     /// Writes the chunk section to a writer.

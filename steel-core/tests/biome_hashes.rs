@@ -10,8 +10,8 @@ use std::thread;
 
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use steel_core::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
 use steel_registry::biome::BiomeRef;
+use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
 
 /// Top-level JSON structure for biome hashes.
 #[derive(Deserialize)]

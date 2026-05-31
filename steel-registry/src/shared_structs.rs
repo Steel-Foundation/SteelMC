@@ -1,5 +1,53 @@
+use std::{collections::BTreeMap, str::FromStr};
+
+use serde::{Deserialize, Deserializer, de::Error as _};
 use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_utils::Identifier;
+
+/// Block state data as encoded by vanilla registry JSON.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockStateData {
+    /// Block identifier.
+    #[serde(rename = "Name")]
+    pub name: Identifier,
+    /// String-valued block-state properties.
+    #[serde(rename = "Properties", default)]
+    pub properties: BTreeMap<String, String>,
+}
+
+/// Fluid state data as encoded by vanilla registry JSON.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FluidStateData {
+    /// Fluid identifier.
+    #[serde(rename = "Name")]
+    pub name: Identifier,
+    /// String-valued fluid-state properties.
+    #[serde(rename = "Properties", default)]
+    pub properties: BTreeMap<String, String>,
+}
+
+pub fn deserialize_tag_identifier<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Identifier, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    let tag = value.strip_prefix('#').unwrap_or(&value);
+    Identifier::from_str(tag).map_err(D::Error::custom)
+}
+
+pub fn deserialize_optional_tag_identifier<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Identifier>, D::Error> {
+    let Some(value) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let tag = value.strip_prefix('#').unwrap_or(&value);
+    Identifier::from_str(tag)
+        .map(Some)
+        .map_err(D::Error::custom)
+}
 
 /// A single entry in the list of spawn conditions.
 #[derive(Debug)]

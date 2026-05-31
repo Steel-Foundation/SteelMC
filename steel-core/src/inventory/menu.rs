@@ -650,11 +650,12 @@ impl MenuBehavior {
 
         // First, update last_slots from actual slot contents
         self.update_last_slots(&guard);
+        let state_id = self.increment_state_id();
 
         // Send full container content
         let packet = CContainerSetContent {
             container_id: i32::from(self.container_id),
-            state_id: self.state_id as i32,
+            state_id: state_id as i32,
             items: self.last_slots.clone(),
             carried_item: self.carried.clone(),
         };
@@ -683,8 +684,8 @@ impl MenuBehavior {
     /// This is called every tick to sync only changed slots.
     ///
     /// Based on Java's `AbstractContainerMenu::broadcastChanges`.
-    /// Note: This does NOT increment `state_id` - that only happens when
-    /// processing client clicks (via `increment_state_id`).
+    /// Slot content packets increment `state_id`, matching vanilla's
+    /// `ContainerSynchronizer::sendSlotChange`.
     pub fn broadcast_changes(&mut self, connection: &Arc<PlayerConnection>) {
         let guard = self.lock_all_containers();
 
@@ -741,13 +742,14 @@ impl MenuBehavior {
             return;
         }
 
-        let item = &self.last_slots[slot];
+        let item = self.last_slots[slot].clone();
+        let state_id = self.increment_state_id();
 
         let packet = CContainerSetSlot {
             container_id: i32::from(self.container_id),
-            state_id: self.state_id as i32,
+            state_id: state_id as i32,
             slot: slot as i16,
-            item_stack: item.clone(),
+            item_stack: item,
         };
 
         Self::send_packet(connection, packet);
@@ -911,7 +913,7 @@ impl MenuBehavior {
 
                         let mut new_item = source.clone();
                         new_item.set_count(new_count);
-                        slot.set_item(&mut guard, new_item);
+                        slot.set_by_player(&mut guard, new_item, &slot_item);
                     }
                 }
 
@@ -1040,15 +1042,18 @@ impl MenuBehavior {
                     // Try to add slot items to carried stack
                     let space = carried.max_stack_size() - carried.count;
                     if space > 0 {
-                        let take_amount = slot_item.count.min(space);
-                        let taken = slot.remove(&mut guard, take_amount);
-                        // Handle any remainder (regular slots don't produce remainders, but be safe)
-                        if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
-                            player.add_item_or_drop_with_guard(&mut guard, remainder);
+                        if let Some(taken) =
+                            slot.try_remove(&mut guard, slot_item.count, space, player)
+                        {
+                            if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
+                                player.add_item_or_drop_with_guard(&mut guard, remainder);
+                            }
+                            let mut new_carried = carried;
+                            new_carried.grow(taken.count);
+                            self.carried = new_carried;
+                        } else {
+                            self.carried = carried;
                         }
-                        let mut new_carried = carried;
-                        new_carried.grow(taken.count);
-                        self.carried = new_carried;
                     } else {
                         self.carried = carried;
                     }
@@ -1098,6 +1103,10 @@ impl MenuBehavior {
     ///
     /// Based on Java's `AbstractContainerMenu::doClick` for ClickType.THROW.
     pub fn do_throw(&mut self, slot_num: i16, button: i8, player: &Player) {
+        if !self.carried.is_empty() {
+            return;
+        }
+
         if slot_num < 0 {
             return;
         }
@@ -1126,11 +1135,10 @@ impl MenuBehavior {
             slot.get_item(&guard).count
         };
 
-        let dropped = slot.remove(&mut guard, amount);
+        let dropped = slot.safe_take(&mut guard, amount, i32::MAX, player);
         if !dropped.is_empty() {
             player.drop_item(dropped.clone(), false, true);
         }
-        slot.set_changed(&mut guard);
 
         // Ctrl+Q: Keep dropping while the slot has the same item type
         if button == 1 {
@@ -1147,12 +1155,11 @@ impl MenuBehavior {
                 if current_item.is_empty() || !ItemStack::is_same_item(&current_item, &dropped) {
                     break;
                 }
-                let more_dropped = slot.remove(&mut guard, current_item.count);
+                let more_dropped = slot.safe_take(&mut guard, current_item.count, i32::MAX, player);
                 if more_dropped.is_empty() {
                     break;
                 }
                 player.drop_item(more_dropped, false, true);
-                slot.set_changed(&mut guard);
             }
         }
     }
@@ -1180,7 +1187,7 @@ pub trait Menu {
     ) -> ItemStack;
 
     /// Returns true if this menu is still valid for the player.
-    fn still_valid(&self) -> bool {
+    fn still_valid(&self, _player: &Player) -> bool {
         true
     }
 
@@ -1192,12 +1199,12 @@ pub trait Menu {
 
     /// Called when the menu is closed/removed.
     /// Override to handle cleanup like returning crafting grid items to the player.
-    /// The default implementation clears the carried item by dropping it.
+    /// The default implementation returns the carried item to the player's inventory.
     fn removed(&mut self, player: &Player) {
-        // Default: drop the carried item
+        // Default: return the carried item to the player's inventory, dropping overflow.
         let carried = mem::take(&mut self.behavior_mut().carried);
         if !carried.is_empty() {
-            player.drop_item(carried, false, true);
+            player.add_item_or_drop(carried);
         }
     }
 
@@ -1326,11 +1333,13 @@ pub trait Menu {
 
         if source_item.is_empty() {
             // Move from target to inventory
-            if target_slot.may_pickup(&guard, player) {
+            if target_slot.may_pickup(&guard, player)
+                && let Some(taken) =
+                    target_slot.try_remove(&mut guard, target_item.count, i32::MAX, player)
+            {
                 if let Some(inv) = guard.get_mut(player_inv_id) {
-                    inv.set_item(inventory_slot, target_item.clone());
+                    inv.set_item(inventory_slot, taken);
                 }
-                target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
                 }
@@ -1446,7 +1455,7 @@ pub trait Menu {
                     if pass != 0 || target_item.count != target_item.max_stack_size() {
                         let can_take = max_stack - self.behavior().carried.count;
                         let to_take = target_item.count.min(can_take);
-                        let removed = target_slot.safe_take(&mut guard, to_take, i32::MAX, player);
+                        let removed = target_slot.safe_take(&mut guard, to_take, can_take, player);
                         self.behavior_mut().carried.grow(removed.count);
                     }
                 }

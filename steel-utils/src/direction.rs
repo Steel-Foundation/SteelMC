@@ -4,7 +4,7 @@
 
 use std::io::{self, Cursor};
 
-use crate::{codec::VarInt, math::Axis, serial::ReadFrom, types::BlockPos};
+use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
 #[derive(Clone, Copy, Debug)]

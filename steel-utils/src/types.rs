@@ -17,10 +17,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use wincode::{SchemaRead, SchemaWrite, config::Config, io::Reader, io::Writer};
 
 use crate::{
+    axis::Axis,
     codec::VarInt,
     direction::Direction,
     hash::{ComponentHasher, HashComponent},
-    math::Axis,
     serial::{ReadFrom, WriteTo},
 };
 
@@ -149,6 +149,21 @@ impl ChunkPos {
     /// Creates a new `ChunkPos` with the given x and y coordinates.
     pub const fn new(x: i32, y: i32) -> Self {
         Self(IVec2::new(x, y))
+    }
+
+    /// Creates a `ChunkPos` from a world block position.
+    #[must_use]
+    pub const fn from_block_pos(pos: BlockPos) -> Self {
+        Self::new(
+            SectionPos::block_to_section_coord(pos.0.x),
+            SectionPos::block_to_section_coord(pos.0.z),
+        )
+    }
+
+    /// Creates a `ChunkPos` containing the given floating-point world position.
+    #[must_use]
+    pub fn from_entity_pos(pos: DVec3) -> Self {
+        Self::from_block_pos(BlockPos::from(pos))
     }
 
     /// Checks if the given chunk coordinates are within valid bounds.
@@ -420,6 +435,12 @@ impl SectionPos {
             Self::block_to_section_coord(pos.0.y),
             Self::block_to_section_coord(pos.0.z),
         )
+    }
+
+    /// Creates a `SectionPos` containing the given floating-point world position.
+    #[must_use]
+    pub fn from_entity_pos(pos: DVec3) -> Self {
+        Self::from_block_pos(BlockPos::from(pos))
     }
 
     /// Gets the X coordinate.
@@ -1420,6 +1441,18 @@ mod tests {
         assert!(PackedChunkLocalXZ::from_local_xz(15, 15).is_some());
         assert!(PackedChunkLocalXZ::from_local_xz(16, 0).is_none());
         assert!(PackedChunkLocalXZ::from_local_xz(0, 16).is_none());
+    }
+
+    #[test]
+    fn entity_positions_floor_before_chunk_and_section_conversion() {
+        let pos = DVec3::new(-4352.5, -16.5, -4405.5);
+
+        assert_eq!(BlockPos::from(pos), BlockPos::new(-4353, -17, -4406));
+        assert_eq!(ChunkPos::from_entity_pos(pos), ChunkPos::new(-273, -276));
+        assert_eq!(
+            SectionPos::from_entity_pos(pos),
+            SectionPos::new(-273, -2, -276)
+        );
     }
 
     #[test]

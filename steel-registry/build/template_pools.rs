@@ -384,11 +384,14 @@ pub(crate) fn build() -> TokenStream {
     templates.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut template_tokens = TokenStream::new();
+    let mut template_nbt_match_arms = TokenStream::new();
     for (name, tmpl) in &templates {
         let key = gen_identifier(&format!("minecraft:{name}"));
         let sx = tmpl.size[0];
         let sy = tmpl.size[1];
         let sz = tmpl.size[2];
+        let include_path =
+            format!("../../build_assets/builtin_datapacks/minecraft/structure/{name}.nbt");
 
         let jigsaw_tokens: Vec<TokenStream> = tmpl
             .jigsaws
@@ -428,6 +431,9 @@ pub(crate) fn build() -> TokenStream {
                 jigsaws: vec![#(#jigsaw_tokens),*],
             }),
         });
+        template_nbt_match_arms.extend(quote! {
+            #name => Some(include_bytes!(#include_path)),
+        });
     }
 
     let pool_count = pools.len();
@@ -450,6 +456,18 @@ pub(crate) fn build() -> TokenStream {
         /// Each entry is (template_key, template_data).
         pub fn vanilla_templates() -> Vec<(Identifier, TemplateData)> {
             vec![#template_tokens]
+        }
+
+        /// Returns the compressed NBT bytes for a vanilla structure template.
+        pub fn vanilla_template_nbt_bytes(key: &Identifier) -> Option<&'static [u8]> {
+            if key.namespace != Identifier::VANILLA_NAMESPACE {
+                return None;
+            }
+
+            match key.path.as_ref() {
+                #template_nbt_match_arms
+                _ => None,
+            }
         }
 
         /// Number of template pools.

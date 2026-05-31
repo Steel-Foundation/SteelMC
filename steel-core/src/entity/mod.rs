@@ -8,7 +8,7 @@ use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
 use steel_utils::locks::SyncMutex;
@@ -204,6 +204,11 @@ pub trait Entity: Send + Sync {
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
     fn rotation(&self) -> (f32, f32) {
         (0.0, 0.0)
+    }
+
+    /// Extra spawn-packet data used by vanilla for entity-specific construction.
+    fn spawn_data(&self) -> i32 {
+        0
     }
 
     /// Gets the eye height for this entity.

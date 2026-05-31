@@ -77,7 +77,7 @@ impl EntityTracker {
         let entity_id = entity.id();
         let range_chunks = entity.entity_type().client_tracking_range;
         let pos = entity.position();
-        let center_chunk = ChunkPos::new((pos.x as i32) >> 4, (pos.z as i32) >> 4);
+        let center_chunk = ChunkPos::from_entity_pos(pos);
 
         // Calculate all chunks within tracking range
         let mut registered_chunks = FxHashSet::default();

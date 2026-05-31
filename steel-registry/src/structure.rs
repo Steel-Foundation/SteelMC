@@ -113,6 +113,22 @@ pub enum StructureGenerationStep {
     UndergroundDecoration,
 }
 
+impl StructureGenerationStep {
+    /// Decoration-stage ordinal used by vanilla `GenerationStep.Decoration`.
+    ///
+    /// Structure JSON only names the three structure-capable decoration stages;
+    /// feature generation still runs all eleven decoration stages, so these
+    /// values intentionally leave the vanilla gaps intact.
+    #[must_use]
+    pub const fn decoration_ordinal(self) -> usize {
+        match self {
+            Self::UndergroundStructures => 3,
+            Self::SurfaceStructures => 4,
+            Self::UndergroundDecoration => 7,
+        }
+    }
+}
+
 /// How a structure modifies surrounding terrain.
 ///
 /// Corresponds to vanilla's `TerrainAdjustment` enum.
@@ -166,6 +182,22 @@ mod tests {
                 .iter()
                 .any(|structure| structure.key == Identifier::vanilla_static("village_plains"))
         }));
+    }
+
+    #[test]
+    fn structure_generation_steps_use_vanilla_decoration_ordinals() {
+        assert_eq!(
+            StructureGenerationStep::UndergroundStructures.decoration_ordinal(),
+            3
+        );
+        assert_eq!(
+            StructureGenerationStep::SurfaceStructures.decoration_ordinal(),
+            4
+        );
+        assert_eq!(
+            StructureGenerationStep::UndergroundDecoration.decoration_ordinal(),
+            7
+        );
     }
 }
 

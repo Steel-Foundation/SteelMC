@@ -7,11 +7,11 @@
 use heck::ToShoutySnakeCase;
 use proc_macro2::Span;
 use serde::Deserialize;
-use std::env;
-use std::fs;
+use std::{env, fs, path::Path};
 use syn::Ident;
 
 mod blocks;
+mod candle_cakes;
 mod common;
 mod items;
 mod strippables;
@@ -35,19 +35,15 @@ pub fn main() {
 
     fs::create_dir_all(&out_dir).expect("Failed to create output directory");
 
-    fs::write(
+    write_if_changed(
         format!("{out_dir}/blocks.rs"),
         blocks::build(&classes.blocks),
-    )
-    .expect("Failed to write blocks.rs");
-    fs::write(format!("{out_dir}/items.rs"), items::build(&classes.items))
-        .expect("Failed to write items.rs");
-    fs::write(format!("{out_dir}/waxables.rs"), waxables::build())
-        .expect("Failed to write waxables.rs");
-    fs::write(format!("{out_dir}/weathering.rs"), weathering::build())
-        .expect("Failed to write weathering.rs");
-    fs::write(format!("{out_dir}/strippables.rs"), strippables::build())
-        .expect("Failed to write strippables.rs");
+    );
+    write_if_changed(format!("{out_dir}/candle_cakes.rs"), candle_cakes::build());
+    write_if_changed(format!("{out_dir}/items.rs"), items::build(&classes.items));
+    write_if_changed(format!("{out_dir}/waxables.rs"), waxables::build());
+    write_if_changed(format!("{out_dir}/weathering.rs"), weathering::build());
+    write_if_changed(format!("{out_dir}/strippables.rs"), strippables::build());
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
@@ -64,4 +60,17 @@ fn to_item_ident(name: &str) -> Ident {
 #[must_use]
 pub fn to_block_ident(name: &str) -> Ident {
     Ident::new(&name.to_shouty_snake_case(), Span::call_site())
+}
+
+fn write_if_changed(path: impl AsRef<Path>, content: String) {
+    let path = path.as_ref();
+    if let Ok(existing) = fs::read_to_string(path)
+        && existing == content
+    {
+        return;
+    }
+
+    if let Err(error) = fs::write(path, content) {
+        panic!("Failed to write {}: {error}", path.display());
+    }
 }
