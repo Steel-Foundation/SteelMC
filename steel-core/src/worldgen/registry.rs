@@ -10,11 +10,12 @@ use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use toml::map::Map;
 
-use crate::world::structure::placement::load_vanilla_structure_sets;
 use crate::worldgen::structure::{FixedStructureBiomeProvider, StructureGenerator};
 use crate::worldgen::{
-    BiomeSourceKind, ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
+    ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
 };
+use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::structure::placement::load_vanilla_structure_sets;
 
 /// Fully constructed generator metadata for a world.
 pub struct GeneratorOutput {
@@ -413,17 +414,11 @@ fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::Registry;
-
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
+    use steel_registry::test_support::init_test_registry;
 
     #[test]
     fn default_flat_config_matches_vanilla_superflat() {
-        init_registry();
+        init_test_registry();
 
         let output = create_flat(&toml::Value::Table(Map::new()), 0)
             .expect("default flat config should create a generator");

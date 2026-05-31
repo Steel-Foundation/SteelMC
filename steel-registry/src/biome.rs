@@ -5,6 +5,9 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::REGISTRY;
+use crate::TaggedRegistryExt;
+
 #[derive(Debug)]
 pub struct Biome {
     pub key: Identifier,
@@ -20,6 +23,13 @@ pub struct Biome {
     pub features: Vec<Vec<Identifier>>,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
+}
+
+impl Biome {
+    /// Returns `true` if this biome is tagged with the given tag.
+    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+        REGISTRY.biomes.is_in_tag(self, tag)
+    }
 }
 
 #[derive(Debug)]

@@ -3,6 +3,8 @@
     reason = "tree decorators mirror vanilla decorator context"
 )]
 
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::super::super::vanilla_collections::JavaBlockPosSet;
@@ -673,10 +675,10 @@ impl FeatureDecorationRunner {
         Self::shuffle_tree_positions(random, &mut heart_placements);
         let Some(target_pos) = heart_placements.into_iter().find(|pos| {
             Self::VANILLA_DIRECTION_VALUES.iter().all(|direction| {
-                registry.blocks.is_in_tag(
-                    region.block_state(pos.relative(*direction)).get_block(),
-                    &vanilla_block_tags::LOGS_TAG,
-                )
+                region
+                    .block_state(pos.relative(*direction))
+                    .get_block()
+                    .has_tag(&BlockTag::LOGS)
             })
         }) else {
             return;

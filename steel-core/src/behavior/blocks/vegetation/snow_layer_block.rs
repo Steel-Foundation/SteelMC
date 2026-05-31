@@ -2,7 +2,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::shapes;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
@@ -36,17 +36,11 @@ impl BlockBehavior for SnowLayerBlock {
         let below = world.get_block_state(pos.below());
         let below_block = below.get_block();
 
-        if REGISTRY.blocks.is_in_tag(
-            below_block,
-            &vanilla_block_tags::CANNOT_SUPPORT_SNOW_LAYER_TAG,
-        ) {
+        if below_block.has_tag(&BlockTag::CANNOT_SUPPORT_SNOW_LAYER) {
             return false;
         }
 
-        if REGISTRY.blocks.is_in_tag(
-            below_block,
-            &vanilla_block_tags::SUPPORT_OVERRIDE_SNOW_LAYER_TAG,
-        ) {
+        if below_block.has_tag(&BlockTag::SUPPORT_OVERRIDE_SNOW_LAYER) {
             return true;
         }
 

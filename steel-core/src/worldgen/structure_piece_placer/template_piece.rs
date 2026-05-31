@@ -4,11 +4,11 @@ use glam::DVec3;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
-    Registry, TaggedRegistryExt, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
-    vanilla_entities, vanilla_items,
+    Registry, vanilla_block_entity_types, vanilla_blocks, vanilla_entities, vanilla_items,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
@@ -20,13 +20,13 @@ use crate::entity::{
     entities::{ItemFrameEntity, RawEntity},
     next_entity_id,
 };
-use crate::world::structure::{
-    StructureMirror, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
-    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
-};
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
     StructureDataMarker, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+};
+use steel_worldgen::structure::{
+    StructureMirror, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
+    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 use super::StructurePiecePlacer;
@@ -50,7 +50,7 @@ impl StructurePiecePlacer {
             Ok(template) => template,
             Err(err) => panic!("{err}"),
         };
-        let position = Self::adjusted_template_position(region, registry, &template, data, random);
+        let position = Self::adjusted_template_position(region, &template, data, random);
         let mut hardcoded_processors = Vec::new();
         let processor_list =
             Self::template_processors(registry, &data.processors, &mut hardcoded_processors);
@@ -130,7 +130,6 @@ impl StructurePiecePlacer {
 
     fn adjusted_template_position(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         template: &StructureTemplate,
         data: &mut TemplatePieceData,
         random: &mut WorldgenRandom,
@@ -177,7 +176,7 @@ impl StructurePiecePlacer {
                 )
             }
             TemplatePlacementAdjustment::OceanRuin => {
-                Self::adjusted_ocean_ruin_position(region, registry, template, data)
+                Self::adjusted_ocean_ruin_position(region, template, data)
             }
         }
     }
@@ -255,7 +254,7 @@ impl StructurePiecePlacer {
 
     fn adjusted_ocean_ruin_position(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
+
         template: &StructureTemplate,
         data: &mut TemplatePieceData,
     ) -> BlockPos {
@@ -274,14 +273,13 @@ impl StructurePiecePlacer {
             data.rotation
                 .transform_pos(size[0] - 1, 0, size[2] - 1, 0, 0);
         let corner = base.offset(corner_x, 0, corner_z);
-        let y = Self::adjusted_ocean_ruin_height(region, registry, base, corner);
+        let y = Self::adjusted_ocean_ruin_height(region, base, corner);
         data.template_position.1 = y;
         BlockPos::new(data.template_position.0, y, data.template_position.2)
     }
 
     fn adjusted_ocean_ruin_height(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         base: BlockPos,
         corner: BlockPos,
     ) -> i32 {
@@ -301,9 +299,7 @@ impl StructurePiecePlacer {
                 let mut state = region.block_state(pos);
                 while (state.is_air()
                     || Self::is_water_state(state)
-                    || registry
-                        .blocks
-                        .is_in_tag(state.get_block(), &vanilla_block_tags::ICE_TAG))
+                    || state.get_block().has_tag(&BlockTag::ICE))
                     && floor_y > region.min_y() + 1
                 {
                     floor_y -= 1;
@@ -720,7 +716,6 @@ impl StructurePiecePlacer {
                 };
                 Self::post_process_ruined_portal(
                     region,
-                    registry,
                     *vertical_placement,
                     *properties,
                     template_box,

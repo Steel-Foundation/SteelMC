@@ -3,13 +3,14 @@
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_blocks,
+    vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
+use crate::world::game_event_context::GameEventContext;
 
 /// Behavior for items that place blocks.
 #[item_behavior]
@@ -59,13 +60,12 @@ impl BlockItem {
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-            let item_stack = context.inv.item();
             placed_behavior.set_placed_by(
                 placed_state,
                 context.world,
                 place_pos,
                 Some(context.player),
-                item_stack,
+                &context.inv,
             );
         }
 
@@ -78,8 +78,13 @@ impl BlockItem {
             sound_type.pitch,
             Some(context.player.id),
         );
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_PLACE,
+            place_pos,
+            &GameEventContext::new(Some(context.player), Some(placed_state)),
+        );
 
-        context.inv.item().shrink(1);
+        context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success
     }

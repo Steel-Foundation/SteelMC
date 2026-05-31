@@ -7,9 +7,9 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use crate::RegistryExt;
 use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::{DynProperty, Property};
+use crate::{RegistryExt, TaggedRegistryExt};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> &'static [shapes::AABB];
@@ -172,6 +172,11 @@ impl Block {
     #[must_use]
     pub fn default_state(&'static self) -> BlockStateId {
         crate::REGISTRY.blocks.get_default_state_id(self)
+    }
+
+    /// Returns `true` if this block is tagged with the given tag.
+    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+        crate::REGISTRY.blocks.is_in_tag(self, tag)
     }
 }
 

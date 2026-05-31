@@ -38,6 +38,11 @@ pub mod block_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/candle_cakes.rs"]
+pub mod candle_cakes;
+
+#[allow(warnings)]
+#[rustfmt::skip]
 #[path = "generated/items.rs"]
 pub mod item_behaviors;
 

@@ -1,9 +1,9 @@
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
-use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
 use steel_utils::ChunkPos;
 use steel_utils::random::RandomSource;
+use steel_worldgen::noise::Beardifier;
 
 /// A chunk generator that generates an empty world.
 #[derive(Default)]

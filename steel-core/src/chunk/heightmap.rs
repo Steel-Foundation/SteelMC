@@ -10,9 +10,9 @@ use std::sync::LazyLock;
 
 use smallvec::SmallVec;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
+    REGISTRY,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_block_tags,
+    vanilla_block_tags::BlockTag,
 };
 use steel_utils::BlockStateId;
 
@@ -74,9 +74,7 @@ impl HeightmapType {
 
     /// Checks if a block is in the leaves tag.
     fn is_leaves(block: BlockRef) -> bool {
-        REGISTRY
-            .blocks
-            .is_in_tag(block, &vanilla_block_tags::LEAVES_TAG)
+        block.has_tag(&BlockTag::LEAVES)
     }
 
     const fn mask(self) -> u8 {
@@ -735,8 +733,8 @@ mod tests {
     use std::sync::Once;
 
     use steel_registry::{
-        REGISTRY, Registry,
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        test_support::init_test_registry,
         vanilla_blocks,
     };
 
@@ -746,10 +744,8 @@ mod tests {
 
     static INIT_BEHAVIORS: Once = Once::new();
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
+    fn init_test_state() {
+        init_test_registry();
         INIT_BEHAVIORS.call_once(init_behaviors);
     }
 
@@ -773,7 +769,7 @@ mod tests {
 
     #[test]
     fn heightmap_predicates_use_blocks_motion_and_fluid_state() {
-        init_registry();
+        init_test_state();
 
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         assert!(!HeightmapType::OceanFloorWg.is_opaque(water));
@@ -794,7 +790,7 @@ mod tests {
 
     #[test]
     fn initial_fill_update_tracks_only_matching_blocks() {
-        init_registry();
+        init_test_state();
 
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);

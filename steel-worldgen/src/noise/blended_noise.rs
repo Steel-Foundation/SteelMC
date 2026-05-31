@@ -5,12 +5,10 @@
 
 use std::simd::cmp::SimdPartialOrd;
 use std::simd::f64x4;
-use std::simd::{Select, StdFloat};
 
-use crate::math::clamped_lerp;
 use crate::noise::PerlinNoise;
-use crate::noise::perlin_noise::wrap;
 use crate::random::RandomSource;
+use steel_math::{clamped_lerp, clamped_lerp_4x, wrap, wrap_4x};
 
 /// Base frequency multiplier for all `BlendedNoise` coordinate transforms.
 const COORDINATE_SCALE: f64 = 684.412;
@@ -241,29 +239,6 @@ impl BlendedNoise {
     pub fn min_value(&self) -> f64 {
         -self.max_value
     }
-}
-
-/// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).
-#[inline]
-fn wrap_4x(x: f64x4) -> f64x4 {
-    let round_off = f64x4::splat(33_554_432.0);
-    x - (x / round_off + f64x4::splat(0.5)).floor() * round_off
-}
-
-/// Clamped lerp for 4 lanes.
-#[inline]
-fn clamped_lerp_4x(min: f64x4, max: f64x4, factor: f64x4) -> f64x4 {
-    let zero = f64x4::splat(0.0);
-    let one = f64x4::splat(1.0);
-    let below = factor.simd_lt(zero);
-    let above = factor.simd_gt(one);
-
-    // lerp result for the middle case
-    let lerped = min + factor * (max - min);
-
-    // Select: below zero → min, above one → max, otherwise → lerped
-    let result = below.select(min, lerped);
-    above.select(max, result)
 }
 
 #[cfg(test)]

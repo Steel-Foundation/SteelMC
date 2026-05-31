@@ -264,22 +264,22 @@ impl Menu for ChestMenu {
     /// Returns true if the container is still valid for interaction.
     ///
     /// Delegates to the container's `still_valid` method.
-    fn still_valid(&self) -> bool {
+    fn still_valid(&self, player: &Player) -> bool {
         let guard = self.behavior.lock_all_containers();
         guard
             .get(self.container.container_id())
-            .is_some_and(super::container::Container::still_valid)
+            .is_some_and(|container| container.still_valid(player))
     }
 
     /// Called when the menu is closed.
     ///
-    /// Drops the carried item (default behavior).
+    /// Returns the carried item to the player inventory.
     /// Note: Java's `ChestMenu::removed` also calls `container.stopOpen(player)`,
     /// but we don't have that callback implemented yet.
     fn removed(&mut self, player: &Player) {
         let carried = mem::take(&mut self.behavior.carried);
         if !carried.is_empty() {
-            player.drop_item(carried, false, true);
+            player.add_item_or_drop(carried);
         }
     }
 }

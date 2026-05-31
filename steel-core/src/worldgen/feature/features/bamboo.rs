@@ -1,3 +1,5 @@
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
@@ -73,10 +75,10 @@ impl FeatureDecorationRunner {
                 let y = region.height_at(HeightmapType::WorldSurface, x, z) - 1;
                 let pos = BlockPos::new(x, y, z);
                 let state = region.block_state(pos);
-                if REGISTRY.blocks.is_in_tag(
-                    state.get_block(),
-                    &vanilla_block_tags::BENEATH_BAMBOO_PODZOL_REPLACEABLE_TAG,
-                ) {
+                if state
+                    .get_block()
+                    .has_tag(&BlockTag::BENEATH_BAMBOO_PODZOL_REPLACEABLE)
+                {
                     let _ = region.set_block_state(
                         pos,
                         vanilla_blocks::PODZOL.default_state(),

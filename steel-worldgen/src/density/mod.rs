@@ -14,7 +14,7 @@
 //! - [`NoiseSettings`] - Trait for dimension-specific settings from datapack
 
 pub mod spline_eval;
-mod traits;
+pub mod traits;
 mod types;
 
 pub use traits::{ColumnCache, DimensionNoises, NoiseSettings};

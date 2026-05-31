@@ -3,12 +3,11 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, DoubleBlockHalf};
-use steel_registry::item_stack::ItemStack;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::context::BlockPlaceContext;
+use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
 use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -43,15 +42,12 @@ impl BlockBehavior for SmallDripleafBlock {
         let below_pos = pos.below();
         let below = world.get_block_state(below_pos);
         let fluid = get_fluid_state_from_block(world.get_block_state(pos));
-        REGISTRY.blocks.is_in_tag(
-            below.get_block(),
-            &vanilla_block_tags::SUPPORTS_SMALL_DRIPLEAF_TAG,
-        ) || (fluid.is_source()
-            && fluid.is_water()
-            && REGISTRY.blocks.is_in_tag(
-                below.get_block(),
-                &vanilla_block_tags::SUPPORTS_VEGETATION_TAG,
-            ))
+        below
+            .get_block()
+            .has_tag(&BlockTag::SUPPORTS_SMALL_DRIPLEAF)
+            || (fluid.is_source()
+                && fluid.is_water()
+                && below.get_block().has_tag(&BlockTag::SUPPORTS_VEGETATION))
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -82,7 +78,7 @@ impl BlockBehavior for SmallDripleafBlock {
         world: &Arc<World>,
         pos: BlockPos,
         _player: Option<&Player>,
-        _item_stack: &ItemStack,
+        _inv: &InventoryAccess,
     ) {
         let upper_pos = pos.above();
         let upper_state = DoublePlantBlock::copy_waterlogged_from(

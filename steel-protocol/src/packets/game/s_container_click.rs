@@ -1,4 +1,4 @@
-use std::io::{Cursor, Result};
+use std::io::{Cursor, Error, ErrorKind, Result};
 
 use rustc_hash::FxHashMap;
 use steel_macros::ServerPacket;
@@ -28,9 +28,20 @@ impl ReadFrom for ClickType {
             4 => ClickType::Throw,
             5 => ClickType::QuickCraft,
             6 => ClickType::PickupAll,
-            _ => ClickType::Pickup, // Default to Pickup for unknown values
+            _ => ClickType::Pickup,
         })
     }
+}
+
+fn read_bounded_len(data: &mut Cursor<&[u8]>, max: usize, field: &str) -> Result<usize> {
+    let len = VarInt::read(data)?.0;
+    if len < 0 || len as usize > max {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("{field} length {len} exceeds max {max}"),
+        ));
+    }
+    Ok(len as usize)
 }
 
 /// A hashed representation of component patches for verification.
@@ -44,18 +55,18 @@ pub struct HashedPatchMap {
 impl ReadFrom for HashedPatchMap {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         // Read added components map: Map<VarInt, Int>
-        let added_count = VarInt::read(data)?.0 as usize;
+        let added_count = read_bounded_len(data, 256, "hashed patch added components")?;
         let mut added_components = FxHashMap::default();
-        for _ in 0..added_count.min(256) {
+        for _ in 0..added_count {
             let type_id = VarInt::read(data)?.0;
             let hash = i32::read(data)?;
             added_components.insert(type_id, hash);
         }
 
         // Read removed components set: Collection<VarInt>
-        let removed_count = VarInt::read(data)?.0 as usize;
-        let mut removed_components = Vec::with_capacity(removed_count.min(256));
-        for _ in 0..removed_count.min(256) {
+        let removed_count = read_bounded_len(data, 256, "hashed patch removed components")?;
+        let mut removed_components = Vec::with_capacity(removed_count);
+        for _ in 0..removed_count {
             let type_id = VarInt::read(data)?.0;
             removed_components.push(type_id);
         }
@@ -121,9 +132,9 @@ impl ReadFrom for SContainerClick {
         let click_type = ClickType::read(data)?;
 
         // Read changed slots map with max 128 entries
-        let slot_count = VarInt::read(data)?.0 as usize;
+        let slot_count = read_bounded_len(data, 128, "changed slots")?;
         let mut changed_slots = FxHashMap::default();
-        for _ in 0..slot_count.min(128) {
+        for _ in 0..slot_count {
             let slot = i16::read(data)?;
             let stack = HashedStack::read(data)?;
             changed_slots.insert(slot, stack);
@@ -140,5 +151,35 @@ impl ReadFrom for SContainerClick {
             changed_slots,
             carried_item,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::serial::WriteTo;
+
+    use super::*;
+
+    #[test]
+    fn unknown_click_type_falls_back_to_pickup() {
+        let mut data = Vec::new();
+        VarInt(7).write(&mut data).unwrap();
+
+        let click_type = ClickType::read(&mut Cursor::new(&data)).unwrap();
+        assert_eq!(click_type, ClickType::Pickup);
+    }
+
+    #[test]
+    fn rejects_changed_slot_count_above_vanilla_limit() {
+        let mut data = Vec::new();
+        VarInt(0).write(&mut data).unwrap(); // container id
+        VarInt(0).write(&mut data).unwrap(); // state id
+        0_i16.write(&mut data).unwrap(); // slot num
+        0_i8.write(&mut data).unwrap(); // button num
+        VarInt(0).write(&mut data).unwrap(); // pickup click type
+        VarInt(129).write(&mut data).unwrap(); // changed slots count
+
+        let err = SContainerClick::read(&mut Cursor::new(&data)).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
     }
 }

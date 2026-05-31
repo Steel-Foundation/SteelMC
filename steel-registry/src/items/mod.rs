@@ -7,7 +7,7 @@ use steel_utils::Identifier;
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, blocks::BlockRef, data_components::DataComponentMap,
+    REGISTRY, RegistryExt, TaggedRegistryExt, blocks::BlockRef, data_components::DataComponentMap,
     item_stack::ItemStack,
 };
 
@@ -74,6 +74,11 @@ impl Item {
             }
             None => ItemStack::empty(),
         }
+    }
+
+    /// Returns `true` if this item is tagged with the given tag.
+    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+        REGISTRY.items.is_in_tag(self, tag)
     }
 }
 

@@ -3,8 +3,6 @@
 //! This module provides the integration between extracted vanilla worldgen data
 //! and the world generation pipeline.
 
-/// Biome sources and climate samplers.
-pub mod biomes;
 /// World-carving: runtime context + carver implementations.
 pub mod carver;
 /// Per-chunk bitset marking positions already visited by a carver.
@@ -14,19 +12,14 @@ pub(crate) mod feature;
 pub mod generator;
 /// Concrete chunk generator implementations.
 pub mod generators;
-pub mod noise;
 pub mod region;
 pub mod registry;
 pub(crate) mod stages;
-pub(crate) mod state_resolver;
 pub(crate) mod structure;
 pub(crate) mod structure_piece_placer;
 pub mod surface;
 pub(crate) mod template;
 
-pub use biomes::{
-    BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
-};
 pub use context::{
     ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator, WorldGenContext,
 };

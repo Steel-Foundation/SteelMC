@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::vanilla_block_tags;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -42,7 +42,7 @@ impl EyeblossomBlock {
 
 impl BlockBehavior for EyeblossomBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        survives_on_tag(world, pos, &vanilla_block_tags::SUPPORTS_VEGETATION_TAG)
+        survives_on_tag(world, pos, &BlockTag::SUPPORTS_VEGETATION)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -64,7 +64,7 @@ impl BlockBehavior for EyeblossomBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use super::*;
@@ -101,15 +101,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn eyeblossom_requires_vegetation_support() {
-        init_registry();
+        init_test_registry();
         let behavior =
             EyeblossomBlock::new(&vanilla_blocks::CLOSED_EYEBLOSSOM, EyeblossomType::Closed);
         let pos = BlockPos::new(0, 64, 0);
