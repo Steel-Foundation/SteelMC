@@ -1914,15 +1914,12 @@ impl TranspileContext {
             DensityFunction::BlendDensity(bd) => self.gen_expr_simd(&bd.input, input, is_flat),
 
             DensityFunction::Marker(m) => {
-                if self.interpolated_param_mode && m.kind == MarkerType::Interpolated {
-                    // `Interpolated` markers in `interpolated_param_mode` are
-                    // rewritten by the scalar combine paths; the SIMD fill path
-                    // never runs in `interpolated_param_mode`, so this branch
-                    // is unreachable in practice. Recurse to be safe.
-                    self.gen_expr_simd(&m.wrapped, input, is_flat)
-                } else {
-                    self.gen_expr_simd(&m.wrapped, input, is_flat)
-                }
+                // Markers are transparent to SIMD codegen — recurse into the
+                // wrapped function. (`Interpolated` markers in
+                // `interpolated_param_mode` are rewritten by the scalar combine
+                // paths, and the SIMD fill path never runs in
+                // `interpolated_param_mode`, so the marker kind is moot here.)
+                self.gen_expr_simd(&m.wrapped, input, is_flat)
             }
 
             DensityFunction::BlendedNoise(_) => {

@@ -274,19 +274,13 @@ impl SurfaceSystem {
         v
     }
 
-    /// Compute the effective temperature at a position.
+    /// Compute the effective temperature at a position, using a column-local
+    /// XZ cache.
     ///
-    /// Matches vanilla's `Biome.getTemperature()` with temperature modifier
-    /// and height-based adjustment above `seaLevel + 17`.
-    ///
-    /// # Panics
-    /// Panics if `biome_id` does not correspond to a registered biome.
-    /// Compute temperature using a column-local XZ cache.
-    ///
-    /// Same semantics as vanilla's `Biome.getTemperature()` with the
-    /// temperature modifier and height-based adjustment above `sea_level + 17`.
-    /// All three contributing noise samples are 2D (XZ-only), so reusing them
-    /// across every Y in a column is determinism-preserving.
+    /// Matches vanilla's `Biome.getTemperature()` with the temperature modifier
+    /// and height-based adjustment above `sea_level + 17`. All three contributing
+    /// noise samples are 2D (XZ-only), so reusing them across every Y in a column
+    /// is determinism-preserving.
     ///
     /// # Panics
     /// Panics if `biome_id` does not correspond to a registered biome.
