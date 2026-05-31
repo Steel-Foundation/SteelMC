@@ -978,9 +978,9 @@ fn bench_overworld_full_pipeline_concurrent_overlap(c: &mut Criterion) {
 
 /// A single overworld chunk taken Empty → Full on one thread.
 ///
-/// Finishing one chunk requires generating the surrounding neighbourhood of
+/// Finishing one chunk requires generating the surrounding neighborhood of
 /// dependency chunks (each pipeline step pulls a radius of lower-status
-/// neighbours), so this measures the honest end-to-end cost of producing one
+/// neighbors), so this measures the honest end-to-end cost of producing one
 /// finished chunk rather than a single isolated step.
 fn bench_overworld_full_chunk(c: &mut Criterion) {
     ensure_registry();
