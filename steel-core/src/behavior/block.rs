@@ -502,7 +502,7 @@ pub trait BlockBehavior: Send + Sync {
 
     // These methods are no-ops by default and are overridden by blocks that fall.
 
-    /// Returns configuration applied to the FallingBlockEntity just before it is spawned.
+    /// Returns configuration applied to the `FallingBlockEntity` just before it is spawned.
     ///
     /// Vanilla: `FallingBlock.falling(FallingBlockEntity)` — used by `AnvilBlock`
     /// to enable entity damage on impact.

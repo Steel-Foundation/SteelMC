@@ -584,12 +584,12 @@ impl World {
             // Vanilla: also checks all entities with blocksBuilding=true (FallingBlockEntity, mobs, boats…)
             // TODO: mobs and boats don't implement blocks_building() yet — add overrides as they're implemented
             let query_aabb = AABBd::new(
-                pos.x() as f64,
-                pos.y() as f64,
-                pos.z() as f64,
-                pos.x() as f64 + 1.0,
-                pos.y() as f64 + 1.0,
-                pos.z() as f64 + 1.0,
+                f64::from(pos.x()),
+                f64::from(pos.y()),
+                f64::from(pos.z()),
+                f64::from(pos.x()) + 1.0,
+                f64::from(pos.y()) + 1.0,
+                f64::from(pos.z()) + 1.0,
             );
             for entity in self.get_entities_in_aabb(&query_aabb) {
                 if !entity.blocks_building() || entity.is_removed() {

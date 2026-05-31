@@ -8,6 +8,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::vanilla_fluids;
 use steel_utils::types::UpdateFlags;
+
+use crate::fluid::state::get_fluid_state_from_block;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -40,25 +42,21 @@ impl ConcretePowderBlock {
     pub const fn new(block: BlockRef, concrete: BlockRef) -> Self {
         Self { block, concrete }
     }
+}
 
-    /// Converts to concrete if the block at `pos` or any neighbor contains water.
-    ///
-    /// Vanilla: `ConcretePowderBlock.shouldSolidify()`.
-    fn should_solidify(
-        &self,
-        world: &dyn ScheduledTickAccess,
-        pos: BlockPos,
-        replaced: BlockStateId,
-    ) -> bool {
-        can_solidify(replaced) || touches_liquid(world, pos)
-    }
+/// Returns true if the block should solidify: either the replaced block is water,
+/// or a neighboring block is water.
+///
+/// Vanilla: `ConcretePowderBlock.shouldSolidify()`.
+fn should_solidify(world: &dyn ScheduledTickAccess, pos: BlockPos, replaced: BlockStateId) -> bool {
+    can_solidify(replaced) || touches_liquid(world, pos)
 }
 
 impl BlockBehavior for ConcretePowderBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let pos = context.clicked_pos;
         let replaced = context.world.get_block_state(pos);
-        if self.should_solidify(context.world, pos, replaced) {
+        if should_solidify(context.world, pos, replaced) {
             Some(self.concrete.default_state())
         } else {
             Some(self.block.default_state())
@@ -108,7 +106,7 @@ impl BlockBehavior for ConcretePowderBlock {
         replaced_state: BlockStateId,
         _entity: &dyn Entity,
     ) {
-        if self.should_solidify(world, pos, replaced_state) {
+        if should_solidify(world, pos, replaced_state) {
             world.set_block(pos, self.concrete.default_state(), UpdateFlags::UPDATE_ALL);
         }
     }
@@ -122,7 +120,7 @@ impl BlockBehavior for ConcretePowderBlock {
 ///
 /// Vanilla: `ConcretePowderBlock.canSolidify()`.
 fn can_solidify(state: BlockStateId) -> bool {
-    let fluid = crate::fluid::state::get_fluid_state_from_block(state);
+    let fluid = get_fluid_state_from_block(state);
     fluid.fluid_id == &vanilla_fluids::WATER
 }
 
@@ -132,7 +130,7 @@ fn can_solidify(state: BlockStateId) -> bool {
 /// Vanilla: `ConcretePowderBlock.touchesLiquid()`.
 ///
 /// Differs from vanilla in loop structure but produces identical results: vanilla uses a
-/// mutable BlockPos that is read *before* offset on each iteration — for the DOWN direction
+/// mutable `BlockPos` that is read *before* offset on each iteration — for the DOWN direction
 /// this means it reads the concrete powder block itself, which can only solidify if the
 /// powder is waterlogged, so DOWN is effectively always skipped for dry powder.
 fn touches_liquid(world: &dyn ScheduledTickAccess, pos: BlockPos) -> bool {

@@ -16,10 +16,12 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::blocks::shapes::AABBd;
+use steel_registry::entity_data::BlockPos as EntityDataBlockPos;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::FallingBlockEntityData;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
@@ -32,8 +34,10 @@ use uuid::Uuid;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::blocks::AnvilBlock;
 use crate::entity::{Entity, EntityBase, RemovalReason};
-use crate::fluid::FluidStateExt;
-use crate::fluid::state::{fluid_state_to_block, get_fluid_state_from_block};
+use crate::fluid::state::{
+    fluid_state_to_block, get_fluid_state, get_fluid_state_from_block, water_id,
+};
+use crate::fluid::{FluidStateExt, is_water_fluid};
 use crate::physics::MoverType;
 use crate::world::RaytraceAction;
 use crate::world::World;
@@ -98,13 +102,11 @@ impl FallingBlockEntity {
     #[must_use]
     pub fn new(id: i32, position: DVec3, world: Weak<World>, block_state: BlockStateId) -> Self {
         let mut entity_data = FallingBlockEntityData::new();
-        entity_data
-            .start_pos
-            .set(steel_registry::entity_data::BlockPos::new(
-                position.x as i32,
-                position.y as i32,
-                position.z as i32,
-            ));
+        entity_data.start_pos.set(EntityDataBlockPos::new(
+            position.x as i32,
+            position.y as i32,
+            position.z as i32,
+        ));
 
         Self {
             base: EntityBase::new(id, position, world),
@@ -141,7 +143,6 @@ impl FallingBlockEntity {
         on_ground: bool,
         world: Weak<World>,
     ) -> Self {
-        use steel_registry::vanilla_blocks;
         let block_state = vanilla_blocks::SAND.default_state();
 
         Self {
@@ -175,26 +176,27 @@ impl FallingBlockEntity {
         // Strip WATERLOGGED — the entity itself is never waterlogged
         let falling_state = state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .map(|_| state.set_value(&BlockStateProperties::WATERLOGGED, false))
-            .unwrap_or(state);
+            .map_or(state, |_| {
+                state.set_value(&BlockStateProperties::WATERLOGGED, false)
+            });
 
         // Replace the block with its fluid state (air, or water source if waterlogged)
         let fluid_replacement = fluid_state_to_block(get_fluid_state_from_block(state));
         world.set_block(pos, fluid_replacement, UpdateFlags::UPDATE_ALL);
 
         // Spawn at block center X/Z, bottom Y (vanilla uses pos.getX() + 0.5, pos.getY())
-        let spawn_pos = DVec3::new(pos.x() as f64 + 0.5, pos.y() as f64, pos.z() as f64 + 0.5);
+        let spawn_pos = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + 0.5,
+        );
 
         let entity = Self::new(id, spawn_pos, Arc::downgrade(world), falling_state);
         entity
             .entity_data
             .lock()
             .start_pos
-            .set(steel_registry::entity_data::BlockPos::new(
-                pos.x(),
-                pos.y(),
-                pos.z(),
-            ));
+            .set(EntityDataBlockPos::new(pos.x(), pos.y(), pos.z()));
         entity
     }
 
@@ -220,7 +222,7 @@ impl FallingBlockEntity {
 
     // === Private helpers ===
 
-    fn entity_drops_enabled(&self, world: &Arc<World>) -> bool {
+    fn entity_drops_enabled(world: &Arc<World>) -> bool {
         world.get_game_rule(&ENTITY_DROPS).as_bool().unwrap_or(true)
     }
 
@@ -267,7 +269,7 @@ impl FallingBlockEntity {
             entity.hurt(&source, damage);
         }
 
-        // Anvil degradation: chance to degrade state on impact
+        // Vanilla: isAnvil && damage > 0 && random < 0.05 + fallDistanceInt * 0.05
         if damage > 0.0 && REGISTRY.blocks.is_in_tag(block_ref, &BlockTag::ANVIL) {
             let degrade_chance = 0.05 + fall_dist_int as f32 * 0.05;
             if rand::random::<f32>() < degrade_chance {
@@ -280,7 +282,7 @@ impl FallingBlockEntity {
     }
 
     fn try_drop_block_item(&self, world: &Arc<World>) {
-        if !self.drop_item.load(Ordering::Relaxed) || !self.entity_drops_enabled(world) {
+        if !self.drop_item.load(Ordering::Relaxed) || !Self::entity_drops_enabled(world) {
             return;
         }
         let block_state = self.block_state.load();
@@ -394,6 +396,7 @@ enum PositionSyncPacket {
 /// Returns true if a block state can be replaced by a falling block landing on it.
 ///
 /// Vanilla: `FallingBlock.isFree(BlockState)`.
+#[must_use]
 pub fn is_free(state: BlockStateId) -> bool {
     state.is_air()
         || REGISTRY
@@ -452,7 +455,7 @@ impl Entity for FallingBlockEntity {
     }
 
     fn spawn_data(&self) -> i32 {
-        self.block_state.load().0 as i32
+        i32::from(self.block_state.load().0)
     }
 
     fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
@@ -463,6 +466,10 @@ impl Entity for FallingBlockEntity {
         self.entity_data.lock().pack_all()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "mirrors vanilla FallingBlockEntity.tick() structure"
+    )]
     fn tick(&self) {
         let block_state = self.block_state.load();
         if block_state.is_air() {
@@ -506,7 +513,7 @@ impl Entity for FallingBlockEntity {
 
         let mut is_stuck_in_water = false;
         if is_concrete_powder {
-            let fluid = crate::fluid::state::get_fluid_state(&world, pos);
+            let fluid = get_fluid_state(&world, pos);
             // Vanilla: getFluidState(pos).is(FluidTags.WATER) — any water, not just source
             is_stuck_in_water = fluid.is_water();
 
@@ -555,6 +562,10 @@ impl Entity for FallingBlockEntity {
                 self.cause_fall_damage(current_fall_distance, &world);
             }
 
+            // Re-read from the atomic: cause_fall_damage may have degraded an anvil state.
+            // Vanilla reads this.blockState (a live field) at placement time for the same reason.
+            let block_state = self.block_state.load();
+
             // Bounce damping (vanilla: multiply by (0.7, -0.5, 0.7))
             {
                 let mut vel = self.velocity.lock();
@@ -566,9 +577,11 @@ impl Entity for FallingBlockEntity {
             let current_state = world.get_block_state(pos);
 
             // Skip landing logic if we're on a moving piston
-            use steel_registry::vanilla_blocks;
             if current_state.get_block() != &vanilla_blocks::MOVING_PISTON {
-                if !self.cancel_drop.load(Ordering::Relaxed) {
+                if self.cancel_drop.load(Ordering::Relaxed) {
+                    self.call_on_broken_after_fall(&world, pos);
+                    self.set_removed(RemovalReason::Killed);
+                } else {
                     // TODO: should use canBeReplaced(DirectionalPlaceContext(DOWN, EMPTY, UP)) —
                     //       in practice equivalent for most blocks since the item is always empty
                     let may_replace = current_state.is_replaceable();
@@ -585,8 +598,7 @@ impl Entity for FallingBlockEntity {
                         let place_state = if block_state
                             .try_get_value(&BlockStateProperties::WATERLOGGED)
                             .is_some()
-                            && crate::fluid::state::get_fluid_state(&world, pos).fluid_id
-                                == crate::fluid::water_id()
+                            && get_fluid_state(&world, pos).fluid_id == water_id()
                         {
                             block_state.set_value(&BlockStateProperties::WATERLOGGED, true)
                         } else {
@@ -611,7 +623,7 @@ impl Entity for FallingBlockEntity {
                             behavior.on_land(&world, pos, place_state, current_state, self);
                             // TODO: load block_data into block entity when has_block_entity() works
                         } else if self.drop_item.load(Ordering::Relaxed)
-                            && self.entity_drops_enabled(&world)
+                            && Self::entity_drops_enabled(&world)
                         {
                             self.set_removed(RemovalReason::Killed);
                             self.call_on_broken_after_fall(&world, pos);
@@ -622,15 +634,12 @@ impl Entity for FallingBlockEntity {
                     } else {
                         self.set_removed(RemovalReason::Killed);
                         if self.drop_item.load(Ordering::Relaxed)
-                            && self.entity_drops_enabled(&world)
+                            && Self::entity_drops_enabled(&world)
                         {
                             self.call_on_broken_after_fall(&world, pos);
                             self.try_drop_block_item(&world);
                         }
                     }
-                } else {
-                    self.call_on_broken_after_fall(&world, pos);
-                    self.set_removed(RemovalReason::Killed);
                 }
             }
         }
@@ -685,15 +694,15 @@ impl Entity for FallingBlockEntity {
         let block_state = self.block_state.load();
         // Block state: store as numeric ID (vanilla uses codec; we store raw ID for now)
         // TODO: use proper BlockState codec when available
-        nbt.insert("BlockStateId", NbtTag::Int(block_state.0 as i32));
+        nbt.insert("BlockStateId", NbtTag::Int(i32::from(block_state.0)));
         nbt.insert("Time", NbtTag::Int(self.time.load(Ordering::Relaxed)));
         nbt.insert(
             "DropItem",
-            NbtTag::Byte(self.drop_item.load(Ordering::Relaxed) as i8),
+            NbtTag::Byte(i8::from(self.drop_item.load(Ordering::Relaxed))),
         );
         nbt.insert(
             "HurtEntities",
-            NbtTag::Byte(self.hurt_entities.load(Ordering::Relaxed) as i8),
+            NbtTag::Byte(i8::from(self.hurt_entities.load(Ordering::Relaxed))),
         );
         nbt.insert(
             "FallHurtAmount",
@@ -708,7 +717,7 @@ impl Entity for FallingBlockEntity {
         }
         nbt.insert(
             "CancelDrop",
-            NbtTag::Byte(self.cancel_drop.load(Ordering::Relaxed) as i8),
+            NbtTag::Byte(i8::from(self.cancel_drop.load(Ordering::Relaxed))),
         );
     }
 
@@ -756,5 +765,5 @@ impl Entity for FallingBlockEntity {
 /// waterlogged blocks qualify; flowing water (level 1-7) does not.
 fn is_water_source_block(state: BlockStateId) -> bool {
     let fluid = get_fluid_state_from_block(state);
-    crate::fluid::is_water_fluid(fluid.fluid_id) && fluid.is_source()
+    is_water_fluid(fluid.fluid_id) && fluid.is_source()
 }

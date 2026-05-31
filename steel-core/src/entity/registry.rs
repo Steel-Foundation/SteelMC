@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
+use steel_registry::blocks::Block;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
@@ -265,7 +266,7 @@ pub fn init_entities() {
         let sand = REGISTRY
             .blocks
             .by_key(&Identifier::new("minecraft", "sand"))
-            .map(|b| b.default_state())
+            .map(Block::default_state)
             .unwrap_or_default();
         Arc::new(FallingBlockEntity::new(id, pos, world, sand))
     });
