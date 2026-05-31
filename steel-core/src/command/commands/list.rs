@@ -1,7 +1,7 @@
 //! Handler for the "list" command.
 
 use crate::command::{
-    commands::{CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn, literal},
+    commands::{CommandHandlerBuilder, CommandHandlerDyn, literal},
     context::CommandContext,
     error::CommandError,
 };
@@ -15,26 +15,18 @@ pub fn command_handler() -> impl CommandHandlerDyn {
         "Lists players on the server.",
         "minecraft:command.list",
     )
-    .executes(ListExecutor)
-    .then(literal("uuids").executes(ListWithUuidExecutor))
-}
-
-struct ListExecutor;
-
-impl CommandExecutor<()> for ListExecutor {
-    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        list_players(context, false);
-        Ok(())
-    }
-}
-
-struct ListWithUuidExecutor;
-
-impl CommandExecutor<()> for ListWithUuidExecutor {
-    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        list_players(context, true);
-        Ok(())
-    }
+    .executes(
+        |(), context: &mut CommandContext| -> Result<(), CommandError> {
+            list_players(context, false);
+            Ok(())
+        },
+    )
+    .then(literal("uuids").executes(
+        |(), context: &mut CommandContext| -> Result<(), CommandError> {
+            list_players(context, true);
+            Ok(())
+        },
+    ))
 }
 
 fn list_players(context: &mut CommandContext, show_uuids: bool) {
