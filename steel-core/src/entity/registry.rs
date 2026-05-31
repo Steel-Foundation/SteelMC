@@ -7,6 +7,7 @@ use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use steel_registry::blocks::Block;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_blocks;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_registry::{RegistryExt, vanilla_entities};
 use steel_utils::{BlockPos, Direction};
@@ -257,18 +258,11 @@ pub fn init_entities() {
         },
     );
 
-    // Register falling block entity factory
-    // Note: spawn factory without a block state creates a sand entity as placeholder;
-    // actual spawning goes through FallingBlockEntity::fall() directly.
+    // Note: actual falling block spawning goes through FallingBlockEntity::fall() directly;
+    // this factory is only used when spawning via entity ID (e.g. from a client packet).
+    // SAND is a placeholder — block state is overwritten by load_additional() when loading.
     registry.register(&vanilla_entities::FALLING_BLOCK, |id, pos, world| {
-        use steel_registry::{REGISTRY, RegistryExt};
-        use steel_utils::Identifier;
-        let sand = REGISTRY
-            .blocks
-            .by_key(&Identifier::new("minecraft", "sand"))
-            .map(Block::default_state)
-            .unwrap_or_default();
-        Arc::new(FallingBlockEntity::new(id, pos, world, sand))
+        Arc::new(FallingBlockEntity::new(id, pos, world, vanilla_blocks::SAND.default_state()))
     });
     registry.register_load(
         &vanilla_entities::FALLING_BLOCK,

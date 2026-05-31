@@ -500,19 +500,12 @@ pub trait BlockBehavior: Send + Sync {
         None
     }
 
-    // These methods are no-ops by default and are overridden by blocks that fall.
-
     /// Returns configuration applied to the `FallingBlockEntity` just before it is spawned.
-    ///
-    /// Vanilla: `FallingBlock.falling(FallingBlockEntity)` — used by `AnvilBlock`
-    /// to enable entity damage on impact.
     fn falling_entity_config(&self) -> FallingEntityConfig {
         FallingEntityConfig::default()
     }
 
     /// Called when the falling block successfully lands and is placed in the world.
-    ///
-    /// Vanilla: `Fallable.onLand(Level, BlockPos, BlockState, BlockState, FallingBlockEntity)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -529,8 +522,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Called when the falling block cannot be placed and breaks (drops as item).
-    ///
-    /// Vanilla: `Fallable.onBrokenAfterFall(Level, BlockPos, FallingBlockEntity)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -540,9 +531,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Returns the damage source used when this falling block hurts an entity.
-    ///
-    /// Override in blocks like anvils to use the `falling_anvil` damage type.
-    /// Vanilla: `Fallable.getFallDamageSource(Entity)`.
     fn fall_damage_source(&self, direct_entity_id: i32) -> DamageSource {
         DamageSource {
             damage_type: &vanilla_damage_types::FALLING_BLOCK,
@@ -553,9 +541,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Returns true if this block is a concrete powder variant.
-    ///
-    /// Used by `FallingBlockEntity` to enable the in-flight water solidification check.
-    /// Vanilla: `block instanceof ConcretePowderBlock`.
     fn is_concrete_powder(&self) -> bool {
         false
     }
@@ -565,7 +550,6 @@ pub trait BlockBehavior: Send + Sync {
 ///
 /// Returned by `BlockBehavior::falling_entity_config()`. The entity applies
 /// these values immediately after construction, before being added to the world.
-/// Mirrors vanilla's `FallingBlock.falling(FallingBlockEntity)` callback pattern.
 pub struct FallingEntityConfig {
     /// Whether this falling block damages entities on impact (e.g. anvils).
     pub hurt_entities: bool,

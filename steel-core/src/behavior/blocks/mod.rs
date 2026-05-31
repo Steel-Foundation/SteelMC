@@ -7,7 +7,6 @@ mod building;
 mod container;
 mod decoration;
 mod falling;
-mod farming;
 mod fluid;
 mod portal;
 mod redstone;

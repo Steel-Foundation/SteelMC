@@ -174,9 +174,7 @@ impl FallingBlockEntity {
         // Strip WATERLOGGED — the entity itself is never waterlogged
         let falling_state = state
             .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .map_or(state, |_| {
-                state.set_value(&BlockStateProperties::WATERLOGGED, false)
-            });
+            .map_or(state, |_| state.set_value(&BlockStateProperties::WATERLOGGED, false));
 
         // Replace the block with its fluid state (air, or water source if waterlogged)
         let fluid_replacement = fluid_state_to_block(get_fluid_state_from_block(state));
@@ -190,11 +188,7 @@ impl FallingBlockEntity {
         );
 
         let entity = Self::new(id, spawn_pos, Arc::downgrade(world), falling_state);
-        entity
-            .entity_data
-            .lock()
-            .start_pos
-            .set(EntityDataBlockPos::new(pos.x(), pos.y(), pos.z()));
+        entity.entity_data.lock().start_pos.set(EntityDataBlockPos::new(pos.x(), pos.y(), pos.z()));
         entity
     }
 

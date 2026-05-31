@@ -155,14 +155,6 @@ pub trait Entity: Send + Sync {
         Vec::new()
     }
 
-    /// Returns the entity-type-specific integer sent in `CAddEntity.data`.
-    ///
-    /// Vanilla: `Entity.getEntityData()` used in `AddEntityPacket`.
-    /// Most entities return 0; falling blocks return their block state ID.
-    fn spawn_data(&self) -> i32 {
-        0
-    }
-
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
         self.base().is_some_and(EntityBase::is_removed)
@@ -183,8 +175,6 @@ pub trait Entity: Send + Sync {
     }
 
     /// Whether this entity prevents block placement in its space.
-    ///
-    /// Vanilla: `Entity.blocksBuilding`. True for players, mobs, boats, falling blocks, etc.
     fn blocks_building(&self) -> bool {
         false
     }
@@ -204,6 +194,11 @@ pub trait Entity: Send + Sync {
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
     fn rotation(&self) -> (f32, f32) {
         (0.0, 0.0)
+    }
+
+    /// Extra spawn-packet data used by vanilla for entity-specific construction.
+    fn spawn_data(&self) -> i32 {
+        0
     }
 
     /// Gets the eye height for this entity.
