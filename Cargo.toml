@@ -164,6 +164,11 @@ opt-level = 3
 debug-assertions = false
 overflow-checks = false
 
+[profile.dev.package.steel-math]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
 [workspace.lints.rust]
 missing_docs = "warn"
 

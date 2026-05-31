@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
-use steel_math::map;
+use steel_math::map_clamped;
 
 impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
@@ -179,7 +179,7 @@ impl FeatureDecorationRunner {
     ) -> BlockStateId {
         let slow_noise = Self::normal_noise(&provider.slow_noise, provider.seed);
         let variety_noise = Self::noise_value(&slow_noise, pos, provider.slow_scale);
-        let local_variety = map(
+        let local_variety = map_clamped(
             variety_noise,
             -1.0,
             1.0,

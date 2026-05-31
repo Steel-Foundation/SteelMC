@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "steel-math"
-version = "0.6.3+mc26.1"
+version = "0.7.0+mc26.1"
 
 [[package]]
 name = "steel-protocol"
