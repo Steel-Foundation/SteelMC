@@ -1,7 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{fs, path::Path};
 
-use heck::ToShoutySnakeCase;
+use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
@@ -118,7 +118,6 @@ pub fn build_simple_tags(
     tag_subdir: &str,
     registry_module: &str,
     registry_type: &str,
-    register_fn: &str,
 ) -> TokenStream {
     let tag_dir = format!("build_assets/builtin_datapacks/minecraft/tags/{tag_subdir}");
     println!("cargo:rerun-if-changed={tag_dir}");
@@ -128,7 +127,14 @@ pub fn build_simple_tags(
 
     let registry_module_ident = Ident::new(registry_module, Span::call_site());
     let registry_type_ident = Ident::new(registry_type, Span::call_site());
-    let register_fn_ident = Ident::new(register_fn, Span::call_site());
+    let register_fn_ident = Ident::new(
+        &format!("register_{}_tags", registry_module),
+        Span::call_site(),
+    );
+    let tag_category_ident = Ident::new(
+        &format!("{}Tag", registry_module.to_upper_camel_case()),
+        Span::call_site(),
+    );
 
     let mut stream = TokenStream::new();
 
@@ -147,10 +153,7 @@ pub fn build_simple_tags(
             &format!("{}_TAG_LIST", tag_name.to_shouty_snake_case()),
             Span::call_site(),
         );
-        let tag_ident = Ident::new(
-            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
-            Span::call_site(),
-        );
+        let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
 
         let entry_strs = entries.iter().map(|s| s.as_str());
         let tag_key = tag_name.as_str();
@@ -164,17 +167,20 @@ pub fn build_simple_tags(
         });
 
         register_stream.extend(quote! {
-            registry.register_tag(#tag_ident, #tag_list_ident);
+            registry.register_tag(Self::#tag_ident, #tag_list_ident);
         });
     }
 
     stream.extend(quote! {
         #static_arrays
 
-        #const_identifiers
+        pub struct #tag_category_ident {}
+        impl #tag_category_ident {
+            #const_identifiers
+            pub fn #register_fn_ident(registry: &mut #registry_type_ident) {
+               #register_stream
+            }
 
-        pub fn #register_fn_ident(registry: &mut #registry_type_ident) {
-            #register_stream
         }
     });
 

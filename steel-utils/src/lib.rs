@@ -7,6 +7,8 @@
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = "26.1";
 
+/// axis
+pub mod axis;
 /// Climate system for biome selection.
 pub mod climate;
 pub mod codec;
@@ -19,7 +21,6 @@ pub mod hash;
 pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
-pub mod math;
 pub mod random;
 /// helpful tools for registry
 pub mod registry;

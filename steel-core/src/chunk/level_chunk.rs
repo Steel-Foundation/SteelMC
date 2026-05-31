@@ -32,8 +32,8 @@ use crate::chunk::{
 };
 use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
-use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
+use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
     let section_count = (height / 16) as usize;

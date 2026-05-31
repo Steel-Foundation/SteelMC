@@ -319,7 +319,6 @@ impl Server {
         };
 
         Self::apply_domain_player_state(&player, &state);
-        player.reset_health_if_dead();
         self.send_login_packet(&player, &state.world);
 
         player.reset(state.world.clone(), ResetReason::InitialJoin);

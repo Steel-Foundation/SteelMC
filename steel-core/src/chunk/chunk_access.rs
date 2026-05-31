@@ -13,8 +13,8 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::structure::{StructureReferenceMap, StructureStartMap};
 use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
+use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 /// The status of a chunk.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, SchemaWrite, SchemaRead)]
@@ -662,8 +662,8 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::chunk::heightmap::ChunkHeightmaps;
     use crate::chunk::section::{ChunkSection, Sections};
-    use crate::world::structure::{StructureReferenceMap, StructureStartMap};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
+    use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
     #[test]
     fn proto_height_at_primes_missing_heightmap() {

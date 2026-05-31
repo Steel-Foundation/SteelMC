@@ -1,6 +1,7 @@
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::PackedBlockPos;
 
 use super::super::prelude::*;
@@ -103,24 +104,19 @@ impl FeatureDecorationRunner {
 
     pub(in crate::worldgen::feature) fn safe_set_feature_block(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         state: BlockStateId,
     ) -> bool {
-        if Self::feature_can_replace(registry, region.block_state(pos)) {
+        if Self::feature_can_replace(region.block_state(pos)) {
             region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS)
         } else {
             false
         }
     }
 
-    pub(in crate::worldgen::feature) fn feature_can_replace(
-        registry: &Registry,
-        state: BlockStateId,
-    ) -> bool {
-        !registry.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::FEATURES_CANNOT_REPLACE_TAG,
-        )
+    pub(in crate::worldgen::feature) fn feature_can_replace(state: BlockStateId) -> bool {
+        !state
+            .get_block()
+            .has_tag(&BlockTag::FEATURES_CANNOT_REPLACE)
     }
 }

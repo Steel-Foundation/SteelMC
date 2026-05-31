@@ -1,6 +1,7 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
+use steel_math::map_clamped;
 
 impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
@@ -178,7 +179,7 @@ impl FeatureDecorationRunner {
     ) -> BlockStateId {
         let slow_noise = Self::normal_noise(&provider.slow_noise, provider.seed);
         let variety_noise = Self::noise_value(&slow_noise, pos, provider.slow_scale);
-        let local_variety = Self::clamped_map(
+        let local_variety = map_clamped(
             variety_noise,
             -1.0,
             1.0,
@@ -273,17 +274,6 @@ impl FeatureDecorationRunner {
         };
         let index = random.next_i32_bounded(state_count) as usize;
         Self::block_state_from_data(registry, &states[index])
-    }
-
-    pub(super) fn clamped_map(
-        value: f64,
-        from_low: f64,
-        from_high: f64,
-        to_low: f64,
-        to_high: f64,
-    ) -> f64 {
-        let inverse_lerp = ((value - from_low) / (from_high - from_low)).clamp(0.0, 1.0);
-        to_low + inverse_lerp * (to_high - to_low)
     }
 }
 

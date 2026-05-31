@@ -3,6 +3,8 @@
     reason = "dripstone cluster placement follows vanilla's linear algorithm"
 )]
 
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 
@@ -31,7 +33,6 @@ impl DripstoneColumn {
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_dripstone_cluster_feature(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         random: &mut WorldgenRandom,
         config: &DripstoneClusterConfiguration,
         origin: BlockPos,
@@ -52,7 +53,7 @@ impl FeatureDecorationRunner {
                     Self::chance_of_stalagmite_or_stalactite(x_radius, z_radius, dx, dz, config);
                 let pos = origin.offset(dx, 0, dz);
                 Self::place_dripstone_cluster_column(
-                    region, registry, random, pos, dx, dz, wetness, chance, height, density, config,
+                    region, random, pos, dx, dz, wetness, chance, height, density, config,
                 );
             }
         }
@@ -66,7 +67,6 @@ impl FeatureDecorationRunner {
     )]
     fn place_dripstone_cluster_column(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
         dx: i32,
@@ -95,8 +95,7 @@ impl FeatureDecorationRunner {
 
         let want_pool = random.next_f32() < chance_of_water;
         let column = if let Some(base_floor_y) = base_floor {
-            if want_pool && Self::can_place_dripstone_pool(region, registry, pos.at_y(base_floor_y))
-            {
+            if want_pool && Self::can_place_dripstone_pool(region, pos.at_y(base_floor_y)) {
                 let _ = region.set_block_state(
                     pos.at_y(base_floor_y),
                     vanilla_blocks::WATER.default_state(),
@@ -117,7 +116,6 @@ impl FeatureDecorationRunner {
                 let ceiling_thickness = config.dripstone_block_layer_thickness.sample(random);
                 Self::replace_blocks_with_dripstone_blocks(
                     region,
-                    registry,
                     pos.at_y(ceiling_y),
                     ceiling_thickness,
                     Direction::Up,
@@ -141,7 +139,6 @@ impl FeatureDecorationRunner {
                 let floor_thickness = config.dripstone_block_layer_thickness.sample(random);
                 Self::replace_blocks_with_dripstone_blocks(
                     region,
-                    registry,
                     pos.at_y(floor_y),
                     floor_thickness,
                     Direction::Down,
@@ -192,7 +189,6 @@ impl FeatureDecorationRunner {
         if let Some(ceiling_y) = ceiling {
             Self::grow_pointed_dripstone(
                 region,
-                registry,
                 pos.at_y(ceiling_y - 1),
                 Direction::Down,
                 actual_stalactite_height,
@@ -203,7 +199,6 @@ impl FeatureDecorationRunner {
         if let Some(floor_y) = floor {
             Self::grow_pointed_dripstone(
                 region,
-                registry,
                 pos.at_y(floor_y + 1),
                 Direction::Up,
                 actual_stalagmite_height,
@@ -298,11 +293,7 @@ impl FeatureDecorationRunner {
         ) as i32
     }
 
-    fn can_place_dripstone_pool(
-        region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        pos: BlockPos,
-    ) -> bool {
+    fn can_place_dripstone_pool(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         let state = region.block_state(pos);
         let block = state.get_block();
         if block == &vanilla_blocks::WATER
@@ -317,39 +308,28 @@ impl FeatureDecorationRunner {
         }
 
         for direction in Self::VANILLA_HORIZONTAL_DIRECTIONS {
-            if !Self::can_be_adjacent_to_dripstone_pool_water(
-                region,
-                registry,
-                pos.relative(direction),
-            ) {
+            if !Self::can_be_adjacent_to_dripstone_pool_water(region, pos.relative(direction)) {
                 return false;
             }
         }
 
-        Self::can_be_adjacent_to_dripstone_pool_water(region, registry, pos.below())
+        Self::can_be_adjacent_to_dripstone_pool_water(region, pos.below())
     }
 
-    fn can_be_adjacent_to_dripstone_pool_water(
-        region: &WorldGenRegion<'_>,
-        registry: &Registry,
-        pos: BlockPos,
-    ) -> bool {
+    fn can_be_adjacent_to_dripstone_pool_water(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         let state = region.block_state(pos);
-        registry.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::BASE_STONE_OVERWORLD_TAG,
-        ) || get_fluid_state_from_block(state).is_water()
+        state.get_block().has_tag(&BlockTag::BASE_STONE_OVERWORLD)
+            || get_fluid_state_from_block(state).is_water()
     }
 
     fn replace_blocks_with_dripstone_blocks(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         mut pos: BlockPos,
         max_count: i32,
         direction: Direction,
     ) {
         for _ in 0..max_count {
-            if !Self::place_dripstone_block_if_possible(region, registry, pos) {
+            if !Self::place_dripstone_block_if_possible(region, pos) {
                 return;
             }
 

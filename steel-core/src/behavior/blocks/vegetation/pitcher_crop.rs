@@ -3,13 +3,13 @@ use std::sync::Arc;
 use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, DoubleBlockHalf, EnumProperty, IntProperty},
     },
-    vanilla_block_tags, vanilla_blocks, vanilla_entities, vanilla_game_rules,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_entities, vanilla_game_rules,
 };
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -58,10 +58,7 @@ impl PitcherCropBlock {
                 let block_state = world.get_block_state(check_pos);
                 let mut block_speed = 0.0f32;
 
-                if steel_registry::REGISTRY.blocks.is_in_tag(
-                    block_state.get_block(),
-                    &vanilla_block_tags::GROWS_CROPS_TAG,
-                ) {
+                if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
                     block_speed = 1.0;
                     // Check moisture level (defaults to 0 for non-farmland blocks)
                     let moisture = block_state
@@ -239,9 +236,7 @@ impl BlockBehavior for PitcherCropBlock {
 
 impl Vegetation for PitcherCropBlock {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        REGISTRY
-            .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)
+        state.get_block().has_tag(&BlockTag::SUPPORTS_CROPS)
     }
 }
 

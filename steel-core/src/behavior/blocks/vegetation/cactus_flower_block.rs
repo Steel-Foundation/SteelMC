@@ -8,8 +8,8 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::SupportType;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_registry::{TaggedRegistryExt, vanilla_block_tags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
@@ -37,10 +37,10 @@ impl BlockBehavior for CactusFlowerBlock {
     /// or any block with a sturdy center face on top.
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below = world.get_block_state(pos.below());
-        steel_registry::REGISTRY.blocks.is_in_tag(
-            below.get_block(),
-            &vanilla_block_tags::SUPPORT_OVERRIDE_CACTUS_FLOWER_TAG,
-        ) || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
+        below
+            .get_block()
+            .has_tag(&BlockTag::SUPPORT_OVERRIDE_CACTUS_FLOWER)
+            || below.is_face_sturdy_for(Direction::Up, SupportType::Center)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

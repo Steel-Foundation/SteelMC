@@ -25,14 +25,15 @@ use steel_core::entity::init_entities;
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{
-    BiomeSourceKind, ChunkBiomeSampler, ChunkGenerator, ChunkGeneratorType, EndGenerator,
-    NetherGenerator, OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
+    ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
+    WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
+use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
 

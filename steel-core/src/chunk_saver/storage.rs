@@ -26,20 +26,20 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
 };
 
-use crate::world::structure::desert_pyramid::DesertPyramidPieceData;
-use crate::world::structure::fortress::FortressPieceData;
-use crate::world::structure::jigsaw::{JigsawJunction, JigsawPieceData};
-use crate::world::structure::jungle_temple::JungleTemplePieceData;
-use crate::world::structure::mineshaft::{
+use steel_worldgen::structure::desert_pyramid::DesertPyramidPieceData;
+use steel_worldgen::structure::fortress::FortressPieceData;
+use steel_worldgen::structure::jigsaw::{JigsawJunction, JigsawPieceData};
+use steel_worldgen::structure::jungle_temple::JungleTemplePieceData;
+use steel_worldgen::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
-use crate::world::structure::ocean_monument::{
+use steel_worldgen::structure::ocean_monument::{
     OceanMonumentChildPiece, OceanMonumentChildPieceKind, OceanMonumentPieceData,
     OceanMonumentRoomData,
 };
-use crate::world::structure::stronghold::{StrongholdPieceData, StrongholdSmallDoorType};
-use crate::world::structure::swamp_hut::SwampHutPieceData;
-use crate::world::structure::{
+use steel_worldgen::structure::stronghold::{StrongholdPieceData, StrongholdSmallDoorType};
+use steel_worldgen::structure::swamp_hut::SwampHutPieceData;
+use steel_worldgen::structure::{
     ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
     StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart,
     StructureStartMap, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
@@ -2362,7 +2362,6 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
     use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
-    use crate::world::structure::StructureReferenceSet;
     use glam::DVec3;
     use rustc_hash::FxHashMap;
     use steel_registry::test_support::init_test_registry;
@@ -2370,6 +2369,7 @@ mod tests {
     use steel_registry::vanilla_blocks;
     use steel_registry::vanilla_entities;
     use steel_utils::types::UpdateFlags;
+    use steel_worldgen::structure::StructureReferenceSet;
 
     static RUNTIME_REGISTRIES: Once = Once::new();
 

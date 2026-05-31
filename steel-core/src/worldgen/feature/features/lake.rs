@@ -1,3 +1,5 @@
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
@@ -27,7 +29,7 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        Self::place_lake_contents(region, registry, &grid, origin, fluid);
+        Self::place_lake_contents(region, &grid, origin, fluid);
         Self::place_lake_barrier(region, registry, random, config, &grid, origin);
         if get_fluid_state_from_block(fluid).is_water() {
             Self::freeze_lake_surface(region, registry, biome_zoom_seed, origin);
@@ -88,7 +90,6 @@ impl FeatureDecorationRunner {
 
     fn place_lake_contents(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         grid: &[bool],
         origin: BlockPos,
         fluid: BlockStateId,
@@ -102,7 +103,7 @@ impl FeatureDecorationRunner {
                     }
 
                     let pos = origin.offset(x, y, z);
-                    if !Self::lake_can_replace_block(registry, region.block_state(pos)) {
+                    if !Self::lake_can_replace_block(region.block_state(pos)) {
                         continue;
                     }
 
@@ -144,10 +145,9 @@ impl FeatureDecorationRunner {
                     let pos = origin.offset(x, y, z);
                     let state = region.block_state(pos);
                     if state.is_solid()
-                        && !registry.blocks.is_in_tag(
-                            state.get_block(),
-                            &vanilla_block_tags::LAVA_POOL_STONE_CANNOT_REPLACE_TAG,
-                        )
+                        && !state
+                            .get_block()
+                            .has_tag(&BlockTag::LAVA_POOL_STONE_CANNOT_REPLACE)
                     {
                         let _ = region.set_block_state(pos, barrier, UpdateFlags::UPDATE_CLIENTS);
                         Self::mark_above_for_postprocessing(region, pos);
@@ -168,7 +168,7 @@ impl FeatureDecorationRunner {
             for z in 0..16 {
                 let pos = origin.offset(x, 4, z);
                 if Self::should_freeze(region, registry, biome_zoom_seed, pos, false)
-                    && Self::lake_can_replace_block(registry, region.block_state(pos))
+                    && Self::lake_can_replace_block(region.block_state(pos))
                 {
                     let _ = region.set_block_state(pos, ice, UpdateFlags::UPDATE_CLIENTS);
                 }
@@ -186,11 +186,10 @@ impl FeatureDecorationRunner {
                 || (y > 0 && grid[Self::lake_index(x, y - 1, z)]))
     }
 
-    fn lake_can_replace_block(registry: &Registry, state: BlockStateId) -> bool {
-        !registry.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::FEATURES_CANNOT_REPLACE_TAG,
-        )
+    fn lake_can_replace_block(state: BlockStateId) -> bool {
+        !state
+            .get_block()
+            .has_tag(&BlockTag::FEATURES_CANNOT_REPLACE)
     }
 
     const fn lake_index(x: i32, y: i32, z: i32) -> usize {

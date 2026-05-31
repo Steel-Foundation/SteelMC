@@ -9,8 +9,9 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_fluid_tags};
+use steel_registry::vanilla_fluid_tags;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::context::BlockPlaceContext;
@@ -132,9 +133,7 @@ impl BlockBehavior for SugarCaneBlock {
             return true;
         }
 
-        let is_valid_ground = REGISTRY
-            .blocks
-            .is_in_tag(below_block, &vanilla_block_tags::SUPPORTS_SUGAR_CANE_TAG);
+        let is_valid_ground = below_block.has_tag(&BlockTag::SUPPORTS_SUGAR_CANE);
 
         if !is_valid_ground {
             return false;
@@ -149,13 +148,14 @@ impl BlockBehavior for SugarCaneBlock {
             let neighbor_pos = dir.relative(below_pos);
             let neighbor_state = world.get_block_state(neighbor_pos);
 
-            if REGISTRY.blocks.is_in_tag(
-                neighbor_state.get_block(),
-                &vanilla_block_tags::SUPPORTS_SUGAR_CANE_ADJACENTLY_TAG,
-            ) || REGISTRY.fluids.is_in_tag(
-                neighbor_state.get_fluid_state().fluid_id,
-                &vanilla_fluid_tags::SUPPORTS_SUGAR_CANE_ADJACENTLY_TAG,
-            ) {
+            if neighbor_state
+                .get_block()
+                .has_tag(&BlockTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
+                || neighbor_state
+                    .get_fluid_state()
+                    .fluid_id
+                    .has_tag(&vanilla_fluid_tags::FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
+            {
                 return true;
             }
         }

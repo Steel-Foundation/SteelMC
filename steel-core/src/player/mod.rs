@@ -57,7 +57,7 @@ use steel_protocol::packets::game::{
 use steel_registry::RegistryEntry;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::EntityPose;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
@@ -255,7 +255,7 @@ pub struct Player {
     /// Block breaking state machine.
     pub block_breaking: SyncMutex<BlockBreakingManager>,
 
-    /// Shared living-entity fields (`dead`, `invulnerable_time`, `last_hurt`).
+    /// Shared living-entity fields (`death_processed`, `invulnerable_time`, `last_hurt`).
     /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
     living_base: SyncMutex<LivingEntityBase>,
 
@@ -644,7 +644,7 @@ impl Player {
 
         let (took_full_damage, effective_amount) = {
             let mut living_base = self.living_base.lock();
-            if living_base.dead {
+            if living_base.death_processed {
                 return false;
             }
 
@@ -732,11 +732,11 @@ impl Player {
     fn die(&self, source: &DamageSource) {
         {
             let mut living_base = self.living_base.lock();
-            if self.removed.load(Ordering::Relaxed) || living_base.dead {
+            if self.removed.load(Ordering::Relaxed) || living_base.death_processed {
                 return;
             }
 
-            living_base.dead = true;
+            living_base.death_processed = true;
         }
 
         {
@@ -826,11 +826,13 @@ impl Player {
     /// # Panics
     /// If the player dies in a world that doesn't exist.
     pub fn respawn(&self) {
+        let health = *self.entity_data.lock().health.get();
+        if !Self::should_process_respawn(health) {
+            return;
+        }
+
         {
             let mut living_base = self.living_base.lock();
-            if !living_base.dead {
-                return;
-            }
             living_base.reset_death_state();
         };
 
@@ -938,6 +940,13 @@ impl Player {
                 // TODO: implement stats
             }
         }
+    }
+
+    /// Vanilla accepts a client respawn request only when player health is dead-or-dying.
+    /// Steel's death-processed guard is not respawn authority.
+    #[must_use]
+    const fn should_process_respawn(health: f32) -> bool {
+        health <= 0.0
     }
 
     /// Returns whether the Player can eat
@@ -1383,5 +1392,36 @@ impl TextResolutor for Player {
 
     fn translate(&self, _key: &str) -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Player;
+
+    #[test]
+    fn respawn_request_is_allowed_after_dead_reconnect() {
+        assert!(Player::should_process_respawn(0.0));
+    }
+
+    #[test]
+    fn respawn_request_is_ignored_while_alive() {
+        assert!(!Player::should_process_respawn(20.0));
+    }
+
+    #[test]
+    fn respawn_request_uses_health_not_death_processed_guard() {
+        struct RespawnGateInput {
+            health: f32,
+            death_processed: bool,
+        }
+
+        let input = RespawnGateInput {
+            health: 20.0,
+            death_processed: true,
+        };
+
+        assert!(input.death_processed);
+        assert!(!Player::should_process_respawn(input.health));
     }
 }

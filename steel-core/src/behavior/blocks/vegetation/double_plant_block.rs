@@ -4,7 +4,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
 use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, math::Axis, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, axis::Axis, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;

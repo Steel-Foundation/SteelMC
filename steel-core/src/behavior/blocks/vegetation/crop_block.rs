@@ -8,10 +8,8 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{
-    REGISTRY, TaggedRegistryExt, vanilla_block_tags, vanilla_entities, vanilla_game_rules,
-    vanilla_items,
-};
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::{vanilla_entities, vanilla_game_rules, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
@@ -73,7 +71,7 @@ pub trait CropLike {
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
     fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
-        let mut speed = 1.0f32;
+        let mut speed: f32 = 1.0;
         let below = pos.below();
 
         // Check 3x3 area of farmland below
@@ -81,12 +79,9 @@ pub trait CropLike {
             for dz in -1..=1 {
                 let check_pos = below.offset(dx, 0, dz);
                 let block_state = world.get_block_state(check_pos);
-                let mut block_speed = 0.0f32;
+                let mut block_speed = 0.0;
 
-                if steel_registry::REGISTRY.blocks.is_in_tag(
-                    block_state.get_block(),
-                    &vanilla_block_tags::GROWS_CROPS_TAG,
-                ) {
+                if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
                     block_speed = 1.0;
                     // Check moisture level (defaults to 0 for non-farmland blocks)
                     let moisture = block_state
@@ -290,9 +285,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
 
 impl<T: CropLike> Vegetation for T {
     fn may_place_on(&self, state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
-        REGISTRY
-            .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::SUPPORTS_CROPS_TAG)
+        state.get_block().has_tag(&BlockTag::SUPPORTS_CROPS)
     }
 }
 

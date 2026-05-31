@@ -11,10 +11,11 @@ members = [
     "steel-utils",
     "steel-core",
     "steel-crypto",
+    "steel-math",
 ]
 
 [workspace.package]
-version = "0.6.3+mc26.1"
+version = "0.8.0+mc26.1"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -29,6 +30,7 @@ steel-protocol = { path = "steel-protocol" }
 steel-registry = { path = "steel-registry" }
 steel-utils = { path = "steel-utils" }
 steel-worldgen = { path = "steel-worldgen" }
+steel-math = { path = "steel-math" }
 
 # Async runtime
 tokio = { version = "1.51", features = [
@@ -158,6 +160,11 @@ debug = 0
 
 
 [profile.dev.package.steel-worldgen]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.steel-math]
 opt-level = 3
 debug-assertions = false
 overflow-checks = false

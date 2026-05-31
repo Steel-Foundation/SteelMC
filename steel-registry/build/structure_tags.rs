@@ -1,10 +1,5 @@
 use proc_macro2::TokenStream;
 
 pub(crate) fn build() -> TokenStream {
-    super::tag_utils::build_simple_tags(
-        "worldgen/structure",
-        "structure",
-        "StructureRegistry",
-        "register_structure_tags",
-    )
+    super::tag_utils::build_simple_tags("worldgen/structure", "structure", "StructureRegistry")
 }

@@ -10,7 +10,7 @@ use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
-use steel_registry::entity_types::EntityTypeRef;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_attributes, vanilla_entity_type_tags};
 use steel_utils::BlockPos;

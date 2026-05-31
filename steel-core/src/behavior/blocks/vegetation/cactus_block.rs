@@ -9,9 +9,10 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_fluid_tags;
-use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_damage_types};
-use steel_registry::{vanilla_block_tags, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockStateBehaviorExt;
@@ -76,10 +77,7 @@ impl BlockBehavior for CactusBlock {
             }
 
             let fluid = neighbor.get_fluid_state();
-            if REGISTRY
-                .fluids
-                .is_in_tag(fluid.fluid_id, &vanilla_fluid_tags::LAVA_TAG)
-            {
+            if fluid.fluid_id.has_tag(&vanilla_fluid_tags::FluidTag::LAVA) {
                 return false;
             }
         }
@@ -90,9 +88,7 @@ impl BlockBehavior for CactusBlock {
         let below_block = below.get_block();
 
         let valid_below = below_block == &vanilla_blocks::CACTUS
-            || steel_registry::REGISTRY
-                .blocks
-                .is_in_tag(below_block, &vanilla_block_tags::SUPPORTS_CACTUS_TAG);
+            || below_block.has_tag(&BlockTag::SUPPORTS_CACTUS);
 
         if !valid_below {
             return false;

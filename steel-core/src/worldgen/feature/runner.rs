@@ -5,10 +5,10 @@ use steel_utils::{BoundingBox, ChunkPos};
 
 use super::prelude::*;
 use super::sorter::{FeatureSorter, FeatureStepData};
-#[cfg(test)]
-use crate::world::structure::StructureReferenceMap;
-use crate::world::structure::StructureStart;
 use crate::worldgen::structure_piece_placer::StructurePiecePlacer;
+#[cfg(test)]
+use steel_worldgen::structure::StructureReferenceMap;
+use steel_worldgen::structure::StructureStart;
 
 /// Runs the structure-piece and placed-feature decoration pass for a generator.
 #[derive(Debug)]

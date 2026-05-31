@@ -1,3 +1,5 @@
+use steel_registry::vanilla_block_tags::BlockTag;
+
 use crate::behavior::blocks::ChorusPlantBlock;
 
 use super::super::prelude::*;
@@ -6,15 +8,14 @@ use super::super::runner::FeatureDecorationRunner;
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_chorus_plant_feature(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
         if !region.block_state(origin).is_air()
-            || !registry.blocks.is_in_tag(
-                region.block_state(origin.below()).get_block(),
-                &vanilla_block_tags::SUPPORTS_CHORUS_PLANT_TAG,
-            )
+            || !region
+                .block_state(origin.below())
+                .get_block()
+                .has_tag(&BlockTag::SUPPORTS_CHORUS_PLANT)
         {
             return false;
         }

@@ -37,6 +37,7 @@ impl CommandDispatcher {
         dispatcher.register(commands::gamemode::command_handler());
         dispatcher.register(commands::gamerule::command_handler());
         dispatcher.register(commands::kill::command_handler());
+        dispatcher.register(commands::list::command_handler());
         dispatcher.register(commands::locate::command_handler());
         dispatcher.register(commands::give::command_handler());
         dispatcher.register(commands::seed::command_handler());

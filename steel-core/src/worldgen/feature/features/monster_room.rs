@@ -18,7 +18,6 @@ const MONSTER_ROOM_MOBS: [&str; 4] = [
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_monster_room_feature(
         region: &WorldGenRegion<'_>,
-        registry: &Registry,
         random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
@@ -89,13 +88,12 @@ impl FeatureDecorationRunner {
                             } else {
                                 cobble
                             };
-                            let _ =
-                                Self::safe_set_feature_block(region, registry, wall_block, state);
+                            let _ = Self::safe_set_feature_block(region, wall_block, state);
                         }
                     } else if wall_state.get_block() != &vanilla_blocks::CHEST
                         && wall_state.get_block() != &vanilla_blocks::SPAWNER
                     {
-                        let _ = Self::safe_set_feature_block(region, registry, wall_block, air);
+                        let _ = Self::safe_set_feature_block(region, wall_block, air);
                     }
                 }
             }
@@ -120,7 +118,7 @@ impl FeatureDecorationRunner {
                             chest_pos,
                             vanilla_blocks::CHEST.default_state(),
                         );
-                        if Self::safe_set_feature_block(region, registry, chest_pos, chest) {
+                        if Self::safe_set_feature_block(region, chest_pos, chest) {
                             Self::set_loot_table_block_entity(
                                 region,
                                 chest_pos,
@@ -137,7 +135,7 @@ impl FeatureDecorationRunner {
         }
 
         let spawner = vanilla_blocks::SPAWNER.default_state();
-        if Self::safe_set_feature_block(region, registry, origin, spawner) {
+        if Self::safe_set_feature_block(region, origin, spawner) {
             let entity_id = MONSTER_ROOM_MOBS[random.next_i32_bounded(4) as usize];
             Self::set_spawner_entity(region, origin, spawner, entity_id);
         }

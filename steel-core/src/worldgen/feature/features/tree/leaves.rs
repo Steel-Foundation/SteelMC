@@ -1,7 +1,4 @@
-#![expect(
-    clippy::too_many_arguments,
-    reason = "tree shape scanning mirrors vanilla neighbor update state"
-)]
+use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
@@ -13,7 +10,6 @@ const LEAF_DISTANCE_LIMIT: usize = 7;
 impl FeatureDecorationRunner {
     pub(super) fn update_tree_leaves(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         bounds: TreeBounds,
         placement: &TreePlacement,
     ) {
@@ -77,7 +73,7 @@ impl FeatureDecorationRunner {
                 }
 
                 let state = region.block_state(neighbor_pos);
-                let Some(distance) = Self::tree_optional_leaf_distance_at(registry, state) else {
+                let Some(distance) = Self::tree_optional_leaf_distance_at(state) else {
                     continue;
                 };
                 let new_distance = distance.min((smallest_distance + 1) as u8);
@@ -88,12 +84,11 @@ impl FeatureDecorationRunner {
             }
         }
 
-        Self::update_tree_shape_at_edge(region, registry, bounds, &shape);
+        Self::update_tree_shape_at_edge(region, bounds, &shape);
     }
 
     fn update_tree_shape_at_edge(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         bounds: TreeBounds,
         shape: &FxHashSet<BlockPos>,
     ) {
@@ -101,7 +96,6 @@ impl FeatureDecorationRunner {
             for y in bounds.min_y..=bounds.max_y {
                 Self::scan_tree_shape_line(
                     region,
-                    registry,
                     shape,
                     bounds.min_z,
                     bounds.max_z,
@@ -116,7 +110,6 @@ impl FeatureDecorationRunner {
             for x in bounds.min_x..=bounds.max_x {
                 Self::scan_tree_shape_line(
                     region,
-                    registry,
                     shape,
                     bounds.min_y,
                     bounds.max_y,
@@ -131,7 +124,6 @@ impl FeatureDecorationRunner {
             for z in bounds.min_z..=bounds.max_z {
                 Self::scan_tree_shape_line(
                     region,
-                    registry,
                     shape,
                     bounds.min_x,
                     bounds.max_x,
@@ -145,7 +137,6 @@ impl FeatureDecorationRunner {
 
     fn scan_tree_shape_line(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         shape: &FxHashSet<BlockPos>,
         start: i32,
         end: i32,
@@ -157,11 +148,11 @@ impl FeatureDecorationRunner {
         for cursor in start..=end + 1 {
             let full = cursor != end + 1 && shape.contains(&pos_at(cursor));
             if !last_full && full {
-                Self::update_tree_shape_face(region, registry, pos_at(cursor), negative);
+                Self::update_tree_shape_face(region, pos_at(cursor), negative);
             }
 
             if last_full && !full {
-                Self::update_tree_shape_face(region, registry, pos_at(cursor - 1), positive);
+                Self::update_tree_shape_face(region, pos_at(cursor - 1), positive);
             }
 
             last_full = full;
@@ -170,7 +161,6 @@ impl FeatureDecorationRunner {
 
     fn update_tree_shape_face(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         direction: Direction,
     ) {
@@ -178,8 +168,8 @@ impl FeatureDecorationRunner {
         let state = region.block_state(pos);
         let neighbor_state = region.block_state(neighbor_pos);
 
-        Self::update_leaf_shape_at_edge(region, registry, pos, state, neighbor_state);
-        Self::update_leaf_shape_at_edge(region, registry, neighbor_pos, neighbor_state, state);
+        Self::update_leaf_shape_at_edge(region, pos, state, neighbor_state);
+        Self::update_leaf_shape_at_edge(region, neighbor_pos, neighbor_state, state);
 
         let new_state = BLOCK_BEHAVIORS
             .get_behavior(state.get_block())
@@ -209,15 +199,11 @@ impl FeatureDecorationRunner {
 
     fn update_leaf_shape_at_edge(
         region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
         pos: BlockPos,
         state: BlockStateId,
         neighbor_state: BlockStateId,
     ) {
-        if !registry
-            .blocks
-            .is_in_tag(state.get_block(), &vanilla_block_tags::LEAVES_TAG)
-        {
+        if !state.get_block().has_tag(&BlockTag::LEAVES) {
             return;
         }
 
@@ -233,25 +219,25 @@ impl FeatureDecorationRunner {
             let _ = region.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, 5);
         }
 
-        let distance_from_neighbor = Self::tree_leaf_distance_at(registry, neighbor_state) + 1;
+        let distance_from_neighbor = Self::tree_leaf_distance_at(neighbor_state) + 1;
         if distance_from_neighbor != 1 || distance != distance_from_neighbor {
             let _ = region.schedule_block_tick_default(pos, state.get_block(), 1);
         }
     }
 
-    fn tree_optional_leaf_distance_at(registry: &Registry, state: BlockStateId) -> Option<u8> {
-        if registry.blocks.is_in_tag(
-            state.get_block(),
-            &vanilla_block_tags::PREVENTS_NEARBY_LEAF_DECAY_TAG,
-        ) {
+    fn tree_optional_leaf_distance_at(state: BlockStateId) -> Option<u8> {
+        if state
+            .get_block()
+            .has_tag(&BlockTag::PREVENTS_NEARBY_LEAF_DECAY)
+        {
             return Some(0);
         }
 
         state.try_get_value(&BlockStateProperties::DISTANCE)
     }
 
-    fn tree_leaf_distance_at(registry: &Registry, state: BlockStateId) -> u8 {
-        Self::tree_optional_leaf_distance_at(registry, state).unwrap_or(7)
+    fn tree_leaf_distance_at(state: BlockStateId) -> u8 {
+        Self::tree_optional_leaf_distance_at(state).unwrap_or(7)
     }
 
     const fn tree_can_schedule_tick_at(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
