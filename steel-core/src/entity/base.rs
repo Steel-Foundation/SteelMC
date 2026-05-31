@@ -50,8 +50,6 @@ pub struct EntityBase {
     /// Whether this entity has been removed.
     removed: AtomicBool,
     /// Whether this entity should suppress sounds and particles.
-    ///
-    /// Vanilla: `Entity.silent` / `Entity.isSilent()`.
     silent: AtomicBool,
     /// Callback for entity lifecycle events.
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
@@ -128,8 +126,6 @@ impl EntityBase {
     }
 
     /// Returns true if this entity suppresses sounds and particles.
-    ///
-    /// Vanilla: `Entity.isSilent()`.
     #[inline]
     #[must_use]
     pub fn is_silent(&self) -> bool {
