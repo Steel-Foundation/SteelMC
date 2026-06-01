@@ -7,8 +7,8 @@ COPY . .
 RUN cargo build --release --locked
 FROM gcr.io/distroless/cc-debian13
 
-COPY --from=builder /steel/steel-linux /
+COPY --from=builder /steel/target/release/steel /
 
 EXPOSE 25565
 
-ENTRYPOINT ["/steel-linux"]
+ENTRYPOINT ["/steel"]
