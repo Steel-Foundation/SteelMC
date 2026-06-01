@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+  pull_request:
   release:
     types:
       - published
@@ -40,6 +41,7 @@ jobs:
       # Enable this later when you want to push to GitHub Container Registry.
       #
       # - name: Login to GitHub Container Registry
+      #   if: github.event_name != 'pull_request'
       #   uses: docker/login-action@v3
       #   with:
       #     registry: ${{ env.REGISTRY }}
@@ -51,6 +53,8 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: false # Change to true later to push to GHCR
+          push: false
+          # Later, when enabling GHCR push, use this instead:
+          # push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
