@@ -3,17 +3,14 @@ LABEL authors="junkydeveloper"
 
 WORKDIR /steel
 
-COPY . .
+# COPY . .
+# RUN cargo build --release --locked
+RUN wget https://github.com/Steel-Foundation/SteelMC/releases/download/v0.8.0%2Bmc26.1/steel-linux && chmod +x ./steel-linux
 
-RUN cargo build --release --locked
+FROM gcr.io/distroless/cc-debian13
 
-FROM debian:bookworm-slim
+COPY --from=builder /steel/steel-linux /
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+EXPOSE 25565
 
-COPY --from=builder /steel/target/release/steel /steel/steel-bin
-
-WORKDIR /steel
-ENTRYPOINT ["/steel/steel-bin"]
+ENTRYPOINT ["/steel-linux"]
