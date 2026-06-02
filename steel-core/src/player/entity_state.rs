@@ -14,6 +14,7 @@ use steel_registry::{vanilla_attributes, vanilla_blocks};
 use steel_utils::types::GameType;
 use steel_utils::{BlockStateId, Identifier, WorldAabb};
 
+use crate::behavior::BlockCollisionContext;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::{Entity, EntitySharedFlags, LivingEntity};
 use crate::fluid::get_fluid_state;
@@ -182,14 +183,15 @@ impl Player {
     }
 
     #[must_use]
-    fn can_player_fit_within_blocks_when(&self, pose: EntityPose) -> bool {
+    fn can_player_fit_within_blocks_and_entities_when(&self, pose: EntityPose) -> bool {
         let world = self.get_world();
-        let collision_world = WorldCollisionProvider::new(&world);
+        let collision_world = WorldCollisionProvider::for_entity(&world, self);
         collision_world
-            .get_block_collisions(
+            .get_collisions_with_context(
                 &self
                     .bounding_box_for_pose(pose)
                     .deflate(POSE_COLLISION_EPSILON),
+                BlockCollisionContext::entity(self.position().y, self.is_descending()),
             )
             .is_empty()
     }
@@ -337,16 +339,16 @@ impl Player {
 
     /// Updates the player's pose in entity data based on current state.
     pub(super) fn update_pose(&self) {
-        if !self.can_player_fit_within_blocks_when(EntityPose::Swimming) {
+        if !self.can_player_fit_within_blocks_and_entities_when(EntityPose::Swimming) {
             return;
         }
 
         let desired_pose = self.get_desired_pose();
         let is_spectator = self.game_mode() == GameType::Spectator;
         let fits_desired_pose =
-            is_spectator || self.can_player_fit_within_blocks_when(desired_pose);
-        let fits_crouching =
-            !fits_desired_pose && self.can_player_fit_within_blocks_when(EntityPose::Sneaking);
+            is_spectator || self.can_player_fit_within_blocks_and_entities_when(desired_pose);
+        let fits_crouching = !fits_desired_pose
+            && self.can_player_fit_within_blocks_and_entities_when(EntityPose::Sneaking);
 
         let Some(actual_pose) = select_actual_pose(
             desired_pose,
@@ -361,7 +363,6 @@ impl Player {
             return;
         };
 
-        // TODO: Include blocking entities once entity collision pose checks exist.
         self.base
             .set_pose_and_dimensions(actual_pose, Self::dimensions_for_pose(actual_pose));
         self.entity_data.lock().base_mut().pose.set(actual_pose);
