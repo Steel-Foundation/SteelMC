@@ -25,6 +25,11 @@ pub struct MovementState {
 
     /// Tick when last impulse was applied (knockback, etc.).
     pub last_impulse_tick: i32,
+
+    /// Last movement accepted from the client.
+    ///
+    /// Mirrors vanilla `ServerPlayer.lastKnownClientMovement`.
+    pub last_known_client_movement: DVec3,
 }
 
 impl MovementState {
@@ -38,6 +43,20 @@ impl MovementState {
             received_move_packet_count: 0,
             known_move_packet_count: 0,
             last_impulse_tick: 0,
+            last_known_client_movement: DVec3::new(0.0, 0.0, 0.0),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::MovementState;
+
+    #[test]
+    fn movement_state_starts_with_zero_known_client_movement() {
+        let state = MovementState::new();
+        assert_eq!(state.last_known_client_movement, DVec3::ZERO);
     }
 }

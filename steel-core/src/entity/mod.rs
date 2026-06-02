@@ -199,6 +199,16 @@ pub trait Entity: Send + Sync {
         false
     }
 
+    /// Returns true when movement is authored by a remote client.
+    fn is_client_authoritative(&self) -> bool {
+        false
+    }
+
+    /// Returns the movement vector vanilla exposes for block-contact logic.
+    fn known_movement(&self) -> DVec3 {
+        self.velocity()
+    }
+
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).

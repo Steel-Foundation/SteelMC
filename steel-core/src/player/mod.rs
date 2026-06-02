@@ -969,6 +969,7 @@ impl Player {
         // --- Reset transient state ---
         self.client_loaded.store(false, Ordering::Relaxed);
         self.set_velocity(DVec3::ZERO);
+        self.movement.lock().last_known_client_movement = DVec3::ZERO;
         self.set_on_ground(false);
         self.reset_entity_state();
         *self.block_breaking.lock() = BlockBreakingManager::new();
@@ -1028,6 +1029,7 @@ impl Player {
             mv.first_good_position = position;
             mv.received_move_packet_count = 0;
             mv.known_move_packet_count = 0;
+            mv.last_known_client_movement = DVec3::ZERO;
         }
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
@@ -1141,6 +1143,14 @@ impl Entity for Player {
 
     fn is_living_entity(&self) -> bool {
         true
+    }
+
+    fn is_client_authoritative(&self) -> bool {
+        true
+    }
+
+    fn known_movement(&self) -> DVec3 {
+        self.movement.lock().last_known_client_movement
     }
 
     fn max_up_step(&self) -> f32 {

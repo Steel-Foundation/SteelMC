@@ -396,6 +396,7 @@ impl Player {
         let (yaw, pitch) = (target_yaw, target_pitch);
 
         if packet.has_pos || packet.has_rot {
+            self.movement.lock().last_known_client_movement = client_delta;
             let new_chunk = ChunkPos::from_entity_pos(pos);
 
             if packet.has_pos {
@@ -557,6 +558,7 @@ impl Player {
         self.set_position(pos);
         self.set_rotation((yaw, pitch));
         self.set_old_position_to_current();
+        self.movement.lock().last_known_client_movement = DVec3::ZERO;
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
     }
@@ -570,7 +572,9 @@ impl Player {
         if let Some(pos) = tp.try_accept(packet.teleport_id) {
             self.set_position(pos);
             self.set_old_position_to_current();
-            self.movement.lock().last_good_position = pos;
+            let mut movement = self.movement.lock();
+            movement.last_good_position = pos;
+            movement.last_known_client_movement = DVec3::ZERO;
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
