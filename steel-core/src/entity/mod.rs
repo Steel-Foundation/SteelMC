@@ -3,6 +3,7 @@
 use std::sync::{Arc, LazyLock, Weak};
 
 use glam::DVec3;
+use rustc_hash::FxHashSet;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -14,9 +15,8 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_game_events};
-use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, EntityFallOnContext, EntityLandingContext};
@@ -36,6 +36,13 @@ use entities::ItemEntity;
 /// Mirrors vanilla's `Entity.ENTITY_COUNTER`. Each new entity increments this
 /// counter to get a unique network ID. Starts at 1 (0 is reserved).
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
+const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
+
+enum BlockEffectSegmentResult {
+    Complete(i32),
+    IterationLimit,
+    Removed,
+}
 
 /// Allocates a new unique entity ID.
 ///
@@ -49,8 +56,85 @@ pub fn next_entity_id() -> i32 {
     id
 }
 
+fn apply_block_effect_segment(
+    entity: &dyn Entity,
+    world: &Arc<World>,
+    from: DVec3,
+    to: DVec3,
+    max_iterations: i32,
+    visited_blocks: &mut FxHashSet<BlockPos>,
+) -> BlockEffectSegmentResult {
+    let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
+    if aabb.is_empty() {
+        return BlockEffectSegmentResult::Complete(0);
+    }
+
+    let mut hit_iteration_limit = false;
+    let Some(iterations) =
+        block_effects::for_each_block_intersected_between(from, to, aabb, |pos, iteration| {
+            if entity.is_removed() {
+                return false;
+            }
+            if iteration >= max_iterations {
+                hit_iteration_limit = true;
+                return false;
+            }
+
+            let state = world.get_block_state(pos);
+            if state.is_air() || !visited_blocks.insert(pos) {
+                return true;
+            }
+
+            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            behavior.entity_inside(state, world, pos, entity);
+            !entity.is_removed()
+        })
+    else {
+        if entity.is_removed() {
+            return BlockEffectSegmentResult::Removed;
+        }
+        return if hit_iteration_limit {
+            BlockEffectSegmentResult::IterationLimit
+        } else {
+            BlockEffectSegmentResult::Complete(0)
+        };
+    };
+
+    if entity.is_removed() {
+        BlockEffectSegmentResult::Removed
+    } else {
+        BlockEffectSegmentResult::Complete(iterations)
+    }
+}
+
+fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
+    match axis {
+        Axis::X => DVec3::new(position.x + amount, position.y, position.z),
+        Axis::Y => DVec3::new(position.x, position.y + amount, position.z),
+        Axis::Z => DVec3::new(position.x, position.y, position.z + amount),
+    }
+}
+
+fn record_movement_for_block_effects(
+    entity: &dyn Entity,
+    from: DVec3,
+    to: DVec3,
+    requested_movement: DVec3,
+    actual_movement: DVec3,
+) {
+    let movement_length = actual_movement.length_squared();
+    if movement_length > MOVEMENT_RECORD_EPSILON
+        || requested_movement.length_squared() - movement_length < MOVEMENT_RECORD_EPSILON
+    {
+        entity.base().record_movement_this_tick(
+            EntityMovement::with_axis_dependent_original_movement(from, to, requested_movement),
+        );
+    }
+}
+
 pub mod attribute;
 mod base;
+mod block_effects;
 mod cache;
 mod callback;
 pub mod damage;
@@ -66,7 +150,8 @@ mod tracker;
 
 use crate::portal::TeleportTransition;
 pub use base::{
-    EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact, EntityMovementFlags,
+    EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact, EntityMovement,
+    EntityMovementFlags,
 };
 pub use cache::EntityCache;
 pub use callback::{
@@ -150,6 +235,18 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Gets the entity's bounding box for collision queries.
     fn bounding_box(&self) -> WorldAabb {
         self.base().bounding_box()
+    }
+
+    /// Builds this entity's default bounding box at `position`.
+    fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
+        let dimensions = self.base().dimensions();
+        WorldAabb::entity_box(
+            position.x,
+            position.y,
+            position.z,
+            f64::from(dimensions.half_width()),
+            f64::from(dimensions.height),
+        )
     }
 
     /// Called every game tick when the entity is in a ticked chunk.
@@ -390,9 +487,9 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Applies current block-contact effects to this entity.
     ///
     /// Mirrors the shared ownership boundary of vanilla `Entity.applyEffectsFromBlocks`.
-    /// TODO: Extend the block behavior API with vanilla's movement-step sweep,
-    /// entity-inside collision shape, fluid inside effects, and `InsideBlockEffectApplier`
-    /// once those effect systems exist.
+    /// TODO: Extend the block behavior API with vanilla's entity-inside collision
+    /// shape, fluid inside effects, and `InsideBlockEffectApplier` once those
+    /// effect systems exist.
     fn apply_effects_from_blocks(&self) {
         if !self.is_affected_by_blocks() {
             return;
@@ -402,34 +499,86 @@ pub trait Entity: EntityEventSource + Send + Sync {
             return;
         };
 
-        let aabb = self.bounding_box().deflate(1.0E-5);
-        if aabb.is_empty() {
-            return;
-        }
-
-        let min_x = aabb.min_x().floor() as i32;
-        let min_y = aabb.min_y().floor() as i32;
-        let min_z = aabb.min_z().floor() as i32;
-        let max_x = aabb.max_x().floor() as i32;
-        let max_y = aabb.max_y().floor() as i32;
-        let max_z = aabb.max_z().floor() as i32;
         let entity = self.as_entity_event_source();
-
-        for x in min_x..=max_x {
-            for y in min_y..=max_y {
-                for z in min_z..=max_z {
-                    let pos = BlockPos::new(x, y, z);
-                    let state = world.get_block_state(pos);
-                    if state.is_air() {
+        let movements = self.base().take_movements_for_block_effects();
+        let mut visited_blocks = FxHashSet::default();
+        for movement in movements {
+            let mut remaining_iterations = 16;
+            let delta = movement.to() - movement.from();
+            if let Some(original_movement) = movement.axis_dependent_original_movement()
+                && delta.length_squared() > 0.0
+            {
+                let mut segment_from = movement.from();
+                for axis in block_effects::axis_step_order(original_movement) {
+                    let axis_move = block_effects::component(delta, axis);
+                    if axis_move == 0.0 {
                         continue;
                     }
 
-                    let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-                    behavior.entity_inside(state, &world, pos, entity);
-                    if self.is_removed() {
+                    let segment_to = relative_on_axis(segment_from, axis, axis_move);
+                    match apply_block_effect_segment(
+                        entity,
+                        &world,
+                        segment_from,
+                        segment_to,
+                        remaining_iterations,
+                        &mut visited_blocks,
+                    ) {
+                        BlockEffectSegmentResult::Complete(iterations) => {
+                            remaining_iterations -= iterations;
+                        }
+                        BlockEffectSegmentResult::IterationLimit => {
+                            apply_block_effect_segment(
+                                entity,
+                                &world,
+                                movement.to(),
+                                movement.to(),
+                                1,
+                                &mut visited_blocks,
+                            );
+                            return;
+                        }
+                        BlockEffectSegmentResult::Removed => return,
+                    }
+                    segment_from = segment_to;
+                }
+            } else {
+                match apply_block_effect_segment(
+                    entity,
+                    &world,
+                    movement.from(),
+                    movement.to(),
+                    remaining_iterations,
+                    &mut visited_blocks,
+                ) {
+                    BlockEffectSegmentResult::Complete(iterations) => {
+                        remaining_iterations -= iterations;
+                    }
+                    BlockEffectSegmentResult::IterationLimit => {
+                        apply_block_effect_segment(
+                            entity,
+                            &world,
+                            movement.to(),
+                            movement.to(),
+                            1,
+                            &mut visited_blocks,
+                        );
                         return;
                     }
+                    BlockEffectSegmentResult::Removed => return,
                 }
+            }
+
+            if remaining_iterations <= 0 {
+                apply_block_effect_segment(
+                    entity,
+                    &world,
+                    movement.to(),
+                    movement.to(),
+                    1,
+                    &mut visited_blocks,
+                );
+                return;
             }
         }
     }
@@ -604,6 +753,10 @@ pub trait Entity: EntityEventSource + Send + Sync {
     ///
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "mirrors vanilla Entity.move control flow in one auditable path"
+    )]
     fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
@@ -635,9 +788,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
             .base()
             .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
 
+        let start_position = self.position();
+
         // Build physics state
         let physics_state = EntityPhysicsState::with_dimensions(
-            self.position(),
+            start_position,
             self.base().dimensions(),
             self.max_up_step(),
         )
@@ -650,6 +805,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let collision_world = WorldCollisionProvider::new(&world);
         let result =
             resolve_entity_movement(&physics_state, movement, mover_type, &collision_world);
+
+        record_movement_for_block_effects(
+            self.as_entity_event_source(),
+            start_position,
+            result.final_position,
+            movement,
+            result.actual_movement,
+        );
 
         // Update entity state
         self.set_position(result.final_position);

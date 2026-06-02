@@ -3,7 +3,10 @@
 //! `EntityBase` contains the core fields and methods that every entity needs.
 //! Entities embed this struct and delegate common `Entity` trait methods to it.
 
-use std::sync::{Arc, Weak};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Weak},
+};
 
 use glam::DVec3;
 use steel_registry::entity_data::EntityPose;
@@ -20,6 +23,107 @@ const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
 const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
 const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
 const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
+const MOVEMENT_TRACE_LIMIT: usize = 100;
+const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
+
+/// A vanilla movement segment used by block-contact effects.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityMovement {
+    from: DVec3,
+    to: DVec3,
+    axis_dependent_original_movement: Option<DVec3>,
+}
+
+impl EntityMovement {
+    /// Creates a movement segment without axis-dependent original movement.
+    #[must_use]
+    pub const fn new(from: DVec3, to: DVec3) -> Self {
+        Self {
+            from,
+            to,
+            axis_dependent_original_movement: None,
+        }
+    }
+
+    /// Creates a movement segment with the original requested movement.
+    #[must_use]
+    pub const fn with_axis_dependent_original_movement(
+        from: DVec3,
+        to: DVec3,
+        axis_dependent_original_movement: DVec3,
+    ) -> Self {
+        Self {
+            from,
+            to,
+            axis_dependent_original_movement: Some(axis_dependent_original_movement),
+        }
+    }
+
+    /// Returns the segment start position.
+    #[must_use]
+    pub const fn from(self) -> DVec3 {
+        self.from
+    }
+
+    /// Returns the segment end position.
+    #[must_use]
+    pub const fn to(self) -> DVec3 {
+        self.to
+    }
+
+    /// Returns the requested movement used for vanilla axis-ordered scans.
+    #[must_use]
+    pub const fn axis_dependent_original_movement(self) -> Option<DVec3> {
+        self.axis_dependent_original_movement
+    }
+}
+
+#[derive(Debug, Default)]
+struct EntityMovementTrace {
+    movement_this_tick: VecDeque<EntityMovement>,
+    final_movements_this_tick: Vec<EntityMovement>,
+}
+
+impl EntityMovementTrace {
+    fn record(&mut self, movement: EntityMovement) {
+        if self.movement_this_tick.len() >= MOVEMENT_TRACE_LIMIT {
+            let first = self.movement_this_tick.pop_front();
+            let second = self.movement_this_tick.pop_front();
+            match (first, second) {
+                (Some(first), Some(second)) => self
+                    .movement_this_tick
+                    .push_front(EntityMovement::new(first.from(), second.to())),
+                (Some(first), None) => self.movement_this_tick.push_front(first),
+                (None, _) => {}
+            }
+        }
+
+        self.movement_this_tick.push_back(movement);
+    }
+
+    fn take_for_block_effects(
+        &mut self,
+        old_position: DVec3,
+        position: DVec3,
+    ) -> Vec<EntityMovement> {
+        self.final_movements_this_tick.clear();
+        self.final_movements_this_tick
+            .extend(self.movement_this_tick.drain(..));
+
+        if let Some(last_movement) = self.final_movements_this_tick.last().copied() {
+            if (last_movement.to() - position).length_squared() > MOVEMENT_TRACE_POSITION_EPSILON_SQ
+            {
+                self.final_movements_this_tick
+                    .push(EntityMovement::new(last_movement.to(), position));
+            }
+        } else {
+            self.final_movements_this_tick
+                .push(EntityMovement::new(old_position, position));
+        }
+
+        self.final_movements_this_tick.clone()
+    }
+}
 
 /// Vanilla collision and ground-contact flags updated by `Entity.move`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -407,6 +511,8 @@ pub struct EntityBase {
     world: SyncMutex<Weak<World>>,
     /// Current vanilla movement state.
     state: SyncMutex<EntityBaseState>,
+    /// Per-tick movement segments used by vanilla block-contact effects.
+    movement_trace: SyncMutex<EntityMovementTrace>,
     /// Removal and tick bookkeeping.
     lifecycle: SyncMutex<EntityLifecycleState>,
     /// Callback for entity lifecycle events.
@@ -456,6 +562,7 @@ impl EntityBase {
             uuid,
             world: SyncMutex::new(world),
             state: SyncMutex::new(state),
+            movement_trace: SyncMutex::new(EntityMovementTrace::default()),
             lifecycle: SyncMutex::new(EntityLifecycleState::new()),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
@@ -662,6 +769,23 @@ impl EntityBase {
         self.state.lock().old_position = old_position;
     }
 
+    /// Records a movement segment for vanilla block-contact effects.
+    pub fn record_movement_this_tick(&self, movement: EntityMovement) {
+        self.movement_trace.lock().record(movement);
+    }
+
+    /// Takes and finalizes this tick's movement segments for block-contact effects.
+    pub fn take_movements_for_block_effects(&self) -> Vec<EntityMovement> {
+        let (old_position, position) = {
+            let state = self.state.lock();
+            (state.old_position, state.position)
+        };
+
+        self.movement_trace
+            .lock()
+            .take_for_block_effects(old_position, position)
+    }
+
     /// Sets the entity's bounding box directly.
     ///
     /// Use this for vanilla entities whose box is not simply dimensions centered
@@ -798,7 +922,7 @@ impl EntityBase {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntityBase, EntityMovementFlags, EntityPistonMovement};
+    use super::{EntityBase, EntityMovement, EntityMovementFlags, EntityPistonMovement};
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -956,6 +1080,86 @@ mod tests {
         assert_vec3_close(base.old_position(), DVec3::new(4.0, 5.0, 6.0));
         base.set_old_position(DVec3::new(7.0, 8.0, 9.0));
         assert_vec3_close(base.old_position(), DVec3::new(7.0, 8.0, 9.0));
+    }
+
+    #[test]
+    fn movement_trace_falls_back_to_old_position_when_no_moves_were_recorded() {
+        let base = EntityBase::new(
+            1,
+            DVec3::new(1.0, 2.0, 3.0),
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.set_old_position(DVec3::new(-1.0, 2.0, -3.0));
+
+        let movements = base.take_movements_for_block_effects();
+
+        assert_eq!(
+            movements,
+            vec![EntityMovement::new(
+                DVec3::new(-1.0, 2.0, -3.0),
+                DVec3::new(1.0, 2.0, 3.0)
+            )]
+        );
+    }
+
+    #[test]
+    fn movement_trace_appends_direct_position_change_after_recorded_moves() {
+        let base = EntityBase::new(
+            1,
+            DVec3::new(0.0, 64.0, 0.0),
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.record_movement_this_tick(EntityMovement::with_axis_dependent_original_movement(
+            DVec3::new(0.0, 64.0, 0.0),
+            DVec3::new(1.0, 64.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
+        ));
+        base.set_position(DVec3::new(2.0, 64.0, 0.0));
+
+        let movements = base.take_movements_for_block_effects();
+
+        assert_eq!(
+            movements,
+            vec![
+                EntityMovement::with_axis_dependent_original_movement(
+                    DVec3::new(0.0, 64.0, 0.0),
+                    DVec3::new(1.0, 64.0, 0.0),
+                    DVec3::new(1.0, 0.0, 0.0)
+                ),
+                EntityMovement::new(DVec3::new(1.0, 64.0, 0.0), DVec3::new(2.0, 64.0, 0.0))
+            ]
+        );
+    }
+
+    #[test]
+    fn movement_trace_compacts_oldest_moves_at_vanilla_limit() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        for x in 0..101 {
+            let from = DVec3::new(f64::from(x), 0.0, 0.0);
+            let to = DVec3::new(f64::from(x + 1), 0.0, 0.0);
+            base.record_movement_this_tick(EntityMovement::new(from, to));
+        }
+        base.set_position(DVec3::new(101.0, 0.0, 0.0));
+
+        let movements = base.take_movements_for_block_effects();
+
+        assert_eq!(movements.len(), 100);
+        assert_eq!(
+            movements[0],
+            EntityMovement::new(DVec3::new(0.0, 0.0, 0.0), DVec3::new(2.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            movements[99],
+            EntityMovement::new(DVec3::new(100.0, 0.0, 0.0), DVec3::new(101.0, 0.0, 0.0))
+        );
     }
 
     #[test]
