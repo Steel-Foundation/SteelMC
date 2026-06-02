@@ -18,8 +18,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityPositionSyncDecision,
-    EntityPositionSyncState, EntitySyncedData, RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityPositionSyncPacket,
+    EntityPositionSyncSnapshot, EntityPositionSyncState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -29,9 +29,7 @@ use crate::world::World;
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CSetEntityMotion, CTakeItemEntity,
-};
+use steel_protocol::packets::game::{CSetEntityMotion, CTakeItemEntity};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::BlockPos;
 
@@ -554,7 +552,7 @@ impl ItemEntity {
     /// - Delta is too large for i16 encoding
     /// - On-ground state changed
     /// - Periodic full sync (every 60 ticks based on `tick_count`)
-    fn check_position_sync(&self, tick_count: i32) -> Option<PositionSyncPacket> {
+    fn check_position_sync(&self, tick_count: i32) -> Option<EntityPositionSyncPacket> {
         let current_pos = self.position();
         let current_on_ground = self.on_ground();
         let mut sync_state = self.sync_state.lock();
@@ -579,42 +577,19 @@ impl ItemEntity {
                 .position
                 .record_movement_sync(current_pos, current_on_ground, force_full);
 
-        match decision {
-            EntityPositionSyncDecision::Delta { dx, dy, dz } => {
-                // Delta sync: store the actual current position as base.
-                // Vanilla stores the actual position, not the decoded position.
-                // This works because encode() is deterministic - both server and client
-                // compute the same encoded values.
-                Some(PositionSyncPacket::Delta(CMoveEntityPos {
-                    entity_id: self.id(),
-                    dx,
-                    dy,
-                    dz,
-                    on_ground: current_on_ground,
-                }))
-            }
-            EntityPositionSyncDecision::Full => {
-                let vel = self.velocity();
-                // NOTE: We do NOT update last_sent_velocity here because the client
-                // ignores the velocity field in CEntityPositionSync for non-authoritative
-                // entities (like items). The velocity sync is handled separately by
-                // check_velocity_sync() which sends CSetEntityMotion.
-
-                let (yaw, pitch) = self.rotation();
-                Some(PositionSyncPacket::Full(CEntityPositionSync {
-                    entity_id: self.id(),
-                    x: current_pos.x,
-                    y: current_pos.y,
-                    z: current_pos.z,
-                    velocity_x: vel.x,
-                    velocity_y: vel.y,
-                    velocity_z: vel.z,
-                    yaw,
-                    pitch,
-                    on_ground: current_on_ground,
-                }))
-            }
-        }
+        // NOTE: We do NOT update last_sent_velocity here because the client
+        // ignores the velocity field in CEntityPositionSync for non-authoritative
+        // entities (like items). The velocity sync is handled separately by
+        // check_velocity_sync() which sends CSetEntityMotion.
+        Some(
+            decision.into_position_packet(EntityPositionSyncSnapshot::new(
+                self.id(),
+                current_pos,
+                self.velocity(),
+                self.rotation(),
+                current_on_ground,
+            )),
+        )
     }
 
     fn apply_fluid_movement_or_gravity(&self) {
@@ -641,14 +616,6 @@ impl ItemEntity {
             movement.z * horizontal_drag,
         ));
     }
-}
-
-/// Position sync packet variants.
-enum PositionSyncPacket {
-    /// Delta-encoded position update (for small movements).
-    Delta(CMoveEntityPos),
-    /// Full absolute position sync (for large movements or periodic sync).
-    Full(CEntityPositionSync),
 }
 
 impl Entity for ItemEntity {
@@ -819,10 +786,10 @@ impl Entity for ItemEntity {
         // Send position update if needed (vanilla: ServerEntity.sendChanges line 182)
         if let Some(packet) = self.check_position_sync(tick_count) {
             match &packet {
-                PositionSyncPacket::Delta(p) => {
+                EntityPositionSyncPacket::Delta(p) => {
                     world.broadcast_to_nearby(chunk_pos, p.clone(), None);
                 }
-                PositionSyncPacket::Full(p) => {
+                EntityPositionSyncPacket::Full(p) => {
                     world.broadcast_to_nearby(chunk_pos, p.clone(), None);
                 }
             }

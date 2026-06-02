@@ -7,9 +7,8 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPosRot, CMoveEntityRot, CPlayerPosition, CRotateHead,
-    PlayerCommandAction, SAcceptTeleportation, SMovePlayer, SPlayerCommand, SPlayerInput,
-    to_angle_byte,
+    CMoveEntityRot, CPlayerPosition, CRotateHead, PlayerCommandAction, SAcceptTeleportation,
+    SMovePlayer, SPlayerCommand, SPlayerInput, to_angle_byte,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_attributes;
@@ -17,7 +16,9 @@ use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, translations};
 
-use crate::entity::{Entity, EntityPositionSyncDecision, LivingEntity};
+use crate::entity::{
+    Entity, EntityPositionRotSyncPacket, EntityPositionSyncSnapshot, LivingEntity,
+};
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE, has_block_collision,
     is_colliding_with_new_blocks,
@@ -410,35 +411,20 @@ impl Player {
                 let mut mv = self.movement.lock();
                 mv.record_position_sync(movement.pos, movement.on_ground)
             };
+            let packet = decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
+                self.id(),
+                movement.pos,
+                self.velocity(),
+                (movement.yaw, movement.pitch),
+                movement.on_ground,
+            ));
 
-            match decision {
-                EntityPositionSyncDecision::Delta { dx, dy, dz } => {
-                    let move_packet = CMoveEntityPosRot {
-                        entity_id: self.id(),
-                        dx,
-                        dy,
-                        dz,
-                        y_rot: to_angle_byte(movement.yaw),
-                        x_rot: to_angle_byte(movement.pitch),
-                        on_ground: movement.on_ground,
-                    };
-                    world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id()));
+            match packet {
+                EntityPositionRotSyncPacket::Delta(packet) => {
+                    world.broadcast_to_nearby(new_chunk, packet, Some(self.id()));
                 }
-                EntityPositionSyncDecision::Full => {
-                    let delta = self.velocity();
-                    let sync_packet = CEntityPositionSync {
-                        entity_id: self.id(),
-                        x: movement.pos.x,
-                        y: movement.pos.y,
-                        z: movement.pos.z,
-                        velocity_x: delta.x,
-                        velocity_y: delta.y,
-                        velocity_z: delta.z,
-                        yaw: movement.yaw,
-                        pitch: movement.pitch,
-                        on_ground: movement.on_ground,
-                    };
-                    world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
+                EntityPositionRotSyncPacket::Full(packet) => {
+                    world.broadcast_to_nearby(new_chunk, packet, Some(self.id()));
                 }
             }
         } else {

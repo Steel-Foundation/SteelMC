@@ -1,7 +1,10 @@
 //! Shared movement synchronization state for tracked entities.
 
 use glam::DVec3;
-use steel_protocol::packets::game::{PackedEntityDelta, calc_delta};
+use steel_protocol::packets::game::{
+    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, PackedEntityDelta, calc_delta,
+    to_angle_byte,
+};
 
 /// Squared position delta needed before vanilla considers a movement worth syncing.
 pub const POSITION_SYNC_THRESHOLD: f64 = 7.629_394_5e-6;
@@ -20,6 +23,109 @@ pub enum EntityPositionSyncDecision {
     },
     /// Full absolute position sync.
     Full,
+}
+
+/// Position sync packet for entities that do not include rotation in delta updates.
+#[derive(Clone, Debug)]
+pub enum EntityPositionSyncPacket {
+    /// Delta-encoded position update.
+    Delta(CMoveEntityPos),
+    /// Full absolute position sync.
+    Full(CEntityPositionSync),
+}
+
+/// Position sync packet for entities that include rotation in delta updates.
+#[derive(Clone, Debug)]
+pub enum EntityPositionRotSyncPacket {
+    /// Delta-encoded position and rotation update.
+    Delta(CMoveEntityPosRot),
+    /// Full absolute position sync.
+    Full(CEntityPositionSync),
+}
+
+/// Runtime values needed to build a vanilla position sync packet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityPositionSyncSnapshot {
+    entity_id: i32,
+    position: DVec3,
+    velocity: DVec3,
+    rotation: (f32, f32),
+    on_ground: bool,
+}
+
+impl EntityPositionSyncSnapshot {
+    /// Creates a packet snapshot for the current entity state.
+    #[must_use]
+    pub const fn new(
+        entity_id: i32,
+        position: DVec3,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        on_ground: bool,
+    ) -> Self {
+        Self {
+            entity_id,
+            position,
+            velocity,
+            rotation,
+            on_ground,
+        }
+    }
+
+    const fn full_sync_packet(self) -> CEntityPositionSync {
+        CEntityPositionSync {
+            entity_id: self.entity_id,
+            x: self.position.x,
+            y: self.position.y,
+            z: self.position.z,
+            velocity_x: self.velocity.x,
+            velocity_y: self.velocity.y,
+            velocity_z: self.velocity.z,
+            yaw: self.rotation.0,
+            pitch: self.rotation.1,
+            on_ground: self.on_ground,
+        }
+    }
+}
+
+impl EntityPositionSyncDecision {
+    /// Builds the protocol packet for a position-only entity update.
+    #[must_use]
+    pub const fn into_position_packet(
+        self,
+        snapshot: EntityPositionSyncSnapshot,
+    ) -> EntityPositionSyncPacket {
+        match self {
+            Self::Delta { dx, dy, dz } => EntityPositionSyncPacket::Delta(CMoveEntityPos {
+                entity_id: snapshot.entity_id,
+                dx,
+                dy,
+                dz,
+                on_ground: snapshot.on_ground,
+            }),
+            Self::Full => EntityPositionSyncPacket::Full(snapshot.full_sync_packet()),
+        }
+    }
+
+    /// Builds the protocol packet for a position-and-rotation entity update.
+    #[must_use]
+    pub fn into_position_rot_packet(
+        self,
+        snapshot: EntityPositionSyncSnapshot,
+    ) -> EntityPositionRotSyncPacket {
+        match self {
+            Self::Delta { dx, dy, dz } => EntityPositionRotSyncPacket::Delta(CMoveEntityPosRot {
+                entity_id: snapshot.entity_id,
+                dx,
+                dy,
+                dz,
+                y_rot: to_angle_byte(snapshot.rotation.0),
+                x_rot: to_angle_byte(snapshot.rotation.1),
+                on_ground: snapshot.on_ground,
+            }),
+            Self::Full => EntityPositionRotSyncPacket::Full(snapshot.full_sync_packet()),
+        }
+    }
 }
 
 /// Per-entity position sync state shared by player and entity tracking.
@@ -125,9 +231,12 @@ impl EntityPositionSyncState {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
-    use steel_protocol::packets::game::calc_delta;
+    use steel_protocol::packets::game::{calc_delta, to_angle_byte};
 
-    use super::{EntityPositionSyncDecision, EntityPositionSyncState};
+    use super::{
+        EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
+        EntityPositionSyncSnapshot, EntityPositionSyncState,
+    };
 
     #[test]
     fn movement_sync_records_delta_when_packed_delta_fits() {
@@ -171,5 +280,106 @@ mod tests {
 
         assert_eq!(decision, EntityPositionSyncDecision::Full);
         assert_eq!(state.last_sent_position(), DVec3::new(10.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn sync_decision_builds_position_delta_packet() {
+        let position = DVec3::new(0.25, 0.0, -0.5);
+        let decision = EntityPositionSyncDecision::Delta {
+            dx: calc_delta(position.x, 0.0).expect("delta should fit"),
+            dy: calc_delta(position.y, 0.0).expect("delta should fit"),
+            dz: calc_delta(position.z, 0.0).expect("delta should fit"),
+        };
+
+        let packet = decision.into_position_packet(EntityPositionSyncSnapshot::new(
+            12,
+            position,
+            DVec3::new(1.0, 2.0, 3.0),
+            (90.0, 45.0),
+            true,
+        ));
+
+        let EntityPositionSyncPacket::Delta(packet) = packet else {
+            panic!("expected delta packet");
+        };
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(
+            packet.dx,
+            calc_delta(position.x, 0.0).expect("delta should fit")
+        );
+        assert_eq!(
+            packet.dy,
+            calc_delta(position.y, 0.0).expect("delta should fit")
+        );
+        assert_eq!(
+            packet.dz,
+            calc_delta(position.z, 0.0).expect("delta should fit")
+        );
+        assert!(packet.on_ground);
+    }
+
+    #[test]
+    fn sync_decision_builds_position_rotation_delta_packet() {
+        let position = DVec3::new(0.25, 0.0, -0.5);
+        let decision = EntityPositionSyncDecision::Delta {
+            dx: calc_delta(position.x, 0.0).expect("delta should fit"),
+            dy: calc_delta(position.y, 0.0).expect("delta should fit"),
+            dz: calc_delta(position.z, 0.0).expect("delta should fit"),
+        };
+
+        let packet = decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
+            12,
+            position,
+            DVec3::new(1.0, 2.0, 3.0),
+            (90.0, 45.0),
+            true,
+        ));
+
+        let EntityPositionRotSyncPacket::Delta(packet) = packet else {
+            panic!("expected position-rotation delta packet");
+        };
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(
+            packet.dx,
+            calc_delta(position.x, 0.0).expect("delta should fit")
+        );
+        assert_eq!(
+            packet.dy,
+            calc_delta(position.y, 0.0).expect("delta should fit")
+        );
+        assert_eq!(
+            packet.dz,
+            calc_delta(position.z, 0.0).expect("delta should fit")
+        );
+        assert_eq!(packet.y_rot, to_angle_byte(90.0));
+        assert_eq!(packet.x_rot, to_angle_byte(45.0));
+        assert!(packet.on_ground);
+    }
+
+    #[test]
+    fn sync_decision_builds_full_position_sync_packet() {
+        let snapshot = EntityPositionSyncSnapshot::new(
+            12,
+            DVec3::new(10.0, 20.0, 30.0),
+            DVec3::new(1.0, 2.0, 3.0),
+            (90.0, 45.0),
+            true,
+        );
+
+        let packet = EntityPositionSyncDecision::Full.into_position_packet(snapshot);
+
+        let EntityPositionSyncPacket::Full(packet) = packet else {
+            panic!("expected full packet");
+        };
+        assert_eq!(packet.entity_id, 12);
+        assert_eq!(packet.x.to_bits(), 10.0_f64.to_bits());
+        assert_eq!(packet.y.to_bits(), 20.0_f64.to_bits());
+        assert_eq!(packet.z.to_bits(), 30.0_f64.to_bits());
+        assert_eq!(packet.velocity_x.to_bits(), 1.0_f64.to_bits());
+        assert_eq!(packet.velocity_y.to_bits(), 2.0_f64.to_bits());
+        assert_eq!(packet.velocity_z.to_bits(), 3.0_f64.to_bits());
+        assert_eq!(packet.yaw.to_bits(), 90.0_f32.to_bits());
+        assert_eq!(packet.pitch.to_bits(), 45.0_f32.to_bits());
+        assert!(packet.on_ground);
     }
 }
