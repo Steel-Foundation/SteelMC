@@ -4,7 +4,6 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -56,6 +55,67 @@ const DEFAULT_GRAVITY: f64 = 0.04;
 /// Air/vertical drag multiplier per tick.
 const AIR_DRAG: f64 = 0.98;
 
+/// Mutable item-specific state that changes during item ticks, pickup, damage,
+/// merging, and save/load.
+struct ItemEntityState {
+    /// Age in ticks. Despawns at `LIFETIME` (6000). Special value -32768 = infinite.
+    age: i32,
+    /// Per-entity tick counter used for vanilla timing logic.
+    ///
+    /// Vanilla uses `Entity.tickCount` (always increments) for things like the
+    /// `(tickCount + id) % 4 == 0` movement fallback and periodic position sync.
+    /// This must not be tied to `age` because `age` can be set to `INFINITE_LIFETIME`.
+    tick_count: i32,
+    /// Ticks until pickupable. 0 = can pickup, 32767 = never.
+    pickup_delay: i32,
+    /// Health (damage resistance). Item is destroyed when this reaches 0.
+    health: i32,
+    /// UUID of the entity that threw/dropped this item.
+    thrower: Option<Uuid>,
+    /// UUID of the only entity that can pick up this item.
+    /// If `None`, any player can pick it up. Vanilla calls this `target`.
+    owner: Option<Uuid>,
+}
+
+impl ItemEntityState {
+    const fn new() -> Self {
+        Self {
+            age: 0,
+            tick_count: 0,
+            pickup_delay: 0,
+            health: DEFAULT_HEALTH,
+            thrower: None,
+            owner: None,
+        }
+    }
+}
+
+/// Last sent movement state for item entity tracking.
+struct ItemEntitySyncState {
+    /// Last velocity sent to clients (for delta detection).
+    /// Mirrors vanilla's `ServerEntity.lastSentMovement`.
+    last_sent_velocity: DVec3,
+    /// Last position sent to clients (for delta detection).
+    /// Mirrors vanilla's `ServerEntity.lastSentXyz` fields.
+    last_sent_position: DVec3,
+    /// Last `on_ground` state sent to clients.
+    last_sent_on_ground: bool,
+    /// Whether position/velocity needs to be synced to clients.
+    /// Set when velocity changes significantly, like vanilla's `Entity.needsSync`.
+    needs_sync: bool,
+}
+
+impl ItemEntitySyncState {
+    const fn new(position: DVec3, velocity: DVec3, on_ground: bool) -> Self {
+        Self {
+            last_sent_velocity: velocity,
+            last_sent_position: position,
+            last_sent_on_ground: on_ground,
+            needs_sync: false,
+        }
+    }
+}
+
 /// A dropped item entity.
 ///
 /// Mirrors vanilla's `ItemEntity` behavior:
@@ -71,40 +131,10 @@ pub struct ItemEntity {
     /// Entity data containing the `ItemStack`.
     entity_data: SyncMutex<ItemEntityData>,
 
-    // === Timers ===
-    /// Age in ticks. Despawns at `LIFETIME` (6000). Special value -32768 = infinite.
-    age: AtomicI32,
-    /// Per-entity tick counter used for vanilla timing logic.
-    ///
-    /// Vanilla uses `Entity.tickCount` (always increments) for things like the
-    /// `(tickCount + id) % 4 == 0` movement fallback and periodic position sync.
-    /// This must not be tied to `age` because `age` can be set to `INFINITE_LIFETIME`.
-    tick_count: AtomicI32,
-    /// Ticks until pickupable. 0 = can pickup, 32767 = never.
-    pickup_delay: AtomicI32,
-    /// Health (damage resistance). Item is destroyed when this reaches 0.
-    health: AtomicI32,
-
-    // === Item-specific ===
-    /// UUID of the entity that threw/dropped this item.
-    thrower: SyncMutex<Option<Uuid>>,
-    /// UUID of the only entity that can pick up this item.
-    /// If `None`, any player can pick it up.
-    /// Vanilla calls this `target`.
-    owner: SyncMutex<Option<Uuid>>,
-
-    // === Network Sync ===
-    /// Last velocity sent to clients (for delta detection).
-    /// Mirrors vanilla's `ServerEntity.lastSentMovement`.
-    last_sent_velocity: SyncMutex<DVec3>,
-    /// Last position sent to clients (for delta detection).
-    /// Mirrors vanilla's `ServerEntity.lastSentXyz` fields.
-    last_sent_position: SyncMutex<DVec3>,
-    /// Last `on_ground` state sent to clients.
-    last_sent_on_ground: AtomicBool,
-    /// Whether position/velocity needs to be synced to clients.
-    /// Set when velocity changes significantly, like vanilla's `Entity.needsSync`.
-    needs_sync: AtomicBool,
+    /// Item-specific mutable state.
+    item_state: SyncMutex<ItemEntityState>,
+    /// Movement sync state used by tracking.
+    sync_state: SyncMutex<ItemEntitySyncState>,
 }
 
 impl ItemEntity {
@@ -148,16 +178,8 @@ impl ItemEntity {
                 world,
             ),
             entity_data: SyncMutex::new(entity_data),
-            age: AtomicI32::new(0),
-            tick_count: AtomicI32::new(0),
-            pickup_delay: AtomicI32::new(0),
-            health: AtomicI32::new(DEFAULT_HEALTH),
-            thrower: SyncMutex::new(None),
-            owner: SyncMutex::new(None),
-            last_sent_velocity: SyncMutex::new(velocity),
-            last_sent_position: SyncMutex::new(position),
-            last_sent_on_ground: AtomicBool::new(false),
-            needs_sync: AtomicBool::new(false),
+            item_state: SyncMutex::new(ItemEntityState::new()),
+            sync_state: SyncMutex::new(ItemEntitySyncState::new(position, velocity, false)),
         }
     }
 
@@ -186,16 +208,8 @@ impl ItemEntity {
                 world,
             ),
             entity_data: SyncMutex::new(ItemEntityData::new()),
-            age: AtomicI32::new(0),
-            tick_count: AtomicI32::new(0),
-            pickup_delay: AtomicI32::new(0),
-            health: AtomicI32::new(DEFAULT_HEALTH),
-            thrower: SyncMutex::new(None),
-            owner: SyncMutex::new(None),
-            last_sent_velocity: SyncMutex::new(velocity),
-            last_sent_position: SyncMutex::new(position),
-            last_sent_on_ground: AtomicBool::new(on_ground),
-            needs_sync: AtomicBool::new(false),
+            item_state: SyncMutex::new(ItemEntityState::new()),
+            sync_state: SyncMutex::new(ItemEntitySyncState::new(position, velocity, on_ground)),
         }
     }
 
@@ -217,12 +231,12 @@ impl ItemEntity {
     /// Gets the current age in ticks.
     #[must_use]
     pub fn get_age(&self) -> i32 {
-        self.age.load(Ordering::Relaxed)
+        self.item_state.lock().age
     }
 
     /// Sets the age in ticks.
     pub fn set_age(&self, age: i32) {
-        self.age.store(age, Ordering::Relaxed);
+        self.item_state.lock().age = age;
     }
 
     /// Returns this entity's internal tick counter.
@@ -231,46 +245,44 @@ impl ItemEntity {
     /// `age` is set to `INFINITE_LIFETIME`.
     #[must_use]
     pub fn get_tick_count(&self) -> i32 {
-        self.tick_count.load(Ordering::Relaxed)
+        self.item_state.lock().tick_count
     }
 
     /// Sets the entity to never despawn.
     pub fn set_unlimited_lifetime(&self) {
-        self.age.store(INFINITE_LIFETIME, Ordering::Relaxed);
+        self.item_state.lock().age = INFINITE_LIFETIME;
     }
 
     /// Gets the pickup delay in ticks.
     #[must_use]
     pub fn get_pickup_delay(&self) -> i32 {
-        self.pickup_delay.load(Ordering::Relaxed)
+        self.item_state.lock().pickup_delay
     }
 
     /// Sets the default pickup delay (10 ticks = 0.5 seconds).
     pub fn set_default_pickup_delay(&self) {
-        self.pickup_delay
-            .store(DEFAULT_PICKUP_DELAY, Ordering::Relaxed);
+        self.item_state.lock().pickup_delay = DEFAULT_PICKUP_DELAY;
     }
 
     /// Sets the pickup delay to zero (immediately pickupable).
     pub fn set_no_pickup_delay(&self) {
-        self.pickup_delay.store(0, Ordering::Relaxed);
+        self.item_state.lock().pickup_delay = 0;
     }
 
     /// Sets the item to never be pickupable.
     pub fn set_never_pickup(&self) {
-        self.pickup_delay
-            .store(INFINITE_PICKUP_DELAY, Ordering::Relaxed);
+        self.item_state.lock().pickup_delay = INFINITE_PICKUP_DELAY;
     }
 
     /// Sets a custom pickup delay in ticks.
     pub fn set_pickup_delay(&self, delay: i32) {
-        self.pickup_delay.store(delay, Ordering::Relaxed);
+        self.item_state.lock().pickup_delay = delay;
     }
 
     /// Returns true if the item has a pickup delay (cannot be picked up yet).
     #[must_use]
     pub fn has_pickup_delay(&self) -> bool {
-        self.pickup_delay.load(Ordering::Relaxed) > 0
+        self.item_state.lock().pickup_delay > 0
     }
 
     // === Health ===
@@ -278,25 +290,25 @@ impl ItemEntity {
     /// Gets the health (damage resistance).
     #[must_use]
     pub fn get_health(&self) -> i32 {
-        self.health.load(Ordering::Relaxed)
+        self.item_state.lock().health
     }
 
     /// Sets the health.
     pub fn set_health(&self, health: i32) {
-        self.health.store(health, Ordering::Relaxed);
+        self.item_state.lock().health = health;
     }
 
     // === Thrower ===
 
     /// Sets the entity that threw/dropped this item.
     pub fn set_thrower(&self, uuid: Uuid) {
-        *self.thrower.lock() = Some(uuid);
+        self.item_state.lock().thrower = Some(uuid);
     }
 
     /// Gets the UUID of the entity that threw/dropped this item.
     #[must_use]
     pub fn get_thrower(&self) -> Option<Uuid> {
-        *self.thrower.lock()
+        self.item_state.lock().thrower
     }
 
     // === Owner ===
@@ -306,7 +318,7 @@ impl ItemEntity {
     /// Pass `None` to allow any player to pick it up.
     /// Vanilla calls this `target`.
     pub fn set_owner(&self, uuid: Option<Uuid>) {
-        *self.owner.lock() = uuid;
+        self.item_state.lock().owner = uuid;
     }
 
     /// Gets the owner UUID (the only entity that can pick up this item).
@@ -314,7 +326,7 @@ impl ItemEntity {
     /// Returns `None` if any player can pick it up.
     #[must_use]
     pub fn get_owner(&self) -> Option<Uuid> {
-        *self.owner.lock()
+        self.item_state.lock().owner
     }
 
     // === Pickup ===
@@ -388,10 +400,11 @@ impl ItemEntity {
     #[must_use]
     pub fn is_mergeable(&self) -> bool {
         let item = self.get_item();
+        let state = self.item_state.lock();
         !self.is_removed()
-            && self.pickup_delay.load(Ordering::Relaxed) != INFINITE_PICKUP_DELAY
-            && self.age.load(Ordering::Relaxed) != INFINITE_LIFETIME
-            && self.age.load(Ordering::Relaxed) < LIFETIME
+            && state.pickup_delay != INFINITE_PICKUP_DELAY
+            && state.age != INFINITE_LIFETIME
+            && state.age < LIFETIME
             && item.count() < item.max_stack_size()
     }
 
@@ -458,20 +471,16 @@ impl ItemEntity {
         to_item.set_item(new_to_stack);
 
         // Pickup delay is the max of both (so merged items don't become instantly pickable)
-        let new_pickup_delay = to_item
-            .pickup_delay
-            .load(Ordering::Relaxed)
-            .max(from_item.pickup_delay.load(Ordering::Relaxed));
-        to_item
-            .pickup_delay
-            .store(new_pickup_delay, Ordering::Relaxed);
-
-        // Age is the min of both (so merged items don't despawn prematurely)
-        let new_age = to_item
-            .age
-            .load(Ordering::Relaxed)
-            .min(from_item.age.load(Ordering::Relaxed));
-        to_item.age.store(new_age, Ordering::Relaxed);
+        // Age is the min of both (so merged items don't despawn prematurely).
+        let (from_pickup_delay, from_age) = {
+            let state = from_item.item_state.lock();
+            (state.pickup_delay, state.age)
+        };
+        {
+            let mut state = to_item.item_state.lock();
+            state.pickup_delay = state.pickup_delay.max(from_pickup_delay);
+            state.age = state.age.min(from_age);
+        }
 
         // Update or remove the source item
         if new_from_stack.is_empty() {
@@ -525,7 +534,8 @@ impl ItemEntity {
     /// - OR velocity became zero (to stop client-side prediction)
     fn check_velocity_sync(&self) -> Option<CSetEntityMotion> {
         let current = self.velocity();
-        let last_sent = *self.last_sent_velocity.lock();
+        let mut sync_state = self.sync_state.lock();
+        let last_sent = sync_state.last_sent_velocity;
 
         let diff_sq = (current.x - last_sent.x).powi(2)
             + (current.y - last_sent.y).powi(2)
@@ -537,7 +547,7 @@ impl ItemEntity {
             || (diff_sq > 0.0 && current.x == 0.0 && current.y == 0.0 && current.z == 0.0);
 
         if should_sync {
-            *self.last_sent_velocity.lock() = current;
+            sync_state.last_sent_velocity = current;
             Some(CSetEntityMotion::new(
                 self.id(),
                 current.x,
@@ -558,9 +568,10 @@ impl ItemEntity {
     /// - Periodic full sync (every 60 ticks based on `tick_count`)
     fn check_position_sync(&self, tick_count: i32) -> Option<PositionSyncPacket> {
         let current_pos = self.position();
-        let last_sent = *self.last_sent_position.lock();
         let current_on_ground = self.on_ground();
-        let last_on_ground = self.last_sent_on_ground.load(Ordering::Relaxed);
+        let mut sync_state = self.sync_state.lock();
+        let last_sent = sync_state.last_sent_position;
+        let last_on_ground = sync_state.last_sent_on_ground;
 
         // Check if position changed enough to warrant sync
         // Vanilla threshold: 7.6293945E-6 (TOLERANCE_LEVEL_POSITION)
@@ -592,12 +603,11 @@ impl ItemEntity {
             || dy.is_none()
             || dz.is_none();
 
-        self.last_sent_on_ground
-            .store(current_on_ground, Ordering::Relaxed);
+        sync_state.last_sent_on_ground = current_on_ground;
 
         if use_full_sync {
             // Full sync: client sets position directly, so store current_pos
-            *self.last_sent_position.lock() = current_pos;
+            sync_state.last_sent_position = current_pos;
 
             let vel = self.velocity();
             // NOTE: We do NOT update last_sent_velocity here because the client
@@ -623,11 +633,11 @@ impl ItemEntity {
             // Vanilla stores the actual position, not the decoded position.
             // This works because encode() is deterministic - both server and client
             // compute the same encoded values.
-            let dx = dx.expect("delta dx missing in delta position sync");
-            let dy = dy.expect("delta dy missing in delta position sync");
-            let dz = dz.expect("delta dz missing in delta position sync");
+            let (Some(dx), Some(dy), Some(dz)) = (dx, dy, dz) else {
+                return None;
+            };
 
-            *self.last_sent_position.lock() = current_pos;
+            sync_state.last_sent_position = current_pos;
 
             Some(PositionSyncPacket::Delta(CMoveEntityPos {
                 entity_id: self.id(),
@@ -697,7 +707,23 @@ impl Entity for ItemEntity {
 
     fn tick(&self) {
         // Vanilla: `Entity.tickCount` increments every tick regardless of item age/lifetime.
-        let tick_count = self.tick_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let (tick_count, should_despawn) = {
+            let mut state = self.item_state.lock();
+            state.tick_count += 1;
+
+            if state.pickup_delay > 0 && state.pickup_delay != INFINITE_PICKUP_DELAY {
+                state.pickup_delay -= 1;
+            }
+
+            let should_despawn = if state.age != INFINITE_LIFETIME {
+                state.age += 1;
+                state.age >= LIFETIME
+            } else {
+                false
+            };
+
+            (state.tick_count, should_despawn)
+        };
 
         // Check if item is empty
         if self.get_item().is_empty() {
@@ -705,20 +731,9 @@ impl Entity for ItemEntity {
             return;
         }
 
-        // Decrement pickup delay
-        let pickup_delay = self.pickup_delay.load(Ordering::Relaxed);
-        if pickup_delay > 0 && pickup_delay != INFINITE_PICKUP_DELAY {
-            self.pickup_delay.fetch_sub(1, Ordering::Relaxed);
-        }
-
-        // Increment age and check for despawn
-        let age = self.age.load(Ordering::Relaxed);
-        if age != INFINITE_LIFETIME {
-            let new_age = self.age.fetch_add(1, Ordering::Relaxed) + 1;
-            if new_age >= LIFETIME {
-                self.set_removed(RemovalReason::Discarded);
-                return;
-            }
+        if should_despawn {
+            self.set_removed(RemovalReason::Discarded);
+            return;
         }
 
         // Store old position for merge rate calculation (vanilla: xo, yo, zo)
@@ -810,13 +825,13 @@ impl Entity for ItemEntity {
         );
         let diff_sq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
         if diff_sq > 0.01 {
-            self.needs_sync.store(true, Ordering::Relaxed);
+            self.sync_state.lock().needs_sync = true;
         }
 
         // Also set needsSync when on_ground changes - this ensures immediate sync
         // when the item lands or becomes airborne, preventing client desync
         if self.on_ground() != old_on_ground {
-            self.needs_sync.store(true, Ordering::Relaxed);
+            self.sync_state.lock().needs_sync = true;
         }
     }
 
@@ -826,7 +841,7 @@ impl Entity for ItemEntity {
         };
 
         let update_interval = self.entity_type().update_interval; // 20 for items
-        let needs_sync = self.needs_sync.load(Ordering::Relaxed);
+        let needs_sync = self.sync_state.lock().needs_sync;
 
         // Only send updates on the update interval OR when needsSync is set
         // (vanilla: ServerEntity.sendChanges line 97)
@@ -863,7 +878,7 @@ impl Entity for ItemEntity {
         }
 
         // Clear needsSync after processing (vanilla: ServerEntity.sendChanges line 193)
-        self.needs_sync.store(false, Ordering::Relaxed);
+        self.sync_state.lock().needs_sync = false;
     }
 
     fn get_default_gravity(&self) -> f64 {
@@ -888,8 +903,11 @@ impl Entity for ItemEntity {
 
     fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase and canBeHurtBy (damage resistance component)
-        let new_health = self.health.load(Ordering::Relaxed) - amount as i32;
-        self.health.store(new_health, Ordering::Relaxed);
+        let new_health = {
+            let mut state = self.item_state.lock();
+            state.health -= amount as i32;
+            state.health
+        };
         if new_health <= 0 {
             // TODO: Call item.onDestroyed() when implemented
             self.set_removed(RemovalReason::Killed);
@@ -899,19 +917,18 @@ impl Entity for ItemEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         // Match vanilla's ItemEntity.addAdditionalSaveData
-        nbt.insert("Health", self.health.load(Ordering::Relaxed) as i16);
-        nbt.insert("Age", self.age.load(Ordering::Relaxed) as i16);
-        nbt.insert(
-            "PickupDelay",
-            self.pickup_delay.load(Ordering::Relaxed) as i16,
-        );
+        let state = self.item_state.lock();
+        nbt.insert("Health", state.health as i16);
+        nbt.insert("Age", state.age as i16);
+        nbt.insert("PickupDelay", state.pickup_delay as i16);
 
-        if let Some(thrower) = self.get_thrower() {
+        if let Some(thrower) = state.thrower {
             nbt.insert("Thrower", NbtTag::IntArray(thrower.to_int_array().to_vec()));
         }
-        if let Some(owner) = self.get_owner() {
+        if let Some(owner) = state.owner {
             nbt.insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
         }
+        drop(state);
 
         let item = self.get_item();
         if !item.is_empty() {
@@ -924,27 +941,28 @@ impl Entity for ItemEntity {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
 
         // Match vanilla's ItemEntity.readAdditionalSaveData
+        let mut state = self.item_state.lock();
         if let Some(health) = nbt.short("Health") {
-            self.health.store(i32::from(health), Ordering::Relaxed);
+            state.health = i32::from(health);
         }
         if let Some(age) = nbt.short("Age") {
-            self.age.store(i32::from(age), Ordering::Relaxed);
+            state.age = i32::from(age);
         }
         if let Some(pickup_delay) = nbt.short("PickupDelay") {
-            self.pickup_delay
-                .store(i32::from(pickup_delay), Ordering::Relaxed);
+            state.pickup_delay = i32::from(pickup_delay);
         }
 
         if let Some(thrower_arr) = nbt.int_array("Thrower")
             && let Some(uuid) = Uuid::from_int_array(&thrower_arr)
         {
-            *self.thrower.lock() = Some(uuid);
+            state.thrower = Some(uuid);
         }
         if let Some(owner_arr) = nbt.int_array("Owner")
             && let Some(uuid) = Uuid::from_int_array(&owner_arr)
         {
-            *self.owner.lock() = Some(uuid);
+            state.owner = Some(uuid);
         }
+        drop(state);
 
         if let Some(item_tag) = nbt.compound("Item")
             && let Some(item) = ItemStack::from_borrowed_compound(&item_tag)
