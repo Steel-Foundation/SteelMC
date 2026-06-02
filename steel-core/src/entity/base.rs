@@ -330,6 +330,8 @@ impl EntityGroundContact {
 pub struct EntityBaseState {
     position: DVec3,
     old_position: DVec3,
+    last_known_position: Option<DVec3>,
+    last_known_speed: DVec3,
     velocity: DVec3,
     rotation: (f32, f32),
     pose: EntityPose,
@@ -353,6 +355,8 @@ impl EntityBaseState {
         Self {
             position,
             old_position: position,
+            last_known_position: None,
+            last_known_speed: DVec3::ZERO,
             velocity: DVec3::ZERO,
             rotation: (0.0, 0.0),
             pose: EntityPose::Standing,
@@ -614,6 +618,10 @@ impl EntityBase {
 
     /// Creates a new `EntityBase` with a randomly generated UUID and explicit state.
     #[must_use]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "EntityBaseState is an owned construction snapshot built with with_* helpers"
+    )]
     pub fn new_with_state(id: i32, state: EntityBaseState, world: Weak<World>) -> Self {
         Self::with_uuid_and_state(id, Uuid::new_v4(), state, world)
     }
@@ -637,6 +645,10 @@ impl EntityBase {
     /// Use this when loading entities from disk so the vanilla base fields are
     /// reconstructed in one place.
     #[must_use]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "EntityBaseState is an owned construction snapshot built with with_* helpers"
+    )]
     pub fn with_uuid_and_state(
         id: i32,
         uuid: Uuid,
@@ -701,6 +713,12 @@ impl EntityBase {
     #[inline]
     pub fn old_position(&self) -> DVec3 {
         self.state.lock().old_position
+    }
+
+    /// Returns vanilla `lastKnownSpeed`, the displacement computed at base-tick start.
+    #[inline]
+    pub fn known_speed(&self) -> DVec3 {
+        self.state.lock().last_known_speed
     }
 
     /// Gets the entity's current bounding box.
@@ -862,6 +880,30 @@ impl EntityBase {
     /// Sets the vanilla boarding cooldown in ticks.
     pub(crate) fn set_boarding_cooldown(&self, boarding_cooldown: i32) {
         self.relationships.lock().boarding_cooldown = boarding_cooldown;
+    }
+
+    /// Advances the base-tick movement and relationship state Steel currently implements.
+    pub fn advance_base_tick_state(&self) {
+        self.compute_known_speed();
+        self.decrement_boarding_cooldown();
+    }
+
+    /// Computes vanilla `lastKnownSpeed` from the previous base-tick position.
+    pub fn compute_known_speed(&self) {
+        let mut state = self.state.lock();
+        let previous_position = match state.last_known_position {
+            Some(position) => position,
+            None => state.position,
+        };
+        state.last_known_speed = state.position - previous_position;
+        state.last_known_position = Some(state.position);
+    }
+
+    fn decrement_boarding_cooldown(&self) {
+        let mut relationships = self.relationships.lock();
+        if relationships.boarding_cooldown > 0 {
+            relationships.boarding_cooldown -= 1;
+        }
     }
 
     /// Updates the world reference used by this entity.
@@ -1519,6 +1561,42 @@ mod tests {
         assert_vec3_close(base.old_position(), DVec3::new(4.0, 5.0, 6.0));
         base.set_old_position(DVec3::new(7.0, 8.0, 9.0));
         assert_vec3_close(base.old_position(), DVec3::new(7.0, 8.0, 9.0));
+    }
+
+    #[test]
+    fn known_speed_is_base_tick_position_delta() {
+        let base = EntityBase::new(
+            1,
+            DVec3::new(1.0, 2.0, 3.0),
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_position(DVec3::new(4.0, 2.0, 3.0));
+        base.advance_base_tick_state();
+        assert_vec3_close(base.known_speed(), DVec3::ZERO);
+
+        base.set_position(DVec3::new(7.0, 1.5, -1.0));
+        base.advance_base_tick_state();
+        assert_vec3_close(base.known_speed(), DVec3::new(3.0, -0.5, -4.0));
+    }
+
+    #[test]
+    fn base_tick_state_decrements_boarding_cooldown() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_boarding_cooldown(2);
+        base.advance_base_tick_state();
+        assert_eq!(base.boarding_cooldown(), 1);
+        base.advance_base_tick_state();
+        assert_eq!(base.boarding_cooldown(), 0);
+        base.advance_base_tick_state();
+        assert_eq!(base.boarding_cooldown(), 0);
     }
 
     #[test]

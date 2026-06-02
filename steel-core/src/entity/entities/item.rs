@@ -654,7 +654,7 @@ impl Entity for ItemEntity {
             return;
         }
 
-        self.refresh_fluid_contact_for_base_tick();
+        self.base_tick();
 
         // Vanilla item tick stores previous position before applying movement.
         self.set_old_position_to_current();

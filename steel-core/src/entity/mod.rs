@@ -461,8 +461,19 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Called every game tick when the entity is in a ticked chunk.
     ///
     /// Use `self.level()` to access the world for physics, block queries, etc.
-    /// The caller (`EntityStorage`) handles base tick logic like dirty data sync.
+    /// The caller (`EntityStorage`) handles post-tick dirty data sync.
     fn tick(&self) {}
+
+    /// Runs the vanilla base-tick physics pieces Steel currently implements.
+    ///
+    /// This intentionally stays separate from `tick()` because several vanilla
+    /// subclasses override tick without calling `super.tick()`.
+    fn base_tick(&self) {
+        self.base().advance_base_tick_state();
+        self.refresh_fluid_contact_for_base_tick();
+        // TODO: Add remaining vanilla baseTick pieces: portal, fire/lava,
+        // sprint particles, leash tick, and shared below-world handling.
+    }
 
     /// Sends position/velocity changes to tracking players.
     ///
@@ -558,6 +569,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns the movement vector vanilla exposes for block-contact logic.
     fn known_movement(&self) -> DVec3 {
         self.velocity()
+    }
+
+    /// Returns the base-tick displacement vanilla exposes as `getKnownSpeed`.
+    fn known_speed(&self) -> DVec3 {
+        self.base().known_speed()
     }
 
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
