@@ -6,7 +6,7 @@ use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
-use crate::entity::{ENTITIES, SharedEntity};
+use crate::entity::{ENTITIES, EntityLoadRequest, SharedEntity};
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
@@ -665,6 +665,7 @@ impl ChunkStorage {
                     pos: [pos.x, pos.y, pos.z],
                     motion: [vel.x, vel.y, vel.z],
                     rotation: [yaw, pitch],
+                    fall_distance: entity.fall_distance(),
                     on_ground: entity.on_ground(),
                     nbt_data: nbt_bytes,
                 })
@@ -1042,13 +1043,16 @@ impl ChunkStorage {
         };
 
         Some(ENTITIES.create_and_load_or_raw(
-            entity_type,
-            pos,
-            uuid,
-            velocity,
-            rotation,
-            persistent.on_ground,
-            level,
+            EntityLoadRequest {
+                entity_type,
+                position: pos,
+                uuid,
+                velocity,
+                rotation,
+                fall_distance: persistent.fall_distance,
+                on_ground: persistent.on_ground,
+                world: level,
+            },
             &nbt,
         ))
     }
@@ -2361,7 +2365,7 @@ mod tests {
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
-    use crate::entity::{entities::EndCrystalEntity, init_entities, next_entity_id};
+    use crate::entity::{Entity, entities::EndCrystalEntity, init_entities, next_entity_id};
     use glam::DVec3;
     use rustc_hash::FxHashMap;
     use steel_registry::test_support::init_test_registry;
@@ -2557,6 +2561,7 @@ mod tests {
         ));
         crystal.set_beam_target(Some(BlockPos::new(0, 64, 0)));
         crystal.set_invulnerable(true);
+        crystal.set_fall_distance(3.75);
         proto.add_entity(crystal);
 
         let chunk = ChunkAccess::Proto(proto);
@@ -2564,6 +2569,7 @@ mod tests {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert_eq!(prepared.persistent.entities.len(), 1);
+        assert!((prepared.persistent.entities[0].fall_distance - 3.75).abs() <= f32::EPSILON);
 
         let loaded = ChunkStorage::persistent_to_chunk(
             &prepared.persistent,
@@ -2585,6 +2591,7 @@ mod tests {
             entities[0].entity_type().id(),
             vanilla_entities::END_CRYSTAL.id()
         );
+        assert!((entities[0].fall_distance() - 3.75).abs() <= f32::EPSILON);
     }
 
     #[test]

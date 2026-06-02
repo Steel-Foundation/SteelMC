@@ -40,7 +40,7 @@ use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::ENTITIES;
+use crate::entity::{ENTITIES, EntityLoadRequest};
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
@@ -76,6 +76,7 @@ struct StructureEntityInfo {
     entity_type: EntityTypeRef,
     rotation: (f32, f32),
     velocity: DVec3,
+    fall_distance: f32,
     on_ground: bool,
     nbt: NbtCompound,
 }
@@ -343,6 +344,9 @@ impl StructureTemplate {
             })?;
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
+            let fall_distance = entity_nbt
+                .double("fall_distance")
+                .map_or(0.0, |value| value as f32);
             let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
             let mut nbt = entity_nbt.to_owned();
             Self::strip_entity_base_fields(&mut nbt);
@@ -353,6 +357,7 @@ impl StructureTemplate {
                 entity_type,
                 rotation,
                 velocity,
+                fall_distance,
                 on_ground,
                 nbt,
             });
@@ -382,7 +387,15 @@ impl StructureTemplate {
     }
 
     fn strip_entity_base_fields(nbt: &mut NbtCompound) {
-        for field in ["id", "Pos", "Motion", "Rotation", "UUID", "OnGround"] {
+        for field in [
+            "id",
+            "Pos",
+            "Motion",
+            "Rotation",
+            "UUID",
+            "fall_distance",
+            "OnGround",
+        ] {
             let _ = nbt.remove(field);
         }
     }
@@ -812,13 +825,16 @@ impl StructureTemplate {
             };
 
             let runtime_entity = ENTITIES.create_and_load_or_raw(
-                entity.entity_type,
-                pos,
-                Uuid::new_v4(),
-                entity.velocity,
-                rotation,
-                entity.on_ground,
-                region.weak_world(),
+                EntityLoadRequest {
+                    entity_type: entity.entity_type,
+                    position: pos,
+                    uuid: Uuid::new_v4(),
+                    velocity: entity.velocity,
+                    rotation,
+                    fall_distance: entity.fall_distance,
+                    on_ground: entity.on_ground,
+                    world: region.weak_world(),
+                },
                 &nbt,
             );
             let _ = region.add_fresh_entity(runtime_entity);

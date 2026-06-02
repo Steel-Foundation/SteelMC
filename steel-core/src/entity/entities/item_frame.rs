@@ -13,9 +13,8 @@ use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
-use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
@@ -58,21 +57,10 @@ impl ItemFrameEntity {
 
     /// Creates an item frame from persistent entity data.
     #[must_use]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        rotation: (f32, f32),
-        world: Weak<World>,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
+        let position = load.position;
         Self {
-            base: EntityBase::with_uuid_and_state(
-                id,
-                uuid,
-                EntityBaseState::new(position, vanilla_entities::ITEM_FRAME.dimensions)
-                    .with_rotation(rotation),
-                world,
-            ),
+            base: EntityBase::from_load(load, vanilla_entities::ITEM_FRAME.dimensions),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(BlockPos::new(
                 position.x.floor() as i32,

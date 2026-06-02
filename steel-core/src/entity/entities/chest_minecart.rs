@@ -11,9 +11,8 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
-use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
 
 /// Chest minecart entity state used by mineshaft generation.
@@ -47,25 +46,9 @@ impl ChestMinecartEntity {
 
     /// Creates a chest minecart entity from saved data.
     #[must_use]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        velocity: DVec3,
-        rotation: (f32, f32),
-        on_ground: bool,
-        world: Weak<World>,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
         Self {
-            base: EntityBase::with_uuid_and_state(
-                id,
-                uuid,
-                EntityBaseState::new(position, vanilla_entities::CHEST_MINECART.dimensions)
-                    .with_velocity(velocity)
-                    .with_rotation(rotation)
-                    .with_on_ground(on_ground),
-                world,
-            ),
+            base: EntityBase::from_load(load, vanilla_entities::CHEST_MINECART.dimensions),
             first_tick: AtomicBool::new(false),
             loot_table: SyncMutex::new(None),
             loot_table_seed: AtomicI64::new(0),

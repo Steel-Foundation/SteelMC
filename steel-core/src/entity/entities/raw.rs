@@ -7,9 +7,8 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::locks::SyncMutex;
-use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
 
 /// Steel-specific fallback for entity types whose runtime behavior is not implemented yet.
@@ -35,30 +34,9 @@ impl RawEntity {
 
     /// Creates a raw entity from base entity data.
     #[must_use]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "raw fallback must preserve all persisted base entity fields"
-    )]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        velocity: DVec3,
-        rotation: (f32, f32),
-        on_ground: bool,
-        world: Weak<World>,
-        entity_type: EntityTypeRef,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad, entity_type: EntityTypeRef) -> Self {
         Self {
-            base: EntityBase::with_uuid_and_state(
-                id,
-                uuid,
-                EntityBaseState::new(position, entity_type.dimensions)
-                    .with_velocity(velocity)
-                    .with_rotation(rotation)
-                    .with_on_ground(on_ground),
-                world,
-            ),
+            base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             data: SyncMutex::new(NbtCompound::new()),
         }

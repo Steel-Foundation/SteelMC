@@ -291,6 +291,13 @@ impl EntityBaseState {
         self
     }
 
+    /// Sets accumulated fall distance on this state snapshot.
+    #[must_use]
+    pub const fn with_fall_distance(mut self, fall_distance: f32) -> Self {
+        self.fall_distance = fall_distance;
+        self
+    }
+
     /// Sets the ground-contact flag on this state snapshot.
     #[must_use]
     pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
@@ -315,6 +322,31 @@ impl EntityBaseState {
         self.bounding_box = Self::make_bounding_box(self.position, dimensions);
         self
     }
+}
+
+/// Base fields restored from persistent entity data.
+///
+/// Vanilla loads these fields through `Entity.load` before type-specific
+/// entity data. Keeping them bundled makes the load boundary explicit and
+/// prevents constructor signatures from drifting as base state grows.
+#[derive(Debug, Clone)]
+pub struct EntityBaseLoad {
+    /// Fresh runtime ID from `next_entity_id()`.
+    pub id: i32,
+    /// Restored entity position.
+    pub position: DVec3,
+    /// Persisted entity UUID.
+    pub uuid: Uuid,
+    /// Restored velocity.
+    pub velocity: DVec3,
+    /// Restored yaw and pitch.
+    pub rotation: (f32, f32),
+    /// Restored accumulated fall distance.
+    pub fall_distance: f32,
+    /// Restored ground-contact flag.
+    pub on_ground: bool,
+    /// World reference for the loaded entity.
+    pub world: Weak<World>,
 }
 
 /// Common fields and methods shared by all entities.
@@ -407,6 +439,21 @@ impl EntityBase {
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             last_world_tick: AtomicI32::new(-1),
         }
+    }
+
+    /// Creates a base from persistent vanilla entity fields.
+    #[must_use]
+    pub fn from_load(load: EntityBaseLoad, dimensions: EntityDimensions) -> Self {
+        Self::with_uuid_and_state(
+            load.id,
+            load.uuid,
+            EntityBaseState::new(load.position, dimensions)
+                .with_velocity(load.velocity)
+                .with_rotation(load.rotation)
+                .with_fall_distance(load.fall_distance)
+                .with_on_ground(load.on_ground),
+            load.world,
+        )
     }
 
     // === Accessors for Entity trait delegation ===

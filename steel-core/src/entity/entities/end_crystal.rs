@@ -11,9 +11,8 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, locks::SyncMutex};
-use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -45,21 +44,9 @@ impl EndCrystalEntity {
 
     /// Creates an End Crystal entity from saved data.
     #[must_use]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        rotation: (f32, f32),
-        world: Weak<World>,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
         Self {
-            base: EntityBase::with_uuid_and_state(
-                id,
-                uuid,
-                EntityBaseState::new(position, vanilla_entities::END_CRYSTAL.dimensions)
-                    .with_rotation(rotation),
-                world,
-            ),
+            base: EntityBase::from_load(load, vanilla_entities::END_CRYSTAL.dimensions),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
             invulnerable: AtomicBool::new(false),
         }

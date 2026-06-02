@@ -50,7 +50,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v13: Split template processor persistence and added ruined-portal processors.
 /// v14: Added buried treasure procedural piece persistence.
 /// v15: Added procedural structure-piece payload persistence.
-pub const FORMAT_VERSION: u16 = 15;
+/// v16: Added entity fall distance persistence.
+pub const FORMAT_VERSION: u16 = 16;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -409,6 +410,8 @@ pub struct PersistentEntity {
     pub motion: [f64; 3],
     /// Rotation (yaw, pitch) in degrees.
     pub rotation: [f32; 2],
+    /// Accumulated vanilla fall distance.
+    pub fall_distance: f32,
     /// Whether entity is on ground.
     pub on_ground: bool,
     /// Type-specific NBT data from `save_additional`.

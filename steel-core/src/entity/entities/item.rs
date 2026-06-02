@@ -19,7 +19,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseState, EntityFluidContact, EntityPositionSyncState, RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityFluidContact,
+    EntityPositionSyncState, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -189,25 +190,12 @@ impl ItemEntity {
     /// Used when loading entities from disk. Type-specific data (item, age, etc.)
     /// is restored via `load_additional()` after this constructor.
     #[must_use]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        velocity: DVec3,
-        rotation: (f32, f32),
-        on_ground: bool,
-        world: Weak<World>,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
+        let position = load.position;
+        let velocity = load.velocity;
+        let on_ground = load.on_ground;
         Self {
-            base: EntityBase::with_uuid_and_state(
-                id,
-                uuid,
-                EntityBaseState::new(position, vanilla_entities::ITEM.dimensions)
-                    .with_velocity(velocity)
-                    .with_rotation(rotation)
-                    .with_on_ground(on_ground),
-                world,
-            ),
+            base: EntityBase::from_load(load, vanilla_entities::ITEM.dimensions),
             entity_data: SyncMutex::new(ItemEntityData::new()),
             item_state: SyncMutex::new(ItemEntityState::new()),
             sync_state: SyncMutex::new(ItemEntitySyncState::new(position, velocity, on_ground)),

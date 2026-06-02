@@ -57,7 +57,9 @@ mod storage;
 mod tracker;
 
 use crate::portal::TeleportTransition;
-pub use base::{EntityBase, EntityBaseState, EntityGroundContact, EntityMovementFlags};
+pub use base::{
+    EntityBase, EntityBaseLoad, EntityBaseState, EntityGroundContact, EntityMovementFlags,
+};
 pub use cache::EntityCache;
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, NullEntityCallback, PlayerEntityCallback,
@@ -66,7 +68,7 @@ pub use callback::{
 pub use fluid_contact::EntityFluidContact;
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{EntityPositionSyncState, POSITION_SYNC_THRESHOLD};
-pub use registry::{ENTITIES, EntityRegistry, init_entities};
+pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub use storage::EntityStorage;
 pub use tracker::EntityTracker;
 

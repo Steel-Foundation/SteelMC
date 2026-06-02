@@ -16,7 +16,7 @@ use steel_utils::BlockStateId;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad};
 use crate::world::World;
 
 /// A block display entity that renders a block state at its position.
@@ -70,25 +70,9 @@ impl BlockDisplayEntity {
     /// Display entities have no physical collision, but vanilla base state is
     /// still persisted and should round-trip through the shared base.
     #[must_use]
-    pub fn from_saved(
-        id: i32,
-        position: DVec3,
-        uuid: Uuid,
-        velocity: DVec3,
-        rotation: (f32, f32),
-        on_ground: bool,
-        world: Weak<World>,
-    ) -> Self {
+    pub fn from_saved(load: EntityBaseLoad) -> Self {
         Self {
-            base: EntityBase::with_uuid_and_state(
-                id,
-                uuid,
-                EntityBaseState::new(position, vanilla_entities::BLOCK_DISPLAY.dimensions)
-                    .with_velocity(velocity)
-                    .with_rotation(rotation)
-                    .with_on_ground(on_ground),
-                world,
-            ),
+            base: EntityBase::from_load(load, vanilla_entities::BLOCK_DISPLAY.dimensions),
             entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
         }
     }
