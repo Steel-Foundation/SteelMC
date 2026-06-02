@@ -5,6 +5,7 @@ mod chat_state;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
+mod container_counter;
 mod entity_state;
 /// Experience System
 pub mod experience;
@@ -31,6 +32,7 @@ mod tick_state;
 
 pub use abilities::Abilities;
 use chat_state::ChatState;
+use container_counter::ContainerCounter;
 use entity_state::EntityState;
 use food_data::FoodData;
 use glam::DVec3;
@@ -52,7 +54,7 @@ use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{
     Arc, Weak,
-    atomic::{AtomicU8, AtomicU32, Ordering},
+    atomic::{AtomicU32, Ordering},
 };
 use steel_protocol::packets::game::{
     CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
@@ -222,7 +224,7 @@ pub struct Player {
     open_menu: SyncMutex<Option<Box<dyn MenuInstance>>>,
 
     /// Counter for generating container IDs (1-100, wraps around).
-    container_counter: AtomicU8,
+    container_counter: SyncMutex<ContainerCounter>,
 
     /// Pending server-initiated teleport state (ID, position, timeout).
     teleport_state: SyncMutex<TeleportState>,
@@ -357,7 +359,7 @@ impl Player {
             inventory: inventory.clone(),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
-            container_counter: AtomicU8::new(0),
+            container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
             tick_state: SyncMutex::new(PlayerTickState::new()),
             entity_state: SyncMutex::new(EntityState::new()),

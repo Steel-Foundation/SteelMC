@@ -3,7 +3,7 @@
 use std::{
     array,
     f32::consts::TAU,
-    sync::{LazyLock, Weak, atomic::Ordering},
+    sync::{LazyLock, Weak},
 };
 
 use glam::DVec3;
@@ -486,10 +486,7 @@ impl Player {
     ///
     /// Based on Java's `ServerPlayer::nextContainerCounter`.
     fn next_container_counter(&self) -> u8 {
-        let current = self.container_counter.load(Ordering::Relaxed);
-        let next = (current % 100) + 1;
-        self.container_counter.store(next, Ordering::Relaxed);
-        next
+        self.container_counter.lock().next()
     }
 
     /// Opens a menu for this player.
