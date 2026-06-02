@@ -100,9 +100,6 @@ struct ItemEntitySyncState {
     /// Last velocity sent to clients (for delta detection).
     /// Mirrors vanilla's `ServerEntity.lastSentMovement`.
     last_sent_velocity: DVec3,
-    /// Whether position/velocity needs to be synced to clients.
-    /// Set when velocity changes significantly, like vanilla's `Entity.needsSync`.
-    needs_sync: bool,
 }
 
 impl ItemEntitySyncState {
@@ -110,7 +107,6 @@ impl ItemEntitySyncState {
         Self {
             position: EntityPositionSyncState::new(position, on_ground),
             last_sent_velocity: velocity,
-            needs_sync: false,
         }
     }
 }
@@ -743,13 +739,13 @@ impl Entity for ItemEntity {
         );
         let diff_sq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
         if diff_sq > 0.01 {
-            self.sync_state.lock().needs_sync = true;
+            self.mark_velocity_sync();
         }
 
         // Also set needsSync when on_ground changes - this ensures immediate sync
         // when the item lands or becomes airborne, preventing client desync
         if self.on_ground() != old_on_ground {
-            self.sync_state.lock().needs_sync = true;
+            self.mark_velocity_sync();
         }
     }
 
@@ -759,7 +755,7 @@ impl Entity for ItemEntity {
         };
 
         let update_interval = self.entity_type().update_interval; // 20 for items
-        let needs_sync = self.sync_state.lock().needs_sync;
+        let needs_sync = self.needs_velocity_sync();
 
         // Only send updates on the update interval OR when needsSync is set
         // (vanilla: ServerEntity.sendChanges line 97)
@@ -791,7 +787,7 @@ impl Entity for ItemEntity {
         }
 
         // Clear needsSync after processing (vanilla: ServerEntity.sendChanges line 193)
-        self.sync_state.lock().needs_sync = false;
+        self.clear_velocity_sync();
     }
 
     fn get_default_gravity(&self) -> f64 {

@@ -342,6 +342,7 @@ pub struct EntityBaseState {
     fall_distance: f64,
     stuck_speed_multiplier: DVec3,
     no_physics: bool,
+    needs_velocity_sync: bool,
 }
 
 impl EntityBaseState {
@@ -364,6 +365,7 @@ impl EntityBaseState {
             fall_distance: 0.0,
             stuck_speed_multiplier: DVec3::ZERO,
             no_physics: false,
+            needs_velocity_sync: false,
         }
     }
 
@@ -798,6 +800,12 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
+    /// Returns true when vanilla `ServerEntity` should consider a velocity sync.
+    #[inline]
+    pub fn needs_velocity_sync(&self) -> bool {
+        self.state.lock().needs_velocity_sync
+    }
+
     /// Gets the world this entity is in.
     ///
     /// Returns `None` if the world has been dropped.
@@ -1016,6 +1024,16 @@ impl EntityBase {
     /// Sets whether this entity bypasses collision physics.
     pub fn set_no_physics(&self, no_physics: bool) {
         self.state.lock().no_physics = no_physics;
+    }
+
+    /// Marks velocity for vanilla `ServerEntity` synchronization.
+    pub fn mark_velocity_sync(&self) {
+        self.state.lock().needs_velocity_sync = true;
+    }
+
+    /// Clears the vanilla velocity sync marker after send processing.
+    pub fn clear_velocity_sync(&self) {
+        self.state.lock().needs_velocity_sync = false;
     }
 
     /// Sets accumulated vanilla fall distance.

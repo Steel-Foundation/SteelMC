@@ -396,6 +396,48 @@ pub trait Entity: EntityEventSource + Send + Sync {
             && !self.is_passenger_of_same_vehicle(other)
     }
 
+    /// Adds an impulse to this entity's velocity and marks velocity for sync.
+    ///
+    /// Mirrors vanilla `Entity.push(double, double, double)`.
+    fn push_impulse(&self, impulse: DVec3) {
+        if !impulse.is_finite() {
+            return;
+        }
+
+        self.set_velocity(self.velocity() + impulse);
+        self.mark_velocity_sync();
+    }
+
+    /// Applies vanilla entity-to-entity push separation.
+    ///
+    /// Mirrors vanilla `Entity.push(Entity)`.
+    fn push_entity(&self, entity: &dyn Entity) {
+        if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
+            return;
+        }
+
+        let mut x = entity.position().x - self.position().x;
+        let mut z = entity.position().z - self.position().z;
+        let mut distance = x.abs().max(z.abs());
+        if distance < 0.01 {
+            return;
+        }
+
+        distance = distance.sqrt();
+        x /= distance;
+        z /= distance;
+        let scale = (1.0 / distance).min(1.0) * 0.05;
+        x *= scale;
+        z *= scale;
+
+        if !self.is_vehicle() && self.is_pushable() {
+            self.push_impulse(DVec3::new(-x, 0.0, -z));
+        }
+        if !entity.is_vehicle() && entity.is_pushable() {
+            entity.push_impulse(DVec3::new(x, 0.0, z));
+        }
+    }
+
     /// Builds this entity's default bounding box at `position`.
     fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
         let dimensions = self.base().dimensions();
@@ -550,6 +592,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Sets the entity's velocity.
     fn set_velocity(&self, velocity: DVec3) {
         self.base().set_velocity(velocity);
+    }
+
+    /// Returns true when vanilla `ServerEntity` should consider sending velocity.
+    fn needs_velocity_sync(&self) -> bool {
+        self.base().needs_velocity_sync()
+    }
+
+    /// Marks velocity for vanilla `ServerEntity` synchronization.
+    fn mark_velocity_sync(&self) {
+        self.base().mark_velocity_sync();
+    }
+
+    /// Clears the vanilla velocity sync marker after send processing.
+    fn clear_velocity_sync(&self) {
+        self.base().clear_velocity_sync();
     }
 
     /// Returns accumulated vanilla fall distance.
@@ -1439,5 +1496,79 @@ pub trait LivingEntity: Entity {
             // TODO: SCALE → refreshDimensions()
             // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Weak};
+
+    use glam::DVec3;
+    use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::vanilla_entities;
+
+    use super::{Entity, EntityBase, SharedEntity};
+
+    struct PushableTestEntity {
+        base: EntityBase,
+    }
+
+    impl PushableTestEntity {
+        fn shared(id: i32, position: DVec3) -> SharedEntity {
+            Arc::new(Self {
+                base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
+            })
+        }
+    }
+
+    impl Entity for PushableTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+
+        fn is_pushable(&self) -> bool {
+            true
+        }
+    }
+
+    fn assert_vec3_close(left: DVec3, right: DVec3) {
+        let diff = left - right;
+        assert!(
+            diff.length_squared() < 1.0e-24,
+            "expected {left:?} to equal {right:?}"
+        );
+    }
+
+    #[test]
+    fn push_impulse_updates_velocity_and_marks_sync() {
+        let entity = PushableTestEntity::shared(1, DVec3::ZERO);
+
+        entity.push_impulse(DVec3::new(0.1, 0.2, 0.3));
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.1, 0.2, 0.3));
+        assert!(entity.needs_velocity_sync());
+
+        entity.clear_velocity_sync();
+        entity.push_impulse(DVec3::new(f64::INFINITY, 0.0, 0.0));
+
+        assert_vec3_close(entity.velocity(), DVec3::new(0.1, 0.2, 0.3));
+        assert!(!entity.needs_velocity_sync());
+    }
+
+    #[test]
+    fn push_entity_separates_pushable_entities_like_vanilla() {
+        let left = PushableTestEntity::shared(1, DVec3::ZERO);
+        let right = PushableTestEntity::shared(2, DVec3::new(1.0, 0.0, 0.0));
+
+        left.push_entity(right.as_ref());
+
+        assert_vec3_close(left.velocity(), DVec3::new(-0.05, 0.0, 0.0));
+        assert_vec3_close(right.velocity(), DVec3::new(0.05, 0.0, 0.0));
+        assert!(left.needs_velocity_sync());
+        assert!(right.needs_velocity_sync());
     }
 }
