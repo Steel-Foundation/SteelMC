@@ -227,6 +227,21 @@ pub trait Entity: Send + Sync {
         self.base().set_velocity(velocity);
     }
 
+    /// Returns accumulated vanilla fall distance.
+    fn fall_distance(&self) -> f32 {
+        self.base().fall_distance()
+    }
+
+    /// Sets accumulated vanilla fall distance.
+    fn set_fall_distance(&self, fall_distance: f32) {
+        self.base().set_fall_distance(fall_distance);
+    }
+
+    /// Resets accumulated vanilla fall distance.
+    fn reset_fall_distance(&self) {
+        self.base().reset_fall_distance();
+    }
+
     /// Returns true if the entity is on the ground.
     fn on_ground(&self) -> bool {
         self.base().on_ground()
@@ -255,6 +270,11 @@ pub trait Entity: Send + Sync {
     /// Sets whether this entity bypasses collision physics.
     fn set_no_physics(&self, no_physics: bool) {
         self.base().set_no_physics(no_physics);
+    }
+
+    /// Applies vanilla stuck-in-block movement for the next movement pass.
+    fn make_stuck_in_block(&self, speed_multiplier: DVec3) {
+        self.base().make_stuck_in_block(speed_multiplier);
     }
 
     /// Sets whether the entity is on the ground.
@@ -440,6 +460,9 @@ pub trait Entity: Send + Sync {
                 return None;
             }
         }
+        movement = self
+            .base()
+            .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
 
         // Build physics state
         let mut physics_state = EntityPhysicsState::with_dimensions(
@@ -450,6 +473,7 @@ pub trait Entity: Send + Sync {
         physics_state.velocity = self.velocity();
         physics_state.on_ground = self.on_ground();
         physics_state.is_crouching = self.backs_off_from_edge();
+        physics_state.fall_distance = self.fall_distance();
 
         // Perform collision detection and movement
         let collision_world = WorldCollisionProvider::new(&world);

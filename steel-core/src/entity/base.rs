@@ -20,6 +20,7 @@ use crate::world::World;
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
 const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
 const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
+const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
 
 /// Vanilla collision and ground-contact flags updated by `Entity.move`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +225,8 @@ pub struct EntityBaseState {
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
     piston_movement: EntityPistonMovement,
+    fall_distance: f32,
+    stuck_speed_multiplier: DVec3,
     no_physics: bool,
 }
 
@@ -241,6 +244,8 @@ impl EntityBaseState {
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
             piston_movement: EntityPistonMovement::new(),
+            fall_distance: 0.0,
+            stuck_speed_multiplier: DVec3::ZERO,
             no_physics: false,
         }
     }
@@ -494,6 +499,12 @@ impl EntityBase {
         self.state.lock().ground_contact.on_ground_no_blocks()
     }
 
+    /// Returns accumulated vanilla fall distance.
+    #[inline]
+    pub fn fall_distance(&self) -> f32 {
+        self.state.lock().fall_distance
+    }
+
     /// Returns true when movement bypasses collision physics.
     #[inline]
     pub fn no_physics(&self) -> bool {
@@ -585,6 +596,16 @@ impl EntityBase {
         self.state.lock().no_physics = no_physics;
     }
 
+    /// Sets accumulated vanilla fall distance.
+    pub fn set_fall_distance(&self, fall_distance: f32) {
+        self.state.lock().fall_distance = fall_distance;
+    }
+
+    /// Resets accumulated vanilla fall distance.
+    pub fn reset_fall_distance(&self) {
+        self.set_fall_distance(0.0);
+    }
+
     /// Sets whether this entity is touching the ground.
     pub fn set_on_ground(&self, on_ground: bool) {
         let mut state = self.state.lock();
@@ -634,6 +655,32 @@ impl EntityBase {
             .limit_movement(movement, current_game_time)
     }
 
+    /// Sets the speed multiplier used for the next stuck-in-block movement pass.
+    pub fn make_stuck_in_block(&self, speed_multiplier: DVec3) {
+        let mut state = self.state.lock();
+        state.fall_distance = 0.0;
+        state.stuck_speed_multiplier = speed_multiplier;
+    }
+
+    /// Applies and clears vanilla stuck-in-block speed state.
+    #[must_use]
+    pub fn consume_stuck_speed_multiplier(&self, movement: DVec3, apply_multiplier: bool) -> DVec3 {
+        let mut state = self.state.lock();
+        if state.stuck_speed_multiplier.length_squared() <= STUCK_SPEED_MULTIPLIER_EPSILON {
+            return movement;
+        }
+
+        let stuck_speed_multiplier = state.stuck_speed_multiplier;
+        state.stuck_speed_multiplier = DVec3::ZERO;
+        state.velocity = DVec3::ZERO;
+
+        if apply_multiplier {
+            movement * stuck_speed_multiplier
+        } else {
+            movement
+        }
+    }
+
     /// Checks if this entity was already ticked during the given server tick.
     #[inline]
     pub fn was_ticked_this_tick(&self, server_tick: i32) -> bool {
@@ -661,6 +708,13 @@ mod tests {
         let diff = left - right;
         assert!(
             diff.length_squared() < 1.0e-24,
+            "expected {left:?} to equal {right:?}"
+        );
+    }
+
+    fn assert_f32_close(left: f32, right: f32) {
+        assert!(
+            (left - right).abs() < 1.0e-6,
             "expected {left:?} to equal {right:?}"
         );
     }
@@ -738,5 +792,63 @@ mod tests {
         assert!(!base.no_physics());
         base.set_no_physics(true);
         assert!(base.no_physics());
+    }
+
+    #[test]
+    fn fall_distance_is_stored_on_base_state() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        base.set_fall_distance(4.5);
+        assert_f32_close(base.fall_distance(), 4.5);
+        base.reset_fall_distance();
+        assert_f32_close(base.fall_distance(), 0.0);
+    }
+
+    #[test]
+    fn stuck_speed_multiplier_resets_fall_distance_and_applies_once() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
+        base.set_fall_distance(3.0);
+        base.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));
+
+        assert_f32_close(base.fall_distance(), 0.0);
+        assert_vec3_close(
+            base.consume_stuck_speed_multiplier(DVec3::new(1.0, -1.0, 0.5), true),
+            DVec3::new(0.8, -0.75, 0.4),
+        );
+        assert_vec3_close(base.velocity(), DVec3::ZERO);
+        assert_vec3_close(
+            base.consume_stuck_speed_multiplier(DVec3::new(1.0, -1.0, 0.5), true),
+            DVec3::new(1.0, -1.0, 0.5),
+        );
+    }
+
+    #[test]
+    fn stuck_speed_multiplier_can_be_consumed_without_applying_for_pistons() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
+        base.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));
+
+        let movement = DVec3::new(1.0, -1.0, 0.5);
+        assert_vec3_close(
+            base.consume_stuck_speed_multiplier(movement, false),
+            movement,
+        );
+        assert_vec3_close(base.velocity(), DVec3::ZERO);
     }
 }
