@@ -415,11 +415,30 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Returns true if this entity is currently touching water.
     fn is_in_water(&self) -> bool {
+        self.fluid_contact().water_height() > 0.0
+    }
+
+    /// Returns true if this entity is currently touching lava.
+    fn is_in_lava(&self) -> bool {
+        self.fluid_contact().lava_height() > 0.0
+    }
+
+    /// Returns cached fluid contact from the last entity fluid refresh.
+    fn fluid_contact(&self) -> EntityFluidContact {
+        self.base().fluid_contact()
+    }
+
+    /// Refreshes cached fluid contact from this entity's current bounding box.
+    fn refresh_fluid_contact(&self) -> EntityFluidContact {
         let Some(world) = self.level() else {
-            return false;
+            let contact = EntityFluidContact::default();
+            self.base().set_fluid_contact(contact);
+            return contact;
         };
 
-        EntityFluidContact::scan(&world, self.bounding_box()).water_height() > 0.0
+        let contact = EntityFluidContact::scan(&world, self.bounding_box());
+        self.base().set_fluid_contact(contact);
+        contact
     }
 
     /// Returns true if this entity type ignores vanilla fall damage.
@@ -763,6 +782,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             let final_position = self.position() + delta;
             self.set_position(final_position);
             self.base().clear_collision_flags();
+            self.refresh_fluid_contact();
 
             return Some(MoveResult {
                 final_position,
@@ -826,6 +846,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
             self.ground_contact_after_movement(result.on_ground, Some(result.actual_movement));
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
+        self.refresh_fluid_contact();
 
         if self.is_local_instance_authoritative()
             && self.apply_fall_damage_after_move(&result, &world)

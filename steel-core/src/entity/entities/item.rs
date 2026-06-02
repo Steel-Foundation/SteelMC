@@ -18,8 +18,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityFluidContact,
-    EntityPositionSyncDecision, EntityPositionSyncState, EntitySyncedData, RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityPositionSyncDecision,
+    EntityPositionSyncState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -618,12 +618,7 @@ impl ItemEntity {
     }
 
     fn apply_fluid_movement_or_gravity(&self) {
-        let Some(world) = self.level() else {
-            self.apply_gravity();
-            return;
-        };
-
-        let contact = EntityFluidContact::scan(&world, self.bounding_box());
+        let contact = self.fluid_contact();
         if contact.water_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
             self.apply_fluid_movement(ITEM_WATER_DRAG);
         } else if contact.lava_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
@@ -695,6 +690,8 @@ impl Entity for ItemEntity {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
+
+        self.refresh_fluid_contact();
 
         // Vanilla item tick stores previous position before applying movement.
         self.set_old_position_to_current();

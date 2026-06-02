@@ -402,6 +402,7 @@ impl Player {
 
         if packet.has_pos {
             self.set_position(accepted_pos);
+            self.refresh_fluid_contact();
         }
         if let Some((player_stands_on_something, y_dist)) = floating_check {
             self.record_client_floating(

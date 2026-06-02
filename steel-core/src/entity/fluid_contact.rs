@@ -22,6 +22,15 @@ pub struct EntityFluidContact {
 }
 
 impl EntityFluidContact {
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) const fn from_heights(water_height: f64, lava_height: f64) -> Self {
+        Self {
+            water_height,
+            lava_height,
+        }
+    }
+
     /// Scans the world for water/lava touching `bounding_box`.
     #[must_use]
     pub fn scan(world: &Arc<World>, bounding_box: WorldAabb) -> Self {

@@ -16,6 +16,7 @@ use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
+use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{EntityLevelCallback, NullEntityCallback, RemovalReason};
 use crate::world::World;
 
@@ -328,6 +329,7 @@ pub struct EntityBaseState {
     bounding_box: WorldAabb,
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
+    fluid_contact: EntityFluidContact,
     piston_movement: EntityPistonMovement,
     fall_distance: f64,
     stuck_speed_multiplier: DVec3,
@@ -348,6 +350,7 @@ impl EntityBaseState {
             bounding_box: Self::make_bounding_box(position, dimensions),
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
+            fluid_contact: EntityFluidContact::default(),
             piston_movement: EntityPistonMovement::new(),
             fall_distance: 0.0,
             stuck_speed_multiplier: DVec3::ZERO,
@@ -679,6 +682,11 @@ impl EntityBase {
         self.state.lock().ground_contact.on_ground_no_blocks()
     }
 
+    /// Returns cached fluid contact from the last entity fluid refresh.
+    pub fn fluid_contact(&self) -> EntityFluidContact {
+        self.state.lock().fluid_contact
+    }
+
     /// Returns accumulated vanilla fall distance.
     #[inline]
     pub fn fall_distance(&self) -> f64 {
@@ -852,6 +860,11 @@ impl EntityBase {
         state.ground_contact = ground_contact;
     }
 
+    /// Stores the current vanilla fluid contact snapshot.
+    pub fn set_fluid_contact(&self, fluid_contact: EntityFluidContact) {
+        self.state.lock().fluid_contact = fluid_contact;
+    }
+
     /// Sets ground and horizontal collision flags from an accepted client move.
     pub fn set_on_ground_with_movement(
         &self,
@@ -922,7 +935,9 @@ impl EntityBase {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntityBase, EntityMovement, EntityMovementFlags, EntityPistonMovement};
+    use super::{
+        EntityBase, EntityFluidContact, EntityMovement, EntityMovementFlags, EntityPistonMovement,
+    };
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -1046,6 +1061,21 @@ mod tests {
         assert!(base.clear_removed());
         assert!(!base.clear_removed());
         assert!(!base.is_removed());
+    }
+
+    #[test]
+    fn base_state_caches_fluid_contact() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        let contact = EntityFluidContact::from_heights(0.4, 0.0);
+
+        base.set_fluid_contact(contact);
+
+        assert_eq!(base.fluid_contact(), contact);
     }
 
     #[test]
