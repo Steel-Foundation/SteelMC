@@ -3,7 +3,10 @@
 
 use glam::DVec3;
 
-use crate::entity::{EntityPositionSyncDecision, EntityPositionSyncState};
+use crate::entity::{
+    EntityPositionSyncDecision, EntityPositionSyncState, EntityRotationSyncState,
+    PackedEntityRotation,
+};
 
 /// Player movement packets force a full entity position sync after this delay.
 const PLAYER_FULL_SYNC_DELAY: i32 = 400;
@@ -12,8 +15,8 @@ const PLAYER_FULL_SYNC_DELAY: i32 = 400;
 pub struct MovementState {
     /// Position/on-ground state used for tracking movement packets.
     position_sync: EntityPositionSyncState,
-    /// The previous rotation for movement broadcasts.
-    prev_rotation: (f32, f32),
+    /// Packed body/head rotation state used for tracking movement packets.
+    rotation_sync: EntityRotationSyncState,
 
     /// Last known good position (for collision rollback).
     last_good_position: DVec3,
@@ -42,10 +45,10 @@ pub struct MovementState {
 
 impl MovementState {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             position_sync: EntityPositionSyncState::new(DVec3::new(0.0, 0.0, 0.0), false),
-            prev_rotation: (0.0, 0.0),
+            rotation_sync: EntityRotationSyncState::new((0.0, 0.0), 0.0),
             last_good_position: DVec3::new(0.0, 0.0, 0.0),
             first_good_position: DVec3::new(0.0, 0.0, 0.0),
             received_move_packet_count: 0,
@@ -175,9 +178,22 @@ impl MovementState {
             .record_movement_sync(position, on_ground, force_full)
     }
 
-    /// Records the last rotation broadcast to tracking clients.
-    pub(super) const fn mark_rotation_sent(&mut self, rotation: (f32, f32)) {
-        self.prev_rotation = rotation;
+    /// Records a body rotation packet when the packed yaw or pitch changed.
+    pub(super) fn record_body_rotation_sync(
+        &mut self,
+        rotation: (f32, f32),
+    ) -> Option<PackedEntityRotation> {
+        self.rotation_sync.record_body_rotation(rotation)
+    }
+
+    /// Marks body rotation as sent because a full position sync includes it.
+    pub(super) fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
+        self.rotation_sync.mark_body_rotation_sent(rotation);
+    }
+
+    /// Records a head-rotation packet when the packed yaw changed.
+    pub(super) fn record_head_yaw_sync(&mut self, head_yaw: f32) -> Option<i8> {
+        self.rotation_sync.record_head_yaw(head_yaw)
     }
 }
 

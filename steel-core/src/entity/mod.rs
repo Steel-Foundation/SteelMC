@@ -161,7 +161,8 @@ pub use fluid_contact::EntityFluidContact;
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{
     EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
-    EntityPositionSyncSnapshot, EntityPositionSyncState, POSITION_SYNC_THRESHOLD,
+    EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
+    POSITION_SYNC_THRESHOLD, PackedEntityRotation,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;

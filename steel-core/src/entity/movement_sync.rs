@@ -9,6 +9,81 @@ use steel_protocol::packets::game::{
 /// Squared position delta needed before vanilla considers a movement worth syncing.
 pub const POSITION_SYNC_THRESHOLD: f64 = 7.629_394_5e-6;
 
+/// Packed body rotation used by entity movement packets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PackedEntityRotation {
+    yaw: i8,
+    pitch: i8,
+}
+
+impl PackedEntityRotation {
+    /// Packs yaw and pitch using vanilla's angle-byte representation.
+    #[must_use]
+    pub fn from_degrees(rotation: (f32, f32)) -> Self {
+        Self {
+            yaw: to_angle_byte(rotation.0),
+            pitch: to_angle_byte(rotation.1),
+        }
+    }
+
+    /// Returns packed yaw.
+    #[must_use]
+    pub const fn yaw(self) -> i8 {
+        self.yaw
+    }
+
+    /// Returns packed pitch.
+    #[must_use]
+    pub const fn pitch(self) -> i8 {
+        self.pitch
+    }
+}
+
+/// Last packed rotation values known to tracking clients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityRotationSyncState {
+    last_body_rotation: PackedEntityRotation,
+    last_head_yaw: i8,
+}
+
+impl EntityRotationSyncState {
+    /// Creates rotation sync state for values already known to tracking clients.
+    #[must_use]
+    pub fn new(body_rotation: (f32, f32), head_yaw: f32) -> Self {
+        Self {
+            last_body_rotation: PackedEntityRotation::from_degrees(body_rotation),
+            last_head_yaw: to_angle_byte(head_yaw),
+        }
+    }
+
+    /// Records a body rotation packet if the packed yaw or pitch changed.
+    pub fn record_body_rotation(&mut self, rotation: (f32, f32)) -> Option<PackedEntityRotation> {
+        let packed = PackedEntityRotation::from_degrees(rotation);
+        if packed == self.last_body_rotation {
+            return None;
+        }
+
+        self.last_body_rotation = packed;
+        Some(packed)
+    }
+
+    /// Marks a body rotation as sent because a full position sync includes it.
+    pub fn mark_body_rotation_sent(&mut self, rotation: (f32, f32)) {
+        self.last_body_rotation = PackedEntityRotation::from_degrees(rotation);
+    }
+
+    /// Records a head-rotation packet if the packed yaw changed.
+    pub fn record_head_yaw(&mut self, head_yaw: f32) -> Option<i8> {
+        let packed = to_angle_byte(head_yaw);
+        if packed == self.last_head_yaw {
+            return None;
+        }
+
+        self.last_head_yaw = packed;
+        Some(packed)
+    }
+}
+
 /// Encoded position sync selected for an entity movement update.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityPositionSyncDecision {
@@ -235,7 +310,8 @@ mod tests {
 
     use super::{
         EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
-        EntityPositionSyncSnapshot, EntityPositionSyncState,
+        EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
+        PackedEntityRotation,
     };
 
     #[test]
@@ -280,6 +356,37 @@ mod tests {
 
         assert_eq!(decision, EntityPositionSyncDecision::Full);
         assert_eq!(state.last_sent_position(), DVec3::new(10.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn rotation_sync_records_body_rotation_only_when_packed_angle_changes() {
+        let mut state = EntityRotationSyncState::new((0.0, 0.0), 0.0);
+
+        assert_eq!(state.record_body_rotation((0.5, 0.5)), None);
+        assert_eq!(
+            state.record_body_rotation((2.0, 0.0)),
+            Some(PackedEntityRotation {
+                yaw: to_angle_byte(2.0),
+                pitch: to_angle_byte(0.0),
+            })
+        );
+        assert_eq!(state.record_body_rotation((2.5, 0.0)), None);
+        assert_eq!(
+            state.record_body_rotation((2.5, 2.0)),
+            Some(PackedEntityRotation {
+                yaw: to_angle_byte(2.5),
+                pitch: to_angle_byte(2.0),
+            })
+        );
+    }
+
+    #[test]
+    fn rotation_sync_records_head_rotation_only_when_packed_angle_changes() {
+        let mut state = EntityRotationSyncState::new((0.0, 0.0), 0.0);
+
+        assert_eq!(state.record_head_yaw(0.5), None);
+        assert_eq!(state.record_head_yaw(2.0), Some(to_angle_byte(2.0)));
+        assert_eq!(state.record_head_yaw(2.5), None);
     }
 
     #[test]
