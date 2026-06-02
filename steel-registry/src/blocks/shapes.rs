@@ -1,4 +1,53 @@
-use steel_utils::BlockLocalAabb;
+use steel_utils::{BlockLocalAabb, axis::Axis};
+
+/// Vanilla shape boolean operation.
+///
+/// Mirrors `net.minecraft.world.phys.shapes.BooleanOp`. Operations where
+/// `apply(false, false)` is true are not valid for `join_is_not_empty`, matching
+/// vanilla's guard for unbounded outside-space results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BooleanOp {
+    False,
+    NotOr,
+    OnlySecond,
+    NotFirst,
+    OnlyFirst,
+    NotSecond,
+    NotSame,
+    NotAnd,
+    And,
+    Same,
+    Second,
+    Causes,
+    First,
+    CausedBy,
+    Or,
+    True,
+}
+
+impl BooleanOp {
+    #[must_use]
+    pub const fn apply(self, first: bool, second: bool) -> bool {
+        match self {
+            Self::False => false,
+            Self::NotOr => !first && !second,
+            Self::OnlySecond => second && !first,
+            Self::NotFirst => !first,
+            Self::OnlyFirst => first && !second,
+            Self::NotSecond => !second,
+            Self::NotSame => first != second,
+            Self::NotAnd => !first || !second,
+            Self::And => first && second,
+            Self::Same => first == second,
+            Self::Second => second,
+            Self::Causes => !first || second,
+            Self::First => first,
+            Self::CausedBy => first || !second,
+            Self::Or => first || second,
+            Self::True => true,
+        }
+    }
+}
 
 /// A block-local voxel shape.
 ///
@@ -40,16 +89,36 @@ impl VoxelShape {
         self.boxes.len()
     }
 
-    /// Returns true if this shape has no boxes.
+    /// Returns true if this shape has no non-empty boxes.
     #[must_use]
-    pub const fn is_empty(self) -> bool {
-        self.boxes.is_empty()
+    pub fn is_empty(self) -> bool {
+        self.boxes.iter().all(|aabb| aabb.is_empty())
+    }
+
+    /// Returns the minimum coordinate on `axis`, or positive infinity for an empty shape.
+    #[must_use]
+    pub fn min(self, axis: Axis) -> f64 {
+        self.boxes
+            .iter()
+            .filter(|aabb| !aabb.is_empty())
+            .map(|aabb| aabb.min(axis))
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Returns the maximum coordinate on `axis`, or negative infinity for an empty shape.
+    #[must_use]
+    pub fn max(self, axis: Axis) -> f64 {
+        self.boxes
+            .iter()
+            .filter(|aabb| !aabb.is_empty())
+            .map(|aabb| aabb.max(axis))
+            .fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// Returns the union bounds of this shape, or `None` for empty shapes.
     #[must_use]
     pub fn bounds(self) -> Option<BlockLocalAabb> {
-        let (first, rest) = self.boxes.split_first()?;
+        let first = self.boxes.iter().find(|aabb| !aabb.is_empty())?;
         let mut min_x = first.min_x();
         let mut min_y = first.min_y();
         let mut min_z = first.min_z();
@@ -57,7 +126,10 @@ impl VoxelShape {
         let mut max_y = first.max_y();
         let mut max_z = first.max_z();
 
-        for aabb in rest {
+        for aabb in self.boxes {
+            if aabb.is_empty() {
+                continue;
+            }
             min_x = min_x.min(aabb.min_x());
             min_y = min_y.min(aabb.min_y());
             min_z = min_z.min(aabb.min_z());
@@ -179,6 +251,8 @@ impl ShapeRegistry {
 
 const FULL_BLOCK_BOXES: &[BlockLocalAabb] = &[BlockLocalAabb::FULL_BLOCK];
 
+const VOXEL_EPSILON: f64 = 1.0e-7;
+
 /// Shape data for a block state.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockShapes {
@@ -249,22 +323,116 @@ pub fn bounding_box(shape: VoxelShape) -> BlockLocalAabb {
 ///
 /// This matches vanilla's `Block.isShapeFullBlock()` used by `isSolidRender()`.
 ///
-/// TODO: Handle multi-AABB shapes whose union covers the full block (e.g. stacked slabs).
-/// Vanilla uses exact boolean voxel arithmetic (`Shapes.joinIsNotEmpty`). No vanilla blocks
-/// currently have multi-AABB full-block shapes, so single-AABB fast path suffices for now.
 #[must_use]
 pub fn is_shape_full_block(shape: VoxelShape) -> bool {
-    // A full block shape must have exactly one box that covers 0-1 on all axes.
-    let [aabb] = shape.boxes() else {
-        return false;
-    };
+    !join_is_not_empty(VoxelShape::FULL_BLOCK, shape, BooleanOp::NotSame)
+}
 
-    aabb.min_x() <= 0.0
-        && aabb.max_x() >= 1.0
-        && aabb.min_y() <= 0.0
-        && aabb.max_y() >= 1.0
-        && aabb.min_z() <= 0.0
-        && aabb.max_z() >= 1.0
+/// Returns true if applying `op` to two voxel shapes produces any filled space.
+///
+/// This is the box-backed equivalent of vanilla `Shapes.joinIsNotEmpty`. It
+/// decomposes both shapes into a shared coordinate grid and tests occupancy in
+/// each cell. The current representation does not materialize a joined shape;
+/// it answers the boolean query needed for full-block and occlusion checks.
+///
+/// # Panics
+/// Panics if `op.apply(false, false)` is true, matching vanilla's invalid
+/// operation guard for unbounded outside-space results.
+#[must_use]
+pub fn join_is_not_empty(first: VoxelShape, second: VoxelShape, op: BooleanOp) -> bool {
+    if op.apply(false, false) {
+        panic!("join_is_not_empty cannot use an operation that includes empty outside space");
+    }
+
+    let first_empty = first.is_empty();
+    let second_empty = second.is_empty();
+    if first_empty || second_empty {
+        return op.apply(!first_empty, !second_empty);
+    }
+
+    if first == second {
+        return op.apply(true, true);
+    }
+
+    let first_only_matters = op.apply(true, false);
+    let second_only_matters = op.apply(false, true);
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        if first.max(axis) < second.min(axis) - VOXEL_EPSILON {
+            return first_only_matters || second_only_matters;
+        }
+        if second.max(axis) < first.min(axis) - VOXEL_EPSILON {
+            return first_only_matters || second_only_matters;
+        }
+    }
+
+    let mut x_edges = shape_edges(first, second, Axis::X);
+    let mut y_edges = shape_edges(first, second, Axis::Y);
+    let mut z_edges = shape_edges(first, second, Axis::Z);
+    sort_and_dedup_voxel_edges(&mut x_edges);
+    sort_and_dedup_voxel_edges(&mut y_edges);
+    sort_and_dedup_voxel_edges(&mut z_edges);
+
+    for x in x_edges.windows(2) {
+        if x[1] - x[0] <= VOXEL_EPSILON {
+            continue;
+        }
+        for y in y_edges.windows(2) {
+            if y[1] - y[0] <= VOXEL_EPSILON {
+                continue;
+            }
+            for z in z_edges.windows(2) {
+                if z[1] - z[0] <= VOXEL_EPSILON {
+                    continue;
+                }
+                let first_full = shape_fills_cell(first, x[0], x[1], y[0], y[1], z[0], z[1]);
+                let second_full = shape_fills_cell(second, x[0], x[1], y[0], y[1], z[0], z[1]);
+                if op.apply(first_full, second_full) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+fn shape_edges(first: VoxelShape, second: VoxelShape, axis: Axis) -> Vec<f64> {
+    let mut edges = Vec::with_capacity((first.len() + second.len()) * 2);
+    for shape in [first, second] {
+        for aabb in shape {
+            if aabb.is_empty() {
+                continue;
+            }
+            edges.push(aabb.min(axis));
+            edges.push(aabb.max(axis));
+        }
+    }
+    edges
+}
+
+fn sort_and_dedup_voxel_edges(edges: &mut Vec<f64>) {
+    edges.sort_by(|a, b| a.total_cmp(b));
+    edges.dedup_by(|a, b| (*a - *b).abs() <= VOXEL_EPSILON);
+}
+
+fn shape_fills_cell(
+    shape: VoxelShape,
+    min_x: f64,
+    max_x: f64,
+    min_y: f64,
+    max_y: f64,
+    min_z: f64,
+    max_z: f64,
+) -> bool {
+    shape.into_iter().any(|aabb| {
+        !aabb.is_empty()
+            && aabb.min_x() <= min_x + VOXEL_EPSILON
+            && aabb.max_x() >= max_x - VOXEL_EPSILON
+            && aabb.min_y() <= min_y + VOXEL_EPSILON
+            && aabb.max_y() >= max_y - VOXEL_EPSILON
+            && aabb.min_z() <= min_z + VOXEL_EPSILON
+            && aabb.max_z() >= max_z - VOXEL_EPSILON
+    })
 }
 
 /// Support type for `is_face_sturdy` checks.
@@ -558,6 +726,85 @@ mod tests {
         BlockLocalAabb::new(0.375, 0.5, 0.625, 1.0, 1.0, 1.0),
         BlockLocalAabb::new(0.625, 0.5, 0.375, 1.0, 1.0, 0.625),
     ];
+
+    const SPLIT_FULL_BLOCK: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0),
+        BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const LOWER_HALF_BLOCK: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.5, 1.0)];
+
+    const UPPER_HALF_BLOCK: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(0.0, 0.5, 0.0, 1.0, 1.0, 1.0)];
+
+    const OVERLAPPING_HALF_BLOCKS: &[BlockLocalAabb] = &[
+        BlockLocalAabb::new(0.0, 0.0, 0.0, 0.75, 1.0, 1.0),
+        BlockLocalAabb::new(0.25, 0.0, 0.0, 1.0, 1.0, 1.0),
+    ];
+
+    const ZERO_VOLUME_BOX: &[BlockLocalAabb] = &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.0, 1.0)];
+
+    #[test]
+    fn boolean_op_matches_vanilla_truth_table() {
+        assert!(BooleanOp::OnlyFirst.apply(true, false));
+        assert!(!BooleanOp::OnlyFirst.apply(false, true));
+        assert!(BooleanOp::NotSame.apply(true, false));
+        assert!(!BooleanOp::NotSame.apply(true, true));
+        assert!(BooleanOp::Or.apply(false, true));
+        assert!(!BooleanOp::And.apply(true, false));
+    }
+
+    #[test]
+    fn join_is_not_empty_detects_intersection() {
+        assert!(join_is_not_empty(
+            VoxelShape::from_boxes(OVERLAPPING_HALF_BLOCKS),
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            BooleanOp::And
+        ));
+    }
+
+    #[test]
+    fn join_is_not_empty_rejects_disjoint_and() {
+        assert!(!join_is_not_empty(
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            VoxelShape::from_boxes(UPPER_HALF_BLOCK),
+            BooleanOp::And
+        ));
+    }
+
+    #[test]
+    fn join_is_not_empty_detects_only_first_remainder() {
+        assert!(join_is_not_empty(
+            VoxelShape::FULL_BLOCK,
+            VoxelShape::from_boxes(LOWER_HALF_BLOCK),
+            BooleanOp::OnlyFirst
+        ));
+    }
+
+    #[test]
+    fn shape_full_block_accepts_tiled_boxes() {
+        assert!(is_shape_full_block(VoxelShape::from_boxes(
+            SPLIT_FULL_BLOCK
+        )));
+    }
+
+    #[test]
+    fn shape_full_block_rejects_partial_boxes() {
+        assert!(!is_shape_full_block(VoxelShape::from_boxes(
+            LOWER_HALF_BLOCK
+        )));
+    }
+
+    #[test]
+    fn zero_volume_boxes_are_empty() {
+        assert!(VoxelShape::from_boxes(ZERO_VOLUME_BOX).is_empty());
+        assert!(!join_is_not_empty(
+            VoxelShape::from_boxes(ZERO_VOLUME_BOX),
+            VoxelShape::FULL_BLOCK,
+            BooleanOp::And
+        ));
+    }
 
     #[test]
     fn face_full_accepts_union_covering_face() {
