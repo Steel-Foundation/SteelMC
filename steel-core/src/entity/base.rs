@@ -17,7 +17,9 @@ use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
-use crate::entity::{EntityLevelCallback, NullEntityCallback, RemovalReason};
+use crate::entity::{
+    EntityLevelCallback, NullEntityCallback, RemovalReason, SharedEntity, WeakEntity,
+};
 use crate::physics::EntityPhysicsState;
 use crate::world::World;
 
@@ -487,6 +489,73 @@ impl EntityLifecycleState {
     }
 }
 
+/// Vanilla passenger and vehicle relationship state.
+///
+/// Stored separately from movement state because riding relationships affect
+/// collision, tracking, saving, and future pathfinding without being part of
+/// the entity's physical pose/velocity snapshot.
+#[derive(Default)]
+struct EntityRelationshipState {
+    vehicle: Option<WeakEntity>,
+    passengers: Vec<WeakEntity>,
+    boarding_cooldown: i32,
+}
+
+impl EntityRelationshipState {
+    fn vehicle(&mut self) -> Option<SharedEntity> {
+        let vehicle = self.vehicle.as_ref().and_then(Weak::upgrade);
+        if vehicle.is_none() {
+            self.vehicle = None;
+        }
+        vehicle
+    }
+
+    fn passengers(&mut self) -> Vec<SharedEntity> {
+        let mut live_passengers = Vec::new();
+        self.passengers.retain(|passenger| {
+            if let Some(entity) = passenger.upgrade() {
+                live_passengers.push(entity);
+                true
+            } else {
+                false
+            }
+        });
+        live_passengers
+    }
+
+    fn first_passenger(&mut self) -> Option<SharedEntity> {
+        self.passengers
+            .retain(|passenger| passenger.strong_count() > 0);
+        self.passengers.first().and_then(Weak::upgrade)
+    }
+
+    fn has_passenger_id(&mut self, passenger_id: i32) -> bool {
+        self.passengers
+            .retain(|passenger| passenger.strong_count() > 0);
+        self.passengers.iter().any(|passenger| {
+            passenger
+                .upgrade()
+                .is_some_and(|entity| entity.id() == passenger_id)
+        })
+    }
+
+    fn remove_passenger_id(&mut self, passenger_id: i32) -> bool {
+        let mut removed = false;
+        self.passengers.retain(|passenger| {
+            let Some(entity) = passenger.upgrade() else {
+                return false;
+            };
+            if entity.id() == passenger_id {
+                removed = true;
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+}
+
 /// Common fields and methods shared by all entities.
 ///
 /// Entities embed this struct to avoid duplicating core identity, position,
@@ -525,6 +594,8 @@ pub struct EntityBase {
     movement_trace: SyncMutex<EntityMovementTrace>,
     /// Removal and tick bookkeeping.
     lifecycle: SyncMutex<EntityLifecycleState>,
+    /// Passenger, vehicle, and boarding-cooldown state.
+    relationships: SyncMutex<EntityRelationshipState>,
     /// Callback for entity lifecycle events.
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
 }
@@ -574,6 +645,7 @@ impl EntityBase {
             state: SyncMutex::new(state),
             movement_trace: SyncMutex::new(EntityMovementTrace::default()),
             lifecycle: SyncMutex::new(EntityLifecycleState::new()),
+            relationships: SyncMutex::new(EntityRelationshipState::default()),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
     }
@@ -734,6 +806,46 @@ impl EntityBase {
         self.world.lock().upgrade()
     }
 
+    /// Gets the vehicle this entity is riding, if it is still loaded.
+    pub fn vehicle(&self) -> Option<SharedEntity> {
+        self.relationships.lock().vehicle()
+    }
+
+    /// Gets this entity's direct passengers, pruning stale weak references.
+    pub fn passengers(&self) -> Vec<SharedEntity> {
+        self.relationships.lock().passengers()
+    }
+
+    /// Gets this entity's first direct passenger, if present.
+    pub fn first_passenger(&self) -> Option<SharedEntity> {
+        self.relationships.lock().first_passenger()
+    }
+
+    /// Returns true when this entity has at least one direct passenger.
+    pub fn is_vehicle(&self) -> bool {
+        self.first_passenger().is_some()
+    }
+
+    /// Returns true when the entity ID is a direct passenger.
+    pub fn has_passenger_id(&self, passenger_id: i32) -> bool {
+        self.relationships.lock().has_passenger_id(passenger_id)
+    }
+
+    /// Returns the vanilla boarding cooldown in ticks.
+    pub fn boarding_cooldown(&self) -> i32 {
+        self.relationships.lock().boarding_cooldown
+    }
+
+    /// Removes a direct passenger by entity ID.
+    pub(crate) fn remove_passenger_id(&self, passenger_id: i32) -> bool {
+        self.relationships.lock().remove_passenger_id(passenger_id)
+    }
+
+    /// Sets the vanilla boarding cooldown in ticks.
+    pub(crate) fn set_boarding_cooldown(&self, boarding_cooldown: i32) {
+        self.relationships.lock().boarding_cooldown = boarding_cooldown;
+    }
+
     /// Updates the world reference used by this entity.
     pub fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
@@ -760,8 +872,57 @@ impl EntityBase {
         };
 
         if should_notify {
+            self.detach_from_relationships(reason);
             self.level_callback.lock().on_remove(reason);
         }
+    }
+
+    fn detach_from_relationships(&self, reason: RemovalReason) {
+        if reason.should_destroy() {
+            self.stop_riding_relationship();
+        }
+        self.eject_passenger_relationships();
+    }
+
+    fn stop_riding_relationship(&self) {
+        let vehicle = {
+            let mut relationships = self.relationships.lock();
+            let vehicle = relationships.vehicle();
+            relationships.vehicle = None;
+            vehicle
+        };
+
+        if let Some(vehicle) = vehicle {
+            vehicle.base().remove_passenger_id(self.id);
+            self.set_boarding_cooldown(60);
+        }
+    }
+
+    fn eject_passenger_relationships(&self) {
+        let passengers = {
+            let mut relationships = self.relationships.lock();
+            let passengers = relationships.passengers();
+            relationships.passengers.clear();
+            passengers
+        };
+
+        for passenger in passengers {
+            if passenger.base().clear_vehicle_if(self.id) {
+                passenger.base().set_boarding_cooldown(60);
+            }
+        }
+    }
+
+    fn clear_vehicle_if(&self, vehicle_id: i32) -> bool {
+        let mut relationships = self.relationships.lock();
+        let Some(vehicle) = relationships.vehicle() else {
+            return false;
+        };
+        if vehicle.id() != vehicle_id {
+            return false;
+        }
+        relationships.vehicle = None;
+        true
     }
 
     /// Clears the removed flag and returns whether the entity had been removed.
@@ -984,11 +1145,11 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::entity_type::EntityDimensions;
+    use steel_registry::{entity_type::EntityDimensions, vanilla_entities};
     use steel_utils::WorldAabb;
     use steel_utils::locks::SyncMutex;
 
-    use crate::entity::{EntityLevelCallback, RemovalReason};
+    use crate::entity::{EntityLevelCallback, RemovalReason, SharedEntity, entities::RawEntity};
     use crate::world::World;
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -1004,6 +1165,25 @@ mod tests {
             (left - right).abs() < 1.0e-6,
             "expected {left:?} to equal {right:?}"
         );
+    }
+
+    fn raw_entity(id: i32) -> SharedEntity {
+        Arc::new(RawEntity::new(
+            id,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+            &vanilla_entities::ITEM,
+        ))
+    }
+
+    fn link_vehicle_and_passenger(vehicle: &SharedEntity, passenger: &SharedEntity) {
+        passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
+        vehicle
+            .base()
+            .relationships
+            .lock()
+            .passengers
+            .push(Arc::downgrade(passenger));
     }
 
     #[derive(Default)]
@@ -1147,6 +1327,62 @@ mod tests {
         assert!(!base.no_physics());
         base.set_no_physics(true);
         assert!(base.no_physics());
+    }
+
+    #[test]
+    fn relationship_state_tracks_direct_vehicle_and_passengers() {
+        let vehicle = raw_entity(1);
+        let passenger = raw_entity(2);
+
+        link_vehicle_and_passenger(&vehicle, &passenger);
+
+        assert!(passenger.is_passenger());
+        assert_eq!(passenger.vehicle().map(|entity| entity.id()), Some(1));
+        assert!(vehicle.is_vehicle());
+        assert_eq!(vehicle.first_passenger().map(|entity| entity.id()), Some(2));
+        assert_eq!(
+            vehicle
+                .passengers()
+                .iter()
+                .map(|entity| entity.id())
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
+        assert!(vehicle.has_passenger(passenger.as_ref()));
+        assert_eq!(passenger.root_vehicle_id(), 1);
+        assert!(passenger.is_passenger_of_same_vehicle(vehicle.as_ref()));
+    }
+
+    #[test]
+    fn relationship_queries_follow_indirect_vehicle_chain() {
+        let root = raw_entity(1);
+        let middle = raw_entity(2);
+        let passenger = raw_entity(3);
+
+        link_vehicle_and_passenger(&root, &middle);
+        link_vehicle_and_passenger(&middle, &passenger);
+
+        assert_eq!(passenger.root_vehicle_id(), 1);
+        assert_eq!(middle.root_vehicle_id(), 1);
+        assert!(root.has_indirect_passenger(passenger.as_ref()));
+        assert!(middle.has_indirect_passenger(passenger.as_ref()));
+        assert!(!passenger.has_indirect_passenger(root.as_ref()));
+        assert!(middle.is_passenger_of_same_vehicle(passenger.as_ref()));
+    }
+
+    #[test]
+    fn removal_cleans_up_relationship_state() {
+        let vehicle = raw_entity(1);
+        let passenger = raw_entity(2);
+
+        link_vehicle_and_passenger(&vehicle, &passenger);
+
+        vehicle.set_removed(RemovalReason::UnloadedToChunk);
+
+        assert!(vehicle.is_removed());
+        assert!(!vehicle.is_vehicle());
+        assert!(!passenger.is_passenger());
+        assert_eq!(passenger.base().boarding_cooldown(), 60);
     }
 
     #[test]

@@ -295,6 +295,107 @@ pub trait Entity: EntityEventSource + Send + Sync {
         !self.is_removed() && self.is_pickable()
     }
 
+    /// Gets the vehicle this entity is riding, if present.
+    ///
+    /// Mirrors vanilla `Entity.getVehicle`.
+    fn vehicle(&self) -> Option<SharedEntity> {
+        self.base().vehicle()
+    }
+
+    /// Returns whether this entity is riding another entity.
+    ///
+    /// Mirrors vanilla `Entity.isPassenger`.
+    fn is_passenger(&self) -> bool {
+        self.vehicle().is_some()
+    }
+
+    /// Gets this entity's direct passengers.
+    ///
+    /// Mirrors vanilla `Entity.getPassengers`.
+    fn passengers(&self) -> Vec<SharedEntity> {
+        self.base().passengers()
+    }
+
+    /// Gets this entity's first direct passenger.
+    ///
+    /// Mirrors vanilla `Entity.getFirstPassenger`.
+    fn first_passenger(&self) -> Option<SharedEntity> {
+        self.base().first_passenger()
+    }
+
+    /// Returns whether this entity has any direct passengers.
+    ///
+    /// Mirrors vanilla `Entity.isVehicle`.
+    fn is_vehicle(&self) -> bool {
+        self.base().is_vehicle()
+    }
+
+    /// Returns whether `passenger` is a direct passenger of this entity.
+    ///
+    /// Mirrors vanilla `Entity.hasPassenger(Entity)`.
+    fn has_passenger(&self, passenger: &dyn Entity) -> bool {
+        self.base().has_passenger_id(passenger.id())
+    }
+
+    /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
+    ///
+    /// Mirrors vanilla `Entity.getRootVehicle` using session IDs for object identity.
+    fn root_vehicle_id(&self) -> i32 {
+        let mut root_id = self.id();
+        let mut vehicle = self.vehicle();
+        let mut visited = Vec::new();
+
+        while let Some(entity) = vehicle {
+            let entity_id = entity.id();
+            if visited.contains(&entity_id) {
+                break;
+            }
+            visited.push(entity_id);
+            root_id = entity_id;
+            vehicle = entity.vehicle();
+        }
+
+        root_id
+    }
+
+    /// Returns whether this entity and `other` share the same root vehicle.
+    ///
+    /// Mirrors vanilla `Entity.isPassengerOfSameVehicle`.
+    fn is_passenger_of_same_vehicle(&self, other: &dyn Entity) -> bool {
+        self.root_vehicle_id() == other.root_vehicle_id()
+    }
+
+    /// Returns whether `entity` is an indirect passenger of this entity.
+    ///
+    /// Mirrors vanilla `Entity.hasIndirectPassenger`.
+    fn has_indirect_passenger(&self, entity: &dyn Entity) -> bool {
+        let target_id = self.id();
+        let mut vehicle = entity.vehicle();
+        let mut visited = Vec::new();
+
+        while let Some(ridden) = vehicle {
+            let ridden_id = ridden.id();
+            if ridden_id == target_id {
+                return true;
+            }
+            if visited.contains(&ridden_id) {
+                return false;
+            }
+            visited.push(ridden_id);
+            vehicle = ridden.vehicle();
+        }
+
+        false
+    }
+
+    /// Returns whether this entity can collide with `other`.
+    ///
+    /// Mirrors vanilla `Entity.canCollideWith`.
+    fn can_collide_with(&self, other: &dyn Entity) -> bool {
+        other.can_be_collided_with(Some(self.as_entity_event_source()))
+            && !self.is_passenger_of_same_vehicle(other)
+    }
+
     /// Builds this entity's default bounding box at `position`.
     fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
         let dimensions = self.base().dimensions();
