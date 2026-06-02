@@ -17,6 +17,7 @@ use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::attribute::AttributeMap;
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
@@ -536,9 +537,9 @@ pub trait Entity: Send + Sync {
 
         // Vanilla: Entity.move() zeros velocity components on collision.
         // Horizontal collision zeros X/Z individually based on which axis collided.
-        // Vertical collision calls Block.updateEntityMovementAfterFallOn which by default zeros Y.
-        // (vanilla: Entity.move lines 776-785)
-        // TODO: Support block-specific behavior (slime bounce, etc.)
+        // Vertical collision calls Block.updateEntityMovementAfterFallOn.
+        // The default block behavior zeros Y velocity; block-specific behavior
+        // can override this for slime, beds, and similar landing surfaces.
         if result.horizontal_collision {
             let vel = self.velocity();
             self.set_velocity(DVec3::new(
@@ -548,9 +549,21 @@ pub trait Entity: Send + Sync {
             ));
         }
         if result.vertical_collision {
-            // Default Block.updateEntityMovementAfterFallOn behavior: zero Y velocity
-            let vel = self.velocity();
-            self.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
+            let velocity = self.velocity();
+            let next_velocity =
+                if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
+                    let effect_state = world.get_block_state(effect_pos);
+                    let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
+                    behavior.update_entity_movement_after_fall_on(
+                        effect_state,
+                        &world,
+                        effect_pos,
+                        velocity,
+                    )
+                } else {
+                    DVec3::new(velocity.x, 0.0, velocity.z)
+                };
+            self.set_velocity(next_velocity);
         }
 
         let speed_factor = f64::from(self.block_speed_factor());

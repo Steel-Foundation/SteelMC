@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -347,6 +348,25 @@ pub trait BlockBehavior: Send + Sync {
         entity: &dyn Entity,
     ) {
         // Default: no-op
+    }
+
+    /// Updates entity velocity after a vertical movement collision with this block.
+    ///
+    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
+    /// Steel returns the velocity to apply so movement resolution keeps entity
+    /// state changes centralized in [`Entity::move_entity`].
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores state, world, and pos"
+    )]
+    fn update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        velocity: DVec3,
+    ) -> DVec3 {
+        DVec3::new(velocity.x, 0.0, velocity.z)
     }
 
     // === Block Entity Methods ===
