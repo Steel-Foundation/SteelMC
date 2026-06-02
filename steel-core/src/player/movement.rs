@@ -3,7 +3,7 @@
 //! This module handles server-side movement simulation and anti-cheat checks.
 //! It implements collision detection and physics similar to vanilla Minecraft.
 
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
@@ -166,11 +166,11 @@ impl Player {
     fn update_awaiting_teleport(&self) -> bool {
         let mut tp = self.teleport_state.lock();
         let Some(pos) = tp.awaiting_position else {
-            tp.teleport_time = self.tick_count.load(Ordering::Relaxed);
+            tp.teleport_time = self.tick_count();
             return false;
         };
 
-        let current_tick = self.tick_count.load(Ordering::Relaxed);
+        let current_tick = self.tick_count();
 
         // Resend teleport after 20 ticks (~1 second) timeout
         if current_tick.wrapping_sub(tp.teleport_time) > 20 {
@@ -636,7 +636,7 @@ impl Player {
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
-            tp.teleport_time = self.tick_count.load(Ordering::Relaxed);
+            tp.teleport_time = self.tick_count();
             let id = tp.next_id();
             tp.awaiting_position = Some(pos);
             id

@@ -3,7 +3,7 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode`, particularly
 //! the `useItemOn` method that handles block placement and block interactions.
 
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 
 use steel_protocol::packets::game::{
     AnimateAction, CAnimate, CBlockChangedAck, CBlockUpdate, CChangeDifficulty, CGameEvent,
@@ -311,16 +311,12 @@ impl Player {
     /// The ack is batched and sent once per tick (in `tick_ack_block_changes`),
     /// matching vanilla behavior.
     pub fn ack_block_changes_up_to(&self, sequence: i32) {
-        let current = self.ack_block_changes_up_to.load(Ordering::Relaxed);
-        if sequence > current {
-            self.ack_block_changes_up_to
-                .store(sequence, Ordering::Relaxed);
-        }
+        self.tick_state.lock().ack_block_changes_up_to(sequence);
     }
 
     /// Sends pending block change ack if any. Called once per tick.
     pub(super) fn tick_ack_block_changes(&self) {
-        let sequence = self.ack_block_changes_up_to.swap(-1, Ordering::Relaxed);
+        let sequence = self.tick_state.lock().take_ack_block_changes_up_to();
         if sequence > -1 {
             self.send_packet(CBlockChangedAck { sequence });
         }

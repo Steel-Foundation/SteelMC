@@ -27,6 +27,7 @@ pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
 mod teleport_state;
+mod tick_state;
 
 pub use abilities::Abilities;
 use chat_state::ChatState;
@@ -43,6 +44,7 @@ use steel_protocol::{
     packets::game::CSetExperience,
 };
 use teleport_state::TeleportState;
+use tick_state::PlayerTickState;
 
 use block_breaking::BlockBreakingManager;
 use enum_dispatch::enum_dispatch;
@@ -50,7 +52,7 @@ use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{
     Arc, Weak,
-    atomic::{AtomicI32, AtomicU8, AtomicU32, Ordering},
+    atomic::{AtomicU8, AtomicU32, Ordering},
 };
 use steel_protocol::packets::game::{
     CAddEntity, CDamageEvent, CEntityEvent, CHurtAnimation, CPlayerCombatKill, CRemoveEntities,
@@ -222,14 +224,11 @@ pub struct Player {
     /// Counter for generating container IDs (1-100, wraps around).
     container_counter: AtomicU8,
 
-    /// Tracks the last acknowledged block change sequence number.
-    ack_block_changes_up_to: AtomicI32,
-
     /// Pending server-initiated teleport state (ID, position, timeout).
     teleport_state: SyncMutex<TeleportState>,
 
-    /// Local tick counter (incremented each tick).
-    tick_count: AtomicI32,
+    /// Local tick and once-per-tick packet state.
+    tick_state: SyncMutex<PlayerTickState>,
 
     /// Physical state flags (sleeping, fall flying, on ground).
     entity_state: SyncMutex<EntityState>,
@@ -359,9 +358,8 @@ impl Player {
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
             container_counter: AtomicU8::new(0),
-            ack_block_changes_up_to: AtomicI32::new(-1),
             teleport_state: SyncMutex::new(TeleportState::new()),
-            tick_count: AtomicI32::new(0),
+            tick_state: SyncMutex::new(PlayerTickState::new()),
             entity_state: SyncMutex::new(EntityState::new()),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
@@ -379,7 +377,7 @@ impl Player {
         reason = "world coordinates are always within i32 range in a valid Minecraft world"
     )]
     pub fn tick(&self) {
-        self.tick_count.fetch_add(1, Ordering::Relaxed);
+        self.advance_tick();
 
         // Vanilla: ServerGamePacketListenerImpl.resetPosition().
         self.movement.lock().reset_for_tick(self.position());
@@ -970,6 +968,17 @@ impl Player {
     /// Marks whether the client has loaded into play.
     pub fn set_client_loaded(&self, client_loaded: bool) {
         self.lifecycle.lock().set_client_loaded(client_loaded);
+    }
+
+    /// Returns this player's local server tick count.
+    #[must_use]
+    pub fn tick_count(&self) -> i32 {
+        self.tick_state.lock().tick_count()
+    }
+
+    /// Advances this player's local server tick count.
+    fn advance_tick(&self) {
+        self.tick_state.lock().advance_tick();
     }
 
     /// Resets the player's transient state and prepares them for a new world.
