@@ -237,6 +237,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         !self.is_client_authoritative()
     }
 
+    /// Returns true when vanilla allows this side to apply movement simulation side effects.
+    fn can_simulate_movement(&self) -> bool {
+        self.is_local_instance_authoritative()
+    }
+
     /// Returns true when vanilla landing bounce should be suppressed.
     fn is_suppressing_bounce(&self) -> bool {
         self.synced_data()
@@ -619,7 +624,7 @@ pub trait Entity: EntityEventSource + Send + Sync {
                 if result.z_collision { 0.0 } else { vel.z },
             ));
         }
-        if result.vertical_collision {
+        if result.vertical_collision && self.can_simulate_movement() {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
                 velocity,
