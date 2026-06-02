@@ -19,7 +19,7 @@ use crate::entity::damage::DamageSource;
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityFluidContact,
-    EntityPositionSyncState, EntitySyncedData, RemovalReason,
+    EntityPositionSyncDecision, EntityPositionSyncState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -571,56 +571,49 @@ impl ItemEntity {
             return None;
         }
 
-        // Try delta encoding first
-        let delta = sync_state.position.packed_delta(current_pos);
-
         // Use full sync if delta overflow or on-ground changed or periodic
         // (vanilla: ServerEntity.sendChanges line 123)
-        let use_full_sync = on_ground_changed || force_periodic_sync || delta.is_none();
-
-        if use_full_sync {
-            // Full sync: client sets position directly, so store current_pos
+        let force_full = on_ground_changed || force_periodic_sync;
+        let decision =
             sync_state
                 .position
-                .mark_full_sent(current_pos, current_on_ground);
+                .record_movement_sync(current_pos, current_on_ground, force_full);
 
-            let vel = self.velocity();
-            // NOTE: We do NOT update last_sent_velocity here because the client
-            // ignores the velocity field in CEntityPositionSync for non-authoritative
-            // entities (like items). The velocity sync is handled separately by
-            // check_velocity_sync() which sends CSetEntityMotion.
+        match decision {
+            EntityPositionSyncDecision::Delta { dx, dy, dz } => {
+                // Delta sync: store the actual current position as base.
+                // Vanilla stores the actual position, not the decoded position.
+                // This works because encode() is deterministic - both server and client
+                // compute the same encoded values.
+                Some(PositionSyncPacket::Delta(CMoveEntityPos {
+                    entity_id: self.id(),
+                    dx,
+                    dy,
+                    dz,
+                    on_ground: current_on_ground,
+                }))
+            }
+            EntityPositionSyncDecision::Full => {
+                let vel = self.velocity();
+                // NOTE: We do NOT update last_sent_velocity here because the client
+                // ignores the velocity field in CEntityPositionSync for non-authoritative
+                // entities (like items). The velocity sync is handled separately by
+                // check_velocity_sync() which sends CSetEntityMotion.
 
-            let (yaw, pitch) = self.rotation();
-            Some(PositionSyncPacket::Full(CEntityPositionSync {
-                entity_id: self.id(),
-                x: current_pos.x,
-                y: current_pos.y,
-                z: current_pos.z,
-                velocity_x: vel.x,
-                velocity_y: vel.y,
-                velocity_z: vel.z,
-                yaw,
-                pitch,
-                on_ground: current_on_ground,
-            }))
-        } else {
-            // Delta sync: store the actual current position as base.
-            // Vanilla stores the actual position, not the decoded position.
-            // This works because encode() is deterministic - both server and client
-            // compute the same encoded values.
-            let (dx, dy, dz) = delta?;
-
-            sync_state
-                .position
-                .mark_delta_sent(current_pos, current_on_ground);
-
-            Some(PositionSyncPacket::Delta(CMoveEntityPos {
-                entity_id: self.id(),
-                dx,
-                dy,
-                dz,
-                on_ground: current_on_ground,
-            }))
+                let (yaw, pitch) = self.rotation();
+                Some(PositionSyncPacket::Full(CEntityPositionSync {
+                    entity_id: self.id(),
+                    x: current_pos.x,
+                    y: current_pos.y,
+                    z: current_pos.z,
+                    velocity_x: vel.x,
+                    velocity_y: vel.y,
+                    velocity_z: vel.z,
+                    yaw,
+                    pitch,
+                    on_ground: current_on_ground,
+                }))
+            }
         }
     }
 

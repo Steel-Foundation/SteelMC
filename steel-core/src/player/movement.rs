@@ -17,7 +17,7 @@ use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_
 use steel_utils::types::GameType;
 use steel_utils::{ChunkPos, WorldAabb, translations};
 
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, EntityPositionSyncDecision, LivingEntity};
 use crate::physics::{CollisionWorld, MoverType, WorldCollisionProvider, join_is_not_empty};
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -441,56 +441,45 @@ impl Player {
         let new_chunk = ChunkPos::from_entity_pos(movement.pos);
 
         if movement.has_pos {
-            let (sync_delay, last_on_ground, delta) = {
+            let decision = {
                 let mut mv = self.movement.lock();
                 let delay = mv.position_sync.advance_sync_delay();
-                (
-                    delay,
-                    mv.position_sync.last_sent_on_ground(),
-                    mv.position_sync.packed_delta(movement.pos),
-                )
+                let on_ground_changed =
+                    mv.position_sync.last_sent_on_ground() != movement.on_ground;
+                let force_full = delay > 400 || on_ground_changed;
+                mv.position_sync
+                    .record_movement_sync(movement.pos, movement.on_ground, force_full)
             };
-            let on_ground_changed = last_on_ground != movement.on_ground;
-            let force_sync = sync_delay > 400 || on_ground_changed;
 
-            if let Some((dx, dy, dz)) = delta
-                && !force_sync
-            {
-                self.movement
-                    .lock()
-                    .position_sync
-                    .mark_delta_sent(movement.pos, movement.on_ground);
-
-                let move_packet = CMoveEntityPosRot {
-                    entity_id: self.id(),
-                    dx,
-                    dy,
-                    dz,
-                    y_rot: to_angle_byte(movement.yaw),
-                    x_rot: to_angle_byte(movement.pitch),
-                    on_ground: movement.on_ground,
-                };
-                world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id()));
-            } else {
-                self.movement
-                    .lock()
-                    .position_sync
-                    .mark_full_sent(movement.pos, movement.on_ground);
-
-                let delta = self.velocity();
-                let sync_packet = CEntityPositionSync {
-                    entity_id: self.id(),
-                    x: movement.pos.x,
-                    y: movement.pos.y,
-                    z: movement.pos.z,
-                    velocity_x: delta.x,
-                    velocity_y: delta.y,
-                    velocity_z: delta.z,
-                    yaw: movement.yaw,
-                    pitch: movement.pitch,
-                    on_ground: movement.on_ground,
-                };
-                world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
+            match decision {
+                EntityPositionSyncDecision::Delta { dx, dy, dz } => {
+                    let move_packet = CMoveEntityPosRot {
+                        entity_id: self.id(),
+                        dx,
+                        dy,
+                        dz,
+                        y_rot: to_angle_byte(movement.yaw),
+                        x_rot: to_angle_byte(movement.pitch),
+                        on_ground: movement.on_ground,
+                    };
+                    world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id()));
+                }
+                EntityPositionSyncDecision::Full => {
+                    let delta = self.velocity();
+                    let sync_packet = CEntityPositionSync {
+                        entity_id: self.id(),
+                        x: movement.pos.x,
+                        y: movement.pos.y,
+                        z: movement.pos.z,
+                        velocity_x: delta.x,
+                        velocity_y: delta.y,
+                        velocity_z: delta.z,
+                        yaw: movement.yaw,
+                        pitch: movement.pitch,
+                        on_ground: movement.on_ground,
+                    };
+                    world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
+                }
             }
         } else {
             let rot_packet = CMoveEntityRot {

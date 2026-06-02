@@ -75,7 +75,9 @@ pub use callback::{
 };
 pub use fluid_contact::EntityFluidContact;
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
-pub use movement_sync::{EntityPositionSyncState, POSITION_SYNC_THRESHOLD};
+pub use movement_sync::{
+    EntityPositionSyncDecision, EntityPositionSyncState, POSITION_SYNC_THRESHOLD,
+};
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use shared_flags::EntitySharedFlags;
 pub use storage::EntityStorage;
