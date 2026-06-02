@@ -7,7 +7,6 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
-use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
@@ -20,7 +19,7 @@ use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
 
-use crate::entity::{Entity, EntityBase, RemovalReason};
+use crate::entity::{Entity, EntityBase, EntityBaseState, RemovalReason};
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
@@ -67,14 +66,6 @@ const AIR_DRAG: f64 = 0.98;
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
     base: EntityBase,
-
-    // === Position & Physics ===
-    /// Velocity in blocks per tick.
-    velocity: SyncMutex<DVec3>,
-    /// Rotation as (yaw, pitch) in degrees. Items have random yaw on spawn.
-    rotation: AtomicCell<(f32, f32)>,
-    /// Whether the entity is on the ground.
-    on_ground: AtomicBool,
 
     // === Synced Entity Data ===
     /// Entity data containing the `ItemStack`.
@@ -149,10 +140,13 @@ impl ItemEntity {
         entity_data.item.set(item);
 
         Self {
-            base: EntityBase::new(id, position, world),
-            velocity: SyncMutex::new(velocity),
-            rotation: AtomicCell::new((yaw, 0.0)),
-            on_ground: AtomicBool::new(false),
+            base: EntityBase::new_with_state(
+                id,
+                EntityBaseState::new(position)
+                    .with_velocity(velocity)
+                    .with_rotation((yaw, 0.0)),
+                world,
+            ),
             entity_data: SyncMutex::new(entity_data),
             age: AtomicI32::new(0),
             tick_count: AtomicI32::new(0),
@@ -182,10 +176,15 @@ impl ItemEntity {
         world: Weak<World>,
     ) -> Self {
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
-            velocity: SyncMutex::new(velocity),
-            rotation: AtomicCell::new(rotation),
-            on_ground: AtomicBool::new(on_ground),
+            base: EntityBase::with_uuid_and_state(
+                id,
+                uuid,
+                EntityBaseState::new(position)
+                    .with_velocity(velocity)
+                    .with_rotation(rotation)
+                    .with_on_ground(on_ground),
+                world,
+            ),
             entity_data: SyncMutex::new(ItemEntityData::new()),
             age: AtomicI32::new(0),
             tick_count: AtomicI32::new(0),
@@ -211,16 +210,6 @@ impl ItemEntity {
     /// Sets the item stack.
     pub fn set_item(&self, item: ItemStack) {
         self.entity_data.lock().item.set(item);
-    }
-
-    // === Position & Physics ===
-    // Note: set_position, set_velocity, set_on_ground are implemented
-    // via the Entity trait.
-
-    /// Gets whether the entity is on the ground.
-    #[must_use]
-    pub fn is_on_ground(&self) -> bool {
-        self.on_ground.load(Ordering::Relaxed)
     }
 
     // === Timers ===
@@ -616,7 +605,7 @@ impl ItemEntity {
             // entities (like items). The velocity sync is handled separately by
             // check_velocity_sync() which sends CSetEntityMotion.
 
-            let (yaw, pitch) = self.rotation.load();
+            let (yaw, pitch) = self.rotation();
             Some(PositionSyncPacket::Full(CEntityPositionSync {
                 entity_id: self.id(),
                 x: current_pos.x,
@@ -903,26 +892,6 @@ impl Entity for ItemEntity {
 
     fn pack_all_entity_data(&self) -> Vec<DataValue> {
         self.entity_data.lock().pack_all()
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
-    }
-
-    fn velocity(&self) -> DVec3 {
-        *self.velocity.lock()
-    }
-
-    fn set_velocity(&self, velocity: DVec3) {
-        *self.velocity.lock() = velocity;
-    }
-
-    fn on_ground(&self) -> bool {
-        self.on_ground.load(Ordering::Relaxed)
-    }
-
-    fn set_on_ground(&self, on_ground: bool) {
-        self.on_ground.store(on_ground, Ordering::Relaxed);
     }
 
     fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {

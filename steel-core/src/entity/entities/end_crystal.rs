@@ -3,7 +3,6 @@
 use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -14,7 +13,7 @@ use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::{BlockPos, WorldAabb, locks::SyncMutex};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityBaseState};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -24,7 +23,6 @@ use crate::world::World;
 /// intentionally left to the broader entity/combat foundations.
 pub struct EndCrystalEntity {
     base: EntityBase,
-    rotation: AtomicCell<(f32, f32)>,
     entity_data: SyncMutex<EndCrystalEntityData>,
     invulnerable: AtomicBool,
 }
@@ -35,7 +33,6 @@ impl EndCrystalEntity {
     pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
             base: EntityBase::new(id, position, world),
-            rotation: AtomicCell::new((0.0, 0.0)),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
             invulnerable: AtomicBool::new(false),
         }
@@ -51,8 +48,12 @@ impl EndCrystalEntity {
         world: Weak<World>,
     ) -> Self {
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
-            rotation: AtomicCell::new(rotation),
+            base: EntityBase::with_uuid_and_state(
+                id,
+                uuid,
+                EntityBaseState::new(position).with_rotation(rotation),
+                world,
+            ),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
             invulnerable: AtomicBool::new(false),
         }
@@ -94,7 +95,7 @@ impl EndCrystalEntity {
     /// Sets position and rotation, matching vanilla `Entity.snapTo`.
     pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
         self.set_position(position);
-        self.rotation.store((yaw, pitch));
+        self.base.set_rotation((yaw, pitch));
     }
 
     const fn nbt_bool(value: bool) -> i8 {
@@ -129,10 +130,6 @@ impl Entity for EndCrystalEntity {
 
     fn pack_all_entity_data(&self) -> Vec<DataValue> {
         self.entity_data.lock().pack_all()
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

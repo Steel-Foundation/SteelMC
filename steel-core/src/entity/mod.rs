@@ -50,7 +50,7 @@ mod storage;
 mod tracker;
 
 use crate::portal::TeleportTransition;
-pub use base::EntityBase;
+pub use base::{EntityBase, EntityBaseState};
 pub use cache::EntityCache;
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, NullEntityCallback, PlayerEntityCallback,
@@ -188,7 +188,7 @@ pub trait Entity: Send + Sync {
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
     fn rotation(&self) -> (f32, f32) {
-        (0.0, 0.0)
+        self.base().map_or((0.0, 0.0), EntityBase::rotation)
     }
 
     /// Extra spawn-packet data used by vanilla for entity-specific construction.
@@ -213,19 +213,27 @@ pub trait Entity: Send + Sync {
 
     /// Gets the entity's velocity in blocks per tick.
     fn velocity(&self) -> DVec3 {
-        DVec3::new(0.0, 0.0, 0.0)
+        self.base().map_or(DVec3::ZERO, EntityBase::velocity)
     }
 
     /// Sets the entity's velocity.
-    fn set_velocity(&self, _velocity: DVec3) {}
+    fn set_velocity(&self, velocity: DVec3) {
+        if let Some(base) = self.base() {
+            base.set_velocity(velocity);
+        }
+    }
 
     /// Returns true if the entity is on the ground.
     fn on_ground(&self) -> bool {
-        false
+        self.base().is_some_and(EntityBase::on_ground)
     }
 
     /// Sets whether the entity is on the ground.
-    fn set_on_ground(&self, _on_ground: bool) {}
+    fn set_on_ground(&self, on_ground: bool) {
+        if let Some(base) = self.base() {
+            base.set_on_ground(on_ground);
+        }
+    }
 
     /// Sets the entity's position.
     fn set_position(&self, pos: DVec3) {

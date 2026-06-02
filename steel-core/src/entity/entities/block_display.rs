@@ -16,7 +16,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockStateId, WorldAabb};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityBaseState};
 use crate::world::World;
 
 /// A block display entity that renders a block state at its position.
@@ -56,12 +56,30 @@ impl BlockDisplayEntity {
 
     /// Creates a block display entity from saved data.
     ///
-    /// Display entities don't use velocity, rotation, or `on_ground`, so this is
-    /// essentially an alias for `with_uuid`. Type-specific data is restored
-    /// via `load_additional()` after construction.
+    /// Display entities have no physical collision, but vanilla base state is
+    /// still persisted and should round-trip through the shared base.
     #[must_use]
-    pub fn from_saved(id: i32, position: DVec3, uuid: Uuid, world: Weak<World>) -> Self {
-        Self::with_uuid(id, position, uuid, world)
+    pub fn from_saved(
+        id: i32,
+        position: DVec3,
+        uuid: Uuid,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        on_ground: bool,
+        world: Weak<World>,
+    ) -> Self {
+        Self {
+            base: EntityBase::with_uuid_and_state(
+                id,
+                uuid,
+                EntityBaseState::new(position)
+                    .with_velocity(velocity)
+                    .with_rotation(rotation)
+                    .with_on_ground(on_ground),
+                world,
+            ),
+            entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
+        }
     }
 
     /// Gets a reference to the entity data for reading/modifying synced state.

@@ -4,7 +4,6 @@ use std::str::FromStr;
 use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
-use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -14,7 +13,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{Identifier, WorldAabb};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityBaseState};
 use crate::world::World;
 
 /// Chest minecart entity state used by mineshaft generation.
@@ -24,9 +23,6 @@ use crate::world::World;
 /// structure generation creates.
 pub struct ChestMinecartEntity {
     base: EntityBase,
-    velocity: SyncMutex<DVec3>,
-    rotation: AtomicCell<(f32, f32)>,
-    on_ground: AtomicBool,
     first_tick: AtomicBool,
     loot_table: SyncMutex<Option<Identifier>>,
     loot_table_seed: AtomicI64,
@@ -38,9 +34,6 @@ impl ChestMinecartEntity {
     pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
             base: EntityBase::new(id, position, world),
-            velocity: SyncMutex::new(DVec3::ZERO),
-            rotation: AtomicCell::new((0.0, 0.0)),
-            on_ground: AtomicBool::new(false),
             first_tick: AtomicBool::new(true),
             loot_table: SyncMutex::new(None),
             loot_table_seed: AtomicI64::new(0),
@@ -59,10 +52,15 @@ impl ChestMinecartEntity {
         world: Weak<World>,
     ) -> Self {
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
-            velocity: SyncMutex::new(velocity),
-            rotation: AtomicCell::new(rotation),
-            on_ground: AtomicBool::new(on_ground),
+            base: EntityBase::with_uuid_and_state(
+                id,
+                uuid,
+                EntityBaseState::new(position)
+                    .with_velocity(velocity)
+                    .with_rotation(rotation)
+                    .with_on_ground(on_ground),
+                world,
+            ),
             first_tick: AtomicBool::new(false),
             loot_table: SyncMutex::new(None),
             loot_table_seed: AtomicI64::new(0),
@@ -95,26 +93,6 @@ impl Entity for ChestMinecartEntity {
         let half_width = f64::from(dims.width) / 2.0;
         let height = f64::from(dims.height);
         WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
-    }
-
-    fn velocity(&self) -> DVec3 {
-        *self.velocity.lock()
-    }
-
-    fn set_velocity(&self, velocity: DVec3) {
-        *self.velocity.lock() = velocity;
-    }
-
-    fn on_ground(&self) -> bool {
-        self.on_ground.load(Ordering::Relaxed)
-    }
-
-    fn set_on_ground(&self, on_ground: bool) {
-        self.on_ground.store(on_ground, Ordering::Relaxed);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

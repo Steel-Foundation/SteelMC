@@ -237,8 +237,10 @@ pub fn init_entities() {
     });
     registry.register_load(
         &vanilla_entities::BLOCK_DISPLAY,
-        |id, pos, uuid, _velocity, _rotation, _on_ground, world| {
-            Arc::new(BlockDisplayEntity::from_saved(id, pos, uuid, world))
+        |id, pos, uuid, velocity, rotation, on_ground, world| {
+            Arc::new(BlockDisplayEntity::from_saved(
+                id, pos, uuid, velocity, rotation, on_ground, world,
+            ))
         },
     );
 

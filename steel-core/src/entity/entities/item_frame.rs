@@ -2,7 +2,6 @@
 
 use std::sync::Weak;
 
-use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -16,7 +15,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityBaseState};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
@@ -28,7 +27,6 @@ pub struct ItemFrameEntity {
     base: EntityBase,
     entity_data: SyncMutex<ItemFrameEntityData>,
     block_pos: SyncMutex<BlockPos>,
-    rotation: AtomicCell<(f32, f32)>,
 }
 
 impl ItemFrameEntity {
@@ -36,10 +34,14 @@ impl ItemFrameEntity {
     #[must_use]
     pub fn new(id: i32, block_pos: BlockPos, direction: Direction, world: Weak<World>) -> Self {
         let entity = Self {
-            base: EntityBase::new(id, Self::frame_center(block_pos, direction), world),
+            base: EntityBase::new_with_state(
+                id,
+                EntityBaseState::new(Self::frame_center(block_pos, direction))
+                    .with_rotation(Self::rotation_for_direction(direction)),
+                world,
+            ),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(block_pos),
-            rotation: AtomicCell::new(Self::rotation_for_direction(direction)),
         };
         entity
             .entity_data
@@ -60,14 +62,18 @@ impl ItemFrameEntity {
         world: Weak<World>,
     ) -> Self {
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
+            base: EntityBase::with_uuid_and_state(
+                id,
+                uuid,
+                EntityBaseState::new(position).with_rotation(rotation),
+                world,
+            ),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
             block_pos: SyncMutex::new(BlockPos::new(
                 position.x.floor() as i32,
                 position.y.floor() as i32,
                 position.z.floor() as i32,
             )),
-            rotation: AtomicCell::new(rotation),
         }
     }
 
@@ -86,7 +92,8 @@ impl ItemFrameEntity {
             .hanging_entity
             .direction
             .set(direction);
-        self.rotation.store(Self::rotation_for_direction(direction));
+        self.base
+            .set_rotation(Self::rotation_for_direction(direction));
         self.recalculate_position();
     }
 
@@ -160,10 +167,6 @@ impl Entity for ItemFrameEntity {
             center.y + y_size / 2.0,
             center.z + z_size / 2.0,
         )
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
     }
 
     fn spawn_data(&self) -> i32 {

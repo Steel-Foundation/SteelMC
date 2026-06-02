@@ -1,9 +1,7 @@
 //! NBT-preserving fallback entity.
 
 use std::sync::Weak;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
@@ -11,7 +9,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::{WorldAabb, locks::SyncMutex};
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityBaseState};
 use crate::world::World;
 
 /// Steel-specific fallback for entity types whose runtime behavior is not implemented yet.
@@ -21,9 +19,6 @@ use crate::world::World;
 pub struct RawEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
-    rotation: AtomicCell<(f32, f32)>,
-    velocity: SyncMutex<DVec3>,
-    on_ground: AtomicBool,
     data: SyncMutex<NbtCompound>,
 }
 
@@ -34,9 +29,6 @@ impl RawEntity {
         Self {
             base: EntityBase::new(id, position, world),
             entity_type,
-            rotation: AtomicCell::new((0.0, 0.0)),
-            velocity: SyncMutex::new(DVec3::ZERO),
-            on_ground: AtomicBool::new(false),
             data: SyncMutex::new(NbtCompound::new()),
         }
     }
@@ -58,11 +50,16 @@ impl RawEntity {
         entity_type: EntityTypeRef,
     ) -> Self {
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
+            base: EntityBase::with_uuid_and_state(
+                id,
+                uuid,
+                EntityBaseState::new(position)
+                    .with_velocity(velocity)
+                    .with_rotation(rotation)
+                    .with_on_ground(on_ground),
+                world,
+            ),
             entity_type,
-            rotation: AtomicCell::new(rotation),
-            velocity: SyncMutex::new(velocity),
-            on_ground: AtomicBool::new(on_ground),
             data: SyncMutex::new(NbtCompound::new()),
         }
     }
@@ -70,7 +67,7 @@ impl RawEntity {
     /// Sets position and rotation, matching vanilla `Entity.snapTo`.
     pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
         self.set_position(position);
-        self.rotation.store((yaw, pitch));
+        self.base.set_rotation((yaw, pitch));
     }
 
     /// Marks a raw mob as persistent when vanilla structure generation would do so.
@@ -94,26 +91,6 @@ impl Entity for RawEntity {
         let half_width = f64::from(dims.width) / 2.0;
         let height = f64::from(dims.height);
         WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
-    }
-
-    fn velocity(&self) -> DVec3 {
-        *self.velocity.lock()
-    }
-
-    fn set_velocity(&self, velocity: DVec3) {
-        *self.velocity.lock() = velocity;
-    }
-
-    fn on_ground(&self) -> bool {
-        self.on_ground.load(Ordering::Relaxed)
-    }
-
-    fn set_on_ground(&self, on_ground: bool) {
-        self.on_ground.store(on_ground, Ordering::Relaxed);
     }
 
     fn tick(&self) {
