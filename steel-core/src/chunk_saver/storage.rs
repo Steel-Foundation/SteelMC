@@ -2569,7 +2569,7 @@ mod tests {
             panic!("dirty proto chunk should prepare for saving");
         };
         assert_eq!(prepared.persistent.entities.len(), 1);
-        assert!((prepared.persistent.entities[0].fall_distance - 3.75).abs() <= f32::EPSILON);
+        assert!((prepared.persistent.entities[0].fall_distance - 3.75).abs() <= f64::EPSILON);
 
         let loaded = ChunkStorage::persistent_to_chunk(
             &prepared.persistent,
@@ -2591,7 +2591,7 @@ mod tests {
             entities[0].entity_type().id(),
             vanilla_entities::END_CRYSTAL.id()
         );
-        assert!((entities[0].fall_distance() - 3.75).abs() <= f32::EPSILON);
+        assert!((entities[0].fall_distance() - 3.75).abs() <= f64::EPSILON);
     }
 
     #[test]

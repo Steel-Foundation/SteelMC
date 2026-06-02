@@ -2,17 +2,21 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_macros::block_behavior;
-use steel_registry::blocks::BlockRef;
+use steel_registry::{blocks::BlockRef, vanilla_damage_types};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, EntityLandingContext},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, EntityFallDamage, EntityFallOnContext,
+        EntityLandingContext,
+    },
+    entity::damage::DamageSource,
     world::World,
 };
 
 /// Behavior for slime blocks.
 ///
-/// TODO: Add vanilla `fallOn` fall-damage suppression and `stepOn` horizontal damping.
+/// TODO: Add vanilla `stepOn` horizontal damping.
 #[block_behavior]
 pub struct SlimeBlock {
     block: BlockRef,
@@ -47,6 +51,24 @@ impl SlimeBlock {
 impl BlockBehavior for SlimeBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn fall_on(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        context: EntityFallOnContext,
+    ) -> Option<EntityFallDamage> {
+        if context.suppresses_bounce {
+            None
+        } else {
+            Some(EntityFallDamage::new(
+                context.fall_distance,
+                0.0,
+                DamageSource::environment(&vanilla_damage_types::FALL),
+            ))
+        }
     }
 
     fn update_entity_movement_after_fall_on(

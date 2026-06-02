@@ -76,7 +76,7 @@ struct StructureEntityInfo {
     entity_type: EntityTypeRef,
     rotation: (f32, f32),
     velocity: DVec3,
-    fall_distance: f32,
+    fall_distance: f64,
     on_ground: bool,
     nbt: NbtCompound,
 }
@@ -344,9 +344,7 @@ impl StructureTemplate {
             })?;
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
-            let fall_distance = entity_nbt
-                .double("fall_distance")
-                .map_or(0.0, |value| value as f32);
+            let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
             let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
             let mut nbt = entity_nbt.to_owned();
             Self::strip_entity_base_fields(&mut nbt);

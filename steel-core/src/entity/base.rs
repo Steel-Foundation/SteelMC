@@ -225,7 +225,7 @@ pub struct EntityBaseState {
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
     piston_movement: EntityPistonMovement,
-    fall_distance: f32,
+    fall_distance: f64,
     stuck_speed_multiplier: DVec3,
     no_physics: bool,
 }
@@ -301,7 +301,7 @@ impl EntityBaseState {
 
     /// Sets accumulated fall distance on this state snapshot.
     #[must_use]
-    pub const fn with_fall_distance(mut self, fall_distance: f32) -> Self {
+    pub const fn with_fall_distance(mut self, fall_distance: f64) -> Self {
         self.fall_distance = fall_distance;
         self
     }
@@ -350,7 +350,7 @@ pub struct EntityBaseLoad {
     /// Restored yaw and pitch.
     pub rotation: (f32, f32),
     /// Restored accumulated fall distance.
-    pub fall_distance: f32,
+    pub fall_distance: f64,
     /// Restored ground-contact flag.
     pub on_ground: bool,
     /// World reference for the loaded entity.
@@ -574,7 +574,7 @@ impl EntityBase {
 
     /// Returns accumulated vanilla fall distance.
     #[inline]
-    pub fn fall_distance(&self) -> f32 {
+    pub fn fall_distance(&self) -> f64 {
         self.state.lock().fall_distance
     }
 
@@ -694,8 +694,13 @@ impl EntityBase {
     }
 
     /// Sets accumulated vanilla fall distance.
-    pub fn set_fall_distance(&self, fall_distance: f32) {
+    pub fn set_fall_distance(&self, fall_distance: f64) {
         self.state.lock().fall_distance = fall_distance;
+    }
+
+    /// Adds vertical movement to accumulated fall distance using vanilla precision.
+    pub fn accumulate_fall_distance(&self, vertical_movement: f64) {
+        self.state.lock().fall_distance -= f64::from(vertical_movement as f32);
     }
 
     /// Resets accumulated vanilla fall distance.
@@ -811,7 +816,7 @@ mod tests {
         );
     }
 
-    fn assert_f32_close(left: f32, right: f32) {
+    fn assert_f64_close(left: f64, right: f64) {
         assert!(
             (left - right).abs() < 1.0e-6,
             "expected {left:?} to equal {right:?}"
@@ -963,9 +968,29 @@ mod tests {
         );
 
         base.set_fall_distance(4.5);
-        assert_f32_close(base.fall_distance(), 4.5);
+        assert_f64_close(base.fall_distance(), 4.5);
         base.reset_fall_distance();
-        assert_f32_close(base.fall_distance(), 0.0);
+        assert_f64_close(base.fall_distance(), 0.0);
+    }
+
+    #[test]
+    fn fall_distance_accumulation_uses_vanilla_float_cast() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        let vertical_movement = -1.0 / 3.0;
+        base.accumulate_fall_distance(vertical_movement);
+
+        let vanilla_delta = -f64::from(vertical_movement as f32);
+        assert_f64_close(base.fall_distance(), vanilla_delta);
+        assert!(
+            (base.fall_distance() + vertical_movement).abs() > f64::EPSILON,
+            "fall distance should preserve vanilla's f32 cast before widening"
+        );
     }
 
     #[test]
@@ -980,7 +1005,7 @@ mod tests {
         base.set_fall_distance(3.0);
         base.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));
 
-        assert_f32_close(base.fall_distance(), 0.0);
+        assert_f64_close(base.fall_distance(), 0.0);
         assert_vec3_close(
             base.consume_stuck_speed_multiplier(DVec3::new(1.0, -1.0, 0.5), true),
             DVec3::new(0.8, -0.75, 0.4),

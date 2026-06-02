@@ -198,7 +198,7 @@ fn is_above_ground(
     }
 
     let max_down_step = f64::from(state.max_up_step);
-    let fall_distance = f64::from(state.fall_distance);
+    let fall_distance = state.fall_distance;
     fall_distance < max_down_step
         && !can_fall_at_least(aabb, 0.0, 0.0, max_down_step - fall_distance, world)
 }

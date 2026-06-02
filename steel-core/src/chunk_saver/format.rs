@@ -411,7 +411,7 @@ pub struct PersistentEntity {
     /// Rotation (yaw, pitch) in degrees.
     pub rotation: [f32; 2],
     /// Accumulated vanilla fall distance.
-    pub fall_distance: f32,
+    pub fall_distance: f64,
     /// Whether entity is on ground.
     pub on_ground: bool,
     /// Type-specific NBT data from `save_additional`.

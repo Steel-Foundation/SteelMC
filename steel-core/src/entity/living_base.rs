@@ -104,6 +104,20 @@ impl LivingEntityBase {
         }
     }
 
+    /// Calculates vanilla living-entity fall damage.
+    #[must_use]
+    pub fn calculate_fall_damage(
+        fall_distance: f64,
+        damage_modifier: f32,
+        safe_fall_distance: f64,
+        fall_damage_multiplier: f64,
+    ) -> i32 {
+        ((fall_distance + 1.0e-6 - safe_fall_distance)
+            * f64::from(damage_modifier)
+            * fall_damage_multiplier)
+            .floor() as i32
+    }
+
     /// Decrements remaining invulnerability ticks by one if any are active.
     pub fn decrement_invulnerable_time(&self) {
         let mut state = self.state.lock();
@@ -164,5 +178,34 @@ impl LivingEntityBase {
     #[inline]
     pub fn reset_death_state(&self) {
         self.state.lock().reset_death_state();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LivingEntityBase;
+
+    #[test]
+    fn fall_damage_starts_above_safe_fall_distance() {
+        assert_eq!(
+            LivingEntityBase::calculate_fall_damage(3.0, 1.0, 3.0, 1.0),
+            0
+        );
+        assert_eq!(
+            LivingEntityBase::calculate_fall_damage(4.0, 1.0, 3.0, 1.0),
+            1
+        );
+    }
+
+    #[test]
+    fn fall_damage_applies_block_and_attribute_multipliers() {
+        assert_eq!(
+            LivingEntityBase::calculate_fall_damage(8.0, 0.5, 3.0, 2.0),
+            5
+        );
+        assert_eq!(
+            LivingEntityBase::calculate_fall_damage(8.0, 0.2, 3.0, 1.0),
+            1
+        );
     }
 }

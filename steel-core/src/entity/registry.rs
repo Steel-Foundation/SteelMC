@@ -43,7 +43,7 @@ pub struct EntityLoadRequest {
     /// Restored yaw and pitch.
     pub rotation: (f32, f32),
     /// Restored accumulated fall distance.
-    pub fall_distance: f32,
+    pub fall_distance: f64,
     /// Restored ground-contact flag.
     pub on_ground: bool,
     /// World reference for the loaded entity.
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(entity.position(), DVec3::new(1.0, 2.0, 3.0));
         assert_eq!(entity.velocity(), DVec3::new(0.1, 0.0, 0.2));
         assert_eq!(entity.rotation(), (45.0, 10.0));
-        assert!((entity.fall_distance() - 2.25).abs() <= f32::EPSILON);
+        assert!((entity.fall_distance() - 2.25).abs() <= f64::EPSILON);
         assert!(entity.on_ground());
 
         let mut saved = NbtCompound::new();

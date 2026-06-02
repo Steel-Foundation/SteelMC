@@ -12,18 +12,21 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_utils::BlockPos;
+use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_game_events};
 use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{BlockPos, BlockStateId};
 use uuid::Uuid;
 
-use crate::behavior::{BLOCK_BEHAVIORS, EntityLandingContext};
+use crate::behavior::{BLOCK_BEHAVIORS, EntityFallOnContext, EntityLandingContext};
 use crate::entity::attribute::AttributeMap;
 use crate::physics::{
     EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
     move_entity as resolve_entity_movement,
 };
 use crate::world::World;
+use crate::world::game_event_context::GameEventContext;
 use crate::{entity::damage::DamageSource, player::Player};
 
 use entities::ItemEntity;
@@ -85,6 +88,18 @@ pub type SharedEntity = Arc<dyn Entity>;
 /// Type alias for a weak entity reference.
 pub type WeakEntity = Weak<dyn Entity>;
 
+/// Object-safe access to an entity trait object from default `Entity` methods.
+pub trait EntityEventSource {
+    /// Returns this entity as a game-event source.
+    fn as_entity_event_source(&self) -> &dyn Entity;
+}
+
+impl<T: Entity> EntityEventSource for T {
+    fn as_entity_event_source(&self) -> &dyn Entity {
+        self
+    }
+}
+
 /// A trait for entities.
 ///
 /// This trait provides the core functionality for entities.
@@ -103,7 +118,7 @@ pub type WeakEntity = Weak<dyn Entity>;
 ///     // All other common methods use defaults from EntityBase!
 /// }
 /// ```
-pub trait Entity: Send + Sync {
+pub trait Entity: EntityEventSource + Send + Sync {
     /// Returns a reference to the entity's shared vanilla base fields.
     fn base(&self) -> &EntityBase;
 
@@ -269,18 +284,49 @@ pub trait Entity: Send + Sync {
     }
 
     /// Returns accumulated vanilla fall distance.
-    fn fall_distance(&self) -> f32 {
+    fn fall_distance(&self) -> f64 {
         self.base().fall_distance()
     }
 
     /// Sets accumulated vanilla fall distance.
-    fn set_fall_distance(&self, fall_distance: f32) {
+    fn set_fall_distance(&self, fall_distance: f64) {
         self.base().set_fall_distance(fall_distance);
     }
 
     /// Resets accumulated vanilla fall distance.
     fn reset_fall_distance(&self) {
         self.base().reset_fall_distance();
+    }
+
+    /// Returns true if this entity is currently touching water.
+    fn is_in_water(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+
+        EntityFluidContact::scan(&world, self.bounding_box()).water_height() > 0.0
+    }
+
+    /// Returns true if this entity type ignores vanilla fall damage.
+    fn is_fall_damage_immune(&self) -> bool {
+        REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::FALL_DAMAGE_IMMUNE)
+    }
+
+    /// Applies vanilla fall damage. Base entities only propagate to passengers.
+    #[expect(
+        unused_variables,
+        reason = "base entity fall damage is a no-op until passengers are implemented"
+    )]
+    fn cause_fall_damage(
+        &self,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        // TODO: Propagate fall damage to passengers once passenger state exists.
+        false
     }
 
     /// Returns true if the entity is on the ground.
@@ -389,6 +435,11 @@ pub trait Entity: Send + Sync {
     /// Returns the block position used for movement-affecting block properties.
     fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
         self.on_pos(0.500_001)
+    }
+
+    /// Returns vanilla `getOnPosLegacy()`, used by fall/step block hooks.
+    fn on_pos_legacy(&self) -> Option<BlockPos> {
+        self.on_pos(0.2)
     }
 
     /// Returns the vanilla block speed factor applied after movement.
@@ -543,6 +594,10 @@ pub trait Entity: Send + Sync {
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
 
+        if self.apply_fall_damage_after_move(&result, &world) {
+            return Some(result);
+        }
+
         // Vanilla: Entity.move() zeros velocity components on collision.
         // Horizontal collision zeros X/Z individually based on which axis collided.
         // Vertical collision calls Block.updateEntityMovementAfterFallOn.
@@ -588,6 +643,72 @@ pub trait Entity: Send + Sync {
         ));
 
         Some(result)
+    }
+
+    /// Applies vanilla fall-distance bookkeeping after accepted movement.
+    fn apply_fall_damage_after_move(&self, result: &MoveResult, world: &Arc<World>) -> bool {
+        let Some(effect_pos) = self.on_pos_legacy() else {
+            return false;
+        };
+        let effect_state = world.get_block_state(effect_pos);
+        self.check_fall_damage(
+            result.actual_movement.y,
+            result.on_ground,
+            effect_state,
+            effect_pos,
+            world,
+        );
+        self.is_removed()
+    }
+
+    /// Mirrors vanilla `Entity.checkFallDamage`.
+    fn check_fall_damage(
+        &self,
+        vertical_movement: f64,
+        on_ground: bool,
+        on_state: BlockStateId,
+        pos: BlockPos,
+        world: &Arc<World>,
+    ) {
+        if !self.is_in_water() && vertical_movement < 0.0 {
+            self.base().accumulate_fall_distance(vertical_movement);
+        }
+
+        if !on_ground {
+            return;
+        }
+
+        let fall_distance = self.fall_distance();
+        if fall_distance > 0.0 {
+            let behavior = BLOCK_BEHAVIORS.get_behavior(on_state.get_block());
+            let fall_context =
+                EntityFallOnContext::new(fall_distance, self.is_suppressing_bounce());
+            if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
+                self.cause_fall_damage(
+                    fall_damage.fall_distance,
+                    fall_damage.damage_modifier,
+                    &fall_damage.source,
+                );
+            }
+
+            let supporting_state = self
+                .base()
+                .supporting_block()
+                .map_or(on_state, |supporting_pos| {
+                    world.get_block_state(supporting_pos)
+                });
+            world.game_event(
+                &vanilla_game_events::HIT_GROUND,
+                BlockPos::new(
+                    self.position().x.floor() as i32,
+                    self.position().y.floor() as i32,
+                    self.position().z.floor() as i32,
+                ),
+                &GameEventContext::new(Some(self.as_entity_event_source()), Some(supporting_state)),
+            );
+        }
+
+        self.reset_fall_distance();
     }
 
     /// Computes vanilla support state for an on-ground update.

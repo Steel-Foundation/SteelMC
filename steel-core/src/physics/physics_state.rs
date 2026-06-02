@@ -44,7 +44,7 @@ pub struct EntityPhysicsState {
     pub in_lava: bool,
 
     /// Remaining fall distance for fall damage calculation.
-    pub fall_distance: f32,
+    pub fall_distance: f64,
 }
 
 /// Default max step height for most entities.

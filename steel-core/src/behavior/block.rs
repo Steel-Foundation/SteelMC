@@ -9,6 +9,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::vanilla_damage_types;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
@@ -17,7 +18,7 @@ use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
-use crate::entity::Entity;
+use crate::entity::{Entity, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -37,6 +38,49 @@ pub struct EntityLandingContext {
     pub is_living_entity: bool,
     /// Whether vanilla bounce behavior should be suppressed.
     pub suppresses_bounce: bool,
+}
+
+/// Entity facts needed by `Block.fallOn`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityFallOnContext {
+    /// Accumulated vanilla fall distance at landing time.
+    pub fall_distance: f64,
+    /// Whether vanilla bounce behavior should be suppressed.
+    pub suppresses_bounce: bool,
+}
+
+impl EntityFallOnContext {
+    /// Creates a fall-on context for a ground collision.
+    #[must_use]
+    pub const fn new(fall_distance: f64, suppresses_bounce: bool) -> Self {
+        Self {
+            fall_distance,
+            suppresses_bounce,
+        }
+    }
+}
+
+/// Fall damage requested by a block landing hook.
+#[derive(Debug, Clone)]
+pub struct EntityFallDamage {
+    /// Fall distance to pass to `Entity.causeFallDamage`.
+    pub fall_distance: f64,
+    /// Block-specific damage multiplier.
+    pub damage_modifier: f32,
+    /// Damage source for this landing.
+    pub source: DamageSource,
+}
+
+impl EntityFallDamage {
+    /// Creates a fall-damage action.
+    #[must_use]
+    pub const fn new(fall_distance: f64, damage_modifier: f32, source: DamageSource) -> Self {
+        Self {
+            fall_distance,
+            damage_modifier,
+            source,
+        }
+    }
 }
 
 impl EntityLandingContext {
@@ -377,6 +421,27 @@ pub trait BlockBehavior: Send + Sync {
         entity: &dyn Entity,
     ) {
         // Default: no-op
+    }
+
+    /// Called when an entity lands on this block.
+    ///
+    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores state, world, and pos"
+    )]
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext,
+    ) -> Option<EntityFallDamage> {
+        Some(EntityFallDamage::new(
+            context.fall_distance,
+            1.0,
+            DamageSource::environment(&vanilla_damage_types::FALL),
+        ))
     }
 
     /// Updates entity velocity after a vertical movement collision with this block.
