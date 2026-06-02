@@ -6,6 +6,8 @@ use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{VoxelShape, is_shape_full_block};
 use steel_utils::{BlockLocalAabb, BlockPos, WorldAabb, axis::Axis};
 
+const COLLISION_EPSILON: f64 = 1.0e-7;
+
 /// Computes the maximum safe movement along an axis for an entity AABB through a list of obstacle shapes.
 ///
 /// This is the core collision function used by vanilla's `Shapes.collide()`.
@@ -32,7 +34,7 @@ pub fn collide(
     shapes: &[WorldAabb],
     desired_movement: f64,
 ) -> f64 {
-    if desired_movement.abs() < 1.0e-7 {
+    if desired_movement.abs() < COLLISION_EPSILON {
         return 0.0;
     }
 
@@ -41,8 +43,7 @@ pub fn collide(
     for shape in shapes {
         movement = collide_single(axis, entity_aabb, shape, movement);
 
-        // Early exit if movement is completely blocked
-        if movement.abs() < 1.0e-7 {
+        if movement.abs() < COLLISION_EPSILON {
             return 0.0;
         }
     }
@@ -50,109 +51,48 @@ pub fn collide(
     movement
 }
 
-/// Collides entity AABB against a single obstacle shape along the given axis.
-///
-/// DEBUG: Added extensive logging to trace collision issues.
 fn collide_single(
     axis: Axis,
     entity_aabb: &WorldAabb,
     obstacle: &WorldAabb,
     desired_movement: f64,
 ) -> f64 {
-    match axis {
-        Axis::X => {
-            // Check if entity and obstacle overlap on Y and Z axes
-            if entity_aabb.max_y() <= obstacle.min_y() || entity_aabb.min_y() >= obstacle.max_y() {
-                return desired_movement;
-            }
-            if entity_aabb.max_z() <= obstacle.min_z() || entity_aabb.min_z() >= obstacle.max_z() {
-                return desired_movement;
-            }
+    let (first_cross_axis, second_cross_axis) = cross_axes(axis);
+    if !overlaps_for_collision(entity_aabb, obstacle, first_cross_axis)
+        || !overlaps_for_collision(entity_aabb, obstacle, second_cross_axis)
+    {
+        return desired_movement;
+    }
 
-            // Calculate max movement before hitting obstacle
-            if desired_movement > 0.0 {
-                // Moving in positive X direction
-                let max_move = obstacle.min_x() - entity_aabb.max_x();
-                // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
-                if max_move >= -1.0e-7 && max_move < desired_movement {
-                    max_move
-                } else {
-                    desired_movement
-                }
-            } else {
-                // Moving in negative X direction
-                let max_move = obstacle.max_x() - entity_aabb.min_x();
-                // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
-                if max_move <= 1.0e-7 && max_move > desired_movement {
-                    max_move
-                } else {
-                    desired_movement
-                }
-            }
+    if desired_movement > 0.0 {
+        let max_move = obstacle.min(axis) - entity_aabb.max(axis);
+        if max_move >= -COLLISION_EPSILON && max_move < desired_movement {
+            max_move
+        } else {
+            desired_movement
         }
-        Axis::Y => {
-            // Check if entity and obstacle overlap on X and Z axes
-            if entity_aabb.max_x() <= obstacle.min_x() || entity_aabb.min_x() >= obstacle.max_x() {
-                return desired_movement;
-            }
-            if entity_aabb.max_z() <= obstacle.min_z() || entity_aabb.min_z() >= obstacle.max_z() {
-                return desired_movement;
-            }
-
-            // Calculate max movement before hitting obstacle
-            if desired_movement > 0.0 {
-                // Moving in positive Y direction
-                let max_move = obstacle.min_y() - entity_aabb.max_y();
-                // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
-
-                if max_move >= -1.0e-7 && max_move < desired_movement {
-                    max_move
-                } else {
-                    desired_movement
-                }
-            } else {
-                // Moving in negative Y direction
-                let max_move = obstacle.max_y() - entity_aabb.min_y();
-                // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
-
-                if max_move <= 1.0e-7 && max_move > desired_movement {
-                    max_move
-                } else {
-                    desired_movement
-                }
-            }
-        }
-        Axis::Z => {
-            // Check if entity and obstacle overlap on X and Y axes
-            if entity_aabb.max_x() <= obstacle.min_x() || entity_aabb.min_x() >= obstacle.max_x() {
-                return desired_movement;
-            }
-            if entity_aabb.max_y() <= obstacle.min_y() || entity_aabb.min_y() >= obstacle.max_y() {
-                return desired_movement;
-            }
-
-            // Calculate max movement before hitting obstacle
-            if desired_movement > 0.0 {
-                // Moving in positive Z direction
-                let max_move = obstacle.min_z() - entity_aabb.max_z();
-                // Only apply collision if obstacle is actually blocking (vanilla: newDistance >= -1.0E-7)
-                if max_move >= -1.0e-7 && max_move < desired_movement {
-                    max_move
-                } else {
-                    desired_movement
-                }
-            } else {
-                // Moving in negative Z direction
-                let max_move = obstacle.max_z() - entity_aabb.min_z();
-                // Only apply collision if obstacle is actually blocking (vanilla: newDistance <= 1.0E-7)
-                if max_move <= 1.0e-7 && max_move > desired_movement {
-                    max_move
-                } else {
-                    desired_movement
-                }
-            }
+    } else {
+        let max_move = obstacle.max(axis) - entity_aabb.min(axis);
+        if max_move <= COLLISION_EPSILON && max_move > desired_movement {
+            max_move
+        } else {
+            desired_movement
         }
     }
+}
+
+const fn cross_axes(axis: Axis) -> (Axis, Axis) {
+    match axis {
+        Axis::X => (Axis::Y, Axis::Z),
+        Axis::Y => (Axis::X, Axis::Z),
+        Axis::Z => (Axis::X, Axis::Y),
+    }
+}
+
+fn overlaps_for_collision(entity_aabb: &WorldAabb, obstacle: &WorldAabb, axis: Axis) -> bool {
+    // Vanilla looks up cross-axis cells using min + epsilon and max - epsilon.
+    entity_aabb.max(axis) - COLLISION_EPSILON > obstacle.min(axis)
+        && entity_aabb.min(axis) + COLLISION_EPSILON < obstacle.max(axis)
 }
 
 /// Tests if two shapes have a non-empty intersection (boolean AND operation).
@@ -321,6 +261,24 @@ mod tests {
 
         let result = collide(Axis::X, &entity, &[obstacle], 5.0);
         assert_eq!(result, 5.0, "Should ignore obstacle with no Y overlap");
+    }
+
+    #[test]
+    fn collide_ignores_cross_axis_overlap_below_vanilla_epsilon() {
+        let entity = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let obstacle = WorldAabb::new(2.0, 1.0 - 0.5e-7, 0.0, 3.0, 2.0, 1.0);
+
+        let result = collide(Axis::X, &entity, &[obstacle], 5.0);
+        assert_eq!(result, 5.0);
+    }
+
+    #[test]
+    fn collide_keeps_cross_axis_overlap_above_vanilla_epsilon() {
+        let entity = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let obstacle = WorldAabb::new(2.0, 1.0 - 2.0e-7, 0.0, 3.0, 2.0, 1.0);
+
+        let result = collide(Axis::X, &entity, &[obstacle], 5.0);
+        assert_eq!(result, 1.0);
     }
 
     #[test]
