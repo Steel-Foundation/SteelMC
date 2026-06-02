@@ -187,7 +187,9 @@ impl Player {
 
     /// Marks that an impulse (knockback, etc.) was applied.
     pub fn apply_impulse(&self) {
-        self.movement.lock().last_impulse_tick = self.tick_count.load(Ordering::Relaxed);
+        self.movement
+            .lock()
+            .mark_impulse_tick(self.tick_count.load(Ordering::Relaxed));
     }
 
     /// Checks if movement validation should be performed for this player.
@@ -242,7 +244,7 @@ impl Player {
             return;
         }
 
-        let prev_pos = self.movement.lock().position_sync.last_sent_position();
+        let prev_pos = self.movement.lock().last_sent_position();
         let start_pos = self.position();
         let game_mode = self.game_mode.load();
         let state = self.entity_state_snapshot();
@@ -262,10 +264,7 @@ impl Player {
                 clamp_vertical(packet.position.y),
                 clamp_horizontal(packet.position.z),
             );
-            let (first_good, last_good) = {
-                let mv = self.movement.lock();
-                (mv.first_good_position, mv.last_good_position)
-            };
+            let (first_good, last_good) = self.movement.lock().good_positions();
 
             if is_sleeping {
                 let dx = target_pos.x - first_good.x;
@@ -292,8 +291,7 @@ impl Player {
                 if tick_runs_normally {
                     let mut delta_packets = {
                         let mut mv = self.movement.lock();
-                        mv.received_move_packet_count += 1;
-                        mv.received_move_packet_count - mv.known_move_packet_count
+                        mv.record_move_packet_delta()
                     };
 
                     if delta_packets > 5 {
@@ -348,7 +346,7 @@ impl Player {
                 let in_impulse_grace = {
                     let mv = self.movement.lock();
                     let current_tick = self.tick_count.load(Ordering::Relaxed);
-                    current_tick.wrapping_sub(mv.last_impulse_tick) < IMPULSE_GRACE_TICKS
+                    mv.is_in_impulse_grace(current_tick, IMPULSE_GRACE_TICKS)
                 };
                 let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
                     && !is_creative
@@ -371,7 +369,7 @@ impl Player {
                     return;
                 }
 
-                self.movement.lock().last_good_position = target_pos;
+                self.movement.lock().mark_last_good_position(target_pos);
 
                 if packet.on_ground && self.is_sprinting() {
                     let dx = move_delta.x;
@@ -429,18 +427,15 @@ impl Player {
             return;
         }
 
-        self.movement.lock().last_known_client_movement = movement.client_delta;
+        self.movement
+            .lock()
+            .set_last_known_client_movement(movement.client_delta);
         let new_chunk = ChunkPos::from_entity_pos(movement.pos);
 
         if movement.has_pos {
             let decision = {
                 let mut mv = self.movement.lock();
-                let delay = mv.position_sync.advance_sync_delay();
-                let on_ground_changed =
-                    mv.position_sync.last_sent_on_ground() != movement.on_ground;
-                let force_full = delay > 400 || on_ground_changed;
-                mv.position_sync
-                    .record_movement_sync(movement.pos, movement.on_ground, force_full)
+                mv.record_position_sync(movement.pos, movement.on_ground)
             };
 
             match decision {
@@ -491,7 +486,9 @@ impl Player {
             world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id()));
         }
 
-        self.movement.lock().prev_rotation = (movement.yaw, movement.pitch);
+        self.movement
+            .lock()
+            .mark_rotation_sent((movement.yaw, movement.pitch));
     }
 
     /// Returns the player's current gravity value.
@@ -558,7 +555,7 @@ impl Player {
         self.set_position(pos);
         self.set_rotation((yaw, pitch));
         self.set_old_position_to_current();
-        self.movement.lock().last_known_client_movement = DVec3::ZERO;
+        self.movement.lock().reset_last_known_client_movement();
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
     }
@@ -573,8 +570,8 @@ impl Player {
             self.set_position(pos);
             self.set_old_position_to_current();
             let mut movement = self.movement.lock();
-            movement.last_good_position = pos;
-            movement.last_known_client_movement = DVec3::ZERO;
+            movement.mark_last_good_position(pos);
+            movement.reset_last_known_client_movement();
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());

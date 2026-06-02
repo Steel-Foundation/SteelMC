@@ -76,8 +76,7 @@ use text_components::{content::Resolvable, custom::CustomData};
 use crate::config::RuntimeConfig;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityBase, EntityPositionSyncState, EntitySyncedData,
-    LivingEntityBase, RemovalReason,
+    DEATH_DURATION, Entity, EntityBase, EntitySyncedData, LivingEntityBase, RemovalReason,
 };
 use crate::inventory::SyncPlayerInv;
 use crate::player::experience::Experience;
@@ -365,12 +364,8 @@ impl Player {
     pub fn tick(&self) {
         self.tick_count.fetch_add(1, Ordering::Relaxed);
 
-        // Reset first_good_position to current position at start of tick (vanilla: resetPosition)
-        {
-            let mut mv = self.movement.lock();
-            mv.first_good_position = self.position();
-            mv.known_move_packet_count = mv.received_move_packet_count;
-        }
+        // Vanilla: ServerGamePacketListenerImpl.resetPosition().
+        self.movement.lock().reset_for_tick(self.position());
 
         self.apply_gravity();
         self.tick_ack_block_changes();
@@ -970,7 +965,7 @@ impl Player {
         // --- Reset transient state ---
         self.client_loaded.store(false, Ordering::Relaxed);
         self.set_velocity(DVec3::ZERO);
-        self.movement.lock().last_known_client_movement = DVec3::ZERO;
+        self.movement.lock().reset_last_known_client_movement();
         self.set_on_ground(false);
         self.reset_entity_state();
         *self.block_breaking.lock() = BlockBreakingManager::new();
@@ -1023,15 +1018,9 @@ impl Player {
         self.set_position(position);
         self.set_rotation(rotation);
         self.set_old_position_to_current();
-        {
-            let mut mv = self.movement.lock();
-            mv.position_sync = EntityPositionSyncState::new(position, self.on_ground());
-            mv.last_good_position = position;
-            mv.first_good_position = position;
-            mv.received_move_packet_count = 0;
-            mv.known_move_packet_count = 0;
-            mv.last_known_client_movement = DVec3::ZERO;
-        }
+        self.movement
+            .lock()
+            .reset_for_position_sync(position, self.on_ground());
 
         // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
         self.teleport(position.x, position.y, position.z, rotation.0, rotation.1);
@@ -1151,7 +1140,7 @@ impl Entity for Player {
     }
 
     fn known_movement(&self) -> DVec3 {
-        self.movement.lock().last_known_client_movement
+        self.movement.lock().last_known_client_movement()
     }
 
     fn is_suppressing_bounce(&self) -> bool {

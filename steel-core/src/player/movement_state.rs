@@ -3,33 +3,36 @@
 
 use glam::DVec3;
 
-use crate::entity::EntityPositionSyncState;
+use crate::entity::{EntityPositionSyncDecision, EntityPositionSyncState};
+
+/// Player movement packets force a full entity position sync after this delay.
+const PLAYER_FULL_SYNC_DELAY: i32 = 400;
 
 /// Internal movement tracking state, stored behind a single `SyncMutex` on `Player`.
 pub struct MovementState {
     /// Position/on-ground state used for tracking movement packets.
-    pub position_sync: EntityPositionSyncState,
+    position_sync: EntityPositionSyncState,
     /// The previous rotation for movement broadcasts.
-    pub prev_rotation: (f32, f32),
+    prev_rotation: (f32, f32),
 
     /// Last known good position (for collision rollback).
-    pub last_good_position: DVec3,
+    last_good_position: DVec3,
     /// Position at start of tick (for speed validation).
     /// Matches vanilla `firstGoodX/Y/Z`.
-    pub first_good_position: DVec3,
+    first_good_position: DVec3,
 
     /// Number of move packets received since connection started.
-    pub received_move_packet_count: i32,
+    received_move_packet_count: i32,
     /// Number of move packets at the last tick (for rate limiting).
-    pub known_move_packet_count: i32,
+    known_move_packet_count: i32,
 
     /// Tick when last impulse was applied (knockback, etc.).
-    pub last_impulse_tick: i32,
+    last_impulse_tick: i32,
 
     /// Last movement accepted from the client.
     ///
     /// Mirrors vanilla `ServerPlayer.lastKnownClientMovement`.
-    pub last_known_client_movement: DVec3,
+    last_known_client_movement: DVec3,
 }
 
 impl MovementState {
@@ -46,6 +49,91 @@ impl MovementState {
             last_known_client_movement: DVec3::new(0.0, 0.0, 0.0),
         }
     }
+
+    /// Returns the last absolute position used as the client's movement delta base.
+    #[must_use]
+    pub(super) const fn last_sent_position(&self) -> DVec3 {
+        self.position_sync.last_sent_position()
+    }
+
+    /// Resets per-tick vanilla movement validation bases.
+    pub(super) const fn reset_for_tick(&mut self, position: DVec3) {
+        self.first_good_position = position;
+        self.last_good_position = position;
+        self.known_move_packet_count = self.received_move_packet_count;
+    }
+
+    /// Resets movement validation and tracking bases after a server position sync.
+    pub(super) const fn reset_for_position_sync(&mut self, position: DVec3, on_ground: bool) {
+        self.position_sync = EntityPositionSyncState::new(position, on_ground);
+        self.last_good_position = position;
+        self.first_good_position = position;
+        self.received_move_packet_count = 0;
+        self.known_move_packet_count = 0;
+        self.last_known_client_movement = DVec3::ZERO;
+    }
+
+    /// Returns the current vanilla first-good and last-good validation positions.
+    #[must_use]
+    pub(super) const fn good_positions(&self) -> (DVec3, DVec3) {
+        (self.first_good_position, self.last_good_position)
+    }
+
+    /// Records a received movement packet and returns packets since the last tick.
+    pub(super) const fn record_move_packet_delta(&mut self) -> i32 {
+        self.received_move_packet_count += 1;
+        self.received_move_packet_count - self.known_move_packet_count
+    }
+
+    /// Marks a movement target as the latest accepted vanilla last-good position.
+    pub(super) const fn mark_last_good_position(&mut self, position: DVec3) {
+        self.last_good_position = position;
+    }
+
+    /// Marks the tick when a server impulse was applied.
+    pub(super) const fn mark_impulse_tick(&mut self, tick: i32) {
+        self.last_impulse_tick = tick;
+    }
+
+    /// Returns whether movement validation is still inside the post-impulse grace window.
+    #[must_use]
+    pub(super) const fn is_in_impulse_grace(&self, current_tick: i32, grace_ticks: i32) -> bool {
+        current_tick.wrapping_sub(self.last_impulse_tick) < grace_ticks
+    }
+
+    /// Sets the last accepted client movement vector.
+    pub(super) const fn set_last_known_client_movement(&mut self, movement: DVec3) {
+        self.last_known_client_movement = movement;
+    }
+
+    /// Clears the last accepted client movement vector.
+    pub(super) const fn reset_last_known_client_movement(&mut self) {
+        self.last_known_client_movement = DVec3::ZERO;
+    }
+
+    /// Returns the last accepted client movement vector.
+    #[must_use]
+    pub(super) const fn last_known_client_movement(&self) -> DVec3 {
+        self.last_known_client_movement
+    }
+
+    /// Selects and records the player movement sync form.
+    pub(super) fn record_position_sync(
+        &mut self,
+        position: DVec3,
+        on_ground: bool,
+    ) -> EntityPositionSyncDecision {
+        let delay = self.position_sync.advance_sync_delay();
+        let on_ground_changed = self.position_sync.last_sent_on_ground() != on_ground;
+        let force_full = delay > PLAYER_FULL_SYNC_DELAY || on_ground_changed;
+        self.position_sync
+            .record_movement_sync(position, on_ground, force_full)
+    }
+
+    /// Records the last rotation broadcast to tracking clients.
+    pub(super) const fn mark_rotation_sent(&mut self, rotation: (f32, f32)) {
+        self.prev_rotation = rotation;
+    }
 }
 
 #[cfg(test)]
@@ -57,6 +145,37 @@ mod tests {
     #[test]
     fn movement_state_starts_with_zero_known_client_movement() {
         let state = MovementState::new();
-        assert_eq!(state.last_known_client_movement, DVec3::ZERO);
+        assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn tick_reset_updates_both_good_positions_and_packet_base() {
+        let mut state = MovementState::new();
+        state.mark_last_good_position(DVec3::new(1.0, 2.0, 3.0));
+        state.record_move_packet_delta();
+        state.record_move_packet_delta();
+
+        state.reset_for_tick(DVec3::new(4.0, 5.0, 6.0));
+
+        assert_eq!(
+            state.good_positions(),
+            (DVec3::new(4.0, 5.0, 6.0), DVec3::new(4.0, 5.0, 6.0))
+        );
+        assert_eq!(state.record_move_packet_delta(), 1);
+    }
+
+    #[test]
+    fn position_sync_reset_clears_packet_counts_and_known_movement() {
+        let mut state = MovementState::new();
+        state.record_move_packet_delta();
+        state.set_last_known_client_movement(DVec3::new(0.1, 0.0, 0.0));
+
+        state.reset_for_position_sync(DVec3::new(2.0, 3.0, 4.0), true);
+
+        assert_eq!(state.last_sent_position(), DVec3::new(2.0, 3.0, 4.0));
+        assert_eq!(state.good_positions().0, DVec3::new(2.0, 3.0, 4.0));
+        assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
+        assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
+        assert_eq!(state.record_move_packet_delta(), 1);
     }
 }
