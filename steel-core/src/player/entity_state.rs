@@ -6,19 +6,45 @@
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_attributes;
-use steel_utils::Identifier;
+use steel_utils::types::GameType;
+use steel_utils::{Identifier, WorldAabb};
 
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::{EntitySharedFlags, LivingEntity};
+use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
 
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
+const POSE_COLLISION_EPSILON: f64 = 1.0E-7;
 
 const PLAYER_STANDING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.8, 1.62);
 const PLAYER_CROUCHING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 1.5, 1.27);
 const PLAYER_SWIMMING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 0.6, 0.4);
 const PLAYER_SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
 const PLAYER_DYING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 1.62);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PoseFit {
+    spectator: bool,
+    desired_pose: bool,
+    crouching: bool,
+    swimming: bool,
+}
+
+#[must_use]
+const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<EntityPose> {
+    if !fit.swimming {
+        return None;
+    }
+
+    if fit.spectator || fit.desired_pose {
+        Some(desired_pose)
+    } else if fit.crouching {
+        Some(EntityPose::Sneaking)
+    } else {
+        Some(EntityPose::Swimming)
+    }
+}
 
 /// Physical state flags for a player entity.
 pub(super) struct EntityState {
@@ -103,6 +129,32 @@ impl Player {
         self.entity_state.lock().snapshot()
     }
 
+    #[must_use]
+    fn bounding_box_for_pose(&self, pose: EntityPose) -> WorldAabb {
+        let position = self.base.position();
+        let dimensions = Self::dimensions_for_pose(pose);
+        WorldAabb::entity_box(
+            position.x,
+            position.y,
+            position.z,
+            f64::from(dimensions.half_width()),
+            f64::from(dimensions.height),
+        )
+    }
+
+    #[must_use]
+    fn can_player_fit_within_blocks_when(&self, pose: EntityPose) -> bool {
+        let world = self.get_world();
+        let collision_world = WorldCollisionProvider::new(&world);
+        collision_world
+            .get_block_collisions(
+                &self
+                    .bounding_box_for_pose(pose)
+                    .deflate(POSE_COLLISION_EPSILON),
+            )
+            .is_empty()
+    }
+
     pub(super) fn reset_entity_state(&self) {
         self.entity_state.lock().reset_transient();
     }
@@ -163,7 +215,6 @@ impl Player {
     /// Priority: `Sleeping` > `FallFlying` > `Sneaking` > `Standing`
     // TODO: Add Swimming pose (requires water detection)
     // TODO: Add SpinAttack pose (requires riptide trident)
-    // TODO: Add pose collision checks (force crouch in low ceilings)
     pub(super) fn get_desired_pose(&self) -> EntityPose {
         let es = self.entity_state.lock();
         if es.sleeping {
@@ -179,10 +230,33 @@ impl Player {
 
     /// Updates the player's pose in entity data based on current state.
     pub(super) fn update_pose(&self) {
+        if !self.can_player_fit_within_blocks_when(EntityPose::Swimming) {
+            return;
+        }
+
         let desired_pose = self.get_desired_pose();
+        let is_spectator = self.game_mode() == GameType::Spectator;
+        let fits_desired_pose =
+            is_spectator || self.can_player_fit_within_blocks_when(desired_pose);
+        let fits_crouching =
+            !fits_desired_pose && self.can_player_fit_within_blocks_when(EntityPose::Sneaking);
+
+        let Some(actual_pose) = select_actual_pose(
+            desired_pose,
+            PoseFit {
+                spectator: is_spectator,
+                desired_pose: fits_desired_pose,
+                crouching: fits_crouching,
+                swimming: true,
+            },
+        ) else {
+            return;
+        };
+
+        // TODO: Include the passenger exemption and blocking entities once those systems exist.
         self.base
-            .set_pose_and_dimensions(desired_pose, Self::dimensions_for_pose(desired_pose));
-        self.entity_data.lock().base_mut().pose.set(desired_pose);
+            .set_pose_and_dimensions(actual_pose, Self::dimensions_for_pose(actual_pose));
+        self.entity_data.lock().base_mut().pose.set(actual_pose);
     }
 
     /// Adds or removes the sprint speed modifier on `MOVEMENT_SPEED`.
@@ -242,6 +316,70 @@ mod tests {
         assert_eq!(
             Player::dimensions_for_pose(EntityPose::Dying),
             EntityDimensions::new(0.2, 0.2, 1.62)
+        );
+    }
+
+    #[test]
+    fn player_pose_selection_keeps_pose_when_swimming_cannot_fit() {
+        assert_eq!(
+            select_actual_pose(
+                EntityPose::Standing,
+                PoseFit {
+                    spectator: false,
+                    desired_pose: true,
+                    crouching: true,
+                    swimming: false,
+                },
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn player_pose_selection_allows_spectator_desired_pose() {
+        assert_eq!(
+            select_actual_pose(
+                EntityPose::Standing,
+                PoseFit {
+                    spectator: true,
+                    desired_pose: false,
+                    crouching: false,
+                    swimming: true,
+                },
+            ),
+            Some(EntityPose::Standing)
+        );
+    }
+
+    #[test]
+    fn player_pose_selection_falls_back_to_crouching_when_desired_pose_is_blocked() {
+        assert_eq!(
+            select_actual_pose(
+                EntityPose::Standing,
+                PoseFit {
+                    spectator: false,
+                    desired_pose: false,
+                    crouching: true,
+                    swimming: true,
+                },
+            ),
+            Some(EntityPose::Sneaking)
+        );
+    }
+
+    #[test]
+    fn player_pose_selection_falls_back_to_swimming_when_crouching_is_blocked() {
+        assert_eq!(
+            select_actual_pose(
+                EntityPose::Standing,
+                PoseFit {
+                    spectator: false,
+                    desired_pose: false,
+                    crouching: false,
+                    swimming: true,
+                },
+            ),
+            Some(EntityPose::Swimming)
         );
     }
 }
