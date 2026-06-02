@@ -120,6 +120,11 @@ pub trait Entity: Send + Sync {
         self.base().position()
     }
 
+    /// Gets the entity position used by vanilla movement traces.
+    fn old_position(&self) -> DVec3 {
+        self.base().old_position()
+    }
+
     /// Gets the entity's bounding box for collision queries.
     fn bounding_box(&self) -> WorldAabb {
         self.base().bounding_box()
@@ -309,6 +314,16 @@ pub trait Entity: Send + Sync {
     /// Sets the entity's position.
     fn set_position(&self, pos: DVec3) {
         self.base().set_position(pos);
+    }
+
+    /// Sets the vanilla movement-trace old position to the current position.
+    fn set_old_position_to_current(&self) {
+        self.base().set_old_position_to_current();
+    }
+
+    /// Sets the vanilla movement-trace old position explicitly.
+    fn set_old_position(&self, old_position: DVec3) {
+        self.base().set_old_position(old_position);
     }
 
     /// Returns the block position this entity is standing on.

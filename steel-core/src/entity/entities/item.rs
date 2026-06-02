@@ -742,8 +742,9 @@ impl Entity for ItemEntity {
             return;
         }
 
-        // Store old position for merge rate calculation (vanilla: xo, yo, zo)
-        let old_pos = self.position();
+        // Vanilla item tick stores previous position before applying movement.
+        self.set_old_position_to_current();
+        let old_pos = self.old_position();
         // Store old movement for needsSync check (vanilla: ItemEntity.tick line 98)
         let old_movement = self.velocity();
         // Store old on_ground to detect changes (triggers immediate sync)

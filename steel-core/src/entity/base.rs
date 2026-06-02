@@ -216,6 +216,7 @@ impl EntityGroundContact {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityBaseState {
     position: DVec3,
+    old_position: DVec3,
     velocity: DVec3,
     rotation: (f32, f32),
     pose: EntityPose,
@@ -235,6 +236,7 @@ impl EntityBaseState {
     pub fn new(position: DVec3, dimensions: EntityDimensions) -> Self {
         Self {
             position,
+            old_position: position,
             velocity: DVec3::ZERO,
             rotation: (0.0, 0.0),
             pose: EntityPose::Standing,
@@ -280,6 +282,13 @@ impl EntityBaseState {
     #[must_use]
     pub const fn with_velocity(mut self, velocity: DVec3) -> Self {
         self.velocity = velocity;
+        self
+    }
+
+    /// Sets previous position on this state snapshot.
+    #[must_use]
+    pub const fn with_old_position(mut self, old_position: DVec3) -> Self {
+        self.old_position = old_position;
         self
     }
 
@@ -487,6 +496,12 @@ impl EntityBase {
         self.state.lock().position
     }
 
+    /// Gets the entity position used by vanilla movement traces.
+    #[inline]
+    pub fn old_position(&self) -> DVec3 {
+        self.state.lock().old_position
+    }
+
     /// Gets the entity's current bounding box.
     #[inline]
     pub fn bounding_box(&self) -> WorldAabb {
@@ -634,6 +649,17 @@ impl EntityBase {
             old
         };
         self.level_callback.lock().on_move(old_pos, pos);
+    }
+
+    /// Sets the vanilla movement-trace old position to the current position.
+    pub fn set_old_position_to_current(&self) {
+        let mut state = self.state.lock();
+        state.old_position = state.position;
+    }
+
+    /// Sets the vanilla movement-trace old position explicitly.
+    pub fn set_old_position(&self, old_position: DVec3) {
+        self.state.lock().old_position = old_position;
     }
 
     /// Sets the entity's bounding box directly.
@@ -905,6 +931,26 @@ mod tests {
         assert!(!base.no_physics());
         base.set_no_physics(true);
         assert!(base.no_physics());
+    }
+
+    #[test]
+    fn old_position_is_explicit_movement_trace_state() {
+        let base = EntityBase::new(
+            1,
+            DVec3::new(1.0, 2.0, 3.0),
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        assert_vec3_close(base.old_position(), DVec3::new(1.0, 2.0, 3.0));
+        base.set_position(DVec3::new(4.0, 5.0, 6.0));
+        assert_vec3_close(base.position(), DVec3::new(4.0, 5.0, 6.0));
+        assert_vec3_close(base.old_position(), DVec3::new(1.0, 2.0, 3.0));
+
+        base.set_old_position_to_current();
+        assert_vec3_close(base.old_position(), DVec3::new(4.0, 5.0, 6.0));
+        base.set_old_position(DVec3::new(7.0, 8.0, 9.0));
+        assert_vec3_close(base.old_position(), DVec3::new(7.0, 8.0, 9.0));
     }
 
     #[test]

@@ -46,6 +46,7 @@ impl RawEntity {
     pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
         self.set_position(position);
         self.base.set_rotation((yaw, pitch));
+        self.set_old_position_to_current();
     }
 
     /// Marks a raw mob as persistent when vanilla structure generation would do so.

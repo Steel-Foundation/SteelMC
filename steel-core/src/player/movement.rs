@@ -556,6 +556,7 @@ impl Player {
 
         self.set_position(pos);
         self.set_rotation((yaw, pitch));
+        self.set_old_position_to_current();
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
     }
@@ -568,6 +569,7 @@ impl Player {
 
         if let Some(pos) = tp.try_accept(packet.teleport_id) {
             self.set_position(pos);
+            self.set_old_position_to_current();
             self.movement.lock().last_good_position = pos;
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);

@@ -1020,6 +1020,7 @@ impl Player {
         // Set position and rotation
         self.set_position(position);
         self.set_rotation(rotation);
+        self.set_old_position_to_current();
         {
             let mut mv = self.movement.lock();
             mv.position_sync = EntityPositionSyncState::new(position, self.on_ground());
