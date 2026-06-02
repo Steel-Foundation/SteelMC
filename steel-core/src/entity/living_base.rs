@@ -5,7 +5,6 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
-use crossbeam::atomic::AtomicCell;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_attributes;
 use steel_utils::locks::SyncMutex;
@@ -21,15 +20,17 @@ struct LivingEntityState {
     invulnerable_time: i32,
     last_hurt: f32,
     death_time: i32,
+    speed: f32,
 }
 
 impl LivingEntityState {
-    const fn new() -> Self {
+    const fn new(speed: f32) -> Self {
         Self {
             death_processed: false,
             invulnerable_time: 0,
             last_hurt: 0.0,
             death_time: 0,
+            speed,
         }
     }
 
@@ -52,7 +53,6 @@ impl LivingEntityState {
 pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
-    speed: AtomicCell<f32>,
 }
 
 impl LivingEntityBase {
@@ -70,9 +70,8 @@ impl LivingEntityBase {
             .unwrap_or(0.1) as f32;
 
         Self {
-            state: SyncMutex::new(LivingEntityState::new()),
+            state: SyncMutex::new(LivingEntityState::new(speed)),
             attributes: SyncMutex::new(attributes),
-            speed: AtomicCell::new(speed),
         }
     }
 
@@ -85,13 +84,13 @@ impl LivingEntityBase {
     /// Gets the cached movement speed used by living movement code.
     #[inline]
     pub fn speed(&self) -> f32 {
-        self.speed.load()
+        self.state.lock().speed
     }
 
     /// Sets the cached movement speed used by living movement code.
     #[inline]
     pub fn set_speed(&self, speed: f32) {
-        self.speed.store(speed);
+        self.state.lock().speed = speed;
     }
 
     /// Refreshes the cached movement speed from the `MOVEMENT_SPEED` attribute.
@@ -101,7 +100,7 @@ impl LivingEntityBase {
             .lock()
             .get_value(vanilla_attributes::MOVEMENT_SPEED)
         {
-            self.speed.store(speed as f32);
+            self.state.lock().speed = speed as f32;
         }
     }
 
