@@ -405,6 +405,14 @@ pub trait Entity: Send + Sync {
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
     fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
+        let mut movement = delta;
+        if mover_type == MoverType::Piston {
+            let game_time = world.level_data.read().game_time();
+            movement = self.base().limit_piston_movement(movement, game_time);
+            if movement == DVec3::ZERO {
+                return None;
+            }
+        }
 
         // Build physics state
         let mut physics_state = EntityPhysicsState::with_dimensions(
@@ -418,7 +426,8 @@ pub trait Entity: Send + Sync {
 
         // Perform collision detection and movement
         let collision_world = WorldCollisionProvider::new(&world);
-        let result = resolve_entity_movement(&physics_state, delta, mover_type, &collision_world);
+        let result =
+            resolve_entity_movement(&physics_state, movement, mover_type, &collision_world);
 
         // Update entity state
         self.set_position(result.final_position);
@@ -426,7 +435,7 @@ pub trait Entity: Send + Sync {
             result.on_ground,
             result.horizontal_collision,
             result.vertical_collision,
-            delta,
+            movement,
         );
         let ground_contact =
             self.ground_contact_after_movement(result.on_ground, Some(result.actual_movement));

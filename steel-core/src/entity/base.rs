@@ -17,6 +17,10 @@ use uuid::Uuid;
 use crate::entity::{EntityLevelCallback, NullEntityCallback, RemovalReason};
 use crate::world::World;
 
+const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
+const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
+const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
+
 /// Vanilla collision and ground-contact flags updated by `Entity.move`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityMovementFlags {
@@ -103,6 +107,58 @@ impl Default for EntityMovementFlags {
     }
 }
 
+/// Per-tick piston movement accumulated by vanilla `Entity.limitPistonMovement`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct EntityPistonMovement {
+    deltas: [f64; 3],
+    game_time: i64,
+}
+
+impl EntityPistonMovement {
+    const fn new() -> Self {
+        Self {
+            deltas: [0.0; 3],
+            game_time: 0,
+        }
+    }
+
+    fn limit_movement(&mut self, movement: DVec3, current_game_time: i64) -> DVec3 {
+        if movement.length_squared() <= PISTON_ZERO_MOVEMENT_EPSILON {
+            return movement;
+        }
+
+        if current_game_time != self.game_time {
+            self.deltas = [0.0; 3];
+            self.game_time = current_game_time;
+        }
+
+        if movement.x != 0.0 {
+            return self.apply_axis_restriction(0, movement.x, DVec3::X);
+        }
+        if movement.y != 0.0 {
+            return self.apply_axis_restriction(1, movement.y, DVec3::Y);
+        }
+        if movement.z != 0.0 {
+            return self.apply_axis_restriction(2, movement.z, DVec3::Z);
+        }
+
+        DVec3::ZERO
+    }
+
+    fn apply_axis_restriction(&mut self, axis: usize, amount: f64, unit: DVec3) -> DVec3 {
+        let limited =
+            (amount + self.deltas[axis]).clamp(-PISTON_MOVEMENT_LIMIT, PISTON_MOVEMENT_LIMIT);
+        let applied = limited - self.deltas[axis];
+        self.deltas[axis] = limited;
+
+        if applied.abs() <= PISTON_APPLIED_MOVEMENT_EPSILON {
+            DVec3::ZERO
+        } else {
+            unit * applied
+        }
+    }
+}
+
 /// Vanilla ground-support state updated by `Entity.checkSupportingBlock`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EntityGroundContact {
@@ -158,6 +214,7 @@ pub struct EntityBaseState {
     bounding_box: WorldAabb,
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
+    piston_movement: EntityPistonMovement,
 }
 
 impl EntityBaseState {
@@ -173,6 +230,7 @@ impl EntityBaseState {
             bounding_box: Self::make_bounding_box(position, dimensions),
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
+            piston_movement: EntityPistonMovement::new(),
         }
     }
 
@@ -540,6 +598,14 @@ impl EntityBase {
         state.ground_contact = ground_contact;
     }
 
+    /// Applies vanilla per-tick piston movement accumulation.
+    pub fn limit_piston_movement(&self, movement: DVec3, current_game_time: i64) -> DVec3 {
+        self.state
+            .lock()
+            .piston_movement
+            .limit_movement(movement, current_game_time)
+    }
+
     /// Checks if this entity was already ticked during the given server tick.
     #[inline]
     pub fn was_ticked_this_tick(&self, server_tick: i32) -> bool {
@@ -550,5 +616,69 @@ impl EntityBase {
     #[inline]
     pub fn mark_ticked(&self, server_tick: i32) {
         self.last_world_tick.store(server_tick, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EntityPistonMovement;
+    use glam::DVec3;
+
+    fn assert_vec3_close(left: DVec3, right: DVec3) {
+        let diff = left - right;
+        assert!(
+            diff.length_squared() < 1.0e-24,
+            "expected {left:?} to equal {right:?}"
+        );
+    }
+
+    #[test]
+    fn piston_movement_is_limited_per_axis_per_tick() {
+        let mut piston_movement = EntityPistonMovement::new();
+
+        assert_vec3_close(
+            piston_movement.limit_movement(DVec3::new(0.4, 0.0, 0.0), 10),
+            DVec3::new(0.4, 0.0, 0.0),
+        );
+        assert_vec3_close(
+            piston_movement.limit_movement(DVec3::new(0.4, 0.0, 0.0), 10),
+            DVec3::new(0.11, 0.0, 0.0),
+        );
+        assert_vec3_close(
+            piston_movement.limit_movement(DVec3::new(0.4, 0.0, 0.0), 10),
+            DVec3::ZERO,
+        );
+    }
+
+    #[test]
+    fn piston_movement_resets_each_game_tick() {
+        let mut piston_movement = EntityPistonMovement::new();
+
+        assert_vec3_close(
+            piston_movement.limit_movement(DVec3::new(0.51, 0.0, 0.0), 10),
+            DVec3::new(0.51, 0.0, 0.0),
+        );
+        assert_vec3_close(
+            piston_movement.limit_movement(DVec3::new(0.51, 0.0, 0.0), 11),
+            DVec3::new(0.51, 0.0, 0.0),
+        );
+    }
+
+    #[test]
+    fn piston_movement_uses_first_non_zero_axis() {
+        let mut piston_movement = EntityPistonMovement::new();
+
+        assert_vec3_close(
+            piston_movement.limit_movement(DVec3::new(0.2, 0.2, 0.2), 10),
+            DVec3::new(0.2, 0.0, 0.0),
+        );
+    }
+
+    #[test]
+    fn piston_movement_keeps_sub_threshold_movement() {
+        let mut piston_movement = EntityPistonMovement::new();
+        let movement = DVec3::new(0.0, 0.0, 1.0e-4);
+
+        assert_vec3_close(piston_movement.limit_movement(movement, 10), movement);
     }
 }
