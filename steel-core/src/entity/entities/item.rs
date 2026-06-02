@@ -767,11 +767,6 @@ impl Entity for ItemEntity {
             return;
         }
 
-        let current_pos = self.position();
-
-        // Determine chunk for broadcasting
-        let chunk_pos = steel_utils::ChunkPos::from_entity_pos(current_pos);
-
         // Vanilla sends velocity BEFORE position (ServerEntity.sendChanges lines 168-182).
         // Items have trackDelta=true, so we ALWAYS check velocity when in the update window.
         //
@@ -780,17 +775,17 @@ impl Entity for ItemEntity {
         // gravity in deltaMovement. We MUST send CSetEntityMotion to override the client's
         // deltaMovement, otherwise the client's accumulated gravity causes visual desync.
         if let Some(vel_packet) = self.check_velocity_sync() {
-            world.broadcast_to_nearby(chunk_pos, vel_packet, None);
+            world.broadcast_to_entity_trackers(self.id(), vel_packet, None);
         }
 
         // Send position update if needed (vanilla: ServerEntity.sendChanges line 182)
         if let Some(packet) = self.check_position_sync(tick_count) {
-            match &packet {
-                EntityPositionSyncPacket::Delta(p) => {
-                    world.broadcast_to_nearby(chunk_pos, p.clone(), None);
+            match packet {
+                EntityPositionSyncPacket::Delta(packet) => {
+                    world.broadcast_to_entity_trackers(self.id(), packet, None);
                 }
-                EntityPositionSyncPacket::Full(p) => {
-                    world.broadcast_to_nearby(chunk_pos, p.clone(), None);
+                EntityPositionSyncPacket::Full(packet) => {
+                    world.broadcast_to_entity_trackers(self.id(), packet, None);
                 }
             }
         }

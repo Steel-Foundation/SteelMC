@@ -1477,6 +1477,38 @@ impl World {
         }
     }
 
+    /// Broadcasts a packet to players currently tracking an entity.
+    pub fn broadcast_to_entity_trackers<P: ClientPacket>(
+        &self,
+        entity_id: i32,
+        packet: P,
+        exclude: Option<i32>,
+    ) {
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            return;
+        };
+        self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+    }
+
+    /// Broadcasts an already-encoded packet to players currently tracking an entity.
+    pub fn broadcast_to_entity_trackers_encoded(
+        &self,
+        entity_id: i32,
+        packet: EncodedPacket,
+        exclude: Option<i32>,
+    ) {
+        for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
+            if Some(player_id) == exclude {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(player_id) {
+                player.connection.send_encoded(packet.clone());
+            }
+        }
+    }
+
     /// Saves all dirty chunks in this world to disk.
     ///
     /// This should be called during graceful shutdown.

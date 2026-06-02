@@ -105,7 +105,7 @@ impl EntityStorage {
     /// Uses `tick_count` to prevent double-ticking: if an entity moves to a
     /// different chunk during its tick and that chunk is ticked later in the
     /// same server tick, the entity will be skipped.
-    pub fn tick(&self, world: &Arc<World>, chunk_pos: ChunkPos, tick_count: i32) -> bool {
+    pub fn tick(&self, world: &Arc<World>, _chunk_pos: ChunkPos, tick_count: i32) -> bool {
         // Clone to avoid holding lock during tick
         let entities: Vec<SharedEntity> = self.entities.read().values().cloned().collect();
 
@@ -137,7 +137,7 @@ impl EntityStorage {
             // Broadcast dirty entity data (base tick behavior)
             if let Some(dirty_data) = entity.pack_dirty_entity_data() {
                 let packet = CSetEntityData::new(entity.id(), dirty_data);
-                world.broadcast_to_nearby(chunk_pos, packet, None);
+                world.broadcast_to_entity_trackers(entity.id(), packet, None);
             }
         }
 

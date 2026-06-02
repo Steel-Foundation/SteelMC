@@ -326,6 +326,16 @@ impl EntityTracker {
         self.entities.len()
     }
 
+    /// Returns players currently tracking an entity.
+    #[must_use]
+    pub fn tracking_player_ids(&self, entity_id: i32) -> Vec<i32> {
+        self.entities
+            .read_sync(&entity_id, |_, tracked| {
+                tracked.seen_by.read().iter().copied().collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn add_entity_to_chunk(&self, chunk: ChunkPos, entity_id: i32) {
         if self
             .chunks
