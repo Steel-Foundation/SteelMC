@@ -321,7 +321,7 @@ impl Player {
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
-                data.avatar.living_entity.health.set(max_health);
+                data.living_entity_mut().health.set(max_health);
                 data
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
@@ -790,16 +790,10 @@ impl Player {
         {
             let mut entity_data = self.entity_data.lock();
             entity_data
-                .avatar
-                .living_entity
+                .living_entity_mut()
                 .health
                 .set(self.get_max_health());
-            entity_data
-                .avatar
-                .living_entity
-                .base
-                .pose
-                .set(EntityPose::Standing);
+            entity_data.base_mut().pose.set(EntityPose::Standing);
         }
 
         // Reset food data to defaults
@@ -1154,6 +1148,10 @@ impl Entity for Player {
         f64::from(self.current_dimensions().eye_height)
     }
 
+    fn is_no_gravity(&self) -> bool {
+        *self.entity_data.lock().base().no_gravity.get()
+    }
+
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
         // Delegates to Player's inherent hurt method which handles
         // invulnerability, armor, death, and network packets.
@@ -1182,7 +1180,7 @@ impl Entity for Player {
 
 impl LivingEntity for Player {
     fn get_health(&self) -> f32 {
-        *self.entity_data.lock().avatar.living_entity.health.get()
+        *self.entity_data.lock().living_entity().health.get()
     }
 
     fn set_health(&self, health: f32) {
@@ -1190,8 +1188,7 @@ impl LivingEntity for Player {
         let clamped = health.clamp(0.0, max_health);
         self.entity_data
             .lock()
-            .avatar
-            .living_entity
+            .living_entity_mut()
             .health
             .set(clamped);
     }

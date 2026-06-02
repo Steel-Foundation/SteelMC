@@ -151,9 +151,7 @@ impl Player {
 
         self.entity_data
             .lock()
-            .avatar
-            .living_entity
-            .base
+            .base_mut()
             .shared_flags
             .set(flags.bits() as i8);
     }
@@ -201,13 +199,7 @@ impl Player {
     /// Updates the player's pose in entity data based on current state.
     pub(super) fn update_pose(&self) {
         let desired_pose = self.get_desired_pose();
-        self.entity_data
-            .lock()
-            .avatar
-            .living_entity
-            .base
-            .pose
-            .set(desired_pose);
+        self.entity_data.lock().base_mut().pose.set(desired_pose);
     }
 
     /// Adds or removes the sprint speed modifier on `MOVEMENT_SPEED`.

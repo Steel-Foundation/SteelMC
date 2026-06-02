@@ -468,6 +468,71 @@ fn parent_field_ident(simple_name: &str) -> Ident {
     Ident::new(&field_name, Span::call_site())
 }
 
+fn layer_accessor_methods(
+    root_layer: &LayerDefinition,
+    layer_indices: &HashMap<&str, usize>,
+    layers: &[LayerDefinition],
+    root_expr: TokenStream,
+    root_is_self: bool,
+) -> Vec<TokenStream> {
+    let mut methods = Vec::new();
+    let mut current_layer = root_layer;
+    let mut path = root_expr;
+    let mut is_self_path = root_is_self;
+
+    loop {
+        let accessor_ident = parent_field_ident(&current_layer.simple_name);
+        let accessor_mut_ident = Ident::new(&format!("{accessor_ident}_mut"), Span::call_site());
+        let struct_ident = data_struct_ident(&current_layer.simple_name);
+        let doc = format!(
+            "Returns the `{}` layer.",
+            data_struct_name(&current_layer.simple_name)
+        );
+        let doc_mut = format!(
+            "Returns the mutable `{}` layer.",
+            data_struct_name(&current_layer.simple_name)
+        );
+        let ref_path = path.clone();
+        let mut_path = path.clone();
+        let ref_body = if is_self_path {
+            quote! { self }
+        } else {
+            quote! { &#ref_path }
+        };
+        let mut_body = if is_self_path {
+            quote! { self }
+        } else {
+            quote! { &mut #mut_path }
+        };
+
+        methods.push(quote! {
+            #[doc = #doc]
+            pub fn #accessor_ident(&self) -> &#struct_ident {
+                #ref_body
+            }
+
+            #[doc = #doc_mut]
+            pub fn #accessor_mut_ident(&mut self) -> &mut #struct_ident {
+                #mut_body
+            }
+        });
+
+        let Some(parent_java_class) = current_layer.parent_java_class.as_ref() else {
+            break;
+        };
+        let parent_index = layer_indices
+            .get(parent_java_class.as_str())
+            .unwrap_or_else(|| panic!("Missing parent entity data layer: {parent_java_class}"));
+        let parent_layer = &layers[*parent_index];
+        let parent_field_ident = parent_field_ident(&parent_layer.simple_name);
+        path = quote! { #path.#parent_field_ident };
+        is_self_path = false;
+        current_layer = parent_layer;
+    }
+
+    methods
+}
+
 fn collect_layers(entities: &[EntityEntry]) -> Vec<LayerDefinition> {
     let mut layer_indices = HashMap::new();
     let mut layers = Vec::new();
@@ -739,6 +804,8 @@ pub(crate) fn build() -> TokenStream {
                 data
             }
         };
+        let layer_accessors =
+            layer_accessor_methods(layer, &layer_indices, &layers, quote! { self }, true);
 
         // Generate the struct
         stream.extend(quote! {
@@ -753,6 +820,8 @@ pub(crate) fn build() -> TokenStream {
                 pub fn new() -> Self {
                     #new_body
                 }
+
+                #(#layer_accessors)*
 
                 /// Pack all dirty values for network sync, clearing dirty flags.
                 /// Returns `None` if no values are dirty.
@@ -812,6 +881,18 @@ pub(crate) fn build() -> TokenStream {
         let layer_ident = data_struct_ident(&last_layer.simple_name);
         let root_field_ident = parent_field_ident(&last_layer.simple_name);
         let overrides = concrete_default_overrides(entity, &layer_indices, &layers);
+        let layer_accessors = {
+            let root_expr = quote! { self.#root_field_ident };
+            layer_accessor_methods(
+                &layers[*layer_indices
+                    .get(last_layer.java_class.as_str())
+                    .unwrap_or_else(|| panic!("Missing layer {}", last_layer.java_class))],
+                &layer_indices,
+                &layers,
+                root_expr,
+                false,
+            )
+        };
         let doc = format!(
             "Concrete synchronized entity data for vanilla entity `{}`.",
             entity.name
@@ -844,6 +925,8 @@ pub(crate) fn build() -> TokenStream {
                 pub fn new() -> Self {
                     #new_body
                 }
+
+                #(#layer_accessors)*
 
                 /// Pack all dirty values for network sync, clearing dirty flags.
                 /// Returns `None` if no values are dirty.
