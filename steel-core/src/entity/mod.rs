@@ -108,7 +108,9 @@ pub trait Entity: Send + Sync {
     }
 
     /// Gets the entity's bounding box for collision queries.
-    fn bounding_box(&self) -> WorldAabb;
+    fn bounding_box(&self) -> WorldAabb {
+        self.base().bounding_box()
+    }
 
     /// Called every game tick when the entity is in a ticked chunk.
     ///
@@ -196,7 +198,7 @@ pub trait Entity: Send + Sync {
     /// Default implementation returns the eye height from the entity type dimensions.
     /// Override for entities with pose-dependent eye heights (e.g., players).
     fn get_eye_height(&self) -> f64 {
-        f64::from(self.entity_type().dimensions.eye_height)
+        f64::from(self.base().dimensions().eye_height)
     }
 
     /// Gets the Y coordinate of the entity's eyes.
@@ -281,11 +283,10 @@ pub trait Entity: Send + Sync {
         let velocity = self.velocity();
 
         // Build physics state
-        let mut physics_state = EntityPhysicsState::new(self.position(), self.entity_type());
+        let mut physics_state =
+            EntityPhysicsState::with_dimensions(self.position(), self.base().dimensions(), 0.0);
         physics_state.velocity = velocity;
         physics_state.on_ground = self.on_ground();
-        // Most entities don't step up; override for entities that do
-        physics_state.max_up_step = 0.0;
         physics_state.is_crouching = false;
 
         // Perform collision detection and movement

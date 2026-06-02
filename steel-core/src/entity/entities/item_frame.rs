@@ -36,8 +36,12 @@ impl ItemFrameEntity {
         let entity = Self {
             base: EntityBase::new_with_state(
                 id,
-                EntityBaseState::new(Self::frame_center(block_pos, direction))
-                    .with_rotation(Self::rotation_for_direction(direction)),
+                EntityBaseState::new_with_bounding_box(
+                    Self::frame_center(block_pos, direction),
+                    vanilla_entities::ITEM_FRAME.dimensions,
+                    Self::frame_bounding_box(block_pos, direction, false),
+                )
+                .with_rotation(Self::rotation_for_direction(direction)),
                 world,
             ),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
@@ -65,7 +69,8 @@ impl ItemFrameEntity {
             base: EntityBase::with_uuid_and_state(
                 id,
                 uuid,
-                EntityBaseState::new(position).with_rotation(rotation),
+                EntityBaseState::new(position, vanilla_entities::ITEM_FRAME.dimensions)
+                    .with_rotation(rotation),
                 world,
             ),
             entity_data: SyncMutex::new(ItemFrameEntityData::new()),
@@ -100,7 +105,13 @@ impl ItemFrameEntity {
     fn recalculate_position(&self) {
         let block_pos = *self.block_pos.lock();
         let direction = *self.entity_data.lock().hanging_entity.direction.get();
-        self.set_position(Self::frame_center(block_pos, direction));
+        self.base
+            .set_position(Self::frame_center(block_pos, direction));
+        self.base.set_bounding_box(Self::frame_bounding_box(
+            block_pos,
+            direction,
+            self.has_framed_map(),
+        ));
     }
 
     fn has_framed_map(&self) -> bool {
@@ -128,22 +139,14 @@ impl ItemFrameEntity {
             (0.0, pitch)
         }
     }
-}
 
-impl Entity for ItemFrameEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM_FRAME
-    }
-
-    fn bounding_box(&self) -> WorldAabb {
-        let block_pos = *self.block_pos.lock();
-        let direction = *self.entity_data.lock().hanging_entity.direction.get();
+    fn frame_bounding_box(
+        block_pos: BlockPos,
+        direction: Direction,
+        has_framed_map: bool,
+    ) -> WorldAabb {
         let center = Self::frame_center(block_pos, direction);
-        let size = if self.has_framed_map() { 1.0 } else { 0.75 };
+        let size = if has_framed_map { 1.0 } else { 0.75 };
         let x_size = if direction.axis() == Axis::X {
             0.0625
         } else {
@@ -167,6 +170,16 @@ impl Entity for ItemFrameEntity {
             center.y + y_size / 2.0,
             center.z + z_size / 2.0,
         )
+    }
+}
+
+impl Entity for ItemFrameEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM_FRAME
     }
 
     fn spawn_data(&self) -> i32 {
@@ -232,6 +245,8 @@ impl Entity for ItemFrameEntity {
         if let Some(direction) = facing {
             self.set_direction(direction);
         }
+
+        self.recalculate_position();
     }
 }
 

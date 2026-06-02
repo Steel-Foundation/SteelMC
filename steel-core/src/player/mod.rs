@@ -89,8 +89,6 @@ use steel_protocol::packets::{
 use steel_registry::item_stack::ItemStack;
 
 use steel_utils::BlockPos;
-use steel_utils::WorldAabb;
-
 use steel_utils::ChunkPos;
 
 use crate::entity::LivingEntity;
@@ -316,7 +314,13 @@ impl Player {
             world: ArcSwap::new(world),
             server,
             config,
-            base: EntityBase::with_uuid(entity_id, player_uuid, pos, world_ref),
+            base: EntityBase::with_uuid(
+                entity_id,
+                player_uuid,
+                pos,
+                Self::dimensions_for_pose(EntityPose::Standing),
+                world_ref,
+            ),
             client_loaded: AtomicBool::new(false),
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
@@ -1123,18 +1127,6 @@ impl Entity for Player {
         &vanilla_entities::PLAYER
     }
 
-    fn bounding_box(&self) -> WorldAabb {
-        let pos = self.position();
-        let dimensions = self.current_dimensions();
-        WorldAabb::entity_box(
-            pos.x,
-            pos.y,
-            pos.z,
-            f64::from(dimensions.half_width()),
-            f64::from(dimensions.height),
-        )
-    }
-
     fn tick(&self) {
         // Player tick is handled separately by World::tick_game()
         // This is here for Entity trait compliance
@@ -1142,10 +1134,6 @@ impl Entity for Player {
 
     fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
         Some(self)
-    }
-
-    fn get_eye_height(&self) -> f64 {
-        f64::from(self.current_dimensions().eye_height)
     }
 
     fn is_no_gravity(&self) -> bool {

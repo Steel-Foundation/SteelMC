@@ -13,8 +13,8 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemEntityData;
+use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
@@ -142,7 +142,7 @@ impl ItemEntity {
         Self {
             base: EntityBase::new_with_state(
                 id,
-                EntityBaseState::new(position)
+                EntityBaseState::new(position, vanilla_entities::ITEM.dimensions)
                     .with_velocity(velocity)
                     .with_rotation((yaw, 0.0)),
                 world,
@@ -179,7 +179,7 @@ impl ItemEntity {
             base: EntityBase::with_uuid_and_state(
                 id,
                 uuid,
-                EntityBaseState::new(position)
+                EntityBaseState::new(position, vanilla_entities::ITEM.dimensions)
                     .with_velocity(velocity)
                     .with_rotation(rotation)
                     .with_on_ground(on_ground),
@@ -693,14 +693,6 @@ impl Entity for ItemEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
-    }
-
-    fn bounding_box(&self) -> WorldAabb {
-        let pos = self.position();
-        let dims = self.entity_type().dimensions;
-        let half_width = f64::from(dims.width) / 2.0;
-        let height = f64::from(dims.height);
-        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
     }
 
     fn tick(&self) {

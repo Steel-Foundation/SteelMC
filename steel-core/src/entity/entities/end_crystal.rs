@@ -10,7 +10,7 @@ use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
-use steel_utils::{BlockPos, WorldAabb, locks::SyncMutex};
+use steel_utils::{BlockPos, locks::SyncMutex};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseState};
@@ -32,7 +32,12 @@ impl EndCrystalEntity {
     #[must_use]
     pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
-            base: EntityBase::new(id, position, world),
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::END_CRYSTAL.dimensions,
+                world,
+            ),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
             invulnerable: AtomicBool::new(false),
         }
@@ -51,7 +56,8 @@ impl EndCrystalEntity {
             base: EntityBase::with_uuid_and_state(
                 id,
                 uuid,
-                EntityBaseState::new(position).with_rotation(rotation),
+                EntityBaseState::new(position, vanilla_entities::END_CRYSTAL.dimensions)
+                    .with_rotation(rotation),
                 world,
             ),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
@@ -110,14 +116,6 @@ impl Entity for EndCrystalEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::END_CRYSTAL
-    }
-
-    fn bounding_box(&self) -> WorldAabb {
-        let pos = self.position();
-        let dims = self.entity_type().dimensions;
-        let half_width = f64::from(dims.width) / 2.0;
-        let height = f64::from(dims.height);
-        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
     }
 
     fn tick(&self) {

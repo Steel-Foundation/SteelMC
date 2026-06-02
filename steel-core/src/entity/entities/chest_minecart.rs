@@ -9,8 +9,8 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
+use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{Identifier, WorldAabb};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseState};
@@ -33,7 +33,12 @@ impl ChestMinecartEntity {
     #[must_use]
     pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
-            base: EntityBase::new(id, position, world),
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::CHEST_MINECART.dimensions,
+                world,
+            ),
             first_tick: AtomicBool::new(true),
             loot_table: SyncMutex::new(None),
             loot_table_seed: AtomicI64::new(0),
@@ -55,7 +60,7 @@ impl ChestMinecartEntity {
             base: EntityBase::with_uuid_and_state(
                 id,
                 uuid,
-                EntityBaseState::new(position)
+                EntityBaseState::new(position, vanilla_entities::CHEST_MINECART.dimensions)
                     .with_velocity(velocity)
                     .with_rotation(rotation)
                     .with_on_ground(on_ground),
@@ -85,14 +90,6 @@ impl Entity for ChestMinecartEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::CHEST_MINECART
-    }
-
-    fn bounding_box(&self) -> WorldAabb {
-        let pos = self.position();
-        let dims = self.entity_type().dimensions;
-        let half_width = f64::from(dims.width) / 2.0;
-        let height = f64::from(dims.height);
-        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

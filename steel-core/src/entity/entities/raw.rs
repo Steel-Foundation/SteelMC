@@ -6,7 +6,7 @@ use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_utils::{WorldAabb, locks::SyncMutex};
+use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseState};
@@ -27,7 +27,7 @@ impl RawEntity {
     #[must_use]
     pub fn new(id: i32, position: DVec3, world: Weak<World>, entity_type: EntityTypeRef) -> Self {
         Self {
-            base: EntityBase::new(id, position, world),
+            base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             data: SyncMutex::new(NbtCompound::new()),
         }
@@ -53,7 +53,7 @@ impl RawEntity {
             base: EntityBase::with_uuid_and_state(
                 id,
                 uuid,
-                EntityBaseState::new(position)
+                EntityBaseState::new(position, entity_type.dimensions)
                     .with_velocity(velocity)
                     .with_rotation(rotation)
                     .with_on_ground(on_ground),
@@ -83,14 +83,6 @@ impl Entity for RawEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
-    }
-
-    fn bounding_box(&self) -> WorldAabb {
-        let pos = self.position();
-        let dims = self.entity_type().dimensions;
-        let half_width = f64::from(dims.width) / 2.0;
-        let height = f64::from(dims.height);
-        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
     }
 
     fn tick(&self) {

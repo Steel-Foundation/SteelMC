@@ -113,11 +113,6 @@ impl Player {
         }
     }
 
-    /// Returns the player's current pose-dependent dimensions.
-    pub(super) fn current_dimensions(&self) -> EntityDimensions {
-        Self::dimensions_for_pose(self.get_desired_pose())
-    }
-
     pub(super) fn entity_state_snapshot(&self) -> EntityStateSnapshot {
         self.entity_state.lock().snapshot()
     }
@@ -199,6 +194,8 @@ impl Player {
     /// Updates the player's pose in entity data based on current state.
     pub(super) fn update_pose(&self) {
         let desired_pose = self.get_desired_pose();
+        self.base
+            .set_pose_and_dimensions(desired_pose, Self::dimensions_for_pose(desired_pose));
         self.entity_data.lock().base_mut().pose.set(desired_pose);
     }
 

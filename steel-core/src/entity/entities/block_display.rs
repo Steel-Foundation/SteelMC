@@ -12,8 +12,8 @@ use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
+use steel_utils::BlockStateId;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockStateId, WorldAabb};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseState};
@@ -38,7 +38,12 @@ impl BlockDisplayEntity {
     #[must_use]
     pub fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self {
-            base: EntityBase::new(id, position, world),
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::BLOCK_DISPLAY.dimensions,
+                world,
+            ),
             entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
         }
     }
@@ -49,7 +54,13 @@ impl BlockDisplayEntity {
     #[must_use]
     pub fn with_uuid(id: i32, position: DVec3, uuid: Uuid, world: Weak<World>) -> Self {
         Self {
-            base: EntityBase::with_uuid(id, uuid, position, world),
+            base: EntityBase::with_uuid(
+                id,
+                uuid,
+                position,
+                vanilla_entities::BLOCK_DISPLAY.dimensions,
+                world,
+            ),
             entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
         }
     }
@@ -72,7 +83,7 @@ impl BlockDisplayEntity {
             base: EntityBase::with_uuid_and_state(
                 id,
                 uuid,
-                EntityBaseState::new(position)
+                EntityBaseState::new(position, vanilla_entities::BLOCK_DISPLAY.dimensions)
                     .with_velocity(velocity)
                     .with_rotation(rotation)
                     .with_on_ground(on_ground),
@@ -100,12 +111,6 @@ impl Entity for BlockDisplayEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::BLOCK_DISPLAY
-    }
-
-    fn bounding_box(&self) -> WorldAabb {
-        // Display entities have zero-size bounding boxes (no collision)
-        let pos = self.position();
-        WorldAabb::new(pos.x, pos.y, pos.z, pos.x, pos.y, pos.z)
     }
 
     fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
