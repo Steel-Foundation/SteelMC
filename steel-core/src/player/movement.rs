@@ -12,12 +12,11 @@ use steel_protocol::packets::game::{
     calc_delta, to_angle_byte,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::{vanilla_attributes, vanilla_entities};
 use steel_utils::types::GameType;
-use steel_utils::{BlockPos, ChunkPos, translations};
+use steel_utils::{BlockPos, ChunkPos, WorldAabb, translations};
 
 use crate::entity::LivingEntity;
 use crate::physics::{
@@ -62,13 +61,13 @@ pub const IMPULSE_GRACE_TICKS: i32 = 20;
 
 /// Creates a player bounding box at the given position.
 #[must_use]
-pub fn make_player_aabb(pos: DVec3) -> AABBd {
-    AABBd::entity_box(pos.x, pos.y, pos.z, PLAYER_WIDTH / 2.0, PLAYER_HEIGHT)
+pub fn make_player_aabb(pos: DVec3) -> WorldAabb {
+    WorldAabb::entity_box(pos.x, pos.y, pos.z, PLAYER_WIDTH / 2.0, PLAYER_HEIGHT)
 }
 
 /// Creates a player bounding box at the given position, deflated by the collision epsilon.
 #[must_use]
-pub fn make_player_aabb_deflated(pos: DVec3) -> AABBd {
+pub fn make_player_aabb_deflated(pos: DVec3) -> WorldAabb {
     make_player_aabb(pos).deflate(COLLISION_EPSILON)
 }
 
@@ -159,12 +158,12 @@ pub fn simulate_move(
 pub fn is_in_collision(world: &Arc<World>, pos: DVec3) -> bool {
     let aabb = make_player_aabb_deflated(pos);
 
-    let min_x = aabb.min_x.floor() as i32;
-    let max_x = aabb.max_x.ceil() as i32;
-    let min_y = aabb.min_y.floor() as i32;
-    let max_y = aabb.max_y.ceil() as i32;
-    let min_z = aabb.min_z.floor() as i32;
-    let max_z = aabb.max_z.ceil() as i32;
+    let min_x = aabb.min_x().floor() as i32;
+    let max_x = aabb.max_x().ceil() as i32;
+    let min_y = aabb.min_y().floor() as i32;
+    let max_y = aabb.max_y().ceil() as i32;
+    let min_z = aabb.min_z().floor() as i32;
+    let max_z = aabb.max_z().ceil() as i32;
 
     for bx in min_x..max_x {
         for by in min_y..max_y {
@@ -174,8 +173,8 @@ pub fn is_in_collision(world: &Arc<World>, pos: DVec3) -> bool {
                 let collision_shape = block_state.get_collision_shape();
 
                 for block_aabb in collision_shape {
-                    let world_aabb = block_aabb.at_block(bx, by, bz);
-                    if aabb.intersects_block_aabb(&world_aabb) {
+                    let world_aabb = block_aabb.at_block(block_pos);
+                    if aabb.intersects(world_aabb) {
                         return true;
                     }
                 }
@@ -921,11 +920,11 @@ mod tests {
         let pos = DVec3::new(0.0, 64.0, 0.0);
         let aabb = make_player_aabb(pos);
 
-        assert!((aabb.min_x - (-0.3)).abs() < 0.001);
-        assert!((aabb.max_x - 0.3).abs() < 0.001);
-        assert!((aabb.min_y - 64.0).abs() < 0.001);
-        assert!((aabb.max_y - 65.8).abs() < 0.001);
-        assert!((aabb.min_z - (-0.3)).abs() < 0.001);
-        assert!((aabb.max_z - 0.3).abs() < 0.001);
+        assert!((aabb.min_x() - (-0.3)).abs() < 0.001);
+        assert!((aabb.max_x() - 0.3).abs() < 0.001);
+        assert!((aabb.min_y() - 64.0).abs() < 0.001);
+        assert!((aabb.max_y() - 65.8).abs() < 0.001);
+        assert!((aabb.min_z() - (-0.3)).abs() < 0.001);
+        assert!((aabb.max_z() - 0.3).abs() < 0.001);
     }
 }

@@ -29,7 +29,7 @@ use steel_protocol::{
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::shapes::{AABBd, VoxelShape, is_face_full};
+use steel_registry::blocks::shapes::{VoxelShape, is_face_full};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -60,7 +60,7 @@ pub enum RaytraceAction {
 
 use glam::DVec3;
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos,
+    BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos, WorldAabb,
     types::{Difficulty, GameType, UpdateFlags},
 };
 use tokio::{runtime::Runtime, time::Instant};
@@ -561,7 +561,7 @@ impl World {
         self.players.iter_players(|_uuid, player| {
             let player_pos = player.position.lock();
             let half_width = Self::PLAYER_WIDTH / 2.0;
-            let player_aabb = AABBd::new(
+            let player_aabb = WorldAabb::new(
                 player_pos.x - half_width,
                 player_pos.y,
                 player_pos.z - half_width,
@@ -572,8 +572,8 @@ impl World {
 
             // Check if any block AABB intersects with the player
             for block_aabb in collision_shape {
-                let world_aabb = block_aabb.at_block(pos.x(), pos.y(), pos.z());
-                if player_aabb.intersects_block_aabb(&world_aabb) {
+                let world_aabb = block_aabb.at_block(pos);
+                if player_aabb.intersects(world_aabb) {
                     obstructed = true;
                     return false; // stop iteration
                 }
@@ -1622,16 +1622,8 @@ impl World {
                 f64::from(block_pos.y()),
                 f64::from(block_pos.z()),
             );
-            let world_min = DVec3::new(
-                f64::from(shape.min_x),
-                f64::from(shape.min_y),
-                f64::from(shape.min_z),
-            ) + block_vec;
-            let world_max = DVec3::new(
-                f64::from(shape.max_x),
-                f64::from(shape.max_y),
-                f64::from(shape.max_z),
-            ) + block_vec;
+            let world_min = DVec3::new(shape.min_x(), shape.min_y(), shape.min_z()) + block_vec;
+            let world_max = DVec3::new(shape.max_x(), shape.max_y(), shape.max_z()) + block_vec;
 
             if let Some(hit) = Self::intersects_aabb_with_t(from, to, world_min, world_max)
                 && closest.is_none_or(|(best_t, _)| hit.0 < best_t)
@@ -2356,7 +2348,7 @@ impl World {
     ///
     /// Only returns entities in loaded chunks.
     #[must_use]
-    pub fn get_entities_in_aabb(&self, aabb: &AABBd) -> Vec<SharedEntity> {
+    pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
         self.entity_cache.get_entities_in_aabb(aabb)
     }
 

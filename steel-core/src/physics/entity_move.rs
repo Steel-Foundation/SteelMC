@@ -6,7 +6,7 @@
 //! - Proper collision detection and resolution
 
 use glam::DVec3;
-use steel_registry::blocks::shapes::AABBd;
+use steel_utils::WorldAabb;
 
 use crate::physics::{
     collision::CollisionWorld, physics_state::EntityPhysicsState, shapes::collide,
@@ -54,7 +54,7 @@ pub struct MoveResult {
     pub z_collision: bool,
 
     /// The entity's AABB at the final position.
-    pub final_aabb: AABBd,
+    pub final_aabb: WorldAabb,
 }
 
 /// Moves an entity through the world with collision detection and resolution.
@@ -126,7 +126,7 @@ pub fn move_entity(
 fn apply_sneak_edge_prevention(
     _state: &EntityPhysicsState,
     delta: DVec3,
-    aabb: &AABBd,
+    aabb: &WorldAabb,
     world: &dyn CollisionWorld,
 ) -> DVec3 {
     // Only prevent edge falling for horizontal movement
@@ -135,25 +135,18 @@ fn apply_sneak_edge_prevention(
     }
 
     // Calculate position after movement
-    let new_aabb = AABBd {
-        min_x: aabb.min_x + delta.x,
-        min_y: aabb.min_y + delta.y,
-        min_z: aabb.min_z + delta.z,
-        max_x: aabb.max_x + delta.x,
-        max_y: aabb.max_y + delta.y,
-        max_z: aabb.max_z + delta.z,
-    };
+    let new_aabb = aabb.move_vec(delta);
 
     // Check if there's ground below the new position
     // We check down to 1 block below (vanilla checks maxUpStep + 1.0)
-    let check_down_aabb = AABBd {
-        min_x: new_aabb.min_x,
-        min_y: new_aabb.min_y - 1.0,
-        min_z: new_aabb.min_z,
-        max_x: new_aabb.max_x,
-        max_y: new_aabb.min_y,
-        max_z: new_aabb.max_z,
-    };
+    let check_down_aabb = WorldAabb::new(
+        new_aabb.min_x(),
+        new_aabb.min_y() - 1.0,
+        new_aabb.min_z(),
+        new_aabb.max_x(),
+        new_aabb.min_y(),
+        new_aabb.max_z(),
+    );
 
     let ground_below = world.get_block_collisions(&check_down_aabb);
 
@@ -196,7 +189,7 @@ fn axis_step_order(movement: DVec3) -> [Axis; 3] {
 fn collide_with_world(
     state: &EntityPhysicsState,
     movement: DVec3,
-    aabb: &AABBd,
+    aabb: &WorldAabb,
     world: &dyn CollisionWorld,
 ) -> MoveResult {
     // Get all collision shapes that could intersect with our movement
@@ -256,32 +249,11 @@ fn collide_with_world(
 }
 
 /// Moves an AABB along a single axis by the given amount.
-fn move_aabb(aabb: &AABBd, axis: Axis, amount: f64) -> AABBd {
+fn move_aabb(aabb: &WorldAabb, axis: Axis, amount: f64) -> WorldAabb {
     match axis {
-        Axis::X => AABBd {
-            min_x: aabb.min_x + amount,
-            min_y: aabb.min_y,
-            min_z: aabb.min_z,
-            max_x: aabb.max_x + amount,
-            max_y: aabb.max_y,
-            max_z: aabb.max_z,
-        },
-        Axis::Y => AABBd {
-            min_x: aabb.min_x,
-            min_y: aabb.min_y + amount,
-            min_z: aabb.min_z,
-            max_x: aabb.max_x,
-            max_y: aabb.max_y + amount,
-            max_z: aabb.max_z,
-        },
-        Axis::Z => AABBd {
-            min_x: aabb.min_x,
-            min_y: aabb.min_y,
-            min_z: aabb.min_z + amount,
-            max_x: aabb.max_x,
-            max_y: aabb.max_y,
-            max_z: aabb.max_z + amount,
-        },
+        Axis::X => aabb.move_by(amount, 0.0, 0.0),
+        Axis::Y => aabb.move_by(0.0, amount, 0.0),
+        Axis::Z => aabb.move_by(0.0, 0.0, amount),
     }
 }
 
@@ -329,21 +301,14 @@ fn should_try_step_up(
 fn try_step_up(
     state: &EntityPhysicsState,
     movement: DVec3,
-    aabb: &AABBd,
+    aabb: &WorldAabb,
     ground_result: &MoveResult,
     world: &dyn CollisionWorld,
 ) -> MoveResult {
     let max_step = f64::from(state.max_up_step);
 
     // Sweep for collisions during the entire step attempt
-    let step_sweep_aabb = AABBd {
-        min_x: (aabb.min_x + movement.x).min(aabb.min_x),
-        min_y: aabb.min_y,
-        min_z: (aabb.min_z + movement.z).min(aabb.min_z),
-        max_x: (aabb.max_x + movement.x).max(aabb.max_x),
-        max_y: aabb.max_y + max_step,
-        max_z: (aabb.max_z + movement.z).max(aabb.max_z),
-    };
+    let step_sweep_aabb = aabb.expand_towards(DVec3::new(movement.x, max_step, movement.z));
     let collisions = world.get_block_collisions(&step_sweep_aabb);
 
     // Vanilla: collideWithShapes(Vec3(movement.x, maxUpStep, movement.z), groundedAABB, colliders)
@@ -410,39 +375,8 @@ fn try_step_up(
 }
 
 /// Creates an AABB that encompasses the start and end positions of a movement.
-fn sweep_aabb(aabb: &AABBd, movement: DVec3) -> AABBd {
-    AABBd {
-        min_x: if movement.x < 0.0 {
-            aabb.min_x + movement.x
-        } else {
-            aabb.min_x
-        },
-        min_y: if movement.y < 0.0 {
-            aabb.min_y + movement.y
-        } else {
-            aabb.min_y
-        },
-        min_z: if movement.z < 0.0 {
-            aabb.min_z + movement.z
-        } else {
-            aabb.min_z
-        },
-        max_x: if movement.x > 0.0 {
-            aabb.max_x + movement.x
-        } else {
-            aabb.max_x
-        },
-        max_y: if movement.y > 0.0 {
-            aabb.max_y + movement.y
-        } else {
-            aabb.max_y
-        },
-        max_z: if movement.z > 0.0 {
-            aabb.max_z + movement.z
-        } else {
-            aabb.max_z
-        },
-    }
+fn sweep_aabb(aabb: &WorldAabb, movement: DVec3) -> WorldAabb {
+    aabb.expand_towards(movement)
 }
 
 #[cfg(test)]
@@ -469,25 +403,18 @@ mod tests {
             }
         }
 
-        fn get_block_collisions(&self, aabb: &AABBd) -> Vec<AABBd> {
+        fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
             let mut collisions = Vec::new();
 
-            if self.has_floor && aabb.min_y <= 1.0 {
+            if self.has_floor && aabb.min_y() <= 1.0 {
                 // Full block at Y=0
-                collisions.push(AABBd {
-                    min_x: -10.0,
-                    min_y: 0.0,
-                    min_z: -10.0,
-                    max_x: 10.0,
-                    max_y: 1.0,
-                    max_z: 10.0,
-                });
+                collisions.push(WorldAabb::new(-10.0, 0.0, -10.0, 10.0, 1.0, 10.0));
             }
 
             collisions
         }
 
-        fn get_pre_move_collisions(&self, _aabb: &AABBd, _old_pos: DVec3) -> Vec<AABBd> {
+        fn get_pre_move_collisions(&self, _aabb: &WorldAabb, _old_pos: DVec3) -> Vec<WorldAabb> {
             Vec::new()
         }
     }

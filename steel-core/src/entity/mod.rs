@@ -6,11 +6,11 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
+use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
@@ -81,7 +81,7 @@ pub type WeakEntity = Weak<dyn Entity>;
 /// impl Entity for MyEntity {
 ///     fn base(&self) -> Option<&EntityBase> { Some(&self.base) }
 ///     fn entity_type(&self) -> EntityTypeRef { vanilla_entities::MY_ENTITY }
-///     fn bounding_box(&self) -> AABBd { /* ... */ }
+///     fn bounding_box(&self) -> WorldAabb { /* ... */ }
 ///     // All other common methods use defaults from EntityBase!
 /// }
 /// ```
@@ -114,7 +114,7 @@ pub trait Entity: Send + Sync {
     }
 
     /// Gets the entity's bounding box for collision queries.
-    fn bounding_box(&self) -> AABBd;
+    fn bounding_box(&self) -> WorldAabb;
 
     /// Called every game tick when the entity is in a ticked chunk.
     ///

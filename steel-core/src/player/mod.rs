@@ -55,7 +55,6 @@ use steel_protocol::packets::game::{
     ClientCommandAction,
 };
 use steel_registry::RegistryEntry;
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
@@ -95,6 +94,7 @@ use steel_protocol::packets::{
 use steel_registry::item_stack::ItemStack;
 
 use steel_utils::BlockPos;
+use steel_utils::WorldAabb;
 
 use steel_utils::ChunkPos;
 
@@ -551,12 +551,12 @@ impl Player {
         let world = self.get_world();
         let aabb = self.bounding_box().deflate(1.0E-5);
 
-        let min_x = aabb.min_x.floor() as i32;
-        let min_y = aabb.min_y.floor() as i32;
-        let min_z = aabb.min_z.floor() as i32;
-        let max_x = aabb.max_x.floor() as i32;
-        let max_y = aabb.max_y.floor() as i32;
-        let max_z = aabb.max_z.floor() as i32;
+        let min_x = aabb.min_x().floor() as i32;
+        let min_y = aabb.min_y().floor() as i32;
+        let min_z = aabb.min_z().floor() as i32;
+        let max_x = aabb.max_x().floor() as i32;
+        let max_y = aabb.max_y().floor() as i32;
+        let max_z = aabb.max_z().floor() as i32;
 
         for x in min_x..=max_x {
             for y in min_y..=max_y {
@@ -1192,20 +1192,13 @@ impl Entity for Player {
         *self.position.lock()
     }
 
-    fn bounding_box(&self) -> AABBd {
+    fn bounding_box(&self) -> WorldAabb {
         let pos = self.position();
         // Player hitbox: 0.6 wide, 1.8 tall (standing)
         // TODO: Adjust for pose (crouching, swimming, etc.)
         let half_width = 0.3;
         let height = 1.8;
-        AABBd {
-            min_x: pos.x - half_width,
-            min_y: pos.y,
-            min_z: pos.z - half_width,
-            max_x: pos.x + half_width,
-            max_y: pos.y + height,
-            max_z: pos.z + half_width,
-        }
+        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
     }
 
     fn tick(&self) {

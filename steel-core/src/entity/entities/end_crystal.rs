@@ -7,12 +7,11 @@ use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
-use steel_utils::{BlockPos, locks::SyncMutex};
+use steel_utils::{BlockPos, WorldAabb, locks::SyncMutex};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase};
@@ -112,19 +111,12 @@ impl Entity for EndCrystalEntity {
         &vanilla_entities::END_CRYSTAL
     }
 
-    fn bounding_box(&self) -> AABBd {
+    fn bounding_box(&self) -> WorldAabb {
         let pos = self.position();
         let dims = self.entity_type().dimensions;
         let half_width = f64::from(dims.width) / 2.0;
         let height = f64::from(dims.height);
-        AABBd {
-            min_x: pos.x - half_width,
-            min_y: pos.y,
-            min_z: pos.z - half_width,
-            max_x: pos.x + half_width,
-            max_y: pos.y + height,
-            max_z: pos.z + half_width,
-        }
+        WorldAabb::entity_box(pos.x, pos.y, pos.z, half_width, height)
     }
 
     fn tick(&self) {

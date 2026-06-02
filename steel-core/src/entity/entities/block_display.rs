@@ -8,13 +8,12 @@ use std::sync::Weak;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
-use steel_utils::BlockStateId;
 use steel_utils::locks::SyncMutex;
+use steel_utils::{BlockStateId, WorldAabb};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase};
@@ -85,17 +84,10 @@ impl Entity for BlockDisplayEntity {
         &vanilla_entities::BLOCK_DISPLAY
     }
 
-    fn bounding_box(&self) -> AABBd {
+    fn bounding_box(&self) -> WorldAabb {
         // Display entities have zero-size bounding boxes (no collision)
         let pos = self.position();
-        AABBd {
-            min_x: pos.x,
-            min_y: pos.y,
-            min_z: pos.z,
-            max_x: pos.x,
-            max_y: pos.y,
-            max_z: pos.z,
-        }
+        WorldAabb::new(pos.x, pos.y, pos.z, pos.x, pos.y, pos.z)
     }
 
     fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {

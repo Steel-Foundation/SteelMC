@@ -7,8 +7,7 @@
 use std::sync::Arc;
 
 use rustc_hash::FxHashSet;
-use steel_registry::blocks::shapes::AABBd;
-use steel_utils::SectionPos;
+use steel_utils::{SectionPos, WorldAabb};
 use uuid::Uuid;
 
 use super::{SharedEntity, WeakEntity};
@@ -117,16 +116,16 @@ impl EntityCache {
     ///
     /// Only returns entities in loaded chunks (where weak refs are valid).
     #[must_use]
-    pub fn get_entities_in_aabb(&self, aabb: &AABBd) -> Vec<SharedEntity> {
+    pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
         let mut result = Vec::new();
 
         // Determine section range (with 2 block grace like vanilla)
-        let min_x = ((aabb.min_x - 2.0) as i32) >> 4;
-        let min_y = ((aabb.min_y - 2.0) as i32) >> 4;
-        let min_z = ((aabb.min_z - 2.0) as i32) >> 4;
-        let max_x = ((aabb.max_x + 2.0) as i32) >> 4;
-        let max_y = ((aabb.max_y + 2.0) as i32) >> 4;
-        let max_z = ((aabb.max_z + 2.0) as i32) >> 4;
+        let min_x = ((aabb.min_x() - 2.0) as i32) >> 4;
+        let min_y = ((aabb.min_y() - 2.0) as i32) >> 4;
+        let min_z = ((aabb.min_z() - 2.0) as i32) >> 4;
+        let max_x = ((aabb.max_x() + 2.0) as i32) >> 4;
+        let max_y = ((aabb.max_y() + 2.0) as i32) >> 4;
+        let max_z = ((aabb.max_z() + 2.0) as i32) >> 4;
 
         for sy in min_y..=max_y {
             for sz in min_z..=max_z {
@@ -140,7 +139,7 @@ impl EntityCache {
                     if let Some(ids) = entity_ids {
                         for entity_id in ids {
                             if let Some(entity) = self.get_by_id(entity_id)
-                                && entity.bounding_box().intersects(aabb)
+                                && entity.bounding_box().intersects(*aabb)
                             {
                                 result.push(entity);
                             }

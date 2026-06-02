@@ -6,7 +6,6 @@ use crossbeam::atomic::AtomicCell;
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
@@ -14,7 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, Direction, axis::Axis};
+use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase};
@@ -124,7 +123,7 @@ impl Entity for ItemFrameEntity {
         &vanilla_entities::ITEM_FRAME
     }
 
-    fn bounding_box(&self) -> AABBd {
+    fn bounding_box(&self) -> WorldAabb {
         let block_pos = *self.block_pos.lock();
         let direction = *self.entity_data.lock().direction.get();
         let center = Self::frame_center(block_pos, direction);
@@ -144,14 +143,14 @@ impl Entity for ItemFrameEntity {
         } else {
             size
         };
-        AABBd {
-            min_x: center.x - x_size / 2.0,
-            min_y: center.y - y_size / 2.0,
-            min_z: center.z - z_size / 2.0,
-            max_x: center.x + x_size / 2.0,
-            max_y: center.y + y_size / 2.0,
-            max_z: center.z + z_size / 2.0,
-        }
+        WorldAabb::new(
+            center.x - x_size / 2.0,
+            center.y - y_size / 2.0,
+            center.z - z_size / 2.0,
+            center.x + x_size / 2.0,
+            center.y + y_size / 2.0,
+            center.z + z_size / 2.0,
+        )
     }
 
     fn rotation(&self) -> (f32, f32) {

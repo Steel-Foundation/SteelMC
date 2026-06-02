@@ -1,8 +1,8 @@
 //! Entity physics state representation.
 
 use glam::DVec3;
-use steel_registry::blocks::shapes::AABBd;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_utils::WorldAabb;
 
 /// Physics state for an entity, tracking position, velocity, and movement properties.
 ///
@@ -17,7 +17,7 @@ pub struct EntityPhysicsState {
     pub velocity: DVec3,
 
     /// Entity's axis-aligned bounding box in world coordinates.
-    pub bounding_box: AABBd,
+    pub bounding_box: WorldAabb,
 
     /// Current entity dimensions (can change with pose/age).
     pub dimensions: EntityDimensions,
@@ -85,18 +85,11 @@ impl EntityPhysicsState {
     /// Creates a bounding box from position and dimensions.
     /// Box is centered on X/Z with Y at entity feet (vanilla behavior).
     #[must_use]
-    fn make_bounding_box(position: DVec3, dimensions: &EntityDimensions) -> AABBd {
+    fn make_bounding_box(position: DVec3, dimensions: &EntityDimensions) -> WorldAabb {
         let half_width = f64::from(dimensions.width) / 2.0;
         let height = f64::from(dimensions.height);
 
-        AABBd {
-            min_x: position.x - half_width,
-            min_y: position.y,
-            min_z: position.z - half_width,
-            max_x: position.x + half_width,
-            max_y: position.y + height,
-            max_z: position.z + half_width,
-        }
+        WorldAabb::entity_box(position.x, position.y, position.z, half_width, height)
     }
 
     /// Updates the bounding box to match the current position and dimensions.
