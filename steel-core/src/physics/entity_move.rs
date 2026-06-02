@@ -17,6 +17,7 @@ const ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
 const EDGE_STEP: f64 = 0.05;
 const EDGE_COLLISION_EPSILON: f64 = 1.0e-7;
 const STEP_HEIGHT_COLLISION_EPSILON: f64 = 1.0e-5;
+const MTH_EQUAL_EPSILON: f64 = 1.0e-5;
 
 /// Type of movement being performed.
 ///
@@ -267,8 +268,8 @@ fn collide_with_world(
     let on_ground = resolved.y != movement.y && movement.y < 0.0;
 
     // Detect collisions (vanilla: Entity.move lines 751-757)
-    let x_collision = resolved.x != movement.x;
-    let z_collision = resolved.z != movement.z;
+    let x_collision = horizontal_axis_collided(movement.x, resolved.x);
+    let z_collision = horizontal_axis_collided(movement.z, resolved.z);
     let horizontal_collision = x_collision || z_collision;
     let vertical_collision = resolved.y != movement.y;
 
@@ -329,6 +330,11 @@ fn move_aabb(aabb: &WorldAabb, axis: Axis, amount: f64) -> WorldAabb {
         Axis::Y => aabb.move_by(0.0, amount, 0.0),
         Axis::Z => aabb.move_by(0.0, 0.0, amount),
     }
+}
+
+fn horizontal_axis_collided(requested: f64, actual: f64) -> bool {
+    // Vanilla reports horizontal collision with `!Mth.equal(requested, actual)`.
+    (actual - requested).abs() >= MTH_EQUAL_EPSILON
 }
 
 /// Checks if step-up should be attempted.
@@ -417,8 +423,8 @@ fn try_step_up(
         let distance_to_ground = aabb.min_y() - grounded_aabb.min_y();
         let actual_movement = step_from_ground - DVec3::new(0.0, distance_to_ground, 0.0);
         let final_aabb = stepped_aabb.move_by(0.0, -distance_to_ground, 0.0);
-        let x_collision = actual_movement.x != movement.x;
-        let z_collision = actual_movement.z != movement.z;
+        let x_collision = horizontal_axis_collided(movement.x, actual_movement.x);
+        let z_collision = horizontal_axis_collided(movement.z, actual_movement.z);
         let vertical_collision = actual_movement.y != movement.y;
 
         return MoveResult {
@@ -754,5 +760,13 @@ mod tests {
         );
         assert!(result.actual_movement.y.abs() < ZERO_MOVEMENT_EPSILON);
         assert!(result.horizontal_collision);
+    }
+
+    #[test]
+    fn horizontal_collision_uses_vanilla_mth_equal_tolerance() {
+        assert!(!horizontal_axis_collided(1.0, 1.0));
+        assert!(!horizontal_axis_collided(1.0, 1.0 - 0.5e-5));
+        assert!(horizontal_axis_collided(1.0, 1.0 - 1.1e-5));
+        assert!(horizontal_axis_collided(1.0, 1.0 - 2.0e-5));
     }
 }
