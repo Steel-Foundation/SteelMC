@@ -1146,6 +1146,10 @@ impl Entity for Player {
         true
     }
 
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
     fn is_client_authoritative(&self) -> bool {
         true
     }

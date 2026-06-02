@@ -247,6 +247,14 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().bounding_box()
     }
 
+    /// Returns whether this entity obstructs block placement.
+    ///
+    /// Mirrors vanilla `Entity.blocksBuilding`. Base entities do not obstruct
+    /// placement unless a concrete entity type opts in.
+    fn blocks_building(&self) -> bool {
+        false
+    }
+
     /// Builds this entity's default bounding box at `position`.
     fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
         let dimensions = self.base().dimensions();

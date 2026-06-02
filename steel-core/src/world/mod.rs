@@ -541,15 +541,10 @@ impl World {
         self.is_in_valid_bounds(pos)
     }
 
-    /// Player dimensions matching vanilla Minecraft.
-    const PLAYER_WIDTH: f64 = 0.6;
-    const PLAYER_HEIGHT: f64 = 1.8;
-
     /// Checks if a block's collision shape at the given position is unobstructed by entities.
     ///
     /// This is the Rust equivalent of vanilla's `Level.isUnobstructed(BlockState, BlockPos, CollisionContext)`.
     /// In vanilla, this checks all entities with `blocksBuilding=true` (players, mobs, boats, etc.).
-    /// Currently only checks players since other entities aren't fully implemented.
     ///
     /// Returns `true` if the position is clear, `false` if an entity would obstruct placement.
     #[must_use]
@@ -558,33 +553,16 @@ impl World {
             return true;
         }
 
-        // TODO: Check other entities with blocksBuilding=true (mobs, boats, minecarts, etc.)
-        let mut obstructed = false;
-        self.players.iter_players(|_uuid, player| {
-            let player_pos = player.position();
-            let half_width = Self::PLAYER_WIDTH / 2.0;
-            let player_aabb = WorldAabb::new(
-                player_pos.x - half_width,
-                player_pos.y,
-                player_pos.z - half_width,
-                player_pos.x + half_width,
-                player_pos.y + Self::PLAYER_HEIGHT,
-                player_pos.z + half_width,
-            );
-
-            // Check if any block AABB intersects with the player
-            for block_aabb in collision_shape {
-                let world_aabb = block_aabb.at_block(pos);
-                if player_aabb.intersects(world_aabb) {
-                    obstructed = true;
-                    return false; // stop iteration
+        for block_aabb in collision_shape {
+            let world_aabb = block_aabb.at_block(pos);
+            for entity in self.get_entities_in_aabb(&world_aabb) {
+                if entity.blocks_building() && entity.bounding_box().intersects(world_aabb) {
+                    return false;
                 }
             }
+        }
 
-            true // continue iteration
-        });
-
-        !obstructed
+        true
     }
 
     /// Returns whether the tick rate is running normally.

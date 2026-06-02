@@ -923,3 +923,22 @@ impl Entity for ItemEntity {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+
+    use crate::entity::Entity;
+    use crate::world::World;
+
+    use super::ItemEntity;
+
+    #[test]
+    fn item_entities_do_not_obstruct_block_placement() {
+        let item = ItemEntity::new(1, DVec3::ZERO, Weak::<World>::new());
+
+        assert!(!item.blocks_building());
+    }
+}
