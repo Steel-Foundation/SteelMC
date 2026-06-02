@@ -99,6 +99,15 @@ impl EntityMovementFlags {
         self.horizontal_collision = horizontal_collision;
         self
     }
+
+    /// Returns the same ground state with collision flags cleared.
+    #[must_use]
+    pub const fn without_collisions(mut self) -> Self {
+        self.horizontal_collision = false;
+        self.vertical_collision = false;
+        self.vertical_collision_below = false;
+        self
+    }
 }
 
 impl Default for EntityMovementFlags {
@@ -215,6 +224,7 @@ pub struct EntityBaseState {
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
     piston_movement: EntityPistonMovement,
+    no_physics: bool,
 }
 
 impl EntityBaseState {
@@ -231,6 +241,7 @@ impl EntityBaseState {
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
             piston_movement: EntityPistonMovement::new(),
+            no_physics: false,
         }
     }
 
@@ -483,6 +494,12 @@ impl EntityBase {
         self.state.lock().ground_contact.on_ground_no_blocks()
     }
 
+    /// Returns true when movement bypasses collision physics.
+    #[inline]
+    pub fn no_physics(&self) -> bool {
+        self.state.lock().no_physics
+    }
+
     /// Gets the world this entity is in.
     ///
     /// Returns `None` if the world has been dropped.
@@ -563,6 +580,11 @@ impl EntityBase {
         self.state.lock().rotation = rotation;
     }
 
+    /// Sets whether this entity bypasses collision physics.
+    pub fn set_no_physics(&self, no_physics: bool) {
+        self.state.lock().no_physics = no_physics;
+    }
+
     /// Sets whether this entity is touching the ground.
     pub fn set_on_ground(&self, on_ground: bool) {
         let mut state = self.state.lock();
@@ -598,6 +620,12 @@ impl EntityBase {
         state.ground_contact = ground_contact;
     }
 
+    /// Clears collision flags after a no-physics move.
+    pub fn clear_collision_flags(&self) {
+        let mut state = self.state.lock();
+        state.movement_flags = state.movement_flags.without_collisions();
+    }
+
     /// Applies vanilla per-tick piston movement accumulation.
     pub fn limit_piston_movement(&self, movement: DVec3, current_game_time: i64) -> DVec3 {
         self.state
@@ -621,8 +649,13 @@ impl EntityBase {
 
 #[cfg(test)]
 mod tests {
-    use super::EntityPistonMovement;
+    use super::{EntityBase, EntityMovementFlags, EntityPistonMovement};
+    use std::sync::Weak;
+
     use glam::DVec3;
+    use steel_registry::entity_type::EntityDimensions;
+
+    use crate::world::World;
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
         let diff = left - right;
@@ -680,5 +713,30 @@ mod tests {
         let movement = DVec3::new(0.0, 0.0, 1.0e-4);
 
         assert_vec3_close(piston_movement.limit_movement(movement, 10), movement);
+    }
+
+    #[test]
+    fn collision_flags_clear_without_changing_ground_state() {
+        let flags = EntityMovementFlags::after_move(true, true, true, DVec3::new(0.0, -1.0, 0.0))
+            .without_collisions();
+
+        assert!(flags.on_ground());
+        assert!(!flags.horizontal_collision());
+        assert!(!flags.vertical_collision());
+        assert!(!flags.vertical_collision_below());
+    }
+
+    #[test]
+    fn no_physics_is_stored_on_base_state() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+
+        assert!(!base.no_physics());
+        base.set_no_physics(true);
+        assert!(base.no_physics());
     }
 }

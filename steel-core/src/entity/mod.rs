@@ -247,6 +247,16 @@ pub trait Entity: Send + Sync {
         self.base().vertical_collision_below()
     }
 
+    /// Returns true when movement bypasses collision physics.
+    fn no_physics(&self) -> bool {
+        self.base().no_physics()
+    }
+
+    /// Sets whether this entity bypasses collision physics.
+    fn set_no_physics(&self, no_physics: bool) {
+        self.base().set_no_physics(no_physics);
+    }
+
     /// Sets whether the entity is on the ground.
     fn set_on_ground(&self, on_ground: bool) {
         let ground_contact = self.ground_contact_after_movement(on_ground, None);
@@ -405,6 +415,23 @@ pub trait Entity: Send + Sync {
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
     fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
+        if self.no_physics() {
+            let final_position = self.position() + delta;
+            self.set_position(final_position);
+            self.base().clear_collision_flags();
+
+            return Some(MoveResult {
+                final_position,
+                actual_movement: delta,
+                on_ground: self.on_ground(),
+                horizontal_collision: false,
+                vertical_collision: false,
+                x_collision: false,
+                z_collision: false,
+                final_aabb: self.bounding_box(),
+            });
+        }
+
         let mut movement = delta;
         if mover_type == MoverType::Piston {
             let game_time = world.level_data.read().game_time();
