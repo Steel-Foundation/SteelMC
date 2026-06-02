@@ -10,11 +10,13 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
+use crate::entity::Entity;
 use crate::physics::COLLISION_EPSILON;
 use crate::physics::shapes::{join_is_not_empty, translate_shape};
 use crate::world::World;
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
+const ENTITY_COLLISION_EPSILON: f64 = 1.0e-7;
 
 /// Trait for querying collision shapes from the world.
 ///
@@ -38,6 +40,27 @@ pub trait CollisionWorld {
         self.get_block_collisions(aabb)
     }
 
+    /// Queries all entity collision shapes intersecting the given AABB.
+    ///
+    /// Path-navigation regions and test worlds use the default empty entity
+    /// collision list. Live entity movement supplies these through
+    /// [`WorldCollisionProvider`].
+    fn get_entity_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+        let _ = aabb;
+        Vec::new()
+    }
+
+    /// Queries entity collisions followed by block collisions with a vanilla context.
+    fn get_collisions_with_context(
+        &self,
+        aabb: &WorldAabb,
+        context: BlockCollisionContext,
+    ) -> Vec<WorldAabb> {
+        let mut collisions = self.get_entity_collisions(aabb);
+        collisions.extend(self.get_block_collisions_with_context(aabb, context));
+        collisions
+    }
+
     /// Gets collision shapes for vanilla pre-move checks.
     ///
     /// # Arguments
@@ -48,19 +71,25 @@ pub trait CollisionWorld {
     /// # Returns
     /// Collision shapes intersecting the target box.
     ///
-    /// Vanilla uses the old bottom-center Y as collision context. Steel block
-    /// collision shapes receive a placement-style context for this query.
+    /// Vanilla includes entity collisions and uses the old bottom-center Y as
+    /// block collision context.
     fn get_pre_move_collisions(
         &self,
         aabb: &WorldAabb,
         old_bottom_center: DVec3,
         descending: bool,
-    ) -> Vec<WorldAabb>;
+    ) -> Vec<WorldAabb> {
+        self.get_collisions_with_context(
+            aabb,
+            BlockCollisionContext::pre_move(old_bottom_center.y, descending),
+        )
+    }
 }
 
 /// Implements `CollisionWorld` for the Steel World struct.
 pub struct WorldCollisionProvider<'a> {
     world: &'a Arc<World>,
+    source: Option<&'a dyn Entity>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,7 +155,18 @@ fn should_query_collision_shape(
 impl<'a> WorldCollisionProvider<'a> {
     /// Creates a new collision provider for the given world.
     pub const fn new(world: &'a Arc<World>) -> Self {
-        Self { world }
+        Self {
+            world,
+            source: None,
+        }
+    }
+
+    /// Creates a collision provider for movement authored by `source`.
+    pub const fn for_entity(world: &'a Arc<World>, source: &'a dyn Entity) -> Self {
+        Self {
+            world,
+            source: Some(source),
+        }
     }
 
     fn get_collision_shape(
@@ -239,11 +279,22 @@ pub fn has_block_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool
         .is_empty()
 }
 
-/// Returns whether `new_aabb` collides with blocks that `old_aabb` did not.
+/// Returns whether an entity box intersects any entity or block collision shape.
+#[must_use]
+pub fn has_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool {
+    !world
+        .get_collisions_with_context(
+            &aabb.deflate(COLLISION_EPSILON),
+            BlockCollisionContext::empty(),
+        )
+        .is_empty()
+}
+
+/// Returns whether `new_aabb` collides with shapes that `old_aabb` did not.
 ///
 /// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
 #[must_use]
-pub fn is_colliding_with_new_blocks(
+pub fn is_colliding_with_new_shapes(
     world: &impl CollisionWorld,
     old_aabb: WorldAabb,
     new_aabb: WorldAabb,
@@ -321,16 +372,26 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         collisions
     }
 
-    fn get_pre_move_collisions(
-        &self,
-        aabb: &WorldAabb,
-        old_bottom_center: DVec3,
-        descending: bool,
-    ) -> Vec<WorldAabb> {
-        self.get_block_collisions_with_context(
-            aabb,
-            BlockCollisionContext::pre_move(old_bottom_center.y, descending),
-        )
+    fn get_entity_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+        if aabb.size() < ENTITY_COLLISION_EPSILON {
+            return Vec::new();
+        }
+
+        let query = aabb.inflate(ENTITY_COLLISION_EPSILON);
+        self.world
+            .get_entities_in_aabb(&query)
+            .into_iter()
+            .filter(|entity| !entity.is_removed())
+            .filter(|entity| match self.source {
+                Some(source) => {
+                    entity.id() != source.id()
+                        && !entity.is_spectator()
+                        && source.can_collide_with(entity.as_ref())
+                }
+                None => !entity.is_spectator() && entity.can_be_collided_with(None),
+            })
+            .map(|entity| entity.bounding_box())
+            .collect()
     }
 }
 
@@ -345,6 +406,7 @@ mod tests {
 
     struct TestCollisionWorld {
         block_collisions: Vec<WorldAabb>,
+        entity_collisions: Vec<WorldAabb>,
         pre_move_collisions: Vec<WorldAabb>,
     }
 
@@ -355,6 +417,14 @@ mod tests {
 
         fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
             self.block_collisions
+                .iter()
+                .copied()
+                .filter(|collision| collision.intersects(*aabb))
+                .collect()
+        }
+
+        fn get_entity_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+            self.entity_collisions
                 .iter()
                 .copied()
                 .filter(|collision| collision.intersects(*aabb))
@@ -387,6 +457,7 @@ mod tests {
     fn block_collision_helper_reports_intersecting_collision_shape() {
         let world = TestCollisionWorld {
             block_collisions: vec![WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)],
+            entity_collisions: Vec::new(),
             pre_move_collisions: Vec::new(),
         };
 
@@ -401,7 +472,25 @@ mod tests {
     }
 
     #[test]
-    fn new_block_collision_helper_ignores_collision_already_touching_old_box() {
+    fn collision_helper_reports_intersecting_entity_shape() {
+        let world = TestCollisionWorld {
+            block_collisions: Vec::new(),
+            entity_collisions: vec![WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)],
+            pre_move_collisions: Vec::new(),
+        };
+
+        assert!(has_collision(
+            &world,
+            WorldAabb::new(0.25, 0.25, 0.25, 0.75, 0.75, 0.75)
+        ));
+        assert!(!has_block_collision(
+            &world,
+            WorldAabb::new(0.25, 0.25, 0.25, 0.75, 0.75, 0.75)
+        ));
+    }
+
+    #[test]
+    fn new_shape_collision_helper_ignores_collision_already_touching_old_box() {
         let already_overlapped = WorldAabb::new(0.25, 0.0, 0.25, 0.75, 1.0, 0.75);
         let new_collision = WorldAabb::new(2.0, 0.0, 0.0, 3.0, 1.0, 1.0);
         let old_aabb = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
@@ -409,9 +498,10 @@ mod tests {
 
         let already_stuck_world = TestCollisionWorld {
             block_collisions: Vec::new(),
+            entity_collisions: Vec::new(),
             pre_move_collisions: vec![already_overlapped],
         };
-        assert!(!is_colliding_with_new_blocks(
+        assert!(!is_colliding_with_new_shapes(
             &already_stuck_world,
             old_aabb,
             new_aabb,
@@ -420,9 +510,10 @@ mod tests {
 
         let newly_blocked_world = TestCollisionWorld {
             block_collisions: Vec::new(),
+            entity_collisions: Vec::new(),
             pre_move_collisions: vec![new_collision],
         };
-        assert!(is_colliding_with_new_blocks(
+        assert!(is_colliding_with_new_shapes(
             &newly_blocked_world,
             old_aabb,
             new_aabb,

@@ -119,12 +119,22 @@ pub(crate) fn move_entity(
         delta
     };
 
+    let swept_aabb = sweep_aabb(&aabb, movement);
+    let entity_collisions = world.get_entity_collisions(&swept_aabb);
+
     // Perform basic collision resolution
-    let collision_result = collide_with_world(state, movement, &aabb, world);
+    let collision_result = collide_with_world(state, movement, &aabb, world, &entity_collisions);
 
     // Try step-up if horizontal collision occurred
     if should_try_step_up(state, &collision_result, mover_type) {
-        try_step_up(state, movement, &aabb, &collision_result, world)
+        try_step_up(
+            state,
+            movement,
+            &aabb,
+            &collision_result,
+            &entity_collisions,
+            world,
+        )
     } else {
         collision_result
     }
@@ -257,12 +267,15 @@ fn collide_with_world(
     movement: DVec3,
     aabb: &WorldAabb,
     world: &dyn CollisionWorld,
+    entity_collisions: &[WorldAabb],
 ) -> MoveResult {
     // Get all collision shapes that could intersect with our movement
     let swept_aabb = sweep_aabb(aabb, movement);
-    let collisions = world.get_block_collisions_with_context(
+    let collisions = collect_collisions_with_context(
+        world,
         &swept_aabb,
         BlockCollisionContext::entity(state.position().y, state.descending()),
+        entity_collisions,
     );
 
     let (resolved, current_aabb) = collide_with_shapes(movement, aabb, &collisions);
@@ -327,6 +340,18 @@ fn collide_with_shapes(
     (resolved, current_aabb)
 }
 
+fn collect_collisions_with_context(
+    world: &dyn CollisionWorld,
+    aabb: &WorldAabb,
+    context: BlockCollisionContext,
+    entity_collisions: &[WorldAabb],
+) -> Vec<WorldAabb> {
+    let mut collisions = Vec::with_capacity(entity_collisions.len());
+    collisions.extend_from_slice(entity_collisions);
+    collisions.extend(world.get_block_collisions_with_context(aabb, context));
+    collisions
+}
+
 /// Moves an AABB along a single axis by the given amount.
 fn move_aabb(aabb: &WorldAabb, axis: Axis, amount: f64) -> WorldAabb {
     match axis {
@@ -387,6 +412,7 @@ fn try_step_up(
     movement: DVec3,
     aabb: &WorldAabb,
     ground_result: &MoveResult,
+    entity_collisions: &[WorldAabb],
     world: &dyn CollisionWorld,
 ) -> MoveResult {
     let max_step = f64::from(state.max_up_step());
@@ -403,7 +429,12 @@ fn try_step_up(
         step_sweep_aabb =
             step_sweep_aabb.expand_towards(DVec3::new(0.0, -STEP_HEIGHT_COLLISION_EPSILON, 0.0));
     }
-    let collisions = world.get_block_collisions(&step_sweep_aabb);
+    let collisions = collect_collisions_with_context(
+        world,
+        &step_sweep_aabb,
+        BlockCollisionContext::entity(state.position().y, state.descending()),
+        entity_collisions,
+    );
     let candidates = collect_candidate_step_up_heights(
         &grounded_aabb,
         &collisions,
@@ -584,6 +615,28 @@ mod tests {
         }
     }
 
+    struct EntityBoxWorld {
+        boxes: Vec<WorldAabb>,
+    }
+
+    impl CollisionWorld for EntityBoxWorld {
+        fn get_block_state(&self, _pos: BlockPos) -> steel_utils::BlockStateId {
+            REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR)
+        }
+
+        fn get_block_collisions(&self, _aabb: &WorldAabb) -> Vec<WorldAabb> {
+            Vec::new()
+        }
+
+        fn get_entity_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+            self.boxes
+                .iter()
+                .copied()
+                .filter(|collision| collision.intersects(*aabb))
+                .collect()
+        }
+    }
+
     fn player_state(position: DVec3) -> EntityPhysicsState {
         EntityPhysicsState::with_dimensions(position, vanilla_entities::PLAYER.dimensions, 0.6)
     }
@@ -721,6 +774,29 @@ mod tests {
         let result = move_entity(&state, movement, MoverType::Player, &world);
 
         assert_eq!(result.actual_movement, movement);
+    }
+
+    #[test]
+    fn test_entity_collision_clips_horizontal_movement() {
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0));
+        let world = EntityBoxWorld {
+            boxes: vec![WorldAabb::new(0.7, 1.0, -0.3, 1.7, 2.8, 0.3)],
+        };
+
+        let result = move_entity(
+            &state,
+            DVec3::new(1.0, 0.0, 0.0),
+            MoverType::SelfMovement,
+            &world,
+        );
+
+        assert!(
+            result.actual_movement.x > 0.39 && result.actual_movement.x < 0.41,
+            "entity collision should clip movement at the other entity's box: {:?}",
+            result.actual_movement
+        );
+        assert!(result.horizontal_collision);
+        assert!(result.x_collision);
     }
 
     #[test]

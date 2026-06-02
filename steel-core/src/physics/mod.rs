@@ -16,7 +16,8 @@ pub mod shapes;
 
 // Public API
 pub use collision::{
-    CollisionWorld, WorldCollisionProvider, has_block_collision, is_colliding_with_new_blocks,
+    CollisionWorld, WorldCollisionProvider, has_block_collision, has_collision,
+    is_colliding_with_new_shapes,
 };
 pub(crate) use entity_move::move_entity;
 pub use entity_move::{MoveResult, MoverType};

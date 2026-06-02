@@ -21,8 +21,8 @@ use crate::entity::{
     EntityPositionSyncSnapshot, LivingEntity,
 };
 use crate::physics::{
-    MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE, has_block_collision,
-    is_colliding_with_new_blocks,
+    MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE, has_collision,
+    is_colliding_with_new_shapes,
 };
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -83,6 +83,21 @@ fn vanilla_post_move_y_dist(target_y: f64, simulated_y: f64) -> f64 {
         y_dist = 0.0;
     }
     y_dist
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MovementCollisionValidation {
+    no_physics: bool,
+    moved_wrongly: bool,
+    old_collision: bool,
+    new_collision: bool,
+}
+
+impl MovementCollisionValidation {
+    #[must_use]
+    const fn rejects(self) -> bool {
+        !self.no_physics && ((self.moved_wrongly && !self.old_collision) || self.new_collision)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -326,16 +341,23 @@ impl Player {
                     && !in_impulse_grace;
 
                 let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
-                let collision_world = WorldCollisionProvider::new(&world);
-                let old_collision = has_block_collision(&collision_world, old_aabb);
-                let new_collision = is_colliding_with_new_blocks(
+                let collision_world = WorldCollisionProvider::for_entity(&world, self);
+                let old_collision = has_collision(&collision_world, old_aabb);
+                let new_collision = is_colliding_with_new_shapes(
                     &collision_world,
                     old_aabb,
                     new_aabb,
                     self.is_crouching(),
                 );
 
-                if (fail && !old_collision) || new_collision {
+                if (MovementCollisionValidation {
+                    no_physics: self.no_physics(),
+                    moved_wrongly: fail,
+                    old_collision,
+                    new_collision,
+                })
+                .rejects()
+                {
                     self.teleport(
                         start_pos.x,
                         start_pos.y,
@@ -788,6 +810,32 @@ mod tests {
         let delta = movement_error_delta(DVec3::new(10.0, 120.0, -5.0), DVec3::new(8.0, 0.0, -8.0));
 
         assert_eq!(delta, DVec3::new(2.0, 0.0, 3.0));
+    }
+
+    #[test]
+    fn movement_validation_accepts_no_physics_even_with_new_collision() {
+        assert!(
+            !MovementCollisionValidation {
+                no_physics: true,
+                moved_wrongly: true,
+                old_collision: false,
+                new_collision: true,
+            }
+            .rejects()
+        );
+    }
+
+    #[test]
+    fn movement_validation_rejects_new_collision_for_physical_player() {
+        assert!(
+            MovementCollisionValidation {
+                no_physics: false,
+                moved_wrongly: false,
+                old_collision: false,
+                new_collision: true,
+            }
+            .rejects()
+        );
     }
 
     #[test]

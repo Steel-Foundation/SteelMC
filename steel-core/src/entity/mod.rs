@@ -1073,7 +1073,8 @@ pub trait Entity: EntityEventSource + Send + Sync {
         let start_position = physics_state.position();
 
         // Perform collision detection and movement
-        let collision_world = WorldCollisionProvider::new(&world);
+        let collision_world =
+            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
         let result =
             resolve_entity_movement(&physics_state, movement, mover_type, &collision_world);
 
