@@ -97,6 +97,17 @@ fn movement_error_delta(target_pos: DVec3, simulated_pos: DVec3) -> DVec3 {
     DVec3::new(error_x, error_y, error_z)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AcceptedMovementBroadcast {
+    has_pos: bool,
+    has_rot: bool,
+    pos: DVec3,
+    yaw: f32,
+    pitch: f32,
+    on_ground: bool,
+    client_delta: DVec3,
+}
+
 /// Checks if an entity box is colliding with blocks.
 #[must_use]
 pub fn has_block_collision(world: &Arc<World>, aabb: WorldAabb) -> bool {
@@ -403,110 +414,103 @@ impl Player {
             self.reset_fall_distance();
         }
 
-        let pos = if packet.has_pos {
-            accepted_pos
-        } else {
-            prev_pos
-        };
-        let (yaw, pitch) = (target_yaw, target_pitch);
-
-        if packet.has_pos || packet.has_rot {
-            self.movement.lock().last_known_client_movement = client_delta;
-            let new_chunk = ChunkPos::from_entity_pos(pos);
-
-            if packet.has_pos {
-                let (sync_delay, last_on_ground, delta) = {
-                    let mut mv = self.movement.lock();
-                    let d = mv.position_sync.advance_sync_delay();
-                    (
-                        d,
-                        mv.position_sync.last_sent_on_ground(),
-                        mv.position_sync.packed_delta(pos),
-                    )
-                };
-                let on_ground_changed = last_on_ground != packet.on_ground;
-                let force_sync = sync_delay > 400 || on_ground_changed;
-
-                if let Some((dx, dy, dz)) = delta {
-                    if force_sync {
-                        {
-                            let mut mv = self.movement.lock();
-                            mv.position_sync.mark_full_sent(pos, packet.on_ground);
-                        }
-
-                        let delta = self.velocity();
-                        let sync_packet = CEntityPositionSync {
-                            entity_id: self.id(),
-                            x: pos.x,
-                            y: pos.y,
-                            z: pos.z,
-                            velocity_x: delta.x,
-                            velocity_y: delta.y,
-                            velocity_z: delta.z,
-                            yaw,
-                            pitch,
-                            on_ground: packet.on_ground,
-                        };
-                        world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
-                    } else {
-                        self.movement
-                            .lock()
-                            .position_sync
-                            .mark_delta_sent(pos, packet.on_ground);
-
-                        let move_packet = CMoveEntityPosRot {
-                            entity_id: self.id(),
-                            dx,
-                            dy,
-                            dz,
-                            y_rot: to_angle_byte(yaw),
-                            x_rot: to_angle_byte(pitch),
-                            on_ground: packet.on_ground,
-                        };
-                        world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id()));
-                    }
+        self.broadcast_accepted_movement(
+            &world,
+            AcceptedMovementBroadcast {
+                has_pos: packet.has_pos,
+                has_rot: packet.has_rot,
+                pos: if packet.has_pos {
+                    accepted_pos
                 } else {
-                    {
-                        let mut mv = self.movement.lock();
-                        mv.position_sync.mark_full_sent(pos, packet.on_ground);
-                    }
+                    prev_pos
+                },
+                yaw: target_yaw,
+                pitch: target_pitch,
+                on_ground: packet.on_ground,
+                client_delta,
+            },
+        );
+    }
 
-                    let delta = self.velocity();
-                    let sync_packet = CEntityPositionSync {
-                        entity_id: self.id(),
-                        x: pos.x,
-                        y: pos.y,
-                        z: pos.z,
-                        velocity_x: delta.x,
-                        velocity_y: delta.y,
-                        velocity_z: delta.z,
-                        yaw,
-                        pitch,
-                        on_ground: packet.on_ground,
-                    };
-                    world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
-                }
-            } else {
-                let rot_packet = CMoveEntityRot {
-                    entity_id: self.id(),
-                    y_rot: to_angle_byte(yaw),
-                    x_rot: to_angle_byte(pitch),
-                    on_ground: packet.on_ground,
-                };
-                world.broadcast_to_nearby(new_chunk, rot_packet, Some(self.id()));
-            }
-
-            if packet.has_rot {
-                let head_packet = CRotateHead {
-                    entity_id: self.id(),
-                    head_y_rot: to_angle_byte(yaw),
-                };
-                world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id()));
-            }
-
-            let mut mv = self.movement.lock();
-            mv.prev_rotation = (yaw, pitch);
+    fn broadcast_accepted_movement(&self, world: &Arc<World>, movement: AcceptedMovementBroadcast) {
+        if !movement.has_pos && !movement.has_rot {
+            return;
         }
+
+        self.movement.lock().last_known_client_movement = movement.client_delta;
+        let new_chunk = ChunkPos::from_entity_pos(movement.pos);
+
+        if movement.has_pos {
+            let (sync_delay, last_on_ground, delta) = {
+                let mut mv = self.movement.lock();
+                let delay = mv.position_sync.advance_sync_delay();
+                (
+                    delay,
+                    mv.position_sync.last_sent_on_ground(),
+                    mv.position_sync.packed_delta(movement.pos),
+                )
+            };
+            let on_ground_changed = last_on_ground != movement.on_ground;
+            let force_sync = sync_delay > 400 || on_ground_changed;
+
+            if let Some((dx, dy, dz)) = delta
+                && !force_sync
+            {
+                self.movement
+                    .lock()
+                    .position_sync
+                    .mark_delta_sent(movement.pos, movement.on_ground);
+
+                let move_packet = CMoveEntityPosRot {
+                    entity_id: self.id(),
+                    dx,
+                    dy,
+                    dz,
+                    y_rot: to_angle_byte(movement.yaw),
+                    x_rot: to_angle_byte(movement.pitch),
+                    on_ground: movement.on_ground,
+                };
+                world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id()));
+            } else {
+                self.movement
+                    .lock()
+                    .position_sync
+                    .mark_full_sent(movement.pos, movement.on_ground);
+
+                let delta = self.velocity();
+                let sync_packet = CEntityPositionSync {
+                    entity_id: self.id(),
+                    x: movement.pos.x,
+                    y: movement.pos.y,
+                    z: movement.pos.z,
+                    velocity_x: delta.x,
+                    velocity_y: delta.y,
+                    velocity_z: delta.z,
+                    yaw: movement.yaw,
+                    pitch: movement.pitch,
+                    on_ground: movement.on_ground,
+                };
+                world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
+            }
+        } else {
+            let rot_packet = CMoveEntityRot {
+                entity_id: self.id(),
+                y_rot: to_angle_byte(movement.yaw),
+                x_rot: to_angle_byte(movement.pitch),
+                on_ground: movement.on_ground,
+            };
+            world.broadcast_to_nearby(new_chunk, rot_packet, Some(self.id()));
+        }
+
+        if movement.has_rot {
+            let head_packet = CRotateHead {
+                entity_id: self.id(),
+                head_y_rot: to_angle_byte(movement.yaw),
+            };
+            world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id()));
+        }
+
+        self.movement.lock().prev_rotation = (movement.yaw, movement.pitch);
     }
 
     /// Returns the player's current gravity value.
