@@ -665,6 +665,7 @@ impl Entity for ItemEntity {
         let old_on_ground = self.on_ground();
 
         self.apply_fluid_movement_or_gravity();
+        self.update_no_physics_from_current_collision();
 
         // Vanilla optimization: skip physics when at rest on ground.
         // Only process physics if:

@@ -6,7 +6,7 @@ use glam::DVec3;
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::{block_state_ext::BlockStateExt as _, shapes::is_shape_full_block};
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -16,13 +16,17 @@ use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, vanilla_game_events};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
+use steel_utils::random::Random as _;
+use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
-use crate::behavior::{BLOCK_BEHAVIORS, EntityFallOnContext, EntityLandingContext};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockCollisionContext, EntityFallOnContext, EntityLandingContext,
+};
 use crate::entity::attribute::AttributeMap;
 use crate::physics::{
-    MoveResult, MoverType, WorldCollisionProvider, move_entity as resolve_entity_movement,
+    CollisionWorld, MoveResult, MoverType, WorldCollisionProvider,
+    move_entity as resolve_entity_movement,
 };
 use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
@@ -36,11 +40,64 @@ use entities::ItemEntity;
 /// counter to get a unique network ID. Starts at 1 (0 is reserved).
 static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
+const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
+const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
+    Direction::North,
+    Direction::South,
+    Direction::West,
+    Direction::East,
+    Direction::Up,
+];
 
 enum BlockEffectSegmentResult {
     Complete(i32),
     IterationLimit,
     Removed,
+}
+
+fn closest_open_space_direction(
+    block_pos: BlockPos,
+    fractional_position: DVec3,
+    mut is_full_collision_block: impl FnMut(BlockPos) -> bool,
+) -> Direction {
+    let mut closest_direction = Direction::Up;
+    let mut closest_distance = f64::MAX;
+
+    for direction in MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS {
+        let neighbor_pos = direction.relative(block_pos);
+        if is_full_collision_block(neighbor_pos) {
+            continue;
+        }
+
+        let axis_delta = axis_component(fractional_position, direction.axis());
+        let oriented_delta = if direction_step(direction) > 0.0 {
+            1.0 - axis_delta
+        } else {
+            axis_delta
+        };
+
+        if oriented_delta < closest_distance {
+            closest_distance = oriented_delta;
+            closest_direction = direction;
+        }
+    }
+
+    closest_direction
+}
+
+const fn axis_component(vector: DVec3, axis: Axis) -> f64 {
+    match axis {
+        Axis::X => vector.x,
+        Axis::Y => vector.y,
+        Axis::Z => vector.z,
+    }
+}
+
+const fn direction_step(direction: Direction) -> f64 {
+    match direction {
+        Direction::Down | Direction::North | Direction::West => -1.0,
+        Direction::Up | Direction::South | Direction::East => 1.0,
+    }
 }
 
 /// Allocates a new unique entity ID.
@@ -768,6 +825,72 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Sets whether this entity bypasses collision physics.
     fn set_no_physics(&self, no_physics: bool) {
         self.base().set_no_physics(no_physics);
+    }
+
+    /// Updates item-style `noPhysics` from the entity's current collision state.
+    fn update_no_physics_from_current_collision(&self) {
+        let Some(world) = self.level() else {
+            self.set_no_physics(false);
+            return;
+        };
+
+        let collision_world =
+            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        // TODO: Include world-border collision once Steel has world-border physics.
+        let colliding = !collision_world
+            .get_collisions_with_context(
+                &self.bounding_box().deflate(NO_PHYSICS_COLLISION_EPSILON),
+                BlockCollisionContext::empty(),
+            )
+            .is_empty();
+        self.set_no_physics(colliding);
+        if colliding {
+            let bounding_box = self.bounding_box();
+            self.move_towards_closest_space(
+                self.position().x,
+                f64::midpoint(bounding_box.min_y(), bounding_box.max_y()),
+                self.position().z,
+            );
+        }
+    }
+
+    /// Nudges velocity toward the closest non-full collision block.
+    fn move_towards_closest_space(&self, x: f64, y: f64, z: f64) {
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        let block_pos = BlockPos::containing(x, y, z);
+        let fractional_position = DVec3::new(
+            x - f64::from(block_pos.x()),
+            y - f64::from(block_pos.y()),
+            z - f64::from(block_pos.z()),
+        );
+        let closest_direction =
+            closest_open_space_direction(block_pos, fractional_position, |neighbor_pos| {
+                let block_state = world.get_block_state(neighbor_pos);
+                let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
+                let collision_shape = behavior.get_collision_shape(
+                    block_state,
+                    world.as_ref(),
+                    neighbor_pos,
+                    BlockCollisionContext::empty(),
+                );
+                is_shape_full_block(collision_shape)
+            });
+
+        let speed = {
+            let mut random = self.base().random().lock();
+            f64::from(random.next_f32().mul_add(0.2, 0.1))
+        };
+        let step = direction_step(closest_direction);
+        let scaled_velocity = self.velocity() * 0.75;
+        let next_velocity = match closest_direction.axis() {
+            Axis::X => DVec3::new(step * speed, scaled_velocity.y, scaled_velocity.z),
+            Axis::Y => DVec3::new(scaled_velocity.x, step * speed, scaled_velocity.z),
+            Axis::Z => DVec3::new(scaled_velocity.x, scaled_velocity.y, step * speed),
+        };
+        self.set_velocity(next_velocity);
     }
 
     /// Applies vanilla stuck-in-block movement for the next movement pass.
@@ -1530,8 +1653,9 @@ mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::vanilla_entities;
+    use steel_utils::{BlockPos, Direction};
 
-    use super::{Entity, EntityBase, SharedEntity};
+    use super::{Entity, EntityBase, SharedEntity, closest_open_space_direction};
 
     struct PushableTestEntity {
         base: EntityBase,
@@ -1564,6 +1688,49 @@ mod tests {
         assert!(
             diff.length_squared() < 1.0e-24,
             "expected {left:?} to equal {right:?}"
+        );
+    }
+
+    fn closest_direction_with_blocked_neighbors(
+        fractional_position: DVec3,
+        blocked_directions: &[Direction],
+    ) -> Direction {
+        let origin = BlockPos::ZERO;
+        closest_open_space_direction(origin, fractional_position, |neighbor_pos| {
+            blocked_directions
+                .iter()
+                .any(|direction| direction.relative(origin) == neighbor_pos)
+        })
+    }
+
+    #[test]
+    fn closest_open_space_direction_matches_vanilla_order_on_ties() {
+        assert_eq!(
+            closest_direction_with_blocked_neighbors(DVec3::splat(0.5), &[]),
+            Direction::North
+        );
+    }
+
+    #[test]
+    fn closest_open_space_direction_skips_full_collision_neighbors() {
+        assert_eq!(
+            closest_direction_with_blocked_neighbors(
+                DVec3::new(0.3, 0.5, 0.7),
+                &[Direction::South]
+            ),
+            Direction::West
+        );
+        assert_eq!(
+            closest_direction_with_blocked_neighbors(
+                DVec3::new(0.3, 0.2, 0.7),
+                &[
+                    Direction::North,
+                    Direction::South,
+                    Direction::West,
+                    Direction::East,
+                ],
+            ),
+            Direction::Up
         );
     }
 
