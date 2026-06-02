@@ -2,7 +2,6 @@
 
 use std::str::FromStr;
 use std::sync::Weak;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
@@ -22,9 +21,24 @@ use crate::world::World;
 /// structure generation creates.
 pub struct ChestMinecartEntity {
     base: EntityBase,
-    first_tick: AtomicBool,
-    loot_table: SyncMutex<Option<Identifier>>,
-    loot_table_seed: AtomicI64,
+    state: SyncMutex<ChestMinecartState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChestMinecartState {
+    first_tick: bool,
+    loot_table: Option<Identifier>,
+    loot_table_seed: i64,
+}
+
+impl ChestMinecartState {
+    const fn new(first_tick: bool) -> Self {
+        Self {
+            first_tick,
+            loot_table: None,
+            loot_table_seed: 0,
+        }
+    }
 }
 
 impl ChestMinecartEntity {
@@ -38,9 +52,7 @@ impl ChestMinecartEntity {
                 vanilla_entities::CHEST_MINECART.dimensions,
                 world,
             ),
-            first_tick: AtomicBool::new(true),
-            loot_table: SyncMutex::new(None),
-            loot_table_seed: AtomicI64::new(0),
+            state: SyncMutex::new(ChestMinecartState::new(true)),
         }
     }
 
@@ -49,16 +61,15 @@ impl ChestMinecartEntity {
     pub fn from_saved(load: EntityBaseLoad) -> Self {
         Self {
             base: EntityBase::from_load(load, vanilla_entities::CHEST_MINECART.dimensions),
-            first_tick: AtomicBool::new(false),
-            loot_table: SyncMutex::new(None),
-            loot_table_seed: AtomicI64::new(0),
+            state: SyncMutex::new(ChestMinecartState::new(false)),
         }
     }
 
     /// Sets the deferred loot table used when the container is first opened.
     pub fn set_loot_table(&self, loot_table: Identifier, seed: i64) {
-        *self.loot_table.lock() = Some(loot_table);
-        self.loot_table_seed.store(seed, Ordering::Relaxed);
+        let mut state = self.state.lock();
+        state.loot_table = Some(loot_table);
+        state.loot_table_seed = seed;
     }
 
     const fn nbt_bool(value: bool) -> i8 {
@@ -77,16 +88,13 @@ impl Entity for ChestMinecartEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         nbt.insert("FlippedRotation", Self::nbt_bool(false));
-        nbt.insert(
-            "HasTicked",
-            Self::nbt_bool(self.first_tick.load(Ordering::Relaxed)),
-        );
+        let state = self.state.lock();
+        nbt.insert("HasTicked", Self::nbt_bool(state.first_tick));
 
-        if let Some(loot_table) = self.loot_table.lock().as_ref() {
+        if let Some(loot_table) = state.loot_table.as_ref() {
             nbt.insert("LootTable", loot_table.to_string());
-            let seed = self.loot_table_seed.load(Ordering::Relaxed);
-            if seed != 0 {
-                nbt.insert("LootTableSeed", NbtTag::Long(seed));
+            if state.loot_table_seed != 0 {
+                nbt.insert("LootTableSeed", NbtTag::Long(state.loot_table_seed));
             }
         }
     }
@@ -94,16 +102,15 @@ impl Entity for ChestMinecartEntity {
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
 
-        if let Some(first_tick) = nbt.byte("HasTicked") {
-            self.first_tick.store(first_tick != 0, Ordering::Relaxed);
-        }
-
         let loot_table = nbt
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_string()).ok());
-        *self.loot_table.lock() = loot_table;
-        self.loot_table_seed
-            .store(nbt.long("LootTableSeed").unwrap_or(0), Ordering::Relaxed);
+        let mut state = self.state.lock();
+        if let Some(first_tick) = nbt.byte("HasTicked") {
+            state.first_tick = first_tick != 0;
+        }
+        state.loot_table = loot_table;
+        state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
     }
 }
 

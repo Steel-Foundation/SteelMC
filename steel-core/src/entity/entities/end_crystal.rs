@@ -1,7 +1,6 @@
 //! Minimal End Crystal entity implementation for End spike worldgen.
 
 use std::sync::Weak;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
@@ -23,7 +22,20 @@ use crate::world::World;
 pub struct EndCrystalEntity {
     base: EntityBase,
     entity_data: SyncMutex<EndCrystalEntityData>,
-    invulnerable: AtomicBool,
+    state: SyncMutex<EndCrystalState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EndCrystalState {
+    invulnerable: bool,
+}
+
+impl EndCrystalState {
+    const fn new() -> Self {
+        Self {
+            invulnerable: false,
+        }
+    }
 }
 
 impl EndCrystalEntity {
@@ -38,7 +50,7 @@ impl EndCrystalEntity {
                 world,
             ),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
-            invulnerable: AtomicBool::new(false),
+            state: SyncMutex::new(EndCrystalState::new()),
         }
     }
 
@@ -48,7 +60,7 @@ impl EndCrystalEntity {
         Self {
             base: EntityBase::from_load(load, vanilla_entities::END_CRYSTAL.dimensions),
             entity_data: SyncMutex::new(EndCrystalEntityData::new()),
-            invulnerable: AtomicBool::new(false),
+            state: SyncMutex::new(EndCrystalState::new()),
         }
     }
 
@@ -76,13 +88,13 @@ impl EndCrystalEntity {
 
     /// Sets the vanilla invulnerable flag.
     pub fn set_invulnerable(&self, invulnerable: bool) {
-        self.invulnerable.store(invulnerable, Ordering::Relaxed);
+        self.state.lock().invulnerable = invulnerable;
     }
 
     /// Returns the vanilla invulnerable flag.
     #[must_use]
     pub fn is_invulnerable(&self) -> bool {
-        self.invulnerable.load(Ordering::Relaxed)
+        self.state.lock().invulnerable
     }
 
     /// Sets position and rotation, matching vanilla `Entity.snapTo`.
@@ -146,5 +158,32 @@ impl Entity for EndCrystalEntity {
         if let Some(invulnerable) = nbt.byte("Invulnerable") {
             self.set_invulnerable(invulnerable != 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+
+    #[test]
+    fn end_crystal_saves_invulnerable_state() {
+        let crystal = EndCrystalEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+        crystal.set_invulnerable(true);
+
+        let mut nbt = NbtCompound::new();
+        crystal.save_additional(&mut nbt);
+
+        assert_eq!(nbt.byte("Invulnerable"), Some(1));
+
+        let loaded = EndCrystalEntity::new(2, DVec3::new(4.5, 5.5, 6.5), Weak::new());
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed =
+            read_borrowed_compound(&mut Cursor::new(&bytes)).expect("test nbt should reborrow");
+        loaded.load_additional(&borrowed);
+        assert!(loaded.is_invulnerable());
     }
 }
