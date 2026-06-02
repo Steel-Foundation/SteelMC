@@ -342,7 +342,7 @@ impl Player {
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
-                data.health.set(max_health);
+                data.avatar.living_entity.health.set(max_health);
                 data
             }),
             speed: AtomicCell::new(speed),
@@ -412,7 +412,7 @@ impl Player {
             }
         }
 
-        if *self.entity_data.lock().health.get() <= 0.0 {
+        if *self.entity_data.lock().avatar.living_entity.health.get() <= 0.0 {
             self.tick_death();
         } else {
             self.touch_nearby_items();
@@ -450,7 +450,7 @@ impl Player {
         self.sync_entity_data();
 
         {
-            let health = *self.entity_data.lock().health.get();
+            let health = *self.entity_data.lock().avatar.living_entity.health.get();
             let (food, saturation) = {
                 let food_data = self.food_data.lock();
                 (food_data.food_level, food_data.saturation_level)
@@ -601,7 +601,7 @@ impl Player {
             }
         }
 
-        if *self.entity_data.lock().health.get() <= 0.0 {
+        if *self.entity_data.lock().avatar.living_entity.health.get() <= 0.0 {
             return false;
         }
 
@@ -700,7 +700,7 @@ impl Player {
             );
         }
 
-        if *self.entity_data.lock().health.get() <= 0.0 {
+        if *self.entity_data.lock().avatar.living_entity.health.get() <= 0.0 {
             self.die(source);
         }
 
@@ -721,8 +721,8 @@ impl Player {
         self.cause_food_exhaustion(source.damage_type.exhaustion);
 
         let mut entity_data = self.entity_data.lock();
-        let new_health = (*entity_data.health.get() - amount).max(0.0);
-        entity_data.health.set(new_health);
+        let new_health = (*entity_data.avatar.living_entity.health.get() - amount).max(0.0);
+        entity_data.avatar.living_entity.health.set(new_health);
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
@@ -823,7 +823,7 @@ impl Player {
     /// # Panics
     /// If the player dies in a world that doesn't exist.
     pub fn respawn(&self) {
-        let health = *self.entity_data.lock().health.get();
+        let health = *self.entity_data.lock().avatar.living_entity.health.get();
         if !Self::should_process_respawn(health) {
             return;
         }
@@ -848,8 +848,17 @@ impl Player {
         // Respawn-specific state: reset health and pose
         {
             let mut entity_data = self.entity_data.lock();
-            entity_data.health.set(self.get_max_health());
-            entity_data.pose.set(EntityPose::Standing);
+            entity_data
+                .avatar
+                .living_entity
+                .health
+                .set(self.get_max_health());
+            entity_data
+                .avatar
+                .living_entity
+                .base
+                .pose
+                .set(EntityPose::Standing);
         }
 
         // Reset food data to defaults
@@ -1289,13 +1298,18 @@ impl LivingEntity for Player {
     }
 
     fn get_health(&self) -> f32 {
-        *self.entity_data.lock().health.get()
+        *self.entity_data.lock().avatar.living_entity.health.get()
     }
 
     fn set_health(&self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        self.entity_data.lock().health.set(clamped);
+        self.entity_data
+            .lock()
+            .avatar
+            .living_entity
+            .health
+            .set(clamped);
     }
 
     fn living_base(&self) -> &SyncMutex<LivingEntityBase> {

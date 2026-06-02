@@ -357,12 +357,16 @@ pub enum EntityData {
 
     // Holder/registry reference variants (VarInt registry IDs)
     CatVariant(i32),
+    CatSoundVariant(i32),
     CowVariant(i32),
+    CowSoundVariant(i32),
     WolfVariant(i32),
     WolfSoundVariant(i32),
     FrogVariant(i32),
     PigVariant(i32),
+    PigSoundVariant(i32),
     ChickenVariant(i32),
+    ChickenSoundVariant(i32),
     ZombieNautilusVariant(i32),
     PaintingVariant(i32),
 

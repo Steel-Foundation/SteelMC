@@ -1,11 +1,11 @@
 //! Build script for generating entity data structs from entities.json.
 //!
-//! Generates a struct per entity type with SyncedValue fields for each
-//! synched_data entry, along with `new()`, `pack_dirty()`, and `pack_all()` methods.
+//! Generates composed data structs matching the vanilla class layers that declare
+//! synchronized entity data.
 
-use std::fs;
+use std::{collections::HashMap, fs};
 
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::{ToShoutySnakeCase, ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
@@ -16,95 +16,190 @@ struct EntityEntry {
     #[expect(dead_code)]
     id: i32,
     name: String,
-    synched_data: Vec<SynchedDataEntry>,
+    synched_data: SynchedData,
 }
 
 #[derive(Deserialize, Debug)]
+struct SynchedData {
+    #[expect(dead_code)]
+    java_class: String,
+    #[expect(dead_code)]
+    class_hierarchy: Vec<ClassEntry>,
+    layers: Vec<SynchedDataLayer>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ClassEntry {
+    #[expect(dead_code)]
+    java_class: String,
+    #[expect(dead_code)]
+    simple_name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct SynchedDataLayer {
+    java_class: String,
+    simple_name: String,
+    fields: Vec<SynchedDataEntry>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 struct SynchedDataEntry {
     index: u8,
     name: String,
+    accessor_field: String,
+    serializer_id: i32,
     serializer: String,
     #[serde(default)]
     default_value: Value,
 }
 
-/// Maps a serializer name to (Rust type, EntityData variant, serializer ID).
-fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str, i32)> {
-    // Serializer IDs must match the registration order in vanilla_serializers.rs
+#[derive(Clone, Debug)]
+struct LayerDefinition {
+    java_class: String,
+    simple_name: String,
+    parent_java_class: Option<String>,
+    fields: Vec<SynchedDataEntry>,
+}
+
+/// Maps a serializer name to (Rust type, EntityData variant).
+fn serializer_info(serializer: &str) -> Option<(&'static str, &'static str)> {
     Some(match serializer {
-        "byte" => ("i8", "Byte", 0),
-        "int" => ("i32", "Int", 1),
-        "long" => ("i64", "Long", 2),
-        "float" => ("f32", "Float", 3),
-        "string" => ("String", "String", 4),
-        "component" => ("Box<TextComponent>", "Component", 5),
-        "optional_component" => ("Option<Box<TextComponent>>", "OptionalComponent", 6),
-        "item_stack" => ("ItemStack", "ItemStack", 7),
-        "boolean" => ("bool", "Boolean", 8),
-        "rotations" => ("Rotations", "Rotations", 9),
-        "block_pos" => ("BlockPos", "BlockPos", 10),
-        "optional_block_pos" => ("Option<BlockPos>", "OptionalBlockPos", 11),
-        "direction" => ("Direction", "Direction", 12),
-        "optional_living_entity_reference" => ("Option<Uuid>", "OptionalLivingEntityRef", 13),
-        "block_state" => ("BlockStateId", "BlockState", 14),
-        "optional_block_state" => ("Option<BlockStateId>", "OptionalBlockState", 15),
-        "particle" => ("ParticleData", "Particle", 16),
-        "particles" => ("ParticleList", "Particles", 17),
-        "villager_data" => ("VillagerData", "VillagerData", 18),
-        "optional_unsigned_int" => ("Option<u32>", "OptionalUnsignedInt", 19),
-        "pose" => ("EntityPose", "Pose", 20),
-        "cat_variant" => ("i32", "CatVariant", 21),
-        "cow_variant" => ("i32", "CowVariant", 22),
-        "wolf_variant" => ("i32", "WolfVariant", 23),
-        "wolf_sound_variant" => ("i32", "WolfSoundVariant", 24),
-        "frog_variant" => ("i32", "FrogVariant", 25),
-        "pig_variant" => ("i32", "PigVariant", 26),
-        "chicken_variant" => ("i32", "ChickenVariant", 27),
-        "zombie_nautilus_variant" => ("i32", "ZombieNautilusVariant", 28),
-        "optional_global_pos" => ("Option<GlobalPos>", "OptionalGlobalPos", 29),
-        "painting_variant" => ("i32", "PaintingVariant", 30),
-        "sniffer_state" => ("SnifferState", "SnifferState", 31),
-        "armadillo_state" => ("ArmadilloState", "ArmadilloState", 32),
-        "copper_golem_state" => ("i32", "CopperGolemState", 33),
-        "weathering_copper_state" => ("i32", "WeatheringCopperState", 34),
-        "vector3" => ("Vector3f", "Vector3", 35),
-        "quaternion" => ("Quaternionf", "Quaternion", 36),
-        "resolvable_profile" => ("ResolvableProfile", "ResolvableProfile", 37),
-        "humanoid_arm" => ("HumanoidArm", "HumanoidArm", 38),
+        "byte" => ("i8", "Byte"),
+        "int" => ("i32", "Int"),
+        "long" => ("i64", "Long"),
+        "float" => ("f32", "Float"),
+        "string" => ("String", "String"),
+        "component" => ("Box<TextComponent>", "Component"),
+        "optional_component" => ("Option<Box<TextComponent>>", "OptionalComponent"),
+        "item_stack" => ("ItemStack", "ItemStack"),
+        "boolean" => ("bool", "Boolean"),
+        "rotations" => ("Rotations", "Rotations"),
+        "block_pos" => ("BlockPos", "BlockPos"),
+        "optional_block_pos" => ("Option<BlockPos>", "OptionalBlockPos"),
+        "direction" => ("Direction", "Direction"),
+        "optional_living_entity_reference" => ("Option<Uuid>", "OptionalLivingEntityRef"),
+        "block_state" => ("BlockStateId", "BlockState"),
+        "optional_block_state" => ("Option<BlockStateId>", "OptionalBlockState"),
+        "particle" => ("ParticleData", "Particle"),
+        "particles" => ("ParticleList", "Particles"),
+        "villager_data" => ("VillagerData", "VillagerData"),
+        "optional_unsigned_int" => ("Option<u32>", "OptionalUnsignedInt"),
+        "pose" => ("EntityPose", "Pose"),
+        "cat_variant" => ("i32", "CatVariant"),
+        "cat_sound_variant" => ("i32", "CatSoundVariant"),
+        "cow_variant" => ("i32", "CowVariant"),
+        "cow_sound_variant" => ("i32", "CowSoundVariant"),
+        "wolf_variant" => ("i32", "WolfVariant"),
+        "wolf_sound_variant" => ("i32", "WolfSoundVariant"),
+        "frog_variant" => ("i32", "FrogVariant"),
+        "pig_variant" => ("i32", "PigVariant"),
+        "pig_sound_variant" => ("i32", "PigSoundVariant"),
+        "chicken_variant" => ("i32", "ChickenVariant"),
+        "chicken_sound_variant" => ("i32", "ChickenSoundVariant"),
+        "zombie_nautilus_variant" => ("i32", "ZombieNautilusVariant"),
+        "optional_global_pos" => ("Option<GlobalPos>", "OptionalGlobalPos"),
+        "painting_variant" => ("i32", "PaintingVariant"),
+        "sniffer_state" => ("SnifferState", "SnifferState"),
+        "armadillo_state" => ("ArmadilloState", "ArmadilloState"),
+        "copper_golem_state" => ("i32", "CopperGolemState"),
+        "weathering_copper_state" => ("i32", "WeatheringCopperState"),
+        "vector3" => ("Vector3f", "Vector3"),
+        "quaternion" => ("Quaternionf", "Quaternion"),
+        "resolvable_profile" => ("ResolvableProfile", "ResolvableProfile"),
+        "humanoid_arm" => ("HumanoidArm", "HumanoidArm"),
         _ => return None,
     })
+}
+
+fn required_string<'a>(default: &'a Value, serializer: &str) -> &'a str {
+    default
+        .as_str()
+        .unwrap_or_else(|| panic!("Expected string default for {serializer}, got {default}"))
+}
+
+fn minecraft_path<'a>(key: &'a str, serializer: &str) -> &'a str {
+    key.strip_prefix("minecraft:")
+        .unwrap_or_else(|| panic!("Expected minecraft namespaced key for {serializer}, got {key}"))
+}
+
+fn key_ident(default: &Value, serializer: &str) -> Ident {
+    let path = minecraft_path(required_string(default, serializer), serializer);
+    Ident::new(&path.to_shouty_snake_case(), Span::call_site())
+}
+
+fn registry_default_expr(module: &str, default: &Value, serializer: &str) -> TokenStream {
+    let module_ident = Ident::new(module, Span::call_site());
+    let value_ident = key_ident(default, serializer);
+    quote! { crate::#module_ident::#value_ident.id() as i32 }
+}
+
+fn ordinal_default_expr(default: &Value, serializer: &str, names: &[&str]) -> TokenStream {
+    let name = required_string(default, serializer);
+    let ordinal = names
+        .iter()
+        .position(|candidate| *candidate == name)
+        .unwrap_or_else(|| panic!("Unknown {serializer} default: {name}")) as i32;
+    quote! { #ordinal }
 }
 
 /// Generate the default value expression for a field.
 fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
     match serializer {
         "byte" => {
-            let v = default.as_i64().unwrap_or(0) as i8;
+            let v = default
+                .as_i64()
+                .unwrap_or_else(|| panic!("Expected integer default for byte, got {default}"))
+                as i8;
             quote! { #v }
         }
         "int" => {
-            let v = default.as_i64().unwrap_or(0) as i32;
+            let v = default
+                .as_i64()
+                .unwrap_or_else(|| panic!("Expected integer default for int, got {default}"))
+                as i32;
             quote! { #v }
         }
         "long" => {
-            let v = default.as_i64().unwrap_or(0);
+            let v = default
+                .as_i64()
+                .unwrap_or_else(|| panic!("Expected integer default for long, got {default}"));
             quote! { #v }
         }
         "float" => {
-            let v = default.as_f64().unwrap_or(0.0) as f32;
+            let v = default
+                .as_f64()
+                .unwrap_or_else(|| panic!("Expected float default, got {default}"))
+                as f32;
             let lit = Literal::f32_suffixed(v);
             quote! { #lit }
         }
         "string" => {
-            let v = default.as_str().unwrap_or("");
+            let v = required_string(default, serializer);
             quote! { #v.to_string() }
         }
         "boolean" => {
-            let v = default.as_bool().unwrap_or(false);
+            let v = default
+                .as_bool()
+                .unwrap_or_else(|| panic!("Expected boolean default, got {default}"));
             quote! { #v }
         }
-        "optional_component"
-        | "optional_block_pos"
+        "optional_component" => {
+            let present = default
+                .get("present")
+                .and_then(Value::as_bool)
+                .unwrap_or_else(|| panic!("Expected optional_component presence, got {default}"));
+            if present {
+                let text = default
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("Expected optional_component value, got {default}"));
+                quote! { Some(Box::new(TextComponent::plain(#text))) }
+            } else {
+                quote! { None }
+            }
+        }
+        "optional_block_pos"
         | "optional_block_state"
         | "optional_living_entity_reference"
         | "optional_unsigned_int"
@@ -112,12 +207,12 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             quote! { None }
         }
         "pose" => {
-            let pose_str = default.as_str().unwrap_or("STANDING");
+            let pose_str = required_string(default, serializer);
             let pose_ident = Ident::new(&pose_str.to_upper_camel_case(), Span::call_site());
             quote! { EntityPose::#pose_ident }
         }
         "direction" => {
-            let dir_str = default.as_str().unwrap_or("DOWN");
+            let dir_str = required_string(default, serializer);
             let dir_ident = Ident::new(&dir_str.to_upper_camel_case(), Span::call_site());
             quote! { Direction::#dir_ident }
         }
@@ -145,32 +240,71 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
             }
         }
         "block_state" => {
-            let v = default.as_i64().unwrap_or(0) as u16;
-            quote! { BlockStateId(#v) }
+            if let Some(v) = default.as_i64() {
+                let v = v as u16;
+                quote! { BlockStateId(#v) }
+            } else {
+                let block_ident = key_ident(default, serializer);
+                quote! { crate::vanilla_blocks::#block_ident.default_state() }
+            }
         }
         "component" => {
-            quote! { Box::new(TextComponent::default()) }
+            let text = required_string(default, serializer);
+            if text.is_empty() {
+                quote! { Box::new(TextComponent::default()) }
+            } else {
+                quote! { Box::new(TextComponent::plain(#text)) }
+            }
         }
-        // Variant types use VarInt registry IDs
-        "cat_variant"
-        | "cow_variant"
-        | "wolf_variant"
-        | "wolf_sound_variant"
-        | "frog_variant"
-        | "pig_variant"
-        | "chicken_variant"
-        | "zombie_nautilus_variant"
-        | "painting_variant"
-        | "copper_golem_state"
-        | "weathering_copper_state" => {
-            let v = default.as_i64().unwrap_or(0) as i32;
-            quote! { #v }
+        "cat_variant" => registry_default_expr("vanilla_cat_variants", default, serializer),
+        "cat_sound_variant" => {
+            registry_default_expr("vanilla_cat_sound_variants", default, serializer)
+        }
+        "cow_variant" => registry_default_expr("vanilla_cow_variants", default, serializer),
+        "cow_sound_variant" => {
+            registry_default_expr("vanilla_cow_sound_variants", default, serializer)
+        }
+        "wolf_variant" => registry_default_expr("vanilla_wolf_variants", default, serializer),
+        "wolf_sound_variant" => {
+            registry_default_expr("vanilla_wolf_sound_variants", default, serializer)
+        }
+        "frog_variant" => registry_default_expr("vanilla_frog_variants", default, serializer),
+        "pig_variant" => registry_default_expr("vanilla_pig_variants", default, serializer),
+        "pig_sound_variant" => {
+            registry_default_expr("vanilla_pig_sound_variants", default, serializer)
+        }
+        "chicken_variant" => registry_default_expr("vanilla_chicken_variants", default, serializer),
+        "chicken_sound_variant" => {
+            registry_default_expr("vanilla_chicken_sound_variants", default, serializer)
+        }
+        "zombie_nautilus_variant" => {
+            registry_default_expr("vanilla_zombie_nautilus_variants", default, serializer)
+        }
+        "painting_variant" => {
+            registry_default_expr("vanilla_painting_variants", default, serializer)
+        }
+        "copper_golem_state" => {
+            ordinal_default_expr(default, serializer, &["IDLE", "ACTIVE", "WEATHERED"])
+        }
+        "weathering_copper_state" => ordinal_default_expr(
+            default,
+            serializer,
+            &["UNAFFECTED", "EXPOSED", "WEATHERED", "OXIDIZED"],
+        ),
+        "humanoid_arm" => {
+            let arm_str = required_string(default, serializer);
+            let arm_ident = Ident::new(&arm_str.to_upper_camel_case(), Span::call_site());
+            quote! { HumanoidArm::#arm_ident }
         }
         "sniffer_state" => {
-            quote! { SnifferState::default() }
+            let state_str = required_string(default, serializer);
+            let state_ident = Ident::new(&state_str.to_upper_camel_case(), Span::call_site());
+            quote! { SnifferState::#state_ident }
         }
         "armadillo_state" => {
-            quote! { ArmadilloState::default() }
+            let state_str = required_string(default, serializer);
+            let state_ident = Ident::new(&state_str.to_upper_camel_case(), Span::call_site());
+            quote! { ArmadilloState::#state_ident }
         }
         "vector3" => {
             if let Some(obj) = default.as_object() {
@@ -210,9 +344,6 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 quote! { VillagerData::new(0, 0, 1) }
             }
         }
-        "humanoid_arm" => {
-            quote! { HumanoidArm::default() }
-        }
         "item_stack" => {
             quote! { ItemStack::empty() }
         }
@@ -231,7 +362,8 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
 
 /// Generate the EntityData conversion expression for packing.
 fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
-    let (_, variant, _) = serializer_info(serializer).unwrap();
+    let (_, variant) = serializer_info(serializer)
+        .unwrap_or_else(|| panic!("Unknown entity data serializer: {serializer}"));
     let variant_ident = Ident::new(variant, Span::call_site());
 
     match serializer {
@@ -242,12 +374,16 @@ fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
         | "float"
         | "boolean"
         | "cat_variant"
+        | "cat_sound_variant"
         | "cow_variant"
+        | "cow_sound_variant"
         | "wolf_variant"
         | "wolf_sound_variant"
         | "frog_variant"
         | "pig_variant"
+        | "pig_sound_variant"
         | "chicken_variant"
+        | "chicken_sound_variant"
         | "zombie_nautilus_variant"
         | "painting_variant"
         | "copper_golem_state"
@@ -279,17 +415,198 @@ fn entity_data_expr(serializer: &str, field_ident: &Ident) -> TokenStream {
         "rotations" | "block_pos" | "vector3" | "quaternion" => {
             quote! { EntityData::#variant_ident(*self.#field_ident.get()) }
         }
-        _ => quote! { EntityData::Byte(0) }, // Fallback
+        _ => panic!("Unhandled entity data serializer: {serializer}"),
     }
+}
+
+fn data_struct_name(simple_name: &str) -> String {
+    if simple_name == "Entity" {
+        "BaseEntityData".to_owned()
+    } else if simple_name.ends_with("Entity") {
+        format!("{simple_name}Data")
+    } else {
+        format!("{simple_name}EntityData")
+    }
+}
+
+fn data_struct_ident(simple_name: &str) -> Ident {
+    Ident::new(&data_struct_name(simple_name), Span::call_site())
+}
+
+fn sanitize_field_name(name: &str) -> String {
+    let field_name = name.trim_end_matches("_id").to_snake_case();
+    match field_name.as_str() {
+        "type" => "variant_type".to_string(),
+        "self" => "self_ref".to_string(),
+        "super" => "super_ref".to_string(),
+        "crate" => "crate_ref".to_string(),
+        "mod" => "mod_ref".to_string(),
+        "ref" => "ref_value".to_string(),
+        "move" => "move_value".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn entity_struct_name(entity_name: &str) -> String {
+    format!("{}EntityData", entity_name.to_upper_camel_case())
+}
+
+fn field_shape_matches(left: &SynchedDataEntry, right: &SynchedDataEntry) -> bool {
+    left.index == right.index
+        && left.name == right.name
+        && left.accessor_field == right.accessor_field
+        && left.serializer_id == right.serializer_id
+        && left.serializer == right.serializer
+}
+
+fn parent_field_ident(simple_name: &str) -> Ident {
+    let field_name = if simple_name == "Entity" {
+        "base".to_owned()
+    } else {
+        sanitize_field_name(simple_name)
+    };
+    Ident::new(&field_name, Span::call_site())
+}
+
+fn collect_layers(entities: &[EntityEntry]) -> Vec<LayerDefinition> {
+    let mut layer_indices = HashMap::new();
+    let mut layers = Vec::new();
+
+    for entity in entities {
+        let mut parent_java_class = None;
+        for layer in &entity.synched_data.layers {
+            if layer.fields.is_empty() {
+                continue;
+            }
+
+            let mut fields = layer.fields.clone();
+            fields.sort_by_key(|field| field.index);
+
+            if let Some(&index) = layer_indices.get(&layer.java_class) {
+                let existing: &LayerDefinition = &layers[index];
+                if existing.simple_name != layer.simple_name
+                    || existing.parent_java_class != parent_java_class
+                    || existing.fields.len() != fields.len()
+                    || !existing
+                        .fields
+                        .iter()
+                        .zip(fields.iter())
+                        .all(|(left, right)| field_shape_matches(left, right))
+                {
+                    panic!(
+                        "Inconsistent entity data layer for {} while processing entity {}",
+                        layer.java_class, entity.name
+                    );
+                }
+            } else {
+                layer_indices.insert(layer.java_class.clone(), layers.len());
+                layers.push(LayerDefinition {
+                    java_class: layer.java_class.clone(),
+                    simple_name: layer.simple_name.clone(),
+                    parent_java_class: parent_java_class.clone(),
+                    fields,
+                });
+            }
+
+            parent_java_class = Some(layer.java_class.clone());
+        }
+    }
+
+    layers
+}
+
+fn field_path_for_layer(layers: &[&SynchedDataLayer], target_index: usize) -> TokenStream {
+    let mut path = quote! { data };
+
+    for current_index in (target_index + 1..layers.len()).rev() {
+        let field_ident = parent_field_ident(&layers[current_index - 1].simple_name);
+        path = quote! { #path.#field_ident };
+    }
+
+    path
+}
+
+fn concrete_default_overrides(
+    entity: &EntityEntry,
+    canonical_layers: &HashMap<&str, usize>,
+    layers: &[LayerDefinition],
+) -> Vec<TokenStream> {
+    let entity_layers: Vec<_> = entity
+        .synched_data
+        .layers
+        .iter()
+        .filter(|layer| !layer.fields.is_empty())
+        .collect();
+    let mut overrides = Vec::new();
+
+    for (layer_index, entity_layer) in entity_layers.iter().enumerate() {
+        let canonical_index = canonical_layers
+            .get(entity_layer.java_class.as_str())
+            .unwrap_or_else(|| panic!("Missing canonical layer {}", entity_layer.java_class));
+        let canonical_layer = &layers[*canonical_index];
+        let layer_path = field_path_for_layer(&entity_layers, layer_index);
+
+        for field in &entity_layer.fields {
+            let Some(canonical_field) = canonical_layer
+                .fields
+                .iter()
+                .find(|candidate| candidate.index == field.index)
+            else {
+                panic!(
+                    "Missing canonical field {} on layer {}",
+                    field.name, entity_layer.java_class
+                );
+            };
+
+            if canonical_field.default_value == field.default_value {
+                continue;
+            }
+
+            let field_ident = Ident::new(&sanitize_field_name(&field.name), Span::call_site());
+            let default_expr = default_value_expr(&field.serializer, &field.default_value);
+            overrides.push(quote! {
+                #layer_path.#field_ident = SyncedValue::new(#default_expr);
+            });
+        }
+    }
+
+    overrides
 }
 
 pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/entities.json");
 
     let entities_file = "build_assets/entities.json";
-    let content = fs::read_to_string(entities_file).unwrap();
+    let content = fs::read_to_string(entities_file)
+        .unwrap_or_else(|e| panic!("Failed to read {entities_file}: {e}"));
     let entities: Vec<EntityEntry> = serde_json::from_str(&content)
         .unwrap_or_else(|e| panic!("Failed to parse entities.json: {e}"));
+    let layers = collect_layers(&entities);
+    let layer_indices: HashMap<_, _> = layers
+        .iter()
+        .enumerate()
+        .map(|(index, layer)| (layer.java_class.as_str(), index))
+        .collect();
+    let mut layer_new_overrides = HashMap::new();
+
+    for entity in &entities {
+        let Some(last_layer) = entity
+            .synched_data
+            .layers
+            .iter()
+            .rev()
+            .find(|layer| !layer.fields.is_empty())
+        else {
+            continue;
+        };
+
+        if entity_struct_name(&entity.name) == data_struct_name(&last_layer.simple_name) {
+            let overrides = concrete_default_overrides(entity, &layer_indices, &layers);
+            if !overrides.is_empty() {
+                layer_new_overrides.insert(last_layer.java_class.as_str(), overrides);
+            }
+        }
+    }
 
     let mut stream = TokenStream::new();
 
@@ -305,17 +622,15 @@ pub(crate) fn build() -> TokenStream {
         use steel_utils::BlockStateId;
         use text_components::TextComponent;
         use uuid::Uuid;
+        use crate::RegistryEntry;
     });
 
-    // Generate a struct for each entity
-    for entity in &entities {
-        // Skip entities with no synched_data
-        if entity.synched_data.is_empty() {
-            continue;
-        }
-
-        let struct_name = format!("{}EntityData", entity.name.to_upper_camel_case());
-        let struct_ident = Ident::new(&struct_name, Span::call_site());
+    for layer in &layers {
+        let struct_ident = data_struct_ident(&layer.simple_name);
+        let new_overrides = layer_new_overrides
+            .get(layer.java_class.as_str())
+            .cloned()
+            .unwrap_or_default();
 
         // Generate fields
         let mut field_defs = Vec::new();
@@ -324,33 +639,50 @@ pub(crate) fn build() -> TokenStream {
         let mut pack_all_entries = Vec::new();
         let mut is_dirty_checks = Vec::new();
 
-        for data in &entity.synched_data {
-            let Some((rust_type, _, serializer_id)) = serializer_info(&data.serializer) else {
-                eprintln!(
-                    "Warning: Unknown serializer '{}' for entity '{}' field '{}'",
-                    data.serializer, entity.name, data.name
-                );
-                continue;
-            };
+        let parent_layer = layer.parent_java_class.as_ref().map(|parent_java_class| {
+            let parent_index = layer_indices
+                .get(parent_java_class.as_str())
+                .unwrap_or_else(|| panic!("Missing parent entity data layer: {parent_java_class}"));
+            &layers[*parent_index]
+        });
 
-            // Clean up field name (remove _id suffix, convert to snake_case)
-            let field_name = data.name.trim_end_matches("_id").to_snake_case();
-            // Handle Rust reserved keywords
-            let field_name = match field_name.as_str() {
-                "type" => "variant_type".to_string(),
-                "self" => "self_ref".to_string(),
-                "super" => "super_ref".to_string(),
-                "crate" => "crate_ref".to_string(),
-                "mod" => "mod_ref".to_string(),
-                "ref" => "ref_value".to_string(),
-                "move" => "move_value".to_string(),
-                other => other.to_string(),
-            };
+        if let Some(parent_layer) = parent_layer {
+            let parent_field_ident = parent_field_ident(&parent_layer.simple_name);
+            let parent_struct_ident = data_struct_ident(&parent_layer.simple_name);
+
+            field_defs.push(quote! {
+                pub #parent_field_ident: #parent_struct_ident
+            });
+            field_inits.push(quote! {
+                #parent_field_ident: #parent_struct_ident::new()
+            });
+            pack_dirty_checks.push(quote! {
+                self.#parent_field_ident.pack_dirty_into(values);
+            });
+            pack_all_entries.push(quote! {
+                self.#parent_field_ident.pack_all_into(values);
+            });
+            is_dirty_checks.push(quote! {
+                self.#parent_field_ident.is_dirty()
+            });
+        }
+
+        for data in &layer.fields {
+            let (rust_type, _) = serializer_info(&data.serializer).unwrap_or_else(|| {
+                panic!(
+                    "Unknown serializer '{}' for entity data layer '{}' field '{}'",
+                    data.serializer, layer.simple_name, data.name
+                )
+            });
+
+            let field_name = sanitize_field_name(&data.name);
             let field_ident = Ident::new(&field_name, Span::call_site());
-            let rust_type_tokens: TokenStream = rust_type.parse().unwrap();
+            let rust_type_tokens: TokenStream = rust_type.parse().unwrap_or_else(|error| {
+                panic!("Failed to parse Rust type '{rust_type}' for entity data: {error}")
+            });
             let default_expr = default_value_expr(&data.serializer, &data.default_value);
             let index = data.index;
-            let serializer_id_lit = serializer_id;
+            let serializer_id_lit = data.serializer_id;
             let entity_data_expr = entity_data_expr(&data.serializer, &field_ident);
 
             field_defs.push(quote! {
@@ -387,9 +719,30 @@ pub(crate) fn build() -> TokenStream {
             });
         }
 
+        let is_dirty_expr = if is_dirty_checks.is_empty() {
+            quote! { false }
+        } else {
+            quote! { #(#is_dirty_checks)||* }
+        };
+        let new_body = if new_overrides.is_empty() {
+            quote! {
+                Self {
+                    #(#field_inits),*
+                }
+            }
+        } else {
+            quote! {
+                let mut data = Self {
+                    #(#field_inits),*
+                };
+                #(#new_overrides)*
+                data
+            }
+        };
+
         // Generate the struct
         stream.extend(quote! {
-            /// Entity data for `#struct_name`.
+            /// Synchronized entity data declared by the vanilla `#struct_name` layer.
             #[derive(Debug, Clone)]
             pub struct #struct_ident {
                 #(#field_defs),*
@@ -398,33 +751,118 @@ pub(crate) fn build() -> TokenStream {
             impl #struct_ident {
                 /// Create new entity data with default values.
                 pub fn new() -> Self {
-                    Self {
-                        #(#field_inits),*
-                    }
+                    #new_body
                 }
 
                 /// Pack all dirty values for network sync, clearing dirty flags.
                 /// Returns `None` if no values are dirty.
                 pub fn pack_dirty(&mut self) -> Option<Vec<DataValue>> {
                     let mut values = Vec::new();
-                    #(#pack_dirty_checks)*
+                    self.pack_dirty_into(&mut values);
                     if values.is_empty() { None } else { Some(values) }
+                }
+
+                fn pack_dirty_into(&mut self, values: &mut Vec<DataValue>) {
+                    #(#pack_dirty_checks)*
                 }
 
                 /// Pack all non-default values (for initial entity spawn).
                 pub fn pack_all(&self) -> Vec<DataValue> {
                     let mut values = Vec::new();
-                    #(#pack_all_entries)*
+                    self.pack_all_into(&mut values);
                     values
+                }
+
+                fn pack_all_into(&self, values: &mut Vec<DataValue>) {
+                    #(#pack_all_entries)*
                 }
 
                 /// Returns `true` if any field has been modified.
                 pub fn is_dirty(&self) -> bool {
-                    #(#is_dirty_checks)||*
+                    #is_dirty_expr
                 }
             }
 
             impl Default for #struct_ident {
+                fn default() -> Self {
+                    Self::new()
+                }
+            }
+        });
+    }
+
+    for entity in &entities {
+        let Some(last_layer) = entity
+            .synched_data
+            .layers
+            .iter()
+            .rev()
+            .find(|layer| !layer.fields.is_empty())
+        else {
+            continue;
+        };
+
+        let concrete_struct_name = entity_struct_name(&entity.name);
+        let layer_struct_name = data_struct_name(&last_layer.simple_name);
+        if concrete_struct_name == layer_struct_name {
+            continue;
+        }
+
+        let concrete_ident = Ident::new(&concrete_struct_name, Span::call_site());
+        let layer_ident = data_struct_ident(&last_layer.simple_name);
+        let root_field_ident = parent_field_ident(&last_layer.simple_name);
+        let overrides = concrete_default_overrides(entity, &layer_indices, &layers);
+        let doc = format!(
+            "Concrete synchronized entity data for vanilla entity `{}`.",
+            entity.name
+        );
+        let new_body = if overrides.is_empty() {
+            quote! {
+                Self {
+                    #root_field_ident: #layer_ident::new()
+                }
+            }
+        } else {
+            quote! {
+                let mut data = #layer_ident::new();
+                #(#overrides)*
+                Self {
+                    #root_field_ident: data
+                }
+            }
+        };
+
+        stream.extend(quote! {
+            #[doc = #doc]
+            #[derive(Debug, Clone)]
+            pub struct #concrete_ident {
+                pub #root_field_ident: #layer_ident
+            }
+
+            impl #concrete_ident {
+                /// Create new entity data with default values.
+                pub fn new() -> Self {
+                    #new_body
+                }
+
+                /// Pack all dirty values for network sync, clearing dirty flags.
+                /// Returns `None` if no values are dirty.
+                pub fn pack_dirty(&mut self) -> Option<Vec<DataValue>> {
+                    self.#root_field_ident.pack_dirty()
+                }
+
+                /// Pack all non-default values (for initial entity spawn).
+                pub fn pack_all(&self) -> Vec<DataValue> {
+                    self.#root_field_ident.pack_all()
+                }
+
+                /// Returns `true` if any field has been modified.
+                pub fn is_dirty(&self) -> bool {
+                    self.#root_field_ident.is_dirty()
+                }
+            }
+
+            impl Default for #concrete_ident {
                 fn default() -> Self {
                     Self::new()
                 }

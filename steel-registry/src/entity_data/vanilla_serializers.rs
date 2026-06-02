@@ -63,12 +63,16 @@ ser_write!(ser_block_state, BlockState);
 // VarInt serializers (for i32 holder/registry IDs)
 ser_varint!(ser_int, Int);
 ser_varint!(ser_cat_variant, CatVariant);
+ser_varint!(ser_cat_sound_variant, CatSoundVariant);
 ser_varint!(ser_cow_variant, CowVariant);
+ser_varint!(ser_cow_sound_variant, CowSoundVariant);
 ser_varint!(ser_wolf_variant, WolfVariant);
 ser_varint!(ser_wolf_sound_variant, WolfSoundVariant);
 ser_varint!(ser_frog_variant, FrogVariant);
 ser_varint!(ser_pig_variant, PigVariant);
+ser_varint!(ser_pig_sound_variant, PigSoundVariant);
 ser_varint!(ser_chicken_variant, ChickenVariant);
+ser_varint!(ser_chicken_sound_variant, ChickenSoundVariant);
 ser_varint!(ser_zombie_nautilus_variant, ZombieNautilusVariant);
 ser_varint!(ser_painting_variant, PaintingVariant);
 ser_varint!(ser_copper_golem_state, CopperGolemState);
@@ -306,23 +310,27 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
     reg!("optional_unsigned_int", ser_optional_unsigned_int); // 19
     reg!("pose", ser_pose); // 20
     reg!("cat_variant", ser_cat_variant); // 21
-    reg!("cow_variant", ser_cow_variant); // 22
-    reg!("wolf_variant", ser_wolf_variant); // 23
-    reg!("wolf_sound_variant", ser_wolf_sound_variant); // 24
-    reg!("frog_variant", ser_frog_variant); // 25
-    reg!("pig_variant", ser_pig_variant); // 26
-    reg!("chicken_variant", ser_chicken_variant); // 27
-    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant); // 28
-    reg!("optional_global_pos", ser_optional_global_pos); // 29
-    reg!("painting_variant", ser_painting_variant); // 30
-    reg!("sniffer_state", ser_sniffer_state); // 31
-    reg!("armadillo_state", ser_armadillo_state); // 32
-    reg!("copper_golem_state", ser_copper_golem_state); // 33
-    reg!("weathering_copper_state", ser_weathering_copper_state); // 34
-    reg!("vector3", ser_vector3); // 35
-    reg!("quaternion", ser_quaternion); // 36
-    reg!("resolvable_profile", ser_resolvable_profile); // 37
-    reg!("humanoid_arm", ser_humanoid_arm); // 38
+    reg!("cat_sound_variant", ser_cat_sound_variant); // 22
+    reg!("cow_variant", ser_cow_variant); // 23
+    reg!("cow_sound_variant", ser_cow_sound_variant); // 24
+    reg!("wolf_variant", ser_wolf_variant); // 25
+    reg!("wolf_sound_variant", ser_wolf_sound_variant); // 26
+    reg!("frog_variant", ser_frog_variant); // 27
+    reg!("pig_variant", ser_pig_variant); // 28
+    reg!("pig_sound_variant", ser_pig_sound_variant); // 29
+    reg!("chicken_variant", ser_chicken_variant); // 30
+    reg!("chicken_sound_variant", ser_chicken_sound_variant); // 31
+    reg!("zombie_nautilus_variant", ser_zombie_nautilus_variant); // 32
+    reg!("optional_global_pos", ser_optional_global_pos); // 33
+    reg!("painting_variant", ser_painting_variant); // 34
+    reg!("sniffer_state", ser_sniffer_state); // 35
+    reg!("armadillo_state", ser_armadillo_state); // 36
+    reg!("copper_golem_state", ser_copper_golem_state); // 37
+    reg!("weathering_copper_state", ser_weathering_copper_state); // 38
+    reg!("vector3", ser_vector3); // 39
+    reg!("quaternion", ser_quaternion); // 40
+    reg!("resolvable_profile", ser_resolvable_profile); // 41
+    reg!("humanoid_arm", ser_humanoid_arm); // 42
 }
 
 #[cfg(test)]
@@ -349,10 +357,12 @@ mod tests {
         assert_eq!(registry.id_from_key(&id!("float")), Some(3));
         assert_eq!(registry.id_from_key(&id!("boolean")), Some(8));
         assert_eq!(registry.id_from_key(&id!("pose")), Some(20));
-        assert_eq!(registry.id_from_key(&id!("humanoid_arm")), Some(38));
+        assert_eq!(registry.id_from_key(&id!("cat_sound_variant")), Some(22));
+        assert_eq!(registry.id_from_key(&id!("optional_global_pos")), Some(33));
+        assert_eq!(registry.id_from_key(&id!("humanoid_arm")), Some(42));
 
         // Total count
-        assert_eq!(registry.len(), 39);
+        assert_eq!(registry.len(), 43);
     }
 
     #[test]

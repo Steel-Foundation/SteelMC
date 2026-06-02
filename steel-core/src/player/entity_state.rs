@@ -72,7 +72,13 @@ impl Player {
         flags.set(SharedFlags::FALL_FLYING, state.fall_flying);
         drop(state);
 
-        self.entity_data.lock().shared_flags.set(flags.bits() as i8);
+        self.entity_data
+            .lock()
+            .avatar
+            .living_entity
+            .base
+            .shared_flags
+            .set(flags.bits() as i8);
     }
 
     /// Returns true if the player is currently sleeping.
@@ -124,7 +130,13 @@ impl Player {
     /// Updates the player's pose in entity data based on current state.
     pub(super) fn update_pose(&self) {
         let desired_pose = self.get_desired_pose();
-        self.entity_data.lock().pose.set(desired_pose);
+        self.entity_data
+            .lock()
+            .avatar
+            .living_entity
+            .base
+            .pose
+            .set(desired_pose);
     }
 
     /// Adds or removes the sprint speed modifier on `MOVEMENT_SPEED`.

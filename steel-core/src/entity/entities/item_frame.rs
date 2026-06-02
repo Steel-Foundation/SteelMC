@@ -41,7 +41,12 @@ impl ItemFrameEntity {
             block_pos: SyncMutex::new(block_pos),
             rotation: AtomicCell::new(Self::rotation_for_direction(direction)),
         };
-        entity.entity_data.lock().direction.set(direction);
+        entity
+            .entity_data
+            .lock()
+            .hanging_entity
+            .direction
+            .set(direction);
         entity
     }
 
@@ -76,14 +81,18 @@ impl ItemFrameEntity {
     }
 
     fn set_direction(&self, direction: Direction) {
-        self.entity_data.lock().direction.set(direction);
+        self.entity_data
+            .lock()
+            .hanging_entity
+            .direction
+            .set(direction);
         self.rotation.store(Self::rotation_for_direction(direction));
         self.recalculate_position();
     }
 
     fn recalculate_position(&self) {
         let block_pos = *self.block_pos.lock();
-        let direction = *self.entity_data.lock().direction.get();
+        let direction = *self.entity_data.lock().hanging_entity.direction.get();
         self.set_position(Self::frame_center(block_pos, direction));
     }
 
@@ -125,7 +134,7 @@ impl Entity for ItemFrameEntity {
 
     fn bounding_box(&self) -> WorldAabb {
         let block_pos = *self.block_pos.lock();
-        let direction = *self.entity_data.lock().direction.get();
+        let direction = *self.entity_data.lock().hanging_entity.direction.get();
         let center = Self::frame_center(block_pos, direction);
         let size = if self.has_framed_map() { 1.0 } else { 0.75 };
         let x_size = if direction.axis() == Axis::X {
@@ -158,7 +167,7 @@ impl Entity for ItemFrameEntity {
     }
 
     fn spawn_data(&self) -> i32 {
-        direction_3d_data_value(*self.entity_data.lock().direction.get())
+        direction_3d_data_value(*self.entity_data.lock().hanging_entity.direction.get())
     }
 
     fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
@@ -185,7 +194,7 @@ impl Entity for ItemFrameEntity {
         nbt.insert("ItemDropChance", 1.0_f32);
         nbt.insert(
             "Facing",
-            direction_3d_data_value(*entity_data.direction.get()) as i8,
+            direction_3d_data_value(*entity_data.hanging_entity.direction.get()) as i8,
         );
         nbt.insert("Invisible", 0_i8);
         nbt.insert("Fixed", 0_i8);

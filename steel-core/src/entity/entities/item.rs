@@ -890,7 +890,7 @@ impl Entity for ItemEntity {
     }
 
     fn is_no_gravity(&self) -> bool {
-        *self.entity_data.lock().no_gravity.get()
+        *self.entity_data.lock().base.no_gravity.get()
     }
 
     fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
