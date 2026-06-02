@@ -1,7 +1,7 @@
 //! Entity physics state representation.
 
 use glam::DVec3;
-use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::entity_type::EntityDimensions;
 use steel_utils::WorldAabb;
 
 /// Immutable entity movement input used by the collision resolver.
@@ -10,7 +10,7 @@ use steel_utils::WorldAabb;
 /// narrow snapshot of the fields vanilla `Entity.move` needs while resolving a
 /// single movement.
 #[derive(Debug, Clone, Copy)]
-pub struct EntityPhysicsState {
+pub(crate) struct EntityPhysicsState {
     /// Current position (center of bounding box at feet level).
     position: DVec3,
 
@@ -30,16 +30,7 @@ pub struct EntityPhysicsState {
     fall_distance: f64,
 }
 
-/// Default max step height for most entities.
-const DEFAULT_MAX_UP_STEP: f32 = 0.6;
-
 impl EntityPhysicsState {
-    /// Creates a new physics state for an entity at the given position.
-    #[must_use]
-    pub fn new(position: DVec3, entity_type: EntityTypeRef) -> Self {
-        Self::with_dimensions(position, entity_type.dimensions, DEFAULT_MAX_UP_STEP)
-    }
-
     /// Creates a new physics state with custom dimensions.
     #[must_use]
     pub fn with_dimensions(

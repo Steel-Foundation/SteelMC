@@ -10,14 +10,15 @@
 //! 1:1 movement validation for anti-cheat purposes.
 
 pub mod collision;
-pub mod entity_move;
-pub mod physics_state;
+pub(crate) mod entity_move;
+pub(crate) mod physics_state;
 pub mod shapes;
 
 // Public API
 pub use collision::{CollisionWorld, WorldCollisionProvider};
-pub use entity_move::{MoveResult, MoverType, move_entity};
-pub use physics_state::EntityPhysicsState;
+pub(crate) use entity_move::move_entity;
+pub use entity_move::{MoveResult, MoverType};
+pub(crate) use physics_state::EntityPhysicsState;
 pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_shape};
 
 /// Collision epsilon used for AABB deflation (vanilla constant).

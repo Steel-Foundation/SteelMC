@@ -80,7 +80,7 @@ pub struct MoveResult {
 ///
 /// # Vanilla Reference
 /// `net.minecraft.world.entity.Entity.move(MoverType, Vec3)`
-pub fn move_entity(
+pub(crate) fn move_entity(
     state: &EntityPhysicsState,
     delta: DVec3,
     mover_type: MoverType,
@@ -564,9 +564,17 @@ mod tests {
         }
     }
 
+    fn player_state(position: DVec3) -> EntityPhysicsState {
+        EntityPhysicsState::with_dimensions(position, vanilla_entities::PLAYER.dimensions, 0.6)
+    }
+
+    fn item_state(position: DVec3) -> EntityPhysicsState {
+        EntityPhysicsState::with_dimensions(position, vanilla_entities::ITEM.dimensions, 0.6)
+    }
+
     #[test]
     fn test_move_entity_free_fall() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), &vanilla_entities::PLAYER);
+        let state = player_state(DVec3::new(0.0, 10.0, 0.0));
 
         let world = MockWorld { has_floor: true };
         let gravity = DVec3::new(0.0, -0.08, 0.0); // Vanilla gravity per tick
@@ -582,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_move_entity_land_on_ground() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 5.0, 0.0), &vanilla_entities::PLAYER);
+        let state = player_state(DVec3::new(0.0, 5.0, 0.0));
 
         let world = MockWorld { has_floor: true };
         let large_fall = DVec3::new(0.0, -10.0, 0.0);
@@ -599,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_move_entity_no_collision_in_air() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 10.0, 0.0), &vanilla_entities::PLAYER);
+        let state = player_state(DVec3::new(0.0, 10.0, 0.0));
 
         let world = MockWorld { has_floor: false };
         let movement = DVec3::new(1.0, 0.0, 1.0);
@@ -617,8 +625,7 @@ mod tests {
     fn test_item_on_ground_with_accumulated_velocity() {
         // Simulates an item that's on the ground (Y=1.0 on top of floor)
         // and has accumulated negative velocity from gravity
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::ITEM)
-            .with_on_ground(true);
+        let state = item_state(DVec3::new(0.0, 1.0, 0.0)).with_on_ground(true);
 
         let world = MockWorld { has_floor: true };
 
@@ -645,7 +652,7 @@ mod tests {
     fn test_item_slightly_above_ground() {
         // Simulates an item that's slightly above the ground due to floating point
         // Floor at Y=1.0, item at Y=1.00001 (just above)
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.00001, 0.0), &vanilla_entities::ITEM);
+        let state = item_state(DVec3::new(0.0, 1.00001, 0.0));
 
         let world = MockWorld { has_floor: true };
 
@@ -664,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_crouching_backs_off_from_edge_incrementally() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0))
             .with_on_ground(true)
             .with_backs_off_from_edge(true);
 
@@ -684,8 +691,7 @@ mod tests {
 
     #[test]
     fn test_not_crouching_can_move_off_edge() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
-            .with_on_ground(true);
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0)).with_on_ground(true);
 
         let world = BoxWorld {
             boxes: vec![WorldAabb::new(-2.0, 0.0, -2.0, 0.5, 1.0, 2.0)],
@@ -699,8 +705,7 @@ mod tests {
 
     #[test]
     fn test_step_up_uses_obstacle_candidate_height() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
-            .with_on_ground(true);
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0)).with_on_ground(true);
 
         let world = BoxWorld {
             boxes: vec![
@@ -726,8 +731,7 @@ mod tests {
 
     #[test]
     fn test_step_up_rejects_obstacle_above_max_step() {
-        let state = EntityPhysicsState::new(DVec3::new(0.0, 1.0, 0.0), &vanilla_entities::PLAYER)
-            .with_on_ground(true);
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0)).with_on_ground(true);
 
         let world = BoxWorld {
             boxes: vec![
