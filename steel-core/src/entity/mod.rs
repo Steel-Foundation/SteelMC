@@ -330,7 +330,7 @@ pub trait Entity: Send + Sync {
             delta,
         );
         self.base()
-            .set_on_ground_with_movement(movement_flags, result.actual_movement);
+            .set_movement_flags(movement_flags, result.actual_movement);
 
         // Vanilla: Entity.move() zeros velocity components on collision.
         // Horizontal collision zeros X/Z individually based on which axis collided.

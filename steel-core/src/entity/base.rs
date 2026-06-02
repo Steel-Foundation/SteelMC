@@ -87,6 +87,13 @@ impl EntityMovementFlags {
         self.on_ground = on_ground;
         self
     }
+
+    /// Returns the same flags with a new horizontal-collision value.
+    #[must_use]
+    pub const fn with_horizontal_collision(mut self, horizontal_collision: bool) -> Self {
+        self.horizontal_collision = horizontal_collision;
+        self
+    }
 }
 
 /// Vanilla `Entity` movement state stored as one locked snapshot.
@@ -435,14 +442,24 @@ impl EntityBase {
         state.movement_flags = state.movement_flags.with_on_ground(on_ground);
     }
 
-    /// Sets vanilla movement flags after movement.
-    pub fn set_on_ground_with_movement(
-        &self,
-        movement_flags: EntityMovementFlags,
-        _movement: DVec3,
-    ) {
+    /// Sets all vanilla movement flags after `Entity.move`.
+    pub fn set_movement_flags(&self, movement_flags: EntityMovementFlags, _movement: DVec3) {
         // TODO: Update main supporting block from movement when support tracking exists.
         self.state.lock().movement_flags = movement_flags;
+    }
+
+    /// Sets ground and horizontal collision flags from an accepted client move.
+    pub fn set_on_ground_with_movement(
+        &self,
+        on_ground: bool,
+        horizontal_collision: bool,
+        _movement: DVec3,
+    ) {
+        let mut state = self.state.lock();
+        state.movement_flags = state
+            .movement_flags
+            .with_on_ground(on_ground)
+            .with_horizontal_collision(horizontal_collision);
     }
 
     /// Checks if this entity was already ticked during the given server tick.

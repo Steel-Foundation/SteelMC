@@ -11,35 +11,23 @@ use steel_protocol::packets::game::{
     PlayerCommandAction, SAcceptTeleportation, SMovePlayer, SPlayerCommand, SPlayerInput,
     calc_delta, to_angle_byte,
 };
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::entity_data::EntityPose;
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
-use steel_registry::{vanilla_attributes, vanilla_entities};
 use steel_utils::types::GameType;
-use steel_utils::{BlockPos, ChunkPos, WorldAabb, translations};
+use steel_utils::{ChunkPos, WorldAabb, translations};
 
 use crate::entity::{Entity, LivingEntity};
-use crate::physics::{
-    CollisionWorld, EntityPhysicsState, MoverType, WorldCollisionProvider, join_is_not_empty,
-    move_entity,
-};
+use crate::physics::{CollisionWorld, MoverType, WorldCollisionProvider, join_is_not_empty};
 use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::World;
-
-/// Player bounding box width (from entity type registry).
-pub const PLAYER_WIDTH: f64 = vanilla_entities::PLAYER.dimensions.width as f64;
-/// Player bounding box height (from entity type registry).
-pub const PLAYER_HEIGHT: f64 = vanilla_entities::PLAYER.dimensions.height as f64;
 
 /// Small epsilon for AABB deflation (matches vanilla 1.0E-5).
 pub const COLLISION_EPSILON: f64 = 1.0E-5;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
 pub const DEFAULT_GRAVITY: f64 = 0.08;
-/// Default max step height for players.
-pub const PLAYER_MAX_UP_STEP: f32 = 0.6;
 
 /// Maximum movement speed threshold for normal movement (meters per tick squared).
 pub const SPEED_THRESHOLD_NORMAL: f64 = 100.0;
@@ -62,18 +50,6 @@ pub const Y_TOLERANCE: f64 = 0.5;
 /// Post-impulse grace period in ticks (vanilla uses ~10-20 ticks).
 pub const IMPULSE_GRACE_TICKS: i32 = 20;
 
-/// Creates a player bounding box at the given position.
-#[must_use]
-pub fn make_player_aabb(pos: DVec3) -> WorldAabb {
-    WorldAabb::entity_box(pos.x, pos.y, pos.z, PLAYER_WIDTH / 2.0, PLAYER_HEIGHT)
-}
-
-/// Creates a player bounding box at the given position, deflated by the collision epsilon.
-#[must_use]
-pub fn make_player_aabb_deflated(pos: DVec3) -> WorldAabb {
-    make_player_aabb(pos).deflate(COLLISION_EPSILON)
-}
-
 /// Clamps a horizontal coordinate to vanilla limits.
 #[must_use]
 pub fn clamp_horizontal(value: f64) -> f64 {
@@ -86,121 +62,37 @@ pub fn clamp_vertical(value: f64) -> f64 {
     value.clamp(-CLAMP_VERTICAL, CLAMP_VERTICAL)
 }
 
-// ============================================================================
-// Movement Simulation (using physics engine)
-// ============================================================================
-
-/// Result of a movement simulation.
-#[derive(Debug, Clone)]
-pub struct MoveResult {
-    /// The actual movement after collision resolution.
-    pub movement: DVec3,
-    /// The final position after movement.
-    pub position: DVec3,
-    /// Whether there was a collision on the X axis.
-    pub collision_x: bool,
-    /// Whether there was a collision on the Y axis.
-    pub collision_y: bool,
-    /// Whether there was a collision on the Z axis.
-    pub collision_z: bool,
-    /// Whether the player is on the ground after this movement.
-    pub on_ground: bool,
+#[must_use]
+fn wrap_degrees(mut degrees: f32) -> f32 {
+    degrees %= 360.0;
+    if degrees >= 180.0 {
+        degrees -= 360.0;
+    }
+    if degrees < -180.0 {
+        degrees += 360.0;
+    }
+    degrees
 }
 
-/// Simulates player movement with collision detection.
-///
-/// This is the server-side equivalent of vanilla's `Entity.move()`.
-/// It takes a starting position and desired movement delta, then returns
-/// where the player would actually end up after collision resolution.
-///
-/// Uses the new physics engine with step-up and sneak-edge prevention.
-///
-/// # Arguments
-/// * `world` - The world to check collisions against
-/// * `start_pos` - The player's starting position
-/// * `delta` - The desired movement vector
-/// * `is_crouching` - Whether the player is sneaking (for edge prevention)
-/// * `is_fall_flying` - Whether the player is elytra gliding
-/// * `on_ground` - Whether the player is currently on ground (affects step-up)
-///
-/// # Returns
-/// A `MoveResult` containing the resolved movement and collision info.
 #[must_use]
-pub fn simulate_move(
-    world: &Arc<World>,
-    start_pos: DVec3,
-    delta: DVec3,
-    is_crouching: bool,
-    is_fall_flying: bool,
-    on_ground: bool,
-) -> MoveResult {
-    let pose = if is_fall_flying {
-        EntityPose::FallFlying
-    } else if is_crouching {
-        EntityPose::Sneaking
-    } else {
-        EntityPose::Standing
-    };
-    let mut state = EntityPhysicsState::with_dimensions(
-        start_pos,
-        Player::dimensions_for_pose(pose),
-        PLAYER_MAX_UP_STEP,
-    );
-    state.is_crouching = is_crouching;
-    state.on_ground = on_ground;
+fn bottom_center(aabb: WorldAabb) -> DVec3 {
+    DVec3::new(
+        (aabb.min_x() + aabb.max_x()) * 0.5,
+        aabb.min_y(),
+        (aabb.min_z() + aabb.max_z()) * 0.5,
+    )
+}
 
-    // Create collision provider
+/// Checks if an entity box is colliding with blocks.
+#[must_use]
+pub fn has_block_collision(world: &Arc<World>, aabb: WorldAabb) -> bool {
     let collision_world = WorldCollisionProvider::new(world);
-
-    // Run physics simulation
-    let physics_result = move_entity(&state, delta, MoverType::SelfMovement, &collision_world);
-
-    // Convert physics result to movement result
-    MoveResult {
-        movement: physics_result.actual_movement,
-        position: physics_result.final_position,
-        collision_x: physics_result.horizontal_collision,
-        collision_y: physics_result.vertical_collision,
-        collision_z: physics_result.horizontal_collision, // Horizontal includes both X and Z
-        on_ground: physics_result.on_ground,
-    }
+    !collision_world
+        .get_block_collisions(&aabb.deflate(COLLISION_EPSILON))
+        .is_empty()
 }
 
-/// Checks if a player at the given position is colliding with any blocks.
-///
-/// Used to allow movement when already stuck in blocks.
-#[must_use]
-pub fn is_in_collision(world: &Arc<World>, pos: DVec3) -> bool {
-    let aabb = make_player_aabb_deflated(pos);
-
-    let min_x = aabb.min_x().floor() as i32;
-    let max_x = aabb.max_x().ceil() as i32;
-    let min_y = aabb.min_y().floor() as i32;
-    let max_y = aabb.max_y().ceil() as i32;
-    let min_z = aabb.min_z().floor() as i32;
-    let max_z = aabb.max_z().ceil() as i32;
-
-    for bx in min_x..max_x {
-        for by in min_y..max_y {
-            for bz in min_z..max_z {
-                let block_pos = BlockPos::new(bx, by, bz);
-                let block_state = world.get_block_state(block_pos);
-                let collision_shape = block_state.get_collision_shape();
-
-                for block_aabb in collision_shape {
-                    let world_aabb = block_aabb.at_block(block_pos);
-                    if aabb.intersects(world_aabb) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
-
-/// Checks if moving from `old_pos` to `new_pos` would cause collision with NEW blocks.
+/// Checks if moving from `old_aabb` to `new_aabb` would cause collision with new blocks.
 ///
 /// This allows movement when already stuck in blocks (e.g., sand fell on player).
 /// Only returns true if the new position collides with blocks that the old position
@@ -210,186 +102,25 @@ pub fn is_in_collision(world: &Arc<World>, pos: DVec3) -> bool {
 ///
 /// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
 #[must_use]
-pub fn is_colliding_with_new_blocks(world: &Arc<World>, old_pos: DVec3, new_pos: DVec3) -> bool {
-    let old_aabb = make_player_aabb_deflated(old_pos);
-    let new_aabb = make_player_aabb_deflated(new_pos);
-
-    // Use physics collision provider for consistency
+pub fn is_colliding_with_new_blocks(
+    world: &Arc<World>,
+    old_aabb: WorldAabb,
+    new_aabb: WorldAabb,
+) -> bool {
     let collision_world = WorldCollisionProvider::new(world);
-    let collisions = collision_world.get_block_collisions(&new_aabb);
+    let old_shape = old_aabb.deflate(COLLISION_EPSILON);
+    let collisions = collision_world.get_pre_move_collisions(
+        &new_aabb.deflate(COLLISION_EPSILON),
+        bottom_center(old_aabb),
+    );
 
-    // Check if any collision is NEW (not present at old position)
     for collision_aabb in &collisions {
-        // If new position collides but old didn't, this is a NEW collision
-        if join_is_not_empty(&new_aabb, collision_aabb)
-            && !join_is_not_empty(&old_aabb, collision_aabb)
-        {
+        if !join_is_not_empty(collision_aabb, &old_shape) {
             return true;
         }
     }
 
     false
-}
-
-/// Input parameters for movement validation.
-#[derive(Debug, Clone)]
-pub struct MovementInput {
-    /// The target position the client claims to have moved to.
-    pub target_pos: DVec3,
-    /// The position at the start of the current tick.
-    pub first_good_pos: DVec3,
-    /// The last validated position.
-    pub last_good_pos: DVec3,
-    /// The player's current expected velocity (squared length).
-    pub expected_velocity_sq: f64,
-    /// Number of movement packets received since last tick.
-    pub delta_packets: i32,
-    /// Whether the player is using elytra.
-    pub is_fall_flying: bool,
-    /// Whether to skip anti-cheat checks (spectator, creative, tick frozen, gamerules).
-    /// When true, all validation checks are bypassed.
-    pub skip_checks: bool,
-    /// Whether the player is in post-impulse grace period.
-    pub in_impulse_grace: bool,
-    /// Whether the player is crouching (for sneak-edge prevention).
-    pub is_crouching: bool,
-    /// Whether the player was on ground before this movement (affects step-up).
-    pub on_ground: bool,
-}
-
-/// Result of movement validation.
-#[derive(Debug, Clone)]
-pub struct MovementValidation {
-    /// Whether the movement is valid.
-    pub is_valid: bool,
-    /// The movement delta from `last_good_pos`.
-    pub move_delta: DVec3,
-    /// The result of physics simulation.
-    pub move_result: MoveResult,
-    /// Why the movement failed (if invalid).
-    pub failure_reason: Option<MovementFailure>,
-}
-
-/// Reason for movement validation failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MovementFailure {
-    /// Player moved faster than allowed.
-    TooFast,
-    /// Client position differs too much from server simulation.
-    PositionError,
-    /// Player collided with new blocks.
-    Collision,
-}
-
-/// Validates a player's movement.
-///
-/// This encapsulates the movement validation logic from vanilla's `handleMovePlayer`.
-/// It runs physics simulation and checks for speed hacks, position errors, and collisions.
-#[must_use]
-pub fn validate_movement(world: &Arc<World>, input: &MovementInput) -> MovementValidation {
-    let target_pos = input.target_pos;
-    let first_good = input.first_good_pos;
-    let last_good = input.last_good_pos;
-
-    // Speed check: distance from first_good position
-    let dx = target_pos.x - first_good.x;
-    let dy = target_pos.y - first_good.y;
-    let dz = target_pos.z - first_good.z;
-    let moved_dist_sq = dx * dx + dy * dy + dz * dz;
-
-    // Speed check
-    if !input.skip_checks {
-        let threshold = if input.is_fall_flying {
-            SPEED_THRESHOLD_FLYING
-        } else {
-            SPEED_THRESHOLD_NORMAL
-        } * f64::from(input.delta_packets);
-
-        if moved_dist_sq - input.expected_velocity_sq > threshold {
-            return MovementValidation {
-                is_valid: false,
-                move_delta: DVec3::new(0.0, 0.0, 0.0),
-                move_result: MoveResult {
-                    movement: DVec3::new(0.0, 0.0, 0.0),
-                    position: last_good,
-                    collision_x: false,
-                    collision_y: false,
-                    collision_z: false,
-                    on_ground: false,
-                },
-                failure_reason: Some(MovementFailure::TooFast),
-            };
-        }
-    }
-
-    // Calculate movement delta from last_good position
-    let move_delta = DVec3::new(
-        target_pos.x - last_good.x,
-        target_pos.y - last_good.y,
-        target_pos.z - last_good.z,
-    );
-
-    // Run server-side physics simulation with step-up and sneak-edge
-    let move_result = simulate_move(
-        world,
-        last_good,
-        move_delta,
-        input.is_crouching,
-        input.is_fall_flying,
-        input.on_ground,
-    );
-
-    // Calculate error between client position and server-simulated position
-    let error_x = target_pos.x - move_result.position.x;
-    let mut error_y = target_pos.y - move_result.position.y;
-    let error_z = target_pos.z - move_result.position.z;
-
-    // Y-axis tolerance: ignore small Y discrepancies
-    if error_y > -Y_TOLERANCE && error_y < Y_TOLERANCE {
-        error_y = 0.0;
-    }
-
-    let error_dist_sq = error_x * error_x + error_y * error_y + error_z * error_z;
-
-    // Movement error check
-    let error_check_failed = !input.in_impulse_grace && error_dist_sq > MOVEMENT_ERROR_THRESHOLD;
-
-    // Collision checks
-    let was_in_collision = is_in_collision(world, last_good);
-    let collision_check_failed = error_check_failed
-        && was_in_collision
-        && is_colliding_with_new_blocks(world, last_good, target_pos);
-
-    let new_collision_without_error =
-        !error_check_failed && is_colliding_with_new_blocks(world, last_good, target_pos);
-
-    // Determine if movement failed
-    let movement_failed = !input.skip_checks
-        && ((error_check_failed && !was_in_collision)
-            || collision_check_failed
-            || new_collision_without_error);
-
-    if movement_failed {
-        let reason = if error_check_failed && !was_in_collision {
-            MovementFailure::PositionError
-        } else {
-            MovementFailure::Collision
-        };
-
-        return MovementValidation {
-            is_valid: false,
-            move_delta,
-            move_result,
-            failure_reason: Some(reason),
-        };
-    }
-
-    MovementValidation {
-        is_valid: true,
-        move_delta,
-        move_result,
-        failure_reason: None,
-    }
 }
 
 impl Player {
@@ -481,10 +212,12 @@ impl Player {
             return;
         }
 
+        let current_rotation = self.rotation();
+        let target_y_rot = wrap_degrees(packet.get_y_rot(current_rotation.0));
+        let target_x_rot = wrap_degrees(packet.get_x_rot(current_rotation.1));
+
         if self.update_awaiting_teleport() {
-            if packet.has_rot {
-                self.set_rotation((packet.y_rot, packet.x_rot));
-            }
+            self.set_rotation((target_y_rot, target_x_rot));
             return;
         }
 
@@ -492,20 +225,18 @@ impl Player {
             return;
         }
 
-        let (prev_pos, prev_rot) = {
-            let mv = self.movement.lock();
-            (mv.prev_position, mv.prev_rotation)
-        };
+        let prev_pos = self.movement.lock().prev_position;
         let start_pos = self.position();
         let game_mode = self.game_mode.load();
         let state = self.entity_state_snapshot();
-        let (is_sleeping, is_fall_flying, is_crouching) =
-            (state.sleeping, state.fall_flying, state.crouching);
+        let (is_sleeping, is_fall_flying) = (state.sleeping, state.fall_flying);
         let was_on_ground = self.on_ground();
         let is_spectator = game_mode == GameType::Spectator;
         let is_creative = game_mode == GameType::Creative;
         let world = self.get_world();
-        let tick_frozen = !world.tick_runs_normally();
+        let tick_runs_normally = world.tick_runs_normally();
+        let mut accepted_pos = prev_pos;
+        let mut client_delta = DVec3::ZERO;
 
         if packet.has_pos {
             let target_pos = DVec3::new(
@@ -525,63 +256,56 @@ impl Player {
                 let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if moved_dist_sq > 1.0 {
-                    let (yaw, pitch) = self.rotation();
-                    self.teleport(start_pos.x, start_pos.y, start_pos.z, yaw, pitch);
+                    self.teleport(
+                        start_pos.x,
+                        start_pos.y,
+                        start_pos.z,
+                        target_y_rot,
+                        target_x_rot,
+                    );
                     return;
                 }
             } else {
-                let mut delta_packets = {
-                    let mut mv = self.movement.lock();
-                    mv.received_move_packet_count += 1;
-                    mv.received_move_packet_count - mv.known_move_packet_count
-                };
+                let dx = target_pos.x - first_good.x;
+                let dy = target_pos.y - first_good.y;
+                let dz = target_pos.z - first_good.z;
+                let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
-                if delta_packets > 5 {
-                    delta_packets = 1;
+                if tick_runs_normally {
+                    let mut delta_packets = {
+                        let mut mv = self.movement.lock();
+                        mv.received_move_packet_count += 1;
+                        mv.received_move_packet_count - mv.known_move_packet_count
+                    };
+
+                    if delta_packets > 5 {
+                        delta_packets = 1;
+                    }
+
+                    if Self::should_validate_movement(&world, is_fall_flying) {
+                        let threshold = if is_fall_flying {
+                            SPEED_THRESHOLD_FLYING
+                        } else {
+                            SPEED_THRESHOLD_NORMAL
+                        } * f64::from(delta_packets);
+
+                        if moved_dist_sq - self.velocity().length_squared() > threshold {
+                            self.teleport(
+                                start_pos.x,
+                                start_pos.y,
+                                start_pos.z,
+                                current_rotation.0,
+                                current_rotation.1,
+                            );
+                            return;
+                        }
+                    }
                 }
 
-                let gamerule_skip = !Self::should_validate_movement(&world, is_fall_flying);
-                let skip_checks = is_spectator || is_creative || tick_frozen || gamerule_skip;
+                let old_aabb = self.bounding_box();
+                let move_delta = target_pos - last_good;
+                let moved_upwards = move_delta.y > 0.0;
 
-                let (expected_velocity_sq, in_impulse_grace) = {
-                    let mv = self.movement.lock();
-                    let vel_sq = self.velocity().length_squared();
-                    let current_tick = self.tick_count.load(Ordering::Relaxed);
-                    let grace =
-                        current_tick.wrapping_sub(mv.last_impulse_tick) < IMPULSE_GRACE_TICKS;
-                    (vel_sq, grace)
-                };
-
-                let mut validation = validate_movement(
-                    &world,
-                    &MovementInput {
-                        target_pos,
-                        first_good_pos: first_good,
-                        last_good_pos: last_good,
-                        expected_velocity_sq,
-                        delta_packets,
-                        is_fall_flying,
-                        skip_checks,
-                        in_impulse_grace,
-                        is_crouching,
-                        on_ground: was_on_ground,
-                    },
-                );
-
-                if !validation.is_valid {
-                    let (yaw, pitch) = prev_rot;
-                    self.teleport(start_pos.x, start_pos.y, start_pos.z, yaw, pitch);
-                    return;
-                }
-
-                self.movement.lock().last_good_position = target_pos;
-
-                if !was_on_ground && packet.on_ground {
-                    validation.move_delta.y = 0.0;
-                }
-                self.set_velocity(validation.move_delta);
-
-                let moved_upwards = validation.move_delta.y > 0.0;
                 if was_on_ground && !packet.on_ground && moved_upwards {
                     if self.is_sprinting() {
                         self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
@@ -590,9 +314,56 @@ impl Player {
                     }
                 }
 
+                let Some(_move_result) = self.move_entity(MoverType::Player, move_delta) else {
+                    self.teleport(
+                        start_pos.x,
+                        start_pos.y,
+                        start_pos.z,
+                        target_y_rot,
+                        target_x_rot,
+                    );
+                    return;
+                };
+
+                let simulated_pos = self.position();
+                let error_x = target_pos.x - simulated_pos.x;
+                let mut error_y = target_pos.y - simulated_pos.y;
+                let error_z = target_pos.z - simulated_pos.z;
+                if error_y > -Y_TOLERANCE || error_y < Y_TOLERANCE {
+                    error_y = 0.0;
+                }
+
+                let error_dist_sq = error_x * error_x + error_y * error_y + error_z * error_z;
+                let in_impulse_grace = {
+                    let mv = self.movement.lock();
+                    let current_tick = self.tick_count.load(Ordering::Relaxed);
+                    current_tick.wrapping_sub(mv.last_impulse_tick) < IMPULSE_GRACE_TICKS
+                };
+                let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
+                    && !is_creative
+                    && !is_spectator
+                    && !in_impulse_grace;
+
+                let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
+                let old_collision = has_block_collision(&world, old_aabb);
+                let new_collision = is_colliding_with_new_blocks(&world, old_aabb, new_aabb);
+
+                if (fail && !old_collision) || new_collision {
+                    self.teleport(
+                        start_pos.x,
+                        start_pos.y,
+                        start_pos.z,
+                        target_y_rot,
+                        target_x_rot,
+                    );
+                    return;
+                }
+
+                self.movement.lock().last_good_position = target_pos;
+
                 if packet.on_ground && self.is_sprinting() {
-                    let dx = validation.move_delta.x;
-                    let dz = validation.move_delta.z;
+                    let dx = move_delta.x;
+                    let dz = move_delta.z;
 
                     let cm = ((dx * dx + dz * dz).sqrt() as f32 * 100.0).round() as i32;
                     if cm > 0 {
@@ -602,27 +373,27 @@ impl Player {
                     }
                 }
             }
-        }
 
-        self.set_on_ground(packet.on_ground);
+            accepted_pos = target_pos;
+            client_delta = accepted_pos - start_pos;
+        }
 
         if packet.has_pos {
-            self.set_position(packet.position);
+            self.set_position(accepted_pos);
         }
-        if packet.has_rot {
-            self.set_rotation((packet.y_rot, packet.x_rot));
-        }
+        self.set_rotation((target_y_rot, target_x_rot));
+        self.base().set_on_ground_with_movement(
+            packet.on_ground,
+            packet.horizontal_collision,
+            client_delta,
+        );
 
         let pos = if packet.has_pos {
-            packet.position
+            accepted_pos
         } else {
             prev_pos
         };
-        let (yaw, pitch) = if packet.has_rot {
-            (packet.y_rot, packet.x_rot)
-        } else {
-            prev_rot
-        };
+        let (yaw, pitch) = (target_y_rot, target_x_rot);
 
         if packet.has_pos || packet.has_rot {
             let new_chunk = ChunkPos::from_entity_pos(pos);
@@ -729,7 +500,7 @@ impl Player {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::GRAVITY)
-            .unwrap_or(0.08)
+            .unwrap_or(DEFAULT_GRAVITY)
     }
 
     /// Applies gravity to the player's velocity.
@@ -918,15 +689,9 @@ mod tests {
     }
 
     #[test]
-    fn test_make_player_aabb() {
-        let pos = DVec3::new(0.0, 64.0, 0.0);
-        let aabb = make_player_aabb(pos);
-
-        assert!((aabb.min_x() - (-0.3)).abs() < 0.001);
-        assert!((aabb.max_x() - 0.3).abs() < 0.001);
-        assert!((aabb.min_y() - 64.0).abs() < 0.001);
-        assert!((aabb.max_y() - 65.8).abs() < 0.001);
-        assert!((aabb.min_z() - (-0.3)).abs() < 0.001);
-        assert!((aabb.max_z() - 0.3).abs() < 0.001);
+    fn test_wrap_degrees() {
+        assert_eq!(wrap_degrees(181.0), -179.0);
+        assert_eq!(wrap_degrees(-181.0), 179.0);
+        assert_eq!(wrap_degrees(90.0), 90.0);
     }
 }

@@ -21,17 +21,18 @@ pub trait CollisionWorld {
     /// Returns a list of world-space AABBs representing solid block collisions.
     fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb>;
 
-    /// Gets collision shapes needed for pre-move checks (sneak edge prevention).
+    /// Gets collision shapes for vanilla pre-move checks.
     ///
     /// # Arguments
     /// * `aabb` - The entity's bounding box after intended movement
     /// * `old_bottom_center` - The entity's bottom-center position before movement
     ///
     /// # Returns
-    /// Collision shapes at the blocks beneath the old position (for sneak checks).
+    /// Collision shapes intersecting the target box.
     ///
-    /// Matches vanilla's logic in `ServerGamePacketListenerImpl.handleMovePlayer()` where
-    /// it checks blocks at the old Y position to detect edge cases.
+    /// Vanilla uses the old bottom-center Y as collision context. Steel block
+    /// collision shapes are not context-sensitive yet, so this currently matches
+    /// the block-collision portion of that query.
     fn get_pre_move_collisions(&self, aabb: &WorldAabb, old_bottom_center: DVec3)
     -> Vec<WorldAabb>;
 }
@@ -102,42 +103,9 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
     fn get_pre_move_collisions(
         &self,
         aabb: &WorldAabb,
-        old_bottom_center: DVec3,
+        _old_bottom_center: DVec3,
     ) -> Vec<WorldAabb> {
-        let mut collisions = Vec::new();
-
-        // Check blocks at the old Y position (for sneak edge detection)
-        // We check a small area around the old position to catch edge cases
-        let check_min_x = (old_bottom_center.x - 0.3).floor() as i32;
-        let check_max_x = (old_bottom_center.x + 0.3).ceil() as i32;
-        let check_min_z = (old_bottom_center.z - 0.3).floor() as i32;
-        let check_max_z = (old_bottom_center.z + 0.3).ceil() as i32;
-        let check_y = old_bottom_center.y.floor() as i32;
-
-        for z in check_min_z..=check_max_z {
-            for x in check_min_x..=check_max_x {
-                let block_pos = BlockPos::new(x, check_y - 1, z); // Check block below feet
-                let block_state = self.world.get_block_state(block_pos);
-
-                if block_state.is_air() {
-                    continue;
-                }
-
-                let collision_shape = block_state.get_collision_shape();
-                if collision_shape.is_empty() {
-                    continue;
-                }
-
-                for shape_aabb in collision_shape {
-                    let world_aabb = translate_shape(shape_aabb, block_pos);
-                    if aabb.intersects(world_aabb) {
-                        collisions.push(world_aabb);
-                    }
-                }
-            }
-        }
-
-        collisions
+        self.get_block_collisions(aabb)
     }
 }
 
