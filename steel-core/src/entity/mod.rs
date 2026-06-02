@@ -6,10 +6,14 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::DataValue;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_attributes;
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_blocks;
+use steel_utils::BlockPos;
 use steel_utils::WorldAabb;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
@@ -268,6 +272,82 @@ pub trait Entity: Send + Sync {
         self.base().set_position(pos);
     }
 
+    /// Returns the block position this entity is standing on.
+    fn on_pos(&self, offset: f32) -> Option<BlockPos> {
+        let world = self.level()?;
+
+        if let Some(supporting_block) = self.base().supporting_block() {
+            if offset <= 1.0e-5 {
+                return Some(supporting_block);
+            }
+
+            let below_state = world.get_block_state(supporting_block);
+            let below_block = below_state.get_block();
+            if (offset <= 0.5 && below_block.has_tag(&BlockTag::FENCES))
+                || below_block.has_tag(&BlockTag::WALLS)
+                || below_block.has_tag(&BlockTag::FENCE_GATES)
+            {
+                return Some(supporting_block);
+            }
+
+            return Some(BlockPos::new(
+                supporting_block.x(),
+                (self.position().y - f64::from(offset)).floor() as i32,
+                supporting_block.z(),
+            ));
+        }
+
+        let position = self.position();
+        Some(BlockPos::new(
+            position.x.floor() as i32,
+            (position.y - f64::from(offset)).floor() as i32,
+            position.z.floor() as i32,
+        ))
+    }
+
+    /// Returns the block position used for movement-affecting block properties.
+    fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
+        self.on_pos(0.500_001)
+    }
+
+    /// Returns the vanilla block speed factor applied after movement.
+    #[expect(
+        clippy::float_cmp,
+        reason = "intentional: vanilla checks static block speed factors against 1.0"
+    )]
+    fn block_speed_factor(&self) -> f32 {
+        let Some(world) = self.level() else {
+            return 1.0;
+        };
+
+        let position = self.position();
+        let current_state = world.get_block_state(BlockPos::new(
+            position.x.floor() as i32,
+            position.y.floor() as i32,
+            position.z.floor() as i32,
+        ));
+        let current_block = current_state.get_block();
+        let speed_factor_here = current_block.config.speed_factor;
+        if current_block == &vanilla_blocks::WATER
+            || current_block == &vanilla_blocks::BUBBLE_COLUMN
+        {
+            return speed_factor_here;
+        }
+
+        if speed_factor_here != 1.0 {
+            return speed_factor_here;
+        }
+
+        let Some(below_pos) = self.block_pos_below_that_affects_movement() else {
+            return 1.0;
+        };
+        world
+            .get_block_state(below_pos)
+            .get_block()
+            .config
+            .speed_factor
+    }
+
     /// Maximum height this entity can step up during normal movement.
     fn max_up_step(&self) -> f32 {
         0.0
@@ -371,6 +451,14 @@ pub trait Entity: Send + Sync {
             let vel = self.velocity();
             self.set_velocity(DVec3::new(vel.x, 0.0, vel.z));
         }
+
+        let speed_factor = f64::from(self.block_speed_factor());
+        let vel = self.velocity();
+        self.set_velocity(DVec3::new(
+            vel.x * speed_factor,
+            vel.y,
+            vel.z * speed_factor,
+        ));
 
         Some(result)
     }

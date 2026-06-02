@@ -781,14 +781,9 @@ impl Entity for ItemEntity {
                 // Get world for block queries
                 if let Some(world) = self.level() {
                     // Apply friction (vanilla: ItemEntity.tick line 125-128)
-                    let friction = if result.on_ground {
-                        // Block below that affects movement (0.999999F offset like vanilla)
-                        let pos = self.position();
-                        let block_pos = BlockPos::new(
-                            pos.x.floor() as i32,
-                            (pos.y - 0.999_999).floor() as i32,
-                            pos.z.floor() as i32,
-                        );
+                    let friction = if result.on_ground
+                        && let Some(block_pos) = self.block_pos_below_that_affects_movement()
+                    {
                         let block_state = world.get_block_state(block_pos);
                         f64::from(block_state.get_block().config.friction) * 0.98
                     } else {
@@ -903,6 +898,10 @@ impl Entity for ItemEntity {
 
     fn is_no_gravity(&self) -> bool {
         *self.entity_data.lock().base().no_gravity.get()
+    }
+
+    fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
+        self.on_pos(0.999_999)
     }
 
     fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
