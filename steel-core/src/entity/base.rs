@@ -16,6 +16,79 @@ use uuid::Uuid;
 use crate::entity::{EntityLevelCallback, NullEntityCallback, RemovalReason};
 use crate::world::World;
 
+/// Vanilla collision and ground-contact flags updated by `Entity.move`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityMovementFlags {
+    on_ground: bool,
+    horizontal_collision: bool,
+    vertical_collision: bool,
+    vertical_collision_below: bool,
+}
+
+impl EntityMovementFlags {
+    /// Creates movement flags for an entity that has not moved yet.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            on_ground: false,
+            horizontal_collision: false,
+            vertical_collision: false,
+            vertical_collision_below: false,
+        }
+    }
+
+    /// Creates movement flags from a completed movement pass.
+    #[must_use]
+    pub fn after_move(
+        on_ground: bool,
+        horizontal_collision: bool,
+        vertical_collision: bool,
+        requested_delta: DVec3,
+    ) -> Self {
+        Self {
+            on_ground,
+            horizontal_collision,
+            vertical_collision,
+            vertical_collision_below: vertical_collision && requested_delta.y < 0.0,
+        }
+    }
+
+    /// Returns true if the entity is touching the ground.
+    #[inline]
+    #[must_use]
+    pub const fn on_ground(self) -> bool {
+        self.on_ground
+    }
+
+    /// Returns true if the last movement was clipped horizontally.
+    #[inline]
+    #[must_use]
+    pub const fn horizontal_collision(self) -> bool {
+        self.horizontal_collision
+    }
+
+    /// Returns true if the last movement was clipped vertically.
+    #[inline]
+    #[must_use]
+    pub const fn vertical_collision(self) -> bool {
+        self.vertical_collision
+    }
+
+    /// Returns true if the last vertical collision was below the entity.
+    #[inline]
+    #[must_use]
+    pub const fn vertical_collision_below(self) -> bool {
+        self.vertical_collision_below
+    }
+
+    /// Returns the same flags with a new ground-contact value.
+    #[must_use]
+    pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
+        self.on_ground = on_ground;
+        self
+    }
+}
+
 /// Vanilla `Entity` movement state stored as one locked snapshot.
 ///
 /// Position, velocity, rotation, and ground contact are commonly read together
@@ -30,7 +103,7 @@ pub struct EntityBaseState {
     pose: EntityPose,
     dimensions: EntityDimensions,
     bounding_box: WorldAabb,
-    on_ground: bool,
+    movement_flags: EntityMovementFlags,
 }
 
 impl EntityBaseState {
@@ -44,7 +117,7 @@ impl EntityBaseState {
             pose: EntityPose::Standing,
             dimensions,
             bounding_box: Self::make_bounding_box(position, dimensions),
-            on_ground: false,
+            movement_flags: EntityMovementFlags::new(),
         }
     }
 
@@ -92,7 +165,7 @@ impl EntityBaseState {
     /// Sets the ground-contact flag on this state snapshot.
     #[must_use]
     pub const fn with_on_ground(mut self, on_ground: bool) -> Self {
-        self.on_ground = on_ground;
+        self.movement_flags = self.movement_flags.with_on_ground(on_ground);
         self
     }
 
@@ -255,7 +328,25 @@ impl EntityBase {
     /// Returns true if the entity is touching the ground.
     #[inline]
     pub fn on_ground(&self) -> bool {
-        self.state.lock().on_ground
+        self.state.lock().movement_flags.on_ground()
+    }
+
+    /// Returns true if the last movement was clipped horizontally.
+    #[inline]
+    pub fn horizontal_collision(&self) -> bool {
+        self.state.lock().movement_flags.horizontal_collision()
+    }
+
+    /// Returns true if the last movement was clipped vertically.
+    #[inline]
+    pub fn vertical_collision(&self) -> bool {
+        self.state.lock().movement_flags.vertical_collision()
+    }
+
+    /// Returns true if the last vertical collision was below the entity.
+    #[inline]
+    pub fn vertical_collision_below(&self) -> bool {
+        self.state.lock().movement_flags.vertical_collision_below()
     }
 
     /// Gets the world this entity is in.
@@ -340,7 +431,18 @@ impl EntityBase {
 
     /// Sets whether this entity is touching the ground.
     pub fn set_on_ground(&self, on_ground: bool) {
-        self.state.lock().on_ground = on_ground;
+        let mut state = self.state.lock();
+        state.movement_flags = state.movement_flags.with_on_ground(on_ground);
+    }
+
+    /// Sets vanilla movement flags after movement.
+    pub fn set_on_ground_with_movement(
+        &self,
+        movement_flags: EntityMovementFlags,
+        _movement: DVec3,
+    ) {
+        // TODO: Update main supporting block from movement when support tracking exists.
+        self.state.lock().movement_flags = movement_flags;
     }
 
     /// Checks if this entity was already ticked during the given server tick.

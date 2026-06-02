@@ -16,7 +16,8 @@ use uuid::Uuid;
 
 use crate::entity::attribute::AttributeMap;
 use crate::physics::{
-    EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider, move_entity,
+    EntityPhysicsState, MoveResult, MoverType, WorldCollisionProvider,
+    move_entity as resolve_entity_movement,
 };
 use crate::world::World;
 use crate::{entity::damage::DamageSource, player::Player};
@@ -50,7 +51,7 @@ mod storage;
 mod tracker;
 
 use crate::portal::TeleportTransition;
-pub use base::{EntityBase, EntityBaseState};
+pub use base::{EntityBase, EntityBaseState, EntityMovementFlags};
 pub use cache::EntityCache;
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, NullEntityCallback, PlayerEntityCallback,
@@ -223,6 +224,21 @@ pub trait Entity: Send + Sync {
         self.base().on_ground()
     }
 
+    /// Returns true if the last movement was clipped horizontally.
+    fn horizontal_collision(&self) -> bool {
+        self.base().horizontal_collision()
+    }
+
+    /// Returns true if the last movement was clipped vertically.
+    fn vertical_collision(&self) -> bool {
+        self.base().vertical_collision()
+    }
+
+    /// Returns true if the last vertical collision was below the entity.
+    fn vertical_collision_below(&self) -> bool {
+        self.base().vertical_collision_below()
+    }
+
     /// Sets whether the entity is on the ground.
     fn set_on_ground(&self, on_ground: bool) {
         self.base().set_on_ground(on_ground);
@@ -231,6 +247,16 @@ pub trait Entity: Send + Sync {
     /// Sets the entity's position.
     fn set_position(&self, pos: DVec3) {
         self.base().set_position(pos);
+    }
+
+    /// Maximum height this entity can step up during normal movement.
+    fn max_up_step(&self) -> f32 {
+        0.0
+    }
+
+    /// Whether movement should apply player-style sneak edge prevention.
+    fn backs_off_from_edge(&self) -> bool {
+        false
     }
 
     // === Physics Helper Methods ===
@@ -278,24 +304,33 @@ pub trait Entity: Send + Sync {
     ///
     /// Mirrors vanilla's `Entity.move(MoverType, Vec3)`.
     /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-    fn do_move(&self, mover_type: MoverType) -> Option<MoveResult> {
+    fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
-        let velocity = self.velocity();
 
         // Build physics state
-        let mut physics_state =
-            EntityPhysicsState::with_dimensions(self.position(), self.base().dimensions(), 0.0);
-        physics_state.velocity = velocity;
+        let mut physics_state = EntityPhysicsState::with_dimensions(
+            self.position(),
+            self.base().dimensions(),
+            self.max_up_step(),
+        );
+        physics_state.velocity = self.velocity();
         physics_state.on_ground = self.on_ground();
-        physics_state.is_crouching = false;
+        physics_state.is_crouching = self.backs_off_from_edge();
 
         // Perform collision detection and movement
         let collision_world = WorldCollisionProvider::new(&world);
-        let result = move_entity(&physics_state, velocity, mover_type, &collision_world);
+        let result = resolve_entity_movement(&physics_state, delta, mover_type, &collision_world);
 
         // Update entity state
         self.set_position(result.final_position);
-        self.set_on_ground(result.on_ground);
+        let movement_flags = EntityMovementFlags::after_move(
+            result.on_ground,
+            result.horizontal_collision,
+            result.vertical_collision,
+            delta,
+        );
+        self.base()
+            .set_on_ground_with_movement(movement_flags, result.actual_movement);
 
         // Vanilla: Entity.move() zeros velocity components on collision.
         // Horizontal collision zeros X/Z individually based on which axis collided.

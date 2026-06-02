@@ -745,8 +745,8 @@ impl Entity for ItemEntity {
             || (tick_count + self.id()) % 4 == 0;
 
         if should_move {
-            // Move with collision detection (do_move handles velocity zeroing on collision)
-            if let Some(result) = self.do_move(MoverType::SelfMovement) {
+            // Move with collision detection; movement handles velocity zeroing on collision.
+            if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
                 // Get world for block queries
                 if let Some(world) = self.level() {
                     // Apply friction (vanilla: ItemEntity.tick line 125-128)

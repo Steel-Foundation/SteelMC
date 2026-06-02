@@ -1136,6 +1136,17 @@ impl Entity for Player {
         Some(self)
     }
 
+    fn max_up_step(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::STEP_HEIGHT)
+            .unwrap_or(0.6) as f32
+    }
+
+    fn backs_off_from_edge(&self) -> bool {
+        self.is_crouching()
+    }
+
     fn is_no_gravity(&self) -> bool {
         *self.entity_data.lock().base().no_gravity.get()
     }

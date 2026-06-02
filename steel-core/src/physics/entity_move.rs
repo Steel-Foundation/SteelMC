@@ -21,6 +21,8 @@ use steel_utils::axis::Axis;
 pub enum MoverType {
     /// Normal entity movement (walking, jumping, gravity).
     SelfMovement,
+    /// Player movement received from the client.
+    Player,
     /// Movement caused by external forces (pistons, etc).
     Piston,
     /// Movement from shulker box opening/closing.
@@ -99,7 +101,9 @@ pub fn move_entity(
     let aabb = state.bounding_box;
 
     // Apply sneak-edge prevention if crouching and on ground
-    let movement = if state.is_crouching && state.on_ground && mover_type == MoverType::SelfMovement
+    let movement = if state.is_crouching
+        && state.on_ground
+        && matches!(mover_type, MoverType::SelfMovement | MoverType::Player)
     {
         apply_sneak_edge_prevention(state, delta, &aabb, world)
     } else {
@@ -263,8 +267,8 @@ fn should_try_step_up(
     collision_result: &MoveResult,
     mover_type: MoverType,
 ) -> bool {
-    // Only try step-up for self-movement
-    if mover_type != MoverType::SelfMovement {
+    // Only try step-up for normal entity/player movement.
+    if !matches!(mover_type, MoverType::SelfMovement | MoverType::Player) {
         return false;
     }
 
