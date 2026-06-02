@@ -408,8 +408,15 @@ pub trait Entity: Send + Sync {
 /// **Note:** All methods take `&self` (not `&mut self`) because living entities
 /// are shared via `Arc` and use interior mutability (atomics, `SyncMutex`, etc.).
 pub trait LivingEntity: Entity {
+    /// Returns a reference to the shared [`LivingEntityBase`] that holds
+    /// living runtime state such as attributes, cached movement speed,
+    /// damage cooldown, and death animation counters.
+    fn living_base(&self) -> &LivingEntityBase;
+
     /// Returns a reference to this entity's attribute map.
-    fn attributes(&self) -> &SyncMutex<AttributeMap>;
+    fn attributes(&self) -> &SyncMutex<AttributeMap> {
+        self.living_base().attributes()
+    }
 
     /// Gets the current health of the entity.
     fn get_health(&self) -> f32;
@@ -442,10 +449,6 @@ pub trait LivingEntity: Entity {
     fn is_alive(&self) -> bool {
         !self.is_dead_or_dying()
     }
-
-    /// Returns a reference to the shared [`LivingEntityBase`] that holds
-    /// `dead`, `invulnerable_time`, and `last_hurt`.
-    fn living_base(&self) -> &SyncMutex<LivingEntityBase>;
 
     /// Gets the absorption amount (extra health from effects like absorption).
     fn get_absorption_amount(&self) -> f32;
@@ -511,10 +514,14 @@ pub trait LivingEntity: Entity {
     fn set_sprinting(&self, sprinting: bool);
 
     /// Gets the entity's cached movement speed.
-    fn get_speed(&self) -> f32;
+    fn get_speed(&self) -> f32 {
+        self.living_base().speed()
+    }
 
     /// Sets the entity's cached movement speed.
-    fn set_speed(&self, speed: f32);
+    fn set_speed(&self, speed: f32) {
+        self.living_base().set_speed(speed);
+    }
 
     /// Drains dirty attributes and applies server-side effects.
     fn refresh_dirty_attributes(&self) {

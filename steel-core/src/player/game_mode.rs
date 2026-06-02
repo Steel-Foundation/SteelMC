@@ -26,8 +26,8 @@ use crate::behavior::{
 use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
 use crate::command::commands::gamemode::get_gamemode_translation;
-use crate::entity::Entity;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
+use crate::entity::{Entity, LivingEntity};
 use crate::inventory::menu::Menu;
 use crate::player::Player;
 use crate::player::block_breaking::BlockBreakAction;
@@ -271,7 +271,7 @@ impl Player {
     /// range modifiers every tick.
     pub(super) fn update_player_attributes(&self) {
         let is_creative = self.game_mode.load() == GameType::Creative;
-        let mut attrs = self.attributes.lock();
+        let mut attrs = self.attributes().lock();
 
         if is_creative {
             attrs.set_modifier(
@@ -362,7 +362,7 @@ impl Player {
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
         let base_range = self
-            .attributes
+            .attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(4.5);

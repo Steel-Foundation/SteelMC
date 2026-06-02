@@ -1,38 +1,30 @@
 //! Shared fields for all living entities.
 //!
-//! Mirrors the fields that vanilla defines on `LivingEntity` (and `Entity` for
-//! `invulnerableTime`). Entities that implement `LivingEntity` embed this
-//! struct and expose it via `LivingEntity::living_base()`, just like
+//! Mirrors the runtime fields that vanilla defines on `LivingEntity` (and
+//! `Entity` for `invulnerableTime`). Entities that implement `LivingEntity`
+//! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
+
+use crossbeam::atomic::AtomicCell;
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_attributes;
+use steel_utils::locks::SyncMutex;
+
+use crate::entity::attribute::AttributeMap;
 
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
 
-/// Common fields shared by all living entities.
-///
-/// **Deviation from vanilla:** Vanilla calls this guard `LivingEntity.dead`,
-/// but it means death side effects have been processed, not health is zero.
-/// `ServerPlayer.die()` does NOT call `super.die()` and never sets that field.
-/// Steel uses this guard for players too because it reuses the same `Player`
-/// instance; health remains the source of truth for dead-or-dying checks such
-/// as client respawn requests.
-pub struct LivingEntityBase {
-    /// Whether death side effects have already been processed.
-    ///
-    /// See struct-level doc for vanilla deviation details.
-    pub death_processed: bool,
-    /// Remaining invulnerability ticks.
-    pub invulnerable_time: i32,
-    /// Last damage amount for invulnerability-frame comparison.
-    pub last_hurt: f32,
-    /// Ticks since the entity died. Incremented each tick while dead/dying.
-    pub death_time: i32,
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LivingEntityState {
+    death_processed: bool,
+    invulnerable_time: i32,
+    last_hurt: f32,
+    death_time: i32,
 }
 
-impl LivingEntityBase {
-    /// Creates a new `LivingEntityBase` with default values (alive, no invulnerability, no hurt).
-    #[must_use]
-    pub const fn new() -> Self {
+impl LivingEntityState {
+    const fn new() -> Self {
         Self {
             death_processed: false,
             invulnerable_time: 0,
@@ -41,16 +33,7 @@ impl LivingEntityBase {
         }
     }
 
-    /// Increments `death_time` by 1 and returns the new value.
-    #[inline]
-    pub const fn increment_death_time(&mut self) -> i32 {
-        self.death_time += 1;
-        self.death_time
-    }
-
-    /// Resets all death-related state back to alive defaults.
-    #[inline]
-    pub const fn reset_death_state(&mut self) {
+    const fn reset_death_state(&mut self) {
         self.death_processed = false;
         self.death_time = 0;
         self.invulnerable_time = 0;
@@ -58,8 +41,129 @@ impl LivingEntityBase {
     }
 }
 
-impl Default for LivingEntityBase {
-    fn default() -> Self {
-        Self::new()
+/// Common runtime fields shared by all living entities.
+///
+/// **Deviation from vanilla:** Vanilla calls this guard `LivingEntity.dead`,
+/// but it means death side effects have been processed, not health is zero.
+/// `ServerPlayer.die()` does NOT call `super.die()` and never sets that field.
+/// Steel uses this guard for players too because it reuses the same `Player`
+/// instance; health remains the source of truth for dead-or-dying checks such
+/// as client respawn requests.
+pub struct LivingEntityBase {
+    state: SyncMutex<LivingEntityState>,
+    attributes: SyncMutex<AttributeMap>,
+    speed: AtomicCell<f32>,
+}
+
+impl LivingEntityBase {
+    /// Creates living runtime state from an entity type's default attributes.
+    #[must_use]
+    pub fn new(entity_type: EntityTypeRef) -> Self {
+        Self::with_attributes(AttributeMap::new_for_entity(entity_type))
+    }
+
+    /// Creates living runtime state from an explicit attribute map.
+    #[must_use]
+    pub fn with_attributes(attributes: AttributeMap) -> Self {
+        let speed = attributes
+            .get_value(vanilla_attributes::MOVEMENT_SPEED)
+            .unwrap_or(0.1) as f32;
+
+        Self {
+            state: SyncMutex::new(LivingEntityState::new()),
+            attributes: SyncMutex::new(attributes),
+            speed: AtomicCell::new(speed),
+        }
+    }
+
+    /// Returns this entity's attribute map.
+    #[inline]
+    pub const fn attributes(&self) -> &SyncMutex<AttributeMap> {
+        &self.attributes
+    }
+
+    /// Gets the cached movement speed used by living movement code.
+    #[inline]
+    pub fn speed(&self) -> f32 {
+        self.speed.load()
+    }
+
+    /// Sets the cached movement speed used by living movement code.
+    #[inline]
+    pub fn set_speed(&self, speed: f32) {
+        self.speed.store(speed);
+    }
+
+    /// Refreshes the cached movement speed from the `MOVEMENT_SPEED` attribute.
+    pub fn refresh_speed_from_attributes(&self) {
+        if let Some(speed) = self
+            .attributes
+            .lock()
+            .get_value(vanilla_attributes::MOVEMENT_SPEED)
+        {
+            self.speed.store(speed as f32);
+        }
+    }
+
+    /// Decrements remaining invulnerability ticks by one if any are active.
+    pub fn decrement_invulnerable_time(&self) {
+        let mut state = self.state.lock();
+        if state.invulnerable_time > 0 {
+            state.invulnerable_time -= 1;
+        }
+    }
+
+    /// Applies vanilla hurt cooldown bookkeeping.
+    ///
+    /// Returns `None` when damage should be ignored because death was already
+    /// processed or the amount did not exceed the active invulnerability frame.
+    pub fn apply_damage_cooldown(
+        &self,
+        amount: f32,
+        bypasses_cooldown: bool,
+    ) -> Option<(bool, f32)> {
+        let mut state = self.state.lock();
+        if state.death_processed {
+            return None;
+        }
+
+        if state.invulnerable_time > 10 && !bypasses_cooldown {
+            if amount <= state.last_hurt {
+                return None;
+            }
+            let effective = amount - state.last_hurt;
+            state.last_hurt = amount;
+            Some((false, effective))
+        } else {
+            state.last_hurt = amount;
+            state.invulnerable_time = 20;
+            Some((true, amount))
+        }
+    }
+
+    /// Marks death side effects as processed.
+    ///
+    /// Returns `false` if they were already processed.
+    pub fn mark_death_processed(&self) -> bool {
+        let mut state = self.state.lock();
+        if state.death_processed {
+            return false;
+        }
+        state.death_processed = true;
+        true
+    }
+
+    /// Increments death animation time by 1 and returns the new value.
+    #[inline]
+    pub fn increment_death_time(&self) -> i32 {
+        let mut state = self.state.lock();
+        state.death_time += 1;
+        state.death_time
+    }
+
+    /// Resets all death-related state back to alive defaults.
+    #[inline]
+    pub fn reset_death_state(&self) {
+        self.state.lock().reset_death_state();
     }
 }

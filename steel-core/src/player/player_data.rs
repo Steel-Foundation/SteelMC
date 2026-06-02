@@ -4,7 +4,10 @@
 
 use steel_registry::item_stack::ItemStack;
 
-use crate::{entity::Entity, inventory::container::Container};
+use crate::{
+    entity::{Entity, LivingEntity},
+    inventory::container::Container,
+};
 
 use super::{Player, abilities::Abilities};
 
@@ -126,7 +129,6 @@ impl PersistentPlayerData {
         };
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
-        let entity_data = player.entity_data.lock();
         let food_data = player.food_data.lock();
 
         // Collect non-empty inventory slots
@@ -158,7 +160,7 @@ impl PersistentPlayerData {
             rotation: [yaw, pitch],
             on_ground,
             fall_flying,
-            health: *entity_data.avatar.living_entity.health.get(),
+            health: player.get_health(),
             game_mode: player.game_mode.load() as i32,
             prev_game_mode: player.prev_game_mode.load() as i32,
             abilities: PersistentAbilities {
@@ -266,13 +268,7 @@ impl PersistentPlayerData {
         }
 
         // Health
-        player
-            .entity_data
-            .lock()
-            .avatar
-            .living_entity
-            .health
-            .set(self.health);
+        player.set_health(self.health);
 
         // Game mode
         let game_mode = self.game_mode.into();

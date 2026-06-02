@@ -711,7 +711,7 @@ impl Player {
     /// Matches vanilla `LivingEntity.getGravity()` which reads from `Attributes.GRAVITY`.
     /// Default is 0.08 blocks/tick².
     fn get_gravity(&self) -> f64 {
-        self.attributes
+        self.attributes()
             .lock()
             .get_value(vanilla_attributes::GRAVITY)
             .unwrap_or(0.08)

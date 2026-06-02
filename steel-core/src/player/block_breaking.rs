@@ -20,7 +20,7 @@ use steel_utils::{
 
 use super::food_data::food_constants;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
-use crate::entity::Entity;
+use crate::entity::{Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::world::{World, game_event_context::GameEventContext};
@@ -463,7 +463,7 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
 
     let mut rng = rand::rng();
     let luck = player
-        .attributes
+        .attributes()
         .lock()
         .get_value(vanilla_attributes::LUCK)
         .unwrap_or(0.0) as f32;

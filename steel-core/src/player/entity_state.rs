@@ -8,6 +8,7 @@ use steel_registry::entity_data::EntityPose;
 use steel_registry::vanilla_attributes;
 use steel_utils::Identifier;
 
+use crate::entity::LivingEntity;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::player::Player;
 
@@ -134,7 +135,7 @@ impl Player {
     ///
     /// Vanilla: `LivingEntity.setSprinting()` — `SPEED_MODIFIER_SPRINTING`.
     pub(super) fn apply_sprint_speed_modifier(&self, sprinting: bool) {
-        let mut attrs = self.attributes.lock();
+        let mut attrs = self.attributes().lock();
         if sprinting {
             attrs.add_modifier(
                 vanilla_attributes::MOVEMENT_SPEED,

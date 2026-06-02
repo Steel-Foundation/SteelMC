@@ -74,7 +74,6 @@ use text_components::translation::TranslatedMessage;
 use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::config::RuntimeConfig;
-use crate::entity::attribute::AttributeMap;
 use crate::entity::damage::DamageSource;
 use crate::entity::{DEATH_DURATION, Entity, EntityBase, LivingEntityBase, RemovalReason};
 use crate::inventory::SyncPlayerInv;
@@ -190,12 +189,6 @@ pub struct Player {
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
     entity_data: SyncMutex<PlayerEntityData>,
 
-    /// The player's movement speed.
-    speed: AtomicCell<f32>,
-
-    /// Entity attribute map (movement speed, max health, gravity, etc.).
-    attributes: SyncMutex<AttributeMap>,
-
     /// The last chunk position of the player.
     pub last_chunk_pos: SyncMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
@@ -247,9 +240,9 @@ pub struct Player {
     /// Block breaking state machine.
     pub block_breaking: SyncMutex<BlockBreakingManager>,
 
-    /// Shared living-entity fields (`death_processed`, `invulnerable_time`, `last_hurt`).
+    /// Shared living-entity runtime fields (attributes, speed, damage/death state).
     /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
-    living_base: SyncMutex<LivingEntityBase>,
+    living_base: LivingEntityBase,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
     pub food_data: SyncMutex<FoodData>,
@@ -276,7 +269,7 @@ impl Player {
         let (yaw, pitch) = self.rotation();
         let (yaw_rad, pitch_rad) = (f64::from(yaw.to_radians()), f64::from(pitch.to_radians()));
         let block_interaction_range = self
-            .attributes
+            .attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(4.5);
@@ -307,13 +300,12 @@ impl Player {
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
-        let max_health = attributes
+        let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let max_health = living_base
+            .attributes()
+            .lock()
             .get_value(vanilla_attributes::MAX_HEALTH)
             .unwrap_or(20.0) as f32;
-        let speed = attributes
-            .get_value(vanilla_attributes::MOVEMENT_SPEED)
-            .unwrap_or(0.1) as f32;
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
 
@@ -332,8 +324,6 @@ impl Player {
                 data.avatar.living_entity.health.set(max_health);
                 data
             }),
-            speed: AtomicCell::new(speed),
-            attributes: SyncMutex::new(attributes),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
             chunk_sender: SyncMutex::new(ChunkSender::default()),
@@ -351,7 +341,7 @@ impl Player {
             entity_state: SyncMutex::new(EntityState::new()),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
-            living_base: SyncMutex::new(LivingEntityBase::new()),
+            living_base,
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
             domain_switching: AtomicBool::new(false),
@@ -390,14 +380,9 @@ impl Player {
         let world = self.get_world();
         world.chunk_map.update_player_status(self);
 
-        {
-            let mut living_base = self.living_base.lock();
-            if living_base.invulnerable_time > 0 {
-                living_base.invulnerable_time -= 1;
-            }
-        }
+        self.living_base.decrement_invulnerable_time();
 
-        if *self.entity_data.lock().avatar.living_entity.health.get() <= 0.0 {
+        if self.get_health() <= 0.0 {
             self.tick_death();
         } else {
             self.touch_nearby_items();
@@ -411,13 +396,7 @@ impl Player {
             // - Handling falling
 
             // aiStep in vanilla
-            if let Some(speed) = self
-                .attributes
-                .lock()
-                .get_value(vanilla_attributes::MOVEMENT_SPEED)
-            {
-                self.speed.store(speed as f32);
-            }
+            self.living_base.refresh_speed_from_attributes();
 
             self.update_player_attributes();
             self.tick_regeneration();
@@ -435,7 +414,7 @@ impl Player {
         self.sync_entity_data();
 
         {
-            let health = *self.entity_data.lock().avatar.living_entity.health.get();
+            let health = self.get_health();
             let (food, saturation) = {
                 let food_data = self.food_data.lock();
                 (food_data.food_level, food_data.saturation_level)
@@ -468,7 +447,7 @@ impl Player {
         }
 
         {
-            let snapshots = self.attributes.lock().drain_dirty_sync();
+            let snapshots = self.attributes().lock().drain_dirty_sync();
             if !snapshots.is_empty() {
                 let packet = CUpdateAttributes::new(self.id(), snapshots);
                 let chunk_pos = *self.last_chunk_pos.lock();
@@ -483,10 +462,7 @@ impl Player {
     /// Ticks the death animation timer.
     /// Vanilla: `LivingEntity.tickDeath()` (not overridden by `ServerPlayer`).
     fn tick_death(&self) {
-        let death_time = {
-            let mut living_base = self.living_base.lock();
-            living_base.increment_death_time()
-        };
+        let death_time = self.living_base.increment_death_time();
 
         if death_time >= DEATH_DURATION && !self.is_removed() {
             let world = self.get_world();
@@ -586,7 +562,7 @@ impl Player {
             }
         }
 
-        if *self.entity_data.lock().avatar.living_entity.health.get() <= 0.0 {
+        if self.get_health() <= 0.0 {
             return false;
         }
 
@@ -624,24 +600,11 @@ impl Player {
             return false;
         }
 
-        let (took_full_damage, effective_amount) = {
-            let mut living_base = self.living_base.lock();
-            if living_base.death_processed {
-                return false;
-            }
-
-            if living_base.invulnerable_time > 10 && !source.bypasses_cooldown() {
-                if amount <= living_base.last_hurt {
-                    return false;
-                }
-                let effective = amount - living_base.last_hurt;
-                living_base.last_hurt = amount;
-                (false, effective)
-            } else {
-                living_base.last_hurt = amount;
-                living_base.invulnerable_time = 20;
-                (true, amount)
-            }
+        let Some((took_full_damage, effective_amount)) = self
+            .living_base
+            .apply_damage_cooldown(amount, source.bypasses_cooldown())
+        else {
+            return false;
         };
 
         // TODO: Vanilla LivingEntity.hurtServer applies item blocking (shield) before
@@ -685,7 +648,7 @@ impl Player {
             );
         }
 
-        if *self.entity_data.lock().avatar.living_entity.health.get() <= 0.0 {
+        if self.get_health() <= 0.0 {
             self.die(source);
         }
 
@@ -705,20 +668,16 @@ impl Player {
         // TODO: absorption handling
         self.cause_food_exhaustion(source.damage_type.exhaustion);
 
-        let mut entity_data = self.entity_data.lock();
-        let new_health = (*entity_data.avatar.living_entity.health.get() - amount).max(0.0);
-        entity_data.avatar.living_entity.health.set(new_health);
+        self.set_health(self.get_health() - amount);
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
     fn die(&self, source: &DamageSource) {
-        {
-            let mut living_base = self.living_base.lock();
-            if self.is_removed() || living_base.death_processed {
-                return;
-            }
-
-            living_base.death_processed = true;
+        if self.is_removed() {
+            return;
+        }
+        if !self.living_base.mark_death_processed() {
+            return;
         }
 
         {
@@ -808,15 +767,12 @@ impl Player {
     /// # Panics
     /// If the player dies in a world that doesn't exist.
     pub fn respawn(&self) {
-        let health = *self.entity_data.lock().avatar.living_entity.health.get();
+        let health = self.get_health();
         if !Self::should_process_respawn(health) {
             return;
         }
 
-        {
-            let mut living_base = self.living_base.lock();
-            living_base.reset_death_state();
-        };
+        self.living_base.reset_death_state();
 
         let was_removed = self.base.clear_removed();
         let world = self.get_world();
@@ -850,7 +806,7 @@ impl Player {
         *self.food_data.lock() = FoodData::new();
 
         // Clear transient attribute modifiers (sprint, potion effects, etc.)
-        self.attributes.lock().remove_all_transient();
+        self.attributes().lock().remove_all_transient();
 
         self.health_sync.lock().reset_for_respawn();
 
@@ -1241,10 +1197,6 @@ impl Entity for Player {
 }
 
 impl LivingEntity for Player {
-    fn attributes(&self) -> &SyncMutex<AttributeMap> {
-        &self.attributes
-    }
-
     fn get_health(&self) -> f32 {
         *self.entity_data.lock().avatar.living_entity.health.get()
     }
@@ -1260,7 +1212,7 @@ impl LivingEntity for Player {
             .set(clamped);
     }
 
-    fn living_base(&self) -> &SyncMutex<LivingEntityBase> {
+    fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
     }
 
@@ -1282,14 +1234,6 @@ impl LivingEntity for Player {
     fn set_sprinting(&self, sprinting: bool) {
         self.entity_state.lock().sprinting = sprinting;
         self.apply_sprint_speed_modifier(sprinting);
-    }
-
-    fn get_speed(&self) -> f32 {
-        self.speed.load()
-    }
-
-    fn set_speed(&self, speed: f32) {
-        self.speed.store(speed);
     }
 }
 
