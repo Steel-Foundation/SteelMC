@@ -8,7 +8,7 @@ use steel_registry::{
     item_stack::ItemStack,
     items::item::BlockHitResult,
     loot_table::LootContext,
-    sound_events, vanilla_entities, vanilla_items,
+    sound_events, vanilla_damage_types, vanilla_entities, vanilla_items,
     vanilla_loot_tables::{self},
 };
 use steel_utils::{
@@ -25,10 +25,12 @@ use crate::{
             vegetation_block::{vegetation_can_survive, vegetation_update_shape},
         },
     },
-    entity::Entity,
+    entity::{Entity, damage::DamageSource},
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 };
+
+const DAMAGE_MOVEMENT_THRESHOLD: f64 = 0.003;
 
 /// Behavior for Sweet Berry Bushes
 #[block_behavior]
@@ -95,20 +97,17 @@ impl BlockBehavior for SweetBerryBushBlock {
 
     fn entity_inside(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         _world: &Arc<World>,
         _pos: BlockPos,
         entity: &dyn Entity,
     ) {
-        if !entity.is_living_entity()
-            || entity.entity_type() == &vanilla_entities::FOX
-            || entity.entity_type() == &vanilla_entities::BEE
-        {
+        if !Self::applies_contact_effects(entity) {
             return;
         }
 
         entity.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));
-        // TODO: Apply age-gated contact damage once entity previous-position tracking is available.
+        Self::apply_contact_damage(state, entity);
     }
 
     fn use_item_on(
@@ -180,6 +179,36 @@ impl BlockBehavior for SweetBerryBushBlock {
     }
 }
 
+impl SweetBerryBushBlock {
+    fn applies_contact_effects(entity: &dyn Entity) -> bool {
+        entity.is_living_entity()
+            && entity.entity_type() != &vanilla_entities::FOX
+            && entity.entity_type() != &vanilla_entities::BEE
+    }
+
+    fn apply_contact_damage(state: BlockStateId, entity: &dyn Entity) {
+        if state.get_value(&BlockStateProperties::AGE_3) == 0 {
+            return;
+        }
+
+        let movement = if entity.is_client_authoritative() {
+            entity.known_movement()
+        } else {
+            entity.old_position() - entity.position()
+        };
+
+        if movement.x.mul_add(movement.x, movement.z * movement.z) > 0.0
+            && (movement.x.abs() >= DAMAGE_MOVEMENT_THRESHOLD
+                || movement.z.abs() >= DAMAGE_MOVEMENT_THRESHOLD)
+        {
+            entity.hurt(
+                &DamageSource::environment(&vanilla_damage_types::SWEET_BERRY_BUSH),
+                1.0,
+            );
+        }
+    }
+}
+
 impl Bonemealable for SweetBerryBushBlock {
     fn is_valid_bonemeal_target(
         &self,
@@ -209,3 +238,168 @@ impl Bonemealable for SweetBerryBushBlock {
 }
 
 impl Vegetation for SweetBerryBushBlock {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use steel_registry::{
+        entity_type::{EntityDimensions, EntityTypeRef},
+        test_support::init_test_registry,
+        vanilla_blocks,
+    };
+    use steel_utils::locks::SyncMutex;
+
+    use super::*;
+    use crate::entity::EntityBase;
+
+    struct TestEntity {
+        base: EntityBase,
+        entity_type: EntityTypeRef,
+        is_living: bool,
+        is_client_authoritative: bool,
+        known_movement: DVec3,
+        damage: SyncMutex<Vec<(String, f32)>>,
+    }
+
+    impl TestEntity {
+        fn living(entity_type: EntityTypeRef) -> Self {
+            Self {
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    EntityDimensions::new(0.6, 1.8, 1.62),
+                    Weak::<World>::new(),
+                ),
+                entity_type,
+                is_living: true,
+                is_client_authoritative: false,
+                known_movement: DVec3::ZERO,
+                damage: SyncMutex::new(Vec::new()),
+            }
+        }
+
+        fn with_position(self, position: DVec3) -> Self {
+            self.base.set_position(position);
+            self
+        }
+
+        fn with_old_position(self, old_position: DVec3) -> Self {
+            self.base.set_old_position(old_position);
+            self
+        }
+
+        fn with_client_movement(mut self, movement: DVec3) -> Self {
+            self.is_client_authoritative = true;
+            self.known_movement = movement;
+            self
+        }
+
+        fn non_living(mut self) -> Self {
+            self.is_living = false;
+            self
+        }
+
+        fn damage_events(&self) -> Vec<(String, f32)> {
+            self.damage.lock().clone()
+        }
+    }
+
+    impl Entity for TestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+
+        fn is_living_entity(&self) -> bool {
+            self.is_living
+        }
+
+        fn is_client_authoritative(&self) -> bool {
+            self.is_client_authoritative
+        }
+
+        fn known_movement(&self) -> DVec3 {
+            self.known_movement
+        }
+
+        fn hurt(&self, source: &DamageSource, amount: f32) -> bool {
+            self.damage
+                .lock()
+                .push((source.damage_type.key.path.as_ref().to_owned(), amount));
+            true
+        }
+    }
+
+    fn state_with_age(age: u8) -> BlockStateId {
+        init_test_registry();
+        vanilla_blocks::SWEET_BERRY_BUSH
+            .default_state()
+            .set_value(&BlockStateProperties::AGE_3, age)
+    }
+
+    #[test]
+    fn contact_damage_uses_old_position_for_server_authored_entities() {
+        let entity = TestEntity::living(&vanilla_entities::PLAYER)
+            .with_position(DVec3::new(0.0, 0.0, 0.0))
+            .with_old_position(DVec3::new(0.004, 0.0, 0.0));
+
+        SweetBerryBushBlock::apply_contact_damage(state_with_age(1), &entity);
+
+        assert_eq!(
+            entity.damage_events(),
+            vec![("sweet_berry_bush".to_owned(), 1.0)]
+        );
+    }
+
+    #[test]
+    fn contact_damage_uses_known_movement_for_client_authored_entities() {
+        let entity = TestEntity::living(&vanilla_entities::PLAYER)
+            .with_position(DVec3::ZERO)
+            .with_old_position(DVec3::ZERO)
+            .with_client_movement(DVec3::new(0.0, 0.0, 0.004));
+
+        SweetBerryBushBlock::apply_contact_damage(state_with_age(1), &entity);
+
+        assert_eq!(
+            entity.damage_events(),
+            vec![("sweet_berry_bush".to_owned(), 1.0)]
+        );
+    }
+
+    #[test]
+    fn contact_damage_is_age_gated() {
+        let entity = TestEntity::living(&vanilla_entities::PLAYER)
+            .with_position(DVec3::ZERO)
+            .with_old_position(DVec3::new(0.004, 0.0, 0.0));
+
+        SweetBerryBushBlock::apply_contact_damage(state_with_age(0), &entity);
+
+        assert!(entity.damage_events().is_empty());
+    }
+
+    #[test]
+    fn contact_damage_requires_threshold_movement() {
+        let entity = TestEntity::living(&vanilla_entities::PLAYER)
+            .with_position(DVec3::ZERO)
+            .with_old_position(DVec3::new(0.002_9, 0.0, 0.002_9));
+
+        SweetBerryBushBlock::apply_contact_damage(state_with_age(1), &entity);
+
+        assert!(entity.damage_events().is_empty());
+    }
+
+    #[test]
+    fn foxes_bees_and_non_living_entities_are_immune_to_sweet_berry_bush_effects() {
+        let fox = TestEntity::living(&vanilla_entities::FOX);
+        let bee = TestEntity::living(&vanilla_entities::BEE);
+        let item = TestEntity::living(&vanilla_entities::ITEM).non_living();
+
+        assert!(!SweetBerryBushBlock::applies_contact_effects(&fox));
+        assert!(!SweetBerryBushBlock::applies_contact_effects(&bee));
+        assert!(!SweetBerryBushBlock::applies_contact_effects(&item));
+    }
+}
