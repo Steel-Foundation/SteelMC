@@ -162,7 +162,7 @@ fn apply_sneak_edge_prevention(
     let step_x = delta_x.signum() * EDGE_STEP;
     let step_z = delta_z.signum() * EDGE_STEP;
 
-    while delta_x != 0.0 && can_fall_at_least(aabb, delta_x, 0.0, max_down_step, world) {
+    while delta_x != 0.0 && can_fall_at_least(state, aabb, delta_x, 0.0, max_down_step, world) {
         if delta_x.abs() <= EDGE_STEP {
             delta_x = 0.0;
             break;
@@ -171,7 +171,7 @@ fn apply_sneak_edge_prevention(
         delta_x -= step_x;
     }
 
-    while delta_z != 0.0 && can_fall_at_least(aabb, 0.0, delta_z, max_down_step, world) {
+    while delta_z != 0.0 && can_fall_at_least(state, aabb, 0.0, delta_z, max_down_step, world) {
         if delta_z.abs() <= EDGE_STEP {
             delta_z = 0.0;
             break;
@@ -182,7 +182,7 @@ fn apply_sneak_edge_prevention(
 
     while delta_x != 0.0
         && delta_z != 0.0
-        && can_fall_at_least(aabb, delta_x, delta_z, max_down_step, world)
+        && can_fall_at_least(state, aabb, delta_x, delta_z, max_down_step, world)
     {
         if delta_x.abs() <= EDGE_STEP {
             delta_x = 0.0;
@@ -212,10 +212,11 @@ fn is_above_ground(
     let max_down_step = f64::from(state.max_up_step());
     let fall_distance = state.fall_distance();
     fall_distance < max_down_step
-        && !can_fall_at_least(aabb, 0.0, 0.0, max_down_step - fall_distance, world)
+        && !can_fall_at_least(state, aabb, 0.0, 0.0, max_down_step - fall_distance, world)
 }
 
 fn can_fall_at_least(
+    state: &EntityPhysicsState,
     aabb: &WorldAabb,
     delta_x: f64,
     delta_z: f64,
@@ -235,7 +236,12 @@ fn can_fall_at_least(
         aabb.max_z() - EDGE_COLLISION_EPSILON + delta_z,
     );
 
-    world.get_block_collisions(&fall_aabb).is_empty()
+    world
+        .get_collisions_with_context(
+            &fall_aabb,
+            BlockCollisionContext::entity(state.position().y, state.descending()),
+        )
+        .is_empty()
 }
 
 /// Returns the axis step order for collision resolution.
@@ -760,6 +766,21 @@ mod tests {
             result.actual_movement
         );
         assert!(result.actual_movement.y.abs() < ZERO_MOVEMENT_EPSILON);
+    }
+
+    #[test]
+    fn test_sneak_edge_treats_entity_collision_as_support() {
+        let state = player_state(DVec3::new(0.0, 1.0, 0.0))
+            .with_on_ground(true)
+            .with_backs_off_from_edge(true);
+        let world = EntityBoxWorld {
+            boxes: vec![WorldAabb::new(0.7, 0.4, -0.3, 1.3, 1.0, 0.3)],
+        };
+        let movement = DVec3::new(1.0, 0.0, 0.0);
+
+        let result = move_entity(&state, movement, MoverType::Player, &world);
+
+        assert_eq!(result.actual_movement, movement);
     }
 
     #[test]
