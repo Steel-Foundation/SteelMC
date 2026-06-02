@@ -1146,10 +1146,6 @@ impl Entity for Player {
         // This is here for Entity trait compliance
     }
 
-    fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
-        Some(self)
-    }
-
     fn is_living_entity(&self) -> bool {
         true
     }

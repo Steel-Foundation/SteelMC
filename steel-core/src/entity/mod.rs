@@ -336,11 +336,6 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().set_level_callback(callback);
     }
 
-    /// Gets the entity as a Player if it is one.
-    fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
-        None
-    }
-
     /// Gets the entity as an `ItemEntity` if it is one.
     fn as_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
         None

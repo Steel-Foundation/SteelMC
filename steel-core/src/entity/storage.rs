@@ -81,18 +81,13 @@ impl EntityStorage {
     ///
     /// Excludes:
     /// - Removed entities
-    /// - Players (saved separately in playerdata)
-    /// - Entity types with `can_serialize = false`
+    /// - Entity types with `can_serialize = false` (including players)
     #[must_use]
     pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
         self.entities
             .read()
             .values()
-            .filter(|e| {
-                !e.is_removed()
-                    && (*e).clone().as_player().is_none()
-                    && e.entity_type().can_serialize
-            })
+            .filter(|e| !e.is_removed() && e.entity_type().can_serialize)
             .cloned()
             .collect()
     }
