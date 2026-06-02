@@ -123,10 +123,7 @@ impl PersistentPlayerData {
         let (yaw, pitch) = player.rotation();
         let delta = player.velocity();
         let on_ground = player.on_ground();
-        let fall_flying = {
-            let es = player.entity_state.lock();
-            es.fall_flying
-        };
+        let fall_flying = player.is_fall_flying();
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
         let food_data = player.food_data.lock();
@@ -260,10 +257,7 @@ impl PersistentPlayerData {
             player.set_velocity(DVec3::new(self.motion[0], self.motion[1], self.motion[2]));
 
             // Ground state
-            {
-                let mut es = player.entity_state.lock();
-                es.fall_flying = self.fall_flying;
-            }
+            player.set_fall_flying(self.fall_flying);
             player.set_on_ground(self.on_ground);
         }
 

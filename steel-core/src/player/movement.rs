@@ -482,10 +482,9 @@ impl Player {
         };
         let start_pos = self.position();
         let game_mode = self.game_mode.load();
-        let (is_sleeping, is_fall_flying, is_crouching) = {
-            let es = self.entity_state.lock();
-            (es.sleeping, es.fall_flying, es.crouching)
-        };
+        let state = self.entity_state_snapshot();
+        let (is_sleeping, is_fall_flying, is_crouching) =
+            (state.sleeping, state.fall_flying, state.crouching);
         let was_on_ground = self.on_ground();
         let is_spectator = game_mode == GameType::Spectator;
         let is_creative = game_mode == GameType::Creative;
@@ -726,10 +725,7 @@ impl Player {
     /// - Player is in creative mode and flying
     /// - Player is fall flying (elytra - uses different physics)
     pub(super) fn apply_gravity(&self) {
-        let is_fall_flying = {
-            let es = self.entity_state.lock();
-            es.fall_flying
-        };
+        let is_fall_flying = self.is_fall_flying();
         let on_ground = self.on_ground();
         let game_mode = self.game_mode.load();
         let is_spectator = game_mode == GameType::Spectator;
@@ -803,7 +799,7 @@ impl Player {
         // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
         // lastActionTime = Util.getMillis(), preventing idle-kick. Add when idle-kick system is implemented.
 
-        self.entity_state.lock().crouching = packet.shift();
+        self.set_crouching(packet.shift());
     }
 
     /// Handles a player command packet (sprinting, elytra, leaving bed, etc).
@@ -851,12 +847,11 @@ impl Player {
                 //   - emit ELYTRA_GLIDE game event every 10 ticks
                 // Blocked on: equipment checks working end-to-end, potion effects,
                 //             fluid detection, passenger/vehicle system
-                self.entity_state.lock().fall_flying = true;
+                self.set_fall_flying(true);
             }
             PlayerCommandAction::LeaveBed => {
-                let mut state = self.entity_state.lock();
-                if state.sleeping {
-                    state.sleeping = false;
+                if self.is_sleeping() {
+                    self.set_sleeping(false);
                     // TODO: Full bed wake-up logic:
                     //   - set bed block OCCUPIED property to false
                     //   - compute stand-up position via BedBlock::findStandUpPosition

@@ -28,20 +28,28 @@ bitflags! {
 }
 
 /// Physical state flags for a player entity.
-pub struct EntityState {
+pub(super) struct EntityState {
     /// Whether the player is currently sleeping in a bed.
-    pub sleeping: bool,
+    sleeping: bool,
     /// Whether the player is currently fall flying (elytra gliding).
-    pub fall_flying: bool,
+    fall_flying: bool,
     /// Whether the player is sneaking (shift key down).
-    pub crouching: bool,
+    crouching: bool,
     /// Whether the player is sprinting.
+    sprinting: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct EntityStateSnapshot {
+    pub sleeping: bool,
+    pub fall_flying: bool,
+    pub crouching: bool,
     pub sprinting: bool,
 }
 
 impl EntityState {
     #[must_use]
-    pub const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             sleeping: false,
             fall_flying: false,
@@ -49,12 +57,58 @@ impl EntityState {
             sprinting: false,
         }
     }
+
+    #[must_use]
+    pub(super) const fn snapshot(&self) -> EntityStateSnapshot {
+        EntityStateSnapshot {
+            sleeping: self.sleeping,
+            fall_flying: self.fall_flying,
+            crouching: self.crouching,
+            sprinting: self.sprinting,
+        }
+    }
+
+    pub(super) const fn set_sleeping(&mut self, sleeping: bool) {
+        self.sleeping = sleeping;
+    }
+
+    pub(super) const fn set_fall_flying(&mut self, fall_flying: bool) {
+        self.fall_flying = fall_flying;
+    }
+
+    pub(super) const fn set_crouching(&mut self, crouching: bool) {
+        self.crouching = crouching;
+    }
+
+    pub(super) const fn set_sprinting(&mut self, sprinting: bool) {
+        self.sprinting = sprinting;
+    }
+
+    pub(super) const fn reset_transient(&mut self) {
+        self.fall_flying = false;
+        self.sleeping = false;
+        self.crouching = false;
+        self.sprinting = false;
+    }
 }
 
 impl Player {
+    pub(super) fn entity_state_snapshot(&self) -> EntityStateSnapshot {
+        self.entity_state.lock().snapshot()
+    }
+
+    pub(super) fn reset_entity_state(&self) {
+        self.entity_state.lock().reset_transient();
+    }
+
     /// Returns true if the player is shifting (sneaking).
     pub fn is_crouching(&self) -> bool {
-        self.entity_state.lock().crouching
+        self.entity_state.lock().snapshot().crouching
+    }
+
+    /// Sets whether the player is shifting (sneaking).
+    pub fn set_crouching(&self, crouching: bool) {
+        self.entity_state.lock().set_crouching(crouching);
     }
 
     /// Packs `EntityState` booleans into the vanilla shared flags byte and writes
@@ -82,23 +136,23 @@ impl Player {
     /// Returns true if the player is currently sleeping.
     #[must_use]
     pub fn is_sleeping(&self) -> bool {
-        self.entity_state.lock().sleeping
+        self.entity_state.lock().snapshot().sleeping
     }
 
     /// Sets the player's sleeping state.
     pub fn set_sleeping(&self, sleeping: bool) {
-        self.entity_state.lock().sleeping = sleeping;
+        self.entity_state.lock().set_sleeping(sleeping);
     }
 
     /// Returns true if the player is currently fall flying (elytra).
     #[must_use]
     pub fn is_fall_flying(&self) -> bool {
-        self.entity_state.lock().fall_flying
+        self.entity_state.lock().snapshot().fall_flying
     }
 
     /// Sets the player's fall flying state.
     pub fn set_fall_flying(&self, fall_flying: bool) {
-        self.entity_state.lock().fall_flying = fall_flying;
+        self.entity_state.lock().set_fall_flying(fall_flying);
     }
 
     /// Determines the desired pose based on current player state.

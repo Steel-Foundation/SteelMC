@@ -232,7 +232,7 @@ pub struct Player {
     tick_count: AtomicI32,
 
     /// Physical state flags (sleeping, fall flying, on ground).
-    pub(crate) entity_state: SyncMutex<EntityState>,
+    entity_state: SyncMutex<EntityState>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
     pub abilities: SyncMutex<Abilities>,
@@ -970,13 +970,7 @@ impl Player {
         self.client_loaded.store(false, Ordering::Relaxed);
         self.set_velocity(DVec3::ZERO);
         self.set_on_ground(false);
-        {
-            let mut es = self.entity_state.lock();
-            es.fall_flying = false;
-            es.sleeping = false;
-            es.crouching = false;
-            es.sprinting = false;
-        }
+        self.reset_entity_state();
         *self.block_breaking.lock() = BlockBreakingManager::new();
 
         // Reset chunk tracking — bump generation counter so the chunk sending tick
@@ -1228,12 +1222,24 @@ impl LivingEntity for Player {
     }
 
     fn is_sprinting(&self) -> bool {
-        self.entity_state.lock().sprinting
+        self.entity_state_snapshot().sprinting
     }
 
     fn set_sprinting(&self, sprinting: bool) {
-        self.entity_state.lock().sprinting = sprinting;
+        self.entity_state.lock().set_sprinting(sprinting);
         self.apply_sprint_speed_modifier(sprinting);
+    }
+
+    fn is_fall_flying(&self) -> bool {
+        Player::is_fall_flying(self)
+    }
+
+    fn is_sleeping(&self) -> bool {
+        Player::is_sleeping(self)
+    }
+
+    fn stop_sleeping(&self) {
+        self.set_sleeping(false);
     }
 }
 

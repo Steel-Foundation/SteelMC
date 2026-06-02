@@ -373,7 +373,7 @@ impl Player {
     /// Returns true if player is sneaking (secondary use active).
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
-        self.entity_state.lock().crouching
+        self.is_crouching()
     }
 
     /// Sends block update packets for a position and its neighbor.
