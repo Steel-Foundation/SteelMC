@@ -213,6 +213,23 @@ impl Player {
         let mut moved_upwards = false;
         let mut floating_check = None;
 
+        if self.is_passenger() {
+            self.set_rotation((target_yaw, target_pitch));
+            self.broadcast_accepted_movement(
+                &world,
+                AcceptedMovementBroadcast {
+                    has_pos: false,
+                    has_rot: packet.has_rot,
+                    pos: prev_pos,
+                    yaw: target_yaw,
+                    pitch: target_pitch,
+                    on_ground: self.on_ground(),
+                    client_delta,
+                },
+            );
+            return;
+        }
+
         if packet.has_pos {
             let target_pos = DVec3::new(
                 clamp_horizontal(packet.position.x),
@@ -548,8 +565,7 @@ impl Player {
 
     /// Advances vanilla's floating violation tracker and disconnects when exceeded.
     pub(super) fn disconnect_if_floating_too_long(&self) -> bool {
-        // TODO: Add the passenger exemption when the passenger system exists.
-        let should_count = !self.is_sleeping() && !self.is_dead_or_dying();
+        let should_count = !self.is_sleeping() && !self.is_passenger() && !self.is_dead_or_dying();
         let maximum_flying_ticks = self.maximum_flying_ticks();
         let should_disconnect = self
             .movement
@@ -581,13 +597,13 @@ impl Player {
         let game_mode = self.game_mode();
         let is_spectator = game_mode == GameType::Spectator;
         let is_flying = self.is_flying();
+        let is_passenger = self.is_passenger();
 
-        if is_flying {
-            // TODO: Add the passenger exemption when the passenger system exists.
+        if is_flying && !is_passenger {
             self.reset_fall_distance();
         }
 
-        if on_ground || is_spectator || is_flying || is_fall_flying {
+        if on_ground || is_spectator || is_flying || is_fall_flying || is_passenger {
             return;
         }
 
@@ -696,19 +712,25 @@ impl Player {
             }
             PlayerCommandAction::StartFallFlying => {
                 // TODO: Full canGlide() checks once the required systems exist:
-                //   - not in water, not a passenger
                 //   - no Levitation effect
                 //   - at least one equipped item has GLIDER component in correct slot
                 //     and won't break on next damage
-                //   - not in creative flight
                 // If validation fails, call stop_fall_flying() (toggle shared flag 7)
                 // Also needs tick-based updateFallFlying():
                 //   - re-validate canGlide() every tick
                 //   - damage a random glider item every 20 ticks
                 //   - emit ELYTRA_GLIDE game event every 10 ticks
-                // Blocked on: equipment checks working end-to-end, potion effects,
-                //             fluid detection, passenger/vehicle system
-                self.set_fall_flying(true);
+                // Blocked on: equipment checks working end-to-end and potion effects.
+                if !self.is_fall_flying()
+                    && !self.on_ground()
+                    && !self.is_passenger()
+                    && !self.is_flying()
+                    && !self.is_in_water()
+                {
+                    self.set_fall_flying(true);
+                } else {
+                    self.set_fall_flying(false);
+                }
             }
             PlayerCommandAction::LeaveBed => {
                 if self.is_sleeping() {
@@ -727,7 +749,7 @@ impl Player {
             PlayerCommandAction::StartRidingJump
             | PlayerCommandAction::StopRidingJump
             | PlayerCommandAction::OpenVehicleInventory => {
-                // TODO: Implement vehicle command handling once the passenger/vehicle system exists.
+                // TODO: Implement once controlled vehicle jumping and vehicle inventory interfaces exist.
             }
         }
 

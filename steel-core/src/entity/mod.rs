@@ -706,17 +706,16 @@ pub trait Entity: EntityEventSource + Send + Sync {
     }
 
     /// Applies vanilla fall damage. Base entities only propagate to passengers.
-    #[expect(
-        unused_variables,
-        reason = "base entity fall damage is a no-op until passengers are implemented"
-    )]
     fn cause_fall_damage(
         &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
     ) -> bool {
-        // TODO: Propagate fall damage to passengers once passenger state exists.
+        for passenger in self.passengers() {
+            passenger.cause_fall_damage(fall_distance, damage_modifier, source);
+        }
+
         false
     }
 

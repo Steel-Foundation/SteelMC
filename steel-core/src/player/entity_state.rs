@@ -32,6 +32,7 @@ const PLAYER_DYING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SwimmingEnvironment {
     sprinting: bool,
+    passenger: bool,
     in_water: bool,
     under_water: bool,
     block_fluid_is_water: bool,
@@ -39,6 +40,10 @@ struct SwimmingEnvironment {
 
 #[must_use]
 const fn select_swimming_state(currently_swimming: bool, env: SwimmingEnvironment) -> bool {
+    if env.passenger {
+        return false;
+    }
+
     if currently_swimming {
         env.sprinting && env.in_water
     } else {
@@ -49,6 +54,7 @@ const fn select_swimming_state(currently_swimming: bool, env: SwimmingEnvironmen
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PoseFit {
     spectator: bool,
+    passenger: bool,
     desired_pose: bool,
     crouching: bool,
     swimming: bool,
@@ -60,7 +66,7 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
         return None;
     }
 
-    if fit.spectator || fit.desired_pose {
+    if fit.spectator || fit.passenger || fit.desired_pose {
         Some(desired_pose)
     } else if fit.crouching {
         Some(EntityPose::Sneaking)
@@ -247,7 +253,6 @@ impl Player {
 
     /// Updates the vanilla swimming shared flag.
     pub(super) fn update_swimming(&self) {
-        // TODO: Include the passenger exemption once the passenger system exists.
         let state = self.entity_state_snapshot();
         let world = self.get_world();
         let block_fluid = get_fluid_state(&world, self.block_position());
@@ -255,6 +260,7 @@ impl Player {
             state.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator,
             SwimmingEnvironment {
                 sprinting: state.sprinting,
+                passenger: self.is_passenger(),
                 in_water: self.is_in_water(),
                 under_water: self.is_under_water(),
                 block_fluid_is_water: block_fluid.is_water(),
@@ -346,6 +352,7 @@ impl Player {
             desired_pose,
             PoseFit {
                 spectator: is_spectator,
+                passenger: self.is_passenger(),
                 desired_pose: fits_desired_pose,
                 crouching: fits_crouching,
                 swimming: true,
@@ -354,7 +361,7 @@ impl Player {
             return;
         };
 
-        // TODO: Include the passenger exemption and blocking entities once those systems exist.
+        // TODO: Include blocking entities once entity collision pose checks exist.
         self.base
             .set_pose_and_dimensions(actual_pose, Self::dimensions_for_pose(actual_pose));
         self.entity_data.lock().base_mut().pose.set(actual_pose);
@@ -428,6 +435,7 @@ mod tests {
             true,
             SwimmingEnvironment {
                 sprinting: true,
+                passenger: false,
                 in_water: true,
                 under_water: false,
                 block_fluid_is_water: false,
@@ -441,6 +449,7 @@ mod tests {
             true,
             SwimmingEnvironment {
                 sprinting: false,
+                passenger: false,
                 in_water: true,
                 under_water: true,
                 block_fluid_is_water: true,
@@ -454,6 +463,7 @@ mod tests {
             false,
             SwimmingEnvironment {
                 sprinting: true,
+                passenger: false,
                 in_water: true,
                 under_water: true,
                 block_fluid_is_water: true,
@@ -467,8 +477,23 @@ mod tests {
             false,
             SwimmingEnvironment {
                 sprinting: true,
+                passenger: false,
                 in_water: true,
                 under_water: false,
+                block_fluid_is_water: true,
+            },
+        ));
+    }
+
+    #[test]
+    fn swimming_state_stops_while_passenger() {
+        assert!(!select_swimming_state(
+            true,
+            SwimmingEnvironment {
+                sprinting: true,
+                passenger: true,
+                in_water: true,
+                under_water: true,
                 block_fluid_is_water: true,
             },
         ));
@@ -481,6 +506,7 @@ mod tests {
                 EntityPose::Standing,
                 PoseFit {
                     spectator: false,
+                    passenger: false,
                     desired_pose: true,
                     crouching: true,
                     swimming: false,
@@ -497,6 +523,24 @@ mod tests {
                 EntityPose::Standing,
                 PoseFit {
                     spectator: true,
+                    passenger: false,
+                    desired_pose: false,
+                    crouching: false,
+                    swimming: true,
+                },
+            ),
+            Some(EntityPose::Standing)
+        );
+    }
+
+    #[test]
+    fn player_pose_selection_allows_passenger_desired_pose() {
+        assert_eq!(
+            select_actual_pose(
+                EntityPose::Standing,
+                PoseFit {
+                    spectator: false,
+                    passenger: true,
                     desired_pose: false,
                     crouching: false,
                     swimming: true,
@@ -513,6 +557,7 @@ mod tests {
                 EntityPose::Standing,
                 PoseFit {
                     spectator: false,
+                    passenger: false,
                     desired_pose: false,
                     crouching: true,
                     swimming: true,
@@ -529,6 +574,7 @@ mod tests {
                 EntityPose::Standing,
                 PoseFit {
                     spectator: false,
+                    passenger: false,
                     desired_pose: false,
                     crouching: false,
                     swimming: true,

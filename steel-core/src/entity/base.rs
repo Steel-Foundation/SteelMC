@@ -1173,11 +1173,15 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{entity_type::EntityDimensions, vanilla_entities};
+    use steel_registry::{entity_type::EntityDimensions, entity_type::EntityTypeRef};
+    use steel_registry::{vanilla_damage_types, vanilla_entities};
     use steel_utils::WorldAabb;
     use steel_utils::locks::SyncMutex;
 
-    use crate::entity::{EntityLevelCallback, RemovalReason, SharedEntity, entities::RawEntity};
+    use crate::entity::damage::DamageSource;
+    use crate::entity::{
+        Entity, EntityLevelCallback, RemovalReason, SharedEntity, entities::RawEntity,
+    };
     use crate::world::World;
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -1212,6 +1216,47 @@ mod tests {
             .lock()
             .passengers
             .push(Arc::downgrade(passenger));
+    }
+
+    struct FallDamageTestEntity {
+        base: EntityBase,
+        fall_damage_calls: SyncMutex<Vec<(f64, f32)>>,
+    }
+
+    impl FallDamageTestEntity {
+        fn new(id: i32) -> Arc<Self> {
+            Arc::new(Self {
+                base: EntityBase::new(
+                    id,
+                    DVec3::ZERO,
+                    vanilla_entities::ITEM.dimensions,
+                    Weak::<World>::new(),
+                ),
+                fall_damage_calls: SyncMutex::new(Vec::new()),
+            })
+        }
+    }
+
+    impl Entity for FallDamageTestEntity {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            &vanilla_entities::ITEM
+        }
+
+        fn cause_fall_damage(
+            &self,
+            fall_distance: f64,
+            damage_modifier: f32,
+            _source: &DamageSource,
+        ) -> bool {
+            self.fall_damage_calls
+                .lock()
+                .push((fall_distance, damage_modifier));
+            true
+        }
     }
 
     #[derive(Default)]
@@ -1411,6 +1456,22 @@ mod tests {
         assert!(!vehicle.is_vehicle());
         assert!(!passenger.is_passenger());
         assert_eq!(passenger.base().boarding_cooldown(), 60);
+    }
+
+    #[test]
+    fn base_fall_damage_propagates_to_passengers() {
+        let vehicle = raw_entity(1);
+        let passenger = FallDamageTestEntity::new(2);
+        let passenger_entity: SharedEntity = passenger.clone();
+
+        link_vehicle_and_passenger(&vehicle, &passenger_entity);
+
+        assert!(!vehicle.cause_fall_damage(
+            8.0,
+            1.5,
+            &DamageSource::environment(&vanilla_damage_types::FALL),
+        ));
+        assert_eq!(*passenger.fall_damage_calls.lock(), vec![(8.0, 1.5)]);
     }
 
     #[test]

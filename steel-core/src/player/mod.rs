@@ -382,6 +382,11 @@ impl Player {
     pub fn tick(&self) {
         self.advance_tick();
 
+        self.set_no_physics(self.is_spectator());
+        if self.is_spectator() || self.is_passenger() {
+            self.set_on_ground(false);
+        }
+
         // Vanilla: ServerGamePacketListenerImpl.resetPosition().
         self.movement.lock().reset_for_tick(self.position());
 
