@@ -251,6 +251,7 @@ impl Player {
         let tick_runs_normally = world.tick_runs_normally();
         let mut accepted_pos = prev_pos;
         let mut client_delta = DVec3::ZERO;
+        let mut moved_upwards = false;
 
         if packet.has_pos {
             let target_pos = DVec3::new(
@@ -318,7 +319,7 @@ impl Player {
 
                 let old_aabb = self.bounding_box();
                 let move_delta = target_pos - last_good;
-                let moved_upwards = move_delta.y > 0.0;
+                moved_upwards = move_delta.y > 0.0;
 
                 if was_on_ground && !packet.on_ground && moved_upwards {
                     if self.is_sprinting() {
@@ -363,6 +364,7 @@ impl Player {
                         target_yaw,
                         target_pitch,
                     );
+                    self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
                     return;
                 }
 
@@ -394,6 +396,12 @@ impl Player {
             packet.horizontal_collision,
             client_delta,
         );
+        if self.do_check_fall_damage(client_delta, packet.on_ground, &world) {
+            return;
+        }
+        if moved_upwards {
+            self.reset_fall_distance();
+        }
 
         let pos = if packet.has_pos {
             accepted_pos

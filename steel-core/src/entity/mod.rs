@@ -230,6 +230,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns true when this server instance owns movement side effects.
+    fn is_local_instance_authoritative(&self) -> bool {
+        !self.is_client_authoritative()
+    }
+
     /// Returns true when vanilla landing bounce should be suppressed.
     fn is_suppressing_bounce(&self) -> bool {
         self.synced_data()
@@ -594,7 +599,9 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
 
-        if self.apply_fall_damage_after_move(&result, &world) {
+        if self.is_local_instance_authoritative()
+            && self.apply_fall_damage_after_move(&result, &world)
+        {
             return Some(result);
         }
 
@@ -647,17 +654,18 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
     fn apply_fall_damage_after_move(&self, result: &MoveResult, world: &Arc<World>) -> bool {
+        self.do_check_fall_damage(result.actual_movement, result.on_ground, world)
+    }
+
+    /// Mirrors vanilla `Entity.doCheckFallDamage`.
+    ///
+    /// Callers update on-ground/supporting-block state before this method.
+    fn do_check_fall_damage(&self, movement: DVec3, on_ground: bool, world: &Arc<World>) -> bool {
         let Some(effect_pos) = self.on_pos_legacy() else {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        self.check_fall_damage(
-            result.actual_movement.y,
-            result.on_ground,
-            effect_state,
-            effect_pos,
-            world,
-        );
+        self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
     }
 
