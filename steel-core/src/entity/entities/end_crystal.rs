@@ -121,6 +121,10 @@ impl Entity for EndCrystalEntity {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
 
+    fn is_pickable(&self) -> bool {
+        true
+    }
+
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
@@ -181,5 +185,12 @@ mod tests {
             read_borrowed_compound(&mut Cursor::new(&bytes)).expect("test nbt should reborrow");
         loaded.load_additional(&borrowed);
         assert!(loaded.is_invulnerable());
+    }
+
+    #[test]
+    fn end_crystal_is_pickable_like_vanilla() {
+        let crystal = EndCrystalEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+
+        assert!(crystal.is_pickable());
     }
 }

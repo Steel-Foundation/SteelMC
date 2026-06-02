@@ -264,6 +264,37 @@ pub trait Entity: EntityEventSource + Send + Sync {
         false
     }
 
+    /// Returns whether this entity can be targeted by picking and interaction raycasts.
+    ///
+    /// Mirrors vanilla `Entity.isPickable`. Base entities are not pickable unless
+    /// a concrete entity type opts in.
+    fn is_pickable(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this entity participates in vanilla push separation.
+    ///
+    /// Mirrors vanilla `Entity.isPushable`. Base entities are not pushable unless
+    /// a concrete entity type opts in.
+    fn is_pushable(&self) -> bool {
+        false
+    }
+
+    /// Returns whether `other` can collide with this entity.
+    ///
+    /// Mirrors vanilla `Entity.canBeCollidedWith`. Base entities cannot be collided
+    /// with unless a concrete entity type opts in.
+    fn can_be_collided_with(&self, _other: Option<&dyn Entity>) -> bool {
+        false
+    }
+
+    /// Returns whether projectile collision may interact with this entity.
+    ///
+    /// Mirrors vanilla `Entity.canBeHitByProjectile`.
+    fn can_be_hit_by_projectile(&self) -> bool {
+        !self.is_removed() && self.is_pickable()
+    }
+
     /// Builds this entity's default bounding box at `position`.
     fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
         let dimensions = self.base().dimensions();

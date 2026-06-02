@@ -86,6 +86,14 @@ impl Entity for ChestMinecartEntity {
         &vanilla_entities::CHEST_MINECART
     }
 
+    fn is_pickable(&self) -> bool {
+        !self.is_removed()
+    }
+
+    fn is_pushable(&self) -> bool {
+        true
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         nbt.insert("FlippedRotation", Self::nbt_bool(false));
         let state = self.state.lock();
@@ -136,5 +144,13 @@ mod tests {
         assert_eq!(nbt.long("LootTableSeed"), Some(42));
         assert_eq!(nbt.byte("HasTicked"), Some(1));
         assert_eq!(nbt.byte("FlippedRotation"), Some(0));
+    }
+
+    #[test]
+    fn chest_minecart_is_pickable_and_pushable_like_vanilla() {
+        let minecart = ChestMinecartEntity::new(1, DVec3::new(1.5, 2.5, 3.5), Weak::new());
+
+        assert!(minecart.is_pickable());
+        assert!(minecart.is_pushable());
     }
 }

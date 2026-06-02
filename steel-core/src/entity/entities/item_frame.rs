@@ -173,6 +173,10 @@ impl Entity for ItemFrameEntity {
         direction_3d_data_value(*self.entity_data.lock().hanging_entity.direction.get())
     }
 
+    fn is_pickable(&self) -> bool {
+        true
+    }
+
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
@@ -293,5 +297,13 @@ mod tests {
             Some("minecraft:elytra".to_owned())
         );
         assert_eq!(item.int("count"), Some(1));
+    }
+
+    #[test]
+    fn item_frame_is_pickable_like_vanilla() {
+        let frame =
+            ItemFrameEntity::new(1, BlockPos::new(12, 80, 14), Direction::West, Weak::new());
+
+        assert!(frame.is_pickable());
     }
 }
