@@ -327,6 +327,7 @@ impl Player {
                         target_pitch,
                     );
                     self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+                    self.remove_latest_movement_recording();
                     return;
                 }
 

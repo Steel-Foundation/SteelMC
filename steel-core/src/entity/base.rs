@@ -103,6 +103,10 @@ impl EntityMovementTrace {
         self.movement_this_tick.push_back(movement);
     }
 
+    fn remove_latest_recording(&mut self) {
+        self.movement_this_tick.pop_back();
+    }
+
     fn take_for_block_effects(
         &mut self,
         old_position: DVec3,
@@ -805,6 +809,11 @@ impl EntityBase {
         self.movement_trace.lock().record(movement);
     }
 
+    /// Removes the latest movement segment recorded this tick.
+    pub fn remove_latest_movement_recording(&self) {
+        self.movement_trace.lock().remove_latest_recording();
+    }
+
     /// Takes and finalizes this tick's movement segments for block-contact effects.
     pub fn take_movements_for_block_effects(&self) -> Vec<EntityMovement> {
         let (old_position, position) = {
@@ -1235,6 +1244,31 @@ mod tests {
                 ),
                 EntityMovement::new(DVec3::new(1.0, 64.0, 0.0), DVec3::new(2.0, 64.0, 0.0))
             ]
+        );
+    }
+
+    #[test]
+    fn movement_trace_removes_latest_movement_recording() {
+        let base = EntityBase::new(
+            1,
+            DVec3::ZERO,
+            EntityDimensions::new(0.25, 0.25, 0.125),
+            Weak::<World>::new(),
+        );
+        base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
+        base.record_movement_this_tick(EntityMovement::new(
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(2.0, 0.0, 0.0),
+        ));
+
+        base.remove_latest_movement_recording();
+        base.set_position(DVec3::new(1.0, 0.0, 0.0));
+
+        let movements = base.take_movements_for_block_effects();
+
+        assert_eq!(
+            movements,
+            vec![EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0))]
         );
     }
 

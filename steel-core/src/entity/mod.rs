@@ -697,6 +697,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().set_old_position(old_position);
     }
 
+    /// Removes the latest movement segment recorded this tick.
+    fn remove_latest_movement_recording(&self) {
+        self.base().remove_latest_movement_recording();
+    }
+
     /// Returns the block position this entity is standing on.
     fn on_pos(&self, offset: f32) -> Option<BlockPos> {
         let world = self.level()?;
