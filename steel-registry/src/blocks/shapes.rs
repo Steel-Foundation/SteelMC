@@ -142,6 +142,17 @@ impl VoxelShape {
             min_x, min_y, min_z, max_x, max_y, max_z,
         ))
     }
+
+    /// Returns true when this shape extends outside its owning block.
+    ///
+    /// Mirrors vanilla `BlockState.hasLargeCollisionShape()` for collision
+    /// iterator filtering.
+    #[must_use]
+    pub fn has_large_collision_shape(self) -> bool {
+        [Axis::X, Axis::Y, Axis::Z]
+            .into_iter()
+            .any(|axis| self.min(axis) < 0.0 || self.max(axis) > 1.0)
+    }
 }
 
 impl IntoIterator for VoxelShape {
@@ -745,6 +756,9 @@ mod tests {
 
     const ZERO_VOLUME_BOX: &[BlockLocalAabb] = &[BlockLocalAabb::new(0.0, 0.0, 0.0, 1.0, 0.0, 1.0)];
 
+    const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
+
     #[test]
     fn boolean_op_matches_vanilla_truth_table() {
         assert!(BooleanOp::OnlyFirst.apply(true, false));
@@ -804,6 +818,13 @@ mod tests {
             VoxelShape::FULL_BLOCK,
             BooleanOp::And
         ));
+    }
+
+    #[test]
+    fn large_collision_shape_matches_vanilla_bounds_rule() {
+        assert!(!VoxelShape::EMPTY.has_large_collision_shape());
+        assert!(!VoxelShape::FULL_BLOCK.has_large_collision_shape());
+        assert!(VoxelShape::from_boxes(LARGE_COLLISION_SHAPE).has_large_collision_shape());
     }
 
     #[test]

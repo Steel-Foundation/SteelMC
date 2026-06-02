@@ -3,11 +3,16 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::{
+    blocks::{block_state_ext::BlockStateExt, shapes::VoxelShape},
+    vanilla_blocks,
+};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
 use crate::physics::shapes::translate_shape;
 use crate::world::World;
+
+const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
 
 /// Trait for querying collision shapes from the world.
 ///
@@ -42,6 +47,66 @@ pub struct WorldCollisionProvider<'a> {
     world: &'a Arc<World>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BlockCollisionSearchBounds {
+    min_x: i32,
+    min_y: i32,
+    min_z: i32,
+    max_x: i32,
+    max_y: i32,
+    max_z: i32,
+}
+
+impl BlockCollisionSearchBounds {
+    fn from_aabb(aabb: &WorldAabb) -> Self {
+        Self {
+            min_x: (aabb.min_x() - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
+            min_y: (aabb.min_y() - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
+            min_z: (aabb.min_z() - BLOCK_COLLISION_EPSILON).floor() as i32 - 1,
+            max_x: (aabb.max_x() + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
+            max_y: (aabb.max_y() + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
+            max_z: (aabb.max_z() + BLOCK_COLLISION_EPSILON).floor() as i32 + 1,
+        }
+    }
+
+    fn cursor_type(self, x: i32, y: i32, z: i32) -> CollisionCursorType {
+        let boundary_axis_count = u8::from(x == self.min_x || x == self.max_x)
+            + u8::from(y == self.min_y || y == self.max_y)
+            + u8::from(z == self.min_z || z == self.max_z);
+
+        match boundary_axis_count {
+            0 => CollisionCursorType::Inside,
+            1 => CollisionCursorType::Face,
+            2 => CollisionCursorType::Edge,
+            _ => CollisionCursorType::Corner,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CollisionCursorType {
+    Inside,
+    Face,
+    Edge,
+    Corner,
+}
+
+fn should_query_collision_shape(
+    block_state: BlockStateId,
+    collision_shape: VoxelShape,
+    cursor_type: CollisionCursorType,
+) -> bool {
+    match cursor_type {
+        CollisionCursorType::Inside => true,
+        CollisionCursorType::Face => {
+            block_state.get_block().config.dynamic_shape
+                || collision_shape.has_large_collision_shape()
+        }
+        CollisionCursorType::Edge => block_state.get_block() == &vanilla_blocks::MOVING_PISTON,
+        CollisionCursorType::Corner => false,
+    }
+}
+
 impl<'a> WorldCollisionProvider<'a> {
     /// Creates a new collision provider for the given world.
     pub const fn new(world: &'a Arc<World>) -> Self {
@@ -63,19 +128,19 @@ impl<'a> WorldCollisionProvider<'a> {
         entity_position: DVec3,
         aabb: &WorldAabb,
     ) -> Option<BlockPos> {
-        let min_x = aabb.min_x().floor() as i32;
-        let min_y = aabb.min_y().floor() as i32;
-        let min_z = aabb.min_z().floor() as i32;
-        let max_x = aabb.max_x().ceil() as i32;
-        let max_y = aabb.max_y().ceil() as i32;
-        let max_z = aabb.max_z().ceil() as i32;
+        let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
 
         let mut main_support = None;
         let mut main_support_distance = f64::MAX;
 
-        for y in min_y..=max_y {
-            for z in min_z..=max_z {
-                for x in min_x..=max_x {
+        for y in bounds.min_y..=bounds.max_y {
+            for z in bounds.min_z..=bounds.max_z {
+                for x in bounds.min_x..=bounds.max_x {
+                    let cursor_type = bounds.cursor_type(x, y, z);
+                    if cursor_type == CollisionCursorType::Corner {
+                        continue;
+                    }
+
                     let block_pos = BlockPos::new(x, y, z);
                     let block_state = self.world.get_block_state(block_pos);
                     if block_state.is_air() {
@@ -84,6 +149,9 @@ impl<'a> WorldCollisionProvider<'a> {
 
                     let collision_shape = block_state.get_collision_shape();
                     if collision_shape.is_empty() {
+                        continue;
+                    }
+                    if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
@@ -134,38 +202,35 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
     fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
         let mut collisions = Vec::new();
 
-        // Calculate block bounds from AABB (vanilla uses BlockPos.betweenClosed)
-        let min_x = aabb.min_x().floor() as i32;
-        let min_y = aabb.min_y().floor() as i32;
-        let min_z = aabb.min_z().floor() as i32;
-        let max_x = aabb.max_x().ceil() as i32;
-        let max_y = aabb.max_y().ceil() as i32;
-        let max_z = aabb.max_z().ceil() as i32;
+        let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
 
-        // Iterate over all blocks that could intersect
-        for y in min_y..=max_y {
-            for z in min_z..=max_z {
-                for x in min_x..=max_x {
+        for y in bounds.min_y..=bounds.max_y {
+            for z in bounds.min_z..=bounds.max_z {
+                for x in bounds.min_x..=bounds.max_x {
+                    let cursor_type = bounds.cursor_type(x, y, z);
+                    if cursor_type == CollisionCursorType::Corner {
+                        continue;
+                    }
+
                     let block_pos = BlockPos::new(x, y, z);
                     let block_state = self.world.get_block_state(block_pos);
 
-                    // Skip air blocks
                     if block_state.is_air() {
                         continue;
                     }
 
-                    // Get collision shape for this block
                     let collision_shape = block_state.get_collision_shape();
 
-                    // Skip blocks with no collision
                     if collision_shape.is_empty() {
+                        continue;
+                    }
+                    if !should_query_collision_shape(block_state, collision_shape, cursor_type) {
                         continue;
                     }
 
                     for shape_aabb in collision_shape {
                         let world_aabb = translate_shape(shape_aabb, block_pos);
 
-                        // Only include if it actually intersects our query AABB
                         if aabb.intersects(world_aabb) {
                             collisions.push(world_aabb);
                         }
@@ -189,6 +254,11 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::test_support;
+    use steel_utils::BlockLocalAabb;
+
+    const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
+        &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
 
     #[test]
     fn test_intersects_aabb() {
@@ -228,5 +298,79 @@ mod tests {
             block_pos_center_distance_sq(BlockPos::new(1, 2, 3), DVec3::new(1.5, 1.5, 5.5));
 
         assert!((distance - 5.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn block_collision_search_bounds_match_vanilla_epsilon_range() {
+        let bounds =
+            BlockCollisionSearchBounds::from_aabb(&WorldAabb::new(0.0, 0.25, 0.0, 1.0, 1.0, 1.0));
+
+        assert_eq!(bounds.min_x, -2);
+        assert_eq!(bounds.max_x, 2);
+        assert_eq!(bounds.min_y, -1);
+        assert_eq!(bounds.max_y, 2);
+        assert_eq!(bounds.min_z, -2);
+        assert_eq!(bounds.max_z, 2);
+    }
+
+    #[test]
+    fn collision_cursor_type_matches_vanilla_boundary_count() {
+        let bounds = BlockCollisionSearchBounds::from_aabb(&WorldAabb::new(
+            0.25, 0.25, 0.25, 0.75, 0.75, 0.75,
+        ));
+
+        assert_eq!(bounds.cursor_type(0, 0, 0), CollisionCursorType::Inside);
+        assert_eq!(
+            bounds.cursor_type(bounds.min_x, 0, 0),
+            CollisionCursorType::Face
+        );
+        assert_eq!(
+            bounds.cursor_type(bounds.min_x, bounds.min_y, 0),
+            CollisionCursorType::Edge
+        );
+        assert_eq!(
+            bounds.cursor_type(bounds.min_x, bounds.min_y, bounds.min_z),
+            CollisionCursorType::Corner
+        );
+    }
+
+    #[test]
+    fn collision_shape_filter_matches_vanilla_cursor_rules() {
+        test_support::init_test_registry();
+
+        let stone = vanilla_blocks::STONE.default_state();
+        let moving_piston = vanilla_blocks::MOVING_PISTON.default_state();
+        let large_shape = VoxelShape::from_boxes(LARGE_COLLISION_SHAPE);
+
+        assert!(should_query_collision_shape(
+            stone,
+            VoxelShape::FULL_BLOCK,
+            CollisionCursorType::Inside
+        ));
+        assert!(!should_query_collision_shape(
+            stone,
+            VoxelShape::FULL_BLOCK,
+            CollisionCursorType::Face
+        ));
+        assert!(should_query_collision_shape(
+            stone,
+            large_shape,
+            CollisionCursorType::Face
+        ));
+        assert!(!should_query_collision_shape(
+            stone,
+            large_shape,
+            CollisionCursorType::Edge
+        ));
+        assert!(should_query_collision_shape(
+            moving_piston,
+            VoxelShape::FULL_BLOCK,
+            CollisionCursorType::Edge
+        ));
+        assert!(!should_query_collision_shape(
+            moving_piston,
+            large_shape,
+            CollisionCursorType::Corner
+        ));
     }
 }
