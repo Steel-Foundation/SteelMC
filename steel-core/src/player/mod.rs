@@ -97,7 +97,6 @@ use steel_protocol::packets::{
 };
 use steel_registry::item_stack::ItemStack;
 
-use steel_utils::BlockPos;
 use steel_utils::ChunkPos;
 
 use crate::entity::LivingEntity;
@@ -406,7 +405,7 @@ impl Player {
         } else {
             self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
-            self.check_inside_blocks();
+            self.apply_effects_from_blocks();
             self.check_below_world();
 
             // TODO: Implement remaining player ticking logic here
@@ -525,38 +524,6 @@ impl Player {
     #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn handle_client_tick_end(&self) {
         //log::info!("Hello from the other side!");
-    }
-
-    /// Checks all blocks overlapping the player's AABB and calls `entity_inside`
-    /// on each block's behavior (e.g. cactus damage, fire ignition).
-    fn check_inside_blocks(&self) {
-        use crate::behavior::BLOCK_BEHAVIORS;
-        use steel_registry::blocks::block_state_ext::BlockStateExt;
-
-        let world = self.get_world();
-        let aabb = self.bounding_box().deflate(1.0E-5);
-
-        let min_x = aabb.min_x().floor() as i32;
-        let min_y = aabb.min_y().floor() as i32;
-        let min_z = aabb.min_z().floor() as i32;
-        let max_x = aabb.max_x().floor() as i32;
-        let max_y = aabb.max_y().floor() as i32;
-        let max_z = aabb.max_z().floor() as i32;
-
-        for x in min_x..=max_x {
-            for y in min_y..=max_y {
-                for z in min_z..=max_z {
-                    let pos = BlockPos::new(x, y, z);
-                    let state = world.get_block_state(pos);
-                    if state.is_air() {
-                        continue;
-                    }
-                    let block = state.get_block();
-                    let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-                    behavior.entity_inside(state, &world, pos, self as &dyn Entity);
-                }
-            }
-        }
     }
 
     fn check_below_world(&self) {

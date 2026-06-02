@@ -372,6 +372,11 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().no_physics()
     }
 
+    /// Returns true when vanilla block-contact effects may run for this entity.
+    fn is_affected_by_blocks(&self) -> bool {
+        !self.is_removed() && !self.no_physics()
+    }
+
     /// Sets whether this entity bypasses collision physics.
     fn set_no_physics(&self, no_physics: bool) {
         self.base().set_no_physics(no_physics);
@@ -380,6 +385,53 @@ pub trait Entity: EntityEventSource + Send + Sync {
     /// Applies vanilla stuck-in-block movement for the next movement pass.
     fn make_stuck_in_block(&self, speed_multiplier: DVec3) {
         self.base().make_stuck_in_block(speed_multiplier);
+    }
+
+    /// Applies current block-contact effects to this entity.
+    ///
+    /// Mirrors the shared ownership boundary of vanilla `Entity.applyEffectsFromBlocks`.
+    /// TODO: Extend the block behavior API with vanilla's movement-step sweep,
+    /// entity-inside collision shape, fluid inside effects, and `InsideBlockEffectApplier`
+    /// once those effect systems exist.
+    fn apply_effects_from_blocks(&self) {
+        if !self.is_affected_by_blocks() {
+            return;
+        }
+
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        let aabb = self.bounding_box().deflate(1.0E-5);
+        if aabb.is_empty() {
+            return;
+        }
+
+        let min_x = aabb.min_x().floor() as i32;
+        let min_y = aabb.min_y().floor() as i32;
+        let min_z = aabb.min_z().floor() as i32;
+        let max_x = aabb.max_x().floor() as i32;
+        let max_y = aabb.max_y().floor() as i32;
+        let max_z = aabb.max_z().floor() as i32;
+        let entity = self.as_entity_event_source();
+
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    let pos = BlockPos::new(x, y, z);
+                    let state = world.get_block_state(pos);
+                    if state.is_air() {
+                        continue;
+                    }
+
+                    let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+                    behavior.entity_inside(state, &world, pos, entity);
+                    if self.is_removed() {
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /// Sets whether the entity is on the ground.
