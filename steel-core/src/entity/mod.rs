@@ -1,7 +1,6 @@
 //! This module contains entity-related traits and types.
 
-use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::BaseNbtCompound;
@@ -32,15 +31,18 @@ use entities::ItemEntity;
 ///
 /// Mirrors vanilla's `Entity.ENTITY_COUNTER`. Each new entity increments this
 /// counter to get a unique network ID. Starts at 1 (0 is reserved).
-static ENTITY_COUNTER: AtomicI32 = AtomicI32::new(1);
+static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 
 /// Allocates a new unique entity ID.
 ///
 /// This is the primary way to get entity IDs for spawning entities.
-/// Thread-safe and lock-free.
+/// Thread-safe through the shared counter lock.
 #[must_use]
 pub fn next_entity_id() -> i32 {
-    ENTITY_COUNTER.fetch_add(1, Ordering::Relaxed)
+    let mut counter = ENTITY_COUNTER.lock();
+    let id = *counter;
+    *counter = counter.wrapping_add(1);
+    id
 }
 
 pub mod attribute;
