@@ -227,6 +227,16 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.base().position()
     }
 
+    /// Gets the entity's current block position.
+    fn block_position(&self) -> BlockPos {
+        let position = self.position();
+        BlockPos::new(
+            position.x.floor() as i32,
+            position.y.floor() as i32,
+            position.z.floor() as i32,
+        )
+    }
+
     /// Gets the entity position used by vanilla movement traces.
     fn old_position(&self) -> DVec3 {
         self.base().old_position()

@@ -1,16 +1,18 @@
 //! Core entity state flags for a player.
 //!
 //! Groups the boolean/simple state flags that describe what the player is
-//! physically doing: sleeping, gliding, sneaking, sprinting.
+//! physically doing: sleeping, swimming, gliding, sneaking, sprinting.
 
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
+use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_attributes;
 use steel_utils::types::GameType;
 use steel_utils::{Identifier, WorldAabb};
 
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-use crate::entity::{EntitySharedFlags, LivingEntity};
+use crate::entity::{Entity, EntitySharedFlags, LivingEntity};
+use crate::fluid::get_fluid_state;
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
 
@@ -22,6 +24,23 @@ const PLAYER_CROUCHING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6,
 const PLAYER_SWIMMING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.6, 0.6, 0.4);
 const PLAYER_SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
 const PLAYER_DYING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 1.62);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SwimmingEnvironment {
+    sprinting: bool,
+    in_water: bool,
+    under_water: bool,
+    block_fluid_is_water: bool,
+}
+
+#[must_use]
+const fn select_swimming_state(currently_swimming: bool, env: SwimmingEnvironment) -> bool {
+    if currently_swimming {
+        env.sprinting && env.in_water
+    } else {
+        env.sprinting && env.under_water && env.block_fluid_is_water
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PoseFit {
@@ -50,6 +69,8 @@ const fn select_actual_pose(desired_pose: EntityPose, fit: PoseFit) -> Option<En
 pub(super) struct EntityState {
     /// Whether the player is currently sleeping in a bed.
     sleeping: bool,
+    /// Whether the vanilla swimming shared flag is set.
+    swimming: bool,
     /// Whether the player is currently fall flying (elytra gliding).
     fall_flying: bool,
     /// Whether the player is sneaking (shift key down).
@@ -61,6 +82,7 @@ pub(super) struct EntityState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct EntityStateSnapshot {
     pub sleeping: bool,
+    pub swimming: bool,
     pub fall_flying: bool,
     pub crouching: bool,
     pub sprinting: bool,
@@ -71,6 +93,7 @@ impl EntityState {
     pub(super) const fn new() -> Self {
         Self {
             sleeping: false,
+            swimming: false,
             fall_flying: false,
             crouching: false,
             sprinting: false,
@@ -81,6 +104,7 @@ impl EntityState {
     pub(super) const fn snapshot(&self) -> EntityStateSnapshot {
         EntityStateSnapshot {
             sleeping: self.sleeping,
+            swimming: self.swimming,
             fall_flying: self.fall_flying,
             crouching: self.crouching,
             sprinting: self.sprinting,
@@ -89,6 +113,10 @@ impl EntityState {
 
     pub(super) const fn set_sleeping(&mut self, sleeping: bool) {
         self.sleeping = sleeping;
+    }
+
+    pub(super) const fn set_swimming(&mut self, swimming: bool) {
+        self.swimming = swimming;
     }
 
     pub(super) const fn set_fall_flying(&mut self, fall_flying: bool) {
@@ -106,6 +134,7 @@ impl EntityState {
     pub(super) const fn reset_transient(&mut self) {
         self.fall_flying = false;
         self.sleeping = false;
+        self.swimming = false;
         self.crouching = false;
         self.sprinting = false;
     }
@@ -176,8 +205,9 @@ impl Player {
         let state = self.entity_state.lock();
         let mut flags = EntitySharedFlags::empty();
 
-        // TODO: on_fire, swimming, invisible, glowing
+        // TODO: on_fire, invisible, glowing
         flags.set(EntitySharedFlags::SHIFT_KEY_DOWN, state.crouching);
+        flags.set(EntitySharedFlags::SWIMMING, state.swimming);
         flags.set(EntitySharedFlags::SPRINTING, state.sprinting);
         flags.set(EntitySharedFlags::FALL_FLYING, state.fall_flying);
         drop(state);
@@ -200,6 +230,35 @@ impl Player {
         self.entity_state.lock().set_sleeping(sleeping);
     }
 
+    /// Returns true if vanilla player rules consider the player swimming.
+    #[must_use]
+    pub fn is_swimming(&self) -> bool {
+        let state = self.entity_state_snapshot();
+        state.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator
+    }
+
+    fn set_swimming(&self, swimming: bool) {
+        self.entity_state.lock().set_swimming(swimming);
+    }
+
+    /// Updates the vanilla swimming shared flag.
+    pub(super) fn update_swimming(&self) {
+        // TODO: Include the passenger exemption once the passenger system exists.
+        let state = self.entity_state_snapshot();
+        let world = self.get_world();
+        let block_fluid = get_fluid_state(&world, self.block_position());
+        let swimming = select_swimming_state(
+            state.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator,
+            SwimmingEnvironment {
+                sprinting: state.sprinting,
+                in_water: self.is_in_water(),
+                under_water: self.is_under_water(),
+                block_fluid_is_water: block_fluid.is_water(),
+            },
+        );
+        self.set_swimming(swimming);
+    }
+
     /// Returns true if the player is currently fall flying (elytra).
     #[must_use]
     pub fn is_fall_flying(&self) -> bool {
@@ -212,16 +271,17 @@ impl Player {
     }
 
     /// Determines the desired pose based on current player state.
-    /// Priority: `Sleeping` > `FallFlying` > `Sneaking` > `Standing`
-    // TODO: Add Swimming pose (requires water detection)
+    /// Priority: `Sleeping` > `Swimming` > `FallFlying` > `Sneaking` > `Standing`
     // TODO: Add SpinAttack pose (requires riptide trident)
     pub(super) fn get_desired_pose(&self) -> EntityPose {
-        let es = self.entity_state.lock();
+        let es = self.entity_state_snapshot();
         if es.sleeping {
             EntityPose::Sleeping
+        } else if es.swimming && !self.is_flying() && self.game_mode() != GameType::Spectator {
+            EntityPose::Swimming
         } else if es.fall_flying {
             EntityPose::FallFlying
-        } else if es.crouching && !self.abilities.lock().flying {
+        } else if es.crouching && !self.is_flying() {
             EntityPose::Sneaking
         } else {
             EntityPose::Standing
@@ -317,6 +377,58 @@ mod tests {
             Player::dimensions_for_pose(EntityPose::Dying),
             EntityDimensions::new(0.2, 0.2, 1.62)
         );
+    }
+
+    #[test]
+    fn swimming_state_continues_while_sprinting_in_water() {
+        assert!(select_swimming_state(
+            true,
+            SwimmingEnvironment {
+                sprinting: true,
+                in_water: true,
+                under_water: false,
+                block_fluid_is_water: false,
+            },
+        ));
+    }
+
+    #[test]
+    fn swimming_state_stops_when_current_swimmer_stops_sprinting() {
+        assert!(!select_swimming_state(
+            true,
+            SwimmingEnvironment {
+                sprinting: false,
+                in_water: true,
+                under_water: true,
+                block_fluid_is_water: true,
+            },
+        ));
+    }
+
+    #[test]
+    fn swimming_state_starts_when_sprinting_underwater_in_water_block() {
+        assert!(select_swimming_state(
+            false,
+            SwimmingEnvironment {
+                sprinting: true,
+                in_water: true,
+                under_water: true,
+                block_fluid_is_water: true,
+            },
+        ));
+    }
+
+    #[test]
+    fn swimming_state_does_not_start_from_body_water_only() {
+        assert!(!select_swimming_state(
+            false,
+            SwimmingEnvironment {
+                sprinting: true,
+                in_water: true,
+                under_water: false,
+                block_fluid_is_water: true,
+            },
+        ));
     }
 
     #[test]

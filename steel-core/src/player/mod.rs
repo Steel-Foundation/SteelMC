@@ -384,6 +384,7 @@ impl Player {
         self.movement.lock().reset_for_tick(self.position());
 
         self.refresh_fluid_contact_for_base_tick();
+        self.update_swimming();
         self.apply_gravity();
         self.tick_ack_block_changes();
 
