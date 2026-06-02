@@ -413,6 +413,7 @@ impl Player {
         }
 
         self.refresh_dirty_attributes();
+        self.movement.lock().tick_post_impulse_grace_time();
 
         self.broadcast_inventory_changes();
         self.update_pose();

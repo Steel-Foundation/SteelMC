@@ -42,9 +42,6 @@ pub const CLAMP_HORIZONTAL: f64 = 3.0E7;
 /// Vertical position clamping limit (matches vanilla).
 pub const CLAMP_VERTICAL: f64 = 2.0E7;
 
-/// Post-impulse grace period in ticks (vanilla uses ~10-20 ticks).
-pub const IMPULSE_GRACE_TICKS: i32 = 20;
-
 /// Clamps a horizontal coordinate to vanilla limits.
 #[must_use]
 pub fn clamp_horizontal(value: f64) -> f64 {
@@ -194,11 +191,9 @@ impl Player {
         true
     }
 
-    /// Marks that an impulse (knockback, etc.) was applied.
-    pub fn apply_impulse(&self) {
-        self.movement
-            .lock()
-            .mark_impulse_tick(self.tick_count.load(Ordering::Relaxed));
+    /// Applies vanilla post-impulse movement validation grace.
+    pub fn apply_post_impulse_grace_time(&self, ticks: i32) {
+        self.movement.lock().apply_post_impulse_grace_time(ticks);
     }
 
     /// Checks if movement validation should be performed for this player.
@@ -356,8 +351,7 @@ impl Player {
                 let error_dist_sq = error_delta.length_squared();
                 let in_impulse_grace = {
                     let mv = self.movement.lock();
-                    let current_tick = self.tick_count.load(Ordering::Relaxed);
-                    mv.is_in_impulse_grace(current_tick, IMPULSE_GRACE_TICKS)
+                    mv.is_in_post_impulse_grace_time()
                 };
                 let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
                     && !is_creative

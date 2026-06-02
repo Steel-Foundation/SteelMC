@@ -26,8 +26,8 @@ pub struct MovementState {
     /// Number of move packets at the last tick (for rate limiting).
     known_move_packet_count: i32,
 
-    /// Tick when last impulse was applied (knockback, etc.).
-    last_impulse_tick: i32,
+    /// Remaining ticks for vanilla post-impulse movement validation grace.
+    post_impulse_grace_time: i32,
 
     /// Last movement accepted from the client.
     ///
@@ -50,7 +50,7 @@ impl MovementState {
             first_good_position: DVec3::new(0.0, 0.0, 0.0),
             received_move_packet_count: 0,
             known_move_packet_count: 0,
-            last_impulse_tick: 0,
+            post_impulse_grace_time: 0,
             last_known_client_movement: DVec3::new(0.0, 0.0, 0.0),
             client_is_floating: false,
             above_ground_tick_count: 0,
@@ -98,15 +98,24 @@ impl MovementState {
         self.last_good_position = position;
     }
 
-    /// Marks the tick when a server impulse was applied.
-    pub(super) const fn mark_impulse_tick(&mut self, tick: i32) {
-        self.last_impulse_tick = tick;
+    /// Applies vanilla post-impulse movement validation grace.
+    pub(super) const fn apply_post_impulse_grace_time(&mut self, ticks: i32) {
+        if ticks > self.post_impulse_grace_time {
+            self.post_impulse_grace_time = ticks;
+        }
     }
 
-    /// Returns whether movement validation is still inside the post-impulse grace window.
+    /// Returns whether movement validation is inside post-impulse grace.
     #[must_use]
-    pub(super) const fn is_in_impulse_grace(&self, current_tick: i32, grace_ticks: i32) -> bool {
-        current_tick.wrapping_sub(self.last_impulse_tick) < grace_ticks
+    pub(super) const fn is_in_post_impulse_grace_time(&self) -> bool {
+        self.post_impulse_grace_time > 0
+    }
+
+    /// Decrements post-impulse grace once per player tick.
+    pub(super) const fn tick_post_impulse_grace_time(&mut self) {
+        if self.post_impulse_grace_time > 0 {
+            self.post_impulse_grace_time -= 1;
+        }
     }
 
     /// Sets the last accepted client movement vector.
@@ -213,6 +222,33 @@ mod tests {
         assert_eq!(state.good_positions().1, DVec3::new(2.0, 3.0, 4.0));
         assert_eq!(state.last_known_client_movement(), DVec3::ZERO);
         assert_eq!(state.record_move_packet_delta(), 1);
+    }
+
+    #[test]
+    fn post_impulse_grace_counts_down_by_tick() {
+        let mut state = MovementState::new();
+        state.apply_post_impulse_grace_time(2);
+
+        assert!(state.is_in_post_impulse_grace_time());
+        state.tick_post_impulse_grace_time();
+        assert!(state.is_in_post_impulse_grace_time());
+        state.tick_post_impulse_grace_time();
+        assert!(!state.is_in_post_impulse_grace_time());
+    }
+
+    #[test]
+    fn post_impulse_grace_keeps_larger_existing_window() {
+        let mut state = MovementState::new();
+        state.apply_post_impulse_grace_time(5);
+        state.apply_post_impulse_grace_time(2);
+
+        for _ in 0..4 {
+            state.tick_post_impulse_grace_time();
+            assert!(state.is_in_post_impulse_grace_time());
+        }
+
+        state.tick_post_impulse_grace_time();
+        assert!(!state.is_in_post_impulse_grace_time());
     }
 
     #[test]
