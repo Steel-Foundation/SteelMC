@@ -43,8 +43,11 @@ pub const CLAMP_HORIZONTAL: f64 = 3.0E7;
 /// Vertical position clamping limit (matches vanilla).
 pub const CLAMP_VERTICAL: f64 = 2.0E7;
 
-/// Y-axis tolerance for movement error checks.
-/// Vanilla ignores Y differences within this range after physics simulation.
+/// Y-axis tolerance value used by vanilla's movement-error branch.
+///
+/// Vanilla currently uses `yDist > -0.5 || yDist < 0.5`, which zeroes every
+/// finite Y residual before the moved-wrongly check. Keep the value named so
+/// the parity quirk is not hidden in the packet handler.
 pub const Y_TOLERANCE: f64 = 0.5;
 
 /// Post-impulse grace period in ticks (vanilla uses ~10-20 ticks).
@@ -81,6 +84,17 @@ const fn bottom_center(aabb: WorldAabb) -> DVec3 {
         aabb.min_y(),
         f64::midpoint(aabb.min_z(), aabb.max_z()),
     )
+}
+
+#[must_use]
+fn movement_error_delta(target_pos: DVec3, simulated_pos: DVec3) -> DVec3 {
+    let error_x = target_pos.x - simulated_pos.x;
+    let mut error_y = target_pos.y - simulated_pos.y;
+    if error_y > -Y_TOLERANCE || error_y < Y_TOLERANCE {
+        error_y = 0.0;
+    }
+    let error_z = target_pos.z - simulated_pos.z;
+    DVec3::new(error_x, error_y, error_z)
 }
 
 /// Checks if an entity box is colliding with blocks.
@@ -325,15 +339,8 @@ impl Player {
                     return;
                 };
 
-                let simulated_pos = self.position();
-                let error_x = target_pos.x - simulated_pos.x;
-                let mut error_y = target_pos.y - simulated_pos.y;
-                let error_z = target_pos.z - simulated_pos.z;
-                if error_y > -Y_TOLERANCE || error_y < Y_TOLERANCE {
-                    error_y = 0.0;
-                }
-
-                let error_dist_sq = error_x * error_x + error_y * error_y + error_z * error_z;
+                let error_delta = movement_error_delta(target_pos, self.position());
+                let error_dist_sq = error_delta.length_squared();
                 let in_impulse_grace = {
                     let mv = self.movement.lock();
                     let current_tick = self.tick_count.load(Ordering::Relaxed);
@@ -700,5 +707,12 @@ mod tests {
         assert_eq!(wrap_degrees(181.0), -179.0);
         assert_eq!(wrap_degrees(-181.0), 179.0);
         assert_eq!(wrap_degrees(90.0), 90.0);
+    }
+
+    #[test]
+    fn movement_error_delta_matches_vanilla_y_branch() {
+        let delta = movement_error_delta(DVec3::new(10.0, 120.0, -5.0), DVec3::new(8.0, 0.0, -8.0));
+
+        assert_eq!(delta, DVec3::new(2.0, 0.0, 3.0));
     }
 }
