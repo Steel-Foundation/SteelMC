@@ -18,7 +18,9 @@ use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
 
-use crate::entity::{Entity, EntityBase, EntityBaseState, EntityPositionSyncState, RemovalReason};
+use crate::entity::{
+    Entity, EntityBase, EntityBaseState, EntityFluidContact, EntityPositionSyncState, RemovalReason,
+};
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
@@ -54,6 +56,10 @@ const DEFAULT_GRAVITY: f64 = 0.04;
 
 /// Air/vertical drag multiplier per tick.
 const AIR_DRAG: f64 = 0.98;
+const FLUID_VERTICAL_NUDGE: f64 = 5.0e-4;
+const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
+const ITEM_WATER_DRAG: f64 = 0.99;
+const ITEM_LAVA_DRAG: f64 = 0.95;
 
 /// Mutable item-specific state that changes during item ticks, pickup, damage,
 /// merging, and save/load.
@@ -668,6 +674,36 @@ impl ItemEntity {
             }
         }
     }
+
+    fn apply_fluid_movement_or_gravity(&self) {
+        let Some(world) = self.level() else {
+            self.apply_gravity();
+            return;
+        };
+
+        let contact = EntityFluidContact::scan(&world, self.bounding_box());
+        if contact.water_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
+            self.apply_fluid_movement(ITEM_WATER_DRAG);
+        } else if contact.lava_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
+            self.apply_fluid_movement(ITEM_LAVA_DRAG);
+        } else {
+            self.apply_gravity();
+        }
+    }
+
+    fn apply_fluid_movement(&self, horizontal_drag: f64) {
+        let movement = self.velocity();
+        self.set_velocity(DVec3::new(
+            movement.x * horizontal_drag,
+            movement.y
+                + if movement.y < 0.06 {
+                    FLUID_VERTICAL_NUDGE
+                } else {
+                    0.0
+                },
+            movement.z * horizontal_drag,
+        ));
+    }
 }
 
 /// Position sync packet variants.
@@ -725,9 +761,7 @@ impl Entity for ItemEntity {
         // Store old on_ground to detect changes (triggers immediate sync)
         let old_on_ground = self.on_ground();
 
-        // TODO: Handle water/lava movement (setUnderwaterMovement, setUnderLavaMovement)
-        // For now, just apply gravity
-        self.apply_gravity();
+        self.apply_fluid_movement_or_gravity();
 
         // Vanilla optimization: skip physics when at rest on ground.
         // Only process physics if:

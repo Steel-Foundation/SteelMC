@@ -45,6 +45,7 @@ mod cache;
 mod callback;
 pub mod damage;
 pub mod entities;
+mod fluid_contact;
 mod living_base;
 mod movement_sync;
 mod registry;
@@ -58,6 +59,7 @@ pub use callback::{
     EntityChunkCallback, EntityLevelCallback, NullEntityCallback, PlayerEntityCallback,
     RemovalReason,
 };
+pub use fluid_contact::EntityFluidContact;
 pub use living_base::{DEATH_DURATION, LivingEntityBase};
 pub use movement_sync::{EntityPositionSyncState, POSITION_SYNC_THRESHOLD};
 pub use registry::{ENTITIES, EntityRegistry, init_entities};
