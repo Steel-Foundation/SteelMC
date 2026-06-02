@@ -104,9 +104,6 @@ impl BlockBehavior for SweetBerryBushBlock {
         {
             return;
         }
-        let Some(_living) = entity.base() else {
-            return;
-        };
 
         // TODO: make stuck in block
     }
@@ -157,7 +154,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             pos,
             1.0,
             0.8 + rng.random::<f32>() * 0.4,
-            Some(player.id),
+            Some(player.id()),
         );
 
         let new_state = state.set_value(&BlockStateProperties::AGE_3, 1);

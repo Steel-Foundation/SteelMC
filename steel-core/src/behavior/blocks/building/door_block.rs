@@ -28,6 +28,7 @@ use crate::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
         InventoryAccess,
     },
+    entity::Entity,
     fluid::fluid_state_to_block,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
@@ -169,7 +170,7 @@ impl DoorBlock {
             replacement,
             UpdateFlags::UPDATE_ALL | UpdateFlags::UPDATE_SUPPRESS_DROPS,
         );
-        world.destroy_block_effect(bottom_pos, u32::from(bottom_state.0), Some(player.id));
+        world.destroy_block_effect(bottom_pos, u32::from(bottom_state.0), Some(player.id()));
     }
 
     fn play_sound(&self, world: &Arc<World>, pos: BlockPos, open: bool, exclude: Option<i32>) {
@@ -301,7 +302,7 @@ impl BlockBehavior for DoorBlock {
         let open = !state.get_value(&BlockStateProperties::OPEN);
         let new_state = state.set_value(&BlockStateProperties::OPEN, open);
         world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS);
-        self.play_sound(world, pos, open, Some(player.id));
+        self.play_sound(world, pos, open, Some(player.id()));
         let event = if open {
             &vanilla_game_events::BLOCK_OPEN
         } else {

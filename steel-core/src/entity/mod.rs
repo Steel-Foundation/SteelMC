@@ -74,43 +74,37 @@ pub type WeakEntity = Weak<dyn Entity>;
 ///
 /// # Using `EntityBase`
 ///
-/// Entities that embed [`EntityBase`] can implement `base()` to get default
-/// implementations for common methods like `id()`, `uuid()`, `position()`, etc.
+/// Entities expose [`EntityBase`] to get default implementations for common
+/// methods like `id()`, `uuid()`, `position()`, etc.
 ///
 /// ```ignore
 /// impl Entity for MyEntity {
-///     fn base(&self) -> Option<&EntityBase> { Some(&self.base) }
+///     fn base(&self) -> &EntityBase { &self.base }
 ///     fn entity_type(&self) -> EntityTypeRef { vanilla_entities::MY_ENTITY }
 ///     fn bounding_box(&self) -> WorldAabb { /* ... */ }
 ///     // All other common methods use defaults from EntityBase!
 /// }
 /// ```
 pub trait Entity: Send + Sync {
-    /// Returns a reference to the entity's base fields, if available.
-    ///
-    /// Implement this to get default implementations for common methods.
-    /// Returns `None` by default (for entities like Player that don't use `EntityBase`).
-    fn base(&self) -> Option<&EntityBase> {
-        None
-    }
+    /// Returns a reference to the entity's shared vanilla base fields.
+    fn base(&self) -> &EntityBase;
 
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
 
     /// Gets the entity's unique network ID (session-local).
     fn id(&self) -> i32 {
-        self.base().map_or(0, EntityBase::id)
+        self.base().id()
     }
 
     /// Gets the UUID of the entity (persistent identifier).
     fn uuid(&self) -> Uuid {
-        self.base().map_or(Uuid::nil(), EntityBase::uuid)
+        self.base().uuid()
     }
 
     /// Gets the entity's current position.
     fn position(&self) -> DVec3 {
-        self.base()
-            .map_or(DVec3::new(0.0, 0.0, 0.0), EntityBase::position)
+        self.base().position()
     }
 
     /// Gets the entity's bounding box for collision queries.
@@ -137,7 +131,7 @@ pub trait Entity: Send + Sync {
     /// Returns `None` if the entity is not in a world or the world was dropped.
     /// Mirrors vanilla's `Entity.level()`.
     fn level(&self) -> Option<Arc<World>> {
-        self.base().and_then(EntityBase::level)
+        self.base().level()
     }
 
     /// Packs dirty entity data for network synchronization.
@@ -157,21 +151,17 @@ pub trait Entity: Send + Sync {
 
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
-        self.base().is_some_and(EntityBase::is_removed)
+        self.base().is_removed()
     }
 
     /// Marks the entity as removed with the given reason.
     fn set_removed(&self, reason: RemovalReason) {
-        if let Some(base) = self.base() {
-            base.set_removed(reason);
-        }
+        self.base().set_removed(reason);
     }
 
     /// Sets the level callback for lifecycle events (movement, removal).
     fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
-        if let Some(base) = self.base() {
-            base.set_level_callback(callback);
-        }
+        self.base().set_level_callback(callback);
     }
 
     /// Gets the entity as a Player if it is one.
@@ -188,7 +178,12 @@ pub trait Entity: Send + Sync {
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
     fn rotation(&self) -> (f32, f32) {
-        self.base().map_or((0.0, 0.0), EntityBase::rotation)
+        self.base().rotation()
+    }
+
+    /// Sets the entity's rotation as (yaw, pitch) in degrees.
+    fn set_rotation(&self, rotation: (f32, f32)) {
+        self.base().set_rotation(rotation);
     }
 
     /// Extra spawn-packet data used by vanilla for entity-specific construction.
@@ -213,33 +208,27 @@ pub trait Entity: Send + Sync {
 
     /// Gets the entity's velocity in blocks per tick.
     fn velocity(&self) -> DVec3 {
-        self.base().map_or(DVec3::ZERO, EntityBase::velocity)
+        self.base().velocity()
     }
 
     /// Sets the entity's velocity.
     fn set_velocity(&self, velocity: DVec3) {
-        if let Some(base) = self.base() {
-            base.set_velocity(velocity);
-        }
+        self.base().set_velocity(velocity);
     }
 
     /// Returns true if the entity is on the ground.
     fn on_ground(&self) -> bool {
-        self.base().is_some_and(EntityBase::on_ground)
+        self.base().on_ground()
     }
 
     /// Sets whether the entity is on the ground.
     fn set_on_ground(&self, on_ground: bool) {
-        if let Some(base) = self.base() {
-            base.set_on_ground(on_ground);
-        }
+        self.base().set_on_ground(on_ground);
     }
 
     /// Sets the entity's position.
     fn set_position(&self, pos: DVec3) {
-        if let Some(base) = self.base() {
-            base.set_position(pos);
-        }
+        self.base().set_position(pos);
     }
 
     // === Physics Helper Methods ===
@@ -376,17 +365,14 @@ pub trait Entity: Send + Sync {
     ///
     /// Returns `true` if already ticked this tick, `false` otherwise.
     fn was_ticked_this_tick(&self, server_tick: i32) -> bool {
-        self.base()
-            .is_some_and(|b| b.was_ticked_this_tick(server_tick))
+        self.base().was_ticked_this_tick(server_tick)
     }
 
     /// Marks this entity as ticked for the given server tick.
     ///
     /// Called by `EntityStorage::tick()` before ticking an entity.
     fn mark_ticked(&self, server_tick: i32) {
-        if let Some(base) = self.base() {
-            base.mark_ticked(server_tick);
-        }
+        self.base().mark_ticked(server_tick);
     }
 
     /// Applies damage to this entity.

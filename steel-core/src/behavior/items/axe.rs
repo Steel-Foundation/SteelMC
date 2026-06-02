@@ -20,6 +20,7 @@ use crate::{
         InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
         waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
     },
+    entity::Entity,
     world::game_event_context::GameEventContext,
 };
 
@@ -78,12 +79,12 @@ impl ItemBehavior for AxeItem {
 
         context
             .world
-            .play_block_sound(sound_event, pos, 1.0, 1.0, Some(context.player.id));
+            .play_block_sound(sound_event, pos, 1.0, 1.0, Some(context.player.id()));
 
         if let Some(event) = level_event {
             context
                 .world
-                .level_event(event, pos, 0, Some(context.player.id));
+                .level_event(event, pos, 0, Some(context.player.id()));
             emit_connected_chest_block_change(
                 context.world,
                 pos,

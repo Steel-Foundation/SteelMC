@@ -4,7 +4,7 @@
 
 use steel_registry::item_stack::ItemStack;
 
-use crate::inventory::container::Container;
+use crate::{entity::Entity, inventory::container::Container};
 
 use super::{Player, abilities::Abilities};
 
@@ -116,12 +116,13 @@ impl PersistentPlayerData {
     /// Extracts persistent data from a live player.
     #[must_use]
     pub fn from_player(player: &Player) -> Self {
-        let pos = *player.position.lock();
-        let (yaw, pitch) = player.rotation.load();
-        let delta = player.movement.lock().delta_movement;
-        let (on_ground, fall_flying) = {
+        let pos = player.position();
+        let (yaw, pitch) = player.rotation();
+        let delta = player.velocity();
+        let on_ground = player.on_ground();
+        let fall_flying = {
             let es = player.entity_state.lock();
-            (es.on_ground, es.fall_flying)
+            es.fall_flying
         };
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
@@ -248,21 +249,20 @@ impl PersistentPlayerData {
 
         if restore_location {
             // Position
-            *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
+            player.set_position(DVec3::new(self.pos[0], self.pos[1], self.pos[2]));
 
             // Rotation
-            player.rotation.store((self.rotation[0], self.rotation[1]));
+            player.set_rotation((self.rotation[0], self.rotation[1]));
 
             // Motion/velocity
-            player.movement.lock().delta_movement =
-                DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
+            player.set_velocity(DVec3::new(self.motion[0], self.motion[1], self.motion[2]));
 
             // Ground state
             {
                 let mut es = player.entity_state.lock();
-                es.on_ground = self.on_ground;
                 es.fall_flying = self.fall_flying;
             }
+            player.set_on_ground(self.on_ground);
         }
 
         // Health

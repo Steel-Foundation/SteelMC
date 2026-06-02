@@ -18,7 +18,7 @@ use steel_registry::{vanilla_attributes, vanilla_entities};
 use steel_utils::types::GameType;
 use steel_utils::{BlockPos, ChunkPos, WorldAabb, translations};
 
-use crate::entity::LivingEntity;
+use crate::entity::{Entity, LivingEntity};
 use crate::physics::{
     CollisionWorld, EntityPhysicsState, MoverType, WorldCollisionProvider, join_is_not_empty,
     move_entity,
@@ -408,7 +408,7 @@ impl Player {
             let teleport_id = tp.teleport_id;
             drop(tp);
 
-            let (yaw, pitch) = self.rotation.load();
+            let (yaw, pitch) = self.rotation();
             self.send_packet(CPlayerPosition::absolute(
                 teleport_id,
                 pos.x,
@@ -467,7 +467,7 @@ impl Player {
 
         if self.update_awaiting_teleport() {
             if packet.has_rot {
-                self.rotation.store((packet.y_rot, packet.x_rot));
+                self.set_rotation((packet.y_rot, packet.x_rot));
             }
             return;
         }
@@ -480,12 +480,13 @@ impl Player {
             let mv = self.movement.lock();
             (mv.prev_position, mv.prev_rotation)
         };
-        let start_pos = *self.position.lock();
+        let start_pos = self.position();
         let game_mode = self.game_mode.load();
-        let (is_sleeping, is_fall_flying, was_on_ground, is_crouching) = {
+        let (is_sleeping, is_fall_flying, is_crouching) = {
             let es = self.entity_state.lock();
-            (es.sleeping, es.fall_flying, es.on_ground, es.crouching)
+            (es.sleeping, es.fall_flying, es.crouching)
         };
+        let was_on_ground = self.on_ground();
         let is_spectator = game_mode == GameType::Spectator;
         let is_creative = game_mode == GameType::Creative;
         let world = self.get_world();
@@ -509,7 +510,7 @@ impl Player {
                 let moved_dist_sq = dx * dx + dy * dy + dz * dz;
 
                 if moved_dist_sq > 1.0 {
-                    let (yaw, pitch) = self.rotation.load();
+                    let (yaw, pitch) = self.rotation();
                     self.teleport(start_pos.x, start_pos.y, start_pos.z, yaw, pitch);
                     return;
                 }
@@ -529,7 +530,7 @@ impl Player {
 
                 let (expected_velocity_sq, in_impulse_grace) = {
                     let mv = self.movement.lock();
-                    let vel_sq = mv.delta_movement_length_sq();
+                    let vel_sq = self.velocity().length_squared();
                     let current_tick = self.tick_count.load(Ordering::Relaxed);
                     let grace =
                         current_tick.wrapping_sub(mv.last_impulse_tick) < IMPULSE_GRACE_TICKS;
@@ -563,7 +564,7 @@ impl Player {
                 if !was_on_ground && packet.on_ground {
                     validation.move_delta.y = 0.0;
                 }
-                self.set_delta_movement(validation.move_delta);
+                self.set_velocity(validation.move_delta);
 
                 let moved_upwards = validation.move_delta.y > 0.0;
                 if was_on_ground && !packet.on_ground && moved_upwards {
@@ -588,15 +589,13 @@ impl Player {
             }
         }
 
-        self.entity_state.lock().on_ground = packet.on_ground;
+        self.set_on_ground(packet.on_ground);
 
         if packet.has_pos {
-            let old_pos = *self.position.lock();
-            *self.position.lock() = packet.position;
-            self.level_callback.lock().on_move(old_pos, packet.position);
+            self.set_position(packet.position);
         }
         if packet.has_rot {
-            self.rotation.store((packet.y_rot, packet.x_rot));
+            self.set_rotation((packet.y_rot, packet.x_rot));
         }
 
         let pos = if packet.has_pos {
@@ -635,9 +634,9 @@ impl Player {
                             mv.last_sent_on_ground = packet.on_ground;
                         }
 
-                        let delta = self.get_delta_movement();
+                        let delta = self.velocity();
                         let sync_packet = CEntityPositionSync {
-                            entity_id: self.id,
+                            entity_id: self.id(),
                             x: pos.x,
                             y: pos.y,
                             z: pos.z,
@@ -648,10 +647,10 @@ impl Player {
                             pitch,
                             on_ground: packet.on_ground,
                         };
-                        world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
+                        world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
                     } else {
                         let move_packet = CMoveEntityPosRot {
-                            entity_id: self.id,
+                            entity_id: self.id(),
                             dx,
                             dy,
                             dz,
@@ -659,7 +658,7 @@ impl Player {
                             x_rot: to_angle_byte(pitch),
                             on_ground: packet.on_ground,
                         };
-                        world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id));
+                        world.broadcast_to_nearby(new_chunk, move_packet, Some(self.id()));
                     }
                 } else {
                     {
@@ -668,9 +667,9 @@ impl Player {
                         mv.last_sent_on_ground = packet.on_ground;
                     }
 
-                    let delta = self.get_delta_movement();
+                    let delta = self.velocity();
                     let sync_packet = CEntityPositionSync {
-                        entity_id: self.id,
+                        entity_id: self.id(),
                         x: pos.x,
                         y: pos.y,
                         z: pos.z,
@@ -681,41 +680,30 @@ impl Player {
                         pitch,
                         on_ground: packet.on_ground,
                     };
-                    world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id));
+                    world.broadcast_to_nearby(new_chunk, sync_packet, Some(self.id()));
                 }
             } else {
                 let rot_packet = CMoveEntityRot {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     y_rot: to_angle_byte(yaw),
                     x_rot: to_angle_byte(pitch),
                     on_ground: packet.on_ground,
                 };
-                world.broadcast_to_nearby(new_chunk, rot_packet, Some(self.id));
+                world.broadcast_to_nearby(new_chunk, rot_packet, Some(self.id()));
             }
 
             if packet.has_rot {
                 let head_packet = CRotateHead {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     head_y_rot: to_angle_byte(yaw),
                 };
-                world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id));
+                world.broadcast_to_nearby(new_chunk, head_packet, Some(self.id()));
             }
 
             let mut mv = self.movement.lock();
             mv.prev_position = pos;
             mv.prev_rotation = (yaw, pitch);
         }
-    }
-
-    /// Returns the player's current velocity.
-    #[must_use]
-    pub fn get_delta_movement(&self) -> DVec3 {
-        self.movement.lock().delta_movement
-    }
-
-    /// Sets the player's velocity.
-    pub fn set_delta_movement(&self, velocity: DVec3) {
-        self.movement.lock().delta_movement = velocity;
     }
 
     /// Returns the player's current gravity value.
@@ -738,10 +726,11 @@ impl Player {
     /// - Player is in creative mode and flying
     /// - Player is fall flying (elytra - uses different physics)
     pub(super) fn apply_gravity(&self) {
-        let (on_ground, is_fall_flying) = {
+        let is_fall_flying = {
             let es = self.entity_state.lock();
-            (es.on_ground, es.fall_flying)
+            es.fall_flying
         };
+        let on_ground = self.on_ground();
         let game_mode = self.game_mode.load();
         let is_spectator = game_mode == GameType::Spectator;
         let is_creative_flying = game_mode == GameType::Creative; // TODO: check actual flying state
@@ -752,7 +741,9 @@ impl Player {
 
         let gravity = self.get_gravity();
         if gravity != 0.0 {
-            self.movement.lock().delta_movement.y -= gravity;
+            let mut velocity = self.velocity();
+            velocity.y -= gravity;
+            self.set_velocity(velocity);
         }
     }
 
@@ -779,8 +770,8 @@ impl Player {
             id
         };
 
-        *self.position.lock() = pos;
-        self.rotation.store((yaw, pitch));
+        self.set_position(pos);
+        self.set_rotation((yaw, pitch));
 
         self.send_packet(CPlayerPosition::absolute(new_id, x, y, z, yaw, pitch));
     }
@@ -792,7 +783,7 @@ impl Player {
         let mut tp = self.teleport_state.lock();
 
         if let Some(pos) = tp.try_accept(packet.teleport_id) {
-            *self.position.lock() = pos;
+            self.set_position(pos);
             self.movement.lock().last_good_position = pos;
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
@@ -826,11 +817,11 @@ impl Player {
             return;
         }
 
-        if packet.entity_id != self.id {
+        if packet.entity_id != self.id() {
             log::warn!(
                 "Player {} (eid {}) sent SPlayerCommand with mismatched entity_id {}",
                 self.gameprofile.name,
-                self.id,
+                self.id(),
                 packet.entity_id
             );
             return;

@@ -8,6 +8,7 @@ use steel_utils::{Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    entity::Entity,
     world::game_event_context::GameEventContext,
 };
 
@@ -73,7 +74,7 @@ impl ItemBehavior for HoeItem {
             context.hit_result.block_pos,
             1.0,
             1.0,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();

@@ -1,7 +1,7 @@
 //! Core entity state flags for a player.
 //!
 //! Groups the boolean/simple state flags that describe what the player is
-//! physically doing: sleeping, gliding, on the ground, sneaking, sprinting.
+//! physically doing: sleeping, gliding, sneaking, sprinting.
 
 use bitflags::bitflags;
 use steel_registry::entity_data::EntityPose;
@@ -32,8 +32,6 @@ pub struct EntityState {
     pub sleeping: bool,
     /// Whether the player is currently fall flying (elytra gliding).
     pub fall_flying: bool,
-    /// Whether the player is on the ground.
-    pub on_ground: bool,
     /// Whether the player is sneaking (shift key down).
     pub crouching: bool,
     /// Whether the player is sprinting.
@@ -46,7 +44,6 @@ impl EntityState {
         Self {
             sleeping: false,
             fall_flying: false,
-            on_ground: false,
             crouching: false,
             sprinting: false,
         }
@@ -101,12 +98,6 @@ impl Player {
     /// Sets the player's fall flying state.
     pub fn set_fall_flying(&self, fall_flying: bool) {
         self.entity_state.lock().fall_flying = fall_flying;
-    }
-
-    /// Returns true if the player is on the ground.
-    #[must_use]
-    pub fn is_on_ground(&self) -> bool {
-        self.entity_state.lock().on_ground
     }
 
     /// Determines the desired pose based on current player state.

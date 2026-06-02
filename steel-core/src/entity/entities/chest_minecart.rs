@@ -79,8 +79,8 @@ impl ChestMinecartEntity {
 }
 
 impl Entity for ChestMinecartEntity {
-    fn base(&self) -> Option<&EntityBase> {
-        Some(&self.base)
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
     fn entity_type(&self) -> EntityTypeRef {

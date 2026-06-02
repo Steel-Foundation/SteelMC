@@ -94,8 +94,8 @@ impl BlockDisplayEntity {
 }
 
 impl Entity for BlockDisplayEntity {
-    fn base(&self) -> Option<&EntityBase> {
-        Some(&self.base)
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
     fn entity_type(&self) -> EntityTypeRef {

@@ -72,7 +72,9 @@ use crate::{
     block_entity::SharedBlockEntity,
     chunk::heightmap::HeightmapType,
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
-    entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
+    entity::{
+        Entity, EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity,
+    },
     fluid::fluid_state_to_block,
     level_data::{LevelDataManager, WorldGenerationSettings},
     player::{LastSeen, Player, connection::NetworkConnection},
@@ -559,7 +561,7 @@ impl World {
         // TODO: Check other entities with blocksBuilding=true (mobs, boats, minecarts, etc.)
         let mut obstructed = false;
         self.players.iter_players(|_uuid, player| {
-            let player_pos = player.position.lock();
+            let player_pos = player.position();
             let half_width = Self::PLAYER_WIDTH / 2.0;
             let player_aabb = WorldAabb::new(
                 player_pos.x - half_width,
@@ -1414,7 +1416,7 @@ impl World {
     /// Broadcasts an already-encoded packet to all players except one.
     pub fn broadcast_to_all_encoded_except(&self, packet: EncodedPacket, exclude: i32) {
         self.players.iter_players(|_, player| {
-            if player.id != exclude {
+            if player.id() != exclude {
                 player.connection.send_encoded(packet.clone());
             }
             true
@@ -1879,7 +1881,7 @@ impl World {
                 continue;
             }
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = *player.position.lock();
+                let player_pos = player.position();
                 let dx = player_pos.x - event_pos.0;
                 let dy = player_pos.y - event_pos.1;
                 let dz = player_pos.z - event_pos.2;
@@ -2041,7 +2043,7 @@ impl World {
 
         for entity_id in self.player_area_map.get_tracking_players(chunk) {
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = *player.position.lock();
+                let player_pos = player.position();
                 let dx = player_pos.x - event_pos.0;
                 let dy = player_pos.y - event_pos.1;
                 let dz = player_pos.z - event_pos.2;
@@ -2116,7 +2118,7 @@ impl World {
                 continue;
             }
             if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = *player.position.lock();
+                let player_pos = player.position();
                 let dx = player_pos.x - sound_pos.0;
                 let dy = player_pos.y - sound_pos.1;
                 let dz = player_pos.z - sound_pos.2;

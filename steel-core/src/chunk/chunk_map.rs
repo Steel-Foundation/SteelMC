@@ -34,11 +34,11 @@ use crate::chunk::{
     chunk_generation_task::ChunkGenerationTask,
 };
 use crate::chunk_saver::ChunkStorage;
-use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick};
 use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
+use crate::{entity::Entity, player::Player};
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
 
@@ -942,7 +942,7 @@ impl ChunkMap {
 
                 // Update the player area map with the diff
                 world.player_area_map.on_player_view_change(
-                    player.id,
+                    player.id(),
                     &added_chunks,
                     &removed_chunks,
                 );

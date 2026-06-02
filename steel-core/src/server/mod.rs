@@ -13,7 +13,7 @@ use crate::block_entity::init_block_entities;
 use crate::chunk::chunk_map::GenerationTaskCap;
 use crate::command::CommandDispatcher;
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
-use crate::entity::{SharedEntity, init_entities};
+use crate::entity::{Entity, SharedEntity, init_entities};
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
 use crate::level_data::{LevelDataManager, WorldGenerationSettings};
@@ -64,9 +64,12 @@ const CHUNK_SCHEDULING_TPS: u64 = 20;
 
 fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
     let spawn = world.level_data.read().data().spawn.clone();
-    *player.position.lock() =
-        DVec3::new(f64::from(spawn.x), f64::from(spawn.y), f64::from(spawn.z));
-    player.rotation.store((spawn.angle, 0.0));
+    player.set_position(DVec3::new(
+        f64::from(spawn.x),
+        f64::from(spawn.y),
+        f64::from(spawn.z),
+    ));
+    player.set_rotation((spawn.angle, 0.0));
     player.game_mode.store(world.default_gamemode);
     player.prev_game_mode.store(world.default_gamemode);
     player
@@ -321,8 +324,8 @@ impl Server {
 
         player.reset(state.world.clone(), ResetReason::InitialJoin);
         Self::apply_domain_player_state(&player, &state);
-        let pos = *player.position.lock();
-        let rotation = player.rotation.load();
+        let pos = player.position();
+        let rotation = player.rotation();
         player.spawn(pos, rotation, ResetReason::InitialJoin);
     }
 
@@ -468,7 +471,7 @@ impl Server {
         let hashed_seed = world.obfuscated_seed();
 
         player.send_packet(CLogin {
-            player_id: player.id,
+            player_id: player.id(),
             hardcore: false,
             levels: self.worlds.keys().cloned().collect(),
             max_players: self.config.max_players as i32,
@@ -966,8 +969,8 @@ impl Server {
         Self::apply_domain_player_state(&player, &target_state);
         player.reset(target_state.world.clone(), ResetReason::WorldChange);
         Self::apply_domain_player_state(&player, &target_state);
-        let pos = *player.position.lock();
-        let rotation = player.rotation.load();
+        let pos = player.position();
+        let rotation = player.rotation();
         player.spawn(pos, rotation, ResetReason::WorldChange);
 
         if let Err(e) = self
@@ -1142,7 +1145,7 @@ impl Server {
 
         // TODO: Set permissions level to match player's level.
         player.send_packet(CEntityEvent {
-            entity_id: player.id,
+            entity_id: player.id(),
             event: EntityStatus::PermissionLevelOwners,
         });
 

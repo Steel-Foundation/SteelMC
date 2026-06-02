@@ -9,7 +9,7 @@ use steel_utils::SectionPos;
 use tokio::time::Instant;
 
 use crate::{
-    entity::{Entity, PlayerEntityCallback, SharedEntity},
+    entity::{Entity, NullEntityCallback, PlayerEntityCallback, SharedEntity},
     player::connection::NetworkConnection,
     player::{Player, ResetReason},
     world::World,
@@ -19,7 +19,7 @@ impl World {
     /// Removes a player from the world.
     pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
         let uuid = player.gameprofile.id;
-        let entity_id = player.id;
+        let entity_id = player.id();
 
         if self.players.remove(&uuid).await.is_none() {
             return;
@@ -37,6 +37,7 @@ impl World {
         let pos = player.position();
         let section = SectionPos::from_entity_pos(pos);
         self.entity_cache.unregister(entity_id, uuid, section);
+        player.set_level_callback(Arc::new(NullEntityCallback));
 
         // Remove player from entity tracking (stop tracking all entities for this player)
         self.entity_tracker().on_player_leave(entity_id);
@@ -56,7 +57,7 @@ impl World {
     /// removal — the player stays in the global tab list since they are only switching worlds.
     pub fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
         let uuid = player.gameprofile.id;
-        let entity_id = player.id;
+        let entity_id = player.id();
 
         if self.players.remove_sync(&uuid).is_none() {
             return;
@@ -65,6 +66,7 @@ impl World {
         let pos = player.position();
         let section = SectionPos::from_entity_pos(pos);
         self.entity_cache.unregister(entity_id, uuid, section);
+        player.set_level_callback(Arc::new(NullEntityCallback));
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(player);
         self.broadcast_to_all(CRemoveEntities::single(entity_id));
@@ -86,7 +88,7 @@ impl World {
         // Set up level callback for section tracking
         let pos = player.position();
         let callback = Arc::new(PlayerEntityCallback::new(
-            player.id,
+            player.id(),
             pos,
             Arc::downgrade(self),
         ));
@@ -120,8 +122,8 @@ impl World {
     /// Sends all existing players' info to the new player, and broadcasts the new
     /// player's info + entity spawn to all existing players.
     fn sync_tab_list_and_entities(self: &Arc<Self>, player: &Arc<Player>) {
-        let pos = *player.position.lock();
-        let (yaw, pitch) = player.rotation.load();
+        let pos = player.position();
+        let (yaw, pitch) = player.rotation();
 
         // Send existing players to the new player (tab list + entity spawn)
         self.players.iter_players(|_, existing_player| {
@@ -153,12 +155,12 @@ impl World {
             }
 
             // Spawn existing player entity for new player (bundled for atomic processing)
-            let existing_pos = *existing_player.position.lock();
-            let (existing_yaw, existing_pitch) = existing_player.rotation.load();
+            let existing_pos = existing_player.position();
+            let (existing_yaw, existing_pitch) = existing_player.rotation();
             let player_type_id = vanilla_entities::PLAYER.id() as i32;
             player.send_bundle(|bundle| {
                 bundle.add(CAddEntity::player(
-                    existing_player.id,
+                    existing_player.id(),
                     existing_player.gameprofile.id,
                     player_type_id,
                     existing_pos.x,
@@ -189,7 +191,7 @@ impl World {
         // TODO: bundle with entity metadata + equipment packets when implemented
         let player_type_id = vanilla_entities::PLAYER.id() as i32;
         let spawn_packet = CAddEntity::player(
-            player.id,
+            player.id(),
             player.gameprofile.id,
             player_type_id,
             pos.x,
@@ -198,6 +200,6 @@ impl World {
             yaw,
             pitch,
         );
-        self.broadcast_to_all_except(spawn_packet, player.id);
+        self.broadcast_to_all_except(spawn_packet, player.id());
     }
 }

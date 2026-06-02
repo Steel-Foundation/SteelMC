@@ -17,7 +17,7 @@ use steel_utils::ChunkPos;
 use steel_utils::locks::SyncRwLock;
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::entity::{SharedEntity, WeakEntity};
+use crate::entity::{Entity, SharedEntity, WeakEntity};
 use crate::player::Player;
 
 /// World-level entity tracker using chunk-based spatial indexing.
@@ -143,7 +143,7 @@ impl EntityTracker {
         added_chunks: &[ChunkPos],
         removed_chunks: &[ChunkPos],
     ) {
-        let player_id = player.id;
+        let player_id = player.id();
 
         // For removed chunks: check if any entities there should stop being tracked
         for &chunk in removed_chunks {
@@ -199,7 +199,7 @@ impl EntityTracker {
 
     /// Called when a player joins - initializes tracking for all visible entities.
     pub fn on_player_join(&self, player: &Player, view: &PlayerChunkView) {
-        let player_id = player.id;
+        let player_id = player.id();
 
         view.for_each(|chunk| {
             let entity_ids: Option<Vec<i32>> = self

@@ -20,6 +20,7 @@ use steel_utils::{
 
 use super::food_data::food_constants;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
+use crate::entity::Entity;
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::world::{World, game_event_context::GameEventContext};
@@ -95,7 +96,7 @@ impl BlockBreakingManager {
             let state = world.get_block_state(self.destroy_pos);
             if is_air(state) {
                 // Block was broken by something else
-                world.broadcast_block_destruction(player.id, self.destroy_pos, -1);
+                world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
                 self.last_sent_state = -1;
                 self.is_destroying_block = false;
             } else {
@@ -125,7 +126,7 @@ impl BlockBreakingManager {
         let state = (progress * 10.0) as i32;
 
         if state != self.last_sent_state {
-            world.broadcast_block_destruction(player.id, pos, state);
+            world.broadcast_block_destruction(player.id(), pos, state);
             self.last_sent_state = state;
         }
 
@@ -202,7 +203,7 @@ impl BlockBreakingManager {
                         self.is_destroying_block = true;
                         self.destroy_pos = pos;
                         let state = (progress * 10.0) as i32;
-                        world.broadcast_block_destruction(player.id, pos, state);
+                        world.broadcast_block_destruction(player.id(), pos, state);
                         self.last_sent_state = state;
                     }
                 }
@@ -220,7 +221,7 @@ impl BlockBreakingManager {
                         if progress >= 0.7 {
                             // Complete the break
                             self.is_destroying_block = false;
-                            world.broadcast_block_destruction(player.id, pos, -1);
+                            world.broadcast_block_destruction(player.id(), pos, -1);
                             self.destroy_and_ack(player, world, pos);
                             return;
                         }
@@ -245,10 +246,10 @@ impl BlockBreakingManager {
                         self.destroy_pos,
                         pos
                     );
-                    world.broadcast_block_destruction(player.id, self.destroy_pos, -1);
+                    world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
                 }
 
-                world.broadcast_block_destruction(player.id, pos, -1);
+                world.broadcast_block_destruction(player.id(), pos, -1);
             }
         }
     }
@@ -308,7 +309,7 @@ impl BlockBreakingManager {
                 b.key == vanilla_blocks::FIRE.key || b.key == vanilla_blocks::SOUL_FIRE.key
             });
             if !changed_by_player_will_destroy && !is_fire {
-                world.destroy_block_effect(pos, u32::from(adjusted_state.0), Some(player.id));
+                world.destroy_block_effect(pos, u32::from(adjusted_state.0), Some(player.id()));
             }
 
             // Check if player has correct tool for drops

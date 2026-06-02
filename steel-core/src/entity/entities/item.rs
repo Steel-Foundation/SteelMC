@@ -358,7 +358,7 @@ impl ItemEntity {
             let pos = self.position();
             let chunk_pos = steel_utils::ChunkPos::from_entity_pos(pos);
 
-            let take_packet = CTakeItemEntity::new(self.id(), player.id, picked_up_count);
+            let take_packet = CTakeItemEntity::new(self.id(), player.id(), picked_up_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
 
@@ -687,8 +687,8 @@ enum PositionSyncPacket {
 }
 
 impl Entity for ItemEntity {
-    fn base(&self) -> Option<&EntityBase> {
-        Some(&self.base)
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
     fn entity_type(&self) -> EntityTypeRef {

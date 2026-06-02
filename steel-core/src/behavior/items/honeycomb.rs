@@ -9,6 +9,7 @@ use crate::{
         InteractionResult, ItemBehavior, UseOnContext, waxables::get_waxed_from_normal_variant,
     },
     block_entity::{BlockEntity, entities::SignBlockEntity},
+    entity::Entity,
     world::game_event_context::GameEventContext,
 };
 
@@ -42,7 +43,7 @@ impl ItemBehavior for HoneycombItem {
                 level_events::PARTICLES_AND_SOUND_WAX_ON,
                 pos,
                 0,
-                Some(context.player.id),
+                Some(context.player.id()),
             );
             emit_connected_chest_block_change(
                 context.world,
@@ -75,7 +76,7 @@ impl ItemBehavior for HoneycombItem {
             level_events::PARTICLES_AND_SOUND_WAX_ON,
             pos,
             0,
-            Some(context.player.id),
+            Some(context.player.id()),
         );
         InteractionResult::Success
     }

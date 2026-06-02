@@ -11,8 +11,8 @@ use crate::command::commands::{
 };
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
-use crate::entity::LivingEntity;
 use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
 use steel_registry::vanilla_damage_types;
 use steel_utils::translations;
@@ -77,7 +77,7 @@ impl CommandExecutor<((), Vec<Arc<dyn LivingEntity + Send + Sync>>)> for KillTar
         let mut last_name = String::new();
         for target in &targets {
             let target_id = target.id();
-            if let Some(player) = players.iter().find(|p| p.id == target_id) {
+            if let Some(player) = players.iter().find(|p| p.id() == target_id) {
                 kill_player(player);
                 last_name.clone_from(&player.gameprofile.name);
             }

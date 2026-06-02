@@ -104,8 +104,8 @@ impl EndCrystalEntity {
 }
 
 impl Entity for EndCrystalEntity {
-    fn base(&self) -> Option<&EntityBase> {
-        Some(&self.base)
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
     fn entity_type(&self) -> EntityTypeRef {

@@ -278,12 +278,12 @@ impl Player {
         let world = self.get_world();
         let entities = world.get_entities_in_aabb(&pickup_area);
 
-        let Some(player_arc) = world.players.get_by_entity_id(self.id) else {
+        let Some(player_arc) = world.players.get_by_entity_id(self.id()) else {
             return;
         };
 
         for entity in entities {
-            if entity.id() == self.id || entity.is_removed() {
+            if entity.id() == self.id() || entity.is_removed() {
                 continue;
             }
 
@@ -607,7 +607,7 @@ impl Player {
         }
 
         let pos = self.position();
-        let (yaw, pitch) = self.rotation.load();
+        let (yaw, pitch) = self.rotation();
 
         let spawn_y = self.get_eye_y() - 0.3;
 
@@ -658,7 +658,7 @@ impl Player {
     /// Returns false if the player is dead, removed, or has a flag preventing item drops.
     #[must_use]
     pub fn can_drop_items(&self) -> bool {
-        !self.removed.load(Ordering::Relaxed)
+        !self.is_removed()
         // TODO: Check if player is alive (health > 0)
     }
 

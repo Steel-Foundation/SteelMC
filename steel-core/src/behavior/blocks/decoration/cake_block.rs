@@ -16,6 +16,7 @@ use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, candle_cakes,
     },
+    entity::Entity,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -145,7 +146,7 @@ impl BlockBehavior for CakeBlock {
                 pos,
                 1.0,
                 1.0,
-                Some(player.id),
+                Some(player.id()),
             );
             world.set_block(pos, candle_cake.default_state(), UpdateFlags::UPDATE_ALL);
             return InteractionResult::Success;

@@ -19,6 +19,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
 
@@ -85,7 +86,7 @@ impl ButtonBlock {
         world.set_block(pos, powered_state, UpdateFlags::UPDATE_ALL);
         self.update_button_neighbors(powered_state, world, pos);
         world.schedule_block_tick_default(pos, self.block, self.ticks_to_stay_pressed);
-        world.play_block_sound(self.sound_click_on, pos, 1.0, 1.0, Some(player.id));
+        world.play_block_sound(self.sound_click_on, pos, 1.0, 1.0, Some(player.id()));
         world.game_event(
             &vanilla_game_events::BLOCK_ACTIVATE,
             pos,

@@ -92,7 +92,7 @@ pub struct EntityBase {
     /// Persistent UUID for this entity.
     uuid: Uuid,
     /// The world this entity is in.
-    world: Weak<World>,
+    world: SyncMutex<Weak<World>>,
     /// Current vanilla movement state.
     state: SyncMutex<EntityBaseState>,
     /// Whether this entity has been removed.
@@ -139,7 +139,7 @@ impl EntityBase {
         Self {
             id,
             uuid,
-            world,
+            world: SyncMutex::new(world),
             state: SyncMutex::new(state),
             removed: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
@@ -190,7 +190,12 @@ impl EntityBase {
     /// Returns `None` if the world has been dropped.
     #[inline]
     pub fn level(&self) -> Option<Arc<World>> {
-        self.world.upgrade()
+        self.world.lock().upgrade()
+    }
+
+    /// Updates the world reference used by this entity.
+    pub fn set_world(&self, world: Weak<World>) {
+        *self.world.lock() = world;
     }
 
     /// Returns true if the entity has been marked for removal.
@@ -206,6 +211,15 @@ impl EntityBase {
         if !self.removed.swap(true, Ordering::AcqRel) {
             self.level_callback.lock().on_remove(reason);
         }
+    }
+
+    /// Clears the removed flag and returns whether the entity had been removed.
+    ///
+    /// Steel reuses the same `Player` instance across respawn while vanilla
+    /// constructs a fresh `ServerPlayer`, so player respawn needs an explicit
+    /// way to reset this base lifecycle flag.
+    pub fn clear_removed(&self) -> bool {
+        self.removed.swap(false, Ordering::AcqRel)
     }
 
     /// Sets the level callback for lifecycle events.

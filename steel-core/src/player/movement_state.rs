@@ -10,9 +10,6 @@ pub struct MovementState {
     /// The previous rotation for movement broadcasts.
     pub prev_rotation: (f32, f32),
 
-    /// Player's current velocity (delta movement per tick).
-    pub delta_movement: DVec3,
-
     /// Last known good position (for collision rollback).
     pub last_good_position: DVec3,
     /// Position at start of tick (for speed validation).
@@ -40,7 +37,6 @@ impl MovementState {
         Self {
             prev_position: DVec3::new(0.0, 0.0, 0.0),
             prev_rotation: (0.0, 0.0),
-            delta_movement: DVec3::new(0.0, 0.0, 0.0),
             last_good_position: DVec3::new(0.0, 0.0, 0.0),
             first_good_position: DVec3::new(0.0, 0.0, 0.0),
             received_move_packet_count: 0,
@@ -49,12 +45,5 @@ impl MovementState {
             position_sync_delay: 0,
             last_sent_on_ground: false,
         }
-    }
-
-    /// Returns the squared length of `delta_movement`.
-    #[must_use]
-    pub fn delta_movement_length_sq(&self) -> f64 {
-        let dm = &self.delta_movement;
-        dm.x * dm.x + dm.y * dm.y + dm.z * dm.z
     }
 }

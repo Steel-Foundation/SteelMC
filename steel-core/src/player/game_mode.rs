@@ -346,7 +346,7 @@ impl Player {
         pos: BlockPos,
         buffer: f64,
     ) -> bool {
-        let player_pos = *self.position.lock();
+        let player_pos = self.position();
         let eye_y = player_pos.y + self.get_eye_height();
 
         let min_x = f64::from(pos.x());
@@ -401,10 +401,10 @@ impl Player {
             InteractionHand::MainHand => AnimateAction::SwingMainHand,
             InteractionHand::OffHand => AnimateAction::SwingOffHand,
         };
-        let packet = CAnimate::new(self.id, action);
+        let packet = CAnimate::new(self.id(), action);
 
         let chunk = *self.last_chunk_pos.lock();
-        let exclude = if update_self { None } else { Some(self.id) };
+        let exclude = if update_self { None } else { Some(self.id()) };
         self.get_world().broadcast_to_nearby(chunk, packet, exclude);
     }
 

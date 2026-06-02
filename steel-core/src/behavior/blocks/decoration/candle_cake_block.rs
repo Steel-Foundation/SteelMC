@@ -16,6 +16,7 @@ use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, blocks::CakeBlock,
     },
+    entity::Entity,
     player::Player,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -85,7 +86,7 @@ impl BlockBehavior for CandleCakeBlock {
                 pos,
                 1.0,
                 1.0,
-                Some(player.id),
+                Some(player.id()),
             );
             return InteractionResult::Success;
         }

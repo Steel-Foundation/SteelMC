@@ -72,15 +72,11 @@ use text_components::TextComponent;
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{content::Resolvable, custom::CustomData};
-use uuid::Uuid;
 
 use crate::config::RuntimeConfig;
 use crate::entity::attribute::AttributeMap;
 use crate::entity::damage::DamageSource;
-use crate::entity::{
-    DEATH_DURATION, Entity, EntityLevelCallback, LivingEntityBase, NullEntityCallback,
-    RemovalReason,
-};
+use crate::entity::{DEATH_DURATION, Entity, EntityBase, LivingEntityBase, RemovalReason};
 use crate::inventory::SyncPlayerInv;
 use crate::player::experience::Experience;
 use crate::player::player_inventory::PlayerInventory;
@@ -182,16 +178,12 @@ pub struct Player {
     /// Runtime configuration shared with the server.
     pub(crate) config: Arc<RuntimeConfig>,
 
-    /// The entity ID assigned to this player.
-    pub id: i32,
+    /// Common entity fields (id, uuid, position, rotation, removal, callback).
+    base: EntityBase,
 
     /// Whether the player has finished loading the client.
     pub client_loaded: AtomicBool,
 
-    /// The player's position.
-    pub position: SyncMutex<DVec3>,
-    /// The player's rotation (yaw, pitch).
-    pub rotation: AtomicCell<(f32, f32)>,
     /// Movement tracking state
     pub(crate) movement: SyncMutex<MovementState>,
 
@@ -265,13 +257,8 @@ pub struct Player {
     /// Delta-tracking state for `CSetHealth` deduplication.
     health_sync: SyncMutex<HealthSyncState>,
 
-    /// Whether the player has been removed from the world.
-    removed: AtomicBool,
     /// Whether the player is between domain saves/loads and should ignore gameplay packets.
     domain_switching: AtomicBool,
-
-    /// Callback for entity lifecycle events (movement between chunks, removal).
-    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
 
     /// The Player's Experience
     pub experience: SyncMutex<Experience>,
@@ -327,6 +314,8 @@ impl Player {
         let speed = attributes
             .get_value(vanilla_attributes::MOVEMENT_SPEED)
             .unwrap_or(0.1) as f32;
+        let player_uuid = gameprofile.id;
+        let world_ref = Arc::downgrade(&world);
 
         Self {
             gameprofile,
@@ -335,10 +324,8 @@ impl Player {
             world: ArcSwap::new(world),
             server,
             config,
-            id: entity_id,
+            base: EntityBase::with_uuid(entity_id, player_uuid, pos, world_ref),
             client_loaded: AtomicBool::new(false),
-            position: SyncMutex::new(pos),
-            rotation: AtomicCell::new((0.0, 0.0)),
             movement: SyncMutex::new(MovementState::new()),
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
@@ -367,9 +354,7 @@ impl Player {
             living_base: SyncMutex::new(LivingEntityBase::new()),
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
-            removed: AtomicBool::new(false),
             domain_switching: AtomicBool::new(false),
-            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             experience: SyncMutex::new(Experience::default()),
             chunk_send_epoch: AtomicU32::new(0),
         }
@@ -386,7 +371,7 @@ impl Player {
         // Reset first_good_position to current position at start of tick (vanilla: resetPosition)
         {
             let mut mv = self.movement.lock();
-            mv.first_good_position = *self.position.lock();
+            mv.first_good_position = self.position();
             mv.known_move_packet_count = mv.received_move_packet_count;
         }
 
@@ -397,7 +382,7 @@ impl Player {
             //return;
         }
 
-        let current_pos = *self.position.lock();
+        let current_pos = self.position();
         let chunk_pos = ChunkPos::from_entity_pos(current_pos);
 
         *self.last_chunk_pos.lock() = chunk_pos;
@@ -485,7 +470,7 @@ impl Player {
         {
             let snapshots = self.attributes.lock().drain_dirty_sync();
             if !snapshots.is_empty() {
-                let packet = CUpdateAttributes::new(self.id, snapshots);
+                let packet = CUpdateAttributes::new(self.id(), snapshots);
                 let chunk_pos = *self.last_chunk_pos.lock();
                 self.get_world()
                     .broadcast_to_nearby(chunk_pos, packet, None);
@@ -509,13 +494,13 @@ impl Player {
             world.broadcast_to_nearby(
                 chunk_pos,
                 CEntityEvent {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     event: EntityStatus::Poof,
                 },
                 None,
             );
 
-            world.broadcast_to_all(CRemoveEntities::single(self.id));
+            world.broadcast_to_all(CRemoveEntities::single(self.id()));
             self.set_removed(RemovalReason::Killed);
         }
     }
@@ -523,7 +508,7 @@ impl Player {
     /// Syncs dirty entity data to nearby players.
     fn sync_entity_data(&self) {
         if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
-            let packet = CSetEntityData::new(self.id, dirty_values);
+            let packet = CSetEntityData::new(self.id(), dirty_values);
             let chunk_pos = *self.last_chunk_pos.lock();
             self.get_world()
                 .broadcast_to_nearby(chunk_pos, packet, None);
@@ -575,7 +560,7 @@ impl Player {
     }
 
     fn check_below_world(&self) {
-        let pos = *self.position.lock();
+        let pos = self.position();
         if pos.y < f64::from(self.get_world().get_min_y() - 64) {
             self.hurt(
                 &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
@@ -680,7 +665,7 @@ impl Player {
             world.broadcast_to_nearby(
                 chunk_pos,
                 CDamageEvent {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     source_type_id: type_id,
                     source_cause_id: source.causing_entity_id.map_or(0, |id| id + 1),
                     source_direct_id: source.direct_entity_id.map_or(0, |id| id + 1),
@@ -689,11 +674,11 @@ impl Player {
                 None,
             );
 
-            let (yaw, _) = self.rotation.load();
+            let (yaw, _) = self.rotation();
             world.broadcast_to_nearby(
                 chunk_pos,
                 CHurtAnimation {
-                    entity_id: self.id,
+                    entity_id: self.id(),
                     yaw,
                 },
                 None,
@@ -729,7 +714,7 @@ impl Player {
     fn die(&self, source: &DamageSource) {
         {
             let mut living_base = self.living_base.lock();
-            if self.removed.load(Ordering::Relaxed) || living_base.death_processed {
+            if self.is_removed() || living_base.death_processed {
                 return;
             }
 
@@ -756,7 +741,7 @@ impl Player {
         world.broadcast_to_nearby(
             chunk_pos,
             CEntityEvent {
-                entity_id: self.id,
+                entity_id: self.id(),
                 event: EntityStatus::Death,
             },
             None,
@@ -777,7 +762,7 @@ impl Player {
         .component();
 
         self.send_packet(CPlayerCombatKill {
-            player_id: self.id,
+            player_id: self.id(),
             message: if show_death_messages {
                 death_message.clone()
             } else {
@@ -833,7 +818,7 @@ impl Player {
             living_base.reset_death_state();
         };
 
-        let was_removed = self.removed.swap(false, Ordering::AcqRel);
+        let was_removed = self.base.clear_removed();
         let world = self.get_world();
 
         // Only send CRemoveEntities if tick_death() hasn't already removed us
@@ -842,7 +827,7 @@ impl Player {
         // fresh ServerPlayer), clients may briefly see remove+re-add in the same
         // frame if respawn races with tick_death's DEATH_DURATION removal.
         if !was_removed {
-            world.broadcast_to_all(CRemoveEntities::single(self.id));
+            world.broadcast_to_all(CRemoveEntities::single(self.id()));
         }
 
         // Respawn-specific state: reset health and pose
@@ -871,7 +856,7 @@ impl Player {
 
         // TODO: bed/respawn anchor lookup, send NO_RESPAWN_BLOCK_AVAILABLE if missing
 
-        let Some(player_arc) = world.players.get_by_entity_id(self.id) else {
+        let Some(player_arc) = world.players.get_by_entity_id(self.id()) else {
             return;
         };
 
@@ -911,7 +896,7 @@ impl Player {
         // TODO: also send SetEquipment + UpdateAttributes in the bundle
         let player_type_id = vanilla_entities::PLAYER.id() as i32;
         let spawn_packet = CAddEntity::player(
-            self.id,
+            self.id(),
             self.gameprofile.id,
             player_type_id,
             spawn.x,
@@ -921,9 +906,9 @@ impl Player {
             0.0,
         );
         let entity_data = self.entity_data.lock().pack_all();
-        let entity_id = self.id;
+        let entity_id = self.id();
         world.players.iter_players(|_, p| {
-            if p.id != entity_id {
+            if p.id() != entity_id {
                 p.send_bundle(|bundle| {
                     bundle.add(spawn_packet.clone());
                     if !entity_data.is_empty() {
@@ -983,6 +968,7 @@ impl Player {
     /// This is used when the correct world isn't known at construction time
     /// (e.g., when loading saved player data determines the actual world).
     pub fn set_world(&self, world: Arc<World>) {
+        self.base.set_world(Arc::downgrade(&world));
         self.world.store(world);
     }
 
@@ -1026,10 +1012,10 @@ impl Player {
 
         // --- Reset transient state ---
         self.client_loaded.store(false, Ordering::Relaxed);
-        self.movement.lock().delta_movement = DVec3::default();
+        self.set_velocity(DVec3::ZERO);
+        self.set_on_ground(false);
         {
             let mut es = self.entity_state.lock();
-            es.on_ground = false;
             es.fall_flying = false;
             es.sleeping = false;
             es.crouching = false;
@@ -1082,8 +1068,8 @@ impl Player {
         let world = self.get_world();
 
         // Set position and rotation
-        *self.position.lock() = position;
-        self.rotation.store(rotation);
+        self.set_position(position);
+        self.set_rotation(rotation);
         {
             let mut mv = self.movement.lock();
             mv.prev_position = position;
@@ -1158,9 +1144,9 @@ impl Player {
             }
             ResetReason::Respawn => {
                 // Same world — re-enter chunk tracking
-                world.player_area_map.remove_by_entity_id(self.id);
+                world.player_area_map.remove_by_entity_id(self.id());
                 world.chunk_map.remove_player(self);
-                world.entity_tracker().on_player_leave(self.id);
+                world.entity_tracker().on_player_leave(self.id());
 
                 self.send_packet(CGameEvent {
                     event: GameEventType::LevelChunksLoadStart,
@@ -1185,20 +1171,12 @@ pub enum ResetReason {
 }
 
 impl Entity for Player {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PLAYER
-    }
-
-    fn id(&self) -> i32 {
-        self.id
-    }
-
-    fn uuid(&self) -> Uuid {
-        self.gameprofile.id
-    }
-
-    fn position(&self) -> DVec3 {
-        *self.position.lock()
     }
 
     fn bounding_box(&self) -> WorldAabb {
@@ -1215,38 +1193,8 @@ impl Entity for Player {
         // This is here for Entity trait compliance
     }
 
-    fn level(&self) -> Option<Arc<World>> {
-        Some(self.world.load_full())
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed.load(Ordering::Relaxed)
-    }
-
-    fn set_removed(&self, reason: RemovalReason) {
-        if !self.removed.swap(true, Ordering::AcqRel) {
-            self.level_callback.lock().on_remove(reason);
-        }
-    }
-
-    fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
-        *self.level_callback.lock() = callback;
-    }
-
     fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
         Some(self)
-    }
-
-    fn rotation(&self) -> (f32, f32) {
-        self.rotation.load()
-    }
-
-    fn velocity(&self) -> DVec3 {
-        self.movement.lock().delta_movement
-    }
-
-    fn on_ground(&self) -> bool {
-        self.entity_state.lock().on_ground
     }
 
     /// Returns the eye height for the current pose.
