@@ -70,8 +70,7 @@ fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
         f64::from(spawn.z),
     ));
     player.set_rotation((spawn.angle, 0.0));
-    player.game_mode.store(world.default_gamemode);
-    player.prev_game_mode.store(world.default_gamemode);
+    player.restore_game_modes(world.default_gamemode, world.default_gamemode);
     player
         .abilities
         .lock()
@@ -484,8 +483,8 @@ impl Server {
                 dimension_type: world.dimension_type.id() as i32,
                 dimension: world.key.clone(),
                 seed: hashed_seed,
-                game_type: player.game_mode.load(),
-                previous_game_type: Some(player.prev_game_mode.load()),
+                game_type: player.game_mode(),
+                previous_game_type: Some(player.previous_game_mode()),
                 is_debug: false,
                 is_flat: world.is_flat,
                 last_death_location: None,
@@ -1153,7 +1152,7 @@ impl Server {
 
         player.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
-            data: player.game_mode.load().into(),
+            data: player.game_mode().into(),
         });
     }
     /// Queues a world change to be processed after the current tick.

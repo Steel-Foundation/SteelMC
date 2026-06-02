@@ -158,8 +158,8 @@ impl PersistentPlayerData {
             on_ground,
             fall_flying,
             health: player.get_health(),
-            game_mode: player.game_mode.load() as i32,
-            prev_game_mode: player.prev_game_mode.load() as i32,
+            game_mode: player.game_mode() as i32,
+            prev_game_mode: player.previous_game_mode() as i32,
             abilities: PersistentAbilities {
                 invulnerable: abilities.invulnerable,
                 flying: abilities.flying,
@@ -265,12 +265,7 @@ impl PersistentPlayerData {
         player.set_health(self.health);
 
         // Game mode
-        let game_mode = self.game_mode.into();
-        player.game_mode.store(game_mode);
-
-        // Previous game mode
-        let prev_game_mode = self.prev_game_mode.into();
-        player.prev_game_mode.store(prev_game_mode);
+        player.restore_game_modes(self.game_mode.into(), self.prev_game_mode.into());
 
         // Abilities
         *player.abilities.lock() = self.abilities.clone().into();

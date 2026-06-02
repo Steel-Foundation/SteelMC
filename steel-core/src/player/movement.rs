@@ -250,7 +250,7 @@ impl Player {
 
         let prev_pos = self.movement.lock().last_sent_position();
         let start_pos = self.position();
-        let game_mode = self.game_mode.load();
+        let game_mode = self.game_mode();
         let state = self.entity_state_snapshot();
         let (is_sleeping, is_fall_flying) = (state.sleeping, state.fall_flying);
         let was_on_ground = self.on_ground();
@@ -598,7 +598,7 @@ impl Player {
     pub(super) fn apply_gravity(&self) {
         let is_fall_flying = self.is_fall_flying();
         let on_ground = self.on_ground();
-        let game_mode = self.game_mode.load();
+        let game_mode = self.game_mode();
         let is_spectator = game_mode == GameType::Spectator;
         let is_flying = self.is_flying();
 

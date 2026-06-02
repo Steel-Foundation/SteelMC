@@ -270,7 +270,7 @@ impl Player {
     /// - Calculates pickup area as bounding box inflated by (1.0, 0.5, 1.0)
     /// - Calls `playerTouch()` on each entity in range
     pub(super) fn touch_nearby_items(&self) {
-        if self.game_mode.load() == GameType::Spectator {
+        if self.game_mode() == GameType::Spectator {
             return;
         }
 
@@ -338,7 +338,7 @@ impl Player {
     /// This is the common implementation shared between inventory menu and
     /// external menus (crafting table, chest, etc.).
     fn process_container_click(&self, menu: &mut dyn Menu, packet: SContainerClick) {
-        if self.game_mode.load() == GameType::Spectator {
+        if self.game_mode() == GameType::Spectator {
             menu.behavior_mut()
                 .send_all_data_to_remote(&self.connection);
             return;
@@ -366,7 +366,7 @@ impl Player {
 
         menu.behavior_mut().suppress_remote_updates();
 
-        let has_infinite_materials = self.game_mode.load() == GameType::Creative;
+        let has_infinite_materials = self.game_mode() == GameType::Creative;
         menu.clicked(
             packet.slot_num,
             packet.button_num,
@@ -430,7 +430,7 @@ impl Player {
 
     /// Handles a creative mode slot set packet.
     pub fn handle_set_creative_mode_slot(&self, packet: SSetCreativeModeSlot) {
-        if self.game_mode.load() != GameType::Creative {
+        if self.game_mode() != GameType::Creative {
             return;
         }
 

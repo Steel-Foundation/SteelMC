@@ -59,7 +59,7 @@ pub fn use_item_on(
 
     // Spectator mode: can only open menus
     // TODO: Implement menu providers for blocks like chests
-    if player.game_mode.load() == GameType::Spectator {
+    if player.game_mode() == GameType::Spectator {
         return InteractionResult::Pass;
     }
 
@@ -156,7 +156,7 @@ pub fn use_item_on(
 /// This implements logic similar to `ServerPlayerGameMode.useItem()`.
 pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> InteractionResult {
     // Spectator mode: can only open menus
-    if player.game_mode.load() == GameType::Spectator {
+    if player.game_mode() == GameType::Spectator {
         return InteractionResult::Pass;
     }
 
@@ -197,13 +197,9 @@ impl Player {
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
     pub fn set_game_mode(&self, gamemode: GameType) -> bool {
-        let current_gamemode = self.game_mode.load();
-        if current_gamemode == gamemode {
+        if !self.change_game_mode_state(gamemode) {
             return false;
         }
-
-        self.prev_game_mode.store(self.game_mode.load());
-        self.game_mode.store(gamemode);
 
         // Update abilities based on new game mode (mirrors vanilla GameType.updatePlayerAbilities)
         self.abilities.lock().update_for_game_mode(gamemode);
@@ -270,7 +266,7 @@ impl Player {
     /// Vanilla: `ServerPlayer.updatePlayerAttributes()` — applies creative-mode
     /// range modifiers every tick.
     pub(super) fn update_player_attributes(&self) {
-        let is_creative = self.game_mode.load() == GameType::Creative;
+        let is_creative = self.game_mode() == GameType::Creative;
         let mut attrs = self.attributes().lock();
 
         if is_creative {
@@ -307,7 +303,7 @@ impl Player {
     /// Returns true if player has infinite materials (Creative mode).
     #[must_use]
     pub fn has_infinite_materials(&self) -> bool {
-        self.game_mode.load() == GameType::Creative
+        self.game_mode() == GameType::Creative
     }
 
     /// Acknowledges block changes up to the given sequence number.

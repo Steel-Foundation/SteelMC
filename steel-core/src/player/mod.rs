@@ -11,6 +11,7 @@ pub mod experience;
 pub mod food_data;
 /// Game mode specific logic for player interactions.
 pub mod game_mode;
+mod game_mode_state;
 mod game_profile;
 mod health_sync;
 pub mod message_chain;
@@ -42,8 +43,8 @@ use steel_protocol::{
 use teleport_state::TeleportState;
 
 use block_breaking::BlockBreakingManager;
-use crossbeam::atomic::AtomicCell;
 use enum_dispatch::enum_dispatch;
+use game_mode_state::PlayerGameModeState;
 pub use game_profile::{GameProfile, GameProfileAction};
 use std::sync::{
     Arc, Weak,
@@ -203,11 +204,8 @@ pub struct Player {
     /// Chat state: message counters, signature cache, validator, session, chain.
     pub chat: SyncMutex<ChatState>,
 
-    /// The player's current game mode (Survival, Creative, Adventure, Spectator)
-    pub game_mode: AtomicCell<GameType>,
-
-    /// The player's last game mode
-    pub prev_game_mode: AtomicCell<GameType>,
+    /// Current and previous game mode.
+    game_modes: SyncMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: SyncPlayerInv,
@@ -283,6 +281,28 @@ impl Player {
         (start_pos, end_pos)
     }
 
+    /// Returns the player's current game mode.
+    #[must_use]
+    pub fn game_mode(&self) -> GameType {
+        self.game_modes.lock().current()
+    }
+
+    /// Returns the player's previous game mode.
+    #[must_use]
+    pub fn previous_game_mode(&self) -> GameType {
+        self.game_modes.lock().previous()
+    }
+
+    /// Restores current and previous game mode from persistent player data.
+    pub(crate) fn restore_game_modes(&self, current: GameType, previous: GameType) {
+        self.game_modes.lock().set_pair(current, previous);
+    }
+
+    /// Changes the current game mode and records the old current mode as previous.
+    fn change_game_mode_state(&self, game_mode: GameType) -> bool {
+        self.game_modes.lock().change_current(game_mode)
+    }
+
     /// Creates a new player.
     #[expect(clippy::too_many_arguments, reason = "Player::new is complex")]
     pub fn new(
@@ -335,8 +355,7 @@ impl Player {
             chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
             chat: SyncMutex::new(ChatState::new()),
-            game_mode: AtomicCell::new(GameType::Survival),
-            prev_game_mode: AtomicCell::new(GameType::Survival),
+            game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
             open_menu: SyncMutex::new(None),
@@ -836,7 +855,7 @@ impl Player {
         {
             let mut experience = self.experience.lock();
             if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true)
-                && self.game_mode.load() != GameType::Spectator
+                && self.game_mode() != GameType::Spectator
             {
                 // TODO: drop XP orbs (min(level * 7, 100))
                 experience.set_total_points(0);
@@ -994,8 +1013,8 @@ impl Player {
                 dimension_type: new_world.dimension_type.id() as i32,
                 dimension_name: new_world.key.clone(),
                 hashed_seed: new_world.obfuscated_seed(),
-                gamemode: self.game_mode.load() as u8,
-                previous_gamemode: self.prev_game_mode.load() as i8,
+                gamemode: self.game_mode() as u8,
+                previous_gamemode: self.previous_game_mode() as i8,
                 is_debug: false,
                 is_flat: new_world.is_flat,
                 has_death_location: false,

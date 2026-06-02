@@ -113,7 +113,7 @@ impl World {
 
         player.send_packet(CGameEvent {
             event: GameEventType::ChangeGameMode,
-            data: player.game_mode.load().into(),
+            data: player.game_mode().into(),
         });
     }
 
@@ -136,7 +136,7 @@ impl World {
                 existing_player.gameprofile.id,
                 existing_player.gameprofile.name.clone(),
                 existing_player.gameprofile.properties.clone(),
-                existing_player.game_mode.load().into(),
+                existing_player.game_mode().into(),
                 existing_player.connection.latency(),
                 None, // display_name
                 true, // show_hat
@@ -180,7 +180,7 @@ impl World {
             player.gameprofile.id,
             player.gameprofile.name.clone(),
             player.gameprofile.properties.clone(),
-            player.game_mode.load().into(),
+            player.game_mode().into(),
             player.connection.latency(),
             None, // display_name
             true, // show_hat

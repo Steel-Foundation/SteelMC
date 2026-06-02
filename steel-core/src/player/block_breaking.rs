@@ -171,7 +171,7 @@ impl BlockBreakingManager {
                 }
 
                 // Creative mode: instant break
-                if player.game_mode.load() == GameType::Creative {
+                if player.game_mode() == GameType::Creative {
                     self.destroy_and_ack(player, world, pos);
                     return;
                 }
@@ -348,7 +348,7 @@ impl BlockBreakingManager {
             player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
             // Handle drops (skip for creative/spectator)
-            let game_mode = player.game_mode.load();
+            let game_mode = player.game_mode();
             if game_mode != GameType::Spectator
                 && game_mode != GameType::Creative
                 && has_correct_tool
@@ -403,7 +403,7 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
     let destroy_time = block.config.destroy_time;
 
     // Instant break for creative
-    if player.game_mode.load() == GameType::Creative {
+    if player.game_mode() == GameType::Creative {
         return 1.0;
     }
 
