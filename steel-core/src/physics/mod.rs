@@ -15,7 +15,9 @@ pub(crate) mod physics_state;
 pub mod shapes;
 
 // Public API
-pub use collision::{CollisionWorld, WorldCollisionProvider};
+pub use collision::{
+    CollisionWorld, WorldCollisionProvider, has_block_collision, is_colliding_with_new_blocks,
+};
 pub(crate) use entity_move::move_entity;
 pub use entity_move::{MoveResult, MoverType};
 pub(crate) use physics_state::EntityPhysicsState;

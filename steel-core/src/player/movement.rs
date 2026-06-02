@@ -15,19 +15,16 @@ use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_utils::types::GameType;
-use steel_utils::{ChunkPos, WorldAabb, translations};
+use steel_utils::{ChunkPos, translations};
 
 use crate::entity::{Entity, EntityPositionSyncDecision, LivingEntity};
 use crate::physics::{
-    CollisionWorld, MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE,
-    join_is_not_empty,
+    MOVEMENT_ERROR_THRESHOLD, MoverType, WorldCollisionProvider, Y_TOLERANCE, has_block_collision,
+    is_colliding_with_new_blocks,
 };
 use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::World;
-
-/// Small epsilon for AABB deflation (matches vanilla 1.0E-5).
-pub const COLLISION_EPSILON: f64 = 1.0E-5;
 
 /// Default gravity for players (blocks/tick²). Vanilla uses 0.08.
 pub const DEFAULT_GRAVITY: f64 = 0.08;
@@ -67,15 +64,6 @@ fn wrap_degrees(mut degrees: f32) -> f32 {
 }
 
 #[must_use]
-const fn bottom_center(aabb: WorldAabb) -> DVec3 {
-    DVec3::new(
-        f64::midpoint(aabb.min_x(), aabb.max_x()),
-        aabb.min_y(),
-        f64::midpoint(aabb.min_z(), aabb.max_z()),
-    )
-}
-
-#[must_use]
 fn movement_error_delta(target_pos: DVec3, simulated_pos: DVec3) -> DVec3 {
     let error_x = target_pos.x - simulated_pos.x;
     let mut error_y = target_pos.y - simulated_pos.y;
@@ -104,48 +92,6 @@ struct AcceptedMovementBroadcast {
     pitch: f32,
     on_ground: bool,
     client_delta: DVec3,
-}
-
-/// Checks if an entity box is colliding with blocks.
-#[must_use]
-pub fn has_block_collision(world: &Arc<World>, aabb: WorldAabb) -> bool {
-    let collision_world = WorldCollisionProvider::new(world);
-    !collision_world
-        .get_block_collisions(&aabb.deflate(COLLISION_EPSILON))
-        .is_empty()
-}
-
-/// Checks if moving from `old_aabb` to `new_aabb` would cause collision with new blocks.
-///
-/// This allows movement when already stuck in blocks (e.g., sand fell on player).
-/// Only returns true if the new position collides with blocks that the old position
-/// did not collide with.
-///
-/// Uses the physics engine's `join_is_not_empty` for proper collision detection.
-///
-/// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
-#[must_use]
-pub fn is_colliding_with_new_blocks(
-    world: &Arc<World>,
-    old_aabb: WorldAabb,
-    new_aabb: WorldAabb,
-    descending: bool,
-) -> bool {
-    let collision_world = WorldCollisionProvider::new(world);
-    let old_shape = old_aabb.deflate(COLLISION_EPSILON);
-    let collisions = collision_world.get_pre_move_collisions(
-        &new_aabb.deflate(COLLISION_EPSILON),
-        bottom_center(old_aabb),
-        descending,
-    );
-
-    for collision_aabb in &collisions {
-        if !join_is_not_empty(collision_aabb, &old_shape) {
-            return true;
-        }
-    }
-
-    false
 }
 
 impl Player {
@@ -361,9 +307,14 @@ impl Player {
                     && !in_impulse_grace;
 
                 let new_aabb = self.bounding_box().move_vec(target_pos - self.position());
-                let old_collision = has_block_collision(&world, old_aabb);
-                let new_collision =
-                    is_colliding_with_new_blocks(&world, old_aabb, new_aabb, self.is_crouching());
+                let collision_world = WorldCollisionProvider::new(&world);
+                let old_collision = has_block_collision(&collision_world, old_aabb);
+                let new_collision = is_colliding_with_new_blocks(
+                    &collision_world,
+                    old_aabb,
+                    new_aabb,
+                    self.is_crouching(),
+                );
 
                 if (fail && !old_collision) || new_collision {
                     self.teleport(

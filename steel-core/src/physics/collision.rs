@@ -10,7 +10,8 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::physics::shapes::translate_shape;
+use crate::physics::COLLISION_EPSILON;
+use crate::physics::shapes::{join_is_not_empty, translate_shape};
 use crate::world::World;
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -221,6 +222,49 @@ const fn vanilla_block_pos_less(left: BlockPos, right: BlockPos) -> bool {
             && (left.z() < right.z() || left.z() == right.z() && left.x() < right.x())
 }
 
+#[must_use]
+const fn bottom_center(aabb: WorldAabb) -> DVec3 {
+    DVec3::new(
+        f64::midpoint(aabb.min_x(), aabb.max_x()),
+        aabb.min_y(),
+        f64::midpoint(aabb.min_z(), aabb.max_z()),
+    )
+}
+
+/// Returns whether an entity box intersects any block collision shape.
+#[must_use]
+pub fn has_block_collision(world: &impl CollisionWorld, aabb: WorldAabb) -> bool {
+    !world
+        .get_block_collisions(&aabb.deflate(COLLISION_EPSILON))
+        .is_empty()
+}
+
+/// Returns whether `new_aabb` collides with blocks that `old_aabb` did not.
+///
+/// Matches vanilla `ServerGamePacketListenerImpl.isEntityCollidingWithAnythingNew()`.
+#[must_use]
+pub fn is_colliding_with_new_blocks(
+    world: &impl CollisionWorld,
+    old_aabb: WorldAabb,
+    new_aabb: WorldAabb,
+    descending: bool,
+) -> bool {
+    let old_shape = old_aabb.deflate(COLLISION_EPSILON);
+    let collisions = world.get_pre_move_collisions(
+        &new_aabb.deflate(COLLISION_EPSILON),
+        bottom_center(old_aabb),
+        descending,
+    );
+
+    for collision_aabb in &collisions {
+        if !join_is_not_empty(collision_aabb, &old_shape) {
+            return true;
+        }
+    }
+
+    false
+}
+
 impl CollisionWorld for WorldCollisionProvider<'_> {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         self.world.get_block_state(pos)
@@ -299,6 +343,34 @@ mod tests {
     const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
         &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
 
+    struct TestCollisionWorld {
+        block_collisions: Vec<WorldAabb>,
+        pre_move_collisions: Vec<WorldAabb>,
+    }
+
+    impl CollisionWorld for TestCollisionWorld {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            vanilla_blocks::AIR.default_state()
+        }
+
+        fn get_block_collisions(&self, aabb: &WorldAabb) -> Vec<WorldAabb> {
+            self.block_collisions
+                .iter()
+                .copied()
+                .filter(|collision| collision.intersects(*aabb))
+                .collect()
+        }
+
+        fn get_pre_move_collisions(
+            &self,
+            _aabb: &WorldAabb,
+            _old_bottom_center: DVec3,
+            _descending: bool,
+        ) -> Vec<WorldAabb> {
+            self.pre_move_collisions.clone()
+        }
+    }
+
     #[test]
     fn test_intersects_aabb() {
         let aabb1 = WorldAabb::new(0.0, 0.0, 0.0, 2.0, 2.0, 2.0);
@@ -309,6 +381,53 @@ mod tests {
         let aabb3 = WorldAabb::new(5.0, 5.0, 5.0, 6.0, 6.0, 6.0);
 
         assert!(!aabb1.intersects(aabb3));
+    }
+
+    #[test]
+    fn block_collision_helper_reports_intersecting_collision_shape() {
+        let world = TestCollisionWorld {
+            block_collisions: vec![WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)],
+            pre_move_collisions: Vec::new(),
+        };
+
+        assert!(has_block_collision(
+            &world,
+            WorldAabb::new(0.25, 0.25, 0.25, 0.75, 0.75, 0.75)
+        ));
+        assert!(!has_block_collision(
+            &world,
+            WorldAabb::new(2.0, 2.0, 2.0, 3.0, 3.0, 3.0)
+        ));
+    }
+
+    #[test]
+    fn new_block_collision_helper_ignores_collision_already_touching_old_box() {
+        let already_overlapped = WorldAabb::new(0.25, 0.0, 0.25, 0.75, 1.0, 0.75);
+        let new_collision = WorldAabb::new(2.0, 0.0, 0.0, 3.0, 1.0, 1.0);
+        let old_aabb = WorldAabb::new(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let new_aabb = WorldAabb::new(2.0, 0.0, 0.0, 3.0, 1.0, 1.0);
+
+        let already_stuck_world = TestCollisionWorld {
+            block_collisions: Vec::new(),
+            pre_move_collisions: vec![already_overlapped],
+        };
+        assert!(!is_colliding_with_new_blocks(
+            &already_stuck_world,
+            old_aabb,
+            new_aabb,
+            false
+        ));
+
+        let newly_blocked_world = TestCollisionWorld {
+            block_collisions: Vec::new(),
+            pre_move_collisions: vec![new_collision],
+        };
+        assert!(is_colliding_with_new_blocks(
+            &newly_blocked_world,
+            old_aabb,
+            new_aabb,
+            false
+        ));
     }
 
     #[test]
