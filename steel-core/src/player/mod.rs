@@ -1200,7 +1200,7 @@ impl Entity for Player {
     }
 
     fn backs_off_from_edge(&self) -> bool {
-        self.is_crouching()
+        self.is_crouching() && !self.is_flying()
     }
 
     fn hurt(&self, source: &DamageSource, amount: f32) -> bool {

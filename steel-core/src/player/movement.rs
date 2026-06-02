@@ -599,16 +599,21 @@ impl Player {
     /// Gravity is not applied when:
     /// - Player is on the ground
     /// - Player is in spectator mode (no physics)
-    /// - Player is in creative mode and flying
+    /// - Player abilities are currently flying
     /// - Player is fall flying (elytra - uses different physics)
     pub(super) fn apply_gravity(&self) {
         let is_fall_flying = self.is_fall_flying();
         let on_ground = self.on_ground();
         let game_mode = self.game_mode.load();
         let is_spectator = game_mode == GameType::Spectator;
-        let is_creative_flying = game_mode == GameType::Creative; // TODO: check actual flying state
+        let is_flying = self.is_flying();
 
-        if on_ground || is_spectator || is_creative_flying || is_fall_flying {
+        if is_flying {
+            // TODO: Add the passenger exemption when the passenger system exists.
+            self.reset_fall_distance();
+        }
+
+        if on_ground || is_spectator || is_flying || is_fall_flying {
             return;
         }
 
