@@ -107,18 +107,19 @@ impl EntityTracker {
             &get_players_in_chunk,
             &get_player,
         );
+        let player_ids_to_notify: Vec<i32> = players_to_notify.iter().copied().collect();
 
         let tracked = TrackedEntity {
             entity: Arc::downgrade(entity),
             tracking_range,
             registered_chunk,
-            seen_by: SyncRwLock::new(players_to_notify.clone()),
+            seen_by: SyncRwLock::new(players_to_notify),
         };
 
         let _ = self.entities.insert_sync(entity_id, tracked);
 
         // Send spawn packets to all nearby players
-        for player_id in players_to_notify {
+        for player_id in player_ids_to_notify {
             if let Some(player) = get_player(player_id) {
                 send_spawn_packets(entity, &player);
             }
