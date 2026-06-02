@@ -330,6 +330,7 @@ pub struct EntityBaseState {
     movement_flags: EntityMovementFlags,
     ground_contact: EntityGroundContact,
     fluid_contact: EntityFluidContact,
+    was_eye_in_water: bool,
     piston_movement: EntityPistonMovement,
     fall_distance: f64,
     stuck_speed_multiplier: DVec3,
@@ -351,6 +352,7 @@ impl EntityBaseState {
             movement_flags: EntityMovementFlags::new(),
             ground_contact: EntityGroundContact::airborne(),
             fluid_contact: EntityFluidContact::default(),
+            was_eye_in_water: false,
             piston_movement: EntityPistonMovement::new(),
             fall_distance: 0.0,
             stuck_speed_multiplier: DVec3::ZERO,
@@ -687,6 +689,11 @@ impl EntityBase {
         self.state.lock().fluid_contact
     }
 
+    /// Returns vanilla `wasEyeInWater` from the previous fluid refresh.
+    pub fn was_eye_in_water(&self) -> bool {
+        self.state.lock().was_eye_in_water
+    }
+
     /// Returns accumulated vanilla fall distance.
     #[inline]
     pub fn fall_distance(&self) -> f64 {
@@ -863,6 +870,16 @@ impl EntityBase {
     /// Stores the current vanilla fluid contact snapshot.
     pub fn set_fluid_contact(&self, fluid_contact: EntityFluidContact) {
         self.state.lock().fluid_contact = fluid_contact;
+    }
+
+    /// Stores fluid contact for a vanilla base-tick refresh.
+    ///
+    /// Vanilla updates `wasEyeInWater` from the previous fluid interaction
+    /// before scanning the current one.
+    pub fn set_fluid_contact_for_base_tick(&self, fluid_contact: EntityFluidContact) {
+        let mut state = self.state.lock();
+        state.was_eye_in_water = state.fluid_contact.eye_in_water();
+        state.fluid_contact = fluid_contact;
     }
 
     /// Sets ground and horizontal collision flags from an accepted client move.
@@ -1071,11 +1088,24 @@ mod tests {
             EntityDimensions::new(0.25, 0.25, 0.125),
             Weak::<World>::new(),
         );
-        let contact = EntityFluidContact::from_heights(0.4, 0.0);
+        let water_contact = EntityFluidContact::from_parts(0.4, 0.0, true, false);
+        let air_contact = EntityFluidContact::default();
 
-        base.set_fluid_contact(contact);
+        base.set_fluid_contact(water_contact);
 
-        assert_eq!(base.fluid_contact(), contact);
+        assert_eq!(base.fluid_contact(), water_contact);
+        assert!(!base.was_eye_in_water());
+
+        base.set_fluid_contact(air_contact);
+
+        assert_eq!(base.fluid_contact(), air_contact);
+        assert!(!base.was_eye_in_water());
+
+        base.set_fluid_contact(water_contact);
+        base.set_fluid_contact_for_base_tick(air_contact);
+
+        assert_eq!(base.fluid_contact(), air_contact);
+        assert!(base.was_eye_in_water());
     }
 
     #[test]

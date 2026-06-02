@@ -423,6 +423,21 @@ pub trait Entity: EntityEventSource + Send + Sync {
         self.fluid_contact().lava_height() > 0.0
     }
 
+    /// Returns true if this entity's eyes are currently inside water.
+    fn is_eye_in_water(&self) -> bool {
+        self.fluid_contact().eye_in_water()
+    }
+
+    /// Returns true if this entity's eyes are currently inside lava.
+    fn is_eye_in_lava(&self) -> bool {
+        self.fluid_contact().eye_in_lava()
+    }
+
+    /// Returns vanilla underwater state.
+    fn is_under_water(&self) -> bool {
+        self.base().was_eye_in_water() && self.is_in_water()
+    }
+
     /// Returns cached fluid contact from the last entity fluid refresh.
     fn fluid_contact(&self) -> EntityFluidContact {
         self.base().fluid_contact()
@@ -430,14 +445,37 @@ pub trait Entity: EntityEventSource + Send + Sync {
 
     /// Refreshes cached fluid contact from this entity's current bounding box.
     fn refresh_fluid_contact(&self) -> EntityFluidContact {
+        self.scan_and_store_fluid_contact(false)
+    }
+
+    /// Refreshes cached fluid contact with vanilla base-tick eye-water history.
+    fn refresh_fluid_contact_for_base_tick(&self) -> EntityFluidContact {
+        self.scan_and_store_fluid_contact(true)
+    }
+
+    /// Scans current fluid contact and stores it on the entity base.
+    fn scan_and_store_fluid_contact(&self, advance_eye_water_history: bool) -> EntityFluidContact {
         let Some(world) = self.level() else {
             let contact = EntityFluidContact::default();
-            self.base().set_fluid_contact(contact);
+            if advance_eye_water_history {
+                self.base().set_fluid_contact_for_base_tick(contact);
+            } else {
+                self.base().set_fluid_contact(contact);
+            }
             return contact;
         };
 
-        let contact = EntityFluidContact::scan(&world, self.bounding_box());
-        self.base().set_fluid_contact(contact);
+        let contact = EntityFluidContact::scan(
+            &world,
+            self.position(),
+            self.get_eye_y(),
+            self.bounding_box(),
+        );
+        if advance_eye_water_history {
+            self.base().set_fluid_contact_for_base_tick(contact);
+        } else {
+            self.base().set_fluid_contact(contact);
+        }
         contact
     }
 
